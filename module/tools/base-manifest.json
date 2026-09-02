@@ -885,7 +885,7 @@
     "services/frontend/code/packages/codefly-ui/src/chat/index.ts": "077b05b146e09285a20f25edc8f251ca23249c53ba15d6a75610216517f5f33d",
     "services/frontend/code/packages/codefly-ui/src/chat/types.ts": "a764ee5428b3331429f43548108da75e27abf59b3e6b29704415698e30bd9c71",
     "services/frontend/code/packages/codefly-ui/src/dashboard/__tests__/atoms.test.tsx": "94227f9ab443e866f97e6e2ab5928de0fb1670813c38bf08e83063c772470dad",
-    "services/frontend/code/packages/codefly-ui/src/dashboard/__tests__/charts.test.tsx": "85e2be59d4f6bd7d5977c8ae1cf33b490eb05ae3db4495c8e6f5c76d82394f5e",
+    "services/frontend/code/packages/codefly-ui/src/dashboard/__tests__/charts.test.tsx": "6256310d3e2daaea300cc4f508bb95d0a8a439a91054252b0a3e906cf7d72e21",
     "services/frontend/code/packages/codefly-ui/src/dashboard/__tests__/dashboard.test.tsx": "84cad12bdc84ff31be80647e83c3faaa2428f3b7d0aa7582349aed9d512cc592",
     "services/frontend/code/packages/codefly-ui/src/dashboard/__tests__/format.test.ts": "bd0ff46ffa22b016d4b420aa88fc408ecbaea6be8ea17f5bbdbf03aa7b6d9b30",
     "services/frontend/code/packages/codefly-ui/src/dashboard/__tests__/geometry.test.ts": "b099dc7487d19035f255c9d94284da3d89603d9114f51a0122e7699f55f3f468",

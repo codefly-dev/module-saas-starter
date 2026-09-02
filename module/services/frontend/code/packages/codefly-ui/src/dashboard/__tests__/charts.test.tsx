@@ -76,7 +76,8 @@ describe("axes gating", () => {
 
 	it("honors per-axis toggles", () => {
 		const [axis] = byType(LineChart({ points: pts, axes: { y: false } }), Axis);
-		expect(axis.props.x).toBeTruthy();
-		expect(axis.props.y).toBeUndefined();
+		expect(axis?.props).toBeDefined();
+		expect(axis?.props?.x).toBeTruthy();
+		expect(axis?.props?.y).toBeUndefined();
 	});
 });
