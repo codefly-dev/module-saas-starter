@@ -219,7 +219,9 @@ services:
     agent:
       kind: codefly:service
       name: postgres
-      version: 0.0.129
+      # 0.0.130: Alpine OpenSSL rebuild to 3.5.8-r0 (CVE-2026-14456),
+      # codefly-dev/service-postgres#74 — resolved.
+      version: 0.0.130
       publisher: codefly.dev
     endpoints:
       - name: tcp
