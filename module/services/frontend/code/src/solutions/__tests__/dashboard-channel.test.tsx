@@ -2,18 +2,22 @@ import { act, cleanup, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	Dashboard,
 	DASHBOARD_SPEC_VERSION,
 	type DashboardAuthoring,
 	type DashboardDef,
+	type DashboardRecord,
+	MyDashboards,
 	scopedDashboardDraftKey,
-	USER_DASHBOARD_DRAFT_KEY,
-	useDashboardAuthoring,
+	USER_DASHBOARD_LIBRARY_KEY,
 } from "@/features/dashboard";
 import { applyCommand } from "@/features/dashboard/service/dashboard-driver";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
-import { SolutionRuntime } from "../SolutionRuntime";
+import {
+	EXTERNAL_DASHBOARD_ID,
+	EXTERNAL_DASHBOARD_NAME,
+	SolutionRuntime,
+} from "../SolutionRuntime";
 
 const { authState } = vi.hoisted(() => ({
 	authState: { organizationId: "org-1" as string | undefined },
@@ -32,7 +36,6 @@ vi.mock("../SolutionOutlet", () => ({
 	},
 }));
 
-const EMPTY: DashboardDef = { version: DASHBOARD_SPEC_VERSION, metrics: [] };
 const REMOTE = {
 	id: "s1",
 	manifestUrl: "http://localhost/mf-manifest.json",
@@ -40,19 +43,19 @@ const REMOTE = {
 };
 const PAGE_PROPS = { solutionId: "s1", apiBase: "/api/solutions/s1/proxy" };
 
-// The exact localStorage key both SolutionRuntime and DashboardEditor derive for
-// this viewer (org-1, no signed-in user id → "anon"): if either surface stops
-// deriving it through scopedDashboardDraftKey, this key stops matching and the
-// channel silently breaks.
-const VIEWER_DRAFT_KEY = scopedDashboardDraftKey(USER_DASHBOARD_DRAFT_KEY, {
+// The exact localStorage key the viewer's dashboard library persists under
+// (org-1, no signed-in user id → "anon"): SolutionRuntime writes the driver's
+// record here and the "My Dashboards" surface reads from it. If either stops
+// deriving it through scopedDashboardDraftKey the channel silently breaks.
+const VIEWER_LIBRARY_KEY = scopedDashboardDraftKey(USER_DASHBOARD_LIBRARY_KEY, {
 	organizationId: "org-1",
 });
 
-// A minimal stand-in for the Dashboards canvas: any surface that binds the same
-// viewer-scoped key renders the draft an external driver committed.
-function CanvasStandin({ storageKey }: { storageKey: string }) {
-	const { draft } = useDashboardAuthoring(storageKey, EMPTY);
-	return <Dashboard data={draft.spec} />;
+function libraryRecords(): DashboardRecord[] {
+	const raw = window.localStorage.getItem(VIEWER_LIBRARY_KEY);
+	return raw === null
+		? []
+		: (JSON.parse(raw) as { records: DashboardRecord[] }).records;
 }
 
 function eventTypesHandler() {
@@ -102,7 +105,7 @@ describe("dynamic-dashboard external-driver channel", () => {
 		expect(typeof injected?.setDashboard).toBe("function");
 	});
 
-	it("commits an external driver's edit to the viewer-scoped draft the canvas renders", async () => {
+	it("commits an external driver's edit to a library record the My Dashboards surface renders", async () => {
 		renderInApp(<SolutionRuntime remote={REMOTE} pageProps={PAGE_PROPS} />);
 
 		// The composing module decides WHAT to change — here through the
@@ -117,19 +120,22 @@ describe("dynamic-dashboard external-driver channel", () => {
 		});
 		expect(result?.ok).toBe(true);
 
-		// The edit lands under exactly the key the Dashboards editor reads — not a
-		// private key only this channel would ever see.
-		const raw = window.localStorage.getItem(VIEWER_DRAFT_KEY);
-		expect(raw).not.toBeNull();
-		expect(
-			(JSON.parse(raw as string) as DashboardDef).metrics.map((m) => m.title),
-		).toContain("Logins over time");
+		// The edit lands as a real record in the viewer's dashboard library — the
+		// same collection the My Dashboards surface reads — not an anonymous draft
+		// no surface renders.
+		const records = libraryRecords();
+		expect(records).toHaveLength(1);
+		expect(records[0].id).toBe(EXTERNAL_DASHBOARD_ID);
+		expect(records[0].name).toBe(EXTERNAL_DASHBOARD_NAME);
+		expect(records[0].spec.metrics.map((m) => m.title)).toContain(
+			"Logins over time",
+		);
 
-		// A canvas bound to that key renders the committed edit: the host surface
-		// reflects what the external driver changed.
+		// The host surface lists the driver-authored dashboard: the user can find
+		// and open what the external driver changed.
 		cleanup();
-		renderInApp(<CanvasStandin storageKey={VIEWER_DRAFT_KEY} />);
-		expect(await screen.findByText("Logins over time")).toBeTruthy();
+		renderInApp(<MyDashboards />);
+		expect(await screen.findByText(EXTERNAL_DASHBOARD_NAME)).toBeTruthy();
 	});
 
 	it("returns a structured error and persists nothing for a rejected spec", async () => {
@@ -158,7 +164,7 @@ describe("dynamic-dashboard external-driver channel", () => {
 		if (result?.ok !== false) return;
 		expect(result.kind).toBe("validation");
 		expect(result.errors[0].code).toBe("unknown_event_type");
-		// A rejected spec never reaches the draft the canvas reads.
-		expect(window.localStorage.getItem(VIEWER_DRAFT_KEY)).toBeNull();
+		// A rejected spec never reaches the library: no record is created.
+		expect(window.localStorage.getItem(VIEWER_LIBRARY_KEY)).toBeNull();
 	});
 });

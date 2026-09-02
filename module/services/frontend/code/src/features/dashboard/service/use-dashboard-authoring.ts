@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { useAuditService } from "@/lib/hooks/use-api-client";
 import type { DashboardDef } from "../model/schema";
 import { createDashboardAuthoring, type DashboardAuthoring } from "./authoring";
+import type { DashboardDraftStore } from "./draft-store";
 import { type DashboardDraft, useDashboardDraft } from "./use-dashboard-draft";
 
 // The base localStorage key the viewer's own dashboard draft persists under. It
@@ -15,6 +16,10 @@ import { type DashboardDraft, useDashboardDraft } from "./use-dashboard-draft";
 // a string. The Dashboards editor and the external-driver channel both scope it
 // through scopedDashboardDraftKey below.
 export const USER_DASHBOARD_DRAFT_KEY = "dashboard:draft";
+
+// The base localStorage key the viewer's dashboard collection persists under,
+// scoped per viewer/org through scopedDashboardDraftKey like the draft key.
+export const USER_DASHBOARD_LIBRARY_KEY = "dashboard:library";
 
 // Scope a base draft key to the viewer and their org. The draft lives in
 // per-browser localStorage, so an unscoped key would restore one user's (or one
@@ -36,12 +41,13 @@ export function scopedDashboardDraftKey(
 export function useDashboardAuthoring(
 	storageKey: string,
 	initial: DashboardDef,
+	store?: DashboardDraftStore,
 ): { authoring: DashboardAuthoring; draft: DashboardDraft } {
 	const audit = useAuditService();
 	const queryClient = useQueryClient();
 	const { organizationId } = useAuth();
 	const orgId = organizationId ?? "";
-	const draft = useDashboardDraft(storageKey, initial);
+	const draft = useDashboardDraft(storageKey, initial, store);
 	const commit = draft.setSpec;
 	// Back the injected vocabulary read with react-query's shared cache, so the
 	// authoring surface and useAuditEventTypes read one cached registry entry.

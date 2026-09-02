@@ -28,6 +28,7 @@ import type {
 	MetricDef,
 } from "../model/schema";
 import type { FieldError } from "../model/validate";
+import type { DashboardDraftStore } from "../service/draft-store";
 import {
 	scopedDashboardDraftKey,
 	useDashboardAuthoring,
@@ -112,20 +113,24 @@ function metricFromForm(form: WidgetForm): MetricDef {
 export function DashboardEditor({
 	storageKey,
 	initial,
+	store,
 }: {
 	storageKey: string;
 	initial: DashboardDef;
+	// When set, edits persist through this store instead of localStorage — a
+	// named dashboard record isolates itself by id, so the viewer/org key scoping
+	// below (which guards a shared, unscoped browser key) is neither needed nor
+	// applied on that path.
+	store?: DashboardDraftStore;
 }) {
 	const { user, organizationId } = useAuth();
-	// Scope the persisted draft to the viewer and their org through the shared
-	// helper, so this canvas and the external-driver channel resolve to the same
-	// localStorage entry (an unscoped key would also restore one user's widgets
-	// under another's session on a shared browser).
-	const scopedKey = scopedDashboardDraftKey(storageKey, {
-		organizationId,
-		userId: user?.id,
-	});
-	const { authoring, draft } = useDashboardAuthoring(scopedKey, initial);
+	const scopedKey = store
+		? storageKey
+		: scopedDashboardDraftKey(storageKey, {
+				organizationId,
+				userId: user?.id,
+			});
+	const { authoring, draft } = useDashboardAuthoring(scopedKey, initial, store);
 	const spec = draft.spec;
 
 	const [events, setEvents] = useState<AuditEventTypeInfo[]>([]);
