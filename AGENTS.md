@@ -178,7 +178,8 @@ Two tag tracks live here on separate version axes (see
 
 Deep references live under `module/` — authorization
 ([module/AUTHORIZATION_CATALOG.md](./module/AUTHORIZATION_CATALOG.md),
-[AUTHZ.md](./AUTHZ.md)), database/RLS
+[AUTHZ.md](./AUTHZ.md), the authority-checking epic scoping record
+[AUTHORITY_CHECKING_PLAN.md](./AUTHORITY_CHECKING_PLAN.md)), database/RLS
 ([module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)), the approval
 primitive design ([APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)), the dashboard
 authoring API design decisions
