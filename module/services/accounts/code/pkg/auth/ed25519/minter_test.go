@@ -1191,6 +1191,51 @@ func TestVerifyAccess_AcceptsPreviousSigningKeyDuringRotation(t *testing.T) {
 	require.NotEqual(t, uuid.Nil, got.UserID)
 }
 
+func TestJWKS_PublishesRotatedKeysForOverlap(t *testing.T) {
+	prevPub, prevPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	previous := ed25519minter.New(ed25519minter.Config{}, prevPriv, &memoryStore{})
+
+	_, newPriv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	current := ed25519minter.New(ed25519minter.Config{
+		AdditionalVerificationKeys: []ed25519.PublicKey{prevPub},
+	}, newPriv, &memoryStore{})
+
+	raw, err := current.JWKS()
+	require.NoError(t, err)
+
+	var doc struct {
+		Keys []struct {
+			Kty string `json:"kty"`
+			Crv string `json:"crv"`
+			Alg string `json:"alg"`
+			Use string `json:"use"`
+			Kid string `json:"kid"`
+			X   string `json:"x"`
+		} `json:"keys"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(raw), &doc))
+
+	byKid := map[string]string{}
+	for _, k := range doc.Keys {
+		require.Equal(t, "OKP", k.Kty)
+		require.Equal(t, "Ed25519", k.Crv)
+		require.Equal(t, "EdDSA", k.Alg)
+		require.Equal(t, "sig", k.Use)
+		byKid[k.Kid] = k.X
+	}
+
+	// The rotated-out key must be published alongside the current one, so a
+	// callee can verify an in-flight token still signed by the outgoing key
+	// during the overlap window. Without it, edge verification of those valid,
+	// unexpired tokens would fail closed on an unknown kid.
+	require.Contains(t, byKid, current.KeyID())
+	require.Contains(t, byKid, previous.KeyID())
+	require.Equal(t, base64.RawURLEncoding.EncodeToString(prevPub), byKid[previous.KeyID()])
+	require.Equal(t, current.KeyID(), doc.Keys[0].Kid, "current signing key is listed first")
+}
+
 // Compile-time assertion that our test store satisfies SessionStore.
 var _ auth.SessionStore = (*memoryStore)(nil)
 

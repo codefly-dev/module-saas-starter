@@ -141,6 +141,10 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	"main.go":              true,
 	"ratelimit.go":         true,
 	"telemetry_metrics.go": true,
+	// work_context.go fetches the cluster's own published Work Context JWKS
+	// (the access-token key set on the internal accounts route), never an
+	// external IdP — the same key material the sidecar already loads at boot.
+	"work_context.go": true,
 }
 
 // TestPerimeter_NoExternalIdPImports guards ask #2 of issue #313 structurally.

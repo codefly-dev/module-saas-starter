@@ -210,23 +210,36 @@ func (m *Minter) KeyID() string { return m.keyID }
 // (e.g. writing a JWKS file for the sidecar).
 func (m *Minter) PublicKey() ed25519.PublicKey { return m.publicKey }
 
-// JWKS returns a JSON Web Key Set containing this minter's public key.
-// Used by external tooling; the sidecar loads its key from Vault directly.
+// JWKS returns a JSON Web Key Set containing every public key this minter
+// accepts — the current signing key plus any rotated-out keys from
+// Config.AdditionalVerificationKeys. Publishing the prior keys (selected by
+// kid) is what lets a callee verify an in-flight access token or Work Context
+// signed by the outgoing key during a rotation overlap; omitting them would
+// reject those still-valid, unexpired tokens at the edge. The current signing
+// key is listed first; the rest follow in a stable kid order.
 func (m *Minter) JWKS() (string, error) {
-	x := base64.RawURLEncoding.EncodeToString(m.publicKey)
-	keys := map[string]any{
-		"keys": []map[string]any{
-			{
-				"kty": "OKP",
-				"crv": "Ed25519",
-				"alg": "EdDSA",
-				"use": "sig",
-				"kid": m.keyID,
-				"x":   x,
-			},
-		},
+	jwk := func(kid string, pub ed25519.PublicKey) map[string]any {
+		return map[string]any{
+			"kty": "OKP",
+			"crv": "Ed25519",
+			"alg": "EdDSA",
+			"use": "sig",
+			"kid": kid,
+			"x":   base64.RawURLEncoding.EncodeToString(pub),
+		}
 	}
-	buf, err := json.Marshal(keys)
+	entries := []map[string]any{jwk(m.keyID, m.publicKey)}
+	rotated := make([]string, 0, len(m.verifyKeys))
+	for kid := range m.verifyKeys {
+		if kid != m.keyID {
+			rotated = append(rotated, kid)
+		}
+	}
+	slices.Sort(rotated)
+	for _, kid := range rotated {
+		entries = append(entries, jwk(kid, m.verifyKeys[kid]))
+	}
+	buf, err := json.Marshal(map[string]any{"keys": entries})
 	if err != nil {
 		return "", err
 	}

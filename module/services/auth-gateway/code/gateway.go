@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -42,6 +43,7 @@ type Gateway struct {
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
 	solutions         *solutionRegistry // runtime-registered solution upstreams
+	workContext       *workContextVerifier
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -125,6 +127,13 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 // Unlisted paths are rejected with 404. Every request must match an explicit
 // entry in the route config.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// A presented Work Context is verified before any routing so a forged,
+	// expired, or unattenuated capability is rejected at the edge rather than
+	// forwarded to a callee. Absent header: nothing to verify, carry on.
+	if g.rejectInvalidWorkContext(w, r) {
+		return
+	}
+
 	// Runtime solution passthrough (/solutions/*): auth-required, ext_authz
 	// authoritative, upstream resolved from the runtime registry. Handled
 	// before withTrustedFrontendOrigin because the internal registration
@@ -382,6 +391,33 @@ func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
 		}
 		r.Header.Set(key, val)
 	}
+}
+
+// rejectInvalidWorkContext fails closed on a presented-but-invalid Work Context.
+// It returns true when it has answered the request (401), which the caller must
+// treat as terminal. A request without the header, or with a header the edge is
+// not configured to verify, is left untouched for the normal routing path.
+func (g *Gateway) rejectInvalidWorkContext(w http.ResponseWriter, r *http.Request) bool {
+	if g.workContext == nil {
+		return false
+	}
+	raw := r.Header.Get(codefly.WorkContextHeaderName)
+	if raw == "" {
+		return false
+	}
+	token, err := codefly.ParseWorkContextToken(raw)
+	if err == nil {
+		err = g.workContext.Verify(r.Context(), token)
+	}
+	if err != nil {
+		// Log the cause (not the token) so a wall of 401s can be told apart:
+		// a bad/forged capability reads differently here from a JWKS the edge
+		// cannot reach, which the static 401 body deliberately does not reveal.
+		log.Printf("WARN: blocked request: method=%s path=%s reason=invalid_work_context err=%v", r.Method, r.URL.Path, err)
+		httpError(w, http.StatusUnauthorized, "invalid work context")
+		return true
+	}
+	return false
 }
 
 // stripAllIdentityHeaders removes every identity header from the request.
