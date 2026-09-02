@@ -60,6 +60,7 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err != nil {
 			return nil, err
 		}
+		shadowPolicyCoverage(ctx, info.FullMethod)
 		return handler(ctx, req)
 	}
 }
@@ -71,8 +72,31 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 		if err != nil {
 			return err
 		}
+		shadowPolicyCoverage(ctx, info.FullMethod)
 		return handler(srv, &contextServerStream{ServerStream: stream, ctx: ctx})
 	}
+}
+
+// shadowPolicyCoverage classifies how completely the central interceptor could
+// enforce the method's declared policy floor and records the outcome for calls
+// the interceptor does not yet fully cover. It changes no admission decision:
+// this is the measurement half of the shadow-mode rollout, surfacing the
+// gap/unsupported traffic that must reach zero before enforcement is turned on.
+// Fully covered (ok) calls are the steady state and emit nothing.
+func shadowPolicyCoverage(ctx context.Context, fullMethod string) {
+	policy, ok := business.LookupRPCPolicy(fullMethod)
+	if !ok {
+		return
+	}
+	coverage := business.ClassifyCentralCoverage(policy)
+	if coverage == business.CoverageOK {
+		return
+	}
+	wool.Get(ctx).In("rpcPolicyShadow").Info("central authorization coverage below enforce threshold",
+		wool.Field("method", fullMethod),
+		wool.Field("tier", string(policy.Tier)),
+		wool.Field("coverage", string(coverage)),
+	)
 }
 
 type contextServerStream struct {
