@@ -117,11 +117,15 @@ export function MyDashboards({ library }: { library?: DashboardLibrary }) {
 		<div className="space-y-6">
 			<CreateDashboardForm
 				onCreate={async (name) => {
-					const record = await create({
-						name,
-						spec: emptyDashboardSpec(name),
-					});
-					setOpenId(record.id);
+					// A failed create surfaces through `error`; swallow the rejection so
+					// the fire-and-forget caller opens nothing rather than leaking it.
+					try {
+						const record = await create({
+							name,
+							spec: emptyDashboardSpec(name),
+						});
+						setOpenId(record.id);
+					} catch {}
 				}}
 			/>
 

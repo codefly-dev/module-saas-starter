@@ -8,6 +8,7 @@ import {
 	type DashboardLibrary,
 	type DashboardLibraryChange,
 	dashboardRecordStore,
+	driverDashboardStore,
 } from "../dashboard-library";
 import type { DashboardDraftChange } from "../draft-store";
 
@@ -109,6 +110,24 @@ describe.each(backings)("DashboardLibrary (%s)", (_name, build) => {
 		expect(await library.list()).toEqual([]);
 	});
 
+	it("ensure creates by explicit id, then returns the existing record unchanged", async () => {
+		const library = build();
+		const first = await library.ensure({
+			id: "fixed",
+			name: "One",
+			spec: specA,
+		});
+		expect(first.id).toBe("fixed");
+		// A second ensure with different content must not overwrite the record.
+		const second = await library.ensure({
+			id: "fixed",
+			name: "Two",
+			spec: specB,
+		});
+		expect(second).toEqual(first);
+		expect(await library.list()).toHaveLength(1);
+	});
+
 	it("notifies subscribers of the full collection on each mutation", async () => {
 		const library = build();
 		const changes: DashboardLibraryChange[] = [];
@@ -195,5 +214,41 @@ describe("dashboardRecordStore", () => {
 			{ kind: "spec", spec: specB },
 			{ kind: "cleared" },
 		]);
+	});
+
+	it("clear resets the record to a blank spec without deleting it", async () => {
+		const library = createMemoryDashboardLibrary([], fixtures());
+		const record = await library.create({ name: "One", spec: specA });
+		const store = dashboardRecordStore(library, record.id);
+
+		await store.clear();
+
+		const after = await library.get(record.id);
+		expect(after).not.toBeNull();
+		expect(after?.name).toBe("One");
+		expect(after?.spec.metrics).toEqual([]);
+	});
+});
+
+describe("driverDashboardStore", () => {
+	const target = { id: "external-driver", name: "AI dashboard" };
+
+	it("creates the reserved record on first save, then updates only its spec", async () => {
+		const library = createMemoryDashboardLibrary([], fixtures());
+		const store = driverDashboardStore(library, target);
+
+		expect(await store.load()).toBeNull();
+
+		await store.save(specA);
+		const created = await library.get(target.id);
+		expect(created?.name).toBe(target.name);
+		expect(created?.spec).toEqual(specA);
+
+		// A rename the viewer made must survive the next driver edit.
+		await library.update(target.id, { name: "Renamed" });
+		await store.save(specB);
+		const updated = await library.get(target.id);
+		expect(updated?.name).toBe("Renamed");
+		expect(updated?.spec).toEqual(specB);
 	});
 });

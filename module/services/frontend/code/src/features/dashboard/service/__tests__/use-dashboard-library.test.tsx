@@ -85,4 +85,46 @@ describe("useDashboardLibrary", () => {
 		});
 		expect(copy).toBeNull();
 	});
+
+	it("surfaces a failed create through error and rejects the caller", async () => {
+		const failing: DashboardLibrary = {
+			...createMemoryDashboardLibrary([], fixtures()),
+			create() {
+				throw new Error("quota exceeded");
+			},
+		};
+		const { result } = mount(failing);
+
+		let rejected = false;
+		await act(async () => {
+			await result.current.create({ name: "One", spec: specA }).catch(() => {
+				rejected = true;
+			});
+		});
+
+		expect(rejected).toBe(true);
+		await waitFor(() =>
+			expect(result.current.error?.message).toBe("quota exceeded"),
+		);
+	});
+
+	it("surfaces a failed rename through error without rejecting the caller", async () => {
+		const failing: DashboardLibrary = {
+			...createMemoryDashboardLibrary([], fixtures()),
+			update() {
+				throw new Error("record gone");
+			},
+		};
+		const { result } = mount(failing);
+
+		// The fire-and-forget caller (a void-invoked handler) must not see a
+		// rejection; the failure lands on `error` instead.
+		await act(async () => {
+			await result.current.rename("id", "New name");
+		});
+
+		await waitFor(() =>
+			expect(result.current.error?.message).toBe("record gone"),
+		);
+	});
 });

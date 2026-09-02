@@ -6,7 +6,7 @@ import {
 	DEFAULT_DASHBOARD_VISIBILITY,
 	isDashboardVisibility,
 } from "../model/record";
-import type { DashboardDef } from "../model/schema";
+import { DASHBOARD_SPEC_VERSION, type DashboardDef } from "../model/schema";
 import { assertDashboardSpec } from "../model/validate";
 import type { DashboardDraftChange, DashboardDraftStore } from "./draft-store";
 
@@ -51,6 +51,13 @@ export interface DashboardLibrary {
 	// Create a named dashboard. Rejects/throws with a DashboardNameError on an
 	// empty name or a DashboardSpecError on an invalid spec.
 	create(input: CreateDashboardInput): Awaitable<DashboardRecord>;
+	// Return the record with this explicit id, creating it from the input when
+	// absent. Never overwrites an existing record — a caller that owns a
+	// well-known id (e.g. the external-driver channel) uses this to bind to a
+	// stable record without persisting which id it is.
+	ensure(
+		input: { id: string } & CreateDashboardInput,
+	): Awaitable<DashboardRecord>;
 	// Apply a partial update and return the new record. Rejects/throws when no
 	// dashboard has the id, or with a name/spec error for an invalid patch.
 	update(id: string, patch: DashboardRecordPatch): Awaitable<DashboardRecord>;
@@ -136,28 +143,43 @@ interface Backing {
 function crud(
 	backing: Backing,
 	clock: Clock,
-): Pick<DashboardLibrary, "list" | "get" | "create" | "update" | "remove"> {
+): Pick<
+	DashboardLibrary,
+	"list" | "get" | "create" | "ensure" | "update" | "remove"
+> {
 	const commit = (records: DashboardRecord[]) => {
 		backing.persist(records);
 		backing.emit(records);
 	};
+	const insert = (
+		id: string,
+		{
+			name,
+			spec,
+			visibility = DEFAULT_DASHBOARD_VISIBILITY,
+		}: CreateDashboardInput,
+	): DashboardRecord => {
+		assertDashboardName(name);
+		assertDashboardSpec(spec);
+		const at = clock.now();
+		const record: DashboardRecord = {
+			id,
+			name: name.trim(),
+			spec,
+			visibility,
+			createdAt: at,
+			updatedAt: at,
+		};
+		commit([...backing.read(), record]);
+		return record;
+	};
 	return {
 		list: () => backing.read(),
 		get: (id) => backing.read().find((record) => record.id === id) ?? null,
-		create: ({ name, spec, visibility = DEFAULT_DASHBOARD_VISIBILITY }) => {
-			assertDashboardName(name);
-			assertDashboardSpec(spec);
-			const at = clock.now();
-			const record: DashboardRecord = {
-				id: clock.newId(),
-				name: name.trim(),
-				spec,
-				visibility,
-				createdAt: at,
-				updatedAt: at,
-			};
-			commit([...backing.read(), record]);
-			return record;
+		create: (input) => insert(clock.newId(), input),
+		ensure: ({ id, ...input }) => {
+			const existing = backing.read().find((record) => record.id === id);
+			return existing ?? insert(id, input);
 		},
 		update: (id, patch) => {
 			const records = backing.read();
@@ -282,33 +304,79 @@ export function createMemoryDashboardLibrary(
 	};
 }
 
-/**
- * Adapt one library record to the {@link DashboardDraftStore} the editor and
- * authoring loop already bind, so opening a dashboard reuses the whole editing
- * surface unchanged: a save is a spec update on the record, and an external
- * change to that record re-renders the canvas. `clear` removes the record —
- * clearing a record-backed draft is deleting the dashboard — but the editor
- * only ever loads and saves, so it does not fire in that surface.
- */
-export function dashboardRecordStore(
-	library: DashboardLibrary,
-	id: string,
-): DashboardDraftStore {
-	const toSpecChange = (
-		change: DashboardLibraryChange,
-	): DashboardDraftChange => {
+// The blank canvas a record-backed draft resets to: a spec with no widgets.
+const BLANK_SPEC: DashboardDef = {
+	version: DASHBOARD_SPEC_VERSION,
+	metrics: [],
+};
+
+function recordChangeMapper(id: string) {
+	return (change: DashboardLibraryChange): DashboardDraftChange => {
 		if (change.kind === "error") {
 			return { kind: "error", error: change.error };
 		}
 		const record = change.records.find((entry) => entry.id === id);
 		return record ? { kind: "spec", spec: record.spec } : { kind: "cleared" };
 	};
+}
+
+/**
+ * Adapt one library record to the {@link DashboardDraftStore} the editor and
+ * authoring loop already bind, so opening a dashboard reuses the whole editing
+ * surface unchanged: a save is a spec update on the record, and an external
+ * change to that record re-renders the canvas. `clear` resets the record to a
+ * blank canvas — a draft reset must not destroy the named record it belongs to,
+ * so it empties the spec rather than deleting the dashboard.
+ */
+export function dashboardRecordStore(
+	library: DashboardLibrary,
+	id: string,
+): DashboardDraftStore {
+	const toSpecChange = recordChangeMapper(id);
 	return {
 		load: () =>
 			Promise.resolve(library.get(id)).then((record) => record?.spec ?? null),
 		save: (spec) =>
 			Promise.resolve(library.update(id, { spec })).then(() => undefined),
-		clear: () => Promise.resolve(library.remove(id)),
+		clear: () =>
+			Promise.resolve(library.update(id, { spec: BLANK_SPEC })).then(
+				() => undefined,
+			),
+		subscribe: (listener) =>
+			library.subscribe((change) => listener(toSpecChange(change))),
+	};
+}
+
+/**
+ * A {@link DashboardDraftStore} for a reserved, well-known record id — the seam
+ * the external-driver channel binds so a composing module's `setDashboard`
+ * lands in a dashboard the "My Dashboards" surface lists and opens, instead of
+ * an anonymous draft no surface renders. Unlike {@link dashboardRecordStore},
+ * `save` creates the record on first write (the viewer may never have opened it)
+ * and updates only its spec thereafter, so a rename or share the viewer makes
+ * survives the next driver edit.
+ */
+export function driverDashboardStore(
+	library: DashboardLibrary,
+	target: { id: string; name: string },
+): DashboardDraftStore {
+	const { id, name } = target;
+	const toSpecChange = recordChangeMapper(id);
+	return {
+		load: () =>
+			Promise.resolve(library.get(id)).then((record) => record?.spec ?? null),
+		save: (spec) =>
+			Promise.resolve(library.get(id))
+				.then((existing) =>
+					existing
+						? library.update(id, { spec })
+						: library.ensure({ id, name, spec }),
+				)
+				.then(() => undefined),
+		clear: () =>
+			Promise.resolve(library.update(id, { spec: BLANK_SPEC })).then(
+				() => undefined,
+			),
 		subscribe: (listener) =>
 			library.subscribe((change) => listener(toSpecChange(change))),
 	};

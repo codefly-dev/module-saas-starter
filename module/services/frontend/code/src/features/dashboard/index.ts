@@ -53,6 +53,7 @@ export {
 	type DashboardLibrary,
 	type DashboardLibraryChange,
 	dashboardRecordStore,
+	driverDashboardStore,
 } from "./service/dashboard-library";
 export {
 	createBrowserDashboardDraftStore,

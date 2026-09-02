@@ -16,16 +16,19 @@ import {
 export interface DashboardLibraryState {
 	// Every dashboard the viewer can act on, newest activity first.
 	records: DashboardRecord[];
-	// The last read or write failure, or null after a success.
+	// The last read or write failure, or null after a success. A failed mutation
+	// (a full store, a concurrently-deleted record) surfaces here rather than
+	// throwing past the fire-and-forget callers.
 	error: Error | null;
+	// Rejects on failure so a caller that must not proceed on a failed create
+	// (opening the new dashboard) can await it; the failure is also on `error`.
 	create(input: CreateDashboardInput): Promise<DashboardRecord>;
-	rename(id: string, name: string): Promise<DashboardRecord>;
-	setVisibility(
-		id: string,
-		visibility: DashboardVisibility,
-	): Promise<DashboardRecord>;
+	// The fire-and-forget mutations never reject — they surface failures through
+	// `error` — so a `void`-invoked handler cannot leak an unhandled rejection.
+	rename(id: string, name: string): Promise<void>;
+	setVisibility(id: string, visibility: DashboardVisibility): Promise<void>;
 	// Copy an existing dashboard into a new private one. Resolves null when the
-	// source id is gone.
+	// source id is gone or the copy fails.
 	duplicate(id: string): Promise<DashboardRecord | null>;
 	remove(id: string): Promise<void>;
 }
@@ -87,41 +90,68 @@ export function useDashboardLibrary(
 		};
 	}, [activeLibrary]);
 
+	// Run a mutation, routing success/failure into `error`. A store op may throw
+	// synchronously (localStorage quota) or reject (a server store), so the op is
+	// invoked inside the try; on failure `error` is set and the error rethrown so
+	// each caller decides whether to reject or absorb it.
+	const guard = useCallback(async <T>(op: () => T | Promise<T>): Promise<T> => {
+		try {
+			const result = await op();
+			setError(null);
+			return result;
+		} catch (cause) {
+			setError(cause as Error);
+			throw cause;
+		}
+	}, []);
+
 	const create = useCallback(
-		(input: CreateDashboardInput) =>
-			Promise.resolve(activeLibrary.create(input)),
-		[activeLibrary],
+		(input: CreateDashboardInput) => guard(() => activeLibrary.create(input)),
+		[activeLibrary, guard],
 	);
 
 	const rename = useCallback(
 		(id: string, name: string) =>
-			Promise.resolve(activeLibrary.update(id, { name })),
-		[activeLibrary],
+			guard(() => activeLibrary.update(id, { name })).then(
+				() => {},
+				() => {},
+			),
+		[activeLibrary, guard],
 	);
 
 	const setVisibility = useCallback(
 		(id: string, visibility: DashboardVisibility) =>
-			Promise.resolve(activeLibrary.update(id, { visibility })),
-		[activeLibrary],
+			guard(() => activeLibrary.update(id, { visibility })).then(
+				() => {},
+				() => {},
+			),
+		[activeLibrary, guard],
 	);
 
 	const duplicate = useCallback(
-		async (id: string) => {
-			const source = await activeLibrary.get(id);
-			if (source === null) return null;
-			return activeLibrary.create({
-				name: `${source.name} (copy)`,
-				spec: source.spec,
-				visibility: DEFAULT_DASHBOARD_VISIBILITY,
-			});
-		},
-		[activeLibrary],
+		(id: string) =>
+			guard(async () => {
+				const source = await activeLibrary.get(id);
+				if (source === null) return null;
+				return activeLibrary.create({
+					name: `${source.name} (copy)`,
+					spec: source.spec,
+					visibility: DEFAULT_DASHBOARD_VISIBILITY,
+				});
+			}).then(
+				(record) => record,
+				() => null,
+			),
+		[activeLibrary, guard],
 	);
 
 	const remove = useCallback(
 		(id: string) =>
-			Promise.resolve(activeLibrary.remove(id)).then(() => undefined),
-		[activeLibrary],
+			guard(() => activeLibrary.remove(id)).then(
+				() => {},
+				() => {},
+			),
+		[activeLibrary, guard],
 	);
 
 	return { records, error, create, rename, setVisibility, duplicate, remove };
