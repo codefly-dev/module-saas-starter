@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1921,
+  "fileCount": 1922,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "04b26fa6b1fc30d14bba63807aa55e5291175d1e2817b75826defc053f77927e",
@@ -50,9 +50,10 @@
     "docs/IDENTITY_ACCESS_PLAN.md": "ad620230ff0a2fafcd57a5b0adc55bc8619c775d367e4605dcdffe96d8185aa7",
     "docs/adr/0001-frontend-plugin-packaging.md": "b82a3be12fdc2ff7d3edf6822fb22fd08c219732c058f97f8fe1eae92a50ae7b",
     "docs/adr/0002-remote-ui-tier-boundary.md": "a90fa59d7ad82f0c370cbe9ab3cae39c4c4316277cccbe92d40808a73647d1ee",
-    "docs/adr/0003-typed-audit-event-registry.md": "6fb919a9aefdc78d6352806d10a2c6f12dea2a2ebea51f6b48acd4f1f7aa55e6",
+    "docs/adr/0003-typed-audit-event-registry.md": "26e988cc5b9bb7617444bf3e83c8e2917e116119c0ca8dbca90f21dab2ec06b6",
     "docs/adr/0004-authoring-vocabulary-caching.md": "4108deb7681a0e9bb9b5e59face8b95e98cbfb1073c7d8fc96b658cda736ff22",
     "docs/adr/0005-python-settings-delivery.md": "d68681f6c3f3ed14b3035fb30b546648458189b49387a49055e841a8055b2b29",
+    "docs/adr/0006-audit-sink-and-retention-tiers.md": "9f7bc5ed95d0f22b98ab701ec7f4c21028d22f8e4fcf56a2b4354828b52a1997",
     "docs/composition-v2-migration.md": "667398399d801ce310b1e34b954ce8ae85d1978d7f2f77dbad567adb669b06ba",
     "docs/frontend-plugin-architecture.md": "35759568f7c30bedd5ff88119a4a2e384a58711f72bc9d331d0db74a73329d17",
     "docs/frontend-plugin-auth-tenant-matrix.md": "60c70b8abad4f3d420eb7de0e8ca7fecc9b8901ba94fa43bfb9d2ead846a90e9",
