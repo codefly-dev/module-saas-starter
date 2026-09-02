@@ -99,12 +99,15 @@ round numbers undercount):
   `TENANT_REQUIREMENT_ORG_ADMIN` is declared on **37 RPCs** (the issue says 34),
   spread across 11 bounded contexts; `TENANT_REQUIREMENT_ORG_OWNER` is declared
   on **0** (enum value only). None is enforced by an interceptor.
-- **The "~72 hand-written `require*` sites" is precisely the org/team-membership
-  subset**, not the whole surface: `requireOrgAdmin` (30) + `requireOrgMember`
-  (29) + `requireBillingAdmin` (6) + `requireTeamAdmin` (5) + `requireTeamMember`
-  (2) = **72**. The complete `require*` call-site count in `code/` is **310**
-  (`requireAuth` alone is 102). The design point stands either way: central
-  enforcement is absent and the handler gates paper over it, drift-prone.
+- **The "~72 hand-written `require*` sites" is the org/team-membership subset**,
+  not the whole surface: `requireOrgAdmin`, `requireOrgMember`,
+  `requireBillingAdmin`, `requireTeamAdmin`, and `requireTeamMember` together are
+  **~65 non-test call sites** (29 + 27 + 4 + 4 + 1). The exact integer is
+  grep-method-sensitive — the issue's "~72" counts each helper's definition and
+  doc-comment alongside its calls; counting invocations only lands lower. The
+  complete `require*` invocation surface in `code/` is **~270** (`requireAuth`
+  alone is ~93). The design point stands either way: central enforcement is
+  absent and the handler gates paper over it, drift-prone.
 - **The `OWNED_RESOURCE` set is 9, not 8.** `RESOURCE_TARGET_OWNED_RESOURCE`
   appears on 6 webhook + 2 invitation + **1 missed** — `RevokePrincipal`
   (`authorization.proto:703`). All use `RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION`,
@@ -296,7 +299,7 @@ exactly what C's exchange binds against.
 
 | Workstream | Gap | Decision | Child |
 |---|---|---|---|
-| **A** | Interceptors admit on tier only; 37 ORG_ADMIN + the rest of the policy unenforced; 72 org/team gates paper over it | **In scope, staged.** Central full-policy interceptor, shadow → enforce. Fix the `UpdateUser`/`DeleteUser` declaration; leave the 9 `OWNED_RESOURCE` RPCs `unsupported` until an org resolver exists | [#415] |
+| **A** | Interceptors admit on tier only; 37 ORG_ADMIN + the rest of the policy unenforced; ~65 org/team gates paper over it | **In scope, staged.** Central full-policy interceptor, shadow → enforce. Fix the `UpdateUser`/`DeleteUser` declaration; leave the 9 `OWNED_RESOURCE` RPCs `unsupported` until an org resolver exists | [#415] |
 | **B** | No edge verification of a presented Work Context; gateway forwards it unstripped | **In scope.** Multi-kid, fail-closed verifier with `Refresh(ctx)`; single invalid sentinel; add `x-codefly-work-context` handling at the gateway | [#416] |
 | **C** | Every mint/exchange RPC owner-bound; actors cannot renew past the 15m cap; `may_act` is a comment, not code | **In scope.** Actor-authorized exchange keyed to a verified, un-revoked actor-chain hop, renewed ⊆ original. Land after A | [#417] |
 | **D** | `role-catalog-import` is a manual CLI; no `DeployStep`; contribution→role bridge missing | **In scope.** Bootstrap Job after store migrations under `app_control_plane`; design the `contributed-permissions.json` → `roles.json` bridge | [#418] |
@@ -337,10 +340,11 @@ to.
 - One gap is **largely already closed**: (E) per-org **agent** Principal
   registration is repo code (`CreateAgentPrincipal`) that the mint path already
   binds against; only a distinct *service*-Principal surface is open.
-- The issue's headline counts were slightly low — **37** ORG_ADMIN RPCs (not 34),
-  **9** `OWNED_RESOURCE` RPCs (not 8; `RevokePrincipal` was missed), and the
-  **72** figure is specifically the org/team-membership helper subset of 310
-  total `require*` sites.
+- The issue's headline counts were off — **37** ORG_ADMIN RPCs (not 34), **9**
+  `OWNED_RESOURCE` RPCs (not 8; `RevokePrincipal` was missed), and the "~72"
+  figure is the org/team-membership subset — **~65** actual call sites — of
+  **~270** total `require*` invocations (the "72"/"310" counts include helper
+  definitions and doc-comments, not just calls).
 - Each workstream is scheduled as its own child issue ([#415]–[#419], plus
   [#420] for `SINGLE_USE`); this document is the decision record they build from.
 
