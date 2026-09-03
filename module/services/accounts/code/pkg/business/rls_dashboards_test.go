@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
-	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 var dashboardSpec = []byte(`{"version":1,"metrics":[]}`)
@@ -55,20 +54,29 @@ func TestDashboards_SharedBoardSurvivesOwnerDeletion(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 
-	// organizations.owner_id is ON DELETE RESTRICT, so the org owner can't be
-	// erased; a separate member authors the board under test.
 	_, org := mustUserAndOrg(t, ctx, "keeper@rls-test.com", "keeper-rls", "Acme Keeper")
-	author := mustUser(t, ctx, "author@rls-test.com", "author-rls")
+
+	// A bare user referenced only by the dashboard — no org, membership, or role
+	// — isolates the dashboards.owner_id FK so the test proves its ON DELETE
+	// action alone, not the rest of the user-erasure graph. (RegisterUser would
+	// also provision a default org whose owner FK is RESTRICT.)
+	author := business.NewIDString()
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx,
+			`INSERT INTO users (uuid, primary_email, status) VALUES ($1, $2, 'active')`,
+			author, "author@rls-test.com")
+		return err
+	}))
 
 	board, err := testService.CreateDashboard(ctx, org, author, "", "org-board", dashboardSpec)
 	require.NoError(t, err)
 	_, err = testService.ShareDashboard(ctx, org, author, board.ID, business.DashboardVisibilityOrg)
 	require.NoError(t, err)
 
-	// Hard-delete the author's user row — what a GDPR erasure or admin purge
-	// does. The in-app DeleteUser is a soft-delete that never fires the FK, and
-	// the app_tenant role cannot delete users, so run it under the control-plane
-	// role to exercise the constraint directly.
+	// Hard-delete the owner's user row — what a GDPR erasure or admin purge does.
+	// The in-app DeleteUser is a soft-delete that never fires the FK, and
+	// app_tenant cannot delete users, so run it under the control-plane role.
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
 		_, err := tx.Exec(ctx, `DELETE FROM users WHERE uuid = $1`, author)
@@ -85,16 +93,4 @@ func TestDashboards_SharedBoardSurvivesOwnerDeletion(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, shared, 1)
 	require.Equal(t, board.ID, shared[0].ID)
-}
-
-func mustUser(t *testing.T, ctx context.Context, email, providerID string) string {
-	t.Helper()
-	resp, err := testService.RegisterUser(ctx, &gen.RegisterUserRequest{
-		PrimaryEmail: email,
-		Identity: &gen.UserIdentity{
-			Provider: "email", ProviderId: providerID, ProviderEmail: email,
-		},
-	})
-	require.NoError(t, err)
-	return resp.User.Uuid
 }
