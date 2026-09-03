@@ -114,6 +114,19 @@ type Store interface {
 	GetOrgMembership(ctx context.Context, orgID string, userID string) (*gen.OrgMembership, error)
 	ListOrgMembers(ctx context.Context, orgID string) ([]*gen.OrgMembership, error)
 
+	// Dashboards
+	CreateDashboard(ctx context.Context, dashboard *Dashboard) error
+	// GetDashboard returns the row by id within the RLS-scoped org, or nil when
+	// no such row is visible (a cross-tenant id reads as absent, not another
+	// org's row).
+	GetDashboard(ctx context.Context, id string) (*Dashboard, error)
+	ListDashboards(ctx context.Context, orgID, ownerID string, scope DashboardListScope) ([]*Dashboard, error)
+	// UpdateDashboard applies a partial change: a nil name or spec is left
+	// unchanged. It always advances updated_at.
+	UpdateDashboard(ctx context.Context, id string, name *string, spec []byte) error
+	DeleteDashboard(ctx context.Context, id string) error
+	SetDashboardVisibility(ctx context.Context, id string, visibility DashboardVisibility) error
+
 	// Teams
 	CreateTeam(ctx context.Context, team *gen.Team) error
 	ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error)

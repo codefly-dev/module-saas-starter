@@ -61,6 +61,7 @@ export {
 	type DashboardDraftChange,
 	type DashboardDraftStore,
 } from "./service/draft-store";
+export { createServerDashboardLibrary } from "./service/server-dashboard-library";
 export {
 	scopedDashboardDraftKey,
 	USER_DASHBOARD_DRAFT_KEY,

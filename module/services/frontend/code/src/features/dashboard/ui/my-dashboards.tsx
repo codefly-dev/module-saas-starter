@@ -37,6 +37,7 @@ import {
 	type DashboardLibrary,
 	dashboardRecordStore,
 } from "../service/dashboard-library";
+import { createServerDashboardLibrary } from "../service/server-dashboard-library";
 import {
 	scopedDashboardDraftKey,
 	USER_DASHBOARD_LIBRARY_KEY,
@@ -71,8 +72,11 @@ export function MyDashboards({ library }: { library?: DashboardLibrary }) {
 		userId: user?.id,
 	});
 	const defaultLibrary = useMemo(
-		() => createBrowserDashboardLibrary(scopedKey),
-		[scopedKey],
+		() =>
+			organizationId
+				? createServerDashboardLibrary(organizationId)
+				: createBrowserDashboardLibrary(scopedKey),
+		[organizationId, scopedKey],
 	);
 	const activeLibrary = library ?? defaultLibrary;
 	const { records, error, create, rename, setVisibility, duplicate, remove } =

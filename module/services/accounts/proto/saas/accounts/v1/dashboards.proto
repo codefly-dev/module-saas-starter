@@ -1,0 +1,238 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// User-owned dashboards
+// ============================================================================
+
+// How far a dashboard is visible inside its organization. PRIVATE is the owner
+// (and org admins) only; ORG shares it read-only with every member.
+enum DashboardVisibility {
+  DASHBOARD_VISIBILITY_UNSPECIFIED = 0;
+  DASHBOARD_VISIBILITY_PRIVATE = 1;
+  DASHBOARD_VISIBILITY_ORG = 2;
+}
+
+// A named, owned dashboard: a serializable spec (DashboardDef) plus the
+// lifecycle metadata a bare spec literal never had. org_id and owner_id are
+// server-assigned — the browser cannot attest to tenancy or ownership.
+message Dashboard {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  string owner_id = 3 [(buf.validate.field).string.uuid = true];
+  string name = 4;
+  google.protobuf.Struct spec = 5;
+  DashboardVisibility visibility = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message CreateDashboardRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 200
+  }];
+  google.protobuf.Struct spec = 3 [(buf.validate.field).required = true];
+  // Optional client-chosen id for an idempotent create. Empty means the server
+  // assigns one. A caller that owns a well-known id (the external-driver
+  // channel) binds a stable record without persisting which id it minted.
+  string id = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+}
+
+message GetDashboardRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// Which slice of the visible collection a list call returns.
+enum DashboardListScope {
+  // Everything the caller may see: their own plus every org-shared board.
+  DASHBOARD_LIST_SCOPE_UNSPECIFIED = 0;
+  // Caller-owned boards only, at any visibility.
+  DASHBOARD_LIST_SCOPE_MINE = 1;
+  // Org-shared boards, whoever owns them.
+  DASHBOARD_LIST_SCOPE_ORG_SHARED = 2;
+}
+
+message ListDashboardsRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  DashboardListScope scope = 2;
+  int32 page_size = 3 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 100
+  }];
+  string page_token = 4;
+}
+
+message ListDashboardsResponse {
+  repeated Dashboard dashboards = 1;
+  string next_page_token = 2;
+}
+
+message UpdateDashboardRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  // An absent field is left unchanged. name is trim-validated when present; a
+  // present spec replaces the stored one after revalidation.
+  optional string name = 2;
+  google.protobuf.Struct spec = 3;
+}
+
+message DeleteDashboardRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ShareDashboardRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  DashboardVisibility visibility = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+}
+
+// DashboardService — user-owned dashboard records and their lifecycle. Records
+// are org-scoped (RLS); a member owns and edits their own boards, org admins
+// may edit any board in the org, and every member may read a board shared to
+// the org. Sharing (promotion to org visibility) is the privileged transition.
+service DashboardService {
+  rpc CreateDashboard(CreateDashboardRequest) returns (Dashboard) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "dashboards:write"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "dashboard.created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  rpc GetDashboard(GetDashboardRequest) returns (Dashboard) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "dashboards:read"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  rpc ListDashboards(ListDashboardsRequest) returns (ListDashboardsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "dashboards:read"
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  rpc UpdateDashboard(UpdateDashboardRequest) returns (Dashboard) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "dashboards:write"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "dashboard.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  rpc DeleteDashboard(DeleteDashboardRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      permissions: "dashboards:write"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "dashboard.deleted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  rpc ShareDashboard(ShareDashboardRequest) returns (Dashboard) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      permissions: "dashboards:share"
+      resource_bindings: {
+        request_field: "id"
+        target: RESOURCE_TARGET_OWNED_RESOURCE
+        lookup: RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "dashboard.shared"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

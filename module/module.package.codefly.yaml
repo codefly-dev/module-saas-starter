@@ -137,6 +137,9 @@ claims:
   - {kind: permission, key: "audit:read", owner: base}
   - {kind: permission, key: "billing:read", owner: base}
   - {kind: permission, key: "billing:write", owner: base}
+  - {kind: permission, key: "dashboards:read", owner: base}
+  - {kind: permission, key: "dashboards:share", owner: base}
+  - {kind: permission, key: "dashboards:write", owner: base}
   - {kind: permission, key: "entitlements:read", owner: base}
   - {kind: permission, key: "invitations:read", owner: base}
   - {kind: permission, key: "invitations:write", owner: base}

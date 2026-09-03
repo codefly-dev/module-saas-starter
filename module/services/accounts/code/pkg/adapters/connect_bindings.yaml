@@ -27,6 +27,10 @@ services:
     handler: datasourceConnectHandler
     source:
       kind: business
+  DashboardService:
+    handler: dashboardConnectHandler
+    source:
+      kind: business
   DelegationService:
     handler: delegationConnectHandler
     source:

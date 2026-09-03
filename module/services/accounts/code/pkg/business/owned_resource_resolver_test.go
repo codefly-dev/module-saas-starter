@@ -16,6 +16,7 @@ type ownedResourceFakeStore struct {
 	subscriptions map[string]*WebhookSubscription
 	deliveries    map[string]*WebhookDelivery
 	principals    map[string]*Principal
+	dashboards    map[string]*Dashboard
 	err           error
 }
 
@@ -47,6 +48,13 @@ func (f *ownedResourceFakeStore) GetPrincipal(_ context.Context, id string) (*Pr
 	return f.principals[id], nil
 }
 
+func (f *ownedResourceFakeStore) GetDashboard(_ context.Context, id string) (*Dashboard, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.dashboards[id], nil
+}
+
 func ownedResourcePolicy(t *testing.T, fullMethod string) RPCPolicy {
 	t.Helper()
 	policy, ok := LookupRPCPolicy(fullMethod)
@@ -61,6 +69,7 @@ func fullyResolvingStore() *ownedResourceFakeStore {
 		subscriptions: map[string]*WebhookSubscription{"sub-1": {ID: "sub-1", OrgID: "org-sub"}},
 		deliveries:    map[string]*WebhookDelivery{"del-1": {ID: "del-1", SubscriptionID: "sub-1"}},
 		principals:    map[string]*Principal{"prin-1": {ID: "prin-1", OrgID: "org-prin"}},
+		dashboards:    map[string]*Dashboard{"dash-1": {ID: "dash-1", OrgID: "org-dash"}},
 	}
 }
 
@@ -83,6 +92,10 @@ func TestResolveOwnedResourceOrgPerKind(t *testing.T) {
 		{"/saas.accounts.v1.WebhookService/GetDelivery", &gen.GetWebhookDeliveryRequest{Id: "del-1"}, "org-sub"},
 		{"/saas.accounts.v1.WebhookService/ReplayDelivery", &gen.ReplayWebhookDeliveryRequest{Id: "del-1"}, "org-sub"},
 		{"/saas.accounts.v1.WebhookService/ListDeliveries", &gen.ListWebhookDeliveriesRequest{SubscriptionId: "sub-1"}, "org-sub"},
+		{"/saas.accounts.v1.DashboardService/GetDashboard", &gen.GetDashboardRequest{Id: "dash-1"}, "org-dash"},
+		{"/saas.accounts.v1.DashboardService/UpdateDashboard", &gen.UpdateDashboardRequest{Id: "dash-1"}, "org-dash"},
+		{"/saas.accounts.v1.DashboardService/DeleteDashboard", &gen.DeleteDashboardRequest{Id: "dash-1"}, "org-dash"},
+		{"/saas.accounts.v1.DashboardService/ShareDashboard", &gen.ShareDashboardRequest{Id: "dash-1"}, "org-dash"},
 		{"/saas.accounts.v1.PrincipalService/RevokePrincipal", &gen.RevokePrincipalRequest{Id: "prin-1"}, "org-prin"},
 	}
 	for _, tc := range cases {
