@@ -97,6 +97,16 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 // could admit a non-admin who holds it), no platform-role or MFA requirement,
 // and no team or owned-resource binding. Every other requirement stays with the
 // handler require* sites, so this check is never stricter than the handler's own.
+//
+// The interceptor checks the caller's verified (token) organization and never
+// reads the request body. Classifying such a method ok is sound only because
+// auth.RequireVerifiedDatabaseScope pins req.OrgId to the verified org at every
+// handler require* site: a request naming a different org is already rejected
+// there, so "verified org" and "request org" coincide. For an ORG_MEMBER method
+// that makes coverage rest on the token carrying a valid org (the caller is a
+// member of their own active org) plus that pin — not on an independent check of
+// the request's org field, which the interceptor cannot see. If the pin is ever
+// removed, an ORG_MEMBER / ORG_ADMIN method must no longer classify ok.
 func CentralTenantEnforcement(policy RPCPolicy) (policyv1.TenantRequirement, bool) {
 	p := policy.MethodPolicy
 	if p == nil {

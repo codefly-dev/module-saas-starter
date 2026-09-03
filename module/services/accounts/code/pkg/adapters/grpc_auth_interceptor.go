@@ -156,6 +156,15 @@ func SetCentralEnforcementMode(enforce bool) { centralEnforcement = enforce }
 // site that still runs after it. Everything it does not resolve stays with those
 // handler sites. A no-op unless enforce mode is on. Returns a gRPC status error;
 // the Connect path translates it.
+//
+// The equivalence is load-bearing on an invariant enforced elsewhere: this
+// function checks the caller's verified (token) organization and never reads the
+// request body, yet the handler require* sites gate on req.OrgId. Those two
+// agree only because auth.RequireVerifiedDatabaseScope (reached through
+// lookupMembership) rejects any request whose org differs from the verified one,
+// pinning req.OrgId to the verified org. If that pin is ever removed, checking
+// the verified org here stops being equivalent to the handler's req.OrgId check.
+// TestScopePinPinsRequestOrgToVerifiedOrg guards the pin.
 func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
 	if !centralEnforcement {
 		return nil
@@ -174,7 +183,11 @@ func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
 	}
 	orgID, _, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok {
-		return status.Error(codes.PermissionDenied, "organization scope required")
+		// No verified database scope. Surface the exact status the handler
+		// require* sites produce for this condition (RequireVerifiedDatabaseScope
+		// → ErrVerifiedDatabaseIdentityRequired → Unauthenticated) so enforce mode
+		// never returns a different code than the handler would for the same call.
+		return membershipLookupStatus("verify central org scope", auth.ErrVerifiedDatabaseIdentityRequired)
 	}
 	if tenant == policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN {
 		return requireOrgAdmin(ctx, actorID, orgID)

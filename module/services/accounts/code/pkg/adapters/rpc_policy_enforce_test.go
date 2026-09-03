@@ -122,11 +122,41 @@ func TestEnforceDefersOwnedResourceMethod(t *testing.T) {
 	require.NoError(t, enforceCentralPolicy(enforceActorCtx(), ownedResourceMeth))
 }
 
-// A caller with no verified organization cannot satisfy an org-scoped floor.
+// A caller with no verified organization cannot satisfy an org-scoped floor, and
+// enforce mode must surface the SAME status the handler require* site produces
+// for that condition — Unauthenticated "verified authentication context
+// required" (RequireVerifiedDatabaseScope → ErrVerifiedDatabaseIdentityRequired),
+// not a divergent PermissionDenied. Otherwise turning enforce on would change the
+// error code a client sees for an unchanged request.
 func TestEnforceDeniesWithoutVerifiedOrg(t *testing.T) {
 	enableEnforcement(t)
 	installEnforceService(t, memberStore(gen.OrgRole_ORG_ROLE_ADMIN))
 	ctx := stampVerifiedIdentity(context.Background(), enforceActorID, "", auth.Assurance{})
 	err := enforceCentralPolicy(ctx, orgAdminMethod)
-	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, codes.Unauthenticated, status.Code(err))
+	require.Equal(t, "verified authentication context required", status.Convert(err).Message())
+}
+
+// The interceptor checks the caller's verified (token) organization, not the
+// request's org field — enforceCentralPolicy never sees the request body. That is
+// equivalent to the handler's req.OrgId check only because every require* site
+// rejects a request whose org differs from the verified one: lookupMembership
+// runs auth.RequireVerifiedDatabaseScope, which pins req.OrgId to the verified
+// org. This test guards that load-bearing invariant. If it fails, the token-org
+// check is no longer equivalent to the handler's req.OrgId check and
+// CentralTenantEnforcement must stop classifying org-tenant methods as ok.
+func TestScopePinPinsRequestOrgToVerifiedOrg(t *testing.T) {
+	// Caller is an owner of enforceOrgID (would pass every org-tenant floor there)
+	// and their verified scope is enforceOrgID.
+	installEnforceService(t, memberStore(gen.OrgRole_ORG_ROLE_OWNER))
+	ctx := enforceActorCtx()
+	const otherOrg = "019f6bf7-6d2a-7f00-9a1b-2c3d4e5f6071"
+
+	adminErr := requireOrgAdmin(ctx, enforceActorID, otherOrg)
+	require.Equal(t, codes.PermissionDenied, status.Code(adminErr))
+	require.Equal(t, "requested organization is outside the authenticated scope", status.Convert(adminErr).Message())
+
+	memberErr := requireOrgMember(ctx, enforceActorID, otherOrg)
+	require.Equal(t, codes.PermissionDenied, status.Code(memberErr))
+	require.Equal(t, "requested organization is outside the authenticated scope", status.Convert(memberErr).Message())
 }
