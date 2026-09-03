@@ -3,6 +3,8 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -345,9 +347,34 @@ func (s *DelegationServer) ListPendingDelegations(ctx context.Context, req *gen.
 // AuthSecret). Saas-starter has the same key; minting here lets
 // the streaming RPC return a ready-to-use token without a
 // second round-trip through the host.
+// resourceKind extracts the kind prefix of a typed delegation resource. A grant
+// resource is "kind:instance" ("repo:codefly-dev/codefly.dev", "file:/etc/passwd"
+// — see RequestDelegationRequest.resource); the kind is the segment before the
+// first ":". A value with no ":" is itself the kind. This is the encoding bridge
+// to the bare resource kinds an agent's allowed_scopes ceiling is declared in.
+func resourceKind(resource string) string {
+	if i := strings.IndexByte(resource, ':'); i >= 0 {
+		return resource[:i]
+	}
+	return resource
+}
+
 func (s *DelegationServer) mintApprovedToken(actor *business.Principal, grant *business.DelegationGrant) (string, *policy.ScopedAuthorization, error) {
 	if len(s.SigningSecret) == 0 && len(s.SigningEd25519Key) == 0 {
 		return "", nil, errors.New("DelegationServer: no signing key configured (set SigningSecret or SigningEd25519Key)")
+	}
+
+	// The registered agent ceiling (allowed_scopes) is a hard cap above any
+	// grantor's per-grant approval: a delegation whose resource kind is outside
+	// the ceiling mints no usable token, exactly as a Work Context mint outside
+	// the ceiling is refused. The minted token authorizes grant.Resource, so
+	// capping its kind bounds precisely what the token can do. A resourceless
+	// grant ("no specific resource") carries no kind to cap and is left to the
+	// grantor's approval, mirroring an empty scope set on the Work Context path.
+	if grant.Resource != "" && !actor.AllowsResourceKind(resourceKind(grant.Resource)) {
+		return "", nil, fmt.Errorf(
+			"resource kind %q is outside agent %s allowed scopes",
+			resourceKind(grant.Resource), actor.AgentIdentifier)
 	}
 
 	// Translate business.Principal → policy.Principal.

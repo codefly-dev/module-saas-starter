@@ -567,6 +567,65 @@ func TestRenewWorkContextRejectsAudienceOutsideActorCeiling(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestRenewWorkContextRejectsScopeOutsideActorCeiling proves the derive-path
+// enforces the SCOPE dimension of the actor ceiling, not only the audience. The
+// requested scope ("evidence") is a valid, non-widening subset of the parent's
+// own grant — so without the ceiling the renewal would succeed — but it is
+// outside the actor's allowed_scopes ("repo"), which must reject it.
+func TestRenewWorkContextRejectsScopeOutsideActorCeiling(t *testing.T) {
+	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	newServer := func(allowedScopes []string) *WorkContextAuthorityServer {
+		server := &WorkContextAuthorityServer{}
+		server.Configure(WorkContextAuthorityConfiguration{
+			Issuer:     "accounts.test",
+			KeyID:      "accounts-test-key",
+			PrivateKey: privateKey,
+			Authority: &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{
+				OrganizationRevision: 12,
+				Actor: &business.Principal{
+					ID:              renewActorID,
+					Kind:            "agent",
+					AgentIdentifier: "pub/agent:1.0.0",
+					// Audience left unrestricted so the scope dimension is what fails.
+					AllowedScopes: allowedScopes,
+				},
+			}},
+		})
+		require.NoError(t, server.configureErr)
+		return server
+	}
+
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	ctx := stampVerifiedIdentity(context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{})
+	evidenceScope := []*gen.WorkContextScope{{ResourceKind: "evidence", Actions: []string{"append", "read"}}}
+
+	capped := newServer([]string{"repo"})
+	_, err = capped.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
+		OrgId:                  renewOrgID,
+		ParentWorkContextToken: mintDelegatedContext(t, capped).Encoded(),
+		AttenuatedScopes:       evidenceScope,
+		TtlSeconds:             900,
+	})
+	require.Equal(t, codes.PermissionDenied, status.Code(err),
+		"a resource kind outside the actor's ceiling must be rejected even when it does not widen the parent")
+
+	// Same request, but the ceiling admits "evidence": the renewal proceeds.
+	admits := newServer([]string{"evidence"})
+	_, err = admits.RenewWorkContext(ctx, &gen.RenewWorkContextRequest{
+		OrgId:                  renewOrgID,
+		ParentWorkContextToken: mintDelegatedContext(t, admits).Encoded(),
+		AttenuatedScopes:       evidenceScope,
+		TtlSeconds:             900,
+	})
+	require.NoError(t, err)
+}
+
 func TestRenewWorkContextPreservesSingleUseReplayPolicy(t *testing.T) {
 	server := newRenewTestServer(t)
 	parent, _, err := server.signer.StartTask(codefly.StartTaskInput{

@@ -58,11 +58,11 @@ func (s waitlistScopedFake) RevokePrincipal(context.Context, string, string) err
 	panic("unexpected RevokePrincipal call")
 }
 
-func (s waitlistScopedFake) DisableAgentPrincipal(context.Context, string, string) error {
+func (s waitlistScopedFake) DisableAgentPrincipal(context.Context, string, string) (bool, error) {
 	panic("unexpected DisableAgentPrincipal call")
 }
 
-func (s waitlistScopedFake) EnableAgentPrincipal(context.Context, string) error {
+func (s waitlistScopedFake) EnableAgentPrincipal(context.Context, string) (bool, error) {
 	panic("unexpected EnableAgentPrincipal call")
 }
 

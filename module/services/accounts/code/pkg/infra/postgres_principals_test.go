@@ -577,6 +577,34 @@ func TestPrincipals_Disable_IdempotentNoDuplicateAudit(t *testing.T) {
 	require.Equal(t, "first", got.DisabledReason, "the original disable reason must be preserved")
 }
 
+// TestPrincipals_DisableEnable_ReportsTransition pins the store contract the
+// business layer relies on to audit exactly once: Disable/Enable report whether
+// this call actually flipped the row. Without a truthful transition signal the
+// Service would re-derive it from a pre-UPDATE read, which double-audits when two
+// first-time disables race (both read "not disabled", both emit).
+func TestPrincipals_DisableEnable_ReportsTransition(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "publisher/transition:1.0.0")
+	store := testStore.As(business.System())
+
+	transitioned, err := store.DisableAgentPrincipal(testCtx, agent.ID, "first")
+	require.NoError(t, err)
+	require.True(t, transitioned, "the first disable of an active agent flips the row")
+
+	transitioned, err = store.DisableAgentPrincipal(testCtx, agent.ID, "second")
+	require.NoError(t, err)
+	require.False(t, transitioned, "re-disabling reports no transition, so no duplicate audit event fires")
+
+	transitioned, err = store.EnableAgentPrincipal(testCtx, agent.ID)
+	require.NoError(t, err)
+	require.True(t, transitioned, "enabling a disabled agent lifts the suspension")
+
+	transitioned, err = store.EnableAgentPrincipal(testCtx, agent.ID)
+	require.NoError(t, err)
+	require.False(t, transitioned, "re-enabling an already-active agent reports no transition")
+}
+
 func TestPrincipals_Enable_RejectedForRevoked(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)

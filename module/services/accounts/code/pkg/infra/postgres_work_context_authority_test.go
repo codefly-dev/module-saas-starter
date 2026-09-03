@@ -280,7 +280,9 @@ func TestWorkContextAuthorityRejectsDisabledActor(t *testing.T) {
 	_, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, agent.ID, nil)
 	require.NoError(t, err, "an active agent resolves before it is disabled")
 
-	require.NoError(t, testStore.As(business.System()).DisableAgentPrincipal(testCtx, agent.ID, "incident"))
+	transitioned, err := testStore.As(business.System()).DisableAgentPrincipal(testCtx, agent.ID, "incident")
+	require.NoError(t, err)
+	require.True(t, transitioned, "the first disable of an active agent flips the row")
 
 	_, err = testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, agent.ID, nil)
 	require.Error(t, err, "a disabled agent must not resolve as a Work Context actor")

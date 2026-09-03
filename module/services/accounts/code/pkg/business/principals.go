@@ -74,6 +74,24 @@ func (p *Principal) IsDisabled() bool {
 	return p != nil && p.DisabledAt != nil
 }
 
+// AllowsResourceKind reports whether the given resource kind is within this
+// principal's AllowedScopes ceiling. An empty ceiling (or a nil principal) is
+// unrestricted, matching the Work Context mint semantics. This is the single
+// source of truth for the resource-kind dimension of the ceiling, shared by the
+// Work Context mint path and the delegation mint path so an agent's cap holds
+// regardless of which mechanism produces the elevated authority.
+func (p *Principal) AllowsResourceKind(kind string) bool {
+	if p == nil || len(p.AllowedScopes) == 0 {
+		return true
+	}
+	for _, allowed := range p.AllowedScopes {
+		if allowed == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // Validate checks the in-memory invariants that the SQL constraints
 // also enforce. Run before INSERT for a friendly error vs the SQL
 // CHECK violation. Mirrors policy/principal.go's Validate but for
@@ -160,8 +178,10 @@ type PrincipalStore interface {
 	GetAgentPrincipal(ctx context.Context, orgID, agentIdentifier string) (*Principal, error)
 	CreateAgentPrincipal(ctx context.Context, p *Principal) error
 	RevokePrincipal(ctx context.Context, id, reason string) error
-	DisableAgentPrincipal(ctx context.Context, id, reason string) error
-	EnableAgentPrincipal(ctx context.Context, id string) error
+	// The bool reports whether the call actually flipped the row, so the caller
+	// emits the audit event exactly once (see the Service methods below).
+	DisableAgentPrincipal(ctx context.Context, id, reason string) (bool, error)
+	EnableAgentPrincipal(ctx context.Context, id string) (bool, error)
 	ListPrincipals(ctx context.Context, orgID, kind string, pageSize int32, pageToken string) ([]*Principal, string, error)
 }
 
@@ -425,7 +445,7 @@ func (s *Service) DisableAgentPrincipal(ctx context.Context, id, reason string) 
 		return w.NewError("reason required (no silent disables)")
 	}
 	var orgID string
-	var alreadyDisabled bool
+	var transitioned bool
 	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
@@ -438,12 +458,17 @@ func (s *Service) DisableAgentPrincipal(ctx context.Context, id, reason string) 
 			return NewStoreError(errors.New("a revoked principal cannot be disabled"), ErrTypeConflict)
 		}
 		orgID = p.OrgID
-		alreadyDisabled = p.IsDisabled()
-		return s.principalStore().DisableAgentPrincipal(ctx, id, reason)
+		// Gate the audit event on whether the UPDATE actually flipped the row,
+		// not on this pre-UPDATE read: two concurrent first-time disables both
+		// read IsDisabled()==false, but only the txn that wins the row-lock race
+		// transitions the row. Emitting on the racy read double-audits; emitting
+		// on the store's reported transition emits exactly once.
+		transitioned, e = s.principalStore().DisableAgentPrincipal(ctx, id, reason)
+		return e
 	}); err != nil {
 		return w.Wrapf(err, "cannot disable agent principal")
 	}
-	if !alreadyDisabled {
+	if transitioned {
 		s.emit(ctx, "system", "system", EventPrincipalDisabled, "principal", id, orgID,
 			map[string]any{"reason": reason})
 	}
@@ -460,7 +485,7 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 		return w.NewError("principal id required")
 	}
 	var orgID string
-	var wasDisabled bool
+	var transitioned bool
 	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
@@ -473,12 +498,14 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 			return NewStoreError(errors.New("a revoked principal cannot be re-enabled"), ErrTypeConflict)
 		}
 		orgID = p.OrgID
-		wasDisabled = p.IsDisabled()
-		return s.principalStore().EnableAgentPrincipal(ctx, id)
+		// Emit on the store's reported transition, not this pre-UPDATE read, so
+		// concurrent enables audit the lift exactly once (see DisableAgentPrincipal).
+		transitioned, e = s.principalStore().EnableAgentPrincipal(ctx, id)
+		return e
 	}); err != nil {
 		return w.Wrapf(err, "cannot enable agent principal")
 	}
-	if wasDisabled {
+	if transitioned {
 		s.emit(ctx, "system", "system", EventPrincipalEnabled, "principal", id, orgID, nil)
 	}
 	w.Info("agent principal enabled")

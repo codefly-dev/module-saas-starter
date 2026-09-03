@@ -230,7 +230,13 @@ func (s *PostgresStore) RevokePrincipal(ctx context.Context, id, reason string) 
 // original timestamp/reason intact. Returns ErrTypeNotFound when no agent row
 // matches the id (a non-agent id simply matches nothing here — the business
 // layer has already rejected that case with a clearer error).
-func (s *PostgresStore) DisableAgentPrincipal(ctx context.Context, id, reason string) error {
+//
+// The bool reports whether this call actually flipped the row (RowsAffected==1),
+// so the caller can emit the audit event exactly once even under concurrent
+// disables: the txn that loses the row-lock race sees RowsAffected==0 here and
+// reports false, rather than every caller re-deriving the transition from a
+// racy pre-UPDATE read.
+func (s *PostgresStore) DisableAgentPrincipal(ctx context.Context, id, reason string) (bool, error) {
 	w := wool.Get(ctx).In("DisableAgentPrincipal", wool.Field("principal_id", id))
 	executor := s.getQueryExecutor(ctx)
 
@@ -241,30 +247,33 @@ func (s *PostgresStore) DisableAgentPrincipal(ctx context.Context, id, reason st
 		reason, id,
 	)
 	if err != nil {
-		return w.Wrapf(err, "failed to disable agent principal")
+		return false, w.Wrapf(err, "failed to disable agent principal")
 	}
 	if tag.RowsAffected() == 0 {
 		var exists bool
 		if err := executor.QueryRow(ctx,
 			`SELECT EXISTS(SELECT 1 FROM principals WHERE id = $1 AND kind = 'agent')`, id).
 			Scan(&exists); err != nil {
-			return w.Wrapf(err, "failed to verify agent existence after disable no-op")
+			return false, w.Wrapf(err, "failed to verify agent existence after disable no-op")
 		}
 		if !exists {
-			return business.NewStoreError(
+			return false, business.NewStoreError(
 				fmt.Errorf("agent principal %s not found", id),
 				business.ErrTypeNotFound,
 			)
 		}
 		w.Trace("agent principal already disabled; idempotent no-op")
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 // EnableAgentPrincipal clears disabled_at/disabled_reason. Idempotent on an
 // already-active agent (`WHERE disabled_at IS NOT NULL`). Returns
-// ErrTypeNotFound when no agent row matches the id.
-func (s *PostgresStore) EnableAgentPrincipal(ctx context.Context, id string) error {
+// ErrTypeNotFound when no agent row matches the id. The bool reports whether
+// this call actually lifted a suspension (RowsAffected==1), so the caller emits
+// the audit event only on the real transition — see DisableAgentPrincipal.
+func (s *PostgresStore) EnableAgentPrincipal(ctx context.Context, id string) (bool, error) {
 	w := wool.Get(ctx).In("EnableAgentPrincipal", wool.Field("principal_id", id))
 	executor := s.getQueryExecutor(ctx)
 
@@ -275,24 +284,25 @@ func (s *PostgresStore) EnableAgentPrincipal(ctx context.Context, id string) err
 		id,
 	)
 	if err != nil {
-		return w.Wrapf(err, "failed to enable agent principal")
+		return false, w.Wrapf(err, "failed to enable agent principal")
 	}
 	if tag.RowsAffected() == 0 {
 		var exists bool
 		if err := executor.QueryRow(ctx,
 			`SELECT EXISTS(SELECT 1 FROM principals WHERE id = $1 AND kind = 'agent')`, id).
 			Scan(&exists); err != nil {
-			return w.Wrapf(err, "failed to verify agent existence after enable no-op")
+			return false, w.Wrapf(err, "failed to verify agent existence after enable no-op")
 		}
 		if !exists {
-			return business.NewStoreError(
+			return false, business.NewStoreError(
 				fmt.Errorf("agent principal %s not found", id),
 				business.ErrTypeNotFound,
 			)
 		}
 		w.Trace("agent principal already active; idempotent no-op")
+		return false, nil
 	}
-	return nil
+	return true, nil
 }
 
 // ListPrincipals returns paginated principals in the org, optionally

@@ -149,17 +149,26 @@ func (sc *Scoped) RevokePrincipal(ctx context.Context, id, reason string) error 
 }
 
 // DisableAgentPrincipal reversibly suspends an agent under this identity's RLS
-// context.
-func (sc *Scoped) DisableAgentPrincipal(ctx context.Context, id, reason string) error {
-	return sc.Within(ctx, func(ctx context.Context) error {
-		return sc.store.DisableAgentPrincipal(ctx, id, reason)
+// context. The bool reports whether this call flipped the row (see
+// PostgresStore.DisableAgentPrincipal) so the caller audits the transition once.
+func (sc *Scoped) DisableAgentPrincipal(ctx context.Context, id, reason string) (bool, error) {
+	var transitioned bool
+	err := sc.Within(ctx, func(ctx context.Context) error {
+		var e error
+		transitioned, e = sc.store.DisableAgentPrincipal(ctx, id, reason)
+		return e
 	})
+	return transitioned, err
 }
 
 // EnableAgentPrincipal lifts a reversible suspension under this identity's RLS
-// context.
-func (sc *Scoped) EnableAgentPrincipal(ctx context.Context, id string) error {
-	return sc.Within(ctx, func(ctx context.Context) error {
-		return sc.store.EnableAgentPrincipal(ctx, id)
+// context. The bool reports whether a suspension was actually lifted.
+func (sc *Scoped) EnableAgentPrincipal(ctx context.Context, id string) (bool, error) {
+	var transitioned bool
+	err := sc.Within(ctx, func(ctx context.Context) error {
+		var e error
+		transitioned, e = sc.store.EnableAgentPrincipal(ctx, id)
+		return e
 	})
+	return transitioned, err
 }

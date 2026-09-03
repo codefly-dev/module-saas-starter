@@ -366,12 +366,16 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
 	}
-	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
-		return nil, err
-	}
 	_, scopes, err := workContextScopes(req.GetAttenuatedScopes())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// Enforce both dimensions of the actor ceiling: an exchange can name a new
+	// audience AND re-declare scopes, so the scope cap must apply here too, not
+	// only the audience. Relying on the signer's attenuation guarantee alone
+	// would leave the ceiling's scope dimension unenforced on this path.
+	if err := enforceActorCeiling(actor, req.GetAudience(), scopes); err != nil {
+		return nil, err
 	}
 	token, signed, err := s.signer.ExchangeWorkContextAudience(
 		parentToken,
@@ -487,7 +491,9 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	if audience == "" {
 		audience = parent.GetAudience()
 	}
-	if err := enforceActorAudience(actor, audience); err != nil {
+	// A renewal may re-declare attenuated scopes, so enforce both dimensions of
+	// the actor ceiling — audience and resource kinds — not the audience alone.
+	if err := enforceActorCeiling(actor, audience, scopes); err != nil {
 		return nil, err
 	}
 	// A renewal must not silently loosen replay protection: an unspecified
