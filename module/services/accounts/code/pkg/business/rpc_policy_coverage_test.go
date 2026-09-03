@@ -32,9 +32,17 @@ func TestClassifyCentralCoverageIsExhaustiveAndNeverBroadening(t *testing.T) {
 // A binding paired with a self-service tenant is not — the interceptor never
 // validates the bound org field on its own — so it stays a gap.
 func TestBoundOrgResourceIsNeverFalselyOK(t *testing.T) {
+	// PlatformRole and Mfa are set to NONE, not left zero: a real policy is
+	// validated to declare both (UNSPECIFIED is a policy error that excludes the
+	// method from the index), and the classifier compares against NONE. Leaving
+	// them zero would read UNSPECIFIED as "declares a platform-role/MFA
+	// requirement" and force gap regardless of tenant — the classifier only ever
+	// runs on validated policies, so the synthetic one must be valid too.
 	policy := RPCPolicy{MethodPolicy: &policyv1.MethodPolicy{
-		Exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED,
-		Tenant:   policyv1.TenantRequirement_TENANT_REQUIREMENT_USER,
+		Exposure:     policyv1.Exposure_EXPOSURE_AUTHENTICATED,
+		Tenant:       policyv1.TenantRequirement_TENANT_REQUIREMENT_USER,
+		PlatformRole: policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
+		Mfa:          policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
 		ResourceBindings: []*policyv1.ResourceBinding{{
 			RequestField: "org_id",
 			Target:       policyv1.ResourceTarget_RESOURCE_TARGET_ORGANIZATION,
