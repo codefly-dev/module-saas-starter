@@ -9402,6 +9402,9 @@
       "name": "ConsentService"
     },
     {
+      "name": "DashboardService"
+    },
+    {
       "name": "DatasourceService"
     },
     {

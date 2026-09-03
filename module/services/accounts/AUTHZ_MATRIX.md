@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **157 RPCs** across **26 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **163 RPCs** across **27 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -31,6 +31,12 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ConsentService/AcceptTerms` | unary | `POST /v1/consent/terms` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: consent.terms_accepted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Record acceptance of the exact Terms version presented. |
 | `/saas.accounts.v1.ConsentService/GetStatus` | unary | `GET /v1/consent/status` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read TOS acceptance state. |
 | `/saas.accounts.v1.ConsentService/UpdatePreferences` | unary | `PUT /v1/consent/preferences` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: consent.preferences_updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Persist purpose-based optional tracking choices and withdrawals. |
+| `/saas.accounts.v1.DashboardService/CreateDashboard` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=dashboards:write | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: dashboard.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create a named, user-owned dashboard from a validated spec. |
+| `/saas.accounts.v1.DashboardService/DeleteDashboard` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=dashboards:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: dashboard.deleted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Delete a dashboard the caller owns or administers. |
+| `/saas.accounts.v1.DashboardService/GetDashboard` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=dashboards:read | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Open one dashboard the caller owns or that is shared to the org. |
+| `/saas.accounts.v1.DashboardService/ListDashboards` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=dashboards:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the caller's own and org-shared dashboards. |
+| `/saas.accounts.v1.DashboardService/ShareDashboard` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=dashboards:share | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: dashboard.shared | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Change a dashboard's visibility between private and org-shared. |
+| `/saas.accounts.v1.DashboardService/UpdateDashboard` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=dashboards:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: dashboard.updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Rename or replace the spec of a dashboard the caller owns or administers. |
 | `/saas.accounts.v1.DatasourceService/AddGitHubSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source.added | FORBIDDEN / STANDARD_WRITE | SECRET → CONFIDENTIAL | Connect a GitHub repository as a datasource, storing its access token and optional webhook secret encrypted. |
 | `/saas.accounts.v1.DatasourceService/DeleteSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source.removed | FORBIDDEN / STANDARD_WRITE | INTERNAL → INTERNAL | Remove a connected datasource and its stored credentials. |
 | `/saas.accounts.v1.DatasourceService/GetSource` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | Read one connected datasource in the org. |
@@ -171,7 +177,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 38
 - `internal`: 13
 - `mfa`: 3
-- `org_admin`: 35
-- `org_member`: 30
+- `org_admin`: 36
+- `org_member`: 35
 - `platform_admin`: 22
 - `public`: 16

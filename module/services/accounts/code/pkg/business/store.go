@@ -114,6 +114,28 @@ type Store interface {
 	GetOrgMembership(ctx context.Context, orgID string, userID string) (*gen.OrgMembership, error)
 	ListOrgMembers(ctx context.Context, orgID string) ([]*gen.OrgMembership, error)
 
+	// Dashboards
+	// CreateDashboard inserts the record and returns the stored row (with its
+	// server-assigned timestamps) in the same statement, so callers never need a
+	// second read that a concurrent delete could race.
+	CreateDashboard(ctx context.Context, dashboard *Dashboard) (*Dashboard, error)
+	// GetDashboard returns the row by id within the RLS-scoped org, or nil when
+	// no such row is visible (a cross-tenant id reads as absent, not another
+	// org's row).
+	GetDashboard(ctx context.Context, id string) (*Dashboard, error)
+	// ListDashboards returns at most limit rows ordered by (updated_at, id)
+	// descending, starting strictly after the cursor when one is given. A limit
+	// of zero means no bound (callers pass a bounded limit).
+	ListDashboards(ctx context.Context, orgID, ownerID string, scope DashboardListScope, limit int, after *DashboardCursor) ([]*Dashboard, error)
+	// UpdateDashboard applies a partial change (a nil name or spec is left
+	// unchanged), advances updated_at, and returns the updated row, or nil when
+	// no row has the id.
+	UpdateDashboard(ctx context.Context, id string, name *string, spec []byte) (*Dashboard, error)
+	DeleteDashboard(ctx context.Context, id string) error
+	// SetDashboardVisibility sets visibility, advances updated_at, and returns
+	// the updated row, or nil when no row has the id.
+	SetDashboardVisibility(ctx context.Context, id string, visibility DashboardVisibility) (*Dashboard, error)
+
 	// Teams
 	CreateTeam(ctx context.Context, team *gen.Team) error
 	ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error)

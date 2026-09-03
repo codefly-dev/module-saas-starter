@@ -202,6 +202,11 @@ const (
 	EventDatasourceSourceSynced  EventType = "datasource.source.synced"
 	EventDatasourceSourceRemoved EventType = "datasource.source.removed"
 	EventFeatureFlagUpdated      EventType = "feature_flag.updated"
+
+	EventDashboardCreated EventType = "dashboard.created"
+	EventDashboardUpdated EventType = "dashboard.updated"
+	EventDashboardDeleted EventType = "dashboard.deleted"
+	EventDashboardShared  EventType = "dashboard.shared"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -292,6 +297,11 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step")),
 	def(EventOnboardingStepSkip, CategoryOrganization, "An onboarding step was skipped.", str("step")),
 	def(EventActivationAchieved, CategoryOrganization, "An organization reached activation."),
+
+	def(EventDashboardCreated, CategoryOrganization, "A dashboard was created."),
+	def(EventDashboardUpdated, CategoryOrganization, "A dashboard was updated."),
+	def(EventDashboardDeleted, CategoryOrganization, "A dashboard was deleted."),
+	def(EventDashboardShared, CategoryOrganization, "A dashboard's visibility was changed."),
 
 	def(EventWaitlistJoined, CategoryLifecycle, "A prospect joined the waitlist.", pii(str("email"))),
 	def(EventWaitlistPending, CategoryLifecycle, "A waitlist entry moved to pending."),
