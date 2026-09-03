@@ -46,7 +46,7 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 		if err != nil {
 			return nil, err
 		}
-		shadowPolicyCoverage(ctx, req.Spec().Procedure, req.Any())
+		shadowPolicyCoverage(ctx, req.Spec().Procedure)
 		return next(ctx, req)
 	}
 }
@@ -61,7 +61,7 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 		if err != nil {
 			return err
 		}
-		shadowPolicyCoverage(ctx, conn.Spec().Procedure, nil)
+		shadowPolicyCoverage(ctx, conn.Spec().Procedure)
 		return next(ctx, conn)
 	}
 }

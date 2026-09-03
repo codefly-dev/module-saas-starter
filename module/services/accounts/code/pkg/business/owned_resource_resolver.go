@@ -69,10 +69,10 @@ func ownedResourceResolvable(fullMethod string) bool {
 	return ok
 }
 
-// PolicyBindsOwnedResource reports whether the policy carries an OWNED_RESOURCE
+// policyBindsOwnedResource reports whether the policy carries an OWNED_RESOURCE
 // binding, i.e. a method whose owning org must be resolved from a resource id
 // before the central floor can be evaluated.
-func PolicyBindsOwnedResource(policy RPCPolicy) bool {
+func policyBindsOwnedResource(policy RPCPolicy) bool {
 	return ownedResourceBinding(policy.MethodPolicy) != nil
 }
 

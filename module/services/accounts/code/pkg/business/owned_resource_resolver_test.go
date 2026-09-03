@@ -43,7 +43,7 @@ func ownedResourcePolicy(t *testing.T, fullMethod string) RPCPolicy {
 	t.Helper()
 	policy, ok := LookupRPCPolicy(fullMethod)
 	require.Truef(t, ok, "%s is not in the policy catalog", fullMethod)
-	require.Truef(t, PolicyBindsOwnedResource(policy), "%s does not bind an owned resource", fullMethod)
+	require.Truef(t, policyBindsOwnedResource(policy), "%s does not bind an owned resource", fullMethod)
 	return policy
 }
 
@@ -117,13 +117,13 @@ func TestOwnedResourceRegistryMatchesCatalog(t *testing.T) {
 	for method := range ownedResourceResolvers {
 		policy, ok := LookupRPCPolicy(method)
 		require.Truef(t, ok, "%s is registered but absent from the catalog", method)
-		require.Truef(t, PolicyBindsOwnedResource(policy), "%s is registered but binds no owned resource", method)
+		require.Truef(t, policyBindsOwnedResource(policy), "%s is registered but binds no owned resource", method)
 	}
 	for _, policy := range RPCPolicies() {
 		if !policy.Tier.Valid() || policy.PolicyError != "" {
 			continue
 		}
-		if PolicyBindsOwnedResource(policy) {
+		if policyBindsOwnedResource(policy) {
 			require.Truef(t, ownedResourceResolvable(policy.FullMethod),
 				"%s binds an owned resource but has no resolver", policy.FullMethod)
 		}
