@@ -388,6 +388,12 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	var auditExportWorker *jobs.Worker
 	if auditSinkMode == auditSinkBoth {
+		// The tee carries org-scoped events only. Control-plane / platform-admin
+		// audit events (NULL org) are Postgres-only: the job platform reserves
+		// global-scope enqueue for the privileged worker pool, which opens its own
+		// transaction and so cannot commit atomically with the audit row. Surface
+		// this so operators don't assume the warehouse holds platform events.
+		w.Warn("AUDIT_SINK=both tees only org-scoped audit events to the external sink; control-plane/platform-admin (NULL-org) events remain Postgres-only")
 		auditExportHandler, err := business.NewAuditExportJobHandler(externalAuditSink)
 		if err != nil {
 			return nil, err

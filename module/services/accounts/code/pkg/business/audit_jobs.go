@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
+
+	"github.com/codefly-dev/core/wool"
 )
 
 // The audit export feed is the asynchronous tee to an external analytics or
@@ -99,29 +100,15 @@ func (p auditExportPayload) toEntry() AuditEntry {
 }
 
 // enqueueAuditExport appends the export job using the caller's ambient
-// transaction, so it commits with the audit row or not at all.
+// transaction, so it commits with the audit row or not at all. The audit row is
+// the source of truth and has already been written in this tx; a per-event
+// problem building the tee job never aborts that write (buildAuditExportJob
+// degrades to a payload-less job or skips the event). Only a genuine enqueue
+// failure — a broken jobs table — propagates and rolls the tx back.
 func enqueueAuditExport(ctx context.Context, producer jobs.Producer, entry AuditEntry) error {
-	entry.Payload = RedactPayload(entry.EventType, entry.Payload)
-	payload, err := json.Marshal(newAuditExportPayload(entry))
-	if err != nil {
-		return fmt.Errorf("audit: encode export payload: %w", err)
-	}
-	request := &jobsv1.EnqueueJobRequest{Job: &jobsv1.NewJob{
-		Direction: jobsv1.JobDirection_JOB_DIRECTION_OUTBOX,
-		Scope: &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{
-			OrganizationId: entry.OrgID,
-		}},
-		Queue:          AuditExportQueue,
-		Topic:          AuditExportTopic,
-		Source:         AuditExportSource,
-		IdempotencyKey: entry.ID,
-		SchemaVersion:  AuditExportSchemaVersion,
-		Payload:        payload,
-		ContentType:    AuditExportContentType,
-		MaxAttempts:    AuditExportMaxAttempts,
-	}}
-	if err := jobs.ValidateCommand(request); err != nil {
-		return fmt.Errorf("audit: invalid export enqueue command: %w", err)
+	request, ok := buildAuditExportJob(ctx, entry)
+	if !ok {
+		return nil
 	}
 	response, err := producer.EnqueueJob(ctx, request)
 	if err != nil {
@@ -136,6 +123,67 @@ func enqueueAuditExport(ctx context.Context, producer jobs.Producer, entry Audit
 	}
 }
 
+// buildAuditExportJob renders the export enqueue request, returning ok=false
+// (having logged why) when the event cannot be turned into a valid durable job
+// at all. The payload is the only per-event field that can make a well-formed
+// audit event unrepresentable — a value that won't JSON-serialize, or bytes over
+// the job payload cap — so a first failure is retried without it before the
+// event is dropped. InsertAuditEvent already tolerated the same payload; the
+// best-effort tee must not be stricter than the source of truth.
+func buildAuditExportJob(ctx context.Context, entry AuditEntry) (*jobsv1.EnqueueJobRequest, bool) {
+	entry.Payload = RedactPayload(entry.EventType, entry.Payload)
+	request, err := newAuditExportJob(entry)
+	if err == nil {
+		err = jobs.ValidateCommand(request)
+	}
+	if err == nil {
+		return request, true
+	}
+	buildErr := err
+	entry.Payload = nil
+	request, err = newAuditExportJob(entry)
+	if err == nil {
+		err = jobs.ValidateCommand(request)
+	}
+	if err != nil {
+		auditExportUndeliverable(ctx, entry, "skipped", err)
+		return nil, false
+	}
+	auditExportUndeliverable(ctx, entry, "payload dropped", buildErr)
+	return request, true
+}
+
+func newAuditExportJob(entry AuditEntry) (*jobsv1.EnqueueJobRequest, error) {
+	payload, err := json.Marshal(newAuditExportPayload(entry))
+	if err != nil {
+		return nil, err
+	}
+	return &jobsv1.EnqueueJobRequest{Job: &jobsv1.NewJob{
+		Direction: jobsv1.JobDirection_JOB_DIRECTION_OUTBOX,
+		Scope: &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{
+			OrganizationId: entry.OrgID,
+		}},
+		Queue:          AuditExportQueue,
+		Topic:          AuditExportTopic,
+		Source:         AuditExportSource,
+		IdempotencyKey: entry.ID,
+		SchemaVersion:  AuditExportSchemaVersion,
+		Payload:        payload,
+		ContentType:    AuditExportContentType,
+		MaxAttempts:    AuditExportMaxAttempts,
+	}}, nil
+}
+
+func auditExportUndeliverable(ctx context.Context, entry AuditEntry, disposition string, err error) {
+	wool.Get(ctx).In("enqueueAuditExport").Warn(
+		"audit event not fully teed to external sink; Postgres record is unaffected",
+		wool.Field("disposition", disposition),
+		wool.Field("event_id", entry.ID),
+		wool.Field("event_type", string(entry.EventType)),
+		wool.ErrField(err),
+	)
+}
+
 // NewAuditExportJobHandler drains the export queue into the external sink. A
 // sink failure is returned so the generic worker retries the job (at-least-once);
 // a malformed job is a non-retryable ProcessingError.
@@ -148,6 +196,10 @@ func NewAuditExportJobHandler(sink ExternalAuditSink) (jobs.Handler, error) {
 		if err != nil {
 			return jobs.NewProcessingError("audit.invalid_job", "invalid audit export job", false)
 		}
+		// Redact again at the egress boundary. The feed already redacts before
+		// enqueue, but the sink is the point where data leaves the audit store,
+		// so it must not depend on an upstream invariant to keep PII out.
+		entry.Payload = RedactPayload(entry.EventType, entry.Payload)
 		return sink.Emit(ctx, entry)
 	}, nil
 }

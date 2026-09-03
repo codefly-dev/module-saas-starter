@@ -57,7 +57,7 @@ func (s *HTTPAuditSink) Emit(ctx context.Context, entry AuditEntry) error {
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	_, _ = io.Copy(io.Discard, response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("audit: external sink returned HTTP %d", response.StatusCode)

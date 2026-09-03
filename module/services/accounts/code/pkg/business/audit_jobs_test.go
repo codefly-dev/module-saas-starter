@@ -2,7 +2,9 @@ package business
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"sync"
 	"testing"
 
@@ -138,6 +140,37 @@ func TestSelectorBothTeesAndCommitsAtomically(t *testing.T) {
 	}
 }
 
+func TestExportToleratesUnserializablePayloadWithoutAbortingWrite(t *testing.T) {
+	store := &teeStore{}
+	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee())
+	if err != nil {
+		t.Fatalf("NewDurableAuditEmitter: %v", err)
+	}
+	// session.revoked is registered with no fields, so RedactPayload passes the
+	// payload through unchanged — the NaN survives to json.Marshal, which fails.
+	// InsertAuditEvent tolerates this payload (stores "{}"), so the tee must not
+	// roll the audit write back over its own serialization fault.
+	entry := orgAuditEntry()
+	entry.EventType = EventSessionRevoked
+	entry.Payload = map[string]any{"latency": math.NaN()}
+	emitter.Emit(t.Context(), entry)
+
+	if got := len(store.audits); got != 1 {
+		t.Fatalf("audits committed = %d, want 1 (write must not abort on a bad payload)", got)
+	}
+	exports := store.jobsForQueue(AuditExportQueue)
+	if len(exports) != 1 {
+		t.Fatalf("audit export jobs = %d, want 1 (event still teed, payload dropped)", len(exports))
+	}
+	decoded, err := decodeAuditExportEnvelope(envelopeFromRequest(t, exports[0]))
+	if err != nil {
+		t.Fatalf("decode export envelope: %v", err)
+	}
+	if len(decoded.Payload) != 0 {
+		t.Fatalf("teed payload = %v, want empty (dropped)", decoded.Payload)
+	}
+}
+
 func TestExportEnqueueFailureRollsBackAuditRow(t *testing.T) {
 	store := &teeStore{failExportEnqueue: true}
 	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee())
@@ -228,6 +261,58 @@ func TestExportRedactsPayload(t *testing.T) {
 	// leaves the audit store even when the schema is unknown.
 	if len(decoded.Payload) != 0 {
 		t.Fatalf("teed payload = %v, want redacted empty", decoded.Payload)
+	}
+}
+
+type capturingSink struct {
+	last AuditEntry
+}
+
+func (s *capturingSink) Emit(_ context.Context, entry AuditEntry) error {
+	s.last = entry
+	return nil
+}
+
+func TestExportHandlerRedactsAtEgress(t *testing.T) {
+	// A job whose stored payload still carries a PII field (user.created marks
+	// "email" PII). Even though the feed redacts before enqueue, the handler is
+	// the egress boundary and must strip PII independently of upstream.
+	orgID := teeOrgID
+	id := NewIDString()
+	raw, err := json.Marshal(newAuditExportPayload(AuditEntry{
+		ID: id, OrgID: orgID, EventType: EventUserCreated,
+		Payload: map[string]any{"signup_method": "sso", "email": "leak@example.com"},
+	}))
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	envelope := &jobsv1.JobEnvelope{
+		Id:             NewIDString(),
+		Direction:      jobsv1.JobDirection_JOB_DIRECTION_OUTBOX,
+		Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: orgID}},
+		Queue:          AuditExportQueue,
+		Topic:          AuditExportTopic,
+		Source:         AuditExportSource,
+		IdempotencyKey: id,
+		SchemaVersion:  AuditExportSchemaVersion,
+		Payload:        raw,
+		ContentType:    AuditExportContentType,
+		State:          jobsv1.JobState_JOB_STATE_PENDING,
+		MaxAttempts:    AuditExportMaxAttempts,
+	}
+	sink := &capturingSink{}
+	handler, err := NewAuditExportJobHandler(sink)
+	if err != nil {
+		t.Fatalf("NewAuditExportJobHandler: %v", err)
+	}
+	if err := handler(t.Context(), envelope); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if _, leaked := sink.last.Payload["email"]; leaked {
+		t.Fatalf("sink received PII field 'email': %v", sink.last.Payload)
+	}
+	if _, ok := sink.last.Payload["signup_method"]; !ok {
+		t.Fatalf("sink lost non-PII field 'signup_method': %v", sink.last.Payload)
 	}
 }
 
