@@ -33,7 +33,7 @@ describe("generated frontend catalog", () => {
 	});
 
 	it("publishes the canonical permission and scope vocabulary", () => {
-		expect(Object.values(PERMISSIONS)).toHaveLength(21);
+		expect(Object.values(PERMISSIONS)).toHaveLength(24);
 		expect(API_KEY_SCOPES).toHaveLength(19);
 		expect(isPermission(PERMISSIONS.ROLES_WRITE)).toBe(true);
 		expect(isPermission("roles:delete")).toBe(false);
