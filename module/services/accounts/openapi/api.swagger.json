@@ -757,6 +757,19 @@
           "description": "agent_identifier in canonical \"publisher/name:version\" form.",
           "type": "string"
         },
+        "allowedAudiences": {
+          "description": "Optional delegated-execution ceiling. allowed_audiences bounds the Work\nContext audiences this agent may be minted for; allowed_scopes bounds the\nresource kinds it may request. Empty = unrestricted (rollout default).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowedScopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "displayName": {
           "type": "string"
         },
@@ -2748,12 +2761,33 @@
           "description": "agent_identifier is \"publisher/name:version\" for kind=AGENT;\nempty otherwise. Required when kind=AGENT.",
           "type": "string"
         },
+        "allowedAudiences": {
+          "description": "For kind=AGENT only: the delegated-execution ceiling declared at\nregistration. allowed_audiences bounds the Work Context audiences this\nactor may be minted for; allowed_scopes bounds the resource kinds it may\nrequest. Empty = unrestricted.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "allowedScopes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "createdAt": {
           "format": "date-time",
           "type": "string"
         },
         "createdBy": {
           "description": "The principal that created this one — the authorship root a policy\nconsumer chains authority back to. Empty = a root principal (humans).",
+          "type": "string"
+        },
+        "disabledAt": {
+          "description": "A reversible suspension of a delegated actor, distinct from the terminal\nrevoked_at. While set the actor resolves as inactive, so outstanding Work\nContexts go stale on the authorization-revision bump and no new one mints.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "disabledReason": {
           "type": "string"
         },
         "displayName": {

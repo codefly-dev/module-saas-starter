@@ -98,12 +98,13 @@ func resolveWorkContextAuthority(
 		var orgIDOut, agentIdentifier, createdBy *string
 		err := reader.QueryRow(ctx, `
 				SELECT id, kind, display_name, org_id, agent_identifier,
-				       created_at, created_by
+				       created_at, created_by, allowed_audiences, allowed_scopes
 				FROM principals
 				WHERE id = $2
 				  AND org_id = $1
 				  AND kind = 'agent'
-				  AND revoked_at IS NULL`,
+				  AND revoked_at IS NULL
+				  AND disabled_at IS NULL`,
 			orgID, actorPrincipalID,
 		).Scan(
 			&actor.ID,
@@ -113,6 +114,8 @@ func resolveWorkContextAuthority(
 			&agentIdentifier,
 			&actor.CreatedAt,
 			&createdBy,
+			&actor.AllowedAudiences,
+			&actor.AllowedScopes,
 		)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, business.NewStoreError(

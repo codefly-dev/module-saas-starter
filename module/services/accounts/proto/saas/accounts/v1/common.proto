@@ -199,6 +199,17 @@ message Principal {
   // The principal that created this one — the authorship root a policy
   // consumer chains authority back to. Empty = a root principal (humans).
   string created_by = 9;
+  // For kind=AGENT only: the delegated-execution ceiling declared at
+  // registration. allowed_audiences bounds the Work Context audiences this
+  // actor may be minted for; allowed_scopes bounds the resource kinds it may
+  // request. Empty = unrestricted.
+  repeated string allowed_audiences = 10;
+  repeated string allowed_scopes = 11;
+  // A reversible suspension of a delegated actor, distinct from the terminal
+  // revoked_at. While set the actor resolves as inactive, so outstanding Work
+  // Contexts go stale on the authorization-revision bump and no new one mints.
+  google.protobuf.Timestamp disabled_at = 12;
+  string disabled_reason = 13;
 }
 
 // Decision is what the PDP returns for a Decide call. ALLOW means

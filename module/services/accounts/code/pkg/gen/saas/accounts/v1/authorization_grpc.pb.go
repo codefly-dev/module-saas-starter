@@ -697,11 +697,13 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	PrincipalService_GetPrincipal_FullMethodName         = "/saas.accounts.v1.PrincipalService/GetPrincipal"
-	PrincipalService_GetAgentPrincipal_FullMethodName    = "/saas.accounts.v1.PrincipalService/GetAgentPrincipal"
-	PrincipalService_CreateAgentPrincipal_FullMethodName = "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal"
-	PrincipalService_RevokePrincipal_FullMethodName      = "/saas.accounts.v1.PrincipalService/RevokePrincipal"
-	PrincipalService_ListPrincipals_FullMethodName       = "/saas.accounts.v1.PrincipalService/ListPrincipals"
+	PrincipalService_GetPrincipal_FullMethodName          = "/saas.accounts.v1.PrincipalService/GetPrincipal"
+	PrincipalService_GetAgentPrincipal_FullMethodName     = "/saas.accounts.v1.PrincipalService/GetAgentPrincipal"
+	PrincipalService_CreateAgentPrincipal_FullMethodName  = "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal"
+	PrincipalService_RevokePrincipal_FullMethodName       = "/saas.accounts.v1.PrincipalService/RevokePrincipal"
+	PrincipalService_DisableAgentPrincipal_FullMethodName = "/saas.accounts.v1.PrincipalService/DisableAgentPrincipal"
+	PrincipalService_EnableAgentPrincipal_FullMethodName  = "/saas.accounts.v1.PrincipalService/EnableAgentPrincipal"
+	PrincipalService_ListPrincipals_FullMethodName        = "/saas.accounts.v1.PrincipalService/ListPrincipals"
 )
 
 // PrincipalServiceClient is the client API for PrincipalService service.
@@ -718,6 +720,8 @@ type PrincipalServiceClient interface {
 	GetAgentPrincipal(ctx context.Context, in *GetAgentPrincipalRequest, opts ...grpc.CallOption) (*Principal, error)
 	CreateAgentPrincipal(ctx context.Context, in *CreateAgentPrincipalRequest, opts ...grpc.CallOption) (*Principal, error)
 	RevokePrincipal(ctx context.Context, in *RevokePrincipalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	DisableAgentPrincipal(ctx context.Context, in *DisableAgentPrincipalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	EnableAgentPrincipal(ctx context.Context, in *EnableAgentPrincipalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListPrincipals(ctx context.Context, in *ListPrincipalsRequest, opts ...grpc.CallOption) (*ListPrincipalsResponse, error)
 }
 
@@ -769,6 +773,26 @@ func (c *principalServiceClient) RevokePrincipal(ctx context.Context, in *Revoke
 	return out, nil
 }
 
+func (c *principalServiceClient) DisableAgentPrincipal(ctx context.Context, in *DisableAgentPrincipalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, PrincipalService_DisableAgentPrincipal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *principalServiceClient) EnableAgentPrincipal(ctx context.Context, in *EnableAgentPrincipalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, PrincipalService_EnableAgentPrincipal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *principalServiceClient) ListPrincipals(ctx context.Context, in *ListPrincipalsRequest, opts ...grpc.CallOption) (*ListPrincipalsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListPrincipalsResponse)
@@ -793,6 +817,8 @@ type PrincipalServiceServer interface {
 	GetAgentPrincipal(context.Context, *GetAgentPrincipalRequest) (*Principal, error)
 	CreateAgentPrincipal(context.Context, *CreateAgentPrincipalRequest) (*Principal, error)
 	RevokePrincipal(context.Context, *RevokePrincipalRequest) (*emptypb.Empty, error)
+	DisableAgentPrincipal(context.Context, *DisableAgentPrincipalRequest) (*emptypb.Empty, error)
+	EnableAgentPrincipal(context.Context, *EnableAgentPrincipalRequest) (*emptypb.Empty, error)
 	ListPrincipals(context.Context, *ListPrincipalsRequest) (*ListPrincipalsResponse, error)
 	mustEmbedUnimplementedPrincipalServiceServer()
 }
@@ -815,6 +841,12 @@ func (UnimplementedPrincipalServiceServer) CreateAgentPrincipal(context.Context,
 }
 func (UnimplementedPrincipalServiceServer) RevokePrincipal(context.Context, *RevokePrincipalRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevokePrincipal not implemented")
+}
+func (UnimplementedPrincipalServiceServer) DisableAgentPrincipal(context.Context, *DisableAgentPrincipalRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DisableAgentPrincipal not implemented")
+}
+func (UnimplementedPrincipalServiceServer) EnableAgentPrincipal(context.Context, *EnableAgentPrincipalRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method EnableAgentPrincipal not implemented")
 }
 func (UnimplementedPrincipalServiceServer) ListPrincipals(context.Context, *ListPrincipalsRequest) (*ListPrincipalsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPrincipals not implemented")
@@ -912,6 +944,42 @@ func _PrincipalService_RevokePrincipal_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PrincipalService_DisableAgentPrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DisableAgentPrincipalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrincipalServiceServer).DisableAgentPrincipal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrincipalService_DisableAgentPrincipal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrincipalServiceServer).DisableAgentPrincipal(ctx, req.(*DisableAgentPrincipalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PrincipalService_EnableAgentPrincipal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EnableAgentPrincipalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PrincipalServiceServer).EnableAgentPrincipal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PrincipalService_EnableAgentPrincipal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PrincipalServiceServer).EnableAgentPrincipal(ctx, req.(*EnableAgentPrincipalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PrincipalService_ListPrincipals_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListPrincipalsRequest)
 	if err := dec(in); err != nil {
@@ -952,6 +1020,14 @@ var PrincipalService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevokePrincipal",
 			Handler:    _PrincipalService_RevokePrincipal_Handler,
+		},
+		{
+			MethodName: "DisableAgentPrincipal",
+			Handler:    _PrincipalService_DisableAgentPrincipal_Handler,
+		},
+		{
+			MethodName: "EnableAgentPrincipal",
+			Handler:    _PrincipalService_EnableAgentPrincipal_Handler,
 		},
 		{
 			MethodName: "ListPrincipals",

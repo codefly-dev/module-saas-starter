@@ -3,6 +3,8 @@ package adapters
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,7 +133,7 @@ func (s *DelegationServer) RequestDelegation(ctx context.Context, req *gen.Reque
 	if grant.Status == business.GrantStatusApproved && grant.Kind == business.GrantKindOneShot {
 		w := wool.Get(ctx).In("RequestDelegation.autoApproveMint",
 			wool.Field("grant_id", grant.ID))
-		if actor, gerr := service.GetPrincipal(ctx, grant.ActorPrincipalID); gerr == nil {
+		if actor, gerr := service.GetPrincipal(ctx, grant.ActorPrincipalID); gerr == nil && !actor.IsDisabled() {
 			if token, sa, merr := s.mintApprovedToken(actor, grant); merr == nil {
 				if serr := service.SetMintedToken(ctx, grant.ID, grant.OrgID, sa.ID); serr != nil {
 					w.Warn("set minted_token_id failed for auto-approved grant",
@@ -271,6 +273,13 @@ func (s *DelegationServer) DecideDelegation(ctx context.Context, req *gen.Decide
 				wool.Field("error", err.Error()))
 			return delegationGrantToProto(grant), nil
 		}
+		if actor.IsDisabled() {
+			// A disabled actor is neutralized: it mints no usable token, matching
+			// the revoked-actor and disabled Work Context actor behavior.
+			w.Warn("approved grant but actor principal is disabled; minted_token_id stays empty",
+				wool.Field("actor_principal_id", grant.ActorPrincipalID))
+			return delegationGrantToProto(grant), nil
+		}
 		token, sa, err := s.mintApprovedToken(actor, grant)
 		if err != nil {
 			w.Warn("approved grant but mint failed; minted_token_id stays empty",
@@ -338,9 +347,34 @@ func (s *DelegationServer) ListPendingDelegations(ctx context.Context, req *gen.
 // AuthSecret). Saas-starter has the same key; minting here lets
 // the streaming RPC return a ready-to-use token without a
 // second round-trip through the host.
+// resourceKind extracts the kind prefix of a typed delegation resource. A grant
+// resource is "kind:instance" ("repo:codefly-dev/codefly.dev", "file:/etc/passwd"
+// — see RequestDelegationRequest.resource); the kind is the segment before the
+// first ":". A value with no ":" is itself the kind. This is the encoding bridge
+// to the bare resource kinds an agent's allowed_scopes ceiling is declared in.
+func resourceKind(resource string) string {
+	if i := strings.IndexByte(resource, ':'); i >= 0 {
+		return resource[:i]
+	}
+	return resource
+}
+
 func (s *DelegationServer) mintApprovedToken(actor *business.Principal, grant *business.DelegationGrant) (string, *policy.ScopedAuthorization, error) {
 	if len(s.SigningSecret) == 0 && len(s.SigningEd25519Key) == 0 {
 		return "", nil, errors.New("DelegationServer: no signing key configured (set SigningSecret or SigningEd25519Key)")
+	}
+
+	// The registered agent ceiling (allowed_scopes) is a hard cap above any
+	// grantor's per-grant approval: a delegation whose resource kind is outside
+	// the ceiling mints no usable token, exactly as a Work Context mint outside
+	// the ceiling is refused. The minted token authorizes grant.Resource, so
+	// capping its kind bounds precisely what the token can do. A resourceless
+	// grant ("no specific resource") carries no kind to cap and is left to the
+	// grantor's approval, mirroring an empty scope set on the Work Context path.
+	if grant.Resource != "" && !actor.AllowsResourceKind(resourceKind(grant.Resource)) {
+		return "", nil, fmt.Errorf(
+			"resource kind %q is outside agent %s allowed scopes",
+			resourceKind(grant.Resource), actor.AgentIdentifier)
 	}
 
 	// Translate business.Principal → policy.Principal.

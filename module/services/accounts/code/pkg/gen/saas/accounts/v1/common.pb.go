@@ -1217,9 +1217,20 @@ type Principal struct {
 	RevokedReason   string                 `protobuf:"bytes,8,opt,name=revoked_reason,json=revokedReason,proto3" json:"revoked_reason,omitempty"`
 	// The principal that created this one — the authorship root a policy
 	// consumer chains authority back to. Empty = a root principal (humans).
-	CreatedBy     string `protobuf:"bytes,9,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CreatedBy string `protobuf:"bytes,9,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
+	// For kind=AGENT only: the delegated-execution ceiling declared at
+	// registration. allowed_audiences bounds the Work Context audiences this
+	// actor may be minted for; allowed_scopes bounds the resource kinds it may
+	// request. Empty = unrestricted.
+	AllowedAudiences []string `protobuf:"bytes,10,rep,name=allowed_audiences,json=allowedAudiences,proto3" json:"allowed_audiences,omitempty"`
+	AllowedScopes    []string `protobuf:"bytes,11,rep,name=allowed_scopes,json=allowedScopes,proto3" json:"allowed_scopes,omitempty"`
+	// A reversible suspension of a delegated actor, distinct from the terminal
+	// revoked_at. While set the actor resolves as inactive, so outstanding Work
+	// Contexts go stale on the authorization-revision bump and no new one mints.
+	DisabledAt     *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=disabled_at,json=disabledAt,proto3" json:"disabled_at,omitempty"`
+	DisabledReason string                 `protobuf:"bytes,13,opt,name=disabled_reason,json=disabledReason,proto3" json:"disabled_reason,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Principal) Reset() {
@@ -1315,6 +1326,34 @@ func (x *Principal) GetCreatedBy() string {
 	return ""
 }
 
+func (x *Principal) GetAllowedAudiences() []string {
+	if x != nil {
+		return x.AllowedAudiences
+	}
+	return nil
+}
+
+func (x *Principal) GetAllowedScopes() []string {
+	if x != nil {
+		return x.AllowedScopes
+	}
+	return nil
+}
+
+func (x *Principal) GetDisabledAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.DisabledAt
+	}
+	return nil
+}
+
+func (x *Principal) GetDisabledReason() string {
+	if x != nil {
+		return x.DisabledReason
+	}
+	return ""
+}
+
 var File_saas_accounts_v1_common_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_common_proto_rawDesc = "" +
@@ -1401,7 +1440,7 @@ const file_saas_accounts_v1_common_proto_rawDesc = "" +
 	"\x06org_id\x18\x05 \x01(\tR\x05orgId\x12\x14\n" +
 	"\x05scope\x18\x06 \x01(\tR\x05scope\x12;\n" +
 	"\vassigned_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"assignedAt\"\x84\x03\n" +
+	"assignedAt\"\xbe\x04\n" +
 	"\tPrincipal\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x123\n" +
 	"\x04kind\x18\x02 \x01(\x0e2\x1f.saas.accounts.v1.PrincipalKindR\x04kind\x12*\n" +
@@ -1414,7 +1453,13 @@ const file_saas_accounts_v1_common_proto_rawDesc = "" +
 	"revoked_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12%\n" +
 	"\x0erevoked_reason\x18\b \x01(\tR\rrevokedReason\x12\x1d\n" +
 	"\n" +
-	"created_by\x18\t \x01(\tR\tcreatedBy*\x8f\x01\n" +
+	"created_by\x18\t \x01(\tR\tcreatedBy\x12+\n" +
+	"\x11allowed_audiences\x18\n" +
+	" \x03(\tR\x10allowedAudiences\x12%\n" +
+	"\x0eallowed_scopes\x18\v \x03(\tR\rallowedScopes\x12;\n" +
+	"\vdisabled_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"disabledAt\x12'\n" +
+	"\x0fdisabled_reason\x18\r \x01(\tR\x0edisabledReason*\x8f\x01\n" +
 	"\n" +
 	"UserStatus\x12\x1b\n" +
 	"\x17USER_STATUS_UNSPECIFIED\x10\x00\x12\x16\n" +
@@ -1507,11 +1552,12 @@ var file_saas_accounts_v1_common_proto_depIdxs = []int32{
 	4,  // 17: saas.accounts.v1.Principal.kind:type_name -> saas.accounts.v1.PrincipalKind
 	20, // 18: saas.accounts.v1.Principal.created_at:type_name -> google.protobuf.Timestamp
 	20, // 19: saas.accounts.v1.Principal.revoked_at:type_name -> google.protobuf.Timestamp
-	20, // [20:20] is the sub-list for method output_type
-	20, // [20:20] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	20, // 20: saas.accounts.v1.Principal.disabled_at:type_name -> google.protobuf.Timestamp
+	21, // [21:21] is the sub-list for method output_type
+	21, // [21:21] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_common_proto_init() }
