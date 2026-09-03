@@ -25,6 +25,27 @@ type deploymentBindings struct {
 	Module    deploymentModuleBinding      `yaml:"module"`
 	Interface []deploymentInterfaceBinding `yaml:"interface"`
 	Services  []deploymentServiceBinding   `yaml:"services"`
+	// DeployJobs are store-writing deploy steps the module bundle emits for the
+	// promotion driver (see the root gitops renderer). They are accepted here so
+	// the strict decoder does not reject them; the accounts-service projections
+	// this package renders — the DeploymentCatalog and the mesh/network policy
+	// baseline — do not own deploy-job scheduling or reach.
+	DeployJobs []deploymentDeployJobBinding `yaml:"deploy_jobs,omitempty"`
+}
+
+type deploymentDeployJobBinding struct {
+	Name    string                   `yaml:"name"`
+	Service string                   `yaml:"service"`
+	Command string                   `yaml:"command"`
+	Catalog string                   `yaml:"catalog"`
+	Force   bool                     `yaml:"force,omitempty"`
+	Writes  deploymentDeployJobWrite `yaml:"writes"`
+	After   []string                 `yaml:"after,omitempty"`
+}
+
+type deploymentDeployJobWrite struct {
+	Service  string `yaml:"service"`
+	Endpoint string `yaml:"endpoint"`
 }
 
 type deploymentModuleBinding struct {

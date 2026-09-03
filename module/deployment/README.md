@@ -28,8 +28,8 @@ ignored; no repository, branch, revision, or checkout field is read.
 `bundle.json` is the typed, transport-neutral output. It records the module
 identity and, per declared environment, the module-owned overlay path plus the
 placement metadata a promotion driver needs — namespace, cluster kind,
-in-cluster services, ingress routes, and managed-service handoffs. It records no
-repository, revision, or Argo resource.
+in-cluster services, ingress routes, managed-service handoffs, and deploy Jobs.
+It records no repository, revision, or Argo resource.
 
 ```json
 {
@@ -49,6 +49,9 @@ repository, revision, or Argo resource.
       ],
       "managedServiceHandoffs": [
         {"service": "store", "kind": "rds-postgresql", "externalName": "store.internal.example.com"}
+      ],
+      "deployJobs": [
+        {"name": "role-catalog-import", "service": "accounts", "command": "role-catalog-import", "catalog": "deployment/generated/contributed-roles.json", "force": true, "writes": {"service": "store", "endpoint": "tcp", "port": 5432}, "after": ["store"]}
       ]
     }
   ]
@@ -61,6 +64,39 @@ duplicate environments, managed services that are not declared module services,
 and any object outside the module-owned apiVersion allowlist (a boundary test
 also fails if runtime code imports/executes Git or names Argo/Flux/repository
 transport configuration).
+
+## Deploy Jobs
+
+A `deploy_jobs` topology entry is a store-writing one-shot the driver runs as a
+deploy step. Unlike a service's self-serving `bootstrap_job_endpoints` Job —
+which reaches only the service's own endpoints — a deploy Job runs one service's
+image but `writes` to a dependency it declares, consuming a generated artifact.
+The module ships `role-catalog-import`: it runs the `accounts` image but writes
+the composed built-in role catalog into the `store`, `after` the store's own
+migration. Each bundle `deployJobs` entry resolves the `catalog` artifact path,
+the target `service`/`endpoint`/`port`, the `force` flag, and the ordering; the
+driver mounts the catalog, connects the target, runs `command`, and fails the
+promotion if it exits non-zero. Re-running an unchanged catalog is an empty
+no-op, so the step is idempotent. Generation rejects a deploy Job whose catalog
+artifact is absent, whose write target is not a declared dependency of the
+running service, that references an undeclared service, or that writes to a
+migration-bearing target (`bootstrap_job_endpoints`) without ordering `after` it
+— an import that races the migration would write against a schema that does not
+yet exist. In an environment where the target is a managed handoff the driver
+owns the out-of-cluster reach, so no in-cluster reach policy is rendered —
+mirroring the store's own bootstrap authority.
+
+The bundle is transport-neutral, but the driver honours a small contract the
+generated reach policies assume. The Job pod runs under the **running service's**
+ServiceAccount (`service`, here `accounts`): the mesh already authorises that
+identity to the write target because generation requires `service` to declare
+the dependency, so no new mesh policy is minted for the Job. The Kubernetes Job
+is named after the entry's `name` (`role-catalog-import`) so the controller's
+auto-set `job-name` pod label matches the rendered `NetworkPolicy` selector — the
+same convention a `bootstrap_job_endpoints` Job follows. `after` is inclusive of
+each named service's own bring-up, its migration/bootstrap Job included, which is
+why `after: ["store"]` is sufficient to sequence the import behind the store
+migration.
 
 ## Generated layout
 

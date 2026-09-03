@@ -514,6 +514,54 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			},
 			want: "is not a directory",
 		},
+		{
+			name: "deploy job with a missing catalog artifact",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				appendDeployJob(t, moduleDir, "store", "http")
+			},
+			want: "catalog artifact",
+		},
+		{
+			name: "deploy job writing to a non-dependency",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				writeCatalogArtifact(t, moduleDir)
+				appendDeployJob(t, moduleDir, "frontend", "http")
+			},
+			want: "does not declare that dependency",
+		},
+		{
+			name: "deploy job for an undeclared service",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				writeCatalogArtifact(t, moduleDir)
+				appendDeployJob(t, moduleDir, "store", "http")
+				replaceInTopology(t, moduleDir, "    service: accounts\n", "    service: phantom\n")
+			},
+			want: "references undeclared service",
+		},
+		{
+			name: "deploy job to a migration-bearing target without ordering",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				writeCatalogArtifact(t, moduleDir)
+				// store declares bootstrap_job_endpoints (a migration Job), so a
+				// deploy Job that writes to it but omits it from after would let the
+				// import race the migration and write against a missing schema.
+				appendToTopology(t, moduleDir,
+					"deploy_jobs:\n"+
+						"  - name: role-catalog-import\n"+
+						"    service: accounts\n"+
+						"    command: role-catalog-import\n"+
+						"    catalog: deployment/generated/contributed-roles.json\n"+
+						"    force: true\n"+
+						"    writes:\n"+
+						"      service: store\n"+
+						"      endpoint: http\n")
+			},
+			want: "must run after it",
+		},
 	}
 
 	for _, test := range tests {
@@ -653,6 +701,79 @@ func TestGeneratedPoliciesAndGatewayMatchTopology(t *testing.T) {
 	if strings.Contains(string(awsNetwork), "allow-store-from-bootstrap") ||
 		strings.Contains(string(awsNetwork), "allow-store-bootstrap-to-store") {
 		t.Errorf("AWS network policy retains bootstrap authority for managed Postgres:\n%s", awsNetwork)
+	}
+}
+
+func TestDeployJobWiresCatalogImport(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(
+		t,
+		"catalog-deploy",
+		"identity",
+		[]string{"accounts", "auth-gateway", "store"},
+	)
+	writeCatalogArtifact(t, moduleDir)
+	appendDeployJob(t, moduleDir, "store", "http")
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	var bundle moduleBundle
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	// Both environments schedule the import: the store is in-cluster locally and
+	// a managed handoff on AWS, and either way the driver must run the step so a
+	// contributing module's roles land with no manual invocation.
+	if len(bundle.Environments) != 2 {
+		t.Fatalf("bundle environments = %d, want local and aws", len(bundle.Environments))
+	}
+	for _, env := range bundle.Environments {
+		if len(env.DeployJobs) != 1 {
+			t.Fatalf("%s environment deploy jobs = %d, want 1", env.Name, len(env.DeployJobs))
+		}
+		job := env.DeployJobs[0]
+		if job.Name != "role-catalog-import" || job.Service != "accounts" || job.Command != "role-catalog-import" || !job.Force {
+			t.Fatalf("%s deploy job = %#v", env.Name, job)
+		}
+		if job.Catalog != "deployment/generated/contributed-roles.json" {
+			t.Errorf("%s deploy job catalog = %q", env.Name, job.Catalog)
+		}
+		if job.Writes.Service != "store" || job.Writes.Endpoint != "http" || job.Writes.Port != 8080 {
+			t.Errorf("%s deploy job write target = %#v", env.Name, job.Writes)
+		}
+		if !slices.Equal(job.After, []string{"store"}) {
+			t.Errorf("%s deploy job ordering = %v", env.Name, job.After)
+		}
+	}
+
+	overlays := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays")
+	localNetwork := mustReadFile(t, filepath.Join(overlays, "local", "base", "network-policy.yaml"))
+	for _, name := range []string{
+		"allow-store-from-role-catalog-import",
+		"allow-role-catalog-import-to-store",
+	} {
+		if !strings.Contains(localNetwork, "name: "+name) {
+			t.Errorf("local network policy is missing deploy-job reach %q", name)
+		}
+	}
+	if !strings.Contains(localNetwork, "codefly.dev/deploy-job: role-catalog-import") {
+		t.Error("local network policy does not scope the deploy-job pod identity")
+	}
+
+	// The managed store reaches out of cluster; the module renders no in-cluster
+	// reach policy for it, exactly as it omits the store's bootstrap authority.
+	awsNetwork := mustReadFile(t, filepath.Join(overlays, "aws", "base", "network-policy.yaml"))
+	if strings.Contains(awsNetwork, "role-catalog-import") {
+		t.Errorf("AWS network policy renders a deploy-job reach for a managed store:\n%s", awsNetwork)
 	}
 }
 
@@ -1957,6 +2078,59 @@ func assertMindRouteAndPolicies(
 		if !strings.Contains(rendered, "name: "+name) {
 			t.Errorf("local network policy is missing topology exception %q", name)
 		}
+	}
+}
+
+func writeCatalogArtifact(t *testing.T, moduleDir string) {
+	t.Helper()
+	writeTestFile(
+		t,
+		filepath.Join(moduleDir, "deployment", "generated", "contributed-roles.json"),
+		"{\"version\":1,\"roles\":[]}\n",
+	)
+}
+
+func appendDeployJob(t *testing.T, moduleDir, writesService, writesEndpoint string) {
+	t.Helper()
+	appendToTopology(t, moduleDir,
+		"deploy_jobs:\n"+
+			"  - name: role-catalog-import\n"+
+			"    service: accounts\n"+
+			"    command: role-catalog-import\n"+
+			"    catalog: deployment/generated/contributed-roles.json\n"+
+			"    force: true\n"+
+			"    writes:\n"+
+			"      service: "+writesService+"\n"+
+			"      endpoint: "+writesEndpoint+"\n"+
+			"    after:\n"+
+			"      - store\n")
+}
+
+func appendToTopology(t *testing.T, moduleDir, block string) {
+	t.Helper()
+	file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, append(data, []byte(block)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func replaceInTopology(t *testing.T, moduleDir, old, new string) {
+	t.Helper()
+	file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := strings.Replace(string(data), old, new, 1)
+	if replaced == string(data) {
+		t.Fatalf("topology substitution %q found nothing to replace", old)
+	}
+	if err := os.WriteFile(file, []byte(replaced), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
 

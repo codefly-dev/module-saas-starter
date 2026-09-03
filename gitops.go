@@ -90,6 +90,30 @@ type bundleEnvironment struct {
 	Services               []string                `json:"services"`
 	Ingress                []bundleIngressRoute    `json:"ingress"`
 	ManagedServiceHandoffs []managedServiceHandoff `json:"managedServiceHandoffs,omitempty"`
+	DeployJobs             []bundleDeployJob       `json:"deployJobs,omitempty"`
+}
+
+// bundleDeployJob is a store-writing one-shot the promotion driver runs against
+// a dependency's store after that dependency's own bring-up. Unlike a service's
+// self-serving bootstrap Job (bootstrap_job_endpoints, which reaches the
+// service's own endpoints), it runs one service's image but writes to a
+// dependency it declares — carrying the generated artifact and the target the
+// driver mounts and connects. The driver schedules it after the target's
+// migration and fails the promotion if it exits non-zero.
+type bundleDeployJob struct {
+	Name    string             `json:"name"`
+	Service string             `json:"service"`
+	Command string             `json:"command"`
+	Catalog string             `json:"catalog"`
+	Force   bool               `json:"force,omitempty"`
+	Writes  bundleDeployTarget `json:"writes"`
+	After   []string           `json:"after,omitempty"`
+}
+
+type bundleDeployTarget struct {
+	Service  string `json:"service"`
+	Endpoint string `json:"endpoint"`
+	Port     uint32 `json:"port"`
 }
 
 type bundleIngressRoute struct {
@@ -182,10 +206,11 @@ type ingressRoutePlan struct {
 }
 
 type deploymentTopology struct {
-	Version   string              `yaml:"version"`
-	Module    topologyModule      `yaml:"module"`
-	Interface []topologyInterface `yaml:"interface"`
-	Services  []topologyService   `yaml:"services"`
+	Version    string              `yaml:"version"`
+	Module     topologyModule      `yaml:"module"`
+	Interface  []topologyInterface `yaml:"interface"`
+	Services   []topologyService   `yaml:"services"`
+	DeployJobs []topologyDeployJob `yaml:"deploy_jobs,omitempty"`
 
 	// internalMethodPaths holds, per service, the gRPC method paths marked
 	// EXPOSURE_INTERNAL in that service's generated authorization catalog. It is
@@ -247,6 +272,29 @@ type topologyEndpoint struct {
 type topologyDependency struct {
 	Service   string   `yaml:"service"`
 	Endpoints []string `yaml:"endpoints"`
+}
+
+// topologyDeployJob declares a store-writing one-shot the promotion driver runs
+// as a deploy step. It runs Service's image but writes to a dependency's
+// endpoint (Writes) rather than serving its own — the boundary a self-serving
+// bootstrap_job_endpoints Job cannot express — consuming the generated Catalog
+// artifact. Force selects the importer's authoritative-catalog semantics: the
+// generated catalog is base-tracked and only changes through contribution →
+// regeneration, so a removal in it is intentional and applied past the
+// truncation guard.
+type topologyDeployJob struct {
+	Name    string                  `yaml:"name"`
+	Service string                  `yaml:"service"`
+	Command string                  `yaml:"command"`
+	Catalog string                  `yaml:"catalog"`
+	Force   bool                    `yaml:"force,omitempty"`
+	Writes  topologyDeployJobTarget `yaml:"writes"`
+	After   []string                `yaml:"after,omitempty"`
+}
+
+type topologyDeployJobTarget struct {
+	Service  string `yaml:"service"`
+	Endpoint string `yaml:"endpoint"`
 }
 
 func loadWorkspaceManifest(root string) (*workspaceManifest, error) {
@@ -319,6 +367,7 @@ func generateDeploymentBundle(moduleDir string, workspace *workspaceManifest) er
 			Services:               append([]string(nil), plan.services...),
 			Ingress:                bundleIngress(plan.ingress),
 			ManagedServiceHandoffs: append([]managedServiceHandoff(nil), plan.handoffs...),
+			DeployJobs:             planDeployJobs(topology, plan),
 		})
 	}
 	if err := writeJSON(filepath.Join(stage, "bundle.json"), bundle); err != nil {
@@ -342,6 +391,48 @@ func bundleIngress(routes []ingressRoutePlan) []bundleIngressRoute {
 		})
 	}
 	return result
+}
+
+// planDeployJobs records the deploy Jobs the promotion driver must run for this
+// environment: those whose running service is in-cluster and whose write target
+// is reachable (in-cluster or a managed handoff). Each carries the generated
+// catalog artifact and the resolved target endpoint so the driver mounts the
+// document and connects the store without consulting the topology itself.
+func planDeployJobs(topology deploymentTopology, plan environmentPlan) []bundleDeployJob {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	jobs := make([]bundleDeployJob, 0, len(topology.DeployJobs))
+	for _, job := range topology.DeployJobs {
+		if _, exists := inCluster[job.Service]; !exists {
+			continue
+		}
+		_, targetInCluster := inCluster[job.Writes.Service]
+		_, targetManaged := plan.managed[job.Writes.Service]
+		if !targetInCluster && !targetManaged {
+			continue
+		}
+		target, _ := topologyServiceByName(topology, job.Writes.Service)
+		endpoint, _ := topologyEndpointByName(target, job.Writes.Endpoint)
+		jobs = append(jobs, bundleDeployJob{
+			Name:    job.Name,
+			Service: job.Service,
+			Command: job.Command,
+			Catalog: job.Catalog,
+			Force:   job.Force,
+			Writes: bundleDeployTarget{
+				Service:  job.Writes.Service,
+				Endpoint: job.Writes.Endpoint,
+				Port:     endpoint.Port,
+			},
+			After: append([]string(nil), job.After...),
+		})
+	}
+	if len(jobs) == 0 {
+		return nil
+	}
+	return jobs
 }
 
 func replaceGeneratedTree(stage, root string) error {
@@ -1488,12 +1579,91 @@ func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefi
 			}
 		}
 	}
+	if err := validateDeployJobs(moduleDir, topology, topologyServices); err != nil {
+		return deploymentTopology{}, err
+	}
 	internalMethodPaths, err := loadInternalMethodPaths(moduleDir, services)
 	if err != nil {
 		return deploymentTopology{}, err
 	}
 	topology.internalMethodPaths = internalMethodPaths
 	return topology, nil
+}
+
+// validateDeployJobs checks that each deploy Job runs a declared service, ships
+// a command, and writes to an endpoint the running service already declares as
+// a dependency — so the mesh already permits the reach and only the Job pod's
+// distinct identity needs its own policy. The catalog artifact must exist on
+// disk: the generated document is the Job's only input, and a missing file
+// would ship a Job the environment can never satisfy.
+func validateDeployJobs(moduleDir string, topology deploymentTopology, services map[string]topologyService) error {
+	names := make(map[string]struct{}, len(topology.DeployJobs))
+	for _, job := range topology.DeployJobs {
+		if err := validateDNSLabel("deployment topology deploy Job name", job.Name); err != nil {
+			return err
+		}
+		if _, repeated := names[job.Name]; repeated {
+			return fmt.Errorf("deployment topology repeats deploy Job %q", job.Name)
+		}
+		names[job.Name] = struct{}{}
+		runner, exists := services[job.Service]
+		if !exists {
+			return fmt.Errorf("deployment topology deploy Job %q references undeclared service %q", job.Name, job.Service)
+		}
+		if job.Command == "" {
+			return fmt.Errorf("deployment topology deploy Job %q declares no command", job.Name)
+		}
+		if job.Catalog == "" {
+			return fmt.Errorf("deployment topology deploy Job %q declares no catalog artifact", job.Name)
+		}
+		catalog, err := cleanRelativeFilesystemPath(job.Catalog)
+		if err != nil {
+			return fmt.Errorf("deployment topology deploy Job %q catalog: %w", job.Name, err)
+		}
+		if _, err := os.Stat(filepath.Join(moduleDir, filepath.FromSlash(catalog))); err != nil {
+			return fmt.Errorf("deployment topology deploy Job %q catalog artifact %q: %w", job.Name, job.Catalog, err)
+		}
+		target, exists := services[job.Writes.Service]
+		if !exists {
+			return fmt.Errorf("deployment topology deploy Job %q writes to undeclared service %q", job.Name, job.Writes.Service)
+		}
+		if _, exists := topologyEndpointByName(target, job.Writes.Endpoint); !exists {
+			return fmt.Errorf("deployment topology deploy Job %q writes to missing endpoint %s/%s", job.Name, job.Writes.Service, job.Writes.Endpoint)
+		}
+		if !serviceDependsOn(runner, job.Writes.Service, job.Writes.Endpoint) {
+			return fmt.Errorf(
+				"deployment topology deploy Job %q writes to %s/%s but service %q does not declare that dependency",
+				job.Name, job.Writes.Service, job.Writes.Endpoint, job.Service,
+			)
+		}
+		// A write target that declares bootstrap_job_endpoints runs a migration Job
+		// before it is ready to be written to; the deploy Job seeds rows that
+		// migration creates, so it must be ordered after the target. after is
+		// author-supplied, so require the migration-bearing target to appear in it
+		// rather than trusting the ordering to be remembered — an import scheduled
+		// before the store migration writes against a schema that does not yet exist.
+		if len(target.BootstrapJobEndpoints) > 0 && !slices.Contains(job.After, job.Writes.Service) {
+			return fmt.Errorf(
+				"deployment topology deploy Job %q writes to %s, which runs a migration Job, so it must run after it: add %q to the Job's after list",
+				job.Name, job.Writes.Service, job.Writes.Service,
+			)
+		}
+		for _, after := range job.After {
+			if _, exists := services[after]; !exists {
+				return fmt.Errorf("deployment topology deploy Job %q runs after undeclared service %q", job.Name, after)
+			}
+		}
+	}
+	return nil
+}
+
+func serviceDependsOn(service topologyService, dependency, endpoint string) bool {
+	for _, declared := range service.Dependencies {
+		if declared.Service == dependency && slices.Contains(declared.Endpoints, endpoint) {
+			return true
+		}
+	}
+	return false
 }
 
 // loadInternalMethodPaths reads each service's generated authorization catalog
@@ -1714,6 +1884,24 @@ func topologyNetworkPolicies(
 			bootstrapJobEgressPolicy(namespace, labels, service.Name, topologyKubernetesAppLabel(service), ports),
 		)
 	}
+	// A deploy Job reaches a dependency, not its own service, so its pod needs a
+	// reach policy of its own — the running service's app-selector policies never
+	// match the Job pod's distinct identity. Managed targets reach out of cluster
+	// like a managed dependency, so the driver owns that egress, not this policy.
+	for _, job := range topology.DeployJobs {
+		if _, exists := inCluster[job.Service]; !exists {
+			continue
+		}
+		if _, exists := inCluster[job.Writes.Service]; !exists {
+			continue
+		}
+		target, _ := topologyServiceByName(topology, job.Writes.Service)
+		endpoint, _ := topologyEndpointByName(target, job.Writes.Endpoint)
+		policies = append(policies,
+			deployJobIngressPolicy(namespace, labels, job.Name, target.Name, topologyKubernetesAppLabel(target), endpoint.Port),
+			deployJobEgressPolicy(namespace, labels, job.Name, target.Name, topologyKubernetesAppLabel(target), endpoint.Port),
+		)
+	}
 	ingressPorts := make(map[string]map[uint32]struct{})
 	for _, route := range plan.ingress {
 		if ingressPorts[route.service] == nil {
@@ -1824,6 +2012,47 @@ func bootstrapJobEgressPolicy(namespace string, labels map[string]string, servic
 			"egress": []any{map[string]any{
 				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": serviceApp}}}},
 				"ports": networkPorts(ports),
+			}},
+		},
+	}
+}
+
+// deployJobIngressPolicy admits the deploy Job pod to its write target. The Job
+// pod carries codefly.dev/deploy-job plus the Kubernetes-set job-name, not the
+// running service's app label, so its reach is scoped to this Job alone.
+func deployJobIngressPolicy(namespace string, labels map[string]string, job, target, targetApp string, port uint32) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", target, "from", job), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": targetApp}},
+			"policyTypes": []string{"Ingress"},
+			"ingress": []any{map[string]any{
+				"from": []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{
+					"codefly.dev/deploy-job": job,
+					"job-name":               job,
+				}}}},
+				"ports": networkPorts([]uint32{port}),
+			}},
+		},
+	}
+}
+
+func deployJobEgressPolicy(namespace string, labels map[string]string, job, target, targetApp string, port uint32) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", job, "to", target), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{
+				"codefly.dev/deploy-job": job,
+				"job-name":               job,
+			}},
+			"policyTypes": []string{"Egress"},
+			"egress": []any{map[string]any{
+				"to":    []any{map[string]any{"podSelector": map[string]any{"matchLabels": map[string]string{"app": targetApp}}}},
+				"ports": networkPorts([]uint32{port}),
 			}},
 		},
 	}
