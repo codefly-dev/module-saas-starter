@@ -519,15 +519,15 @@ func TestPrincipals_CreateAgent_PersistsCeiling(t *testing.T) {
 	require.Equal(t, []string{"repo"}, got.AllowedScopes)
 }
 
-func TestPrincipals_CreateAgent_EmptyCeilingIsNull(t *testing.T) {
+func TestPrincipals_CreateAgent_EmptyCeilingReadsBackEmpty(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	agent := seedAgentPrincipal(t, orgID, "publisher/no-ceiling:1.0.0")
 
 	got, err := testStore.As(business.Identity{OrgID: orgID}).GetPrincipal(testCtx, agent.ID)
 	require.NoError(t, err)
-	require.Nil(t, got.AllowedAudiences, "an unset ceiling must read back as nil, never an empty allow-nothing set")
-	require.Nil(t, got.AllowedScopes)
+	require.Empty(t, got.AllowedAudiences, "an unset ceiling is the empty array (unrestricted), never an allow-nothing set")
+	require.Empty(t, got.AllowedScopes)
 }
 
 func TestPrincipals_DisableEnable_LifecycleAndAudit(t *testing.T) {

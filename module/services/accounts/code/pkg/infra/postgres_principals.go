@@ -32,12 +32,13 @@ const principalColumnsPrefixed = `p.id, p.kind, p.display_name, p.org_id, p.agen
 	p.created_at, p.revoked_at, p.revoked_reason, p.created_by,
 	p.allowed_audiences, p.allowed_scopes, p.disabled_at, p.disabled_reason`
 
-// nullableStringArray maps an empty ceiling list to a SQL NULL so "unrestricted"
-// is stored as NULL (the CHECK constraint's absent state), never as an empty
-// array which the enforcement layer would otherwise have to distinguish.
-func nullableStringArray(v []string) any {
-	if len(v) == 0 {
-		return nil
+// stringArray normalizes a nil ceiling slice to a non-nil empty slice so it
+// encodes to the SQL empty array '{}' rather than NULL, matching the schema's
+// NOT NULL TEXT[] columns (org_identity_providers.allowed_email_domains does the
+// same). Empty and nil both mean "unrestricted".
+func stringArray(v []string) []string {
+	if v == nil {
+		return []string{}
 	}
 	return v
 }
@@ -161,7 +162,7 @@ func (s *PostgresStore) CreateAgentPrincipal(ctx context.Context, p *business.Pr
 		                        allowed_audiences, allowed_scopes)
 		VALUES ($1, 'agent', $2, $3, $4, NULLIF($5, '')::uuid, $6, $7, $8)`,
 		p.ID, p.DisplayName, p.OrgID, p.AgentIdentifier, p.CreatedBy, p.CreatedAt,
-		nullableStringArray(p.AllowedAudiences), nullableStringArray(p.AllowedScopes),
+		stringArray(p.AllowedAudiences), stringArray(p.AllowedScopes),
 	)
 	if err != nil {
 		// pgx UNIQUE-violation surfaces with SQLSTATE 23505. We don't

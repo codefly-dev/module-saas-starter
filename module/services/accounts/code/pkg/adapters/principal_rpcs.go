@@ -89,6 +89,11 @@ func (s *PrincipalServer) CreateAgentPrincipal(ctx context.Context, req *gen.Cre
 // enablement-lifecycle RPC (the host toggles a delegation-based solution's
 // agents per org), so exposure gating is the whole floor. The suspension bumps
 // the authorization revision, staling outstanding Work Contexts at once.
+//
+// Trust boundary: like GetPrincipal, this is EXPOSURE_INTERNAL and deliberately
+// NOT org-scoped — a valid internal service credential may disable any agent in
+// any tenant, because the host mediates enablement across tenants. No tenant JWT
+// can reach it; only the trusted control plane holds an internal credential.
 func (s *PrincipalServer) DisableAgentPrincipal(ctx context.Context, req *gen.DisableAgentPrincipalRequest) (*emptypb.Empty, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

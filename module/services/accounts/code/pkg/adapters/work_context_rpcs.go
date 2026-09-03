@@ -322,7 +322,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, err := s.verifyParent(
+	parentToken, parent, actor, err := s.verifyParent(
 		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
 	)
 	if err != nil {
@@ -331,7 +331,7 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if req.GetSessionId() == parent.GetSessionId() {
 		return nil, status.Error(codes.InvalidArgument, "new session_id must differ from parent session")
 	}
-	if err := s.enforceDeriveAudienceCeiling(ctx, req.GetOrgId(), parent, req.GetAudience()); err != nil {
+	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	token, signed, err := s.signer.StartSession(parentToken, codefly.StartRootSessionInput{
@@ -357,7 +357,7 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, err := s.verifyParent(
+	parentToken, parent, actor, err := s.verifyParent(
 		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
 	)
 	if err != nil {
@@ -366,7 +366,7 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
 	}
-	if err := s.enforceDeriveAudienceCeiling(ctx, req.GetOrgId(), parent, req.GetAudience()); err != nil {
+	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	_, scopes, err := workContextScopes(req.GetAttenuatedScopes())
@@ -399,7 +399,7 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, err := s.verifyParent(
+	parentToken, parent, _, err := s.verifyParent(
 		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
 	)
 	if err != nil {
@@ -471,7 +471,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	if err := requireOrgMember(ctx, actorID, req.GetOrgId()); err != nil {
 		return nil, err
 	}
-	parentToken, parent, err := s.verifyActorParent(
+	parentToken, parent, actor, err := s.verifyActorParent(
 		ctx, req.GetOrgId(), actorID, req.GetParentWorkContextToken(),
 	)
 	if err != nil {
@@ -487,7 +487,7 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	if audience == "" {
 		audience = parent.GetAudience()
 	}
-	if err := s.enforceDeriveAudienceCeiling(ctx, req.GetOrgId(), parent, audience); err != nil {
+	if err := enforceActorAudience(actor, audience); err != nil {
 		return nil, err
 	}
 	// A renewal must not silently loosen replay protection: an unspecified
@@ -621,10 +621,10 @@ func (s *WorkContextAuthorityServer) verifyParent(
 	orgID string,
 	ownerID string,
 	encoded string,
-) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+) (codefly.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
 	token, err := codefly.ParseWorkContextToken(encoded)
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
 	}
 	parent, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
 		Issuer:           s.issuer,
@@ -632,12 +632,13 @@ func (s *WorkContextAuthorityServer) verifyParent(
 		OwnerPrincipalID: ownerID,
 	})
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
+		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid for caller")
 	}
-	if err := s.requireCurrentAuthority(ctx, orgID, parent); err != nil {
-		return codefly.WorkContextToken{}, nil, err
+	actor, err := s.requireCurrentAuthority(ctx, orgID, parent)
+	if err != nil {
+		return codefly.WorkContextToken{}, nil, nil, err
 	}
-	return token, parent, nil
+	return token, parent, actor, nil
 }
 
 // verifyActorParent is the actor-authorized counterpart of verifyParent. The
@@ -650,80 +651,86 @@ func (s *WorkContextAuthorityServer) verifyActorParent(
 	orgID string,
 	actorID string,
 	encoded string,
-) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+) (codefly.WorkContextToken, *basev0.WorkContextV1, *business.Principal, error) {
 	token, err := codefly.ParseWorkContextToken(encoded)
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
+		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.InvalidArgument, "invalid parent Work Context")
 	}
 	parent, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
 		Issuer:   s.issuer,
 		TenantID: orgID,
 	})
 	if err != nil {
-		return codefly.WorkContextToken{}, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
+		return codefly.WorkContextToken{}, nil, nil, status.Error(codes.PermissionDenied, "parent Work Context is not valid")
 	}
 	actors := parent.GetActorChain()
 	if len(actors) == 0 {
-		return codefly.WorkContextToken{}, nil, status.Error(
+		return codefly.WorkContextToken{}, nil, nil, status.Error(
 			codes.PermissionDenied,
 			"only a delegated actor may renew a Work Context",
 		)
 	}
 	if actors[len(actors)-1].GetPrincipalId() != actorID {
-		return codefly.WorkContextToken{}, nil, status.Error(
+		return codefly.WorkContextToken{}, nil, nil, status.Error(
 			codes.PermissionDenied,
 			"caller is not the current actor of this Work Context",
 		)
 	}
-	if err := s.requireCurrentAuthority(ctx, orgID, parent); err != nil {
-		return codefly.WorkContextToken{}, nil, err
+	actor, err := s.requireCurrentAuthority(ctx, orgID, parent)
+	if err != nil {
+		return codefly.WorkContextToken{}, nil, nil, err
 	}
-	return token, parent, nil
+	return token, parent, actor, nil
 }
 
 // requireCurrentAuthority fails closed unless the parent's sealed authorization
 // revision still matches every subject's current RBAC authority and no chain
 // hop has been revoked. The owner and actor exchange paths share it so a
 // renewal is subject to the same revocation checks as an owner-driven exchange.
+// It returns the current (outermost) delegated actor it resolved — nil for an
+// owner-only context — so derive callers can gate the requested audience against
+// that actor's ceiling without a second authority resolution.
 func (s *WorkContextAuthorityServer) requireCurrentAuthority(
 	ctx context.Context,
 	orgID string,
 	parent *basev0.WorkContextV1,
-) error {
+) (*business.Principal, error) {
 	ownerID := parent.GetOwnerPrincipalId()
 	if len(parent.GetActorChain()) == 0 {
 		permissions := permissionsFromCoreScopes(parent.GetAuthorityScopes())
 		facts, err := s.resolveAuthority(ctx, orgID, ownerID, "", permissions)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
-			return status.Error(
+			return nil, status.Error(
 				codes.FailedPrecondition,
 				"parent Work Context authorization revision is stale",
 			)
 		}
-		return nil
+		return nil, nil
 	}
 	if err := s.requireChainNotRevoked(ctx, orgID, parent.GetActorChain()); err != nil {
-		return err
+		return nil, err
 	}
+	var outermostActor *business.Principal
 	for _, actor := range parent.GetActorChain() {
 		permissions := permissionsFromCoreScopes(actor.GetGrantedScopes())
 		facts, err := s.resolveAuthority(
 			ctx, orgID, ownerID, actor.GetPrincipalId(), permissions,
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if facts.EffectiveRevision() != parent.GetAuthorizationRevision() {
-			return status.Error(
+			return nil, status.Error(
 				codes.FailedPrecondition,
 				"parent Work Context authorization revision is stale",
 			)
 		}
+		outermostActor = facts.Actor
 	}
-	return nil
+	return outermostActor, nil
 }
 
 func (s *WorkContextAuthorityServer) resolveAuthority(
@@ -758,6 +765,12 @@ func (s *WorkContextAuthorityServer) resolveAuthority(
 // outside the delegated actor's registered ceiling (CreateAgentPrincipal's
 // allowed_audiences / allowed_scopes). An empty ceiling list is unrestricted,
 // and a nil actor is an owner-only (non-delegated) context that carries none.
+//
+// The scope ceiling is deliberately at resource-KIND granularity, not
+// kind+action: per-action authority is already granted through role_assignments
+// (the RBAC check resolveAuthority runs), so a finer ceiling would duplicate
+// that. allowed_scopes is the coarser, non-redundant "which resource kinds may
+// this agent ever touch via a Work Context" cap that RBAC does not express.
 func enforceActorCeiling(actor *business.Principal, audience string, scopes []*basev0.WorkScopeV1) error {
 	if err := enforceActorAudience(actor, audience); err != nil {
 		return err
@@ -790,29 +803,6 @@ func enforceActorAudience(actor *business.Principal, audience string) error {
 	}
 	return status.Errorf(codes.PermissionDenied,
 		"audience %q is outside agent %s allowed audiences", audience, actor.AgentIdentifier)
-}
-
-// enforceDeriveAudienceCeiling gates the audience of a context derived from a
-// parent (root session, audience exchange, renewal). These paths preserve the
-// parent's actor chain rather than binding a new actor, so the ceiling of the
-// current (outermost) delegated actor still governs which audiences it may be
-// retargeted to. Owner-only parents carry no actor and no ceiling.
-func (s *WorkContextAuthorityServer) enforceDeriveAudienceCeiling(
-	ctx context.Context,
-	orgID string,
-	parent *basev0.WorkContextV1,
-	audience string,
-) error {
-	chain := parent.GetActorChain()
-	if len(chain) == 0 {
-		return nil
-	}
-	actorID := chain[len(chain)-1].GetPrincipalId()
-	facts, err := s.resolveAuthority(ctx, orgID, parent.GetOwnerPrincipalId(), actorID, nil)
-	if err != nil {
-		return err
-	}
-	return enforceActorAudience(facts.Actor, audience)
 }
 
 func workContextScopes(

@@ -3,8 +3,10 @@
 --
 -- allowed_audiences / allowed_scopes are the ceiling an org admin declares when
 -- registering an agent principal: the Work Context audiences the actor may be
--- minted for and the resource kinds it may request. NULL = unrestricted. Both
--- are meaningful only for kind='agent'.
+-- minted for and the resource kinds it may request. Empty = unrestricted. Both
+-- are meaningful only for kind='agent'. They follow the schema-wide TEXT[]
+-- convention (NOT NULL DEFAULT '{}', e.g. org_identity_providers.allowed_email_domains):
+-- an absent ceiling is the empty array, never NULL.
 --
 -- disabled_at is a REVERSIBLE suspension, distinct from the terminal revoked_at:
 -- while set, the actor resolves as inactive so no new Work Context mints with it
@@ -13,14 +15,14 @@
 -- signed contexts, exactly as a revoke does.
 
 ALTER TABLE principals
-    ADD COLUMN allowed_audiences TEXT[],
-    ADD COLUMN allowed_scopes    TEXT[],
+    ADD COLUMN allowed_audiences TEXT[] NOT NULL DEFAULT '{}',
+    ADD COLUMN allowed_scopes    TEXT[] NOT NULL DEFAULT '{}',
     ADD COLUMN disabled_at       TIMESTAMP WITH TIME ZONE,
     ADD COLUMN disabled_reason   TEXT;
 
--- The ceiling is an agent-only concept; humans and services never carry it.
+-- The ceiling is an agent-only concept; every other kind keeps the empty default.
 ALTER TABLE principals ADD CONSTRAINT principals_ceiling_agent_only CHECK (
-    (kind = 'agent') OR (allowed_audiences IS NULL AND allowed_scopes IS NULL)
+    kind = 'agent' OR (cardinality(allowed_audiences) = 0 AND cardinality(allowed_scopes) = 0)
 );
 
 -- disabled_reason is only meaningful alongside disabled_at, and the reversible
