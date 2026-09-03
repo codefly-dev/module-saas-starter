@@ -112,6 +112,14 @@ func rpcPolicyCoverageCounter() metric.Int64Counter {
 // ok — is recorded so that the absence of gap/unsupported over real traffic is
 // provably "no such traffic" rather than a silent instrument, which is the
 // precondition for turning enforcement on.
+//
+// Classification is static: it reads only the declared policy and never touches
+// the store. An owned-resource method whose org the interceptor can resolve
+// (a resolver is registered) classifies as gap rather than unsupported; the
+// resolver itself is exercised at the enforce stage, not on this measurement
+// path, so a shadowed request stays pure-CPU and the unsupported signal reflects
+// only a structurally unresolvable declaration, never a bad input or a store
+// blip.
 func shadowPolicyCoverage(ctx context.Context, fullMethod string) {
 	policy, ok := business.LookupRPCPolicy(fullMethod)
 	if !ok {
