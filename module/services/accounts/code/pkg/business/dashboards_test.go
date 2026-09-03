@@ -1,6 +1,7 @@
 package business_test
 
 import (
+	"encoding/base64"
 	"fmt"
 	"testing"
 
@@ -208,5 +209,14 @@ func TestDashboards_ListRejectsMalformedPageToken(t *testing.T) {
 	owner, org := mustUserAndOrg(t, ctx, "token-dash@rls-test.com", "token-dash", "Acme Token")
 
 	_, _, err := testService.ListDashboards(ctx, org, owner, business.DashboardListMine, 10, "not-a-valid-token")
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// A well-formed base64 token whose id segment is not a UUID must also be
+	// rejected up front — otherwise it reaches the query as a uuid-typed param
+	// and fails with a Postgres cast error surfaced as Internal.
+	crafted := base64.RawURLEncoding.EncodeToString(
+		[]byte("2026-01-01T00:00:00Z\x1fnot-a-uuid"),
+	)
+	_, _, err = testService.ListDashboards(ctx, org, owner, business.DashboardListMine, 10, crafted)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }

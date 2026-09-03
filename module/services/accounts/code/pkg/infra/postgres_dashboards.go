@@ -55,15 +55,17 @@ func (s *PostgresStore) ListDashboards(ctx context.Context, orgID, ownerID strin
 		args = []any{orgID}
 	}
 
-	// Keyset page boundary: with the (updated_at, id) DESC ordering, the next
-	// page is exactly the rows that sort strictly after the cursor.
+	// Keyset page boundary on the immutable created_at (not updated_at): with the
+	// (created_at, id) DESC ordering, the next page is exactly the rows that sort
+	// strictly after the cursor, and a concurrent updated_at bump can't move a
+	// row across it, so a page walk never skips a live row.
 	if after != nil {
-		args = append(args, after.UpdatedAt, after.ID)
-		where += fmt.Sprintf(" AND (updated_at, id) < ($%d, $%d)", len(args)-1, len(args))
+		args = append(args, after.CreatedAt, after.ID)
+		where += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d)", len(args)-1, len(args))
 	}
 
 	query := `SELECT ` + dashboardColumns + ` FROM dashboards WHERE ` + where +
-		` ORDER BY updated_at DESC, id DESC`
+		` ORDER BY created_at DESC, id DESC`
 	if limit > 0 {
 		args = append(args, limit)
 		query += fmt.Sprintf(" LIMIT $%d", len(args))

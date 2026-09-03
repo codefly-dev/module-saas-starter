@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -58,10 +59,12 @@ const (
 	maxDashboardPageSize     = 100
 )
 
-// DashboardCursor is a keyset position in the (updated_at, id) descending order
-// a list uses to page. It is opaque to clients, carried as page_token.
+// DashboardCursor is a keyset position in the (created_at, id) descending order
+// a list uses to page. created_at is immutable, so a row cannot move across the
+// cursor when another writer bumps its updated_at — a page walk therefore never
+// skips a live row. It is opaque to clients, carried as page_token.
 type DashboardCursor struct {
-	UpdatedAt time.Time
+	CreatedAt time.Time
 	ID        string
 }
 
@@ -78,7 +81,7 @@ func clampDashboardPageSize(n int) int {
 }
 
 func encodeDashboardCursor(c *DashboardCursor) string {
-	raw := c.UpdatedAt.UTC().Format(time.RFC3339Nano) + dashboardCursorSep + c.ID
+	raw := c.CreatedAt.UTC().Format(time.RFC3339Nano) + dashboardCursorSep + c.ID
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
@@ -90,15 +93,21 @@ func decodeDashboardCursor(token string) (*DashboardCursor, error) {
 	if err != nil {
 		return nil, err
 	}
-	updatedAt, id, ok := strings.Cut(string(raw), dashboardCursorSep)
+	createdAt, id, ok := strings.Cut(string(raw), dashboardCursorSep)
 	if !ok {
 		return nil, fmt.Errorf("malformed dashboard cursor")
 	}
-	ts, err := time.Parse(time.RFC3339Nano, updatedAt)
+	ts, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		return nil, err
 	}
-	return &DashboardCursor{UpdatedAt: ts, ID: id}, nil
+	// The id becomes a uuid-typed query parameter; reject a non-uuid cursor here
+	// so a crafted token fails as InvalidArgument, not a Postgres cast error
+	// surfaced as Internal.
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, err
+	}
+	return &DashboardCursor{CreatedAt: ts, ID: id}, nil
 }
 
 // assertDashboardName rejects an empty or whitespace-only name at the write
@@ -210,7 +219,7 @@ func (s *Service) ListDashboards(ctx context.Context, orgID, actorID string, sco
 	if len(records) > pageSize {
 		records = records[:pageSize]
 		last := records[len(records)-1]
-		next = encodeDashboardCursor(&DashboardCursor{UpdatedAt: last.UpdatedAt, ID: last.ID})
+		next = encodeDashboardCursor(&DashboardCursor{CreatedAt: last.CreatedAt, ID: last.ID})
 	}
 	return records, next, nil
 }
@@ -244,7 +253,16 @@ func (s *Service) UpdateDashboard(ctx context.Context, orgID, actorID string, is
 			return status.Error(codes.PermissionDenied, "not authorized to edit this dashboard")
 		}
 		stored, err = s.store.UpdateDashboard(ctx, id, name, spec)
-		return err
+		if err != nil {
+			return err
+		}
+		// A concurrent delete (READ COMMITTED) can remove the row between the
+		// load above and this UPDATE, leaving a zero-row RETURNING. Report it as
+		// gone rather than returning a nil record the caller would deref.
+		if stored == nil {
+			return status.Error(codes.NotFound, "dashboard not found")
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
@@ -296,7 +314,16 @@ func (s *Service) ShareDashboard(ctx context.Context, orgID, actorID string, id 
 			return status.Error(codes.NotFound, "dashboard not found")
 		}
 		stored, err = s.store.SetDashboardVisibility(ctx, id, visibility)
-		return err
+		if err != nil {
+			return err
+		}
+		// A concurrent delete (READ COMMITTED) can remove the row between the
+		// load above and this UPDATE, leaving a zero-row RETURNING. Report it as
+		// gone rather than returning a nil record the caller would deref.
+		if stored == nil {
+			return status.Error(codes.NotFound, "dashboard not found")
+		}
+		return nil
 	}); err != nil {
 		return nil, err
 	}
