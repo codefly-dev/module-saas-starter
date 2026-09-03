@@ -219,11 +219,14 @@ func TestWorkContextAuthorityResolvesOnlyRegisteredAgentActor(t *testing.T) {
 }
 
 // TestRevokingAgentPrincipalStalesOutstandingWorkContext pins the #440
-// lifecycle deliverable: disabling a delegated actor through the RevokePrincipal
-// business path takes immediate effect on Work Contexts already signed against
-// it. The revoked actor no longer resolves, so the consumer-side revision check
-// for an outstanding context reports it stale rather than honoring the old
-// signature.
+// lifecycle deliverable through both mechanisms that give revocation immediate
+// effect on Work Contexts already signed against a delegated actor. Revoking
+// through the RevokePrincipal business path (1) bumps the org authorization
+// revision, so outstanding contexts of every other subject in the org go stale,
+// and (2) removes the actor from the owner-binding lookup, so the revoked actor's
+// own outstanding context fails closed. The two are asserted separately because
+// only the org-revision bump exercises the principals_bump_authorization_revision
+// trigger — the actor-lookup fail would still fire with that trigger removed.
 func TestRevokingAgentPrincipalStalesOutstandingWorkContext(t *testing.T) {
 	ownerID := seedUser(t)
 	orgID := seedOrg(t, ownerID)
@@ -242,9 +245,17 @@ func TestRevokingAgentPrincipalStalesOutstandingWorkContext(t *testing.T) {
 		verified, orgID, ownerID, revision, subjects,
 	), "the context is valid while the actor is a live registered agent")
 
+	before, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, "", nil)
+	require.NoError(t, err)
+
 	svc, err := business.NewService(testStore)
 	require.NoError(t, err)
 	require.NoError(t, svc.RevokePrincipal(testCtx, agent.ID, "delegation disabled"))
+
+	after, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, "", nil)
+	require.NoError(t, err)
+	require.Greater(t, after.OrganizationRevision, before.OrganizationRevision,
+		"revoking a principal must bump the org authorization revision")
 
 	err = testStore.CheckWorkContextAuthorizationRevision(
 		verified, orgID, ownerID, revision, subjects,
