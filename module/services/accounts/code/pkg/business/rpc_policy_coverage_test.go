@@ -128,10 +128,12 @@ func TestClassifyCentralCoverageBuckets(t *testing.T) {
 		"/saas.accounts.v1.APIKeyService/CreateAPIKey": CoverageGap,
 		// Platform-role and MFA requirements remain handler-enforced.
 		"/saas.accounts.v1.PlatformAdminService/GetJob": CoverageGap,
-		// Owned-resource bindings resolve an org through a lookup the
-		// interceptor does not have.
-		"/saas.accounts.v1.InvitationService/RevokeInvitation": CoverageUnsupported,
-		"/saas.accounts.v1.WebhookService/DeleteSubscription":  CoverageUnsupported,
+		// Owned-resource bindings now resolve an org through a registered
+		// resolver, so they are no longer unsupported; the org-admin tenant and
+		// permission they also declare keep them at gap, like their
+		// directly-org-bound siblings.
+		"/saas.accounts.v1.InvitationService/RevokeInvitation": CoverageGap,
+		"/saas.accounts.v1.WebhookService/DeleteSubscription":  CoverageGap,
 	}
 	for method, want := range cases {
 		policy, ok := LookupRPCPolicy(method)
@@ -141,8 +143,12 @@ func TestClassifyCentralCoverageBuckets(t *testing.T) {
 }
 
 // The eight invitation and webhook owned-resource methods the epic calls out
-// stay unsupported until an ownership resolver exists.
-func TestOwnedResourceMethodsAreUnsupported(t *testing.T) {
+// each have a registered ownership resolver, so static classification no longer
+// pins them at unsupported. They remain gap — not ok — because they also
+// declare an org tenant and permission the interceptor does not yet resolve; a
+// resolution miss on a real request downgrades the shadow signal back to
+// unsupported (covered in the adapters shadow test).
+func TestOwnedResourceMethodsAreResolvableGap(t *testing.T) {
 	for _, method := range []string{
 		"/saas.accounts.v1.InvitationService/ResendInvitation",
 		"/saas.accounts.v1.InvitationService/RevokeInvitation",
@@ -155,8 +161,26 @@ func TestOwnedResourceMethodsAreUnsupported(t *testing.T) {
 	} {
 		policy, ok := LookupRPCPolicy(method)
 		require.True(t, ok, method)
-		require.Equalf(t, CoverageUnsupported, ClassifyCentralCoverage(policy), method)
+		require.Truef(t, ownedResourceResolvable(method), "%s must have a resolver", method)
+		require.Equalf(t, CoverageGap, ClassifyCentralCoverage(policy), method)
 	}
+}
+
+// An owned-resource binding on a method with no registered resolver stays
+// unsupported: the classifier keys resolvability off the registry, so a new
+// owned-resource method added without wiring a resolver fails safely rather
+// than silently classifying gap.
+func TestUnregisteredOwnedResourceStaysUnsupported(t *testing.T) {
+	policy := RPCPolicy{MethodPolicy: &policyv1.MethodPolicy{
+		Exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED,
+		Tenant:   policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN,
+		ResourceBindings: []*policyv1.ResourceBinding{{
+			RequestField: "id",
+			Target:       policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE,
+			Lookup:       policyv1.ResourceLookup_RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION,
+		}},
+	}}
+	require.Equal(t, CoverageUnsupported, ClassifyCentralCoverage(policy))
 }
 
 // Removing the org-scoped users:write permission is what pulls UpdateUser and
