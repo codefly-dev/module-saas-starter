@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
@@ -65,10 +66,14 @@ func TestDashboards_SharedBoardSurvivesOwnerDeletion(t *testing.T) {
 	require.NoError(t, err)
 
 	// Hard-delete the author's user row — what a GDPR erasure or admin purge
-	// does. The in-app DeleteUser is a soft-delete that never fires the FK, so
-	// exercise the constraint directly.
-	_, err = testStore.Pool().Exec(ctx, `DELETE FROM users WHERE uuid = $1`, author)
-	require.NoError(t, err)
+	// does. The in-app DeleteUser is a soft-delete that never fires the FK, and
+	// the app_tenant role cannot delete users, so run it under the control-plane
+	// role to exercise the constraint directly.
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		_, err := tx.Exec(ctx, `DELETE FROM users WHERE uuid = $1`, author)
+		return err
+	}))
 
 	survived, err := testService.GetDashboard(ctx, org, author, false, board.ID)
 	require.NoError(t, err, "the shared board must outlive its author")
