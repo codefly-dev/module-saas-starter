@@ -1,0 +1,11 @@
+{
+  "schema": "saas.authz.enforcement.allowlist.v1",
+  "comment": "Ticketed exemptions for the declared-policy -> handler-enforcement lockstep gate (TestDeclaredPolicyEnforcedInLockstep, rpc_policy_lockstep_test.go). Every entry needs a procedure, a reason, and a ticket. Removing an entry re-arms the gate for that procedure; adding one is a reviewable event. Mirrors module/tools/authz-coverage-allowlist.json.",
+  "enforcement": [
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
+      "reason": "Legacy read-only stub. Enforces the SUPER_ADMIN floor via an inline service.Store().GetPlatformRole compare instead of requirePlatformRole, so the require*-based scanner cannot see it; the check is present and denies non-super-admins.",
+      "ticket": "#429"
+    }
+  ]
+}
