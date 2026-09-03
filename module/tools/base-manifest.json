@@ -644,7 +644,7 @@
     "services/accounts/code/pkg/infra/postgres_permissions_test.go": "c05a03ff71df426869c9431f138739aa875aa17e5dce1f12184456828572db31",
     "services/accounts/code/pkg/infra/postgres_platform_admin.go": "5b23e19edbdf3a00319a0d14a8ef71f92f4b98ecdf187a0cfb8eaf9f5679018b",
     "services/accounts/code/pkg/infra/postgres_principals.go": "b6414c9d9742755f48f37f1224a9a05562853e5f23e1fcd465a1cc09be1d5138",
-    "services/accounts/code/pkg/infra/postgres_principals_test.go": "8a2bbd8dd1c649cb0e832bfa9e39c10f107f67bf03d213a68e652cc0c04941d7",
+    "services/accounts/code/pkg/infra/postgres_principals_test.go": "ece1eaffe22f7aaabcdf106f608266c783048e27f0d5870e3e94b5e6a305ccde",
     "services/accounts/code/pkg/infra/postgres_public_catalog.go": "e74ad3ed4bdf8dab78e82026cae46d9924f1f88e0eb36d543f20a9d8be9cd9c2",
     "services/accounts/code/pkg/infra/postgres_public_catalog_test.go": "2080fe1d56e6d190281370beac955843c0dc9b8586a86a8c199130b6fbbd6d91",
     "services/accounts/code/pkg/infra/postgres_retention.go": "afaa16c81a4ee3d9e0227ff6d6009a43ded55bb761d9cc57a58afdd008f8ca91",

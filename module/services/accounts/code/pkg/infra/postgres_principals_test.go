@@ -542,14 +542,17 @@ func TestPrincipals_DisableEnable_LifecycleAndAudit(t *testing.T) {
 
 	require.NoError(t, svc.DisableAgentPrincipal(testCtx, agent.ID, "incident-123"))
 
-	// A disabled agent is no longer resolvable as a fresh actor.
-	_, err = testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
+	// A disabled agent is no longer resolvable as a fresh actor. The exclusion
+	// lives at the business layer (Service.GetAgentPrincipal) and the Work Context
+	// authority query, not the store primitive — the store still returns disabled
+	// rows so CreateAgentPrincipal's idempotency check sees the occupied slot.
+	_, err = svc.GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
 	var se *business.StoreError
 	require.ErrorAs(t, err, &se)
 	require.Equal(t, business.ErrTypeNotFound, se.StoreErrorType)
 
 	require.NoError(t, svc.EnableAgentPrincipal(testCtx, agent.ID))
-	got, err := testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
+	got, err := svc.GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
 	require.NoError(t, err)
 	require.False(t, got.IsDisabled(), "an enabled agent resolves again")
 
