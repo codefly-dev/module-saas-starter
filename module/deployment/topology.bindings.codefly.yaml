@@ -288,3 +288,21 @@ services:
         port: 8200
     spec:
       transit-key: api-keys
+# Store-writing one-shot deploy step: seeds the composed built-in role catalog
+# into the store after its migration. Runs the accounts image (which carries the
+# role-catalog-import binary and connects under the app_control_plane migration
+# authority) but writes to the store dependency, so it is a module deploy Job,
+# not a self-serving store bootstrap_job_endpoints Job. force applies the
+# authoritative generated catalog past the importer's empty-catalog truncation
+# guard; re-runs of an unchanged catalog are an empty no-op.
+deploy_jobs:
+  - name: role-catalog-import
+    service: accounts
+    command: role-catalog-import
+    catalog: deployment/generated/contributed-roles.json
+    force: true
+    writes:
+      service: store
+      endpoint: tcp
+    after:
+      - store

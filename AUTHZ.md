@@ -460,11 +460,19 @@ empty-catalog guard is deliberate, not incidental:
   contributed authority is exactly the destructive step `-force` exists to
   confirm.
 
-> Scheduling the bootstrap Job is the promotion driver's concern, not the
-> module's. This repo emits a transport-neutral bundle
-> ([`deployment/README.md`](module/deployment/README.md)) plus the composed
-> catalog the step applies; the driver wires the Job that invokes the importer
-> against it, alongside the store migration Job it already schedules.
+The module declares this step so the driver need not know the module's internals.
+`deployment/topology.bindings.codefly.yaml` carries a top-level `deploy_jobs`
+entry for `role-catalog-import`: it runs the `accounts` image (which ships the
+importer binary and connects under the `app_control_plane` migration authority)
+but *writes* to the `store` dependency and runs `after` the store — the boundary
+a self-serving `bootstrap_job_endpoints` Job cannot express, since that models a
+service reaching only its own endpoints. The generated bundle
+([`deployment/README.md`](module/deployment/README.md)) surfaces it per
+environment under `deployJobs`, resolving the catalog artifact, the store
+endpoint/port, the `force` flag, and the ordering. The promotion driver mounts
+the catalog, connects the store, runs the importer, and fails the promotion if
+it exits non-zero — the same way it schedules the store migration Job it already
+runs. It carries no repository, revision, or Argo resource.
 
 ## Anti-patterns to avoid
 
