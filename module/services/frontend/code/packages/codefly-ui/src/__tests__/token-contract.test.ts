@@ -33,33 +33,42 @@ function cssVariable(token: string): string {
 
 const doc = readFileSync(tokensDocPath(), "utf8");
 
-// The color table is delimited so the extra-token guard scans only it, not the
-// structural table or the prose (which name variables too).
-function colorTableRegion(source: string): string {
-	const start = source.indexOf("<!-- token-table:start -->");
-	const end = source.indexOf("<!-- token-table:end -->");
-	expect(
-		start,
-		"TOKENS.md is missing the token-table:start marker",
-	).toBeGreaterThanOrEqual(0);
-	expect(
-		end,
-		"TOKENS.md is missing the token-table:end marker",
-	).toBeGreaterThan(start);
+// Each table is delimited so a row-scoped check reads only its own rows, not
+// the other table or the prose (which name tokens and variables too). Scoping
+// matters: `fontSans` and `fontHeading` share a default value, so a whole-doc
+// substring check would let a wrong value in one row pass on the other's copy.
+function tableRegion(source: string, marker: string): string {
+	const start = source.indexOf(`<!-- ${marker}:start -->`);
+	const end = source.indexOf(`<!-- ${marker}:end -->`);
+	if (start < 0 || end <= start)
+		throw new Error(`TOKENS.md is missing the ${marker} start/end markers`);
 	return source.slice(start, end);
 }
 
-const region = colorTableRegion(doc);
+const colorRegion = tableRegion(doc, "token-table");
+const structuralRegion = tableRegion(doc, "structural-table");
 
-// The one table row that documents a token, matched by its unique CSS variable.
-function rowFor(cssVar: string): string | undefined {
-	return region.split("\n").find((line) => line.includes(`\`${cssVar}\``));
+// The one table row that carries a given backticked key (a CSS variable or a
+// token name). Each key is unique within its table, so the first match is it.
+function rowContaining(region: string, key: string): string | undefined {
+	return region.split("\n").find((line) => line.includes(`\`${key}\``));
 }
+
+it("delimits both TOKENS.md tables with start/end markers", () => {
+	for (const marker of ["token-table", "structural-table"]) {
+		expect(doc, `missing <!-- ${marker}:start -->`).toContain(
+			`<!-- ${marker}:start -->`,
+		);
+		expect(doc, `missing <!-- ${marker}:end -->`).toContain(
+			`<!-- ${marker}:end -->`,
+		);
+	}
+});
 
 describe("TOKENS.md documents exactly the contract token vocabulary", () => {
 	for (const token of FRONTEND_APPEARANCE_TOKEN_NAMES) {
 		it(`documents ${token} with its variable and light/dark defaults`, () => {
-			const row = rowFor(cssVariable(token));
+			const row = rowContaining(colorRegion, cssVariable(token));
 			expect(
 				row,
 				`TOKENS.md has no color-table row for ${cssVariable(token)}`,
@@ -81,7 +90,7 @@ describe("TOKENS.md documents exactly the contract token vocabulary", () => {
 	// The reverse direction: the table must document no token that is not in the
 	// contract, so a removed or renamed token cannot linger in the doc.
 	it("lists no color token outside FRONTEND_APPEARANCE_TOKEN_NAMES", () => {
-		const documented = [...region.matchAll(/`(--[a-z0-9-]+)`/g)].map(
+		const documented = [...colorRegion.matchAll(/`(--[a-z0-9-]+)`/g)].map(
 			(match) => match[1],
 		);
 		const expected = FRONTEND_APPEARANCE_TOKEN_NAMES.map(cssVariable);
@@ -104,9 +113,12 @@ describe("TOKENS.md documents the structural and typographic tokens", () => {
 	] as const;
 
 	for (const token of structural) {
-		it(`documents ${token} and its default`, () => {
-			expect(doc, `TOKENS.md must name ${token}`).toContain(`\`${token}\``);
-			expect(doc, `TOKENS.md must carry the ${token} default`).toContain(
+		it(`documents ${token} and its default on its own row`, () => {
+			// Row-scoped so a wrong value can't pass on another token's identical
+			// copy — `fontSans` and `fontHeading` share the same default string.
+			const row = rowContaining(structuralRegion, token);
+			expect(row, `TOKENS.md has no structural row for ${token}`).toBeDefined();
+			expect(row as string, `${token} row must carry its default`).toContain(
 				`\`${DEFAULT_FRONTEND_APPEARANCE[token]}\``,
 			);
 		});
@@ -114,20 +126,38 @@ describe("TOKENS.md documents the structural and typographic tokens", () => {
 });
 
 // Self-test: the guard is only useful if its row detector actually fires. Prove
-// it reports a mismatch on a wrong value and a hit on a correct one, so a green
-// run means "doc matches the contract", never "the detector was disarmed".
+// it catches a wrong value and, crucially, is NOT fooled by a correct copy of
+// that value on another row — the exact masking a whole-doc check allowed.
 describe("token-contract guard detector (self-test)", () => {
-	const sample =
+	const colorSample =
 		"<!-- token-table:start -->\n| `border` | `--border` | Default hairline border | `oklch(0.922 0 0)` | `oklch(1 0 0 / 10%)` |\n<!-- token-table:end -->";
 
-	it("finds a correctly documented row", () => {
-		const line = sample.split("\n").find((l) => l.includes("`--border`"));
-		expect(line).toBeDefined();
-		expect(line).toContain("`oklch(0.922 0 0)`");
+	it("finds a correctly documented color row", () => {
+		const row = rowContaining(
+			tableRegion(colorSample, "token-table"),
+			"--border",
+		);
+		expect(row).toBeDefined();
+		expect(row as string).toContain("`oklch(0.922 0 0)`");
 	});
 
-	it("rejects a wrong default value", () => {
-		const line = sample.split("\n").find((l) => l.includes("`--border`"));
-		expect(line).not.toContain("`oklch(0.5 0 0)`");
+	it("rejects a wrong color default", () => {
+		const row = rowContaining(
+			tableRegion(colorSample, "token-table"),
+			"--border",
+		);
+		expect(row as string).not.toContain("`oklch(0.5 0 0)`");
+	});
+
+	// fontHeading carries a WRONG value while fontSans's row holds the correct
+	// shared string. A whole-doc check passes here (the string is present); the
+	// row-scoped check must fail — that is the regression this guards.
+	it("is not fooled by a shared value on a sibling row", () => {
+		const structuralSample =
+			"<!-- structural-table:start -->\n| `fontSans` | Body font | `Correct, sans-serif` |\n| `fontHeading` | Heading font | `WRONG, serif` |\n<!-- structural-table:end -->";
+		const region = tableRegion(structuralSample, "structural-table");
+		expect(structuralSample).toContain("`Correct, sans-serif`");
+		const headingRow = rowContaining(region, "fontHeading") as string;
+		expect(headingRow).not.toContain("`Correct, sans-serif`");
 	});
 });

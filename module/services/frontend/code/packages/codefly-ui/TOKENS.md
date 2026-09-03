@@ -8,11 +8,18 @@ values behind the names in one place and everything above re-themes for free.
 
 The vocabulary is the shadcn semantic token set (`--muted-foreground`,
 `--destructive`, `--accent`, `--border`, …). The names and their light/dark
-default values are the single source of truth in
+default values are enumerated in
 [`@codefly/saas-plugin-contract`](../saas-plugin-contract) —
-`FRONTEND_APPEARANCE_TOKEN_NAMES` and `DEFAULT_FRONTEND_APPEARANCE`. This
-document is that contract in prose; `src/__tests__/token-contract.test.ts` fails
-CI if the two drift, so the table below can never fall behind the code.
+`FRONTEND_APPEARANCE_TOKEN_NAMES` and `DEFAULT_FRONTEND_APPEARANCE`. They live
+there, one layer down, because the compile-time appearance validator
+(`resolveFrontendAppearance`) consumes them and that contract package must not
+depend on the kit — inverting the stack. The kit / skin layer **owns** the
+vocabulary in the sense that matters: this document and its drift guard
+(`src/__tests__/token-contract.test.ts`, which fails CI if the two ever
+diverge) are the contract every layer above reads, and the tokens reach those
+layers as CSS-variable names — never as a code import, so a solution consumes
+the vocabulary without depending on the (host-internal, unpublished) contract
+package at all.
 
 ## How a name becomes a color
 
@@ -79,6 +86,7 @@ variables read — it does not layer one over the other.
 Shared across both modes (not per-palette). A skin sets these once; they drive
 the density, corner, type, and elevation scales app-wide.
 
+<!-- structural-table:start -->
 | Token | Drives | Default |
 | ----- | ------ | ------- |
 | `defaultTheme` | Initial mode when the viewer has no preference | `system` |
@@ -91,6 +99,7 @@ the density, corner, type, and elevation scales app-wide.
 | `sidebarWidthIcon` | Collapsed (icon-rail) sidebar width | `3rem` |
 | `borderWidth` | Width of the app-wide `border` utility | `1px` |
 | `shadowStrength` | Unitless multiplier (0–2) on the elevation scale | `1` |
+<!-- structural-table:end -->
 
 ## Per-skin overrides
 
