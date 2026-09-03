@@ -18,6 +18,7 @@ type OwnedResourceStore interface {
 	GetInvitationOrgID(ctx context.Context, id string) (string, error)
 	GetWebhookSubscription(ctx context.Context, id string) (*WebhookSubscription, error)
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
+	GetPrincipal(ctx context.Context, id string) (*Principal, error)
 }
 
 // ownedResourceResolver maps one owned-resource id to its owning organization.
@@ -38,6 +39,7 @@ var ownedResourceResolvers = map[string]ownedResourceResolver{
 	"/saas.accounts.v1.WebhookService/ListDeliveries":      resolveSubscriptionOrg,
 	"/saas.accounts.v1.WebhookService/GetDelivery":         resolveDeliveryOrg,
 	"/saas.accounts.v1.WebhookService/ReplayDelivery":      resolveDeliveryOrg,
+	"/saas.accounts.v1.PrincipalService/RevokePrincipal":   resolvePrincipalOrg,
 }
 
 func resolveInvitationOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {
@@ -58,6 +60,18 @@ func resolveDeliveryOrg(ctx context.Context, store OwnedResourceStore, id string
 		return "", err
 	}
 	return resolveSubscriptionOrg(ctx, store, delivery.SubscriptionID)
+}
+
+// resolvePrincipalOrg maps a principal id to its owning org. Human principals
+// are cross-org and carry an empty OrgID: they resolve to no org, so the central
+// path fails closed to them (their revocation stays platform-admin gated at the
+// handler), exactly as the RevokePrincipal handler already distinguishes.
+func resolvePrincipalOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {
+	principal, err := store.GetPrincipal(ctx, id)
+	if err != nil || principal == nil {
+		return "", err
+	}
+	return principal.OrgID, nil
 }
 
 // ownedResourceResolvable reports whether an OWNED_RESOURCE binding on this

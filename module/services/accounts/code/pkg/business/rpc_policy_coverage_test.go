@@ -26,15 +26,23 @@ func TestClassifyCentralCoverageIsExhaustiveAndNeverBroadening(t *testing.T) {
 	}
 }
 
-// A method that binds an organization or team resource requires the
-// interceptor to resolve and check that binding, which it cannot do yet — so
-// even with a self-service tenant and no declared permission it is a gap, not
-// ok. Without this the classifier would report "safe to enforce centrally" for
-// a method whose bound org/team field the interceptor never validates.
+// An organization binding is covered only when the method also declares an
+// org-member/admin tenant: the interceptor enforces that tenant against the
+// caller's verified organization, which the request scope pins to the bound org.
+// A binding paired with a self-service tenant is not — the interceptor never
+// validates the bound org field on its own — so it stays a gap.
 func TestBoundOrgResourceIsNeverFalselyOK(t *testing.T) {
+	// PlatformRole and Mfa are set to NONE, not left zero: a real policy is
+	// validated to declare both (UNSPECIFIED is a policy error that excludes the
+	// method from the index), and the classifier compares against NONE. Leaving
+	// them zero would read UNSPECIFIED as "declares a platform-role/MFA
+	// requirement" and force gap regardless of tenant — the classifier only ever
+	// runs on validated policies, so the synthetic one must be valid too.
 	policy := RPCPolicy{MethodPolicy: &policyv1.MethodPolicy{
-		Exposure: policyv1.Exposure_EXPOSURE_AUTHENTICATED,
-		Tenant:   policyv1.TenantRequirement_TENANT_REQUIREMENT_USER,
+		Exposure:     policyv1.Exposure_EXPOSURE_AUTHENTICATED,
+		Tenant:       policyv1.TenantRequirement_TENANT_REQUIREMENT_USER,
+		PlatformRole: policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
+		Mfa:          policyv1.MFARequirement_MFA_REQUIREMENT_NONE,
 		ResourceBindings: []*policyv1.ResourceBinding{{
 			RequestField: "org_id",
 			Target:       policyv1.ResourceTarget_RESOURCE_TARGET_ORGANIZATION,
@@ -43,17 +51,27 @@ func TestBoundOrgResourceIsNeverFalselyOK(t *testing.T) {
 	}}
 	require.Equal(t, CoverageGap, ClassifyCentralCoverage(policy))
 
-	// The same shape with an owned-resource binding cannot even resolve the org.
+	// The same binding under an org-admin tenant is enforced against the caller's
+	// verified org, so it is covered.
+	policy.MethodPolicy.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN
+	require.Equal(t, CoverageOK, ClassifyCentralCoverage(policy))
+
+	// A declared permission may admit a non-admin who holds it, so the interceptor
+	// defers the whole method to the handler even under an org-admin tenant.
+	policy.MethodPolicy.Permissions = []string{"billing:write"}
+	require.Equal(t, CoverageGap, ClassifyCentralCoverage(policy))
+	policy.MethodPolicy.Permissions = nil
+
+	// An owned-resource binding cannot even resolve the org.
 	policy.MethodPolicy.ResourceBindings[0].Target = policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE
 	require.Equal(t, CoverageUnsupported, ClassifyCentralCoverage(policy))
 }
 
-// Across the real catalog, no method carrying an organization/team/owned
-// resource binding may classify ok: such a binding always implies a
-// server-side resolution the interceptor does not perform. This guards the
-// invariant that today holds only because every bound method also carries an
-// org tenant — a future method that drops the tenant must not slip to ok.
-func TestResourceBoundMethodsAreNeverOK(t *testing.T) {
+// A team or owned-resource binding still implies a server-side resolution the
+// interceptor does not perform, so no method carrying one may classify ok. An
+// organization binding is excluded from this invariant on purpose: it is covered
+// when an org tenant accompanies it (TestBoundOrgResourceIsNeverFalselyOK).
+func TestTeamAndOwnedResourceBoundMethodsAreNeverOK(t *testing.T) {
 	for _, policy := range RPCPolicies() {
 		if !policy.Tier.Valid() || policy.PolicyError != "" {
 			continue
@@ -61,15 +79,30 @@ func TestResourceBoundMethodsAreNeverOK(t *testing.T) {
 		bound := false
 		for _, binding := range policy.MethodPolicy.GetResourceBindings() {
 			switch binding.GetTarget() {
-			case policyv1.ResourceTarget_RESOURCE_TARGET_ORGANIZATION,
-				policyv1.ResourceTarget_RESOURCE_TARGET_TEAM,
+			case policyv1.ResourceTarget_RESOURCE_TARGET_TEAM,
 				policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE:
 				bound = true
 			}
 		}
 		if bound {
 			require.NotEqualf(t, CoverageOK, ClassifyCentralCoverage(policy),
-				"%s binds a resource but classifies ok", policy.FullMethod)
+				"%s binds a team or owned resource but classifies ok", policy.FullMethod)
+		}
+	}
+}
+
+// The classifier and the interceptor must agree: whenever the interceptor
+// enforces a tenant floor for a method, that method must classify ok — otherwise
+// shadow telemetry would understate what enforcement already covers, and the
+// flip gate could never read green for an enforced route.
+func TestCentralTenantEnforcementImpliesOK(t *testing.T) {
+	for _, policy := range RPCPolicies() {
+		if !policy.Tier.Valid() || policy.PolicyError != "" {
+			continue
+		}
+		if _, enforced := CentralTenantEnforcement(policy); enforced {
+			require.Equalf(t, CoverageOK, ClassifyCentralCoverage(policy),
+				"%s is centrally enforced but does not classify ok", policy.FullMethod)
 		}
 	}
 }
@@ -86,9 +119,15 @@ func TestClassifyCentralCoverageBuckets(t *testing.T) {
 		// permission, so these self-service writes are centrally enforceable.
 		"/saas.accounts.v1.UserService/UpdateUser": CoverageOK,
 		"/saas.accounts.v1.UserService/DeleteUser": CoverageOK,
-		// org-admin tenant is a real requirement the interceptor does not yet
-		// resolve; a require* handler site covers it today.
+		// org-member/admin tenants are now resolved against the caller's verified
+		// organization, so a pure org-tenant method is centrally enforceable.
+		"/saas.accounts.v1.OrganizationService/AddMember":   CoverageOK,
+		"/saas.accounts.v1.OrganizationService/ListMembers": CoverageOK,
+		// CreateAPIKey adds an org permission on top of the org-admin tenant; the
+		// permission may admit a non-admin who holds it, so it stays handler-gated.
 		"/saas.accounts.v1.APIKeyService/CreateAPIKey": CoverageGap,
+		// Platform-role and MFA requirements remain handler-enforced.
+		"/saas.accounts.v1.PlatformAdminService/GetJob": CoverageGap,
 		// Owned-resource bindings now resolve an org through a registered
 		// resolver, so they are no longer unsupported; the org-admin tenant and
 		// permission they also declare keep them at gap, like their
@@ -119,6 +158,7 @@ func TestOwnedResourceMethodsAreResolvableGap(t *testing.T) {
 		"/saas.accounts.v1.WebhookService/ReplayDelivery",
 		"/saas.accounts.v1.WebhookService/RotateSecret",
 		"/saas.accounts.v1.WebhookService/TestWebhook",
+		"/saas.accounts.v1.PrincipalService/RevokePrincipal",
 	} {
 		policy, ok := LookupRPCPolicy(method)
 		require.True(t, ok, method)
