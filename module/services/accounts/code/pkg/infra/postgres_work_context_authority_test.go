@@ -218,6 +218,41 @@ func TestWorkContextAuthorityResolvesOnlyRegisteredAgentActor(t *testing.T) {
 	require.Equal(t, business.PrincipalKindAgent, facts.Actor.Kind)
 }
 
+// TestRevokingAgentPrincipalStalesOutstandingWorkContext pins the #440
+// lifecycle deliverable: disabling a delegated actor through the RevokePrincipal
+// business path takes immediate effect on Work Contexts already signed against
+// it. The revoked actor no longer resolves, so the consumer-side revision check
+// for an outstanding context reports it stale rather than honoring the old
+// signature.
+func TestRevokingAgentPrincipalStalesOutstandingWorkContext(t *testing.T) {
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, ownerID, "owner",
+	))
+	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/revoke-stales:0.1.0")
+
+	verified := auth.WithVerifiedDatabaseIdentity(testCtx, ownerID, orgID)
+	facts, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, agent.ID, nil)
+	require.NoError(t, err)
+	revision := facts.EffectiveRevision()
+	subjects := []business.WorkContextRevisionSubject{{PrincipalID: agent.ID}}
+
+	require.NoError(t, testStore.CheckWorkContextAuthorizationRevision(
+		verified, orgID, ownerID, revision, subjects,
+	), "the context is valid while the actor is a live registered agent")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	require.NoError(t, svc.RevokePrincipal(testCtx, agent.ID, "delegation disabled"))
+
+	err = testStore.CheckWorkContextAuthorizationRevision(
+		verified, orgID, ownerID, revision, subjects,
+	)
+	require.ErrorIs(t, err, business.ErrWorkContextAuthorizationStale,
+		"revoking the actor must immediately stale an outstanding Work Context")
+}
+
 func TestWorkContextConsumerAuthorityUsesCurrentRevisionAndExactEvidenceRead(t *testing.T) {
 	ownerID := seedUser(t)
 	readerID := seedUser(t)
