@@ -208,7 +208,8 @@ func TestWorkContextAuthorityResolvesOnlyRegisteredAgentActor(t *testing.T) {
 	require.ErrorAs(t, err, &wrongKind)
 	require.Equal(t, business.ErrTypeNotFound, wrongKind.StoreErrorType)
 
-	// The registered agent principal in the same org does resolve.
+	// The registered agent principal in the same org does resolve, and its
+	// registered ceiling comes back on the resolved actor.
 	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/registered-actor:0.1.0")
 	facts, err := testStore.ResolveWorkContextAuthority(
 		verified, orgID, ownerID, agent.ID, nil,
@@ -262,6 +263,30 @@ func TestRevokingAgentPrincipalStalesOutstandingWorkContext(t *testing.T) {
 	)
 	require.ErrorIs(t, err, business.ErrWorkContextAuthorizationStale,
 		"revoking the actor must immediately stale an outstanding Work Context")
+}
+
+// A disabled agent principal must fail actor resolution exactly like a revoked
+// one, so an in-flight disable takes effect on the next mint/exchange (issue
+// #440).
+func TestWorkContextAuthorityRejectsDisabledActor(t *testing.T) {
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, ownerID, "owner",
+	))
+	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/disabled-actor:0.1.0")
+
+	verified := auth.WithVerifiedDatabaseIdentity(testCtx, ownerID, orgID)
+	_, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, agent.ID, nil)
+	require.NoError(t, err, "an active agent resolves before it is disabled")
+
+	require.NoError(t, testStore.As(business.System()).DisableAgentPrincipal(testCtx, agent.ID, "incident"))
+
+	_, err = testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, agent.ID, nil)
+	require.Error(t, err, "a disabled agent must not resolve as a Work Context actor")
+	var notFound *business.StoreError
+	require.ErrorAs(t, err, &notFound)
+	require.Equal(t, business.ErrTypeNotFound, notFound.StoreErrorType)
 }
 
 func TestWorkContextConsumerAuthorityUsesCurrentRevisionAndExactEvidenceRead(t *testing.T) {

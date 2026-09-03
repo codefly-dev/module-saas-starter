@@ -58,6 +58,14 @@ func (s waitlistScopedFake) RevokePrincipal(context.Context, string, string) err
 	panic("unexpected RevokePrincipal call")
 }
 
+func (s waitlistScopedFake) DisableAgentPrincipal(context.Context, string, string) error {
+	panic("unexpected DisableAgentPrincipal call")
+}
+
+func (s waitlistScopedFake) EnableAgentPrincipal(context.Context, string) error {
+	panic("unexpected EnableAgentPrincipal call")
+}
+
 func newWaitlistStoreFake() *waitlistStoreFake {
 	return &waitlistStoreFake{entries: make(map[string]*business.WaitlistEntry)}
 }

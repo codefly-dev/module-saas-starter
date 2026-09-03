@@ -216,6 +216,8 @@
       "full_name": "saas.accounts.v1.PrincipalService",
       "procedures": [
         "/saas.accounts.v1.PrincipalService/CreateAgentPrincipal",
+        "/saas.accounts.v1.PrincipalService/DisableAgentPrincipal",
+        "/saas.accounts.v1.PrincipalService/EnableAgentPrincipal",
         "/saas.accounts.v1.PrincipalService/GetAgentPrincipal",
         "/saas.accounts.v1.PrincipalService/GetPrincipal",
         "/saas.accounts.v1.PrincipalService/ListPrincipals",
@@ -5788,6 +5790,94 @@
       },
       "policy_tier": "org_admin",
       "description": "Create an agent principal in an organization.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PrincipalService/DisableAgentPrincipal",
+      "service": "PrincipalService",
+      "full_service": "saas.accounts.v1.PrincipalService",
+      "method": "DisableAgentPrincipal",
+      "input_type": "saas.accounts.v1.DisableAgentPrincipalRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "principal.disabled"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Reversibly suspend an agent principal.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PrincipalService/EnableAgentPrincipal",
+      "service": "PrincipalService",
+      "full_service": "saas.accounts.v1.PrincipalService",
+      "method": "EnableAgentPrincipal",
+      "input_type": "saas.accounts.v1.EnableAgentPrincipalRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "principal.enabled"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Lift a reversible suspension on an agent principal.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

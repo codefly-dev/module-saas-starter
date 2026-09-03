@@ -44,6 +44,14 @@ func (h *principalConnectHandler) RevokePrincipal(ctx context.Context, req *conn
 	return unary(ctx, req, h.inner.RevokePrincipal)
 }
 
+func (h *principalConnectHandler) DisableAgentPrincipal(ctx context.Context, req *connect.Request[gen.DisableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.DisableAgentPrincipal)
+}
+
+func (h *principalConnectHandler) EnableAgentPrincipal(ctx context.Context, req *connect.Request[gen.EnableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.EnableAgentPrincipal)
+}
+
 func (h *principalConnectHandler) ListPrincipals(ctx context.Context, req *connect.Request[gen.ListPrincipalsRequest]) (*connect.Response[gen.ListPrincipalsResponse], error) {
 	return unary(ctx, req, h.inner.ListPrincipals)
 }

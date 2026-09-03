@@ -115,6 +115,10 @@ func TestClassifyCentralCoverageBuckets(t *testing.T) {
 		"/saas.accounts.v1.APIKeyService/ValidateAPIKey": CoverageOK,
 		// tenant USER with no permission reduces to "a verified user" + RLS.
 		"/saas.accounts.v1.UserService/GetUser": CoverageOK,
+		// The agent-principal lifecycle RPCs are internal (host-driven tenant
+		// enablement), so exposure gating is the whole floor.
+		"/saas.accounts.v1.PrincipalService/DisableAgentPrincipal": CoverageOK,
+		"/saas.accounts.v1.PrincipalService/EnableAgentPrincipal":  CoverageOK,
 		// The declaration-bug fix removes the unresolvable users:write
 		// permission, so these self-service writes are centrally enforceable.
 		"/saas.accounts.v1.UserService/UpdateUser": CoverageOK,

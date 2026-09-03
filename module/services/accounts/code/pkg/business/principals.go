@@ -52,6 +52,12 @@ type Principal struct {
 	CreatedAt     time.Time
 	RevokedAt     *time.Time
 	RevokedReason string
+	// Delegated-execution ceiling, kind=agent only. Nil = unrestricted.
+	AllowedAudiences []string
+	AllowedScopes    []string
+	// A reversible suspension of a delegated actor, distinct from RevokedAt.
+	DisabledAt     *time.Time
+	DisabledReason string
 }
 
 // IsRevoked reports whether the principal has been revoked. Used by
@@ -59,6 +65,13 @@ type Principal struct {
 // hitting the role-assignment join.
 func (p *Principal) IsRevoked() bool {
 	return p != nil && p.RevokedAt != nil
+}
+
+// IsDisabled reports whether the principal is under a reversible suspension.
+// A disabled agent is not an eligible Work Context actor, but unlike a revoked
+// one it can be re-enabled.
+func (p *Principal) IsDisabled() bool {
+	return p != nil && p.DisabledAt != nil
 }
 
 // Validate checks the in-memory invariants that the SQL constraints
@@ -105,6 +118,9 @@ func (p *Principal) Validate() error {
 	default:
 		return fmt.Errorf("principal: unknown Kind %q (want human|service|agent)", p.Kind)
 	}
+	if p.Kind != PrincipalKindAgent && (len(p.AllowedAudiences) > 0 || len(p.AllowedScopes) > 0) {
+		return errors.New("principal: allowed audiences/scopes are an agent-only ceiling")
+	}
 	return nil
 }
 
@@ -130,6 +146,9 @@ type CreateAgentRequest struct {
 	DisplayName     string
 	// The authenticated principal performing the create (the authorship root).
 	CreatedBy string
+	// Optional delegated-execution ceiling. Empty = unrestricted.
+	AllowedAudiences []string
+	AllowedScopes    []string
 }
 
 // PrincipalStore is the persistence surface this file calls into.
@@ -141,6 +160,8 @@ type PrincipalStore interface {
 	GetAgentPrincipal(ctx context.Context, orgID, agentIdentifier string) (*Principal, error)
 	CreateAgentPrincipal(ctx context.Context, p *Principal) error
 	RevokePrincipal(ctx context.Context, id, reason string) error
+	DisableAgentPrincipal(ctx context.Context, id, reason string) error
+	EnableAgentPrincipal(ctx context.Context, id string) error
 	ListPrincipals(ctx context.Context, orgID, kind string, pageSize int32, pageToken string) ([]*Principal, string, error)
 }
 
@@ -218,6 +239,11 @@ func (s *Service) GetPrincipal(ctx context.Context, id string) (*Principal, erro
 			ErrTypeNotFound,
 		)
 	}
+	// A disabled principal is intentionally still returned here: admin lifecycle
+	// operations (revoke, re-enable) resolve their target through this method, so
+	// hiding disabled rows would make a disabled agent unrevocable. The Work
+	// Context mint path fails a disabled actor closed in ResolveWorkContextAuthority,
+	// and the delegation mint fails it closed at its own call sites.
 	return p, nil
 }
 
@@ -249,6 +275,12 @@ func (s *Service) GetAgentPrincipal(ctx context.Context, orgID, agentIdentifier 
 	if p.IsRevoked() {
 		return nil, NewStoreError(
 			fmt.Errorf("agent %s in org %s revoked", agentIdentifier, orgID),
+			ErrTypeNotFound,
+		)
+	}
+	if p.IsDisabled() {
+		return nil, NewStoreError(
+			fmt.Errorf("agent %s in org %s disabled", agentIdentifier, orgID),
 			ErrTypeNotFound,
 		)
 	}
@@ -305,13 +337,15 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 	// Generate ID server-side. We don't reuse user/api_key IDs for
 	// agents — agents are net-new principals.
 	p := &Principal{
-		ID:              NewIDString(),
-		Kind:            PrincipalKindAgent,
-		DisplayName:     req.DisplayName,
-		OrgID:           req.OrgID,
-		AgentIdentifier: req.AgentIdentifier,
-		CreatedBy:       req.CreatedBy,
-		CreatedAt:       time.Now().UTC(),
+		ID:               NewIDString(),
+		Kind:             PrincipalKindAgent,
+		DisplayName:      req.DisplayName,
+		OrgID:            req.OrgID,
+		AgentIdentifier:  req.AgentIdentifier,
+		CreatedBy:        req.CreatedBy,
+		CreatedAt:        time.Now().UTC(),
+		AllowedAudiences: req.AllowedAudiences,
+		AllowedScopes:    req.AllowedScopes,
 	}
 	if err := p.Validate(); err != nil {
 		return nil, w.Wrapf(err, "invalid principal")
@@ -374,6 +408,80 @@ func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error 
 			map[string]any{"reason": reason})
 	}
 	w.Info("principal revoked", wool.Field("reason", reason))
+	return nil
+}
+
+// DisableAgentPrincipal reversibly suspends an agent principal. Idempotent:
+// re-disabling preserves the original disabled_at/reason and emits no duplicate
+// audit event. The suspension bumps the org/principal authorization revision, so
+// outstanding Work Contexts naming this actor go stale immediately and no new
+// one mints until it is re-enabled.
+func (s *Service) DisableAgentPrincipal(ctx context.Context, id, reason string) error {
+	w := wool.Get(ctx).In("DisableAgentPrincipal", wool.Field("principal_id", id))
+	if id == "" {
+		return w.NewError("principal id required")
+	}
+	if reason == "" {
+		return w.NewError("reason required (no silent disables)")
+	}
+	var orgID string
+	var alreadyDisabled bool
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		p, e := s.principalStore().GetPrincipal(ctx, id)
+		if e != nil {
+			return e
+		}
+		if p.Kind != PrincipalKindAgent {
+			return NewStoreError(errors.New("only agent principals can be disabled"), ErrTypeConflict)
+		}
+		if p.IsRevoked() {
+			return NewStoreError(errors.New("a revoked principal cannot be disabled"), ErrTypeConflict)
+		}
+		orgID = p.OrgID
+		alreadyDisabled = p.IsDisabled()
+		return s.principalStore().DisableAgentPrincipal(ctx, id, reason)
+	}); err != nil {
+		return w.Wrapf(err, "cannot disable agent principal")
+	}
+	if !alreadyDisabled {
+		s.emit(ctx, "system", "system", EventPrincipalDisabled, "principal", id, orgID,
+			map[string]any{"reason": reason})
+	}
+	w.Info("agent principal disabled", wool.Field("reason", reason))
+	return nil
+}
+
+// EnableAgentPrincipal lifts a reversible suspension. Idempotent: enabling an
+// already-active agent is a no-op with no audit event. A revoked principal is
+// terminal and cannot be re-enabled.
+func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
+	w := wool.Get(ctx).In("EnableAgentPrincipal", wool.Field("principal_id", id))
+	if id == "" {
+		return w.NewError("principal id required")
+	}
+	var orgID string
+	var wasDisabled bool
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		p, e := s.principalStore().GetPrincipal(ctx, id)
+		if e != nil {
+			return e
+		}
+		if p.Kind != PrincipalKindAgent {
+			return NewStoreError(errors.New("only agent principals can be enabled"), ErrTypeConflict)
+		}
+		if p.IsRevoked() {
+			return NewStoreError(errors.New("a revoked principal cannot be re-enabled"), ErrTypeConflict)
+		}
+		orgID = p.OrgID
+		wasDisabled = p.IsDisabled()
+		return s.principalStore().EnableAgentPrincipal(ctx, id)
+	}); err != nil {
+		return w.Wrapf(err, "cannot enable agent principal")
+	}
+	if wasDisabled {
+		s.emit(ctx, "system", "system", EventPrincipalEnabled, "principal", id, orgID, nil)
+	}
+	w.Info("agent principal enabled")
 	return nil
 }
 

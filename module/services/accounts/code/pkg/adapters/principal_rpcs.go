@@ -75,12 +75,46 @@ func (s *PrincipalServer) CreateAgentPrincipal(ctx context.Context, req *gen.Cre
 		AgentIdentifier: req.GetAgentIdentifier(),
 		DisplayName:     req.GetDisplayName(),
 		// The authenticated caller is the authorship root (Claims v1, ask #3).
-		CreatedBy: actorID,
+		CreatedBy:        actorID,
+		AllowedAudiences: req.GetAllowedAudiences(),
+		AllowedScopes:    req.GetAllowedScopes(),
 	})
 	if err != nil {
 		return nil, mapPrincipalError(err)
 	}
 	return principalToProto(p), nil
+}
+
+// DisableAgentPrincipal reversibly suspends a delegated actor. It is an internal
+// enablement-lifecycle RPC (the host toggles a delegation-based solution's
+// agents per org), so exposure gating is the whole floor. The suspension bumps
+// the authorization revision, staling outstanding Work Contexts at once.
+func (s *PrincipalServer) DisableAgentPrincipal(ctx context.Context, req *gen.DisableAgentPrincipalRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if err := service.DisableAgentPrincipal(ctx, req.GetId(), req.GetReason()); err != nil {
+		return nil, mapPrincipalError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// EnableAgentPrincipal lifts a reversible suspension. Internal, like its
+// disable counterpart.
+func (s *PrincipalServer) EnableAgentPrincipal(ctx context.Context, req *gen.EnableAgentPrincipalRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if err := service.EnableAgentPrincipal(ctx, req.GetId()); err != nil {
+		return nil, mapPrincipalError(err)
+	}
+	return &emptypb.Empty{}, nil
 }
 
 func (s *PrincipalServer) RevokePrincipal(ctx context.Context, req *gen.RevokePrincipalRequest) (*emptypb.Empty, error) {
@@ -263,17 +297,23 @@ func principalToProto(p *business.Principal) *gen.Principal {
 		return nil
 	}
 	out := &gen.Principal{
-		Id:              p.ID,
-		Kind:            businessKindToProtoKind(p.Kind),
-		DisplayName:     p.DisplayName,
-		OrgId:           p.OrgID,
-		AgentIdentifier: p.AgentIdentifier,
-		CreatedBy:       p.CreatedBy,
-		CreatedAt:       timestamppb.New(p.CreatedAt),
-		RevokedReason:   p.RevokedReason,
+		Id:               p.ID,
+		Kind:             businessKindToProtoKind(p.Kind),
+		DisplayName:      p.DisplayName,
+		OrgId:            p.OrgID,
+		AgentIdentifier:  p.AgentIdentifier,
+		CreatedBy:        p.CreatedBy,
+		CreatedAt:        timestamppb.New(p.CreatedAt),
+		RevokedReason:    p.RevokedReason,
+		AllowedAudiences: p.AllowedAudiences,
+		AllowedScopes:    p.AllowedScopes,
+		DisabledReason:   p.DisabledReason,
 	}
 	if p.RevokedAt != nil {
 		out.RevokedAt = timestamppb.New(*p.RevokedAt)
+	}
+	if p.DisabledAt != nil {
+		out.DisabledAt = timestamppb.New(*p.DisabledAt)
 	}
 	return out
 }

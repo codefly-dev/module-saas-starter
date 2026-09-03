@@ -126,6 +126,8 @@ const (
 	EventApprovalCancelled      EventType = "approval.cancelled"
 	EventPrincipalCreated       EventType = "principal.created"
 	EventPrincipalRevoked       EventType = "principal.revoked"
+	EventPrincipalDisabled      EventType = "principal.disabled"
+	EventPrincipalEnabled       EventType = "principal.enabled"
 
 	EventScopeNodeRegistered EventType = "scope.node_registered"
 	EventScopeGranted        EventType = "scope.granted"
@@ -239,6 +241,8 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason")),
 	def(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
 	def(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
+	def(EventPrincipalDisabled, CategoryAccess, "An agent principal was disabled.", str("reason")),
+	def(EventPrincipalEnabled, CategoryAccess, "An agent principal was re-enabled."),
 	def(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
 	def(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
 	def(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),

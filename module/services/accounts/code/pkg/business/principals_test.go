@@ -129,6 +129,23 @@ func TestPrincipal_Validate(t *testing.T) {
 				OrgID: "org-1", AgentIdentifier: "codefly.dev/auto-merge:0.1.0",
 			},
 		},
+		{
+			name: "valid agent with ceiling",
+			p: &Principal{
+				ID: "id-1", Kind: PrincipalKindAgent, DisplayName: "Auto Merge",
+				OrgID: "org-1", AgentIdentifier: "codefly.dev/auto-merge:0.1.0",
+				AllowedAudiences: []string{"github"}, AllowedScopes: []string{"repo"},
+			},
+		},
+		{
+			name: "service with ceiling rejected",
+			p: &Principal{
+				ID: "id-1", Kind: PrincipalKindService, DisplayName: "ci",
+				OrgID: "org-1", AllowedAudiences: []string{"github"},
+			},
+			wantError: true,
+			errSubstr: "agent-only",
+		},
 	}
 
 	for _, tc := range tests {
@@ -161,6 +178,20 @@ func TestPrincipal_IsRevoked(t *testing.T) {
 		now := time.Now()
 		p := &Principal{ID: "x", RevokedAt: &now}
 		require.True(t, p.IsRevoked())
+	})
+}
+
+func TestPrincipal_IsDisabled(t *testing.T) {
+	t.Run("nil principal not disabled", func(t *testing.T) {
+		var p *Principal
+		require.False(t, p.IsDisabled())
+	})
+	t.Run("zero DisabledAt not disabled", func(t *testing.T) {
+		require.False(t, (&Principal{ID: "x"}).IsDisabled())
+	})
+	t.Run("non-nil DisabledAt is disabled", func(t *testing.T) {
+		now := time.Now()
+		require.True(t, (&Principal{ID: "x", DisabledAt: &now}).IsDisabled())
 	})
 }
 

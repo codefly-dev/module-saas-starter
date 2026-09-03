@@ -131,7 +131,7 @@ func (s *DelegationServer) RequestDelegation(ctx context.Context, req *gen.Reque
 	if grant.Status == business.GrantStatusApproved && grant.Kind == business.GrantKindOneShot {
 		w := wool.Get(ctx).In("RequestDelegation.autoApproveMint",
 			wool.Field("grant_id", grant.ID))
-		if actor, gerr := service.GetPrincipal(ctx, grant.ActorPrincipalID); gerr == nil {
+		if actor, gerr := service.GetPrincipal(ctx, grant.ActorPrincipalID); gerr == nil && !actor.IsDisabled() {
 			if token, sa, merr := s.mintApprovedToken(actor, grant); merr == nil {
 				if serr := service.SetMintedToken(ctx, grant.ID, grant.OrgID, sa.ID); serr != nil {
 					w.Warn("set minted_token_id failed for auto-approved grant",
@@ -269,6 +269,13 @@ func (s *DelegationServer) DecideDelegation(ctx context.Context, req *gen.Decide
 			// "approved but mint failed" event.
 			w.Warn("approved grant but cannot load actor principal; minted_token_id stays empty",
 				wool.Field("error", err.Error()))
+			return delegationGrantToProto(grant), nil
+		}
+		if actor.IsDisabled() {
+			// A disabled actor is neutralized: it mints no usable token, matching
+			// the revoked-actor and disabled Work Context actor behavior.
+			w.Warn("approved grant but actor principal is disabled; minted_token_id stays empty",
+				wool.Field("actor_principal_id", grant.ActorPrincipalID))
 			return delegationGrantToProto(grant), nil
 		}
 		token, sa, err := s.mintApprovedToken(actor, grant)

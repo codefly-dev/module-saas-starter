@@ -94,6 +94,12 @@ const (
 	// PrincipalServiceRevokePrincipalProcedure is the fully-qualified name of the PrincipalService's
 	// RevokePrincipal RPC.
 	PrincipalServiceRevokePrincipalProcedure = "/saas.accounts.v1.PrincipalService/RevokePrincipal"
+	// PrincipalServiceDisableAgentPrincipalProcedure is the fully-qualified name of the
+	// PrincipalService's DisableAgentPrincipal RPC.
+	PrincipalServiceDisableAgentPrincipalProcedure = "/saas.accounts.v1.PrincipalService/DisableAgentPrincipal"
+	// PrincipalServiceEnableAgentPrincipalProcedure is the fully-qualified name of the
+	// PrincipalService's EnableAgentPrincipal RPC.
+	PrincipalServiceEnableAgentPrincipalProcedure = "/saas.accounts.v1.PrincipalService/EnableAgentPrincipal"
 	// PrincipalServiceListPrincipalsProcedure is the fully-qualified name of the PrincipalService's
 	// ListPrincipals RPC.
 	PrincipalServiceListPrincipalsProcedure = "/saas.accounts.v1.PrincipalService/ListPrincipals"
@@ -577,6 +583,8 @@ type PrincipalServiceClient interface {
 	GetAgentPrincipal(context.Context, *connect.Request[v1.GetAgentPrincipalRequest]) (*connect.Response[v1.Principal], error)
 	CreateAgentPrincipal(context.Context, *connect.Request[v1.CreateAgentPrincipalRequest]) (*connect.Response[v1.Principal], error)
 	RevokePrincipal(context.Context, *connect.Request[v1.RevokePrincipalRequest]) (*connect.Response[emptypb.Empty], error)
+	DisableAgentPrincipal(context.Context, *connect.Request[v1.DisableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error)
+	EnableAgentPrincipal(context.Context, *connect.Request[v1.EnableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error)
 	ListPrincipals(context.Context, *connect.Request[v1.ListPrincipalsRequest]) (*connect.Response[v1.ListPrincipalsResponse], error)
 }
 
@@ -615,6 +623,18 @@ func NewPrincipalServiceClient(httpClient connect.HTTPClient, baseURL string, op
 			connect.WithSchema(principalServiceMethods.ByName("RevokePrincipal")),
 			connect.WithClientOptions(opts...),
 		),
+		disableAgentPrincipal: connect.NewClient[v1.DisableAgentPrincipalRequest, emptypb.Empty](
+			httpClient,
+			baseURL+PrincipalServiceDisableAgentPrincipalProcedure,
+			connect.WithSchema(principalServiceMethods.ByName("DisableAgentPrincipal")),
+			connect.WithClientOptions(opts...),
+		),
+		enableAgentPrincipal: connect.NewClient[v1.EnableAgentPrincipalRequest, emptypb.Empty](
+			httpClient,
+			baseURL+PrincipalServiceEnableAgentPrincipalProcedure,
+			connect.WithSchema(principalServiceMethods.ByName("EnableAgentPrincipal")),
+			connect.WithClientOptions(opts...),
+		),
 		listPrincipals: connect.NewClient[v1.ListPrincipalsRequest, v1.ListPrincipalsResponse](
 			httpClient,
 			baseURL+PrincipalServiceListPrincipalsProcedure,
@@ -626,11 +646,13 @@ func NewPrincipalServiceClient(httpClient connect.HTTPClient, baseURL string, op
 
 // principalServiceClient implements PrincipalServiceClient.
 type principalServiceClient struct {
-	getPrincipal         *connect.Client[v1.GetPrincipalRequest, v1.Principal]
-	getAgentPrincipal    *connect.Client[v1.GetAgentPrincipalRequest, v1.Principal]
-	createAgentPrincipal *connect.Client[v1.CreateAgentPrincipalRequest, v1.Principal]
-	revokePrincipal      *connect.Client[v1.RevokePrincipalRequest, emptypb.Empty]
-	listPrincipals       *connect.Client[v1.ListPrincipalsRequest, v1.ListPrincipalsResponse]
+	getPrincipal          *connect.Client[v1.GetPrincipalRequest, v1.Principal]
+	getAgentPrincipal     *connect.Client[v1.GetAgentPrincipalRequest, v1.Principal]
+	createAgentPrincipal  *connect.Client[v1.CreateAgentPrincipalRequest, v1.Principal]
+	revokePrincipal       *connect.Client[v1.RevokePrincipalRequest, emptypb.Empty]
+	disableAgentPrincipal *connect.Client[v1.DisableAgentPrincipalRequest, emptypb.Empty]
+	enableAgentPrincipal  *connect.Client[v1.EnableAgentPrincipalRequest, emptypb.Empty]
+	listPrincipals        *connect.Client[v1.ListPrincipalsRequest, v1.ListPrincipalsResponse]
 }
 
 // GetPrincipal calls saas.accounts.v1.PrincipalService.GetPrincipal.
@@ -653,6 +675,16 @@ func (c *principalServiceClient) RevokePrincipal(ctx context.Context, req *conne
 	return c.revokePrincipal.CallUnary(ctx, req)
 }
 
+// DisableAgentPrincipal calls saas.accounts.v1.PrincipalService.DisableAgentPrincipal.
+func (c *principalServiceClient) DisableAgentPrincipal(ctx context.Context, req *connect.Request[v1.DisableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.disableAgentPrincipal.CallUnary(ctx, req)
+}
+
+// EnableAgentPrincipal calls saas.accounts.v1.PrincipalService.EnableAgentPrincipal.
+func (c *principalServiceClient) EnableAgentPrincipal(ctx context.Context, req *connect.Request[v1.EnableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.enableAgentPrincipal.CallUnary(ctx, req)
+}
+
 // ListPrincipals calls saas.accounts.v1.PrincipalService.ListPrincipals.
 func (c *principalServiceClient) ListPrincipals(ctx context.Context, req *connect.Request[v1.ListPrincipalsRequest]) (*connect.Response[v1.ListPrincipalsResponse], error) {
 	return c.listPrincipals.CallUnary(ctx, req)
@@ -664,6 +696,8 @@ type PrincipalServiceHandler interface {
 	GetAgentPrincipal(context.Context, *connect.Request[v1.GetAgentPrincipalRequest]) (*connect.Response[v1.Principal], error)
 	CreateAgentPrincipal(context.Context, *connect.Request[v1.CreateAgentPrincipalRequest]) (*connect.Response[v1.Principal], error)
 	RevokePrincipal(context.Context, *connect.Request[v1.RevokePrincipalRequest]) (*connect.Response[emptypb.Empty], error)
+	DisableAgentPrincipal(context.Context, *connect.Request[v1.DisableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error)
+	EnableAgentPrincipal(context.Context, *connect.Request[v1.EnableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error)
 	ListPrincipals(context.Context, *connect.Request[v1.ListPrincipalsRequest]) (*connect.Response[v1.ListPrincipalsResponse], error)
 }
 
@@ -698,6 +732,18 @@ func NewPrincipalServiceHandler(svc PrincipalServiceHandler, opts ...connect.Han
 		connect.WithSchema(principalServiceMethods.ByName("RevokePrincipal")),
 		connect.WithHandlerOptions(opts...),
 	)
+	principalServiceDisableAgentPrincipalHandler := connect.NewUnaryHandler(
+		PrincipalServiceDisableAgentPrincipalProcedure,
+		svc.DisableAgentPrincipal,
+		connect.WithSchema(principalServiceMethods.ByName("DisableAgentPrincipal")),
+		connect.WithHandlerOptions(opts...),
+	)
+	principalServiceEnableAgentPrincipalHandler := connect.NewUnaryHandler(
+		PrincipalServiceEnableAgentPrincipalProcedure,
+		svc.EnableAgentPrincipal,
+		connect.WithSchema(principalServiceMethods.ByName("EnableAgentPrincipal")),
+		connect.WithHandlerOptions(opts...),
+	)
 	principalServiceListPrincipalsHandler := connect.NewUnaryHandler(
 		PrincipalServiceListPrincipalsProcedure,
 		svc.ListPrincipals,
@@ -714,6 +760,10 @@ func NewPrincipalServiceHandler(svc PrincipalServiceHandler, opts ...connect.Han
 			principalServiceCreateAgentPrincipalHandler.ServeHTTP(w, r)
 		case PrincipalServiceRevokePrincipalProcedure:
 			principalServiceRevokePrincipalHandler.ServeHTTP(w, r)
+		case PrincipalServiceDisableAgentPrincipalProcedure:
+			principalServiceDisableAgentPrincipalHandler.ServeHTTP(w, r)
+		case PrincipalServiceEnableAgentPrincipalProcedure:
+			principalServiceEnableAgentPrincipalHandler.ServeHTTP(w, r)
 		case PrincipalServiceListPrincipalsProcedure:
 			principalServiceListPrincipalsHandler.ServeHTTP(w, r)
 		default:
@@ -739,6 +789,14 @@ func (UnimplementedPrincipalServiceHandler) CreateAgentPrincipal(context.Context
 
 func (UnimplementedPrincipalServiceHandler) RevokePrincipal(context.Context, *connect.Request[v1.RevokePrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PrincipalService.RevokePrincipal is not implemented"))
+}
+
+func (UnimplementedPrincipalServiceHandler) DisableAgentPrincipal(context.Context, *connect.Request[v1.DisableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PrincipalService.DisableAgentPrincipal is not implemented"))
+}
+
+func (UnimplementedPrincipalServiceHandler) EnableAgentPrincipal(context.Context, *connect.Request[v1.EnableAgentPrincipalRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PrincipalService.EnableAgentPrincipal is not implemented"))
 }
 
 func (UnimplementedPrincipalServiceHandler) ListPrincipals(context.Context, *connect.Request[v1.ListPrincipalsRequest]) (*connect.Response[v1.ListPrincipalsResponse], error) {

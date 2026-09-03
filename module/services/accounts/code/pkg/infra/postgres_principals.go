@@ -19,32 +19,46 @@ import (
 // Revoked principals are RETURNED — IsRevoked() is the discriminator.
 // The business layer applies the "revoked = invisible to fresh-action
 // callers" policy; the storage layer is faithful to the row.
-func (s *PostgresStore) GetPrincipal(ctx context.Context, id string) (*business.Principal, error) {
-	w := wool.Get(ctx).In("GetPrincipal", wool.Field("principal_id", id))
-	executor := s.getQueryExecutor(ctx)
+// principalColumns is the canonical SELECT list for a principals row, in the
+// order scanPrincipal expects. ListPrincipals' human/UNION branches alias the
+// table as `p`, so they inline a `p.`-prefixed copy of this same order.
+const principalColumns = `id, kind, display_name, org_id, agent_identifier,
+	created_at, revoked_at, revoked_reason, created_by,
+	allowed_audiences, allowed_scopes, disabled_at, disabled_reason`
 
-	var p business.Principal
-	var orgID, agentID, revokedReason, createdBy *string
-	var revokedAt *time.Time
+// principalColumnsPrefixed is principalColumns with a `p.` table alias, for the
+// ListPrincipals human/UNION branches that join principals AS p.
+const principalColumnsPrefixed = `p.id, p.kind, p.display_name, p.org_id, p.agent_identifier,
+	p.created_at, p.revoked_at, p.revoked_reason, p.created_by,
+	p.allowed_audiences, p.allowed_scopes, p.disabled_at, p.disabled_reason`
 
-	err := executor.QueryRow(ctx, `
-		SELECT id, kind, display_name, org_id, agent_identifier,
-		       created_at, revoked_at, revoked_reason, created_by
-		FROM principals
-		WHERE id = $1`, id,
-	).Scan(&p.ID, &p.Kind, &p.DisplayName, &orgID, &agentID,
-		&p.CreatedAt, &revokedAt, &revokedReason, &createdBy)
-
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, business.NewStoreError(
-				fmt.Errorf("principal %s not found", id),
-				business.ErrTypeNotFound,
-			)
-		}
-		return nil, w.Wrapf(err, "failed to get principal")
+// nullableStringArray maps an empty ceiling list to a SQL NULL so "unrestricted"
+// is stored as NULL (the CHECK constraint's absent state), never as an empty
+// array which the enforcement layer would otherwise have to distinguish.
+func nullableStringArray(v []string) any {
+	if len(v) == 0 {
+		return nil
 	}
+	return v
+}
 
+// rowScanner is satisfied by both pgx.Row (QueryRow) and pgx.Rows.
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+// scanPrincipal reads one principals row selected via principalColumns into a
+// business.Principal, translating the nullable columns.
+func scanPrincipal(row rowScanner) (*business.Principal, error) {
+	var p business.Principal
+	var orgID, agentID, revokedReason, createdBy, disabledReason *string
+	var revokedAt, disabledAt *time.Time
+	var allowedAudiences, allowedScopes []string
+	if err := row.Scan(&p.ID, &p.Kind, &p.DisplayName, &orgID, &agentID,
+		&p.CreatedAt, &revokedAt, &revokedReason, &createdBy,
+		&allowedAudiences, &allowedScopes, &disabledAt, &disabledReason); err != nil {
+		return nil, err
+	}
 	if orgID != nil {
 		p.OrgID = *orgID
 	}
@@ -61,7 +75,34 @@ func (s *PostgresStore) GetPrincipal(ctx context.Context, id string) (*business.
 	if createdBy != nil {
 		p.CreatedBy = *createdBy
 	}
+	p.AllowedAudiences = allowedAudiences
+	p.AllowedScopes = allowedScopes
+	if disabledAt != nil {
+		t := *disabledAt
+		p.DisabledAt = &t
+	}
+	if disabledReason != nil {
+		p.DisabledReason = *disabledReason
+	}
 	return &p, nil
+}
+
+func (s *PostgresStore) GetPrincipal(ctx context.Context, id string) (*business.Principal, error) {
+	w := wool.Get(ctx).In("GetPrincipal", wool.Field("principal_id", id))
+	executor := s.getQueryExecutor(ctx)
+
+	p, err := scanPrincipal(executor.QueryRow(ctx,
+		`SELECT `+principalColumns+` FROM principals WHERE id = $1`, id))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, business.NewStoreError(
+				fmt.Errorf("principal %s not found", id),
+				business.ErrTypeNotFound,
+			)
+		}
+		return nil, w.Wrapf(err, "failed to get principal")
+	}
+	return p, nil
 }
 
 // GetAgentPrincipal looks up an agent principal by its canonical
@@ -77,22 +118,15 @@ func (s *PostgresStore) GetAgentPrincipal(ctx context.Context, orgID, agentIdent
 		wool.Field("agent_id", agentIdentifier))
 	executor := s.getQueryExecutor(ctx)
 
-	var p business.Principal
-	var orgIDOut, agentID, revokedReason, createdBy *string
-	var revokedAt *time.Time
-
-	err := executor.QueryRow(ctx, `
-		SELECT id, kind, display_name, org_id, agent_identifier,
-		       created_at, revoked_at, revoked_reason, created_by
+	p, err := scanPrincipal(executor.QueryRow(ctx, `
+		SELECT `+principalColumns+`
 		FROM principals
 		WHERE kind = 'agent'
 		  AND org_id = $1
 		  AND agent_identifier = $2
 		  AND revoked_at IS NULL`,
 		orgID, agentIdentifier,
-	).Scan(&p.ID, &p.Kind, &p.DisplayName, &orgIDOut, &agentID,
-		&p.CreatedAt, &revokedAt, &revokedReason, &createdBy)
-
+	))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, business.NewStoreError(
@@ -102,24 +136,7 @@ func (s *PostgresStore) GetAgentPrincipal(ctx context.Context, orgID, agentIdent
 		}
 		return nil, w.Wrapf(err, "failed to get agent principal")
 	}
-
-	if orgIDOut != nil {
-		p.OrgID = *orgIDOut
-	}
-	if agentID != nil {
-		p.AgentIdentifier = *agentID
-	}
-	if revokedAt != nil {
-		t := *revokedAt
-		p.RevokedAt = &t
-	}
-	if revokedReason != nil {
-		p.RevokedReason = *revokedReason
-	}
-	if createdBy != nil {
-		p.CreatedBy = *createdBy
-	}
-	return &p, nil
+	return p, nil
 }
 
 // CreateAgentPrincipal inserts a new agent row. Returns
@@ -140,9 +157,11 @@ func (s *PostgresStore) CreateAgentPrincipal(ctx context.Context, p *business.Pr
 	}
 
 	_, err := executor.Exec(ctx, `
-		INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_by, created_at)
-		VALUES ($1, 'agent', $2, $3, $4, NULLIF($5, '')::uuid, $6)`,
+		INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_by, created_at,
+		                        allowed_audiences, allowed_scopes)
+		VALUES ($1, 'agent', $2, $3, $4, NULLIF($5, '')::uuid, $6, $7, $8)`,
 		p.ID, p.DisplayName, p.OrgID, p.AgentIdentifier, p.CreatedBy, p.CreatedAt,
+		nullableStringArray(p.AllowedAudiences), nullableStringArray(p.AllowedScopes),
 	)
 	if err != nil {
 		// pgx UNIQUE-violation surfaces with SQLSTATE 23505. We don't
@@ -205,6 +224,76 @@ func (s *PostgresStore) RevokePrincipal(ctx context.Context, id, reason string) 
 	return nil
 }
 
+// DisableAgentPrincipal sets disabled_at/disabled_reason on an agent row.
+// Idempotent: `WHERE disabled_at IS NULL` means a second disable leaves the
+// original timestamp/reason intact. Returns ErrTypeNotFound when no agent row
+// matches the id (a non-agent id simply matches nothing here — the business
+// layer has already rejected that case with a clearer error).
+func (s *PostgresStore) DisableAgentPrincipal(ctx context.Context, id, reason string) error {
+	w := wool.Get(ctx).In("DisableAgentPrincipal", wool.Field("principal_id", id))
+	executor := s.getQueryExecutor(ctx)
+
+	tag, err := executor.Exec(ctx, `
+		UPDATE principals
+		SET disabled_at = CURRENT_TIMESTAMP, disabled_reason = $1
+		WHERE id = $2 AND kind = 'agent' AND disabled_at IS NULL`,
+		reason, id,
+	)
+	if err != nil {
+		return w.Wrapf(err, "failed to disable agent principal")
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := executor.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM principals WHERE id = $1 AND kind = 'agent')`, id).
+			Scan(&exists); err != nil {
+			return w.Wrapf(err, "failed to verify agent existence after disable no-op")
+		}
+		if !exists {
+			return business.NewStoreError(
+				fmt.Errorf("agent principal %s not found", id),
+				business.ErrTypeNotFound,
+			)
+		}
+		w.Trace("agent principal already disabled; idempotent no-op")
+	}
+	return nil
+}
+
+// EnableAgentPrincipal clears disabled_at/disabled_reason. Idempotent on an
+// already-active agent (`WHERE disabled_at IS NOT NULL`). Returns
+// ErrTypeNotFound when no agent row matches the id.
+func (s *PostgresStore) EnableAgentPrincipal(ctx context.Context, id string) error {
+	w := wool.Get(ctx).In("EnableAgentPrincipal", wool.Field("principal_id", id))
+	executor := s.getQueryExecutor(ctx)
+
+	tag, err := executor.Exec(ctx, `
+		UPDATE principals
+		SET disabled_at = NULL, disabled_reason = NULL
+		WHERE id = $1 AND kind = 'agent' AND disabled_at IS NOT NULL`,
+		id,
+	)
+	if err != nil {
+		return w.Wrapf(err, "failed to enable agent principal")
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := executor.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM principals WHERE id = $1 AND kind = 'agent')`, id).
+			Scan(&exists); err != nil {
+			return w.Wrapf(err, "failed to verify agent existence after enable no-op")
+		}
+		if !exists {
+			return business.NewStoreError(
+				fmt.Errorf("agent principal %s not found", id),
+				business.ErrTypeNotFound,
+			)
+		}
+		w.Trace("agent principal already active; idempotent no-op")
+	}
+	return nil
+}
+
 // ListPrincipals returns paginated principals in the org, optionally
 // filtered by kind. The empty kind matches all kinds.
 //
@@ -238,16 +327,14 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	switch kind {
 	case business.PrincipalKindHuman:
 		query = `
-			SELECT p.id, p.kind, p.display_name, p.org_id, p.agent_identifier,
-			       p.created_at, p.revoked_at, p.revoked_reason, p.created_by
+			SELECT ` + principalColumnsPrefixed + `
 			FROM principals p
 			JOIN organization_members om ON om.user_id = p.id
 			WHERE p.kind = 'human' AND om.org_id = $1`
 		args = append(args, orgID)
 	case business.PrincipalKindService, business.PrincipalKindAgent:
 		query = `
-			SELECT id, kind, display_name, org_id, agent_identifier,
-			       created_at, revoked_at, revoked_reason, created_by
+			SELECT ` + principalColumns + `
 			FROM principals
 			WHERE kind = $1 AND org_id = $2`
 		args = append(args, kind, orgID)
@@ -257,14 +344,12 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 		// query coherent even though humans and the others use
 		// different join paths.
 		query = `
-			(SELECT p.id, p.kind, p.display_name, p.org_id, p.agent_identifier,
-			        p.created_at, p.revoked_at, p.revoked_reason, p.created_by
+			(SELECT ` + principalColumnsPrefixed + `
 			 FROM principals p
 			 JOIN organization_members om ON om.user_id = p.id
 			 WHERE p.kind = 'human' AND om.org_id = $1)
 			UNION ALL
-			(SELECT id, kind, display_name, org_id, agent_identifier,
-			        created_at, revoked_at, revoked_reason, created_by
+			(SELECT ` + principalColumns + `
 			 FROM principals
 			 WHERE kind IN ('service', 'agent') AND org_id = $1)`
 		args = append(args, orgID)
@@ -277,9 +362,7 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	// expression: appending `AND id < $N` directly to that is invalid SQL (it
 	// lands after the second branch's closing paren), so paging past page 1
 	// failed. Wrapping makes the cursor apply to the union result for every kind.
-	query = `SELECT id, kind, display_name, org_id, agent_identifier,
-	                created_at, revoked_at, revoked_reason, created_by
-	         FROM (` + query + `) AS principals`
+	query = `SELECT ` + principalColumns + ` FROM (` + query + `) AS principals`
 	if pageToken != "" {
 		query += fmt.Sprintf(` WHERE id < $%d`, len(args)+1)
 		args = append(args, pageToken)
@@ -296,30 +379,11 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 
 	var principals []*business.Principal
 	for rows.Next() {
-		var p business.Principal
-		var orgIDOut, agentID, revokedReason, createdBy *string
-		var revokedAt *time.Time
-		if err := rows.Scan(&p.ID, &p.Kind, &p.DisplayName, &orgIDOut, &agentID,
-			&p.CreatedAt, &revokedAt, &revokedReason, &createdBy); err != nil {
+		p, err := scanPrincipal(rows)
+		if err != nil {
 			return nil, "", w.Wrapf(err, "failed to scan principal")
 		}
-		if orgIDOut != nil {
-			p.OrgID = *orgIDOut
-		}
-		if agentID != nil {
-			p.AgentIdentifier = *agentID
-		}
-		if revokedAt != nil {
-			t := *revokedAt
-			p.RevokedAt = &t
-		}
-		if revokedReason != nil {
-			p.RevokedReason = *revokedReason
-		}
-		if createdBy != nil {
-			p.CreatedBy = *createdBy
-		}
-		principals = append(principals, &p)
+		principals = append(principals, p)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, "", w.Wrapf(err, "row scan error")

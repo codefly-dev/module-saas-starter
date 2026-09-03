@@ -491,3 +491,111 @@ func TestPrincipals_RevokePrincipal_EmitsAuditEvent(t *testing.T) {
 	}
 	require.True(t, found, "principal.revoked must be emitted")
 }
+
+// ----------------------------------------------------------------------------
+// Ceiling + disable/enable lifecycle (issue #440)
+// ----------------------------------------------------------------------------
+
+func TestPrincipals_CreateAgent_PersistsCeiling(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+
+	created, err := svc.CreateAgentPrincipal(testCtx, business.CreateAgentRequest{
+		OrgID:            orgID,
+		AgentIdentifier:  "publisher/ceiling:1.0.0",
+		CreatedBy:        owner,
+		AllowedAudiences: []string{"github", "jira"},
+		AllowedScopes:    []string{"repo"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"github", "jira"}, created.AllowedAudiences)
+	require.Equal(t, []string{"repo"}, created.AllowedScopes)
+
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, "publisher/ceiling:1.0.0")
+	require.NoError(t, err)
+	require.Equal(t, []string{"github", "jira"}, got.AllowedAudiences)
+	require.Equal(t, []string{"repo"}, got.AllowedScopes)
+}
+
+func TestPrincipals_CreateAgent_EmptyCeilingIsNull(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "publisher/no-ceiling:1.0.0")
+
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetPrincipal(testCtx, agent.ID)
+	require.NoError(t, err)
+	require.Nil(t, got.AllowedAudiences, "an unset ceiling must read back as nil, never an empty allow-nothing set")
+	require.Nil(t, got.AllowedScopes)
+}
+
+func TestPrincipals_DisableEnable_LifecycleAndAudit(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "publisher/toggle:1.0.0")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	rec := &recordingEmitter{}
+	svc.SetAuditEmitter(rec)
+
+	require.NoError(t, svc.DisableAgentPrincipal(testCtx, agent.ID, "incident-123"))
+
+	// A disabled agent is no longer resolvable as a fresh actor.
+	_, err = testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
+	var se *business.StoreError
+	require.ErrorAs(t, err, &se)
+	require.Equal(t, business.ErrTypeNotFound, se.StoreErrorType)
+
+	require.NoError(t, svc.EnableAgentPrincipal(testCtx, agent.ID))
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetAgentPrincipal(testCtx, orgID, agent.AgentIdentifier)
+	require.NoError(t, err)
+	require.False(t, got.IsDisabled(), "an enabled agent resolves again")
+
+	require.Equal(t, 1, countEvents(rec, business.EventPrincipalDisabled))
+	require.Equal(t, 1, countEvents(rec, business.EventPrincipalEnabled))
+}
+
+func TestPrincipals_Disable_IdempotentNoDuplicateAudit(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "publisher/idem-disable:1.0.0")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	rec := &recordingEmitter{}
+	svc.SetAuditEmitter(rec)
+
+	require.NoError(t, svc.DisableAgentPrincipal(testCtx, agent.ID, "first"))
+	require.NoError(t, svc.DisableAgentPrincipal(testCtx, agent.ID, "second"))
+	require.Equal(t, 1, countEvents(rec, business.EventPrincipalDisabled),
+		"re-disabling an already-disabled agent must not emit a second audit event")
+
+	got, err := testStore.As(business.Identity{OrgID: orgID}).GetPrincipal(testCtx, agent.ID)
+	require.NoError(t, err)
+	require.Equal(t, "first", got.DisabledReason, "the original disable reason must be preserved")
+}
+
+func TestPrincipals_Enable_RejectedForRevoked(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "publisher/revoked-noenable:1.0.0")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	require.NoError(t, testStore.As(business.System()).RevokePrincipal(testCtx, agent.ID, "terminal"))
+
+	err = svc.EnableAgentPrincipal(testCtx, agent.ID)
+	require.Error(t, err, "a revoked principal is terminal and cannot be re-enabled")
+}
+
+func countEvents(rec *recordingEmitter, event business.EventType) int {
+	n := 0
+	for _, e := range rec.entries {
+		if e.EventType == event {
+			n++
+		}
+	}
+	return n
+}

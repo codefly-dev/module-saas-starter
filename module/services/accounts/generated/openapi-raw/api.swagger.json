@@ -5917,6 +5917,19 @@
         },
         "displayName": {
           "type": "string"
+        },
+        "allowedAudiences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional delegated-execution ceiling. allowed_audiences bounds the Work\nContext audiences this agent may be minted for; allowed_scopes bounds the\nresource kinds it may request. Empty = unrestricted (rollout default)."
+        },
+        "allowedScopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
@@ -7929,6 +7942,27 @@
         "createdBy": {
           "type": "string",
           "description": "The principal that created this one — the authorship root a policy\nconsumer chains authority back to. Empty = a root principal (humans)."
+        },
+        "allowedAudiences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "For kind=AGENT only: the delegated-execution ceiling declared at\nregistration. allowed_audiences bounds the Work Context audiences this\nactor may be minted for; allowed_scopes bounds the resource kinds it may\nrequest. Empty = unrestricted."
+        },
+        "allowedScopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "disabledAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "A reversible suspension of a delegated actor, distinct from the terminal\nrevoked_at. While set the actor resolves as inactive, so outstanding Work\nContexts go stale on the authorization-revision bump and no new one mints."
+        },
+        "disabledReason": {
+          "type": "string"
         }
       },
       "description": "Principal mirrors the principals table 1:1 — the unified identity\nrow used by every action, audit event, and delegation grant.\n\nid matches users.uuid for kind=HUMAN, api_keys.id for kind=SERVICE,\nand is a fresh server-generated UUID for kind=AGENT. We do NOT\nenforce these as foreign keys at the DB level (independent\nlifecycles); the equality is convention and the backfill migration."

@@ -272,6 +272,9 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
+	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
+		return nil, err
+	}
 
 	var actors []*basev0.WorkActorV1
 	if facts.Actor != nil {
@@ -328,6 +331,9 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if req.GetSessionId() == parent.GetSessionId() {
 		return nil, status.Error(codes.InvalidArgument, "new session_id must differ from parent session")
 	}
+	if err := s.enforceDeriveAudienceCeiling(ctx, req.GetOrgId(), parent, req.GetAudience()); err != nil {
+		return nil, err
+	}
 	token, signed, err := s.signer.StartSession(parentToken, codefly.StartRootSessionInput{
 		SessionID:    req.GetSessionId(),
 		Audience:     req.GetAudience(),
@@ -359,6 +365,9 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	}
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
+	}
+	if err := s.enforceDeriveAudienceCeiling(ctx, req.GetOrgId(), parent, req.GetAudience()); err != nil {
+		return nil, err
 	}
 	_, scopes, err := workContextScopes(req.GetAttenuatedScopes())
 	if err != nil {
@@ -414,6 +423,9 @@ func (s *WorkContextAuthorityServer) StartChildSession(
 			codes.FailedPrecondition,
 			"parent Work Context authorization revision is stale",
 		)
+	}
+	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
+		return nil, err
 	}
 	token, signed, err := s.signer.StartChildSession(parentToken, codefly.StartChildSessionInput{
 		SessionID: req.GetSessionId(),
@@ -474,6 +486,9 @@ func (s *WorkContextAuthorityServer) RenewWorkContext(
 	audience := req.GetAudience()
 	if audience == "" {
 		audience = parent.GetAudience()
+	}
+	if err := s.enforceDeriveAudienceCeiling(ctx, req.GetOrgId(), parent, audience); err != nil {
+		return nil, err
 	}
 	// A renewal must not silently loosen replay protection: an unspecified
 	// policy inherits the parent's, so a SINGLE_USE context stays SINGLE_USE
@@ -737,6 +752,67 @@ func (s *WorkContextAuthorityServer) resolveAuthority(
 		}
 	}
 	return nil, status.Error(codes.Internal, "cannot resolve current Work Context authority")
+}
+
+// enforceActorCeiling rejects a mint whose requested audience or scopes fall
+// outside the delegated actor's registered ceiling (CreateAgentPrincipal's
+// allowed_audiences / allowed_scopes). An empty ceiling list is unrestricted,
+// and a nil actor is an owner-only (non-delegated) context that carries none.
+func enforceActorCeiling(actor *business.Principal, audience string, scopes []*basev0.WorkScopeV1) error {
+	if err := enforceActorAudience(actor, audience); err != nil {
+		return err
+	}
+	if actor == nil || len(actor.AllowedScopes) == 0 {
+		return nil
+	}
+	allowed := make(map[string]struct{}, len(actor.AllowedScopes))
+	for _, kind := range actor.AllowedScopes {
+		allowed[kind] = struct{}{}
+	}
+	for _, scope := range scopes {
+		if _, ok := allowed[scope.GetResourceKind()]; !ok {
+			return status.Errorf(codes.PermissionDenied,
+				"resource kind %q is outside agent %s allowed scopes",
+				scope.GetResourceKind(), actor.AgentIdentifier)
+		}
+	}
+	return nil
+}
+
+func enforceActorAudience(actor *business.Principal, audience string) error {
+	if actor == nil || len(actor.AllowedAudiences) == 0 {
+		return nil
+	}
+	for _, allowed := range actor.AllowedAudiences {
+		if allowed == audience {
+			return nil
+		}
+	}
+	return status.Errorf(codes.PermissionDenied,
+		"audience %q is outside agent %s allowed audiences", audience, actor.AgentIdentifier)
+}
+
+// enforceDeriveAudienceCeiling gates the audience of a context derived from a
+// parent (root session, audience exchange, renewal). These paths preserve the
+// parent's actor chain rather than binding a new actor, so the ceiling of the
+// current (outermost) delegated actor still governs which audiences it may be
+// retargeted to. Owner-only parents carry no actor and no ceiling.
+func (s *WorkContextAuthorityServer) enforceDeriveAudienceCeiling(
+	ctx context.Context,
+	orgID string,
+	parent *basev0.WorkContextV1,
+	audience string,
+) error {
+	chain := parent.GetActorChain()
+	if len(chain) == 0 {
+		return nil
+	}
+	actorID := chain[len(chain)-1].GetPrincipalId()
+	facts, err := s.resolveAuthority(ctx, orgID, parent.GetOwnerPrincipalId(), actorID, nil)
+	if err != nil {
+		return err
+	}
+	return enforceActorAudience(facts.Actor, audience)
 }
 
 func workContextScopes(

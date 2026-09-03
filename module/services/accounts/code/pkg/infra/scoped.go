@@ -147,3 +147,19 @@ func (sc *Scoped) RevokePrincipal(ctx context.Context, id, reason string) error 
 		return sc.store.RevokePrincipal(ctx, id, reason)
 	})
 }
+
+// DisableAgentPrincipal reversibly suspends an agent under this identity's RLS
+// context.
+func (sc *Scoped) DisableAgentPrincipal(ctx context.Context, id, reason string) error {
+	return sc.Within(ctx, func(ctx context.Context) error {
+		return sc.store.DisableAgentPrincipal(ctx, id, reason)
+	})
+}
+
+// EnableAgentPrincipal lifts a reversible suspension under this identity's RLS
+// context.
+func (sc *Scoped) EnableAgentPrincipal(ctx context.Context, id string) error {
+	return sc.Within(ctx, func(ctx context.Context) error {
+		return sc.store.EnableAgentPrincipal(ctx, id)
+	})
+}

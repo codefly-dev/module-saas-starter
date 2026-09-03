@@ -297,11 +297,35 @@ message CreateAgentPrincipalRequest {
   // agent_identifier in canonical "publisher/name:version" form.
   string agent_identifier = 2 [(buf.validate.field).string.min_len = 1];
   string display_name = 3;
+  // Optional delegated-execution ceiling. allowed_audiences bounds the Work
+  // Context audiences this agent may be minted for; allowed_scopes bounds the
+  // resource kinds it may request. Empty = unrestricted (rollout default).
+  repeated string allowed_audiences = 4 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 512
+  ];
+  repeated string allowed_scopes = 5 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 128
+  ];
 }
 
 message RevokePrincipalRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
   string reason = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message DisableAgentPrincipalRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string reason = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message EnableAgentPrincipalRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
 }
 
 message ListPrincipalsRequest {
@@ -717,6 +741,38 @@ service PrincipalService {
     option (google.api.http) = {
       post: "/v1/principals/{id}:revoke"
       body: "*"
+    };
+  }
+  rpc DisableAgentPrincipal(DisableAgentPrincipalRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "principal.disabled"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  rpc EnableAgentPrincipal(EnableAgentPrincipalRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "principal.enabled"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
   rpc ListPrincipals(ListPrincipalsRequest) returns (ListPrincipalsResponse) {

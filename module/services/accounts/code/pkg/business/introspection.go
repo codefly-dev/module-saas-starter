@@ -169,6 +169,8 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/SuspendUser":               "Suspend a user account.",
 	"PlatformAdminService/UnsuspendUser":             "Restore a suspended user.",
 	"PrincipalService/CreateAgentPrincipal":          "Create an agent principal in an organization.",
+	"PrincipalService/DisableAgentPrincipal":         "Reversibly suspend an agent principal.",
+	"PrincipalService/EnableAgentPrincipal":          "Lift a reversible suspension on an agent principal.",
 	"PrincipalService/GetAgentPrincipal":             "Internal agent-principal lookup.",
 	"PrincipalService/GetPrincipal":                  "Internal principal lookup.",
 	"PrincipalService/ListPrincipals":                "List principals in an organization.",

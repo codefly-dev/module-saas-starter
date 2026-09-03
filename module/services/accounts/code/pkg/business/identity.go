@@ -42,4 +42,6 @@ type Scoped interface {
 	GetAgentPrincipal(ctx context.Context, orgID, agentIdentifier string) (*Principal, error)
 	CreateAgentPrincipal(ctx context.Context, p *Principal) error
 	RevokePrincipal(ctx context.Context, id, reason string) error
+	DisableAgentPrincipal(ctx context.Context, id, reason string) error
+	EnableAgentPrincipal(ctx context.Context, id string) error
 }
