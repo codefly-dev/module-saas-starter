@@ -17,6 +17,7 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
+	policyv1 "accounts/pkg/gen/saas/policy/v1"
 
 	"github.com/codefly-dev/core/wool"
 )
@@ -64,6 +65,9 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err != nil {
 			return nil, err
 		}
+		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
+			return nil, err
+		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
 		return handler(ctx, req)
 	}
@@ -74,6 +78,9 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx, err := authorizer.authorize(stream.Context(), info.FullMethod)
 		if err != nil {
+			return err
+		}
+		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
 			return err
 		}
 		shadowPolicyCoverage(ctx, info.FullMethod)
@@ -126,6 +133,53 @@ func shadowPolicyCoverage(ctx context.Context, fullMethod string) {
 		attribute.String("method", fullMethod),
 		attribute.String("coverage", string(coverage)),
 	))
+}
+
+// centralEnforcement selects request-time RBAC admission. When false (the
+// default, shadow mode) the interceptors record coverage but change no admission
+// decision. When true they additionally deny a call whose declared org-tenant
+// floor the caller does not satisfy. Set once at startup before the servers
+// register their interceptors.
+var centralEnforcement bool
+
+// SetCentralEnforcementMode turns request-time central RBAC enforcement on or
+// off. Shadow (false) is the fallback; enforce (true) denies at admission. Call
+// before the gRPC and Connect servers register their interceptors.
+func SetCentralEnforcementMode(enforce bool) { centralEnforcement = enforce }
+
+// enforceCentralPolicy denies a call whose declared org-member/admin tenant the
+// authenticated caller does not satisfy, reusing the same membership helpers the
+// handlers do against the caller's verified organization. It enforces only the
+// subset business.CentralTenantEnforcement admits — the tenant floor on methods
+// declaring no finer permission, platform-role, MFA, team binding, or
+// owned-resource binding — so it is never stricter than the handler require*
+// site that still runs after it. Everything it does not resolve stays with those
+// handler sites. A no-op unless enforce mode is on. Returns a gRPC status error;
+// the Connect path translates it.
+func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
+	if !centralEnforcement {
+		return nil
+	}
+	policy, ok := business.LookupRPCPolicy(fullMethod)
+	if !ok {
+		return nil
+	}
+	tenant, enforce := business.CentralTenantEnforcement(policy)
+	if !enforce {
+		return nil
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return err
+	}
+	orgID, _, ok := auth.VerifiedDatabaseIdentity(ctx)
+	if !ok {
+		return status.Error(codes.PermissionDenied, "organization scope required")
+	}
+	if tenant == policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN {
+		return requireOrgAdmin(ctx, actorID, orgID)
+	}
+	return requireOrgMember(ctx, actorID, orgID)
 }
 
 type contextServerStream struct {

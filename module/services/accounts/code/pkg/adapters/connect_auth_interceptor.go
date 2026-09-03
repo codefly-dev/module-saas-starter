@@ -46,6 +46,9 @@ func (i *connectPolicyInterceptor) WrapUnary(next connect.UnaryFunc) connect.Una
 		if err != nil {
 			return nil, err
 		}
+		if err := enforceCentralPolicy(ctx, req.Spec().Procedure); err != nil {
+			return nil, translateGRPCError(err)
+		}
 		shadowPolicyCoverage(ctx, req.Spec().Procedure)
 		return next(ctx, req)
 	}
@@ -60,6 +63,9 @@ func (i *connectPolicyInterceptor) WrapStreamingHandler(next connect.StreamingHa
 		ctx, err := i.authorize(ctx, conn.Spec().Procedure, conn.RequestHeader())
 		if err != nil {
 			return err
+		}
+		if err := enforceCentralPolicy(ctx, conn.Spec().Procedure); err != nil {
+			return translateGRPCError(err)
 		}
 		shadowPolicyCoverage(ctx, conn.Spec().Procedure)
 		return next(ctx, conn)

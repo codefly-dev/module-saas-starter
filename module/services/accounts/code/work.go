@@ -462,6 +462,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	adapters.SetInternalTokenRotation(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"))
 	adapters.SetGatewayToken(workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"))
 
+	centralEnforcement, err := configuredCentralEnforcement()
+	if err != nil {
+		return nil, err
+	}
+	adapters.SetCentralEnforcementMode(centralEnforcement)
+
 	// /v1/status — public health probe surface. Probes run in parallel
 	// with a 2s budget each; overall status is the worst result. The
 	// FE /status page reads this; k8s liveness/readiness can too.
@@ -859,6 +865,21 @@ func configuredMFAStepUpMaxAge() (time.Duration, error) {
 		return 0, fmt.Errorf("MFA_STEP_UP_MAX_AGE must be a positive Go duration no greater than 24h")
 	}
 	return maxAge, nil
+}
+
+// configuredCentralEnforcement selects request-time central RBAC admission from
+// the security configuration. "enforce" turns hard-deny on; "shadow" (and an
+// unset value) keeps the classify-only fallback. Any other value fails the boot
+// so a typo cannot silently leave enforcement off.
+func configuredCentralEnforcement() (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(workspaceEnv("security", "RBAC_CENTRAL_ENFORCEMENT"))) {
+	case "", "shadow":
+		return false, nil
+	case "enforce":
+		return true, nil
+	default:
+		return false, fmt.Errorf(`RBAC_CENTRAL_ENFORCEMENT must be "shadow" or "enforce"`)
+	}
 }
 
 func configuredSessionPolicy() (auth.SessionPolicy, error) {
