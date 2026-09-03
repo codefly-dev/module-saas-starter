@@ -158,6 +158,7 @@ func TestOwnedResourceMethodsAreResolvableGap(t *testing.T) {
 		"/saas.accounts.v1.WebhookService/ReplayDelivery",
 		"/saas.accounts.v1.WebhookService/RotateSecret",
 		"/saas.accounts.v1.WebhookService/TestWebhook",
+		"/saas.accounts.v1.PrincipalService/RevokePrincipal",
 	} {
 		policy, ok := LookupRPCPolicy(method)
 		require.True(t, ok, method)

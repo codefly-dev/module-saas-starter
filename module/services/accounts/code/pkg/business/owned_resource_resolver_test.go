@@ -15,6 +15,7 @@ type ownedResourceFakeStore struct {
 	invitationOrg map[string]string
 	subscriptions map[string]*WebhookSubscription
 	deliveries    map[string]*WebhookDelivery
+	principals    map[string]*Principal
 	err           error
 }
 
@@ -39,6 +40,13 @@ func (f *ownedResourceFakeStore) GetWebhookDelivery(_ context.Context, id string
 	return f.deliveries[id], nil
 }
 
+func (f *ownedResourceFakeStore) GetPrincipal(_ context.Context, id string) (*Principal, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.principals[id], nil
+}
+
 func ownedResourcePolicy(t *testing.T, fullMethod string) RPCPolicy {
 	t.Helper()
 	policy, ok := LookupRPCPolicy(fullMethod)
@@ -52,6 +60,7 @@ func fullyResolvingStore() *ownedResourceFakeStore {
 		invitationOrg: map[string]string{"inv-1": "org-inv"},
 		subscriptions: map[string]*WebhookSubscription{"sub-1": {ID: "sub-1", OrgID: "org-sub"}},
 		deliveries:    map[string]*WebhookDelivery{"del-1": {ID: "del-1", SubscriptionID: "sub-1"}},
+		principals:    map[string]*Principal{"prin-1": {ID: "prin-1", OrgID: "org-prin"}},
 	}
 }
 
@@ -74,6 +83,7 @@ func TestResolveOwnedResourceOrgPerKind(t *testing.T) {
 		{"/saas.accounts.v1.WebhookService/GetDelivery", &gen.GetWebhookDeliveryRequest{Id: "del-1"}, "org-sub"},
 		{"/saas.accounts.v1.WebhookService/ReplayDelivery", &gen.ReplayWebhookDeliveryRequest{Id: "del-1"}, "org-sub"},
 		{"/saas.accounts.v1.WebhookService/ListDeliveries", &gen.ListWebhookDeliveriesRequest{SubscriptionId: "sub-1"}, "org-sub"},
+		{"/saas.accounts.v1.PrincipalService/RevokePrincipal", &gen.RevokePrincipalRequest{Id: "prin-1"}, "org-prin"},
 	}
 	for _, tc := range cases {
 		policy := ownedResourcePolicy(t, tc.method)
@@ -81,6 +91,16 @@ func TestResolveOwnedResourceOrgPerKind(t *testing.T) {
 		require.Truef(t, ok, "%s should resolve", tc.method)
 		require.Equalf(t, tc.want, orgID, "owning org for %s", tc.method)
 	}
+}
+
+// A human principal is cross-org (empty OrgID): revoking it resolves to no org,
+// so the central path fails closed and leaves the platform-admin gate to the
+// handler. The resolver must not bind an org for it.
+func TestResolvePrincipalOrgHumanFailsClosed(t *testing.T) {
+	store := &ownedResourceFakeStore{principals: map[string]*Principal{"human-1": {ID: "human-1", OrgID: ""}}}
+	policy := ownedResourcePolicy(t, "/saas.accounts.v1.PrincipalService/RevokePrincipal")
+	_, ok := ResolveOwnedResourceOrg(context.Background(), store, policy, &gen.RevokePrincipalRequest{Id: "human-1"})
+	require.False(t, ok, "a cross-org human principal must not resolve to an org")
 }
 
 // Resolution fails closed: an unknown resource id (no store row), an empty
