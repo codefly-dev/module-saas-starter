@@ -369,11 +369,39 @@ func doWork(ctx context.Context) (Clean, error) {
 
 	// Audit persistence and matching webhook fan-out share one database
 	// transaction. There is no process-local queue to saturate or lose on crash.
-	auditEmitter, err := business.NewDurableAuditEmitter(store, store)
+	// AUDIT_SINK=both additionally tees each org-scoped audit row to an external
+	// warehouse, fed asynchronously from the durable outbox — Postgres stays the
+	// atomic source of truth (an external destination cannot join its tx).
+	auditSinkMode, externalAuditSink, err := configuredAuditSink()
+	if err != nil {
+		return nil, err
+	}
+	var auditEmitterOpts []business.DurableAuditEmitterOption
+	if auditSinkMode == auditSinkBoth {
+		auditEmitterOpts = append(auditEmitterOpts, business.WithExternalTee())
+	}
+	auditEmitter, err := business.NewDurableAuditEmitter(store, store, auditEmitterOpts...)
 	if err != nil {
 		return nil, err
 	}
 	service.SetAuditEmitter(auditEmitter)
+
+	var auditExportWorker *jobs.Worker
+	if auditSinkMode == auditSinkBoth {
+		auditExportHandler, err := business.NewAuditExportJobHandler(externalAuditSink)
+		if err != nil {
+			return nil, err
+		}
+		auditExportWorker, err = jobs.NewWorker(jobs.WorkerConfig{
+			Store:      jobStore,
+			Queue:      business.AuditExportQueue,
+			Handler:    auditExportHandler,
+			RetryDelay: business.AuditExportRetryDelay,
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Reconcile the audit event-type registry projection from the code catalog
 	// and provision the current + upcoming monthly partitions so audit writes
@@ -710,6 +738,9 @@ func doWork(ctx context.Context) (Clean, error) {
 	if analyticsWorker != nil {
 		analyticsWorker.Start(ctx)
 	}
+	if auditExportWorker != nil {
+		auditExportWorker.Start(ctx)
+	}
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
@@ -729,6 +760,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if err := analyticsWorker.Shutdown(shutdownCtx); err != nil {
 				sw.Warn("product analytics worker shutdown timed out", wool.ErrField(err))
+			}
+			cancel()
+		}
+		if auditExportWorker != nil {
+			sw.Info("stopping audit export worker")
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			if err := auditExportWorker.Shutdown(shutdownCtx); err != nil {
+				sw.Warn("audit export worker shutdown timed out", wool.ErrField(err))
 			}
 			cancel()
 		}
@@ -824,6 +863,48 @@ func configuredAnalyticsSink() (analytics.Destination, bool, error) {
 	default:
 		return nil, false, fmt.Errorf("PRODUCT_ANALYTICS_MODE must be disabled, noop, or posthog")
 	}
+}
+
+type auditSinkMode int
+
+const (
+	auditSinkPostgres auditSinkMode = iota
+	auditSinkBoth
+)
+
+// configuredAuditSink selects the audit backend. "postgres" (default) keeps the
+// durable emitter alone. "both" adds an asynchronous tee to an external
+// warehouse while Postgres stays the atomic source of truth. "external" is
+// rejected: an external destination cannot join the audit transaction, so it
+// cannot replace the durable emitter without forfeiting audit/webhook
+// atomicity — a deliberate posture we refuse to let a config value break.
+func configuredAuditSink() (auditSinkMode, business.ExternalAuditSink, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AUDIT_SINK"))) {
+	case "", "postgres":
+		return auditSinkPostgres, nil, nil
+	case "both":
+		sink, err := configuredExternalAuditSink()
+		if err != nil {
+			return auditSinkPostgres, nil, err
+		}
+		return auditSinkBoth, sink, nil
+	case "external":
+		return auditSinkPostgres, nil, fmt.Errorf(
+			"AUDIT_SINK=external is not permitted: Postgres is the atomic source of truth and an external destination cannot join its transaction; use AUDIT_SINK=both to tee to the external sink")
+	default:
+		return auditSinkPostgres, nil, fmt.Errorf("AUDIT_SINK must be postgres or both")
+	}
+}
+
+func configuredExternalAuditSink() (business.ExternalAuditSink, error) {
+	endpoint := strings.TrimSpace(os.Getenv("AUDIT_EXTERNAL_URL"))
+	if endpoint == "" {
+		return nil, fmt.Errorf("AUDIT_SINK=both requires AUDIT_EXTERNAL_URL for the external audit destination")
+	}
+	return business.NewHTTPAuditSink(business.HTTPAuditSinkConfig{
+		Endpoint: endpoint,
+		Token:    strings.TrimSpace(os.Getenv("AUDIT_EXTERNAL_TOKEN")),
+	})
 }
 
 // anonymousEndpointsUnprotected reports whether the four anonymous endpoints
