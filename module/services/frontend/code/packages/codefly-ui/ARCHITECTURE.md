@@ -54,6 +54,21 @@ sits outside this stack.
    components stroke with `currentColor` / `--primary`, so a skin change
    re-themes the whole catalog for free.
 
+5. **Sealed downward.** A higher layer *composes* what a lower layer ships but
+   can never *shadow or replace* it. A solution cannot swap in its own `<Card>`
+   / `<Dashboard>` / `<Collection>` that the kit or another module would then
+   pick up — it renders against the one true instance the owning layer
+   publishes. This is what keeps the kit and module UI identical in every
+   solution and lets a skin change propagate predictably instead of forking per
+   solution. It is distinct from *which* version wins (the `requiredVersion:
+   false` policy): sealing is that a lower layer's component can't be overridden
+   *at all*. *(Enforced host-side by the share config in
+   `src/solutions/SolutionOutlet.tsx` — every sealed layer package (React + kit
+   + each module UI) is a `singleton` with `requiredVersion: false`, so a remote
+   consumes the host's already-loaded instance and a copy it bundles itself can
+   never win. The `sealed-layers` test proves a remote's competing copy resolves
+   to the host's.)*
+
 ## Boundary
 
 - **Kit** = anything reusable across solutions (chat, dashboard, tables, atoms).
