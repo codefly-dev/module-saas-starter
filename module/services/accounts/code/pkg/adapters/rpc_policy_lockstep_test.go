@@ -7,8 +7,9 @@ package adapters
 // require* check — a route could declare TENANT_REQUIREMENT_ORG_ADMIN (or an
 // owned-resource / platform-role / MFA floor) and simply forget the gate, and
 // every other test stayed green. This gate parses the handler package and
-// fails closed when a declared floor has no covering require* call reachable
-// from the handler. Deliberate exceptions live in
+// fails closed when a declared floor has no covering require* guard — a call
+// whose error is consumed by control flow, so its failure actually blocks the
+// request — reachable from the handler. Deliberate exceptions live in
 // authz_enforcement_allowlist.json, mirroring the coverage-gate allowlist.
 //
 // A method is served by up to two functions that share its name and request
@@ -48,6 +49,7 @@ type capability string
 const (
 	capOrgMember capability = "org_member"
 	capOrgAdmin  capability = "org_admin"
+	capOrgOwner  capability = "org_owner"
 	capPlatform  capability = "platform_role"
 	capTeam      capability = "team"
 	capMFACond   capability = "mfa_if_enrolled" // satisfied by the strict step-up too
@@ -58,9 +60,15 @@ const (
 // establishes intrinsically (by role/lookup comparison, not by delegating to
 // another helper). Every other function's capabilities are derived by
 // propagating these along the intra-package call graph, so a handler that gates
-// through a local wrapper is still credited. requireOrgAdmin/requireBillingAdmin
-// also establish membership; requireRecentMFA is strictly stronger than the
-// if-enrolled step-up, so it provides both MFA capabilities.
+// through a local wrapper is still credited. requireOrgAdmin also establishes
+// membership; requireRecentMFA is strictly stronger than the if-enrolled
+// step-up, so it provides both MFA capabilities.
+//
+// requireBillingAdmin admits org owner/admin OR a member holding billing:write,
+// so it is looser than a pure org-admin check. It satisfies capOrgAdmin here
+// because every route that uses it declares a billing:write/read permission (a
+// deliberate admin-equivalent delegation); the gate does not model that
+// permission dimension, so it credits the delegation the helper implements.
 func enforcementSeeds() map[string]map[capability]bool {
 	set := func(caps ...capability) map[capability]bool {
 		m := make(map[capability]bool, len(caps))
@@ -96,8 +104,12 @@ func requiredCapabilities(p *policyv1.MethodPolicy) map[capability]bool {
 		need[capPlatform] = true
 	}
 	switch p.GetTenant() {
-	case policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN,
-		policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_OWNER:
+	case policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_OWNER:
+		// Owner is strictly above admin; no require* helper establishes it today,
+		// so an owner-declared route fails closed until a real owner gate exists
+		// rather than being satisfied by requireOrgAdmin.
+		need[capOrgOwner] = true
+	case policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN:
 		need[capOrgAdmin] = true
 	case policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_MEMBER:
 		need[capOrgMember] = true
@@ -263,6 +275,19 @@ func receiverTypeName(expr ast.Expr) string {
 // plain-identifier calls (require* helpers and package functions), plus
 // same-receiver method calls (e.g. s.authorizeOwner) resolved to their
 // "<ReceiverType>.<Method>" node so wrapper methods are followed.
+//
+// A call is an edge only when its error result is CONSUMED — assigned to a
+// non-blank variable or returned — never when it is discarded as a bare
+// statement or into the blank identifier. An enforcement call whose error is
+// thrown away does not gate the request (control flow proceeds regardless), so
+// crediting it would let `if cond { requireOrgAdmin(ctx) }` or a stray
+// `requireOrgAdmin(ctx)` pass as enforcement. This binds the credit to the
+// guard's failure actually blocking the call, which is what the declared floor
+// means. It does not prove the guard dominates every path — a legitimately
+// branched authorization (e.g. requireOrgMember with a requirePlatformAdmin
+// override) is credited on the strength of its consumed guards, and a
+// path-dominance analysis strict enough to reject a partial branch would also
+// reject those real handlers.
 func calledNodes(fn *ast.FuncDecl) []string {
 	if fn.Body == nil {
 		return nil
@@ -274,10 +299,11 @@ func calledNodes(fn *ast.FuncDecl) []string {
 			recvVar = names[0].Name
 		}
 	}
+	discarded := discardedCalls(fn.Body)
 	seen := map[string]bool{}
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
-		if !ok {
+		if !ok || discarded[call] {
 			return true
 		}
 		switch fun := call.Fun.(type) {
@@ -298,6 +324,41 @@ func calledNodes(fn *ast.FuncDecl) []string {
 	}
 	sort.Strings(nodes)
 	return nodes
+}
+
+// discardedCalls collects the calls in body whose result is thrown away — a
+// bare expression statement, or an assignment whose every target is the blank
+// identifier. Such a call's error cannot influence control flow.
+func discardedCalls(body *ast.BlockStmt) map[*ast.CallExpr]bool {
+	discarded := map[*ast.CallExpr]bool{}
+	ast.Inspect(body, func(n ast.Node) bool {
+		switch stmt := n.(type) {
+		case *ast.ExprStmt:
+			if call, ok := stmt.X.(*ast.CallExpr); ok {
+				discarded[call] = true
+			}
+		case *ast.AssignStmt:
+			if allBlank(stmt.Lhs) {
+				for _, rhs := range stmt.Rhs {
+					if call, ok := rhs.(*ast.CallExpr); ok {
+						discarded[call] = true
+					}
+				}
+			}
+		}
+		return true
+	})
+	return discarded
+}
+
+func allBlank(exprs []ast.Expr) bool {
+	for _, expr := range exprs {
+		ident, ok := expr.(*ast.Ident)
+		if !ok || ident.Name != "_" {
+			return false
+		}
+	}
+	return len(exprs) > 0
 }
 
 // typesInParams returns the qualified type names referenced by a parameter
@@ -363,7 +424,7 @@ func TestDeclaredPolicyEnforcedInLockstep(t *testing.T) {
 	allow := loadEnforcementAllowlist(t, "authz_enforcement_allowlist.json")
 
 	var violations []string
-	checked := 0
+	exercised := map[capability]bool{}
 	for _, policy := range business.RPCPolicies() {
 		if policy.PolicyError != "" || !policy.Tier.Valid() {
 			continue // excluded from admission; the coverage gate owns these
@@ -372,7 +433,9 @@ func TestDeclaredPolicyEnforcedInLockstep(t *testing.T) {
 		if len(need) == 0 || allow[policy.FullMethod] {
 			continue
 		}
-		checked++
+		for c := range need {
+			exercised[c] = true
+		}
 		reqType := policy.InputType[strings.LastIndex(policy.InputType, ".")+1:]
 		provided, found := scan.capabilitiesFor(policy.Method, reqType)
 		if !found {
@@ -399,9 +462,14 @@ func TestDeclaredPolicyEnforcedInLockstep(t *testing.T) {
 		"(add the require* gate, or a ticketed authz_enforcement_allowlist.json entry):\n%s",
 		strings.Join(violations, "\n"))
 
-	// Guard against the filter silently excluding everything: the fine-grained
-	// floor covers the large majority of authenticated RPCs.
-	require.Greater(t, checked, 80, "expected the lockstep to evaluate the fine-grained-floor RPCs")
+	// Guard against the filter silently dropping a whole floor dimension: every
+	// requirement kind the catalog carries must be exercised, so a regression
+	// that stops classifying (say) MFA or team routes fails loudly rather than
+	// passing on the remaining dimensions. capOrgOwner is absent from the guard
+	// because no route declares it yet.
+	for _, c := range []capability{capOrgMember, capOrgAdmin, capPlatform, capTeam, capMFACond, capMFAStrict} {
+		require.Truef(t, exercised[c], "no fine-grained-floor RPC exercised %q; the classifier may have regressed", c)
+	}
 }
 
 // --- unit tests for the gate machinery -------------------------------------
@@ -451,6 +519,9 @@ func TestRequiredCapabilities(t *testing.T) {
 				{Target: policyv1.ResourceTarget_RESOURCE_TARGET_TEAM},
 			}
 		}), []capability{capOrgAdmin, capTeam}},
+		{"org owner is distinct from admin", mkPolicy(func(p *policyv1.MethodPolicy) {
+			p.Tenant = policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_OWNER
+		}), []capability{capOrgOwner}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -485,24 +556,32 @@ func TestScanHandlersCreditsReachableEnforcement(t *testing.T) {
 package adapters
 
 func (s *AServer) Direct(ctx context.Context, req *gen.DirectRequest) error {
-	requireOrgAdmin(ctx)
+	if err := requireOrgAdmin(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (s *AServer) ViaPlainWrapper(ctx context.Context, req *gen.WrapRequest) error {
-	authorizeMember(ctx)
+	if err := authorizeMember(ctx); err != nil {
+		return err
+	}
 	return nil
 }
-func authorizeMember(ctx context.Context) { requireOrgMember(ctx) }
+func authorizeMember(ctx context.Context) error { return requireOrgMember(ctx) }
 
 func (s *AServer) ViaMethodWrapper(ctx context.Context, req *gen.MethodRequest) error {
-	s.owner(ctx)
+	if err := s.owner(ctx); err != nil {
+		return err
+	}
 	return nil
 }
-func (s *AServer) owner(ctx context.Context) { requireTeamMember(ctx) }
+func (s *AServer) owner(ctx context.Context) error { return requireTeamMember(ctx) }
 
 func (s *AServer) Ungated(ctx context.Context, req *gen.UngatedRequest) error {
-	requireAuth(ctx)
+	if _, err := requireAuth(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -510,7 +589,9 @@ func (h *aConnectHandler) Ungated(ctx context.Context, req *connect.Request[gen.
 	return unary(ctx, req, h.inner.Ungated)
 }
 func (h *aConnectHandler) Delegated(ctx context.Context, req *connect.Request[gen.DelegatedRequest]) error {
-	requireRecentMFA(ctx)
+	if err := requireRecentMFA(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 `)
@@ -538,6 +619,41 @@ func (h *aConnectHandler) Delegated(ctx context.Context, req *connect.Request[ge
 	require.False(t, found)
 }
 
+// An enforcement call whose error is thrown away — dead-branch or a bare
+// statement — does not gate the request and must NOT be credited, so a route
+// that "calls" requireOrgAdmin without acting on its result is still flagged.
+func TestScanHandlersRejectsDiscardedEnforcement(t *testing.T) {
+	scan := scanSource(t, `
+package adapters
+
+func (s *AServer) DeadBranch(ctx context.Context, req *gen.DeadRequest) error {
+	if false {
+		requireOrgAdmin(ctx)
+	}
+	return nil
+}
+
+func (s *AServer) BareCall(ctx context.Context, req *gen.BareRequest) error {
+	requireOrgAdmin(ctx)
+	return nil
+}
+
+func (s *AServer) BlankAssign(ctx context.Context, req *gen.BlankRequest) error {
+	_ = requireOrgAdmin(ctx)
+	return nil
+}
+`)
+	for _, tc := range []struct{ method, reqType string }{
+		{"DeadBranch", "DeadRequest"},
+		{"BareCall", "BareRequest"},
+		{"BlankAssign", "BlankRequest"},
+	} {
+		got, found := scan.capabilitiesFor(tc.method, tc.reqType)
+		require.True(t, found, "%s should be found", tc.method)
+		require.Empty(t, sortedCaps(got), "%s discards the enforcement error and must not be credited", tc.method)
+	}
+}
+
 // A method's Connect wrapper carries no gate while the inner gRPC method holds
 // it; unioning by request type must credit the pair.
 func TestScanHandlersUnionsConnectAndInner(t *testing.T) {
@@ -545,7 +661,9 @@ func TestScanHandlersUnionsConnectAndInner(t *testing.T) {
 package adapters
 
 func (s *AServer) Guarded(ctx context.Context, req *gen.GuardedRequest) error {
-	requireOrgAdmin(ctx)
+	if err := requireOrgAdmin(ctx); err != nil {
+		return err
+	}
 	return nil
 }
 func (h *aConnectHandler) Guarded(ctx context.Context, req *connect.Request[gen.GuardedRequest]) error {
@@ -555,6 +673,17 @@ func (h *aConnectHandler) Guarded(ctx context.Context, req *connect.Request[gen.
 	got, found := scan.capabilitiesFor("Guarded", "GuardedRequest")
 	require.True(t, found)
 	require.ElementsMatch(t, capSlice([]capability{capOrgMember, capOrgAdmin}), sortedCaps(got))
+}
+
+// Every seeded require* helper must exist in the handler package: a rename or
+// removal that would silently drop enforcement credit fails here instead.
+func TestEnforcementSeedsExistInPackage(t *testing.T) {
+	scan, err := scanHandlers(".")
+	require.NoError(t, err)
+	for name := range enforcementSeeds() {
+		require.NotEmpty(t, scan.byName[name],
+			"seeded enforcement helper %q is not defined in package adapters (renamed or removed?)", name)
+	}
 }
 
 func TestEnforcementAllowlistRejectsMalformedEntries(t *testing.T) {
