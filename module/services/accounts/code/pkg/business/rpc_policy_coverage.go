@@ -24,8 +24,10 @@ const (
 	CoverageGap CentralCoverage = "gap"
 
 	// CoverageUnsupported means the policy binds an owned resource whose
-	// organization the interceptor cannot resolve without a lookup it does not
-	// have. Such methods stay unsupported until an ownership resolver exists.
+	// organization the interceptor cannot resolve: no ownership resolver is
+	// registered for the method, or the registered resolver could not map this
+	// request's resource id to an org. Such methods cannot be centrally
+	// enforced until their owning org resolves.
 	CoverageUnsupported CentralCoverage = "unsupported"
 
 	// CoverageBroadening means enforcing the declared floor would admit a call
@@ -44,9 +46,11 @@ const (
 // verified identity and the RLS floor scopes rows to it. A stronger tenant,
 // any declared permission, a platform-role, an MFA requirement, or a resource
 // binding that names an organization or team the caller must relate to is a
-// gap until the interceptor learns to resolve it; an owned-resource binding is
-// unsupported until an ownership resolver exists. Scopes are the API-key
-// ceiling enforced separately by requireScope and are not part of this floor.
+// gap until the interceptor learns to resolve it. An owned-resource binding is
+// unsupported unless an ownership resolver is registered for the method; once
+// it is, the owning org is recoverable and the binding classifies as the gap
+// its bound-resource check implies. Scopes are the API-key ceiling enforced
+// separately by requireScope and are not part of this floor.
 func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 	p := policy.MethodPolicy
 	if p == nil {
@@ -60,7 +64,15 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 	for _, binding := range p.GetResourceBindings() {
 		switch binding.GetTarget() {
 		case policyv1.ResourceTarget_RESOURCE_TARGET_OWNED_RESOURCE:
-			return CoverageUnsupported
+			// An owned resource whose org the interceptor can resolve is no
+			// worse than a directly bound organization: it still needs the
+			// bound-resource check the interceptor does not yet perform (gap),
+			// but it is no longer unsupported. Without a resolver the org is
+			// unrecoverable and the method stays unsupported.
+			if !ownedResourceResolvable(policy.FullMethod) {
+				return CoverageUnsupported
+			}
+			requiresBoundResource = true
 		case policyv1.ResourceTarget_RESOURCE_TARGET_ORGANIZATION,
 			policyv1.ResourceTarget_RESOURCE_TARGET_TEAM:
 			requiresBoundResource = true

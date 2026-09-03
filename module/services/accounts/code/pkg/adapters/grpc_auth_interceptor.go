@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -64,7 +65,7 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err != nil {
 			return nil, err
 		}
-		shadowPolicyCoverage(ctx, info.FullMethod)
+		shadowPolicyCoverage(ctx, info.FullMethod, req)
 		return handler(ctx, req)
 	}
 }
@@ -76,7 +77,7 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 		if err != nil {
 			return err
 		}
-		shadowPolicyCoverage(ctx, info.FullMethod)
+		shadowPolicyCoverage(ctx, info.FullMethod, nil)
 		return handler(srv, &contextServerStream{ServerStream: stream, ctx: ctx})
 	}
 }
@@ -112,7 +113,13 @@ func rpcPolicyCoverageCounter() metric.Int64Counter {
 // ok — is recorded so that the absence of gap/unsupported over real traffic is
 // provably "no such traffic" rather than a silent instrument, which is the
 // precondition for turning enforcement on.
-func shadowPolicyCoverage(ctx context.Context, fullMethod string) {
+//
+// For a method that binds an owned resource, the static classification is
+// optimistic: it assumes the owning org resolves. This confirms that against
+// the real request by running the ownership resolver; a resolution miss is
+// recorded as unsupported so "zero unsupported over real traffic" means the
+// resolver actually mapped every request's resource to an org.
+func shadowPolicyCoverage(ctx context.Context, fullMethod string, req any) {
 	policy, ok := business.LookupRPCPolicy(fullMethod)
 	if !ok {
 		return
@@ -122,10 +129,33 @@ func shadowPolicyCoverage(ctx context.Context, fullMethod string) {
 		return
 	}
 	coverage := business.ClassifyCentralCoverage(policy)
+	if coverage != business.CoverageUnsupported && business.PolicyBindsOwnedResource(policy) {
+		if !ownedResourceOrgResolves(ctx, policy, req) {
+			coverage = business.CoverageUnsupported
+		}
+	}
 	counter.Add(ctx, 1, metric.WithAttributes(
 		attribute.String("method", fullMethod),
 		attribute.String("coverage", string(coverage)),
 	))
+}
+
+// ownedResourceOrgResolves reports whether the ownership resolver can map this
+// request to an owning org, running the store lookup under a control-plane
+// bypass so the true owner resolves regardless of the caller's RLS scope. A nil
+// request (a stream), an unset service, or any lookup failure fails closed.
+func ownedResourceOrgResolves(ctx context.Context, policy business.RPCPolicy, req any) bool {
+	msg, ok := req.(proto.Message)
+	if !ok || service == nil {
+		return false
+	}
+	store := service.Store()
+	resolved := false
+	_ = store.WithControlPlane(ctx, func(ctx context.Context) error {
+		_, resolved = business.ResolveOwnedResourceOrg(ctx, store, policy, msg)
+		return nil
+	})
+	return resolved
 }
 
 type contextServerStream struct {
