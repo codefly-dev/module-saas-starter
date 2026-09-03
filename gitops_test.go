@@ -541,6 +541,27 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			},
 			want: "references undeclared service",
 		},
+		{
+			name: "deploy job to a migration-bearing target without ordering",
+			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
+				t.Helper()
+				writeCatalogArtifact(t, moduleDir)
+				// store declares bootstrap_job_endpoints (a migration Job), so a
+				// deploy Job that writes to it but omits it from after would let the
+				// import race the migration and write against a missing schema.
+				appendToTopology(t, moduleDir,
+					"deploy_jobs:\n"+
+						"  - name: role-catalog-import\n"+
+						"    service: accounts\n"+
+						"    command: role-catalog-import\n"+
+						"    catalog: deployment/generated/contributed-roles.json\n"+
+						"    force: true\n"+
+						"    writes:\n"+
+						"      service: store\n"+
+						"      endpoint: http\n")
+			},
+			want: "must run after it",
+		},
 	}
 
 	for _, test := range tests {
@@ -2071,22 +2092,27 @@ func writeCatalogArtifact(t *testing.T, moduleDir string) {
 
 func appendDeployJob(t *testing.T, moduleDir, writesService, writesEndpoint string) {
 	t.Helper()
+	appendToTopology(t, moduleDir,
+		"deploy_jobs:\n"+
+			"  - name: role-catalog-import\n"+
+			"    service: accounts\n"+
+			"    command: role-catalog-import\n"+
+			"    catalog: deployment/generated/contributed-roles.json\n"+
+			"    force: true\n"+
+			"    writes:\n"+
+			"      service: "+writesService+"\n"+
+			"      endpoint: "+writesEndpoint+"\n"+
+			"    after:\n"+
+			"      - store\n")
+}
+
+func appendToTopology(t *testing.T, moduleDir, block string) {
+	t.Helper()
 	file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
 	data, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	block := "deploy_jobs:\n" +
-		"  - name: role-catalog-import\n" +
-		"    service: accounts\n" +
-		"    command: role-catalog-import\n" +
-		"    catalog: deployment/generated/contributed-roles.json\n" +
-		"    force: true\n" +
-		"    writes:\n" +
-		"      service: " + writesService + "\n" +
-		"      endpoint: " + writesEndpoint + "\n" +
-		"    after:\n" +
-		"      - store\n"
 	if err := os.WriteFile(file, append(data, []byte(block)...), 0o644); err != nil {
 		t.Fatal(err)
 	}

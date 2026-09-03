@@ -51,7 +51,7 @@ It records no repository, revision, or Argo resource.
         {"service": "store", "kind": "rds-postgresql", "externalName": "store.internal.example.com"}
       ],
       "deployJobs": [
-        {"name": "role-catalog-import", "service": "accounts", "command": "role-catalog-import", "catalog": "deployment/generated/contributed-roles.json", "force": true, "writes": {"service": "store", "endpoint": "postgres", "port": 5432}, "after": ["store"]}
+        {"name": "role-catalog-import", "service": "accounts", "command": "role-catalog-import", "catalog": "deployment/generated/contributed-roles.json", "force": true, "writes": {"service": "store", "endpoint": "tcp", "port": 5432}, "after": ["store"]}
       ]
     }
   ]
@@ -79,10 +79,24 @@ driver mounts the catalog, connects the target, runs `command`, and fails the
 promotion if it exits non-zero. Re-running an unchanged catalog is an empty
 no-op, so the step is idempotent. Generation rejects a deploy Job whose catalog
 artifact is absent, whose write target is not a declared dependency of the
-running service, or that references an undeclared service. In an environment
-where the target is a managed handoff the driver owns the out-of-cluster reach,
-so no in-cluster reach policy is rendered — mirroring the store's own bootstrap
-authority.
+running service, that references an undeclared service, or that writes to a
+migration-bearing target (`bootstrap_job_endpoints`) without ordering `after` it
+— an import that races the migration would write against a schema that does not
+yet exist. In an environment where the target is a managed handoff the driver
+owns the out-of-cluster reach, so no in-cluster reach policy is rendered —
+mirroring the store's own bootstrap authority.
+
+The bundle is transport-neutral, but the driver honours a small contract the
+generated reach policies assume. The Job pod runs under the **running service's**
+ServiceAccount (`service`, here `accounts`): the mesh already authorises that
+identity to the write target because generation requires `service` to declare
+the dependency, so no new mesh policy is minted for the Job. The Kubernetes Job
+is named after the entry's `name` (`role-catalog-import`) so the controller's
+auto-set `job-name` pod label matches the rendered `NetworkPolicy` selector — the
+same convention a `bootstrap_job_endpoints` Job follows. `after` is inclusive of
+each named service's own bring-up, its migration/bootstrap Job included, which is
+why `after: ["store"]` is sufficient to sequence the import behind the store
+migration.
 
 ## Generated layout
 

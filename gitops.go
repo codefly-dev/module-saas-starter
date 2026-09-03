@@ -1636,6 +1636,18 @@ func validateDeployJobs(moduleDir string, topology deploymentTopology, services 
 				job.Name, job.Writes.Service, job.Writes.Endpoint, job.Service,
 			)
 		}
+		// A write target that declares bootstrap_job_endpoints runs a migration Job
+		// before it is ready to be written to; the deploy Job seeds rows that
+		// migration creates, so it must be ordered after the target. after is
+		// author-supplied, so require the migration-bearing target to appear in it
+		// rather than trusting the ordering to be remembered — an import scheduled
+		// before the store migration writes against a schema that does not yet exist.
+		if len(target.BootstrapJobEndpoints) > 0 && !slices.Contains(job.After, job.Writes.Service) {
+			return fmt.Errorf(
+				"deployment topology deploy Job %q writes to %s, which runs a migration Job, so it must run after it: add %q to the Job's after list",
+				job.Name, job.Writes.Service, job.Writes.Service,
+			)
+		}
 		for _, after := range job.After {
 			if _, exists := services[after]; !exists {
 				return fmt.Errorf("deployment topology deploy Job %q runs after undeclared service %q", job.Name, after)
