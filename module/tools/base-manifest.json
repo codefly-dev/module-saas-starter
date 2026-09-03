@@ -1254,7 +1254,7 @@
     "services/frontend/code/src/features/dashboard/service/__tests__/dashboard-driver.test.ts": "4f1aab9ad4d6e73d594d785067512f33341d27ed3bdc42267814b7d5fce09f7e",
     "services/frontend/code/src/features/dashboard/service/__tests__/dashboard-library.test.ts": "a61876f6318615dc7ca9ecf682d793220affefa85083935c78cfd0a774554ff2",
     "services/frontend/code/src/features/dashboard/service/__tests__/draft-store.test.ts": "21aff45bdd098f7a8a6dc22ea8ea6ad0d93ccd89d1794971a51cfd5b9fd87437",
-    "services/frontend/code/src/features/dashboard/service/__tests__/server-dashboard-library.test.ts": "c82777a7ae7002f0f85fcc18ddb035aa3adb2098c5757981de1ba2636af07e7d",
+    "services/frontend/code/src/features/dashboard/service/__tests__/server-dashboard-library.test.ts": "4ed0878d3db72bed1dffd240d1c3302d03e0e62f8ed33bd4d041c520ea0cc395",
     "services/frontend/code/src/features/dashboard/service/__tests__/use-dashboard-authoring.test.tsx": "5fbf06ac7db1085895d41b09341408a1dd270014f7fb463fd41a54aa4dbada22",
     "services/frontend/code/src/features/dashboard/service/__tests__/use-dashboard-draft-store.test.ts": "e11afc2c4fd947d0101e1c1c1d03297d0d753dcadec8547bc3178eaac6cae429",
     "services/frontend/code/src/features/dashboard/service/__tests__/use-dashboard-draft.test.ts": "7fcab31336d73f3d2a940f3e6633db331f054f01b6cbab6208b0af51c2daee91",

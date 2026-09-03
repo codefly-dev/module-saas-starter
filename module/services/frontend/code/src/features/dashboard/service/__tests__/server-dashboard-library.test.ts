@@ -85,8 +85,11 @@ function fakeClient() {
 }
 
 function libraryWith(client = fakeClient()) {
-	// biome-ignore lint/suspicious/noExplicitAny: a partial typed fake stands in for the generated client.
-	return { library: createServerDashboardLibrary(ORG, client as any), client };
+	// A partial typed fake stands in for the generated client.
+	const asClient = client as unknown as Parameters<
+		typeof createServerDashboardLibrary
+	>[1];
+	return { library: createServerDashboardLibrary(ORG, asClient), client };
 }
 
 describe("createServerDashboardLibrary", () => {
@@ -228,8 +231,10 @@ describe("createServerDashboardLibrary", () => {
 					: { dashboards: [dash("a"), dash("b")], nextPageToken: "cursor-1" },
 			),
 		};
-		// biome-ignore lint/suspicious/noExplicitAny: a partial typed fake stands in for the generated client.
-		const library = createServerDashboardLibrary(ORG, client as any);
+		const asClient = client as unknown as Parameters<
+			typeof createServerDashboardLibrary
+		>[1];
+		const library = createServerDashboardLibrary(ORG, asClient);
 		const all = await library.list();
 		expect(all.map((r) => r.id)).toEqual(["a", "b", "c"]);
 		expect(client.listDashboards).toHaveBeenCalledTimes(2);
