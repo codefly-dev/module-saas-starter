@@ -218,6 +218,52 @@ func TestWorkContextAuthorityResolvesOnlyRegisteredAgentActor(t *testing.T) {
 	require.Equal(t, business.PrincipalKindAgent, facts.Actor.Kind)
 }
 
+// TestRevokingAgentPrincipalStalesOutstandingWorkContext pins the #440
+// lifecycle deliverable through both mechanisms that give revocation immediate
+// effect on Work Contexts already signed against a delegated actor. Revoking
+// through the RevokePrincipal business path (1) bumps the org authorization
+// revision, so outstanding contexts of every other subject in the org go stale,
+// and (2) removes the actor from the owner-binding lookup, so the revoked actor's
+// own outstanding context fails closed. The two are asserted separately because
+// only the org-revision bump exercises the principals_bump_authorization_revision
+// trigger — the actor-lookup fail would still fire with that trigger removed.
+func TestRevokingAgentPrincipalStalesOutstandingWorkContext(t *testing.T) {
+	ownerID := seedUser(t)
+	orgID := seedOrg(t, ownerID)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, ownerID, "owner",
+	))
+	agent := seedAgentPrincipal(t, orgID, "test.codefly.dev/revoke-stales:0.1.0")
+
+	verified := auth.WithVerifiedDatabaseIdentity(testCtx, ownerID, orgID)
+	facts, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, agent.ID, nil)
+	require.NoError(t, err)
+	revision := facts.EffectiveRevision()
+	subjects := []business.WorkContextRevisionSubject{{PrincipalID: agent.ID}}
+
+	require.NoError(t, testStore.CheckWorkContextAuthorizationRevision(
+		verified, orgID, ownerID, revision, subjects,
+	), "the context is valid while the actor is a live registered agent")
+
+	before, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, "", nil)
+	require.NoError(t, err)
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	require.NoError(t, svc.RevokePrincipal(testCtx, agent.ID, "delegation disabled"))
+
+	after, err := testStore.ResolveWorkContextAuthority(verified, orgID, ownerID, "", nil)
+	require.NoError(t, err)
+	require.Greater(t, after.OrganizationRevision, before.OrganizationRevision,
+		"revoking a principal must bump the org authorization revision")
+
+	err = testStore.CheckWorkContextAuthorizationRevision(
+		verified, orgID, ownerID, revision, subjects,
+	)
+	require.ErrorIs(t, err, business.ErrWorkContextAuthorizationStale,
+		"revoking the actor must immediately stale an outstanding Work Context")
+}
+
 func TestWorkContextConsumerAuthorityUsesCurrentRevisionAndExactEvidenceRead(t *testing.T) {
 	ownerID := seedUser(t)
 	readerID := seedUser(t)

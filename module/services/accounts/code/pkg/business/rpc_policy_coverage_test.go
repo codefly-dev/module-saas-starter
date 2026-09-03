@@ -134,6 +134,13 @@ func TestClassifyCentralCoverageBuckets(t *testing.T) {
 		// directly-org-bound siblings.
 		"/saas.accounts.v1.InvitationService/RevokeInvitation": CoverageGap,
 		"/saas.accounts.v1.WebhookService/DeleteSubscription":  CoverageGap,
+		// Delegated-actor registration is centrally enforceable: reading an agent
+		// principal is an internal authority lookup, and registering one reduces
+		// to the org-admin tenant the interceptor resolves against the caller's
+		// verified org, with no finer permission on top. RevokePrincipal's
+		// owned-resource binding is pinned in TestOwnedResourceMethodsAreResolvableGap.
+		"/saas.accounts.v1.PrincipalService/GetAgentPrincipal":    CoverageOK,
+		"/saas.accounts.v1.PrincipalService/CreateAgentPrincipal": CoverageOK,
 	}
 	for method, want := range cases {
 		policy, ok := LookupRPCPolicy(method)

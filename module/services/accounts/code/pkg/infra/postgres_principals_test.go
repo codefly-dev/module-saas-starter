@@ -467,3 +467,27 @@ func TestPrincipals_CreateAgent_AuditActorTypeFromCreatorKind(t *testing.T) {
 	}
 	require.True(t, found, "principal.created must be emitted")
 }
+
+func TestPrincipals_RevokePrincipal_EmitsAuditEvent(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	agent := seedAgentPrincipal(t, orgID, "publisher/revoke-audit:1.0.0")
+
+	svc, err := business.NewService(testStore)
+	require.NoError(t, err)
+	rec := &recordingEmitter{}
+	svc.SetAuditEmitter(rec)
+
+	require.NoError(t, svc.RevokePrincipal(testCtx, agent.ID, "delegation disabled"))
+
+	found := false
+	for _, e := range rec.entries {
+		if e.EventType == business.EventPrincipalRevoked {
+			require.Equal(t, agent.ID, e.ResourceID)
+			require.Equal(t, orgID, e.OrgID)
+			require.Equal(t, "delegation disabled", e.Payload["reason"])
+			found = true
+		}
+	}
+	require.True(t, found, "principal.revoked must be emitted")
+}
