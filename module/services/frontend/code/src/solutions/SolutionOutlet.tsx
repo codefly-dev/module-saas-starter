@@ -8,37 +8,36 @@ import {
 	type ModuleFederation,
 } from "@module-federation/runtime";
 import * as React from "react";
+import * as ReactDOM from "react-dom";
+import * as ReactJSXRuntime from "react/jsx-runtime";
 import {
 	Component,
-	type ComponentType,
-	lazy,
-	type ReactNode,
 	Suspense,
+	lazy,
+	type ComponentType,
+	type ReactNode,
 } from "react";
-import * as ReactJSXRuntime from "react/jsx-runtime";
-import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 
-// Sealed layers. A higher layer COMPOSES what a lower layer ships but can never
+// Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
 // shadow or replace it: a solution remote renders against the one true instance
 // the owning layer publishes, never its own copy that the kit or another module
 // would then pick up. Layers are sealed downward. (Kit invariant "Sealed
 // downward" — packages/codefly-ui/ARCHITECTURE.md.)
 //
-// The seal is the share config below: every sealed layer package — React, the
-// co-versioned kit, and each module UI package — is a Module-Federation
-// `singleton` with `requiredVersion: false`. `singleton` keeps exactly ONE
-// instance across the host and every remote (drop it and two copies coexist,
-// splitting React context and the skin); `requiredVersion: false` makes a remote
-// consume the host's already-loaded instance without version negotiation, so a
-// remote that bundles its own copy of a sealed package resolves to the host's,
-// not its own. The `sealed-layers` test proves both halves.
-const SEALED_SHARE_CONFIG = {
-	singleton: true,
-	requiredVersion: false,
-} as const;
+// This host config is one half of that seal: every sealed layer package — React,
+// the co-versioned kit, and each module UI package — is shared as a
+// Module-Federation `singleton`. singleton keeps exactly ONE instance across the
+// host and every remote (drop it and two copies coexist, splitting React context
+// and the skin). The seal is cooperative — it also relies on each remote's build
+// sharing these same packages as singletons, so the remote consumes the scope's
+// instance rather than bundling and registering a competing one. `requiredVersion:
+// false` records that this host imposes no version floor on the shared instance
+// (versioning — which version wins — is governed separately; see the kit README).
+// The `kit-shared-version` test asserts the singleton flag on this object.
+const SEALED_SHARE_CONFIG = { singleton: true, requiredVersion: false } as const;
 
 // The co-versioned @codefly/* kit ships lockstep with this host, so one version
 // covers all three. It MUST track the packages' real version — a shared module
@@ -69,11 +68,12 @@ export const CODEFLY_KIT_SHARED = {
 	},
 } as const;
 
-// React is the bottom of the cake and is sealed the same way as the kit: the
-// host owns the single instance and a remote consumes it, so hooks and context
-// hold across the boundary. Sharing it with a version-range `requiredVersion`
-// would let a remote force a renegotiation; `requiredVersion: false` keeps the
-// host's instance authoritative, consistent with every other sealed package.
+// React is the bottom of the cake and is sealed the same way: the host owns the
+// single instance and every remote consumes it, so hooks and context hold across
+// the boundary. `requiredVersion: false` (rather than a version range) only means
+// this host asserts no version floor on the instance it publishes — it does not
+// affect which instance wins (a singleton always resolves to the host's loaded
+// copy); it keeps React consistent with every other sealed package.
 const REACT_SHARED = {
 	react: {
 		version: React.version,
@@ -93,8 +93,8 @@ const REACT_SHARED = {
 } as const;
 
 // The full sealed set the host publishes: React + kit + module UI, every one a
-// host-wins singleton. The `sealed-layers` test iterates this so a package added
-// without the seal fails CI.
+// singleton. The `sealed-layers` test iterates this so a package added without
+// the singleton flag fails CI.
 export const SEALED_SHARED = {
 	...REACT_SHARED,
 	...CODEFLY_KIT_SHARED,
@@ -141,9 +141,7 @@ const remoteComponents = new Map<string, ComponentType<SolutionPageProps>>();
  * renders — required by react-hooks/static-components and needed for Suspense
  * to keep its state.
  */
-function remoteComponent(
-	remote: SolutionRemote,
-): ComponentType<SolutionPageProps> {
+function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProps> {
 	const key = `${remote.id}|${remote.manifestUrl}|${remote.exposedModule}`;
 	const cached = remoteComponents.get(key);
 	if (cached) {
@@ -205,10 +203,7 @@ export interface SolutionPageProps {
 	 * gets the portal's refresh-then-retry recovery — and the dead-session
 	 * auto-relogin — for free, rather than surfacing a bare `HTTP 401`.
 	 */
-	authedFetch: (
-		input: RequestInfo | URL,
-		init?: RequestInit,
-	) => Promise<Response>;
+	authedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 	/**
 	 * The host's dashboard-authoring capability, injected into the mounted
 	 * runtime so a composing module can change the live dashboard: list the
@@ -262,10 +257,7 @@ export function SolutionOutlet({
 	// the remote never touches the token store or constructs its own handle.
 	pageProps: Omit<
 		SolutionPageProps,
-		| "getAccessToken"
-		| "refreshAccessToken"
-		| "authedFetch"
-		| "dashboardAuthoring"
+		"getAccessToken" | "refreshAccessToken" | "authedFetch" | "dashboardAuthoring"
 	>;
 	authoring: DashboardAuthoring;
 }) {
@@ -273,11 +265,7 @@ export function SolutionOutlet({
 
 	return (
 		<SolutionErrorBoundary key={remote.id}>
-			<Suspense
-				fallback={
-					<div className="p-6 text-sm opacity-70">Loading solution…</div>
-				}
-			>
+			<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
 				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
 				<Remote
 					{...pageProps}

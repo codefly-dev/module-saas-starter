@@ -71,11 +71,13 @@ plugin peers are optional, the solution only needs an `.npmrc` pointing the
 `npm ci` then resolves `@codefly-dev/ui` with no reference to the unpublished
 `@codefly/saas-plugin-*` packages.
 
-**Sealed downward.** A solution composes the kit but cannot shadow it: because
-the host publishes each layer package (React + kit + each module UI) as a
-host-wins singleton (`requiredVersion: false`), a solution that bundles its own
-copy of a kit component still renders against the host's one true instance, not
-its own. You build on the kit; you don't monkey-patch it. See invariant 5 in
+**Sealed downward.** A solution composes the kit but must not shadow it: the
+host shares each layer package (React + kit + each module UI) as a
+Module-Federation `singleton`, and a solution's own build shares them the same
+way, so at runtime the solution renders against the host's one instance instead
+of a copy it bundles. You build on the kit; you don't monkey-patch it. This is
+separate from version pinning below (which version the singleton resolves to);
+sealing is that there is a single shared instance at all. See invariant 5 in
 [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 **Version discipline.** The kit is a Module-Federation singleton: at runtime the

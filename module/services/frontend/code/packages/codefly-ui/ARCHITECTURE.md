@@ -55,19 +55,21 @@ sits outside this stack.
    re-themes the whole catalog for free.
 
 5. **Sealed downward.** A higher layer *composes* what a lower layer ships but
-   can never *shadow or replace* it. A solution cannot swap in its own `<Card>`
-   / `<Dashboard>` / `<Collection>` that the kit or another module would then
-   pick up — it renders against the one true instance the owning layer
+   must not *shadow or replace* it. A solution should not swap in its own
+   `<Card>` / `<Dashboard>` / `<Collection>` that the kit or another module would
+   then pick up — it renders against the one true instance the owning layer
    publishes. This is what keeps the kit and module UI identical in every
    solution and lets a skin change propagate predictably instead of forking per
-   solution. It is distinct from *which* version wins (the `requiredVersion:
-   false` policy): sealing is that a lower layer's component can't be overridden
-   *at all*. *(Enforced host-side by the share config in
-   `src/solutions/SolutionOutlet.tsx` — every sealed layer package (React + kit
-   + each module UI) is a `singleton` with `requiredVersion: false`, so a remote
-   consumes the host's already-loaded instance and a copy it bundles itself can
-   never win. The `sealed-layers` test proves a remote's competing copy resolves
-   to the host's.)*
+   solution. It is distinct from *which* version wins: sealing is that a lower
+   layer's component isn't overridden *at all*. *(The mechanism is
+   Module-Federation singletons: the host shares every sealed layer package
+   (React + kit + each module UI) as a `singleton` in
+   `src/solutions/SolutionOutlet.tsx`, so one instance is shared across the host
+   and every remote. The seal is cooperative — a remote gets that one instance
+   because its own build also shares these packages as singletons rather than
+   bundling and registering a competing copy. The `sealed-layers` test asserts
+   the singleton flag on every package in the shared set, so a new layer package
+   cannot ship shared without it.)*
 
 ## Boundary
 
