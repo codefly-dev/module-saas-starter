@@ -2,7 +2,9 @@ package business
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -50,6 +52,54 @@ const (
 	// DashboardListOrgShared returns org-shared boards, whoever owns them.
 	DashboardListOrgShared
 )
+
+const (
+	defaultDashboardPageSize = 50
+	maxDashboardPageSize     = 100
+)
+
+// DashboardCursor is a keyset position in the (updated_at, id) descending order
+// a list uses to page. It is opaque to clients, carried as page_token.
+type DashboardCursor struct {
+	UpdatedAt time.Time
+	ID        string
+}
+
+const dashboardCursorSep = "\x1f"
+
+func clampDashboardPageSize(n int) int {
+	if n <= 0 {
+		return defaultDashboardPageSize
+	}
+	if n > maxDashboardPageSize {
+		return maxDashboardPageSize
+	}
+	return n
+}
+
+func encodeDashboardCursor(c *DashboardCursor) string {
+	raw := c.UpdatedAt.UTC().Format(time.RFC3339Nano) + dashboardCursorSep + c.ID
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+func decodeDashboardCursor(token string) (*DashboardCursor, error) {
+	if token == "" {
+		return nil, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return nil, err
+	}
+	updatedAt, id, ok := strings.Cut(string(raw), dashboardCursorSep)
+	if !ok {
+		return nil, fmt.Errorf("malformed dashboard cursor")
+	}
+	ts, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &DashboardCursor{UpdatedAt: ts, ID: id}, nil
+}
 
 // assertDashboardName rejects an empty or whitespace-only name at the write
 // boundary — a name is what a user picks a dashboard out of a list by. The DB
@@ -106,15 +156,13 @@ func (s *Service) CreateDashboard(ctx context.Context, orgID, ownerID, id, name 
 		Visibility: DashboardVisibilityPrivate,
 	}
 
+	var stored *Dashboard
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.CreateDashboard(ctx, record)
+		var err error
+		stored, err = s.store.CreateDashboard(ctx, record)
+		return err
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create dashboard")
-	}
-
-	stored, err := s.loadDashboard(ctx, orgID, id)
-	if err != nil {
-		return nil, err
 	}
 
 	s.emit(ctx, ownerID, "user", EventDashboardCreated, "dashboard", id, orgID)
@@ -135,19 +183,36 @@ func (s *Service) GetDashboard(ctx context.Context, orgID, actorID string, isAdm
 	return record, nil
 }
 
-// ListDashboards returns the caller's visible collection within their org.
-func (s *Service) ListDashboards(ctx context.Context, orgID, actorID string, scope DashboardListScope) ([]*Dashboard, error) {
+// ListDashboards returns one bounded page of the caller's visible collection
+// within their org, newest activity first, plus the token for the next page (or
+// "" when the page is the last). A page is always bounded so a member with an
+// arbitrarily large collection can never force an unbounded read.
+func (s *Service) ListDashboards(ctx context.Context, orgID, actorID string, scope DashboardListScope, pageSize int, pageToken string) ([]*Dashboard, string, error) {
 	w := wool.Get(ctx).In("ListDashboards")
+
+	pageSize = clampDashboardPageSize(pageSize)
+	cursor, err := decodeDashboardCursor(pageToken)
+	if err != nil {
+		return nil, "", status.Error(codes.InvalidArgument, "invalid page token")
+	}
 
 	var records []*Dashboard
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var err error
-		records, err = s.store.ListDashboards(ctx, orgID, actorID, scope)
+		// One extra row tells us whether a further page exists without a count.
+		records, err = s.store.ListDashboards(ctx, orgID, actorID, scope, pageSize+1, cursor)
 		return err
 	}); err != nil {
-		return nil, w.Wrapf(err, "cannot list dashboards")
+		return nil, "", w.Wrapf(err, "cannot list dashboards")
 	}
-	return records, nil
+
+	next := ""
+	if len(records) > pageSize {
+		records = records[:pageSize]
+		last := records[len(records)-1]
+		next = encodeDashboardCursor(&DashboardCursor{UpdatedAt: last.UpdatedAt, ID: last.ID})
+	}
+	return records, next, nil
 }
 
 // UpdateDashboard applies a name and/or spec change. Only the owner or an org
@@ -166,6 +231,7 @@ func (s *Service) UpdateDashboard(ctx context.Context, orgID, actorID string, is
 		}
 	}
 
+	var stored *Dashboard
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		record, err := s.store.GetDashboard(ctx, id)
 		if err != nil {
@@ -177,13 +243,9 @@ func (s *Service) UpdateDashboard(ctx context.Context, orgID, actorID string, is
 		if !canEditDashboard(record, actorID, isAdmin) {
 			return status.Error(codes.PermissionDenied, "not authorized to edit this dashboard")
 		}
-		return s.store.UpdateDashboard(ctx, id, name, spec)
+		stored, err = s.store.UpdateDashboard(ctx, id, name, spec)
+		return err
 	}); err != nil {
-		return nil, err
-	}
-
-	stored, err := s.loadDashboard(ctx, orgID, id)
-	if err != nil {
 		return nil, err
 	}
 
@@ -224,6 +286,7 @@ func (s *Service) ShareDashboard(ctx context.Context, orgID, actorID string, id 
 		return nil, status.Error(codes.InvalidArgument, "invalid dashboard visibility")
 	}
 
+	var stored *Dashboard
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		record, err := s.store.GetDashboard(ctx, id)
 		if err != nil {
@@ -232,13 +295,9 @@ func (s *Service) ShareDashboard(ctx context.Context, orgID, actorID string, id 
 		if record == nil {
 			return status.Error(codes.NotFound, "dashboard not found")
 		}
-		return s.store.SetDashboardVisibility(ctx, id, visibility)
+		stored, err = s.store.SetDashboardVisibility(ctx, id, visibility)
+		return err
 	}); err != nil {
-		return nil, err
-	}
-
-	stored, err := s.loadDashboard(ctx, orgID, id)
-	if err != nil {
 		return nil, err
 	}
 

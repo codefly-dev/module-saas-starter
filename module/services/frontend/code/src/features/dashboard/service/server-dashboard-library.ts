@@ -91,11 +91,20 @@ export function createServerDashboardLibrary(
 	};
 
 	const list = async (): Promise<DashboardRecord[]> => {
-		const response = await client.listDashboards({
-			orgId,
-			scope: DashboardListScope.UNSPECIFIED,
-		});
-		return response.dashboards.map(toRecord);
+		// The RPC returns a bounded page; the collection contract returns them
+		// all, so walk the page tokens to the end.
+		const all: DashboardRecord[] = [];
+		let pageToken = "";
+		do {
+			const response = await client.listDashboards({
+				orgId,
+				scope: DashboardListScope.UNSPECIFIED,
+				pageToken,
+			});
+			for (const record of response.dashboards) all.push(toRecord(record));
+			pageToken = response.nextPageToken;
+		} while (pageToken !== "");
+		return all;
 	};
 
 	const get = async (id: string): Promise<DashboardRecord | null> => {
@@ -127,12 +136,22 @@ export function createServerDashboardLibrary(
 		});
 		let record = toRecord(created);
 		if (visibility === "org") {
-			record = toRecord(
-				await client.shareDashboard({
-					id: created.id,
-					visibility: PbVisibility.ORG,
-				}),
-			);
+			// Create always mints a private board; sharing is a second, privileged
+			// call. If it fails, delete the board just created so a rejected create
+			// leaves nothing behind rather than an orphaned private record.
+			try {
+				record = toRecord(
+					await client.shareDashboard({
+						id: created.id,
+						visibility: PbVisibility.ORG,
+					}),
+				);
+			} catch (error) {
+				try {
+					await client.deleteDashboard({ id: created.id });
+				} catch {}
+				throw error;
+			}
 		}
 		await refresh();
 		return record;

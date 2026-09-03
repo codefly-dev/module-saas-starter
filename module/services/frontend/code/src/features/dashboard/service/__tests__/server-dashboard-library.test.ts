@@ -56,7 +56,10 @@ function fakeClient() {
 			if (!row) throw new ConnectError("not found", Code.NotFound);
 			return row;
 		}),
-		listDashboards: vi.fn(async () => ({ dashboards: [...rows.values()] })),
+		listDashboards: vi.fn(async () => ({
+			dashboards: [...rows.values()],
+			nextPageToken: "",
+		})),
 		updateDashboard: vi.fn(
 			async (req: { id: string; name?: string; spec?: JsonObject }) => {
 				const row = rows.get(req.id);
@@ -193,5 +196,42 @@ describe("createServerDashboardLibrary", () => {
 			records: expect.arrayContaining([expect.objectContaining({ name: "A" })]),
 		});
 		unsubscribe();
+	});
+
+	it("deletes the just-created board when sharing it on create fails", async () => {
+		const { library, client } = libraryWith();
+		client.shareDashboard.mockRejectedValueOnce(
+			new ConnectError("forbidden", Code.PermissionDenied),
+		);
+		await expect(
+			library.create({ name: "Shared", spec: specA, visibility: "org" }),
+		).rejects.toBeInstanceOf(ConnectError);
+		// The private board created before the failed share must be cleaned up, not
+		// left orphaned.
+		expect(client.deleteDashboard).toHaveBeenCalledTimes(1);
+		expect(await library.list()).toHaveLength(0);
+	});
+
+	it("list walks page tokens to aggregate every page", async () => {
+		const dash = (id: string): Dashboard =>
+			({
+				id,
+				orgId: ORG,
+				ownerId: OWNER,
+				name: id,
+				visibility: PbVisibility.PRIVATE,
+			}) as Dashboard;
+		const client = {
+			listDashboards: vi.fn(async (req: { pageToken?: string }) =>
+				req.pageToken
+					? { dashboards: [dash("c")], nextPageToken: "" }
+					: { dashboards: [dash("a"), dash("b")], nextPageToken: "cursor-1" },
+			),
+		};
+		// biome-ignore lint/suspicious/noExplicitAny: a partial typed fake stands in for the generated client.
+		const library = createServerDashboardLibrary(ORG, client as any);
+		const all = await library.list();
+		expect(all.map((r) => r.id)).toEqual(["a", "b", "c"]);
+		expect(client.listDashboards).toHaveBeenCalledTimes(2);
 	});
 });

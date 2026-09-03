@@ -8,7 +8,12 @@
 CREATE TABLE dashboards (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id     UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    owner_id   UUID NOT NULL REFERENCES users(uuid) ON DELETE CASCADE,
+    -- owner_id is nullable and detaches (SET NULL) when its user is erased, not
+    -- CASCADE: a board shared to the org (visibility = 'org') is an org asset
+    -- and must outlive the member who authored it. A deleted owner's remaining
+    -- private board becomes an owner-less row that no one but an admin can read
+    -- — it is invisible in every list, never a shared-asset loss.
+    owner_id   UUID REFERENCES users(uuid) ON DELETE SET NULL,
     name       TEXT NOT NULL,
     spec       JSONB NOT NULL,
     visibility TEXT NOT NULL DEFAULT 'private'

@@ -73,11 +73,14 @@ func (h *dashboardConnectHandler) ListDashboards(ctx context.Context, req *conne
 	if err := requireOrgMember(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	records, err := h.svc.ListDashboards(ctx, orgID, actorID, scopeFromProto(req.Msg.Scope))
+	records, nextPageToken, err := h.svc.ListDashboards(ctx, orgID, actorID, scopeFromProto(req.Msg.Scope), int(req.Msg.PageSize), req.Msg.PageToken)
 	if err != nil {
 		return nil, err
 	}
-	out := &gen.ListDashboardsResponse{Dashboards: make([]*gen.Dashboard, 0, len(records))}
+	out := &gen.ListDashboardsResponse{
+		Dashboards:    make([]*gen.Dashboard, 0, len(records)),
+		NextPageToken: nextPageToken,
+	}
 	for _, record := range records {
 		proto, err := dashboardToProto(record)
 		if err != nil {

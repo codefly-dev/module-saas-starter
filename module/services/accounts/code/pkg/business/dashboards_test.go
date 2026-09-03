@@ -1,6 +1,7 @@
 package business_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func TestDashboards_CRUDRoundtrip(t *testing.T) {
 	require.Equal(t, "revenue-v2", updated.Name)
 	require.JSONEq(t, string(newSpec), string(updated.Spec))
 
-	list, err := testService.ListDashboards(ctx, org, owner, business.DashboardListMine)
+	list, _, err := testService.ListDashboards(ctx, org, owner, business.DashboardListMine, 0, "")
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 
@@ -91,7 +92,7 @@ func TestDashboards_ShareControlsOrgVisibility(t *testing.T) {
 	require.NoError(t, err, "an org-shared board is readable by any member")
 	require.Equal(t, board.ID, got.ID)
 
-	orgShared, err := testService.ListDashboards(ctx, org, stranger, business.DashboardListOrgShared)
+	orgShared, _, err := testService.ListDashboards(ctx, org, stranger, business.DashboardListOrgShared, 0, "")
 	require.NoError(t, err)
 	require.Len(t, orgShared, 1)
 
@@ -144,21 +145,68 @@ func TestDashboards_ListScopes(t *testing.T) {
 	_, err = testService.ShareDashboard(ctx, org, owner, shared.ID, business.DashboardVisibilityOrg)
 	require.NoError(t, err)
 
-	mine, err := testService.ListDashboards(ctx, org, owner, business.DashboardListMine)
+	mine, _, err := testService.ListDashboards(ctx, org, owner, business.DashboardListMine, 0, "")
 	require.NoError(t, err)
 	require.Len(t, mine, 2)
 
-	ownerAll, err := testService.ListDashboards(ctx, org, owner, business.DashboardListAll)
+	ownerAll, _, err := testService.ListDashboards(ctx, org, owner, business.DashboardListAll, 0, "")
 	require.NoError(t, err)
 	require.Len(t, ownerAll, 2)
 
-	strangerMine, err := testService.ListDashboards(ctx, org, stranger, business.DashboardListMine)
+	strangerMine, _, err := testService.ListDashboards(ctx, org, stranger, business.DashboardListMine, 0, "")
 	require.NoError(t, err)
 	require.Len(t, strangerMine, 0)
 
-	strangerAll, err := testService.ListDashboards(ctx, org, stranger, business.DashboardListAll)
+	strangerAll, _, err := testService.ListDashboards(ctx, org, stranger, business.DashboardListAll, 0, "")
 	require.NoError(t, err)
 	require.Len(t, strangerAll, 1)
 	require.Equal(t, shared.ID, strangerAll[0].ID)
 	require.NotEqual(t, private.ID, strangerAll[0].ID)
+}
+
+// A page is always bounded and hands back a token that walks the rest of the
+// collection exactly once, so a large collection can never force one unbounded
+// read.
+func TestDashboards_ListIsPagedAndBounded(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	owner, org := mustUserAndOrg(t, ctx, "page-dash@rls-test.com", "page-dash", "Acme Page")
+
+	const total = 5
+	created := make(map[string]bool, total)
+	for i := 0; i < total; i++ {
+		board, err := testService.CreateDashboard(ctx, org, owner, "", fmt.Sprintf("board-%d", i), dashboardSpec)
+		require.NoError(t, err)
+		created[board.ID] = true
+	}
+
+	seen := make(map[string]bool, total)
+	token := ""
+	pages := 0
+	for {
+		page, next, err := testService.ListDashboards(ctx, org, owner, business.DashboardListMine, 2, token)
+		require.NoError(t, err)
+		require.LessOrEqual(t, len(page), 2, "page must never exceed the requested size")
+		for _, record := range page {
+			require.False(t, seen[record.ID], "a record must appear on exactly one page")
+			seen[record.ID] = true
+		}
+		pages++
+		require.LessOrEqual(t, pages, total+1, "pagination must terminate")
+		if next == "" {
+			break
+		}
+		token = next
+	}
+	require.Equal(t, created, seen, "paging must cover the whole collection")
+	require.Equal(t, 3, pages, "5 records at page size 2 is three pages (2 + 2 + 1)")
+}
+
+func TestDashboards_ListRejectsMalformedPageToken(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	owner, org := mustUserAndOrg(t, ctx, "token-dash@rls-test.com", "token-dash", "Acme Token")
+
+	_, _, err := testService.ListDashboards(ctx, org, owner, business.DashboardListMine, 10, "not-a-valid-token")
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }

@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 
@@ -15,22 +16,22 @@ type dashboardRow interface {
 	Scan(dest ...any) error
 }
 
-func (s *PostgresStore) CreateDashboard(ctx context.Context, dashboard *business.Dashboard) error {
+const dashboardColumns = `id, org_id, owner_id, name, spec, visibility, created_at, updated_at`
+
+func (s *PostgresStore) CreateDashboard(ctx context.Context, dashboard *business.Dashboard) (*business.Dashboard, error) {
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `
+	row := q.QueryRow(ctx, `
 		INSERT INTO dashboards (id, org_id, owner_id, name, spec, visibility)
-		VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
-		dashboard.ID, dashboard.OrgID, dashboard.OwnerID, dashboard.Name,
-		dashboard.Spec, string(dashboard.Visibility))
-	return err
+		VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+		RETURNING `+dashboardColumns,
+		dashboard.ID, dashboard.OrgID, nilIfEmpty(dashboard.OwnerID),
+		dashboard.Name, dashboard.Spec, string(dashboard.Visibility))
+	return scanDashboard(row)
 }
 
 func (s *PostgresStore) GetDashboard(ctx context.Context, id string) (*business.Dashboard, error) {
 	q := s.getQueryExecutor(ctx)
-	row := q.QueryRow(ctx, `
-		SELECT id, org_id, owner_id, name, spec, visibility, created_at, updated_at
-		FROM dashboards
-		WHERE id = $1`, id)
+	row := q.QueryRow(ctx, `SELECT `+dashboardColumns+` FROM dashboards WHERE id = $1`, id)
 	dashboard, err := scanDashboard(row)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -41,7 +42,7 @@ func (s *PostgresStore) GetDashboard(ctx context.Context, id string) (*business.
 	return dashboard, nil
 }
 
-func (s *PostgresStore) ListDashboards(ctx context.Context, orgID, ownerID string, scope business.DashboardListScope) ([]*business.Dashboard, error) {
+func (s *PostgresStore) ListDashboards(ctx context.Context, orgID, ownerID string, scope business.DashboardListScope, limit int, after *business.DashboardCursor) ([]*business.Dashboard, error) {
 	q := s.getQueryExecutor(ctx)
 
 	where := "org_id = $1 AND (owner_id = $2 OR visibility = 'org')"
@@ -54,11 +55,21 @@ func (s *PostgresStore) ListDashboards(ctx context.Context, orgID, ownerID strin
 		args = []any{orgID}
 	}
 
-	rows, err := q.Query(ctx, `
-		SELECT id, org_id, owner_id, name, spec, visibility, created_at, updated_at
-		FROM dashboards
-		WHERE `+where+`
-		ORDER BY updated_at DESC, id DESC`, args...)
+	// Keyset page boundary: with the (updated_at, id) DESC ordering, the next
+	// page is exactly the rows that sort strictly after the cursor.
+	if after != nil {
+		args = append(args, after.UpdatedAt, after.ID)
+		where += fmt.Sprintf(" AND (updated_at, id) < ($%d, $%d)", len(args)-1, len(args))
+	}
+
+	query := `SELECT ` + dashboardColumns + ` FROM dashboards WHERE ` + where +
+		` ORDER BY updated_at DESC, id DESC`
+	if limit > 0 {
+		args = append(args, limit)
+		query += fmt.Sprintf(" LIMIT $%d", len(args))
+	}
+
+	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -75,15 +86,16 @@ func (s *PostgresStore) ListDashboards(ctx context.Context, orgID, ownerID strin
 	return dashboards, rows.Err()
 }
 
-func (s *PostgresStore) UpdateDashboard(ctx context.Context, id string, name *string, spec []byte) error {
+func (s *PostgresStore) UpdateDashboard(ctx context.Context, id string, name *string, spec []byte) (*business.Dashboard, error) {
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `
+	row := q.QueryRow(ctx, `
 		UPDATE dashboards
 		SET name = COALESCE($2, name),
 		    spec = COALESCE($3::jsonb, spec),
 		    updated_at = NOW()
-		WHERE id = $1`, id, name, spec)
-	return err
+		WHERE id = $1
+		RETURNING `+dashboardColumns, id, name, spec)
+	return scanUpdatedDashboard(row)
 }
 
 func (s *PostgresStore) DeleteDashboard(ctx context.Context, id string) error {
@@ -92,25 +104,44 @@ func (s *PostgresStore) DeleteDashboard(ctx context.Context, id string) error {
 	return err
 }
 
-func (s *PostgresStore) SetDashboardVisibility(ctx context.Context, id string, visibility business.DashboardVisibility) error {
+func (s *PostgresStore) SetDashboardVisibility(ctx context.Context, id string, visibility business.DashboardVisibility) (*business.Dashboard, error) {
 	q := s.getQueryExecutor(ctx)
-	_, err := q.Exec(ctx, `
+	row := q.QueryRow(ctx, `
 		UPDATE dashboards
 		SET visibility = $2, updated_at = NOW()
-		WHERE id = $1`, id, string(visibility))
-	return err
+		WHERE id = $1
+		RETURNING `+dashboardColumns, id, string(visibility))
+	return scanUpdatedDashboard(row)
+}
+
+// scanUpdatedDashboard maps a RETURNING row from a conditional UPDATE, treating
+// "no row" as a nil record so the caller distinguishes a missing id from an
+// error.
+func scanUpdatedDashboard(row dashboardRow) (*business.Dashboard, error) {
+	dashboard, err := scanDashboard(row)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return dashboard, nil
 }
 
 func scanDashboard(row dashboardRow) (*business.Dashboard, error) {
 	var (
 		dashboard  business.Dashboard
+		ownerID    *string
 		visibility string
 	)
 	if err := row.Scan(
-		&dashboard.ID, &dashboard.OrgID, &dashboard.OwnerID, &dashboard.Name,
+		&dashboard.ID, &dashboard.OrgID, &ownerID, &dashboard.Name,
 		&dashboard.Spec, &visibility, &dashboard.CreatedAt, &dashboard.UpdatedAt,
 	); err != nil {
 		return nil, err
+	}
+	if ownerID != nil {
+		dashboard.OwnerID = *ownerID
 	}
 	dashboard.Visibility = business.DashboardVisibility(visibility)
 	return &dashboard, nil
