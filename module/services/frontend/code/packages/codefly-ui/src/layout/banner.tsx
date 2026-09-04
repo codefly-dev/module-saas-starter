@@ -12,12 +12,18 @@ const bannerVariants = cva(
 	"flex items-start gap-3 rounded-lg border px-4 py-3 text-sm [&_svg]:mt-0.5 [&_svg]:size-4 [&_svg]:shrink-0",
 	{
 		variants: {
+			// Status color comes only from tokens the skin owns for status —
+			// `--primary` (affirmative accent), `--destructive`, and the neutral
+			// muted/border set. The token vocabulary has no success-green or
+			// warning-amber, so `warning` is a neutral surface distinguished by its
+			// icon rather than a borrowed chart-palette color (which is grayscale by
+			// default and re-skins unpredictably).
 			tone: {
 				info: "border-border bg-muted/50 text-foreground [&_svg]:text-muted-foreground",
 				success:
-					"border-[color-mix(in_oklch,var(--chart-2)_40%,transparent)] bg-[color-mix(in_oklch,var(--chart-2)_10%,transparent)] text-foreground [&_svg]:text-[var(--chart-2)]",
+					"border-primary/30 bg-primary/5 text-foreground [&_svg]:text-primary",
 				warning:
-					"border-[color-mix(in_oklch,var(--chart-4)_45%,transparent)] bg-[color-mix(in_oklch,var(--chart-4)_12%,transparent)] text-foreground [&_svg]:text-[var(--chart-4)]",
+					"border-border bg-muted/50 text-foreground [&_svg]:text-foreground",
 				destructive:
 					"border-destructive/30 bg-destructive/5 text-foreground [&_svg]:text-destructive",
 			},
@@ -54,6 +60,9 @@ function Banner({
 	return (
 		<div
 			data-slot="banner"
+			// Announce urgent tones assertively, advisory ones politely; a caller
+			// can override via `role`/`aria-live` since {...props} is spread last.
+			role={tone === "destructive" || tone === "warning" ? "alert" : "status"}
 			className={cn(bannerVariants({ tone }), className)}
 			{...props}
 		>

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { CSSProperties } from "react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Card, Section } from "../card.js";
 
 afterEach(cleanup);
@@ -26,6 +26,19 @@ describe("Card", () => {
 		);
 		expect(screen.queryByRole("heading")).toBeNull();
 		expect(screen.getByText("only body")).toBeTruthy();
+	});
+
+	it("forwards native div props (onClick, id, data-*) to the surface", () => {
+		const onClick = vi.fn();
+		render(
+			<Card data-testid="surface" id="c1" onClick={onClick}>
+				<p>body</p>
+			</Card>,
+		);
+		const surface = screen.getByTestId("surface");
+		expect(surface.id).toBe("c1");
+		fireEvent.click(surface);
+		expect(onClick).toHaveBeenCalledTimes(1);
 	});
 });
 

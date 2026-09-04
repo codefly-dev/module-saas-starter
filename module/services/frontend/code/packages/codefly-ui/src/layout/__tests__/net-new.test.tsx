@@ -8,6 +8,8 @@ import {
 	ErrorState,
 	PageHeader,
 	Pagination,
+	RadioGroup,
+	RadioGroupItem,
 	Spinner,
 	StatTile,
 } from "../index.js";
@@ -20,18 +22,51 @@ describe("StatTile", () => {
 			<StatTile label="Failed" value="27" delta="-8.0%" deltaTone="positive" />,
 		);
 		expect(screen.getByText("-8.0%")).toBeTruthy();
-		// positive tone → chart-2 color class present; arrow follows the sign (down).
+		// positive tone → semantic --primary color (never a chart-palette token);
+		// arrow follows the sign (down).
 		const badge = screen.getByText("-8.0%");
-		expect(badge.className).toContain("chart-2");
+		expect(badge.className).toContain("text-primary");
+		expect(badge.className).not.toContain("chart-2");
 		expect(container.querySelector(".lucide-arrow-down")).toBeTruthy();
 		expect(container.querySelector(".lucide-arrow-up")).toBeNull();
 	});
 
-	it("defaults a plain positive delta to an up arrow", () => {
+	it("defaults a plain positive delta to an up arrow, colored from --primary (not a chart token)", () => {
 		const { container } = render(
 			<StatTile label="Total" value="1,284" delta="+12%" />,
 		);
 		expect(container.querySelector(".lucide-arrow-up")).toBeTruthy();
+		const badge = screen.getByText("+12%");
+		expect(badge.className).toContain("text-primary");
+		expect(badge.className).not.toContain("chart-2");
+	});
+
+	it("treats a zero-magnitude delta as neutral with no arrow", () => {
+		const { container } = render(
+			<StatTile label="Flat" value="500" delta="0%" />,
+		);
+		const badge = screen.getByText("0%");
+		expect(badge.className).toContain("muted");
+		expect(badge.className).not.toContain("text-primary");
+		expect(container.querySelector(".lucide-arrow-up")).toBeNull();
+		expect(container.querySelector(".lucide-arrow-down")).toBeNull();
+	});
+
+	it("forwards pass-through props (onClick, data-*, id) to the DOM node", () => {
+		const onClick = vi.fn();
+		render(
+			<StatTile
+				label="Logins"
+				value="1,284"
+				data-testid="kpi-logins"
+				id="kpi"
+				onClick={onClick}
+			/>,
+		);
+		const tile = screen.getByTestId("kpi-logins");
+		expect(tile.id).toBe("kpi");
+		fireEvent.click(tile);
+		expect(onClick).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -49,6 +84,48 @@ describe("Banner", () => {
 		expect(screen.getByText("Heads up")).toBeTruthy();
 		expect(screen.getByText("body copy")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Fix" })).toBeTruthy();
+	});
+
+	it("colors success from --primary and uses no chart-palette token", () => {
+		const { container } = render(<Banner tone="success">done</Banner>);
+		const banner = container.querySelector("[data-slot=banner]") as HTMLElement;
+		expect(banner.className).toContain("primary");
+		expect(banner.className).not.toContain("chart-2");
+		expect(banner.className).not.toContain("chart-4");
+	});
+
+	it("warning uses no chart-palette token", () => {
+		const { container } = render(<Banner tone="warning">careful</Banner>);
+		const banner = container.querySelector("[data-slot=banner]") as HTMLElement;
+		expect(banner.className).not.toContain("chart-4");
+	});
+
+	it("announces urgent tones assertively and advisory ones politely", () => {
+		const { container: a } = render(<Banner tone="destructive">x</Banner>);
+		expect(a.querySelector("[data-slot=banner]")?.getAttribute("role")).toBe(
+			"alert",
+		);
+		const { container: b } = render(<Banner tone="info">y</Banner>);
+		expect(b.querySelector("[data-slot=banner]")?.getAttribute("role")).toBe(
+			"status",
+		);
+	});
+});
+
+describe("RadioGroup", () => {
+	it("marks the default option checked and reports a new selection", () => {
+		const onValueChange = vi.fn();
+		render(
+			<RadioGroup defaultValue="a" onValueChange={onValueChange}>
+				<RadioGroupItem value="a" aria-label="Option A" />
+				<RadioGroupItem value="b" aria-label="Option B" />
+			</RadioGroup>,
+		);
+		const [a, b] = screen.getAllByRole("radio");
+		expect(a.hasAttribute("data-checked")).toBe(true);
+		expect(b.hasAttribute("data-checked")).toBe(false);
+		fireEvent.click(b);
+		expect(onValueChange).toHaveBeenCalledWith("b", expect.anything());
 	});
 });
 

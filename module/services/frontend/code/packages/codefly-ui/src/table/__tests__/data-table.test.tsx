@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { DataTable, type DataTableColumn } from "../index.js";
+import { cleanup, render, screen } from "@testing-library/react";
+import {
+	createColumnHelper,
+	getCoreRowModel,
+	getPaginationRowModel,
+	useReactTable,
+} from "@tanstack/react-table";
+import { afterEach, describe, expect, it } from "vitest";
+import { DataTable } from "../index.js";
 
 afterEach(cleanup);
 
@@ -9,59 +15,78 @@ interface Row {
 	name: string;
 	city: string;
 }
-const columns: DataTableColumn<Row>[] = [
-	{ key: "name", header: "Name", sortable: true },
-	{ key: "city", header: "City" },
+const col = createColumnHelper<Row>();
+const columns = [
+	col.accessor("name", { header: "Name" }),
+	col.accessor("city", { header: "City" }),
 ];
+
+function Harness({
+	data,
+	isLoading,
+	emptyMessage,
+	pageSize,
+}: {
+	data: Row[];
+	isLoading?: boolean;
+	emptyMessage?: string;
+	pageSize?: number;
+}) {
+	const table = useReactTable({
+		data,
+		columns,
+		getCoreRowModel: getCoreRowModel(),
+		...(pageSize
+			? {
+					getPaginationRowModel: getPaginationRowModel(),
+					initialState: { pagination: { pageIndex: 0, pageSize } },
+				}
+			: {}),
+	});
+	return (
+		<DataTable
+			table={table}
+			isLoading={isLoading}
+			emptyMessage={emptyMessage}
+		/>
+	);
+}
+
 const data: Row[] = [
 	{ name: "Jane", city: "NYC" },
 	{ name: "Amir", city: "Berlin" },
 ];
 
-describe("DataTable", () => {
-	it("renders rows from data", () => {
-		render(<DataTable columns={columns} data={data} />);
+describe("DataTable (kit, TanStack)", () => {
+	it("renders rows from the table instance", () => {
+		render(<Harness data={data} />);
 		expect(screen.getByText("Jane")).toBeTruthy();
 		expect(screen.getByText("Berlin")).toBeTruthy();
 	});
 
-	it("shows skeleton rows while loading and no data", () => {
-		const { container } = render(
-			<DataTable columns={columns} data={[]} isLoading skeletonRows={3} />,
-		);
-		expect(container.querySelectorAll("[data-slot=skeleton]").length).toBe(6);
-		expect(screen.queryByText("No results")).toBeNull();
+	it("shows skeleton placeholders while loading", () => {
+		const { container } = render(<Harness data={[]} isLoading />);
+		// 2 header-cell skeletons + 5 body rows × 2 columns.
+		expect(container.querySelectorAll("[data-slot=skeleton]").length).toBe(12);
 	});
 
-	it("shows an empty state when not loading and empty", () => {
-		render(<DataTable columns={columns} data={[]} />);
-		expect(screen.getByText("No results")).toBeTruthy();
+	it("shows the empty message when there are no rows", () => {
+		render(<Harness data={[]} emptyMessage="No people" />);
+		expect(screen.getByText("No people")).toBeTruthy();
 	});
 
-	it("toggles sort direction on a sortable header", () => {
-		const onSortChange = vi.fn();
-		render(
-			<DataTable
-				columns={columns}
-				data={data}
-				sort={{ key: "name", direction: "asc" }}
-				onSortChange={onSortChange}
-			/>,
-		);
-		fireEvent.click(screen.getByRole("button", { name: /Name/ }));
-		expect(onSortChange).toHaveBeenCalledWith({
-			key: "name",
-			direction: "desc",
-		});
+	it("shows pagination controls only when there is more than one page", () => {
+		const many = Array.from({ length: 15 }, (_, i) => ({
+			name: `n${i}`,
+			city: `c${i}`,
+		}));
+		render(<Harness data={many} pageSize={10} />);
+		expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+		expect(screen.getByRole("button", { name: /Next/ })).toBeTruthy();
 	});
 
-	it("uses a custom cell renderer", () => {
-		render(
-			<DataTable
-				columns={[{ key: "name", header: "Name", cell: (r) => `Hi ${r.name}` }]}
-				data={data}
-			/>,
-		);
-		expect(screen.getByText("Hi Jane")).toBeTruthy();
+	it("hides pagination for a single page", () => {
+		render(<Harness data={data} />);
+		expect(screen.queryByRole("button", { name: /Next/ })).toBeNull();
 	});
 });

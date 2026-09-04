@@ -4,25 +4,33 @@
 // pages from one shared package instance. No state or effects here, so these stay
 // server-safe (no `"use client"`); only Tabs needs the client boundary.
 
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ComponentProps, ReactNode } from "react";
 import { cn } from "./cn.js";
 
-export interface CardProps {
+// `title` is overridden to ReactNode (a card heading, not the HTML `title`
+// tooltip string); everything else on a <div> — onClick, id, style, data-*,
+// aria-* — passes straight through so a composer like StatTile can wire them.
+export interface CardProps extends Omit<ComponentProps<"div">, "title"> {
 	title?: ReactNode;
 	/** Trailing controls rendered opposite the title (buttons, menus). */
 	actions?: ReactNode;
-	children?: ReactNode;
-	className?: string;
 }
 
 /** A bordered surface with an optional title row and trailing actions. */
-export function Card({ title, actions, children, className }: CardProps) {
+export function Card({
+	title,
+	actions,
+	children,
+	className,
+	...props
+}: CardProps) {
 	return (
 		<div
 			className={cn(
 				"rounded-lg border bg-card p-4 text-card-foreground shadow-sm",
 				className,
 			)}
+			{...props}
 		>
 			{(title || actions) && (
 				<div className="mb-3 flex items-center justify-between gap-4">

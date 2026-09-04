@@ -18,7 +18,7 @@ function StatTile({
 	visual,
 	className,
 	...props
-}: Omit<React.ComponentProps<"div">, "children"> & {
+}: Omit<React.ComponentProps<"div">, "children" | "title"> & {
 	label: React.ReactNode;
 	value: React.ReactNode;
 	/** e.g. "+12%". Sign drives the arrow and default color. */
@@ -31,12 +31,24 @@ function StatTile({
 	/** A trailing visual — a sparkline (`StatChart`), a small chart, etc. */
 	visual?: React.ReactNode;
 }) {
-	const isNegativeValue = delta?.trim().startsWith("-") ?? false;
+	// A zero-magnitude delta ("0%", "+0.0%") is no change: neutral, no arrow —
+	// distinct from a real rise or fall.
+	const magnitude = delta
+		? Number.parseFloat(delta.replace(/[^0-9.]/g, ""))
+		: Number.NaN;
+	const isZero = Number.isFinite(magnitude) && magnitude === 0;
+	const isNegativeValue = !isZero && (delta?.trim().startsWith("-") ?? false);
 	// Color reads the semantics (a caller may mark a decline "positive", e.g.
 	// fewer failed logins); the arrow always follows the number's actual sign.
 	const tone: DeltaTone =
 		deltaTone ??
-		(isNegativeValue ? "negative" : delta ? "positive" : "neutral");
+		(isZero
+			? "neutral"
+			: isNegativeValue
+				? "negative"
+				: delta
+					? "positive"
+					: "neutral");
 	return (
 		<Card className={cn("flex flex-col gap-2", className)} {...props}>
 			<div className="flex items-start justify-between gap-2">
@@ -58,13 +70,12 @@ function StatTile({
 					<span
 						className={cn(
 							"inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-medium tabular-nums",
-							tone === "positive" &&
-								"bg-[color-mix(in_oklch,var(--chart-2)_15%,transparent)] text-[var(--chart-2)]",
+							tone === "positive" && "bg-primary/10 text-primary",
 							tone === "negative" && "bg-destructive/10 text-destructive",
 							tone === "neutral" && "bg-muted text-muted-foreground",
 						)}
 					>
-						{isNegativeValue ? (
+						{isZero ? null : isNegativeValue ? (
 							<ArrowDownIcon className="size-3" aria-hidden />
 						) : (
 							<ArrowUpIcon className="size-3" aria-hidden />

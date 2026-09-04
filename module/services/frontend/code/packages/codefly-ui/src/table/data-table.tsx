@@ -1,14 +1,8 @@
 "use client";
 
-import {
-	ChevronDownIcon,
-	ChevronUpIcon,
-	ChevronsUpDownIcon,
-} from "lucide-react";
-import type * as React from "react";
-import { cn } from "../layout/cn.js";
-import { EmptyState } from "../layout/empty-state.js";
-import { Pagination } from "../layout/pagination.js";
+import { flexRender, type Table as TanStackTable } from "@tanstack/react-table";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { Button } from "../layout/button.js";
 import { Skeleton } from "../layout/skeleton.js";
 import {
 	Table,
@@ -19,166 +13,150 @@ import {
 	TableRow,
 } from "../layout/table.js";
 
-export type SortDirection = "asc" | "desc";
-export interface SortState {
-	key: string;
-	direction: SortDirection;
-}
-
-export interface DataTableColumn<T> {
-	key: string;
-	header: React.ReactNode;
-	/** Cell renderer; defaults to `String(row[key])`. */
-	cell?: (row: T) => React.ReactNode;
-	align?: "start" | "end";
-	sortable?: boolean;
-	/** Header/cell width utility, e.g. "w-40". */
-	className?: string;
+export interface DataTableProps<T> {
+	table: TanStackTable<T>;
+	isLoading?: boolean;
+	emptyMessage?: string;
+	onRowClick?: (row: T) => void;
 }
 
 /**
- * A presentational table over rows: sortable headers, a loading skeleton, an
- * empty slot, and optional pagination — all **controlled** (it holds no state),
- * composing the layout `Table`. Data resolution, sorting, and paging live in the
- * caller; this renders the result.
+ * Renders a resolved TanStack table: sortable headers, a loading skeleton, an
+ * empty message, and prev/next pagination. The caller owns the table instance
+ * (`useReactTable`) and its sorting/filtering/pagination state; this composes the
+ * layout `Table`/`Button`/`Skeleton` to paint it. The single kit home for
+ * `DataTable` (issue #451) — the host `@/shared/ui/data-table` re-exports it.
  */
-function DataTable<T>({
-	columns,
-	data,
-	getRowId,
-	sort,
-	onSortChange,
-	isLoading = false,
-	skeletonRows = 5,
-	empty,
+export function DataTable<T>({
+	table,
+	isLoading,
+	emptyMessage = "No results.",
 	onRowClick,
-	page,
-	pageCount,
-	onPageChange,
-	className,
-}: {
-	columns: DataTableColumn<T>[];
-	data: T[];
-	getRowId?: (row: T, index: number) => string;
-	sort?: SortState;
-	onSortChange?: (sort: SortState) => void;
-	isLoading?: boolean;
-	skeletonRows?: number;
-	empty?: React.ReactNode;
-	onRowClick?: (row: T) => void;
-	page?: number;
-	pageCount?: number;
-	onPageChange?: (page: number) => void;
-	className?: string;
-}) {
-	const toggleSort = (key: string) => {
-		if (!onSortChange) return;
-		const direction: SortDirection =
-			sort?.key === key && sort.direction === "asc" ? "desc" : "asc";
-		onSortChange({ key, direction });
-	};
-
-	const showEmpty = !isLoading && data.length === 0;
-
-	return (
-		<div data-slot="data-table" className={cn("space-y-3", className)}>
-			<div className="overflow-hidden rounded-lg border">
+}: DataTableProps<T>) {
+	if (isLoading) {
+		return (
+			<div data-slot="data-table" className="rounded-md border">
 				<Table>
 					<TableHeader>
 						<TableRow>
-							{columns.map((col) => {
-								const active = sort?.key === col.key;
-								return (
-									<TableHead
-										key={col.key}
-										className={cn(
-											col.align === "end" && "text-right",
-											col.className,
-										)}
-									>
-										{col.sortable ? (
-											<button
-												type="button"
-												onClick={() => toggleSort(col.key)}
-												className={cn(
-													"inline-flex items-center gap-1 transition-colors hover:text-foreground [&_svg]:size-3.5 [&_svg]:text-muted-foreground",
-													col.align === "end" && "flex-row-reverse",
-													active && "text-foreground",
-												)}
-											>
-												{col.header}
-												{active ? (
-													sort?.direction === "asc" ? (
-														<ChevronUpIcon />
-													) : (
-														<ChevronDownIcon />
-													)
-												) : (
-													<ChevronsUpDownIcon />
-												)}
-											</button>
-										) : (
-											col.header
-										)}
-									</TableHead>
-								);
-							})}
+							{table.getAllColumns().map((col) => (
+								<TableHead key={col.id}>
+									<Skeleton className="h-4 w-24" />
+								</TableHead>
+							))}
 						</TableRow>
 					</TableHeader>
 					<TableBody>
-						{isLoading &&
-							Array.from({ length: skeletonRows }).map((_, r) => (
-								<TableRow key={`sk-${r}`}>
-									{columns.map((col) => (
-										<TableCell key={col.key} className={col.className}>
-											<Skeleton className="h-4 w-full max-w-32" />
-										</TableCell>
-									))}
-								</TableRow>
-							))}
-						{!isLoading &&
-							data.map((row, i) => (
-								<TableRow
-									key={getRowId?.(row, i) ?? i}
-									onClick={onRowClick ? () => onRowClick(row) : undefined}
-									className={cn(onRowClick && "cursor-pointer")}
-								>
-									{columns.map((col) => (
-										<TableCell
-											key={col.key}
-											className={cn(
-												col.align === "end" && "text-right tabular-nums",
-												col.className,
-											)}
-										>
-											{col.cell
-												? col.cell(row)
-												: String(
-														(row as Record<string, unknown>)[col.key] ?? "",
-													)}
-										</TableCell>
-									))}
-								</TableRow>
-							))}
+						{Array.from({ length: 5 }).map((_, i) => (
+							<TableRow key={i}>
+								{table.getAllColumns().map((col) => (
+									<TableCell key={col.id}>
+										<Skeleton className="h-4 w-full" />
+									</TableCell>
+								))}
+							</TableRow>
+						))}
 					</TableBody>
 				</Table>
-				{showEmpty && (
-					<div className="p-4">
-						{empty ?? <EmptyState title="No results" />}
-					</div>
-				)}
 			</div>
-			{page !== undefined && pageCount !== undefined && pageCount > 1 && (
-				<div className="flex justify-end">
-					<Pagination
-						page={page}
-						pageCount={pageCount}
-						onPageChange={onPageChange}
-					/>
+		);
+	}
+
+	return (
+		<div data-slot="data-table">
+			<div className="rounded-md border">
+				<Table>
+					<TableHeader>
+						{table.getHeaderGroups().map((headerGroup) => (
+							<TableRow key={headerGroup.id}>
+								{headerGroup.headers.map((header) => (
+									<TableHead
+										key={header.id}
+										className={
+											header.column.getCanSort()
+												? "cursor-pointer select-none"
+												: ""
+										}
+										onClick={header.column.getToggleSortingHandler()}
+									>
+										{header.isPlaceholder ? null : (
+											<div className="flex items-center gap-1">
+												{flexRender(
+													header.column.columnDef.header,
+													header.getContext(),
+												)}
+												{{
+													asc: " ↑",
+													desc: " ↓",
+												}[header.column.getIsSorted() as string] ?? null}
+											</div>
+										)}
+									</TableHead>
+								))}
+							</TableRow>
+						))}
+					</TableHeader>
+					<TableBody>
+						{table.getRowModel().rows.length ? (
+							table.getRowModel().rows.map((row) => (
+								<TableRow
+									key={row.id}
+									data-state={row.getIsSelected() && "selected"}
+									className={onRowClick ? "cursor-pointer" : ""}
+									onClick={() => onRowClick?.(row.original)}
+								>
+									{row.getVisibleCells().map((cell) => (
+										<TableCell key={cell.id}>
+											{flexRender(
+												cell.column.columnDef.cell,
+												cell.getContext(),
+											)}
+										</TableCell>
+									))}
+								</TableRow>
+							))
+						) : (
+							<TableRow>
+								<TableCell
+									colSpan={table.getAllColumns().length}
+									className="h-24 text-center text-muted-foreground"
+								>
+									{emptyMessage}
+								</TableCell>
+							</TableRow>
+						)}
+					</TableBody>
+				</Table>
+			</div>
+
+			{table.getPageCount() > 1 && (
+				<div className="flex items-center justify-between px-2 py-4">
+					<p className="text-sm text-muted-foreground">
+						Page {table.getState().pagination.pageIndex + 1} of{" "}
+						{table.getPageCount()}
+					</p>
+					<div className="flex items-center gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.previousPage()}
+							disabled={!table.getCanPreviousPage()}
+						>
+							<ChevronLeftIcon className="h-4 w-4" />
+							Previous
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => table.nextPage()}
+							disabled={!table.getCanNextPage()}
+						>
+							Next
+							<ChevronRightIcon className="h-4 w-4" />
+						</Button>
+					</div>
 				</div>
 			)}
 		</div>
 	);
 }
-
-export { DataTable };
