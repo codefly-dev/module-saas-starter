@@ -13,7 +13,9 @@ describe("EmptyState", () => {
 				<button type="button">Add document</button>
 			</EmptyState>,
 		);
-		expect(screen.getByRole("heading", { name: "No documents yet" })).toBeTruthy();
+		expect(
+			screen.getByRole("heading", { name: "No documents yet" }),
+		).toBeTruthy();
 		expect(screen.getByText("Add one to begin")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Add document" })).toBeTruthy();
 	});
@@ -38,9 +40,7 @@ describe("EmptyState", () => {
 
 describe("ErrorState", () => {
 	it("exposes the title through the alert role with a muted detail", () => {
-		render(
-			<ErrorState title="Request failed" detail="gateway timed out" />,
-		);
+		render(<ErrorState title="Request failed" detail="gateway timed out" />);
 		const alert = screen.getByRole("alert");
 		expect(alert.textContent).toContain("Request failed");
 		expect(alert.textContent).toContain("gateway timed out");

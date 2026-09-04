@@ -31,9 +31,11 @@ export interface TabsProps {
 	onChange?: (id: string) => void;
 	/**
 	 * Render every panel and hide the inactive ones instead of unmounting them,
-	 * so a panel's state (a live transcript, a scroll position, an open citation)
-	 * survives a tab switch. Hidden panels stay out of the accessibility tree and
-	 * the tab order via the `hidden` attribute. Defaults to unmounting.
+	 * so a panel's React state (a live transcript, an open citation) survives a
+	 * tab switch. Hiding is via the `hidden` attribute (`display: none`), so the
+	 * panel keeps its component state but not layout-derived DOM state — a
+	 * scroll position inside a hidden panel is not preserved. Hidden panels stay
+	 * out of the accessibility tree and the tab order. Defaults to unmounting.
 	 */
 	keepMounted?: boolean;
 	className?: string;

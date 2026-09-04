@@ -4,7 +4,7 @@
 // in `--muted-foreground`. No host context, no SDK, no data fetching — so the
 // host app and a solution's Module-Federation remote render one shared instance.
 
-import { CircleAlert } from "lucide-react";
+import { CircleAlertIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "./cn.js";
 
@@ -22,7 +22,7 @@ export interface ErrorStateProps {
 export function ErrorState({
 	title,
 	detail,
-	icon = <CircleAlert />,
+	icon = <CircleAlertIcon />,
 	className,
 }: ErrorStateProps) {
 	return (

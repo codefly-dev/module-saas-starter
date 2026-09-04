@@ -9,7 +9,7 @@
 // the kit owns `lucide-react`, so an empty state paints a proper icon out of the
 // box and a caller overrides it with `icon` when a page-specific glyph fits better.
 
-import { Inbox } from "lucide-react";
+import { InboxIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "./cn.js";
 
@@ -25,7 +25,7 @@ export interface EmptyStateProps {
 
 /** A centered placeholder for "nothing here yet" surfaces. */
 export function EmptyState({
-	icon = <Inbox />,
+	icon = <InboxIcon />,
 	heading,
 	description,
 	children,
@@ -41,7 +41,7 @@ export function EmptyState({
 		>
 			<div
 				data-slot="empty-state-icon"
-				className="text-muted-foreground [&_svg]:size-10 [&_svg]:stroke-[1.5]"
+				className="text-muted-foreground [&_svg]:size-10 [&_svg]:[stroke-width:1.5]"
 			>
 				{icon}
 			</div>

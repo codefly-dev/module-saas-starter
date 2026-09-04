@@ -182,8 +182,8 @@ re-inlining the guard is catching. Two buckets:
 `DropdownMenu`, `Sonner`.
 
 **Propose (net-new — small, high-leverage):**
-`EmptyState`, `ErrorState`, `Spinner`, `DataTable`, `Pagination`, `Form`,
-`RadioGroup`, `Breadcrumbs`, `PageHeader`.
+`EmptyState` and `ErrorState` (shipped), plus `Spinner`, `DataTable`, `Pagination`,
+`Form`, `RadioGroup`, `Breadcrumbs`, `PageHeader`.
 
 Rationale: the promote bucket is a move, not a rewrite, so it is cheap and it
 directly retires the re-inlining. The net-new bucket is the shared state/data/nav
@@ -222,7 +222,8 @@ ready to fan out into build issues:
    the set), each: add the definition to the kit at its owner tier, add a subpath /
    export, repoint the host `src/components/ui/<x>.tsx` to re-export the kit, extend
    `no-reinlined-primitives.test.ts` to guard the newly-owned class strings.
-2. **Net-new v1 components** — one build issue each for `EmptyState`, `ErrorState`,
-   `Spinner`, `DataTable`, `Pagination`, `Form`, `RadioGroup`, `Breadcrumbs`,
-   `PageHeader`, seeding `DataTable` from `shared/ui/data-table.tsx`.
+2. **Net-new v1 components** — `EmptyState` and `ErrorState` have shipped (#466);
+   the rest are one build issue each for `Spinner`, `DataTable`, `Pagination`,
+   `Form`, `RadioGroup`, `Breadcrumbs`, `PageHeader`, seeding `DataTable` from
+   `shared/ui/data-table.tsx`.
 3. **v2+** — file the remaining rows as they become needed, not speculatively.
