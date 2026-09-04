@@ -9,6 +9,10 @@
 export { Card, type CardProps, Section, type SectionProps } from "./card.js";
 export { type TabItem, Tabs, type TabsProps } from "./tabs.js";
 
+// Feedback / state
+export { EmptyState, type EmptyStateProps } from "./empty-state.js";
+export { ErrorState, type ErrorStateProps } from "./error-state.js";
+
 // Actions
 export { Button, buttonVariants } from "./button.js";
 

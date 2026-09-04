@@ -29,6 +29,15 @@ export interface TabsProps {
 	/** Controlled selection; pair with `onChange`. */
 	active?: string;
 	onChange?: (id: string) => void;
+	/**
+	 * Render every panel and hide the inactive ones instead of unmounting them,
+	 * so a panel's React state (a live transcript, an open citation) survives a
+	 * tab switch. Hiding is via the `hidden` attribute (`display: none`), so the
+	 * panel keeps its component state but not layout-derived DOM state — a
+	 * scroll position inside a hidden panel is not preserved. Hidden panels stay
+	 * out of the accessibility tree and the tab order. Defaults to unmounting.
+	 */
+	keepMounted?: boolean;
 	className?: string;
 }
 
@@ -42,6 +51,7 @@ export function Tabs({
 	initial,
 	active,
 	onChange,
+	keepMounted = false,
 	className,
 }: TabsProps) {
 	const baseId = useId();
@@ -127,16 +137,29 @@ export function Tabs({
 					);
 				})}
 			</div>
-			{activeTab && (
-				<div
-					role="tabpanel"
-					id={`${baseId}-panel-${activeTab.id}`}
-					aria-labelledby={`${baseId}-tab-${activeTab.id}`}
-					tabIndex={0}
-				>
-					{activeTab.content}
-				</div>
-			)}
+			{keepMounted
+				? tabs.map((tab) => (
+						<div
+							key={tab.id}
+							role="tabpanel"
+							id={`${baseId}-panel-${tab.id}`}
+							aria-labelledby={`${baseId}-tab-${tab.id}`}
+							tabIndex={0}
+							hidden={tab.id !== selected}
+						>
+							{tab.content}
+						</div>
+					))
+				: activeTab && (
+						<div
+							role="tabpanel"
+							id={`${baseId}-panel-${activeTab.id}`}
+							aria-labelledby={`${baseId}-tab-${activeTab.id}`}
+							tabIndex={0}
+						>
+							{activeTab.content}
+						</div>
+					)}
 		</div>
 	);
 }

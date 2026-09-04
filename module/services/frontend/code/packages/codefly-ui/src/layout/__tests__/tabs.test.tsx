@@ -105,6 +105,37 @@ describe("Tabs", () => {
 		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
 	});
 
+	it("unmounts the inactive panel by default", () => {
+		render(<Tabs tabs={tabs} />);
+		// Only the selected panel is in the DOM at all — the others are unmounted.
+		expect(document.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
+	});
+
+	it("keeps every panel mounted when keepMounted, hiding the inactive ones", () => {
+		const { container } = render(<Tabs tabs={tabs} keepMounted />);
+		// All three panels are in the DOM...
+		const panels = container.querySelectorAll('[id*="-panel-"]');
+		expect(panels).toHaveLength(3);
+		// ...but the two inactive ones carry `hidden`, so only the selected panel is
+		// in the accessibility tree and the tab order.
+		expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+		expect(screen.getByRole("tabpanel").textContent).toBe("First panel");
+		expect(screen.getByText("Second panel").closest("[hidden]")).toBeTruthy();
+	});
+
+	it("preserves a hidden panel's DOM node across a controlled tab switch", () => {
+		const { container, rerender } = render(
+			<Tabs tabs={tabs} active="one" keepMounted />,
+		);
+		const secondPanel = screen.getByText("Second panel");
+		rerender(<Tabs tabs={tabs} active="two" keepMounted />);
+		// The same node is revealed rather than remounted — the state a panel holds
+		// (a live transcript) survives the switch.
+		expect(screen.getByText("Second panel")).toBe(secondPanel);
+		expect(screen.getByRole("tabpanel").textContent).toBe("Second panel");
+		expect(container.querySelectorAll('[id*="-panel-"]')).toHaveLength(3);
+	});
+
 	it("keeps only the selected tab in the tab order (roving tabindex)", () => {
 		render(<Tabs tabs={tabs} initial="two" />);
 		const [first, second, third] = screen.getAllByRole("tab");
