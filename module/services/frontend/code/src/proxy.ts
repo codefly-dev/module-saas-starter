@@ -18,7 +18,6 @@ import {
 	type CodeflyGatewayContext,
 	resolveCodeflyGatewayContext,
 } from "@/lib/codefly-gateway-context";
-import type { SolutionManifest } from "@/solutions/registry";
 import { contentSecurityPolicyFromInputs } from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
@@ -117,34 +116,67 @@ function safeDecode(segment: string): string | null {
 
 // A solution's Module Federation remote registers at RUNTIME (see
 // src/solutions/registry.ts), so the build-time CSP in next.config — which
-// excludes /s/:id precisely for this reason — cannot know its origin. This
-// proxy runs on the Node.js runtime, so it shares the process global the
-// registry anchors on; for a solution page it derives the remote's origin from
-// the registration and returns a CSP that allows it, letting a freshly
-// registered cross-origin remote load with no rebuild and no
-// FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages keep their build-time CSP.
-// The registry type is imported for typing only (erased at compile), so this
-// does not pull the server-only registry module into the proxy bundle.
-function solutionContentSecurityPolicy(
-	pathname: string,
-	nonce: string,
-): string | null {
+// excludes /s/:id precisely for this reason — cannot know its origin. Next runs
+// this proxy in a context whose module singletons and globals are NOT shared
+// with route handlers or pages (see the Next "proxy" docs: "you should not
+// attempt relying on shared modules or globals"), so it cannot read the
+// in-process registry the register endpoint and solution page share. Instead it
+// asks the host over the local solutions listing — which does run in that
+// shared context — and derives the requested remote's origin from the
+// registration, letting a freshly registered cross-origin remote load with no
+// rebuild and no FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages skip the
+// lookup and keep their self-only build-time CSP.
+//
+// The listing is fetched over loopback at the port THIS server binds — read
+// from PORT with the same fallback Next's standalone server uses, so it always
+// matches the actual listener. It must NOT be derived from the request origin
+// (the client-controlled Host header): routing a server-side fetch through Host
+// is an SSRF sink, and behind a TLS-terminating ingress the "self" origin is the
+// public hostname, so the request would egress back out instead of staying
+// local. A slow or wedged listener must not stall the page, so the fetch is
+// bounded; on any failure the CSP falls back to self-only and the cause is
+// logged rather than swallowed, since a silent fallback is indistinguishable
+// from the very bug this fixes.
+async function registeredSolutionOrigins(pathname: string): Promise<string[]> {
 	const match = SOLUTION_PAGE.exec(pathname);
 	if (!match) {
-		return null;
+		return [];
 	}
 	const id = safeDecode(match[1]);
-	const registry = (
-		globalThis as typeof globalThis & {
-			__solutionRegistry?: Map<string, SolutionManifest>;
+	if (id === null) {
+		return [];
+	}
+	// Mirror Next's standalone server: parseInt(PORT, 10) || 3000, so an unset,
+	// empty, or non-numeric PORT resolves to the same port the server bound.
+	const port = Number.parseInt(process.env.PORT ?? "", 10) || 3000;
+	const listingUrl = new URL(
+		"/api/solutions/register",
+		`http://127.0.0.1:${port}`,
+	);
+	let solutions: Array<{ id: string; frontend?: { manifestUrl?: string } }>;
+	try {
+		const listing = await fetch(listingUrl, {
+			headers: { accept: "application/json" },
+			signal: AbortSignal.timeout(2000),
+		});
+		if (!listing.ok) {
+			console.error(
+				`solution CSP: registry listing responded ${listing.status} path=${pathname}`,
+			);
+			return [];
 		}
-	).__solutionRegistry;
-	const solution = id === null ? undefined : registry?.get(id);
+		({ solutions } = await listing.json());
+	} catch (err) {
+		console.error(
+			`solution CSP: registry listing unavailable path=${pathname}`,
+			err,
+		);
+		return [];
+	}
+	const manifestUrl = solutions?.find((s) => s.id === id)?.frontend
+		?.manifestUrl;
 	// manifestUrl is validated as an absolute http(s) URL at registration.
-	const origins = solution
-		? [new URL(solution.frontend.manifestUrl).origin]
-		: [];
-	return contentSecurityPolicyFromInputs(baselineCspInputs(), origins, nonce);
+	return manifestUrl ? [new URL(manifestUrl).origin] : [];
 }
 
 // Per-request CSP nonce. Built from Web Crypto so it works on either runtime.
@@ -196,7 +228,7 @@ function isPublic(pathname: string): boolean {
 	return false;
 }
 
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
 	const gatewayHeaders = trustedGatewayRequestHeaders(
 		req,
@@ -249,9 +281,11 @@ export function proxy(req: NextRequest) {
 		return NextResponse.redirect(loginURL);
 	}
 
-	const csp =
-		solutionContentSecurityPolicy(pathname, nonce) ??
-		contentSecurityPolicyFromInputs(baselineCspInputs(), [], nonce);
+	const csp = contentSecurityPolicyFromInputs(
+		baselineCspInputs(),
+		await registeredSolutionOrigins(pathname),
+		nonce,
+	);
 	return withNoncedCSP(req, gatewayHeaders, nonce, csp);
 }
 

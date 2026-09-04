@@ -19,9 +19,9 @@ describe("secret return handling", () => {
 		vi.unstubAllEnvs();
 	});
 
-	it("captures an invitation token in an HttpOnly cookie and redacts the URL", () => {
+	it("captures an invitation token in an HttpOnly cookie and redacts the URL", async () => {
 		const token = "a".repeat(43);
-		const response = proxy(
+		const response = await proxy(
 			new NextRequest(
 				`https://app.example/invitations/accept?token=${token}&campaign=launch`,
 			),
@@ -38,8 +38,8 @@ describe("secret return handling", () => {
 		expect(response.headers.get("referrer-policy")).toBe("no-referrer");
 	});
 
-	it("does not persist a malformed token", () => {
-		const response = proxy(
+	it("does not persist a malformed token", async () => {
+		const response = await proxy(
 			new NextRequest("https://app.example/waitlist/verify?token=too-short"),
 		);
 		expect(response.headers.get("location")).toBe(
@@ -50,8 +50,10 @@ describe("secret return handling", () => {
 
 	it.each(["/invitations/accept/api", "/waitlist/verify/api"])(
 		"keeps the secret bridge public: %s",
-		(path) => {
-			const response = proxy(new NextRequest(`https://app.example${path}`));
+		async (path) => {
+			const response = await proxy(
+				new NextRequest(`https://app.example${path}`),
+			);
 			expect(response.status).toBe(200);
 			expect(response.headers.get("location")).toBeNull();
 		},
