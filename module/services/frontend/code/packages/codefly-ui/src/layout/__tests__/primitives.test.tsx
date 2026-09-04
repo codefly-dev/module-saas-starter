@@ -68,14 +68,22 @@ describe("@codefly-dev/ui/layout exports the promoted primitives", () => {
 // resolve against the kit's own `cn` (clsx + tailwind-merge) and `cva` and paint a
 // caller's className last.
 describe("promoted atoms render", () => {
-	it("Button renders its label and merges className", () => {
+	it("Button renders its label and paints a caller's className last", () => {
+		// `rounded-full` conflicts with the button's own `rounded-lg`. tailwind
+		// -merge must let the caller win — the class is present AND the base class
+		// it overrides is gone. A plain truthy-join would keep both `rounded-lg`
+		// and `rounded-full` and leave CSS source-order to decide, so this asserts
+		// the override actually resolved rather than merely that the class is
+		// appended.
 		render(
-			<Button variant="outline" className="custom-x">
+			<Button variant="outline" className="rounded-full custom-x">
 				Save
 			</Button>,
 		);
 		const button = screen.getByRole("button", { name: "Save" });
 		expect(button.className).toContain("custom-x");
+		expect(button.className).toContain("rounded-full");
+		expect(button.className).not.toContain("rounded-lg");
 	});
 
 	it("Badge renders its content", () => {
