@@ -42,18 +42,34 @@ type AuditEmitter interface {
 // leaves neither the domain event nor partial fan-out; after commit, the leased
 // delivery worker can resume on any replica.
 type DurableAuditEmitter struct {
-	store    Store
-	producer jobs.Producer
+	store       Store
+	producer    jobs.Producer
+	teeExternal bool
 }
 
-func NewDurableAuditEmitter(store Store, producer jobs.Producer) (*DurableAuditEmitter, error) {
+// DurableAuditEmitterOption tunes the emitter at construction.
+type DurableAuditEmitterOption func(*DurableAuditEmitter)
+
+// WithExternalTee enqueues an audit-export job in the same transaction as each
+// org-scoped audit row, feeding the external sink asynchronously from the
+// durable outbox. Postgres stays the atomic source of truth; the tee never runs
+// on the synchronous mutation path (see AuditExportQueue in audit_jobs.go).
+func WithExternalTee() DurableAuditEmitterOption {
+	return func(e *DurableAuditEmitter) { e.teeExternal = true }
+}
+
+func NewDurableAuditEmitter(store Store, producer jobs.Producer, opts ...DurableAuditEmitterOption) (*DurableAuditEmitter, error) {
 	if store == nil {
 		return nil, errors.New("audit: store is required")
 	}
 	if producer == nil {
 		return nil, errors.New("audit: transactional job producer is required")
 	}
-	return &DurableAuditEmitter{store: store, producer: producer}, nil
+	emitter := &DurableAuditEmitter{store: store, producer: producer}
+	for _, opt := range opts {
+		opt(emitter)
+	}
+	return emitter, nil
 }
 
 // normalize backfills id / timestamp / schema version and logs an advisory
@@ -99,6 +115,11 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 		if err := createOutboundWebhookDelivery(
 			ctx, e.store, e.producer, entry.OrgID, delivery, payload,
 		); err != nil {
+			return err
+		}
+	}
+	if e.teeExternal {
+		if err := enqueueAuditExport(ctx, e.producer, entry); err != nil {
 			return err
 		}
 	}
