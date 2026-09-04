@@ -80,6 +80,12 @@ type ResumeRef struct {
 	Mode    string         `json:"mode,omitempty"`
 	JobKind string         `json:"job_kind,omitempty"`
 	Payload map[string]any `json:"payload,omitempty"`
+	// Queue and Topic address the durable outbox job the primitive enqueues when
+	// the request is approved. A requesting module consumes it on its own queue
+	// via the module-facing ClaimJobs (issue #463). When Queue is empty no resume
+	// job is enqueued — the flow observes the terminal state some other way.
+	Queue string `json:"queue,omitempty"`
+	Topic string `json:"topic,omitempty"`
 }
 
 // ApprovalRequest mirrors the approval_requests row 1:1.
@@ -264,7 +270,7 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 		wool.Field("resource", in.Resource),
 		wool.Field("action", in.Action))
 	if err := in.validate(); err != nil {
-		return "", w.Wrapf(err, "validate")
+		return "", NewStoreError(w.Wrapf(err, "validate"), ErrTypeValidation)
 	}
 	quorum := resolvedQuorum(in.Quorum)
 
@@ -393,6 +399,12 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 			}
 			outcome.State = ApprovalApproved
 			outcome.Approved = true
+			// Enqueue the resume outbox job in this same tx, so the gated action
+			// can never be resumed twice or lost: the approved transition and its
+			// resume job commit together or not at all (APPROVALS_DESIGN.md §6).
+			if err := s.enqueueApprovalResume(ctx, req); err != nil {
+				return err
+			}
 			return s.emitTx(ctx, in.Decider, "user", EventApprovalApproved, "approval_request", id, orgID,
 				map[string]any{"resource": req.Resource, "action": req.Action})
 		}

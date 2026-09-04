@@ -39,7 +39,7 @@ func TestAuthorizationCatalogCompilationAndPolicyProjection(t *testing.T) {
 			require.Contains(t, method.GetProcedure(), "Complete")
 		}
 	}
-	require.Equal(t, 13, internalCount)
+	require.Equal(t, 23, internalCount)
 	require.Equal(t, 15, failClosedCount)
 	require.Equal(t, 2, factorAttemptCount)
 	require.Equal(

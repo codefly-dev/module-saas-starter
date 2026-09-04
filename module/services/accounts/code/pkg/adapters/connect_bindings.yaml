@@ -60,6 +60,11 @@ services:
     grpc_server: MFA
     source:
       kind: business
+  ModuleCapabilitiesService:
+    handler: moduleCapabilitiesConnectHandler
+    source:
+      kind: singleton
+      name: ModuleCapabilitiesSingleton
   NotificationService:
     handler: notificationConnectHandler
     source:

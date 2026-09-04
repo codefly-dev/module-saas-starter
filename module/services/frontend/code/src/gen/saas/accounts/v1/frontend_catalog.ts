@@ -14,6 +14,7 @@ import { IdentityService, UserService } from "./identity_pb";
 import { IntrospectionService } from "./introspection_pb";
 import { InvitationService } from "./invitations_pb";
 import { MFAService } from "./mfa_pb";
+import { ModuleCapabilitiesService } from "./module_capabilities_pb";
 import { NotificationService } from "./notifications_pb";
 import { OnboardingService } from "./onboarding_pb";
 import { OrganizationService } from "./organizations_pb";
@@ -174,6 +175,7 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   IntrospectionService,
   InvitationService,
   MFAService,
+  ModuleCapabilitiesService,
   NotificationService,
   OnboardingService,
   OrganizationService,
@@ -206,6 +208,7 @@ export interface AccountsClients {
   readonly IntrospectionService: Client<typeof IntrospectionService>;
   readonly InvitationService: Client<typeof InvitationService>;
   readonly MFAService: Client<typeof MFAService>;
+  readonly ModuleCapabilitiesService: Client<typeof ModuleCapabilitiesService>;
   readonly NotificationService: Client<typeof NotificationService>;
   readonly OnboardingService: Client<typeof OnboardingService>;
   readonly OrganizationService: Client<typeof OrganizationService>;
@@ -237,6 +240,7 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     IntrospectionService: createClient(IntrospectionService, transport),
     InvitationService: createClient(InvitationService, transport),
     MFAService: createClient(MFAService, transport),
+    ModuleCapabilitiesService: createClient(ModuleCapabilitiesService, transport),
     NotificationService: createClient(NotificationService, transport),
     OnboardingService: createClient(OnboardingService, transport),
     OrganizationService: createClient(OrganizationService, transport),
