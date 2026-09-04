@@ -19,17 +19,20 @@ import (
 // handlersRoutingThroughRequireRoleScope discovers, from the handler source, the
 // PermissionService RPCs whose handler gates through requireRoleScope — the
 // global-scope escape hatch (org admin on the request's org, OR platform admin on
-// an empty org). It scans every non-test source file in the handler package (not
-// just rpcs.go) so a handler added or moved to another file cannot slip past the
-// drift guard and silently classify ok. It reads the handlers themselves so the
-// classifier's escape set cannot diverge from the routes it is meant to describe.
+// an empty org). It scans every non-test source file in the handler package and
+// follows the intra-package call graph (the same gating-aware edges the lockstep
+// gate uses, via calledNodes), so a handler that reaches requireRoleScope through
+// a wrapper — not only a direct call — is still found. That the discovered set
+// cannot drift from the routes the classifier's escape set names is asserted by
+// TestGlobalScopeEscapeHatchMatchesHandlers.
 func handlersRoutingThroughRequireRoleScope(t *testing.T) []string {
 	t.Helper()
 	entries, err := os.ReadDir(".")
 	require.NoError(t, err)
 
 	fset := token.NewFileSet()
-	var methods []string
+	callees := map[string][]string{}
+	methodDecls := map[string]*ast.FuncDecl{}
 	for _, entry := range entries {
 		name := entry.Name()
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -39,41 +42,68 @@ func handlersRoutingThroughRequireRoleScope(t *testing.T) []string {
 		require.NoErrorf(t, err, "parse %s", name)
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv == nil || fn.Body == nil {
+			if !ok {
 				continue
 			}
-			routes := false
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok {
-					return true
-				}
-				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "requireRoleScope" {
-					routes = true
-					return false
-				}
-				return true
-			})
-			if !routes {
-				continue
+			node := funcNodeID(fn)
+			callees[node] = calledNodes(fn)
+			if fn.Recv != nil && len(fn.Recv.List) > 0 {
+				methodDecls[node] = fn
 			}
-			require.Equalf(t, "PermServer", receiverTypeName(fn.Recv.List[0].Type),
-				"requireRoleScope caller %s is not on PermServer; extend this test's service mapping", fn.Name.Name)
-			methods = append(methods, "/saas.accounts.v1.PermissionService/"+fn.Name.Name)
+		}
+	}
+
+	// reaches reports whether a call-graph node can reach requireRoleScope through
+	// gating calls. Cycles resolve to false, matching the lockstep resolver.
+	reaches := map[string]bool{}
+	inProgress := map[string]bool{}
+	var visit func(string) bool
+	visit = func(node string) bool {
+		if result, ok := reaches[node]; ok {
+			return result
+		}
+		if inProgress[node] {
+			return false
+		}
+		inProgress[node] = true
+		result := false
+		for _, callee := range callees[node] {
+			if callee == "requireRoleScope" || visit(callee) {
+				result = true
+				break
+			}
+		}
+		delete(inProgress, node)
+		reaches[node] = result
+		return result
+	}
+
+	var methods []string
+	for node, fn := range methodDecls {
+		if !visit(node) {
+			continue
+		}
+		require.Equalf(t, "PermServer", receiverTypeName(fn.Recv.List[0].Type),
+			"requireRoleScope handler %s is not on PermServer; extend this test's service mapping", fn.Name.Name)
+		full := "/saas.accounts.v1.PermissionService/" + fn.Name.Name
+		if _, ok := business.LookupRPCPolicy(full); ok {
+			methods = append(methods, full)
 		}
 	}
 	sort.Strings(methods)
 	return methods
 }
 
-// Every handler that routes through requireRoleScope must classify as gap and be
-// left to the handler by the central interceptor. A newly added requireRoleScope
-// route that is missing from the escape set would classify ok (centrally
-// enforced) and fail here, catching the drift before the enforce flip could
-// over-deny it.
+// The classifier's escape set must equal — in both directions — the handlers that
+// gate through requireRoleScope. A new requireRoleScope route missing from the set
+// would classify ok (centrally enforced) and re-open the over-deny; a set entry
+// whose handler no longer gates through requireRoleScope would leave a route
+// classified gap that no handler backs. ElementsMatch catches either drift.
 func TestGlobalScopeEscapeHatchMatchesHandlers(t *testing.T) {
 	methods := handlersRoutingThroughRequireRoleScope(t)
 	require.NotEmpty(t, methods, "no requireRoleScope handlers found — the scan is broken")
+	require.ElementsMatch(t, business.GlobalScopeEscapeHatchMethods(), methods,
+		"the global-scope escape set must equal the RPCs whose handler gates through requireRoleScope")
 
 	for _, method := range methods {
 		policy, ok := business.LookupRPCPolicy(method)

@@ -1,6 +1,8 @@
 package business
 
 import (
+	"sort"
+
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
@@ -65,6 +67,22 @@ var globalScopeEscapeMethods = map[string]struct{}{
 func hasGlobalScopeEscape(fullMethod string) bool {
 	_, ok := globalScopeEscapeMethods[fullMethod]
 	return ok
+}
+
+// GlobalScopeEscapeHatchMethods returns the methods the central classifier treats
+// as global-scope escapes — handler-gated, never centrally enforced. It is
+// exported so the adapters lockstep test can prove this set equals the handlers
+// that actually gate through requireRoleScope, in both directions: an entry whose
+// handler stopped routing through requireRoleScope, or a requireRoleScope handler
+// missing here, fails that test rather than silently classifying a route as a gap
+// no handler backs (or as ok when it must defer).
+func GlobalScopeEscapeHatchMethods() []string {
+	out := make([]string, 0, len(globalScopeEscapeMethods))
+	for method := range globalScopeEscapeMethods {
+		out = append(out, method)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // ClassifyCentralCoverage reports how completely the central interceptor can
