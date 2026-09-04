@@ -1,0 +1,413 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/jobs/v1/jobs.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Module-facing platform capability surface (issue #463)
+//
+// ModuleCapabilities is the internal-only gRPC surface a sibling module — one
+// running on its own database, not able to join the saas-starter transaction —
+// uses to reach platform capabilities it would otherwise rebuild: durable job
+// enqueue and lease, user notification, approval requests, and typed audit
+// emission. The document store is the first consumer.
+//
+// The surface is EXPOSURE_INTERNAL: it is reached over the accounts internal
+// listener behind the cluster-internal token, carrying the caller's
+// gateway-forwarded Work Context. The caller is a module service principal with
+// a bound tenant and a declared set of queues it may enqueue to and claim from;
+// a principal explicitly granted cross-tenant authority may operate on other
+// tenants and enqueue global inbox work.
+//
+// Jobs reuse the saas.jobs.v1 envelope, lease, and lifecycle verbatim. Because
+// the caller cannot join the saas transaction, the module producer contract is
+// at-least-once with idempotency keys (unlike the in-process producer, which
+// commits its outbox row inside the business mutation). Idempotency behaves per
+// module/JOBS.md: the (direction, scope, queue, source, idempotency_key) tuple
+// is unique and request_fingerprint distinguishes an exact retry (DUPLICATE)
+// from conflicting reuse (an idempotency conflict).
+//
+// NOTE ON PACKAGE: issue #463 proposed package saas.platform.v1. The accounts
+// service's code-generation pipeline (service catalog, Connect/gRPC
+// registration) is keyed to a single proto package, saas.accounts.v1, and the
+// 14 existing EXPOSURE_INTERNAL RPCs already live here. The service is defined
+// in saas.accounts.v1 so it flows through that pipeline unchanged; it remains
+// the logical module-facing platform surface.
+// ============================================================================
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+// ModuleEnqueueJobRequest names the tenant the work belongs to and carries the
+// same producer-owned NewJob the in-process producer uses. tenant must equal
+// the caller principal's bound tenant unless the principal holds a cross-tenant
+// grant; global-scoped (inbox) work additionally requires that grant.
+message ModuleEnqueueJobRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.NewJob job = 2 [(buf.validate.field).required = true];
+}
+
+message ModuleEnqueueJobResponse {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.JobEnqueueDisposition disposition = 2 [(buf.validate.field).required = true];
+}
+
+// ModuleClaimJobsRequest leases a bounded batch of ready jobs from one queue
+// the caller principal is allowed to claim. Claiming is queue-scoped: a queue
+// is owned by the module that declares it. The response returns the fencing
+// lease on each JobEnvelope; heartbeat and finalization require that token.
+message ModuleClaimJobsRequest {
+  string queue = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string worker_id = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  uint32 limit = 3 [(buf.validate.field).uint32 = {
+    gte: 1
+    lte: 100
+  }];
+  google.protobuf.Duration lease_duration = 4 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {nanos: 1000000}
+      lte: {seconds: 3600}
+    }
+  ];
+}
+
+message ModuleClaimJobsResponse {
+  repeated saas.jobs.v1.JobEnvelope jobs = 1;
+}
+
+message ModuleHeartbeatJobRequest {
+  saas.jobs.v1.JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  google.protobuf.Duration extension = 2 [
+    (buf.validate.field).required = true,
+    (buf.validate.field).duration = {
+      gte: {nanos: 1000000}
+      lte: {seconds: 3600}
+    }
+  ];
+}
+
+message ModuleHeartbeatJobResponse {
+  saas.jobs.v1.JobLease lease = 1 [(buf.validate.field).required = true];
+}
+
+// ModuleAckJobRequest completes a leased job successfully.
+message ModuleAckJobRequest {
+  saas.jobs.v1.JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+}
+
+// ModuleNackJobRequest fails a leased job. retryable selects a retryable
+// failure (rescheduled at retry_at, or dead-lettered when the attempt budget is
+// exhausted) versus a permanent failure that dead-letters immediately, matching
+// saas.jobs.v1.JobAttemptOutcome.
+message ModuleNackJobRequest {
+  saas.jobs.v1.JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  saas.jobs.v1.JobFailure failure = 2 [(buf.validate.field).required = true];
+  bool retryable = 3;
+  google.protobuf.Timestamp retry_at = 4;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+// ---------------------------------------------------------------------------
+
+// ModuleNotifyUserRequest routes a notification through the same category
+// policy internal callers use (mandatory categories cannot be suppressed;
+// optional categories consult the user's settings). idempotency_key dedupes
+// redelivery from a module's at-least-once fan-out.
+message ModuleNotifyUserRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string user_id = 2 [(buf.validate.field).string.uuid = true];
+  string title = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 998
+  }];
+  string body = 4 [(buf.validate.field).string.max_len = 8192];
+  string type = 5 [(buf.validate.field).string.max_len = 64];
+  string action_url = 6 [(buf.validate.field).string.max_len = 2048];
+  string category = 7 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 32
+  }];
+  string idempotency_key = 8 [(buf.validate.field).string.max_len = 255];
+}
+
+message ModuleNotifyUserResponse {
+  string notification_id = 1;
+  // delivered is false when category policy suppressed the notification (an
+  // optional category the recipient disabled). The call still succeeds.
+  bool delivered = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Approvals
+// ---------------------------------------------------------------------------
+
+// ModuleApprovalPolicy is the non-resume half of the request policy. quorum is
+// the number of DISTINCT approve decisions required (0 defaults to 1).
+message ModuleApprovalPolicy {
+  uint32 quorum = 1 [(buf.validate.field).uint32.lte = 100];
+  repeated string approver_set = 2 [(buf.validate.field).repeated.max_items = 100];
+  bool allow_self = 3;
+}
+
+// ModuleResumeRef is the outbox target the primitive enqueues when the request
+// is approved: the requesting module consumes it on its own queue via
+// ClaimJobs. topic and payload name the resume work; queue is the module queue
+// it lands on.
+message ModuleResumeRef {
+  string queue = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string topic = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  google.protobuf.Struct payload = 3;
+}
+
+message ModuleRequestApprovalRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string resource = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string action = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  google.protobuf.Struct subject = 4;
+  string requested_by = 5 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  ModuleApprovalPolicy policy = 6;
+  ModuleResumeRef resume_ref = 7 [(buf.validate.field).required = true];
+  google.protobuf.Timestamp expires_at = 8;
+  google.protobuf.Timestamp escalate_at = 9;
+}
+
+message ModuleRequestApprovalResponse {
+  string approval_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+message ModuleGetApprovalRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string approval_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleApproval is the request head as the module sees it.
+message ModuleApproval {
+  string id = 1;
+  string tenant = 2;
+  string resource = 3;
+  string action = 4;
+  google.protobuf.Struct subject = 5;
+  string requested_by = 6;
+  uint32 quorum = 7;
+  string state = 8;
+  ModuleResumeRef resume_ref = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  google.protobuf.Timestamp escalate_at = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message ModuleCancelApprovalRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string approval_id = 2 [(buf.validate.field).string.uuid = true];
+  string reason = 3 [(buf.validate.field).string.max_len = 1024];
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+// ModuleEmitAuditEventRequest emits a registered audit event onto the tenant's
+// single audit spine. event_type must be registered in the code-owned catalog
+// (unregistered types are rejected, not stored free-form). solution names the
+// emitting solution scope. An empty tenant emits a system-scoped event and
+// requires the caller's cross-tenant grant.
+message ModuleEmitAuditEventRequest {
+  string tenant = 1;
+  string event_type = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string actor = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string solution = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string entry_id = 5 [(buf.validate.field).string.max_len = 255];
+  google.protobuf.Struct fields = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Service
+// ---------------------------------------------------------------------------
+
+// ModuleCapabilitiesService is the module-facing platform surface. Every RPC
+// is internal-tier and identifies its caller from the forwarded Work Context.
+service ModuleCapabilitiesService {
+  // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
+  rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
+  rpc ClaimJobs(ModuleClaimJobsRequest) returns (ModuleClaimJobsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // HeartbeatJob renews a live lease by its fencing token.
+  rpc HeartbeatJob(ModuleHeartbeatJobRequest) returns (ModuleHeartbeatJobResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // AckJob completes a leased job successfully.
+  rpc AckJob(ModuleAckJobRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // NackJob fails a leased job as retryable or permanent.
+  rpc NackJob(ModuleNackJobRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // NotifyUser delivers a notification subject to category policy.
+  rpc NotifyUser(ModuleNotifyUserRequest) returns (ModuleNotifyUserResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // RequestApproval opens a pending approval whose resume job the module claims.
+  rpc RequestApproval(ModuleRequestApprovalRequest) returns (ModuleRequestApprovalResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetApproval returns one approval request on the caller's tenant.
+  rpc GetApproval(ModuleGetApprovalRequest) returns (ModuleApproval) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // CancelApproval withdraws a still-open approval request.
+  rpc CancelApproval(ModuleCancelApprovalRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // EmitAuditEvent records a registered audit event on the tenant's spine.
+  rpc EmitAuditEvent(ModuleEmitAuditEventRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}

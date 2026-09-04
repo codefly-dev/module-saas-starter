@@ -207,6 +207,20 @@ const (
 	EventDashboardUpdated EventType = "dashboard.updated"
 	EventDashboardDeleted EventType = "dashboard.deleted"
 	EventDashboardShared  EventType = "dashboard.shared"
+
+	// Document lifecycle vocabulary emitted by a consuming solution through the
+	// module-facing EmitAuditEvent (issue #463). Every event carries the tenant
+	// (org_id), actor (actor_id), and entry (resource_id) columns plus a solution
+	// scope and the entry version in its payload, so a solution keeps one audit
+	// spine per tenant instead of a second trail.
+	EventDocumentIngested           EventType = "document.ingested"
+	EventDocumentVersionMinted      EventType = "document.version_minted"
+	EventDocumentRenamed            EventType = "document.renamed"
+	EventDocumentDeleted            EventType = "document.deleted"
+	EventDocumentQuarantined        EventType = "document.quarantined"
+	EventDocumentQuarantineReleased EventType = "document.quarantine_released"
+	EventDocumentSubscribed         EventType = "document.subscribed"
+	EventDocumentUnsubscribed       EventType = "document.unsubscribed"
 )
 
 var auditEventCatalog = []AuditEventDefinition{
@@ -324,6 +338,14 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
+	def(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", str("solution"), str("version")),
+	def(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", str("solution"), str("version")),
+	def(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", str("solution"), str("version")),
+	def(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", str("solution"), str("version")),
+	def(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", str("solution"), str("version")),
+	def(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", str("solution"), str("version")),
+	def(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", str("solution"), str("version")),
+	def(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", str("solution"), str("version")),
 }
 
 // auditEventIndex resolves an event type to its definition. Built once.

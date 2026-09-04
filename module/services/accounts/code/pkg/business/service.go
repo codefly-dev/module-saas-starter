@@ -54,6 +54,21 @@ type Service struct {
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
 	githubBaseURL             string                     // api.github.com override for the datasource connector
 	newGitHubClient           func(token string) GitHubContentClient
+	moduleProducer            jobs.Producer              // request-scoped, transactional outbox producer for the module-facing surface
+	moduleJobStore            jobs.Store                 // privileged worker store (claim/finalize) for the module-facing surface
+	modulePrincipals          ModulePrincipalRegistry    // per-principal capability grants for the module-facing surface
+}
+
+// SetModuleCapabilities wires the module-facing capability surface (issue #463):
+// a request-scoped transactional producer for tenant/subject enqueue, the
+// privileged worker store for claim/lease/finalize and global inbox enqueue,
+// and the per-principal registry declaring which queues each module service
+// principal may use and whether it may act across tenants. Leaving the registry
+// nil denies every caller (fail-closed).
+func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store, registry ModulePrincipalRegistry) {
+	s.moduleProducer = producer
+	s.moduleJobStore = store
+	s.modulePrincipals = registry
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the

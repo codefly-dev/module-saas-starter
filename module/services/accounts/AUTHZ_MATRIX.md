@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **163 RPCs** across **27 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **173 RPCs** across **28 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -66,6 +66,16 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.MFAService/RevokeDevice` | unary | `DELETE /v1/mfa/devices/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: mfa.device_revoked | FORBIDDEN / MFA | CONFIDENTIAL → CONFIDENTIAL | Remove an MFA device. |
 | `/saas.accounts.v1.MFAService/SetupTOTP` | unary | `POST /v1/mfa/totp/setup` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: mfa.totp_setup_started | FORBIDDEN / MFA | SECRET → SECRET | Begin TOTP enrollment. |
 | `/saas.accounts.v1.MFAService/VerifyTOTP` | unary | `POST /v1/mfa/totp/verify` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | SUCCESS: mfa.totp_verified | FORBIDDEN / MFA | SECRET → CONFIDENTIAL | Confirm TOTP code; activate device. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/AckJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Complete a leased job successfully. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Withdraw a still-open approval request. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Lease a bounded batch of ready jobs from an allowed queue. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Emit a registered audit event on the tenant's spine. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Enqueue durable work for a tenant- or subject-scoped queue. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/GetApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read one approval request on the caller's tenant. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Renew a live job lease by its fencing token. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/NackJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Fail a leased job as retryable or permanent. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Notify a user subject to category policy. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Open a pending approval whose resume job the module claims. |
 | `/saas.accounts.v1.NotificationService/DeleteNotification` | unary | `DELETE /v1/notifications/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Delete one. |
 | `/saas.accounts.v1.NotificationService/GetUnreadCount` | unary | `GET /v1/notifications/unread-count` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Count of unread. |
 | `/saas.accounts.v1.NotificationService/ListNotifications` | unary | `GET /v1/notifications` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the caller's notifications. |
@@ -175,7 +185,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 38
-- `internal`: 13
+- `internal`: 23
 - `mfa`: 3
 - `org_admin`: 36
 - `org_member`: 35

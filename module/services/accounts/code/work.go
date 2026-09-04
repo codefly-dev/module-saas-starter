@@ -166,6 +166,17 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetJobOperations(jobStore)
 	service.SetWebhookJobProducer(store)
 
+	// Module-facing capability surface (issue #463): a request-scoped
+	// transactional producer for tenant/subject enqueue, the privileged worker
+	// store for claim/lease/finalize and global inbox enqueue, and the registry
+	// declaring which queues each module service principal may use. The registry
+	// is deployment-provided; an unset value denies every caller (fail-closed).
+	modulePrincipals, err := business.ParseModulePrincipalRegistry(workspaceEnv("module-capabilities", "MODULE_PRINCIPALS"))
+	if err != nil {
+		return nil, fmt.Errorf("parse module principal registry: %w", err)
+	}
+	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+
 	eventRegistry, err := analytics.DefaultRegistry()
 	if err != nil {
 		return nil, err
