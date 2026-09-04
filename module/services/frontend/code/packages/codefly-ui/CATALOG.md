@@ -45,7 +45,8 @@ Exported from the kit now. Listed for completeness; no work.
 
 | Component | Owner tier | Subpath |
 | --- | --- | --- |
-| `Card`, `Section`, `Tabs` | layout | `@codefly-dev/ui/layout` |
+| `Card`, `Section`, `Tabs` (with a keep-mounted panels mode) | layout | `@codefly-dev/ui/layout` |
+| `EmptyState`, `ErrorState` | layout | `@codefly-dev/ui/layout` |
 | `Dashboard` + chart atoms (`AreaChart`, `BarList`, `LineChart`, `StatChart`, `Axis`, `Gridline`, `Svg`) + scales/format + `DashboardData` | dashboard / charts | `@codefly-dev/ui/dashboard` |
 | `Chat` (+ `ChatMessage`) | chat | `@codefly-dev/ui/chat` |
 | skin resolver / view-descriptor precedence | skin | `@codefly-dev/ui/skin` |
@@ -100,8 +101,6 @@ to first-class kit components de-duplicates real code rather than speculating.
 
 | Group | Component | Owner tier | Notes | v1 |
 | --- | --- | --- | --- | --- |
-| Feedback / state | `EmptyState` | layout | Lift the inline empties in `DataTable` / list surfaces | ✓ |
-| Feedback / state | `ErrorState` | layout | Pairs with `EmptyState` | ✓ |
 | Feedback / state | `Spinner` / inline loading | layout | Complements `Skeleton` for indeterminate waits | ✓ |
 | Feedback / state | `Banner` / `Callout` | layout | Page-level and inline advisory | |
 | Feedback / state | `Progress` | layout | Determinate progress | |

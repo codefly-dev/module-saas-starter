@@ -16,6 +16,9 @@ describe("@codefly-dev/ui/layout exports the promoted primitives", () => {
 		"Card",
 		"Section",
 		"Tabs",
+		// feedback / state
+		"EmptyState",
+		"ErrorState",
 		// actions
 		"Button",
 		"buttonVariants",
