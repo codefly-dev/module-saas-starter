@@ -1,25 +1,4 @@
-"use client";
-
-import { Separator as SeparatorPrimitive } from "@base-ui/react/separator";
-
-import { cn } from "@/lib/utils";
-
-function Separator({
-	className,
-	orientation = "horizontal",
-	...props
-}: SeparatorPrimitive.Props) {
-	return (
-		<SeparatorPrimitive
-			data-slot="separator"
-			orientation={orientation}
-			className={cn(
-				"shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
-				className,
-			)}
-			{...props}
-		/>
-	);
-}
-
-export { Separator };
+// Re-export of the kit primitive. The component now ships once from
+// @codefly-dev/ui/layout (issue #451, sealed layers #450); this module keeps the
+// `@/components/ui/…` import path stable for existing host callers.
+export { Separator } from "@codefly-dev/ui/layout";
