@@ -121,15 +121,23 @@ function safeDecode(segment: string): string | null {
 // with route handlers or pages (see the Next "proxy" docs: "you should not
 // attempt relying on shared modules or globals"), so it cannot read the
 // in-process registry the register endpoint and solution page share. Instead it
-// asks the host over the loopback solutions listing — which does run in that
+// asks the host over the local solutions listing — which does run in that
 // shared context — and derives the requested remote's origin from the
 // registration, letting a freshly registered cross-origin remote load with no
 // rebuild and no FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages skip the
 // lookup and keep their self-only build-time CSP.
-async function registeredSolutionOrigins(
-	req: NextRequest,
-	pathname: string,
-): Promise<string[]> {
+//
+// The listing is fetched over loopback at the port THIS server binds — read
+// from PORT with the same fallback Next's standalone server uses, so it always
+// matches the actual listener. It must NOT be derived from the request origin
+// (the client-controlled Host header): routing a server-side fetch through Host
+// is an SSRF sink, and behind a TLS-terminating ingress the "self" origin is the
+// public hostname, so the request would egress back out instead of staying
+// local. A slow or wedged listener must not stall the page, so the fetch is
+// bounded; on any failure the CSP falls back to self-only and the cause is
+// logged rather than swallowed, since a silent fallback is indistinguishable
+// from the very bug this fixes.
+async function registeredSolutionOrigins(pathname: string): Promise<string[]> {
 	const match = SOLUTION_PAGE.exec(pathname);
 	if (!match) {
 		return [];
@@ -138,17 +146,31 @@ async function registeredSolutionOrigins(
 	if (id === null) {
 		return [];
 	}
+	// Mirror Next's standalone server: parseInt(PORT, 10) || 3000, so an unset,
+	// empty, or non-numeric PORT resolves to the same port the server bound.
+	const port = Number.parseInt(process.env.PORT ?? "", 10) || 3000;
+	const listingUrl = new URL(
+		"/api/solutions/register",
+		`http://127.0.0.1:${port}`,
+	);
 	let solutions: Array<{ id: string; frontend?: { manifestUrl?: string } }>;
 	try {
-		const listing = await fetch(
-			new URL("/api/solutions/register", req.nextUrl.origin),
-			{ headers: { accept: "application/json" } },
-		);
+		const listing = await fetch(listingUrl, {
+			headers: { accept: "application/json" },
+			signal: AbortSignal.timeout(2000),
+		});
 		if (!listing.ok) {
+			console.error(
+				`solution CSP: registry listing responded ${listing.status} path=${pathname}`,
+			);
 			return [];
 		}
 		({ solutions } = await listing.json());
-	} catch {
+	} catch (err) {
+		console.error(
+			`solution CSP: registry listing unavailable path=${pathname}`,
+			err,
+		);
 		return [];
 	}
 	const manifestUrl = solutions?.find((s) => s.id === id)?.frontend
@@ -261,7 +283,7 @@ export async function proxy(req: NextRequest) {
 
 	const csp = contentSecurityPolicyFromInputs(
 		baselineCspInputs(),
-		await registeredSolutionOrigins(req, pathname),
+		await registeredSolutionOrigins(pathname),
 		nonce,
 	);
 	return withNoncedCSP(req, gatewayHeaders, nonce, csp);

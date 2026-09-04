@@ -23,8 +23,8 @@ const AUDIT = {
 	backend: { serviceAlias: "audit" },
 };
 
-function authedRequest(pathname: string): NextRequest {
-	const request = new NextRequest(`https://app.example${pathname}`);
+function authedRequest(url: string): NextRequest {
+	const request = new NextRequest(url);
 	request.cookies.set("codefly_session", "token");
 	return request;
 }
@@ -39,11 +39,17 @@ function directive(csp: string, name: string): string {
 }
 
 // The registry lives in the route-handler context the proxy cannot share, so
-// the proxy reads registered remotes over the loopback solutions listing. Stub
-// that boundary and assert the proxy queries the request's own origin.
-function stubListing(solutions: unknown[]): ReturnType<typeof vi.fn> {
+// the proxy reads registered remotes over the local solutions listing. Stub
+// that boundary and assert the proxy queries loopback at the server's own PORT
+// — never a host or port taken from the (client-controlled) request.
+function stubListing(
+	solutions: unknown[],
+	expectedPort = "4711",
+): ReturnType<typeof vi.fn> {
 	const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
-		expect(input.toString()).toBe("https://app.example/api/solutions/register");
+		expect(input.toString()).toBe(
+			`http://127.0.0.1:${expectedPort}/api/solutions/register`,
+		);
 		return { ok: true, json: async () => ({ solutions }) } as Response;
 	});
 	vi.stubGlobal("fetch", fetchMock);
@@ -53,17 +59,22 @@ function stubListing(solutions: unknown[]): ReturnType<typeof vi.fn> {
 describe("proxy solution-page CSP", () => {
 	beforeEach(() => {
 		vi.stubEnv("SOLUTION_CSP_INPUTS", SELF_ONLY_SNAPSHOT);
+		// A distinctive non-default port proves the listing target is read from
+		// the server's PORT, not hardcoded and not taken from the request.
+		vi.stubEnv("PORT", "4711");
+		vi.spyOn(console, "error").mockImplementation(() => {});
 	});
 
 	afterEach(() => {
 		vi.unstubAllEnvs();
 		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
 	});
 
 	it("allows a registered cross-origin remote without a build-time env", async () => {
 		stubListing([AUDIT]);
 
-		const response = await proxy(authedRequest("/s/audit"));
+		const response = await proxy(authedRequest("https://app.example/s/audit"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		// Nonce-based, no unsafe-inline; strict-dynamic + the remote origin.
@@ -76,10 +87,48 @@ describe("proxy solution-page CSP", () => {
 		);
 	});
 
+	it("targets loopback at the server PORT regardless of the request Host", async () => {
+		// Regression guard: routing the listing fetch through the request origin
+		// would let a spoofed Host turn this server-side call into an SSRF sink
+		// (and break behind a TLS-terminating ingress). The fetch must stay on
+		// 127.0.0.1:$PORT no matter what host the request claims — stubListing
+		// asserts the exact target, so an SSRF reintroduction fails here.
+		const fetchMock = stubListing([AUDIT]);
+
+		const response = await proxy(
+			authedRequest("https://169.254.169.254:1337/s/audit"),
+		);
+
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(
+			directive(
+				response.headers.get("content-security-policy") ?? "",
+				"connect-src",
+			),
+		).toBe("connect-src 'self' http://localhost:8091");
+	});
+
+	it("defaults the listing port to 3000 when PORT is unset", async () => {
+		// Matches Next's standalone server (parseInt(PORT) || 3000), so an empty
+		// or missing PORT still hits the port the server actually bound.
+		vi.stubEnv("PORT", "");
+		stubListing([AUDIT], "3000");
+
+		const response = await proxy(authedRequest("https://app.example/s/audit"));
+		expect(
+			directive(
+				response.headers.get("content-security-policy") ?? "",
+				"connect-src",
+			),
+		).toBe("connect-src 'self' http://localhost:8091");
+	});
+
 	it("locks the CSP to self for an unregistered solution id", async () => {
 		stubListing([AUDIT]);
 
-		const response = await proxy(authedRequest("/s/unknown"));
+		const response = await proxy(
+			authedRequest("https://app.example/s/unknown"),
+		);
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
@@ -92,7 +141,7 @@ describe("proxy solution-page CSP", () => {
 	it("does not query the listing or throw on a malformed id segment", async () => {
 		const fetchMock = stubListing([AUDIT]);
 
-		const response = await proxy(authedRequest("/s/%ZZ"));
+		const response = await proxy(authedRequest("https://app.example/s/%ZZ"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
@@ -103,7 +152,7 @@ describe("proxy solution-page CSP", () => {
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("stays self-only when the listing is unreachable", async () => {
+	it("logs and stays self-only when the listing is unreachable", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn(async () => {
@@ -111,10 +160,32 @@ describe("proxy solution-page CSP", () => {
 			}),
 		);
 
-		const response = await proxy(authedRequest("/s/audit"));
+		const response = await proxy(authedRequest("https://app.example/s/audit"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
 		expect(directive(csp, "script-src")).not.toContain("localhost");
+		// The failure is surfaced, not swallowed — a silent fallback is
+		// indistinguishable from the bug this fix addresses.
+		expect(console.error).toHaveBeenCalledOnce();
+	});
+
+	it("logs and stays self-only when the listing responds non-ok", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					({ ok: false, status: 502, json: async () => ({}) }) as Response,
+			),
+		);
+
+		const response = await proxy(authedRequest("https://app.example/s/audit"));
+		expect(
+			directive(
+				response.headers.get("content-security-policy") ?? "",
+				"connect-src",
+			),
+		).toBe("connect-src 'self'");
+		expect(console.error).toHaveBeenCalledOnce();
 	});
 
 	it("keeps build-time analytics/allowlist hosts from the snapshot, not runtime env", async () => {
@@ -132,7 +203,7 @@ describe("proxy solution-page CSP", () => {
 		stubListing([AUDIT]);
 
 		const csp =
-			(await proxy(authedRequest("/s/audit"))).headers.get(
+			(await proxy(authedRequest("https://app.example/s/audit"))).headers.get(
 				"content-security-policy",
 			) ?? "";
 		expect(directive(csp, "connect-src")).toBe(
@@ -144,9 +215,9 @@ describe("proxy solution-page CSP", () => {
 		vi.stubEnv("SOLUTION_CSP_INPUTS", "");
 		stubListing([AUDIT]);
 
-		await expect(proxy(authedRequest("/s/audit"))).rejects.toThrow(
-			/SOLUTION_CSP_INPUTS/,
-		);
+		await expect(
+			proxy(authedRequest("https://app.example/s/audit")),
+		).rejects.toThrow(/SOLUTION_CSP_INPUTS/);
 	});
 
 	it("sets a per-request nonce'd self CSP on non-solution pages", async () => {
@@ -155,7 +226,7 @@ describe("proxy solution-page CSP", () => {
 		// The proxy now owns the CSP on every route (next.config emits only the
 		// constant hardening headers), so a non-solution page gets a nonce'd
 		// self policy — not the old null (which relied on next.config's static CSP).
-		const response = await proxy(authedRequest("/settings"));
+		const response = await proxy(authedRequest("https://app.example/settings"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
