@@ -370,19 +370,19 @@ func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in 
 // primitive: it opens a pending request whose resume outbox job the module
 // consumes on its own queue once the request is approved.
 type ModuleRequestApprovalInput struct {
-	Tenant      string
-	Resource    string
-	Action      string
-	Subject     map[string]any
-	RequestedBy string
-	Quorum      int
-	ApproverSet []string
-	AllowSelf   bool
-	ResumeQueue string
-	ResumeTopic string
+	Tenant        string
+	Resource      string
+	Action        string
+	Subject       map[string]any
+	RequestedBy   string
+	Quorum        int
+	ApproverSet   []string
+	AllowSelf     bool
+	ResumeQueue   string
+	ResumeTopic   string
 	ResumePayload map[string]any
-	ExpiresAt   *time.Time
-	EscalateAt  *time.Time
+	ExpiresAt     *time.Time
+	EscalateAt    *time.Time
 }
 
 // ModuleRequestApproval creates a pending approval on the caller's tenant. The
