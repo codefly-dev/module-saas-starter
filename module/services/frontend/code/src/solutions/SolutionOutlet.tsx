@@ -21,40 +21,83 @@ import {
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 
+// Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
+// shadow or replace it: a solution remote renders against the one true instance
+// the owning layer publishes, never its own copy that the kit or another module
+// would then pick up. Layers are sealed downward. (Kit invariant "Sealed
+// downward" — packages/codefly-ui/ARCHITECTURE.md.)
+//
+// This host config is one half of that seal: every sealed layer package — React,
+// the co-versioned kit, and each module UI package — is shared as a
+// Module-Federation `singleton`. singleton keeps exactly ONE instance across the
+// host and every remote (drop it and two copies coexist, splitting React context
+// and the skin). The seal is cooperative — it also relies on each remote's build
+// sharing these same packages as singletons, so the remote consumes the scope's
+// instance rather than bundling and registering a competing one. `requiredVersion:
+// false` records that this host imposes no version floor on the shared instance
+// (versioning — which version wins — is governed separately; see the kit README).
+// The `kit-shared-version` test asserts the singleton flag on this object.
+const SEALED_SHARE_CONFIG = { singleton: true, requiredVersion: false } as const;
+
 // The co-versioned @codefly/* kit ships lockstep with this host, so one version
 // covers all three. It MUST track the packages' real version — a shared module
 // that under-reports its version can lose singleton resolution to a remote that
 // bundles a higher one, splitting the instance the dedup exists to keep single.
 // The `kit-shared-version` test pins this to the packages' actual versions so a
-// bump can't drift it silently. requiredVersion is left off the share config:
-// the host publishes this exact instance, and a remote resolves to it without
-// version negotiation.
+// bump can't drift it silently.
 export const CODEFLY_KIT_VERSION = "0.1.0";
 
-// The co-versioned kit packages shared into the Module-Federation scope. Each
-// MUST be a `singleton` so an arbitrarily complex page loads exactly one copy of
-// each kit module (and its tokens) across the host and every remote — drop the
-// flag and two copies can coexist, splitting the React context and the skin.
-// This is the single source of truth the `kit-shared-version` test asserts
-// against directly, so a dropped flag fails CI. `requiredVersion: false`: the
-// host publishes this exact instance and a remote resolves to it without
-// version negotiation.
+// The co-versioned kit + module-UI packages, sealed into the Module-Federation
+// scope. This is the single source of truth the `kit-shared-version` test
+// asserts against directly, so a dropped `singleton` flag fails CI.
 export const CODEFLY_KIT_SHARED = {
 	"@codefly-dev/ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyUi,
-		shareConfig: { singleton: true, requiredVersion: false },
+		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly/saas-ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasUi,
-		shareConfig: { singleton: true, requiredVersion: false },
+		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly/saas-sdk": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasSdk,
-		shareConfig: { singleton: true, requiredVersion: false },
+		shareConfig: SEALED_SHARE_CONFIG,
 	},
+} as const;
+
+// React is the bottom of the cake and is sealed the same way: the host owns the
+// single instance and every remote consumes it, so hooks and context hold across
+// the boundary. `requiredVersion: false` (rather than a version range) only means
+// this host asserts no version floor on the instance it publishes — it does not
+// affect which instance wins (a singleton always resolves to the host's loaded
+// copy); it keeps React consistent with every other sealed package.
+const REACT_SHARED = {
+	react: {
+		version: React.version,
+		lib: () => React,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"react-dom": {
+		version: React.version,
+		lib: () => ReactDOM,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"react/jsx-runtime": {
+		version: React.version,
+		lib: () => ReactJSXRuntime,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+} as const;
+
+// The full sealed set the host publishes: React + kit + module UI, every one a
+// singleton. The `sealed-layers` test iterates this so a package added without
+// the singleton flag fails CI.
+export const SEALED_SHARED = {
+	...REACT_SHARED,
+	...CODEFLY_KIT_SHARED,
 } as const;
 
 /**
@@ -80,24 +123,7 @@ function hostInstance(): ModuleFederation {
 	host = createInstance({
 		name: "saas_host",
 		remotes: [],
-		shared: {
-			react: {
-				version: React.version,
-				lib: () => React,
-				shareConfig: { singleton: true, requiredVersion: `^${React.version}` },
-			},
-			"react-dom": {
-				version: React.version,
-				lib: () => ReactDOM,
-				shareConfig: { singleton: true, requiredVersion: `^${React.version}` },
-			},
-			"react/jsx-runtime": {
-				version: React.version,
-				lib: () => ReactJSXRuntime,
-				shareConfig: { singleton: true, requiredVersion: `^${React.version}` },
-			},
-			...CODEFLY_KIT_SHARED,
-		},
+		shared: SEALED_SHARED,
 	});
 	return host;
 }
