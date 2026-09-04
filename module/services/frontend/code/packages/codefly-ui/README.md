@@ -20,7 +20,9 @@ that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
   overlays a validated, untrusted skin descriptor onto the compiled default and
   caches the result per host. Pure and env-free — the host supplies the
   delivery `SkinSource`s (mounted ConfigMap file, env blob); the kit never
-  reads the environment or the filesystem itself.
+  reads the environment or the filesystem itself. The shared token vocabulary
+  every layer above consumes by name — names, roles, and light/dark defaults —
+  is the contract in [TOKENS.md](./TOKENS.md).
 
 - **Layout** (`@codefly-dev/ui/layout`), **Dashboard**
   (`@codefly-dev/ui/dashboard`), and **Chat** (`@codefly-dev/ui/chat`) — pure,

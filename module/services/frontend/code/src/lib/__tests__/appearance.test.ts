@@ -1,4 +1,8 @@
-import { resolveFrontendAppearance } from "@codefly/saas-plugin-contract";
+import { readFileSync } from "node:fs";
+import {
+	FRONTEND_APPEARANCE_TOKEN_NAMES,
+	resolveFrontendAppearance,
+} from "@codefly/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 import {
 	appearanceStyleProperties,
@@ -57,4 +61,43 @@ describe("application appearance projection", () => {
 		expect(readableForeground("#000000")).toBe("#ffffff");
 		expect(readableForeground("#111827")).toBe("#ffffff");
 	});
+});
+
+// The shadcn variable a token is consumed by: camelCase → kebab, with a dash
+// before the digit in the chart tokens (`chart1` → `--chart-1`).
+function shadcnVariable(token: string): string {
+	return `--${token
+		.replace(/([a-z])([0-9])/g, "$1-$2")
+		.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`;
+}
+
+// The flat CSS rule block for a selector (no nested braces in these blocks).
+function cssBlock(source: string, selector: string): string {
+	const open = source.indexOf(`${selector} {`);
+	if (open < 0) throw new Error(`globals.css has no ${selector} block`);
+	const close = source.indexOf("\n}", open);
+	if (close < 0)
+		throw new Error(`globals.css ${selector} block is unterminated`);
+	return source.slice(open, close);
+}
+
+// The contract owns the token names; globals.css is where they become the
+// shadcn variables every layer above consumes. This ties the two: if a token's
+// consumed variable is renamed in globals.css (or a new token gains no binding),
+// the semantic utility that reads it silently breaks with no other test firing.
+describe("globals.css binds every contract token to its consumed variable", () => {
+	const globals = readFileSync("src/app/globals.css", "utf8");
+	const light = cssBlock(globals, ":root");
+	const dark = cssBlock(globals, ".dark");
+
+	for (const token of FRONTEND_APPEARANCE_TOKEN_NAMES) {
+		it(`defines ${shadcnVariable(token)} in :root and .dark`, () => {
+			expect(light, `:root must define ${shadcnVariable(token)}`).toContain(
+				`${shadcnVariable(token)}:`,
+			);
+			expect(dark, `.dark must define ${shadcnVariable(token)}`).toContain(
+				`${shadcnVariable(token)}:`,
+			);
+		});
+	}
 });

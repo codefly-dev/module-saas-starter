@@ -92,6 +92,12 @@ export const frontendConfig = defineFrontend({
 });
 ```
 
+`FRONTEND_APPEARANCE_TOKEN_NAMES` and `DEFAULT_FRONTEND_APPEARANCE` here are the
+single source of truth for the shared token vocabulary; the kit documents that
+vocabulary as the contract every layer above consumes by name — names, roles,
+and light/dark defaults — in
+[`@codefly-dev/ui`'s TOKENS.md](../codefly-ui/TOKENS.md).
+
 The appearance preset has two kinds of input. **Color** is per-mode: the full
 semantic token set for `light` and `dark`. **Structure and typography** are
 shared across modes: `radius`, `fontSans`/`fontHeading`, `fontSizeBase`,

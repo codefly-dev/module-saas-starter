@@ -52,7 +52,11 @@ sits outside this stack.
 
 4. **Tokens flow through everything.** Color and spacing come from the skin;
    components stroke with `currentColor` / `--primary`, so a skin change
-   re-themes the whole catalog for free.
+   re-themes the whole catalog for free. The token vocabulary — the single set
+   of names every tier consumes, with light/dark defaults — is the contract in
+   [TOKENS.md](./TOKENS.md); `src/__tests__/token-contract.test.ts` keeps that
+   document in lockstep with the contract's `FRONTEND_APPEARANCE_TOKEN_NAMES`
+   and `DEFAULT_FRONTEND_APPEARANCE`.
 
 5. **Sealed downward.** A higher layer *composes* what a lower layer ships but
    must not *shadow or replace* it. A solution should not swap in its own
