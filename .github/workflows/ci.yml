@@ -77,6 +77,9 @@ jobs:
       - name: Enforce the sidecar header-lockstep invariant
         working-directory: module/services/auth-gateway/code
         run: go test -run TestUntrustedHeaders_SupersetOfStampedHeaders .
+      - name: Enforce the declared-policy -> handler-enforcement lockstep
+        working-directory: module/services/accounts/code
+        run: go test -run 'Lockstep|RequiredCapabilities|ScanHandlers|EnforcementAllowlist' ./pkg/adapters/
 
   provider-shim:
     name: Provider setup shims
