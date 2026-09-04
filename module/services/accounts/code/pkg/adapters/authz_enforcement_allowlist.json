@@ -1,11 +1,41 @@
 {
   "schema": "saas.authz.enforcement.allowlist.v1",
-  "comment": "Ticketed exemptions for the declared-policy -> handler-enforcement lockstep gate (TestDeclaredPolicyEnforcedInLockstep, rpc_policy_lockstep_test.go). Every entry needs a procedure, a reason, and a ticket. Removing an entry re-arms the gate for that procedure; adding one is a reviewable event. Mirrors module/tools/authz-coverage-allowlist.json.",
+  "comment": "Ticketed exemptions for the declared-policy -> handler-enforcement lockstep gate (TestDeclaredPolicyEnforcedInLockstep, rpc_policy_lockstep_test.go). Every entry needs a procedure, a reason, and a ticket. An optional \"missing\" list narrows the exemption to specific floor capabilities so the rest of the declared floor stays enforced; omit it to exempt the whole procedure. Removing an entry re-arms the gate; adding one is a reviewable event. Mirrors module/tools/authz-coverage-allowlist.json.",
   "enforcement": [
     {
       "procedure": "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag",
       "reason": "Legacy read-only stub. Enforces the SUPER_ADMIN floor via an inline service.Store().GetPlatformRole compare instead of requirePlatformRole, so the require*-based scanner cannot see it; the check is present and denies non-super-admins.",
       "ticket": "#429"
+    },
+    {
+      "procedure": "/saas.accounts.v1.BillingService/OpenPortal",
+      "reason": "Declares tenant ORG_ADMIN + billing:write, but requireBillingAdmin admits org admin/owner OR a plain member holding billing:write. That OR cannot be expressed by the flat IDL (which reads as AND), and the permission dimension the handler leans on is not modeled by this gate; the org-admin floor is intentionally looser than declared. Membership and the RECENT_STEP_UP MFA floor are still lockstep-enforced. Folding this into the central check waits on the #447 declaration/handler OR-parity work.",
+      "ticket": "#447",
+      "missing": ["org_admin"]
+    },
+    {
+      "procedure": "/saas.accounts.v1.TeamService/AddMember",
+      "reason": "Declares tenant ORG_ADMIN with a TEAM resource binding, but requireTeamAdmin admits org admin/owner OR the team's own admin/owner (a plain org member). That OR cannot be expressed by the flat IDL; org membership and team scope are still lockstep-enforced. Folding waits on the #447 OR-parity work.",
+      "ticket": "#447",
+      "missing": ["org_admin"]
+    },
+    {
+      "procedure": "/saas.accounts.v1.TeamService/RemoveMember",
+      "reason": "Declares tenant ORG_ADMIN with a TEAM resource binding, but requireTeamAdmin admits org admin/owner OR the team's own admin/owner (a plain org member). That OR cannot be expressed by the flat IDL; org membership and team scope are still lockstep-enforced. Folding waits on the #447 OR-parity work.",
+      "ticket": "#447",
+      "missing": ["org_admin"]
+    },
+    {
+      "procedure": "/saas.accounts.v1.TeamService/UpdateTeam",
+      "reason": "Declares tenant ORG_ADMIN with a TEAM resource binding, but requireTeamAdmin admits org admin/owner OR the team's own admin/owner (a plain org member). That OR cannot be expressed by the flat IDL; org membership and team scope are still lockstep-enforced. Folding waits on the #447 OR-parity work.",
+      "ticket": "#447",
+      "missing": ["org_admin"]
+    },
+    {
+      "procedure": "/saas.accounts.v1.TeamService/DeleteTeam",
+      "reason": "Declares tenant ORG_ADMIN with a TEAM resource binding, but requireTeamAdmin admits org admin/owner OR the team's own admin/owner (a plain org member). That OR cannot be expressed by the flat IDL; org membership and team scope are still lockstep-enforced. Folding waits on the #447 OR-parity work.",
+      "ticket": "#447",
+      "missing": ["org_admin"]
     }
   ]
 }
