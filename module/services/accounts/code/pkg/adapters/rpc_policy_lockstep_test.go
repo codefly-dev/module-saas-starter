@@ -64,11 +64,18 @@ const (
 // membership; requireRecentMFA is strictly stronger than the if-enrolled
 // step-up, so it provides both MFA capabilities.
 //
-// requireBillingAdmin admits org owner/admin OR a member holding billing:write,
-// so it is looser than a pure org-admin check. It satisfies capOrgAdmin here
-// because every route that uses it declares a billing:write/read permission (a
-// deliberate admin-equivalent delegation); the gate does not model that
-// permission dimension, so it credits the delegation the helper implements.
+// A seed lists only the capabilities the helper guarantees for EVERY principal
+// it admits — never a capability that merely some accepted principal happens to
+// hold. requireBillingAdmin admits org admin/owner OR a plain member holding
+// billing:write, so its only floor guarantee is membership (capOrgMember); it
+// does not establish capOrgAdmin, because a non-admin member is admitted. Same
+// for requireTeamAdmin: it admits an org admin/owner OR a mere team admin (a
+// plain org member), so it guarantees org membership and team scope, not
+// capOrgAdmin. Crediting the admin-ness those helpers do not enforce would let
+// an ORG_ADMIN-declared route pass while its handler actually admits non-admins
+// — the exact declaration/handler mismatch this gate exists to catch. Routes
+// that lean on those OR semantics (an IDL can only list requirements as a flat
+// AND) are tracked in authz_enforcement_allowlist.json until #447 folds them.
 func enforcementSeeds() map[string]map[capability]bool {
 	set := func(caps ...capability) map[capability]bool {
 		m := make(map[capability]bool, len(caps))
@@ -81,9 +88,9 @@ func enforcementSeeds() map[string]map[capability]bool {
 		"requireOrgMember":     set(capOrgMember),
 		"requireOrgPermission": set(capOrgMember),
 		"requireOrgAdmin":      set(capOrgMember, capOrgAdmin),
-		"requireBillingAdmin":  set(capOrgMember, capOrgAdmin),
+		"requireBillingAdmin":  set(capOrgMember),
 		"requireTeamMember":    set(capOrgMember, capTeam),
-		"requireTeamAdmin":     set(capOrgMember, capOrgAdmin, capTeam),
+		"requireTeamAdmin":     set(capOrgMember, capTeam),
 		"requirePlatformAdmin": set(capPlatform),
 		"requirePlatformRole":  set(capPlatform),
 		"requireMFA":           set(capMFACond),
@@ -196,6 +203,7 @@ func buildScan(files []*ast.File) handlerScan {
 	callees := map[string][]string{}
 	byName := map[string][]handlerFunc{}
 	for _, file := range files {
+		imports := protoPackageByAlias(file)
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok {
@@ -205,7 +213,7 @@ func buildScan(files []*ast.File) handlerScan {
 			callees[node] = calledNodes(fn)
 			byName[fn.Name.Name] = append(byName[fn.Name.Name], handlerFunc{
 				node:     node,
-				genTypes: typesInParams(fn.Type.Params),
+				genTypes: typesInParams(fn.Type.Params, imports),
 			})
 		}
 	}
@@ -276,18 +284,10 @@ func receiverTypeName(expr ast.Expr) string {
 // same-receiver method calls (e.g. s.authorizeOwner) resolved to their
 // "<ReceiverType>.<Method>" node so wrapper methods are followed.
 //
-// A call is an edge only when its error result is CONSUMED — assigned to a
-// non-blank variable or returned — never when it is discarded as a bare
-// statement or into the blank identifier. An enforcement call whose error is
-// thrown away does not gate the request (control flow proceeds regardless), so
-// crediting it would let `if cond { requireOrgAdmin(ctx) }` or a stray
-// `requireOrgAdmin(ctx)` pass as enforcement. This binds the credit to the
-// guard's failure actually blocking the call, which is what the declared floor
-// means. It does not prove the guard dominates every path — a legitimately
-// branched authorization (e.g. requireOrgMember with a requirePlatformAdmin
-// override) is credited on the strength of its consumed guards, and a
-// path-dominance analysis strict enough to reject a partial branch would also
-// reject those real handlers.
+// A call is an edge only when its error result actually GATES the request — see
+// gatingCalls. An enforcement call whose error is dropped does not block control
+// flow, so crediting it would let a forgotten, dead-branch, or clobbered guard
+// pass as enforcement.
 func calledNodes(fn *ast.FuncDecl) []string {
 	if fn.Body == nil {
 		return nil
@@ -299,13 +299,8 @@ func calledNodes(fn *ast.FuncDecl) []string {
 			recvVar = names[0].Name
 		}
 	}
-	discarded := discardedCalls(fn.Body)
 	seen := map[string]bool{}
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || discarded[call] {
-			return true
-		}
+	for call := range gatingCalls(fn.Body) {
 		switch fun := call.Fun.(type) {
 		case *ast.Ident:
 			seen[fun.Name] = true
@@ -316,8 +311,7 @@ func calledNodes(fn *ast.FuncDecl) []string {
 				}
 			}
 		}
-		return true
-	})
+	}
 	nodes := make([]string, 0, len(seen))
 	for node := range seen {
 		nodes = append(nodes, node)
@@ -326,81 +320,280 @@ func calledNodes(fn *ast.FuncDecl) []string {
 	return nodes
 }
 
-// discardedCalls collects the calls in body whose result is thrown away — a
-// bare expression statement, or an assignment whose every target is the blank
-// identifier. Such a call's error cannot influence control flow.
-func discardedCalls(body *ast.BlockStmt) map[*ast.CallExpr]bool {
-	discarded := map[*ast.CallExpr]bool{}
-	ast.Inspect(body, func(n ast.Node) bool {
-		switch stmt := n.(type) {
-		case *ast.ExprStmt:
-			if call, ok := stmt.X.(*ast.CallExpr); ok {
-				discarded[call] = true
+// gatingCalls returns the calls in body whose error result actually gates the
+// request — the only calls whose enforcement may be credited. A require* call
+// gates only when its error controls a return: it is returned directly
+// (`return requireX(ctx)`), it initialises an `if` whose condition nil-checks
+// the assigned error (`if err := requireX(ctx); err != nil { ... }`), or it is
+// assigned to a variable that a later statement in the same block nil-checks or
+// returns before reassigning it (`err := requireX(ctx); ...; if err != nil { ... }`).
+//
+// A call whose error is assigned then dropped, discarded into the blank
+// identifier, or left as a bare statement does NOT gate — control flow proceeds
+// regardless — so it is not credited; that is the case that lets a forgotten or
+// dead-branch guard slip through. Requiring the check before any reassignment
+// also defeats a clobbered error (`err := requireX(); _, err = other(); if err != nil`),
+// where requireX's result is overwritten before it is ever read.
+//
+// This deliberately does not prove the guard dominates every path: a legitimate
+// branched authorization (requireOrgMember with a requirePlatformAdmin override,
+// say) is credited on the strength of its gating guards, because a
+// path-dominance analysis strict enough to reject a partial branch would also
+// reject those real handlers.
+func gatingCalls(body *ast.BlockStmt) map[*ast.CallExpr]bool {
+	gating := map[*ast.CallExpr]bool{}
+	mark := func(exprs []ast.Expr) {
+		for _, e := range exprs {
+			if call, ok := e.(*ast.CallExpr); ok {
+				gating[call] = true
 			}
-		case *ast.AssignStmt:
-			if allBlank(stmt.Lhs) {
-				for _, rhs := range stmt.Rhs {
-					if call, ok := rhs.(*ast.CallExpr); ok {
-						discarded[call] = true
-					}
+		}
+	}
+	var visit func(stmts []ast.Stmt)
+	visit = func(stmts []ast.Stmt) {
+		for i, stmt := range stmts {
+			switch s := stmt.(type) {
+			case *ast.ReturnStmt:
+				mark(s.Results)
+			case *ast.IfStmt:
+				if a, ok := s.Init.(*ast.AssignStmt); ok && condChecksName(s.Cond, assignedNames(a)) {
+					mark(a.Rhs)
+				}
+			case *ast.AssignStmt:
+				if names := assignedNames(s); len(names) > 0 && checkedBeforeReassign(stmts[i+1:], names) {
+					mark(s.Rhs)
+				}
+			}
+			for _, list := range nestedStmtLists(stmt) {
+				visit(list)
+			}
+		}
+	}
+	visit(body.List)
+	return gating
+}
+
+// assignedNames returns the non-blank identifier names on an assignment's LHS.
+func assignedNames(a *ast.AssignStmt) map[string]bool {
+	names := map[string]bool{}
+	for _, lhs := range a.Lhs {
+		if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+			names[id.Name] = true
+		}
+	}
+	return names
+}
+
+// checkedBeforeReassign reports whether one of names is nil-checked or returned
+// by a later statement in the same block before that name is reassigned, which
+// is what makes an assign-then-check guard gate the request.
+func checkedBeforeReassign(rest []ast.Stmt, names map[string]bool) bool {
+	for _, stmt := range rest {
+		if stmtChecksName(stmt, names) {
+			return true
+		}
+		if a, ok := stmt.(*ast.AssignStmt); ok {
+			for name := range assignedNames(a) {
+				if names[name] {
+					return false
 				}
 			}
 		}
-		return true
-	})
-	return discarded
+	}
+	return false
 }
 
-func allBlank(exprs []ast.Expr) bool {
-	for _, expr := range exprs {
-		ident, ok := expr.(*ast.Ident)
-		if !ok || ident.Name != "_" {
-			return false
+// stmtChecksName reports whether stmt reads one of names in a gating way: an
+// `if` whose condition nil-checks the name, or a return that returns it.
+func stmtChecksName(stmt ast.Stmt, names map[string]bool) bool {
+	switch s := stmt.(type) {
+	case *ast.IfStmt:
+		return condChecksName(s.Cond, names)
+	case *ast.ReturnStmt:
+		for _, r := range s.Results {
+			if id, ok := r.(*ast.Ident); ok && names[id.Name] {
+				return true
+			}
 		}
 	}
-	return len(exprs) > 0
+	return false
 }
 
-// typesInParams returns the qualified type names referenced by a parameter
-// list, covering both `*pkg.FooRequest` and `*connect.Request[pkg.FooRequest]`.
-// The package alias varies (gen for accounts types, jobsv1 for job types), so
-// only the type name is kept and matched against the catalog's request type.
-func typesInParams(params *ast.FieldList) map[string]bool {
+// condChecksName reports whether cond compares one of names against nil
+// (`name != nil` / `name == nil`, in either operand order).
+func condChecksName(cond ast.Expr, names map[string]bool) bool {
+	found := false
+	ast.Inspect(cond, func(n ast.Node) bool {
+		bin, ok := n.(*ast.BinaryExpr)
+		if !ok || (bin.Op != token.NEQ && bin.Op != token.EQL) {
+			return true
+		}
+		if nilCompare(bin.X, bin.Y, names) || nilCompare(bin.Y, bin.X, names) {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// nilCompare reports whether varSide is one of names and nilSide is the nil
+// identifier.
+func nilCompare(varSide, nilSide ast.Expr, names map[string]bool) bool {
+	id, ok := varSide.(*ast.Ident)
+	if !ok || !names[id.Name] {
+		return false
+	}
+	nilIdent, ok := nilSide.(*ast.Ident)
+	return ok && nilIdent.Name == "nil"
+}
+
+// nestedStmtLists returns the statement lists nested directly inside stmt, so
+// gatingCalls recurses into blocks, loops, and switch/select cases while
+// keeping each list's statement ordering intact for the adjacency analysis.
+func nestedStmtLists(stmt ast.Stmt) [][]ast.Stmt {
+	var lists [][]ast.Stmt
+	add := func(b *ast.BlockStmt) {
+		if b != nil {
+			lists = append(lists, b.List)
+		}
+	}
+	switch s := stmt.(type) {
+	case *ast.BlockStmt:
+		add(s)
+	case *ast.IfStmt:
+		add(s.Body)
+		if s.Else != nil {
+			lists = append(lists, []ast.Stmt{s.Else})
+		}
+	case *ast.ForStmt:
+		add(s.Body)
+	case *ast.RangeStmt:
+		add(s.Body)
+	case *ast.SwitchStmt:
+		add(s.Body)
+	case *ast.TypeSwitchStmt:
+		add(s.Body)
+	case *ast.SelectStmt:
+		add(s.Body)
+	case *ast.CaseClause:
+		lists = append(lists, s.Body)
+	case *ast.CommClause:
+		lists = append(lists, s.Body)
+	case *ast.LabeledStmt:
+		lists = append(lists, []ast.Stmt{s.Stmt})
+	}
+	return lists
+}
+
+// typesInParams returns the type names referenced by a parameter list, covering
+// both `*pkg.FooRequest` and `*connect.Request[pkg.FooRequest]`. A type whose
+// package alias resolves to a generated proto package (via imports) is recorded
+// fully qualified — "saas.accounts.v1.FooRequest" — so it matches the catalog's
+// input type without colliding with a same-named message in another proto
+// package (saas.jobs.v1 handlers share this Go package). A type whose alias does
+// not resolve falls back to its bare name.
+func typesInParams(params *ast.FieldList, imports map[string]string) map[string]bool {
 	out := map[string]bool{}
 	if params == nil {
 		return out
 	}
 	for _, field := range params.List {
 		ast.Inspect(field.Type, func(n ast.Node) bool {
-			if sel, ok := n.(*ast.SelectorExpr); ok {
-				out[sel.Sel.Name] = true
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
 			}
+			if base, ok := sel.X.(*ast.Ident); ok {
+				if proto := imports[base.Name]; proto != "" {
+					out[proto+"."+sel.Sel.Name] = true
+					return true
+				}
+			}
+			out[sel.Sel.Name] = true
 			return true
 		})
 	}
 	return out
 }
 
+// protoPackageByAlias maps each proto import alias in file to the proto package
+// its generated Go package implements. Only generated proto packages resolve;
+// other imports are absent, so their types fall back to a bare name.
+func protoPackageByAlias(file *ast.File) map[string]string {
+	aliases := map[string]string{}
+	for _, imp := range file.Imports {
+		path := strings.Trim(imp.Path.Value, `"`)
+		proto := protoPackageFromImportPath(path)
+		if proto == "" {
+			continue
+		}
+		alias := path[strings.LastIndex(path, "/")+1:]
+		if imp.Name != nil {
+			alias = imp.Name.Name
+		}
+		aliases[alias] = proto
+	}
+	return aliases
+}
+
+// protoPackageFromImportPath turns a generated Go import path into its proto
+// package: the segments after "/gen/", joined with dots (".../gen/saas/accounts/v1"
+// → "saas.accounts.v1"). A path with no "/gen/" segment is not a proto package.
+func protoPackageFromImportPath(path string) string {
+	const marker = "/gen/"
+	i := strings.Index(path, marker)
+	if i < 0 {
+		return ""
+	}
+	return strings.ReplaceAll(path[i+len(marker):], "/", ".")
+}
+
+// enforcementExemption is a procedure's ticketed lockstep exemption. An entry
+// with no "missing" field exempts the whole procedure (all == true); an entry
+// listing capabilities exempts only those dimensions, so the rest of the
+// declared floor is still lockstep-checked.
+type enforcementExemption struct {
+	all  bool
+	caps map[capability]bool
+}
+
+// exempts reports whether capability c is exempted for this procedure.
+func (e enforcementExemption) exempts(c capability) bool {
+	return e.all || e.caps[c]
+}
+
 // loadEnforcementAllowlist indexes the ticketed exemptions by procedure. A
 // malformed entry cannot silently exempt a route: both a reason and a ticket
-// are mandatory, matching the coverage-gate allowlist contract.
-func loadEnforcementAllowlist(t *testing.T, path string) map[string]bool {
+// are mandatory, matching the coverage-gate allowlist contract. An optional
+// "missing" list narrows the exemption to specific floor capabilities.
+func loadEnforcementAllowlist(t *testing.T, path string) map[string]enforcementExemption {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 	var doc struct {
 		Enforcement []struct {
-			Procedure string `json:"procedure"`
-			Reason    string `json:"reason"`
-			Ticket    string `json:"ticket"`
+			Procedure string   `json:"procedure"`
+			Reason    string   `json:"reason"`
+			Ticket    string   `json:"ticket"`
+			Missing   []string `json:"missing"`
 		} `json:"enforcement"`
 	}
 	require.NoError(t, json.Unmarshal(raw, &doc))
-	allow := map[string]bool{}
+	allow := map[string]enforcementExemption{}
 	for _, entry := range doc.Enforcement {
-		if entry.Procedure != "" && entry.Reason != "" && entry.Ticket != "" {
-			allow[entry.Procedure] = true
+		if entry.Procedure == "" || entry.Reason == "" || entry.Ticket == "" {
+			continue
 		}
+		ex := enforcementExemption{}
+		if len(entry.Missing) == 0 {
+			ex.all = true
+		} else {
+			ex.caps = map[capability]bool{}
+			for _, c := range entry.Missing {
+				ex.caps[capability(c)] = true
+			}
+		}
+		allow[entry.Procedure] = ex
 	}
 	return allow
 }
@@ -430,22 +623,22 @@ func TestDeclaredPolicyEnforcedInLockstep(t *testing.T) {
 			continue // excluded from admission; the coverage gate owns these
 		}
 		need := requiredCapabilities(policy.MethodPolicy)
-		if len(need) == 0 || allow[policy.FullMethod] {
+		exempt := allow[policy.FullMethod]
+		if len(need) == 0 || exempt.all {
 			continue
 		}
 		for c := range need {
 			exercised[c] = true
 		}
-		reqType := policy.InputType[strings.LastIndex(policy.InputType, ".")+1:]
-		provided, found := scan.capabilitiesFor(policy.Method, reqType)
+		provided, found := scan.capabilitiesFor(policy.Method, policy.InputType)
 		if !found {
 			violations = append(violations, fmt.Sprintf(
-				"%s: no handler found for method %s(%s)", policy.FullMethod, policy.Method, reqType))
+				"%s: no handler found for method %s(%s)", policy.FullMethod, policy.Method, policy.InputType))
 			continue
 		}
 		var missing []string
 		for c := range need {
-			if !provided[c] {
+			if !provided[c] && !exempt.exempts(c) {
 				missing = append(missing, string(c))
 			}
 		}
@@ -619,9 +812,11 @@ func (h *aConnectHandler) Delegated(ctx context.Context, req *connect.Request[ge
 	require.False(t, found)
 }
 
-// An enforcement call whose error is thrown away — dead-branch or a bare
-// statement — does not gate the request and must NOT be credited, so a route
-// that "calls" requireOrgAdmin without acting on its result is still flagged.
+// An enforcement call whose error never controls a return — a dead branch, a
+// bare statement, a blank assignment, an assignment that is never checked, or an
+// error clobbered before it is read — does not gate the request and must NOT be
+// credited, so a route that "calls" requireOrgAdmin without acting on its result
+// is still flagged.
 func TestScanHandlersRejectsDiscardedEnforcement(t *testing.T) {
 	scan := scanSource(t, `
 package adapters
@@ -642,16 +837,74 @@ func (s *AServer) BlankAssign(ctx context.Context, req *gen.BlankRequest) error 
 	_ = requireOrgAdmin(ctx)
 	return nil
 }
+
+func (s *AServer) AssignedThenIgnored(ctx context.Context, req *gen.IgnoredRequest) error {
+	err := requireOrgAdmin(ctx)
+	doWork()
+	return nil
+}
+
+func (s *AServer) Clobbered(ctx context.Context, req *gen.ClobberedRequest) error {
+	err := requireOrgAdmin(ctx)
+	_, err = doOther(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
 `)
 	for _, tc := range []struct{ method, reqType string }{
 		{"DeadBranch", "DeadRequest"},
 		{"BareCall", "BareRequest"},
 		{"BlankAssign", "BlankRequest"},
+		{"AssignedThenIgnored", "IgnoredRequest"},
+		{"Clobbered", "ClobberedRequest"},
 	} {
 		got, found := scan.capabilitiesFor(tc.method, tc.reqType)
 		require.True(t, found, "%s should be found", tc.method)
-		require.Empty(t, sortedCaps(got), "%s discards the enforcement error and must not be credited", tc.method)
+		require.Empty(t, sortedCaps(got), "%s does not gate on the enforcement error and must not be credited", tc.method)
 	}
+}
+
+// The assign-then-check idiom gates whether the check is adjacent, separated by
+// other statements, or a bare `return err` propagation — all must be credited so
+// real handlers (requireTeamAdmin returns (orgID, error), checked after the
+// assignment) are not falsely flagged.
+func TestScanHandlersCreditsCheckedAssignment(t *testing.T) {
+	scan := scanSource(t, `
+package adapters
+
+func (s *AServer) AdjacentCheck(ctx context.Context, req *gen.AdjacentRequest) error {
+	err := requireOrgAdmin(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AServer) MultiReturnCheck(ctx context.Context, req *gen.MultiRequest) error {
+	orgID, err := requireTeamAdmin(ctx)
+	_ = orgID
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *AServer) ReturnedErr(ctx context.Context, req *gen.ReturnedRequest) error {
+	err := requireOrgMember(ctx)
+	return err
+}
+`)
+	assertCaps := func(method, reqType string, want ...capability) {
+		t.Helper()
+		got, found := scan.capabilitiesFor(method, reqType)
+		require.True(t, found, "%s(%s) should be found", method, reqType)
+		require.ElementsMatch(t, capSlice(want), sortedCaps(got))
+	}
+	assertCaps("AdjacentCheck", "AdjacentRequest", capOrgMember, capOrgAdmin)
+	assertCaps("MultiReturnCheck", "MultiRequest", capOrgMember, capTeam)
+	assertCaps("ReturnedErr", "ReturnedRequest", capOrgMember)
 }
 
 // A method's Connect wrapper carries no gate while the inner gRPC method holds
@@ -675,6 +928,40 @@ func (h *aConnectHandler) Guarded(ctx context.Context, req *connect.Request[gen.
 	require.ElementsMatch(t, capSlice([]capability{capOrgMember, capOrgAdmin}), sortedCaps(got))
 }
 
+// Two methods sharing a name and a bare request-type name but living in
+// different proto packages (accounts and jobs handlers share this Go package)
+// must not have their enforcement unioned: the qualified request type keys them
+// apart, so a gated accounts handler cannot lend its credit to an ungated jobs
+// handler of the same name.
+func TestScanHandlersKeysByQualifiedRequestType(t *testing.T) {
+	scan := scanSource(t, `
+package adapters
+
+import (
+	accountsv1 "accounts/pkg/gen/saas/accounts/v1"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+)
+
+func (s *AServer) GetThing(ctx context.Context, req *accountsv1.GetThingRequest) error {
+	if err := requireOrgAdmin(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *JServer) GetThing(ctx context.Context, req *jobsv1.GetThingRequest) error {
+	return nil
+}
+`)
+	accounts, found := scan.capabilitiesFor("GetThing", "saas.accounts.v1.GetThingRequest")
+	require.True(t, found)
+	require.ElementsMatch(t, capSlice([]capability{capOrgMember, capOrgAdmin}), sortedCaps(accounts))
+
+	jobs, found := scan.capabilitiesFor("GetThing", "saas.jobs.v1.GetThingRequest")
+	require.True(t, found, "the ungated jobs handler is still found by its own qualified type")
+	require.Empty(t, sortedCaps(jobs), "the ungated jobs handler must not inherit the accounts handler's credit")
+}
+
 // Every seeded require* helper must exist in the handler package: a rename or
 // removal that would silently drop enforcement credit fails here instead.
 func TestEnforcementSeedsExistInPackage(t *testing.T) {
@@ -692,10 +979,19 @@ func TestEnforcementAllowlistRejectsMalformedEntries(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`{"enforcement":[
 		{"procedure":"/s/A","reason":"r","ticket":"#1"},
 		{"procedure":"/s/B","reason":"","ticket":"#2"},
-		{"procedure":"/s/C","reason":"r"}
+		{"procedure":"/s/C","reason":"r"},
+		{"procedure":"/s/D","reason":"r","ticket":"#4","missing":["org_admin"]}
 	]}`), 0o600))
 	allow := loadEnforcementAllowlist(t, path)
-	require.True(t, allow["/s/A"])
-	require.False(t, allow["/s/B"], "an entry without a reason must not exempt")
-	require.False(t, allow["/s/C"], "an entry without a ticket must not exempt")
+
+	require.True(t, allow["/s/A"].all, "a whole-method entry exempts every capability")
+	require.True(t, allow["/s/A"].exempts(capOrgAdmin))
+
+	require.False(t, allow["/s/B"].all, "an entry without a reason must not exempt")
+	require.False(t, allow["/s/B"].exempts(capOrgAdmin))
+	require.False(t, allow["/s/C"].all, "an entry without a ticket must not exempt")
+
+	require.False(t, allow["/s/D"].all, "a scoped entry does not exempt the whole method")
+	require.True(t, allow["/s/D"].exempts(capOrgAdmin), "a scoped entry exempts its listed capability")
+	require.False(t, allow["/s/D"].exempts(capTeam), "a scoped entry does not exempt an unlisted capability")
 }
