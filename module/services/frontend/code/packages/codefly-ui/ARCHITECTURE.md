@@ -75,6 +75,27 @@ sits outside this stack.
    the singleton flag on every package in the shared set, so a new layer package
    cannot ship shared without it.)*
 
+## CSS ownership — every consumer must scan the kit source
+
+The kit ships **no compiled CSS**. Its components carry Tailwind utility classes
+as source strings; the class *definitions* are minted by the consuming app's own
+Tailwind build (CSS ownership: host authority, core-solutions#48). Tailwind only
+emits utilities it can *see*, and it scans its own tree — not `node_modules` — by
+default. So **every** Tailwind build that renders a kit component must point
+Tailwind at the kit source, e.g. in the host's `globals.css`:
+
+```css
+@source "../../packages/codefly-ui/src";
+```
+
+Miss this and the primitives still mount with the right markup but **no styles** —
+a silent visual break, not a build error, because nothing fails; the classes
+simply never make it into the stylesheet. This generalizes to every future
+consumer (a solution fe-remote with its own Tailwind build): each one owns the
+same `@source` (or an equivalent safelist) for the kit, or the kit renders
+unstyled inside it. The host wires this today; a new remote must add it as part
+of adopting the kit.
+
 ## Boundary
 
 - **Kit** = anything reusable across solutions (chat, dashboard, tables, atoms).

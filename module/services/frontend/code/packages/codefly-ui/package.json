@@ -53,6 +53,16 @@
 			"types": "./dist/layout/index.d.ts",
 			"import": "./dist/layout/index.js",
 			"default": "./dist/layout/index.js"
+		},
+		"./table": {
+			"types": "./dist/table/index.d.ts",
+			"import": "./dist/table/index.js",
+			"default": "./dist/table/index.js"
+		},
+		"./form": {
+			"types": "./dist/form/index.d.ts",
+			"import": "./dist/form/index.js",
+			"default": "./dist/form/index.js"
 		}
 	},
 	"scripts": {
@@ -83,7 +93,7 @@
 		"@codefly/saas-plugin-contract": "2.1.0",
 		"@codefly/saas-plugin-react": "0.4.1",
 		"@testing-library/react": "^16.1.0",
-		"@types/react": "^19.2.17",
+		"@types/react": "19.2.17",
 		"happy-dom": "^20.8.9",
 		"react": "^19.2.8",
 		"typescript": "5.9.3",
