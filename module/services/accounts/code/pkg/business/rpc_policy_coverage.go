@@ -1,6 +1,8 @@
 package business
 
 import (
+	"sort"
+
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
 )
 
@@ -37,6 +39,52 @@ const (
 	CoverageBroadening CentralCoverage = "broadening"
 )
 
+// globalScopeEscapeMethods are the PermissionService mutations whose handler
+// gates through requireRoleScope: org admin on the request's org, OR platform
+// admin when the org scope is empty (a global, org-less role/scope/share). The
+// flat MethodPolicy IDL is a conjunction and cannot express that "ORG_ADMIN for
+// this org OR platform admin for global scope" alternative, so their declared
+// ORG_ADMIN tenant reads to the central interceptor as an unconditional org-admin
+// floor. Enforcing that floor against the caller's verified org would both
+// over-deny a platform admin operating on global scope (they have no org
+// membership to satisfy it) and admit an org admin operating on global scope the
+// handler denies. The interceptor never reads the request body, so it cannot
+// resolve the empty-org alternative itself; these methods therefore stay
+// handler-enforced (gap) and are never centrally enforced. The set is pinned to
+// the requireRoleScope call sites by TestGlobalScopeEscapeHatchMatchesHandlers.
+var globalScopeEscapeMethods = map[string]struct{}{
+	"/saas.accounts.v1.PermissionService/CreateRole":        {},
+	"/saas.accounts.v1.PermissionService/AssignRole":        {},
+	"/saas.accounts.v1.PermissionService/RevokeRole":        {},
+	"/saas.accounts.v1.PermissionService/RegisterScopeNode": {},
+	"/saas.accounts.v1.PermissionService/GrantScope":        {},
+	"/saas.accounts.v1.PermissionService/RevokeScope":       {},
+	"/saas.accounts.v1.PermissionService/ShareRecord":       {},
+	"/saas.accounts.v1.PermissionService/RevokeShare":       {},
+	"/saas.accounts.v1.PermissionService/ListShares":        {},
+}
+
+func hasGlobalScopeEscape(fullMethod string) bool {
+	_, ok := globalScopeEscapeMethods[fullMethod]
+	return ok
+}
+
+// GlobalScopeEscapeHatchMethods returns the methods the central classifier treats
+// as global-scope escapes — handler-gated, never centrally enforced. It is
+// exported so the adapters lockstep test can prove this set equals the handlers
+// that actually gate through requireRoleScope, in both directions: an entry whose
+// handler stopped routing through requireRoleScope, or a requireRoleScope handler
+// missing here, fails that test rather than silently classifying a route as a gap
+// no handler backs (or as ok when it must defer).
+func GlobalScopeEscapeHatchMethods() []string {
+	out := make([]string, 0, len(globalScopeEscapeMethods))
+	for method := range globalScopeEscapeMethods {
+		out = append(out, method)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ClassifyCentralCoverage reports how completely the central interceptor can
 // enforce policy's declared authorization floor.
 //
@@ -46,8 +94,9 @@ const (
 // so a method whose floor reduces to that tenant — or to "a verified user"
 // (tenant NONE or USER) — is fully covered. A declared permission (which may
 // admit a non-admin who holds it), a platform-role, an MFA requirement, an
-// org-owner or team tenant, or a bound team resource is a gap the require*
-// handler sites still cover. An owned-resource binding is unsupported unless an
+// org-owner or team tenant, a bound team resource, or a global-scope escape
+// method (globalScopeEscapeMethods) is a gap the require* handler sites still
+// cover. An owned-resource binding is unsupported unless an
 // ownership resolver is registered for the method; once it is, the owning org is
 // recoverable and the binding classifies as the gap its bound-resource check
 // implies. A bound organization not pinned by an org tenant is also a gap, since
@@ -62,6 +111,9 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 	switch p.GetExposure() {
 	case policyv1.Exposure_EXPOSURE_PUBLIC, policyv1.Exposure_EXPOSURE_INTERNAL:
 		return CoverageOK
+	}
+	if hasGlobalScopeEscape(policy.FullMethod) {
+		return CoverageGap
 	}
 	for _, binding := range p.GetResourceBindings() {
 		switch binding.GetTarget() {
@@ -106,8 +158,10 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 // resolves only the ORG_MEMBER / ORG_ADMIN tenant, against the caller's verified
 // organization, and only when the method declares no finer permission (which
 // could admit a non-admin who holds it), no platform-role or MFA requirement,
-// and no team or owned-resource binding. Every other requirement stays with the
-// handler require* sites, so this check is never stricter than the handler's own.
+// no team or owned-resource binding, and no global-scope escape
+// (globalScopeEscapeMethods, whose empty-org alternative the interceptor cannot
+// resolve). Every other requirement stays with the handler require* sites, so
+// this check is never stricter than the handler's own.
 //
 // The interceptor checks the caller's verified (token) organization and never
 // reads the request body. Classifying such a method ok is sound only because
@@ -121,6 +175,9 @@ func ClassifyCentralCoverage(policy RPCPolicy) CentralCoverage {
 func CentralTenantEnforcement(policy RPCPolicy) (policyv1.TenantRequirement, bool) {
 	p := policy.MethodPolicy
 	if p == nil {
+		return policyv1.TenantRequirement_TENANT_REQUIREMENT_UNSPECIFIED, false
+	}
+	if hasGlobalScopeEscape(policy.FullMethod) {
 		return policyv1.TenantRequirement_TENANT_REQUIREMENT_UNSPECIFIED, false
 	}
 	if len(p.GetPermissions()) > 0 ||
