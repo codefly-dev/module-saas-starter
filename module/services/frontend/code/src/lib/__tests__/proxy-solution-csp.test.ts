@@ -1,12 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// registry.ts is server-only; the marker package throws when imported outside a
-// server component, so neutralize it for the unit test.
-vi.mock("server-only", () => ({}));
-
 import { proxy } from "@/proxy";
-import { registerSolution, unregisterSolution } from "@/solutions/registry";
 
 // Stand-in for next.config's build-time snapshot of the env-derived CSP inputs.
 const SELF_ONLY_SNAPSHOT = JSON.stringify({
@@ -14,6 +9,19 @@ const SELF_ONLY_SNAPSHOT = JSON.stringify({
 	analyticsOrigin: null,
 	turnstile: false,
 });
+
+const AUDIT_MANIFEST = "http://localhost:8091/assets/mf-manifest.json";
+
+const AUDIT = {
+	id: "audit",
+	nav: { title: "Audit", path: "/s/audit" },
+	frontend: {
+		type: "module-federation",
+		manifestUrl: AUDIT_MANIFEST,
+		exposedModule: "./Page",
+	},
+	backend: { serviceAlias: "audit" },
+};
 
 function authedRequest(pathname: string): NextRequest {
 	const request = new NextRequest(`https://app.example${pathname}`);
@@ -30,17 +38,16 @@ function directive(csp: string, name: string): string {
 	);
 }
 
-function registerAudit(manifestUrl: string): void {
-	registerSolution({
-		id: "audit",
-		nav: { title: "Audit", path: "/s/audit" },
-		frontend: {
-			type: "module-federation",
-			manifestUrl,
-			exposedModule: "./Page",
-		},
-		backend: { serviceAlias: "audit" },
+// The registry lives in the route-handler context the proxy cannot share, so
+// the proxy reads registered remotes over the loopback solutions listing. Stub
+// that boundary and assert the proxy queries the request's own origin.
+function stubListing(solutions: unknown[]): ReturnType<typeof vi.fn> {
+	const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
+		expect(input.toString()).toBe("https://app.example/api/solutions/register");
+		return { ok: true, json: async () => ({ solutions }) } as Response;
 	});
+	vi.stubGlobal("fetch", fetchMock);
+	return fetchMock;
 }
 
 describe("proxy solution-page CSP", () => {
@@ -49,14 +56,14 @@ describe("proxy solution-page CSP", () => {
 	});
 
 	afterEach(() => {
-		unregisterSolution("audit");
 		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
 	});
 
-	it("allows a registered cross-origin remote without a build-time env", () => {
-		registerAudit("http://localhost:8091/assets/mf-manifest.json");
+	it("allows a registered cross-origin remote without a build-time env", async () => {
+		stubListing([AUDIT]);
 
-		const response = proxy(authedRequest("/s/audit"));
+		const response = await proxy(authedRequest("/s/audit"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		// Nonce-based, no unsafe-inline; strict-dynamic + the remote origin.
@@ -69,8 +76,10 @@ describe("proxy solution-page CSP", () => {
 		);
 	});
 
-	it("locks the CSP to self for an unregistered solution id", () => {
-		const response = proxy(authedRequest("/s/unknown"));
+	it("locks the CSP to self for an unregistered solution id", async () => {
+		stubListing([AUDIT]);
+
+		const response = await proxy(authedRequest("/s/unknown"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
@@ -80,8 +89,10 @@ describe("proxy solution-page CSP", () => {
 		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
 	});
 
-	it("does not throw and stays self-only on a malformed id segment", () => {
-		const response = proxy(authedRequest("/s/%ZZ"));
+	it("does not query the listing or throw on a malformed id segment", async () => {
+		const fetchMock = stubListing([AUDIT]);
+
+		const response = await proxy(authedRequest("/s/%ZZ"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
@@ -89,9 +100,24 @@ describe("proxy solution-page CSP", () => {
 		expect(scriptSrc).toContain("'strict-dynamic'");
 		expect(scriptSrc).not.toContain("localhost");
 		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("keeps build-time analytics/allowlist hosts from the snapshot, not runtime env", () => {
+	it("stays self-only when the listing is unreachable", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("connection refused");
+			}),
+		);
+
+		const response = await proxy(authedRequest("/s/audit"));
+		const csp = response.headers.get("content-security-policy") ?? "";
+		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
+		expect(directive(csp, "script-src")).not.toContain("localhost");
+	});
+
+	it("keeps build-time analytics/allowlist hosts from the snapshot, not runtime env", async () => {
 		// The snapshot carries the analytics host and a build-time allowlist entry;
 		// no NEXT_PUBLIC_* is present in process.env. If the proxy re-read env
 		// instead of the snapshot, these would silently drop on solution pages.
@@ -103,39 +129,48 @@ describe("proxy solution-page CSP", () => {
 				turnstile: false,
 			}),
 		);
-		registerAudit("http://localhost:8091/assets/mf-manifest.json");
+		stubListing([AUDIT]);
 
 		const csp =
-			proxy(authedRequest("/s/audit")).headers.get("content-security-policy") ??
-			"";
+			(await proxy(authedRequest("/s/audit"))).headers.get(
+				"content-security-policy",
+			) ?? "";
 		expect(directive(csp, "connect-src")).toBe(
 			"connect-src 'self' https://trusted.example http://localhost:8091 https://eu.i.posthog.com",
 		);
 	});
 
-	it("fails loudly when the build-time snapshot is missing", () => {
+	it("fails loudly when the build-time snapshot is missing", async () => {
 		vi.stubEnv("SOLUTION_CSP_INPUTS", "");
-		expect(() => proxy(authedRequest("/s/audit"))).toThrow(
+		stubListing([AUDIT]);
+
+		await expect(proxy(authedRequest("/s/audit"))).rejects.toThrow(
 			/SOLUTION_CSP_INPUTS/,
 		);
 	});
 
-	it("sets a per-request nonce'd self CSP on non-solution pages", () => {
+	it("sets a per-request nonce'd self CSP on non-solution pages", async () => {
+		const fetchMock = stubListing([AUDIT]);
+
 		// The proxy now owns the CSP on every route (next.config emits only the
 		// constant hardening headers), so a non-solution page gets a nonce'd
 		// self policy — not the old null (which relied on next.config's static CSP).
-		const response = proxy(authedRequest("/settings"));
+		const response = await proxy(authedRequest("/settings"));
 		const csp = response.headers.get("content-security-policy") ?? "";
 		const scriptSrc = directive(csp, "script-src");
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
 		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
 		expect(scriptSrc).toContain("'strict-dynamic'");
+		// A non-solution page never queries the listing.
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it("does not emit a CSP when redirecting an unauthenticated visitor", () => {
-		registerAudit("http://localhost:8091/assets/mf-manifest.json");
+	it("does not emit a CSP when redirecting an unauthenticated visitor", async () => {
+		stubListing([AUDIT]);
 
-		const response = proxy(new NextRequest("https://app.example/s/audit"));
+		const response = await proxy(
+			new NextRequest("https://app.example/s/audit"),
+		);
 		expect(response.status).toBe(307);
 		expect(response.headers.get("location")).toContain("/auth/login");
 		expect(response.headers.get("content-security-policy")).toBeNull();
