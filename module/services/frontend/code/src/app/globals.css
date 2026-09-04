@@ -2,6 +2,14 @@
 @import "tw-animate-css";
 @import "./shadcn.css";
 
+/* The host owns the single compiled stylesheet (CSS ownership: host authority,
+   core-solutions#48). Its Tailwind build only scans files it can see, so it must
+   scan the kit's source too — the kit ships no CSS and the promoted primitives'
+   Tailwind classes (issue #451) live in the kit source, not under ./src. This
+   generalizes to every consumer the host renders (module UI, solution remotes) as
+   they move into the kit. */
+@source "../../packages/codefly-ui/src";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

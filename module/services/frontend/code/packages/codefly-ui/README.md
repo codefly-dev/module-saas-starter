@@ -26,8 +26,13 @@ that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 - **Layout** (`@codefly-dev/ui/layout`), **Dashboard**
   (`@codefly-dev/ui/dashboard`), and **Chat** (`@codefly-dev/ui/chat`) — pure,
-  data-in presentation (Tabs/Card/Section; `<Dashboard>`, charts,
-  `fromDashboardData`; `<Chat>`). React only: no plugin runtime, no host context.
+  data-in presentation. `layout` carries the page containers (`Card`, `Section`,
+  `Tabs`) and the shadcn primitives promoted into the kit as their single sealed
+  home (issue #451) — actions (`Button`), forms (`Input`, `Textarea`, `Label`,
+  `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Avatar`, `Table`,
+  `Skeleton`, `Separator`) and overlays (`Dialog`, `AlertDialog`, `Tooltip`,
+  `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
+  is `<Chat>`. React only: no plugin runtime, no host context.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
   `@codefly/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
   component stays pure, the same split as `runDashboard` → `<Dashboard>`.
@@ -41,7 +46,7 @@ that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | `@codefly-dev/ui/plugin-host/runtime` | Client runtime adapters (`PluginRuntimeProvider`) |
 | `@codefly-dev/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly-dev/ui/skin`            | `resolveSkin`, skin types                           |
-| `@codefly-dev/ui/layout`          | `Tabs`, `Card`, `Section` (React-only)              |
+| `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 
@@ -55,7 +60,10 @@ The two plugin peers are **optional** (`peerDependenciesMeta`): only `.`,
 `./plugin-host`, and `./skin` touch them, and the host supplies them. The
 `./layout`, `./dashboard`, and `./chat` subpaths reference neither, so a consumer
 of just those subpaths installs the kit without pulling the host-internal plugin
-packages.
+packages. `./layout` does pull the primitives' public runtime deps
+(`@base-ui/react`, `lucide-react`, `class-variance-authority`, `clsx`,
+`tailwind-merge`), declared as ordinary `dependencies` so a consumer resolves them
+from the public registry with no extra config.
 
 ## Consuming from a solution
 
