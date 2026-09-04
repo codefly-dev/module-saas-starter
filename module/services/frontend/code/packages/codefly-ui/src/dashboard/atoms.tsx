@@ -76,13 +76,20 @@ export interface XAxis {
 }
 
 // Even indices across `count` so no more than `max` labels show, always keeping
-// the last bucket so the axis ends on the latest data.
+// the last bucket so the axis ends on the latest data. When the last bucket lands
+// less than a full step from the previous tick, drop that neighbor instead of
+// letting the two labels overlap.
 function stride(count: number, max: number): Set<number> {
 	if (count <= max) return new Set(Array.from({ length: count }, (_, i) => i));
 	const step = Math.ceil(count / max);
 	const shown = new Set<number>();
 	for (let i = 0; i < count; i += step) shown.add(i);
-	shown.add(count - 1);
+	const last = count - 1;
+	if (!shown.has(last)) {
+		const prev = Math.max(...shown);
+		if (last - prev < step) shown.delete(prev);
+		shown.add(last);
+	}
 	return shown;
 }
 
@@ -114,7 +121,11 @@ export function Axis({ plot, x, y }: { plot: Plot; x?: XAxis; y?: YAxis }) {
 						key={key}
 						x={scaleX(i, x.keys.length, plot)}
 						y={plot.bottom + 14}
-						textAnchor="middle"
+						// Anchor the end labels inward so the first/last don't clip the
+						// plot edge; interior labels stay centered on their tick.
+						textAnchor={
+							i === 0 ? "start" : i === x.keys.length - 1 ? "end" : "middle"
+						}
 						className="fill-muted-foreground text-[10px]"
 					>
 						{formatKey(key)}

@@ -27,15 +27,20 @@ that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
 - **Layout** (`@codefly-dev/ui/layout`), **Dashboard**
   (`@codefly-dev/ui/dashboard`), and **Chat** (`@codefly-dev/ui/chat`) — pure,
   data-in presentation. `layout` carries the page containers (`Card`, `Section`,
-  `Tabs`) and the shadcn primitives promoted into the kit as their single sealed
+  `Tabs`), the shadcn primitives promoted into the kit as their single sealed
   home (issue #451) — actions (`Button`), forms (`Input`, `Textarea`, `Label`,
-  `Checkbox`, `Switch`, `Select`), data display (`Badge`, `Avatar`, `Table`,
-  `Skeleton`, `Separator`) and overlays (`Dialog`, `AlertDialog`, `Tooltip`,
-  `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
-  is `<Chat>`. React only: no plugin runtime, no host context.
-  This is the surface a solution fe-remote consumes. `<Chat>` is fed by
-  `@codefly/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
-  component stays pure, the same split as `runDashboard` → `<Dashboard>`.
+  `Checkbox`, `Switch`, `Select`, `RadioGroup`), data display (`Badge`, `Avatar`,
+  `Table`, `Skeleton`, `Separator`) and overlays (`Dialog`, `AlertDialog`,
+  `Tooltip`, `DropdownMenu`) — and the shell/state elements a page composes:
+  `PageHeader`, `Breadcrumbs`, `StatTile`, `Banner`, `EmptyState`, `ErrorState`,
+  `Spinner`, `Pagination`. `table` is `<DataTable>` (sortable/paginated over
+  `Table`); `form` is the presentational field shape (`Form`, `FormField`,
+  `FormLabel`, `FormDescription`, `FormMessage`); `dashboard` is `<Dashboard>`,
+  charts, `fromDashboardData`; `chat` is `<Chat>`. React only: no plugin runtime,
+  no host context. This is the surface a solution fe-remote consumes. `<Chat>` is
+  fed by `@codefly/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS
+  transport, the component stays pure, the same split as `runDashboard` →
+  `<Dashboard>`.
 
 ## Entry points
 
@@ -46,7 +51,9 @@ that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
 | `@codefly-dev/ui/plugin-host/runtime` | Client runtime adapters (`PluginRuntimeProvider`) |
 | `@codefly-dev/ui/plugin-host/ui`  | Client UI adapters (`PluginErrorBoundary`)          |
 | `@codefly-dev/ui/skin`            | `resolveSkin`, skin types                           |
-| `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
+| `@codefly-dev/ui/layout`          | Primitives + shell/state elements (React-only)      |
+| `@codefly-dev/ui/table`           | `DataTable` (React-only)                            |
+| `@codefly-dev/ui/form`            | Form field primitives (React-only)                 |
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
 
