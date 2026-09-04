@@ -51,6 +51,9 @@
       "name": "MFAService"
     },
     {
+      "name": "ModuleCapabilitiesService"
+    },
+    {
       "name": "NotificationService"
     },
     {

@@ -40,15 +40,25 @@ const (
 // ModuleCapabilitiesService is the module-facing platform surface. Every RPC
 // is internal-tier and identifies its caller from the forwarded Work Context.
 type ModuleCapabilitiesServiceClient interface {
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(ctx context.Context, in *ModuleEnqueueJobRequest, opts ...grpc.CallOption) (*ModuleEnqueueJobResponse, error)
+	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(ctx context.Context, in *ModuleClaimJobsRequest, opts ...grpc.CallOption) (*ModuleClaimJobsResponse, error)
+	// HeartbeatJob renews a live lease by its fencing token.
 	HeartbeatJob(ctx context.Context, in *ModuleHeartbeatJobRequest, opts ...grpc.CallOption) (*ModuleHeartbeatJobResponse, error)
+	// AckJob completes a leased job successfully.
 	AckJob(ctx context.Context, in *ModuleAckJobRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// NackJob fails a leased job as retryable or permanent.
 	NackJob(ctx context.Context, in *ModuleNackJobRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(ctx context.Context, in *ModuleNotifyUserRequest, opts ...grpc.CallOption) (*ModuleNotifyUserResponse, error)
+	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(ctx context.Context, in *ModuleRequestApprovalRequest, opts ...grpc.CallOption) (*ModuleRequestApprovalResponse, error)
+	// GetApproval returns one approval request on the caller's tenant.
 	GetApproval(ctx context.Context, in *ModuleGetApprovalRequest, opts ...grpc.CallOption) (*ModuleApproval, error)
+	// CancelApproval withdraws a still-open approval request.
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
@@ -167,15 +177,25 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 // ModuleCapabilitiesService is the module-facing platform surface. Every RPC
 // is internal-tier and identifies its caller from the forwarded Work Context.
 type ModuleCapabilitiesServiceServer interface {
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *ModuleEnqueueJobRequest) (*ModuleEnqueueJobResponse, error)
+	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *ModuleClaimJobsRequest) (*ModuleClaimJobsResponse, error)
+	// HeartbeatJob renews a live lease by its fencing token.
 	HeartbeatJob(context.Context, *ModuleHeartbeatJobRequest) (*ModuleHeartbeatJobResponse, error)
+	// AckJob completes a leased job successfully.
 	AckJob(context.Context, *ModuleAckJobRequest) (*emptypb.Empty, error)
+	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *ModuleNackJobRequest) (*emptypb.Empty, error)
+	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(context.Context, *ModuleNotifyUserRequest) (*ModuleNotifyUserResponse, error)
+	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *ModuleRequestApprovalRequest) (*ModuleRequestApprovalResponse, error)
+	// GetApproval returns one approval request on the caller's tenant.
 	GetApproval(context.Context, *ModuleGetApprovalRequest) (*ModuleApproval, error)
+	// CancelApproval withdraws a still-open approval request.
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
+	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedModuleCapabilitiesServiceServer()
 }

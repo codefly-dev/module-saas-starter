@@ -71,15 +71,25 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
+	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *connect.Request[v1.ModuleClaimJobsRequest]) (*connect.Response[v1.ModuleClaimJobsResponse], error)
+	// HeartbeatJob renews a live lease by its fencing token.
 	HeartbeatJob(context.Context, *connect.Request[v1.ModuleHeartbeatJobRequest]) (*connect.Response[v1.ModuleHeartbeatJobResponse], error)
+	// AckJob completes a leased job successfully.
 	AckJob(context.Context, *connect.Request[v1.ModuleAckJobRequest]) (*connect.Response[emptypb.Empty], error)
+	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
+	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
+	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
+	// GetApproval returns one approval request on the caller's tenant.
 	GetApproval(context.Context, *connect.Request[v1.ModuleGetApprovalRequest]) (*connect.Response[v1.ModuleApproval], error)
+	// CancelApproval withdraws a still-open approval request.
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
+	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
@@ -224,15 +234,25 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, re
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
+	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
 	ClaimJobs(context.Context, *connect.Request[v1.ModuleClaimJobsRequest]) (*connect.Response[v1.ModuleClaimJobsResponse], error)
+	// HeartbeatJob renews a live lease by its fencing token.
 	HeartbeatJob(context.Context, *connect.Request[v1.ModuleHeartbeatJobRequest]) (*connect.Response[v1.ModuleHeartbeatJobResponse], error)
+	// AckJob completes a leased job successfully.
 	AckJob(context.Context, *connect.Request[v1.ModuleAckJobRequest]) (*connect.Response[emptypb.Empty], error)
+	// NackJob fails a leased job as retryable or permanent.
 	NackJob(context.Context, *connect.Request[v1.ModuleNackJobRequest]) (*connect.Response[emptypb.Empty], error)
+	// NotifyUser delivers a notification subject to category policy.
 	NotifyUser(context.Context, *connect.Request[v1.ModuleNotifyUserRequest]) (*connect.Response[v1.ModuleNotifyUserResponse], error)
+	// RequestApproval opens a pending approval whose resume job the module claims.
 	RequestApproval(context.Context, *connect.Request[v1.ModuleRequestApprovalRequest]) (*connect.Response[v1.ModuleRequestApprovalResponse], error)
+	// GetApproval returns one approval request on the caller's tenant.
 	GetApproval(context.Context, *connect.Request[v1.ModuleGetApprovalRequest]) (*connect.Response[v1.ModuleApproval], error)
+	// CancelApproval withdraws a still-open approval request.
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
+	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
 }
 
