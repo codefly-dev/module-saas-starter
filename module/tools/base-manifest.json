@@ -799,7 +799,7 @@
     "services/accounts/kreya/directory.krpref": "c63b7bcfa98039211cd7c429684c666bcb017c55aa5c2041a3a4192abf50d443",
     "services/accounts/kreya/grpc/reflection/v1/ServerReflection/ServerReflectionInfo-request-0.json": "206393591a3c283e137f17cf4ff18fa2d1e80a680d3ee65751ccabc9f89afa28",
     "services/accounts/kreya/grpc/reflection/v1/ServerReflection/ServerReflectionInfo.krop": "8f022ffb673c00cd228857333f6464adb6c0a43b91307966ab6eb466caab467f",
-    "services/accounts/openapi/api.swagger.json": "2ccfb27790eae6630cccf7214bef34137c18685c1d0da3edafccb0e5ed281f0a",
+    "services/accounts/openapi/api.swagger.json": "f431be77fe93c5b12526e464949b92928f3ea199941e81d4323c7bcb1e5eb6d0",
     "services/accounts/proto/buf.gen.yaml": "669f8f20cd408ba68adc22ffcd1d9d9347a731b4ef92016088ab4664e42d1a9f",
     "services/accounts/proto/buf.lock": "4e0de72bae562b3e13b8260fbb6a37dc584451b51279a624d6286fb3292cdfc8",
     "services/accounts/proto/buf.yaml": "d15d377a7f91e58786ee01ed754bafb8fe40703ae8b5577d93f580f54b2f5a8c",
