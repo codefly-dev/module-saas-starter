@@ -45,7 +45,7 @@ func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.Modu
 	if err != nil {
 		return nil, err
 	}
-	resp, err := service.ModuleEnqueueJob(ctx, caller, &jobsv1.EnqueueJobRequest{Job: req.GetJob()})
+	resp, err := service.ModuleEnqueueJob(ctx, caller, req.GetTenant(), &jobsv1.EnqueueJobRequest{Job: req.GetJob()})
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +123,16 @@ func (s *ModuleCapabilitiesServer) NotifyUser(ctx context.Context, req *gen.Modu
 	if err != nil {
 		return nil, err
 	}
-	result, err := service.ModuleNotifyUser(ctx, caller,
-		req.GetTenant(), req.GetUserId(), req.GetTitle(), req.GetBody(),
-		req.GetType(), req.GetActionUrl(), req.GetCategory(), req.GetIdempotencyKey())
+	result, err := service.ModuleNotifyUser(ctx, caller, business.ModuleNotifyUserInput{
+		Tenant:         req.GetTenant(),
+		UserID:         req.GetUserId(),
+		Title:          req.GetTitle(),
+		Body:           req.GetBody(),
+		Type:           req.GetType(),
+		ActionURL:      req.GetActionUrl(),
+		Category:       req.GetCategory(),
+		IdempotencyKey: req.GetIdempotencyKey(),
+	})
 	if err != nil {
 		return nil, err
 	}

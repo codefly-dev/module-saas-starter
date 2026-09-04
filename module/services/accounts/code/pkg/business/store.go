@@ -365,6 +365,10 @@ const (
 	ErrTypeConflict   StoreErrorType = "conflict"
 	ErrTypePermission StoreErrorType = "permission"
 	ErrTypeInternal   StoreErrorType = "internal"
+	// ErrTypeValidation marks a caller-input error (bad request), so a transport
+	// adapter can distinguish it from an internal fault and return the right code
+	// instead of blaming the client for a server-side failure.
+	ErrTypeValidation StoreErrorType = "validation"
 )
 
 type StoreError struct {

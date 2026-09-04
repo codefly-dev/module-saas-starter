@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
@@ -107,15 +108,40 @@ func authorizeTenant(caller ModuleCaller, grant ModulePrincipalGrant, requested 
 	return status.Errorf(codes.PermissionDenied, "principal %s may not act on tenant %s", caller.PrincipalID, requested)
 }
 
+// requireTenantMember verifies a user/subject actually belongs to the named
+// tenant before the surface acts on it, so a module bound to tenant A cannot
+// target a user or subject in tenant B (which the tenant guard alone does not
+// prevent — org membership is a separate fact). The membership read runs under
+// the control-plane role because organization_members is RLS-scoped and the
+// caller carries no tenant GUC of its own.
+func (s *Service) requireTenantMember(ctx context.Context, tenant, userID string) error {
+	var member bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		member, e = s.store.OrgMemberExists(ctx, tenant, userID)
+		return e
+	}); err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+	if !member {
+		return status.Errorf(codes.PermissionDenied, "user %s is not a member of tenant %s", userID, tenant)
+	}
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // Jobs
 // ---------------------------------------------------------------------------
 
-// ModuleEnqueueJob appends durable work on behalf of a module. Tenant- and
-// subject-scoped work goes through the request-scoped producer inside a matching
-// transaction so the security-definer enqueue verifies the scope; global inbox
-// work requires the cross-tenant grant and uses the privileged worker producer.
-func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
+// ModuleEnqueueJob appends durable work on behalf of a module. tenant is the
+// authoritative tenant the caller claims to act on: org-scoped work must name
+// that same tenant, and subject-scoped work must target a member of it, so the
+// job's scope can never reach a tenant the caller was not authorized for. Tenant-
+// and subject-scoped work goes through the request-scoped producer inside a
+// matching transaction so the security-definer enqueue verifies the scope;
+// global inbox work requires the cross-tenant grant and uses the privileged
+// worker producer.
+func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, tenant string, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
 	w := wool.Get(ctx).In("ModuleEnqueueJob")
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
@@ -134,7 +160,12 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, req
 	switch {
 	case scope.GetOrganizationId() != "":
 		orgID := scope.GetOrganizationId()
-		if err := authorizeTenant(caller, grant, orgID); err != nil {
+		// The scope's org must be the tenant the caller is authorized for; a
+		// mismatch would let an authorized tenant name smuggle work into another.
+		if orgID != tenant {
+			return nil, status.Error(codes.InvalidArgument, "job organization scope must equal the request tenant")
+		}
+		if err := authorizeTenant(caller, grant, tenant); err != nil {
 			return nil, err
 		}
 		err = s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
@@ -142,7 +173,14 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, req
 			return err
 		})
 	case scope.GetSubjectId() != "":
-		if err := authorizeTenant(caller, grant, caller.BoundOrg); err != nil {
+		if err := authorizeTenant(caller, grant, tenant); err != nil {
+			return nil, err
+		}
+		// A subject-scoped job names a user; without this the tenant guard is a
+		// no-op (WithUserTx sets current_user_id to the subject, so the security-
+		// definer's subject==current_user_id check is tautological). Bind the
+		// subject to the authorized tenant explicitly.
+		if err := s.requireTenantMember(ctx, tenant, scope.GetSubjectId()); err != nil {
 			return nil, err
 		}
 		err = s.store.WithUserTx(ctx, scope.GetSubjectId(), func(ctx context.Context) error {
@@ -171,7 +209,13 @@ func (s *Service) ModuleEnqueueJob(ctx context.Context, caller ModuleCaller, req
 }
 
 // ModuleClaimJobs leases a bounded batch from one queue the principal owns.
-// Claiming is queue-scoped: a queue belongs to the module that declares it.
+// Claiming a queue reads every scope on it — global work and every tenant's
+// org- and subject-scoped jobs (the claim selects by queue with no tenant
+// filter) — so a claimed payload can belong to any tenant. That makes claiming
+// an inherently cross-tenant, inbox-worker operation: it requires the cross-
+// tenant grant, not merely the queue grant. Without this a tenant-bound
+// principal could read other tenants' confidential job payloads off a shared
+// queue (e.g. datasource, which carries every tenant's ingest jobs).
 func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req *jobsv1.ClaimJobsRequest) (*jobsv1.ClaimJobsResponse, error) {
 	w := wool.Get(ctx).In("ModuleClaimJobs")
 	grant, err := s.moduleGrant(caller)
@@ -180,6 +224,9 @@ func (s *Service) ModuleClaimJobs(ctx context.Context, caller ModuleCaller, req 
 	}
 	if !grant.allowsQueue(req.GetQueue()) {
 		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q", caller.PrincipalID, req.GetQueue())
+	}
+	if !grant.CrossTenant {
+		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not claim queue %q: claiming reads across tenants and requires a cross-tenant grant", caller.PrincipalID, req.GetQueue())
 	}
 	resp, err := s.moduleJobStore.Claim(ctx, req)
 	if err != nil {
@@ -258,6 +305,19 @@ func moduleJobError(w *wool.Wool, err error) error {
 // Notifications
 // ---------------------------------------------------------------------------
 
+// ModuleNotifyUserInput is a named struct rather than a long positional string
+// list so a call site cannot silently transpose title/body/type/category.
+type ModuleNotifyUserInput struct {
+	Tenant         string
+	UserID         string
+	Title          string
+	Body           string
+	Type           string
+	ActionURL      string
+	Category       string
+	IdempotencyKey string
+}
+
 // ModuleNotifyUserResult reports whether the notification was delivered or
 // suppressed by category policy, plus the row id when delivered.
 type ModuleNotifyUserResult struct {
@@ -266,27 +326,32 @@ type ModuleNotifyUserResult struct {
 }
 
 // ModuleNotifyUser routes a notification through the same category policy
-// internal callers use.
-func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, tenant, userID, title, body, notificationType, actionURL, category, idempotencyKey string) (ModuleNotifyUserResult, error) {
+// internal callers use. The target user must belong to the named tenant:
+// notifications are user-scoped, so the tenant guard alone does not stop a
+// module bound to tenant A from notifying a user in tenant B.
+func (s *Service) ModuleNotifyUser(ctx context.Context, caller ModuleCaller, in ModuleNotifyUserInput) (ModuleNotifyUserResult, error) {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
 		return ModuleNotifyUserResult{}, err
 	}
-	if err := authorizeTenant(caller, grant, tenant); err != nil {
+	if err := authorizeTenant(caller, grant, in.Tenant); err != nil {
 		return ModuleNotifyUserResult{}, err
 	}
-	if _, err := notificationCategoryIsMandatory(NotificationCategory(category)); err != nil {
-		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification category %q", category)
+	if _, err := notificationCategoryIsMandatory(NotificationCategory(in.Category)); err != nil {
+		return ModuleNotifyUserResult{}, status.Errorf(codes.InvalidArgument, "invalid notification category %q", in.Category)
+	}
+	if err := s.requireTenantMember(ctx, in.Tenant, in.UserID); err != nil {
+		return ModuleNotifyUserResult{}, err
 	}
 	notification, err := s.CreateNotification(ctx, CreateNotificationInput{
-		UserID:         userID,
-		OrgID:          tenant,
-		Title:          title,
-		Body:           body,
-		Type:           notificationType,
-		ActionURL:      actionURL,
-		Category:       NotificationCategory(category),
-		IdempotencyKey: idempotencyKey,
+		UserID:         in.UserID,
+		OrgID:          in.Tenant,
+		Title:          in.Title,
+		Body:           in.Body,
+		Type:           in.Type,
+		ActionURL:      in.ActionURL,
+		Category:       NotificationCategory(in.Category),
+		IdempotencyKey: in.IdempotencyKey,
 	})
 	if err != nil {
 		return ModuleNotifyUserResult{}, err
@@ -347,7 +412,7 @@ func (s *Service) ModuleRequestApproval(ctx context.Context, caller ModuleCaller
 		EscalateAt:  in.EscalateAt,
 	})
 	if err != nil {
-		return "", status.Error(codes.InvalidArgument, err.Error())
+		return "", moduleApprovalError(err)
 	}
 	return id, nil
 }
@@ -361,7 +426,11 @@ func (s *Service) ModuleGetApproval(ctx context.Context, caller ModuleCaller, te
 	if err := authorizeTenant(caller, grant, tenant); err != nil {
 		return nil, err
 	}
-	return s.GetApprovalRequest(ctx, tenant, id)
+	approval, err := s.GetApprovalRequest(ctx, tenant, id)
+	if err != nil {
+		return nil, moduleApprovalError(err)
+	}
+	return approval, nil
 }
 
 // ModuleCancelApproval withdraws a still-open approval request.
@@ -373,7 +442,31 @@ func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller,
 	if err := authorizeTenant(caller, grant, tenant); err != nil {
 		return err
 	}
-	return s.CancelApprovalRequest(ctx, tenant, id, reason)
+	if err := s.CancelApprovalRequest(ctx, tenant, id, reason); err != nil {
+		return moduleApprovalError(err)
+	}
+	return nil
+}
+
+// moduleApprovalError maps approval-engine errors onto gRPC codes by their typed
+// StoreError. An untyped error is an internal fault, NOT bad client input: the
+// previous blanket InvalidArgument told a module its request was malformed even
+// when the database failed, so it would retry the same request forever.
+func moduleApprovalError(err error) error {
+	var se *StoreError
+	if errors.As(err, &se) {
+		switch se.StoreErrorType {
+		case ErrTypeValidation:
+			return status.Error(codes.InvalidArgument, err.Error())
+		case ErrTypeNotFound:
+			return status.Error(codes.NotFound, err.Error())
+		case ErrTypeConflict:
+			return status.Error(codes.FailedPrecondition, err.Error())
+		case ErrTypePermission:
+			return status.Error(codes.PermissionDenied, err.Error())
+		}
+	}
+	return status.Error(codes.Internal, err.Error())
 }
 
 // enqueueApprovalResume appends the resume outbox job for an approved request.
@@ -383,8 +476,15 @@ func (s *Service) ModuleCancelApproval(ctx context.Context, caller ModuleCaller,
 // rather than resuming the gated action twice. No-op when no resume queue is
 // declared or the producer is not wired.
 func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalRequest) error {
-	if req.ResumeRef.Queue == "" || s.moduleProducer == nil {
+	if req.ResumeRef.Queue == "" {
 		return nil
+	}
+	// A request that declares a resume queue MUST get its resume job or the whole
+	// decision aborts: silently approving without enqueuing the resume strands the
+	// gated action with no signal, which is exactly the loss this primitive exists
+	// to prevent. Fail the decision instead of dropping the resume.
+	if s.moduleProducer == nil {
+		return fmt.Errorf("approval %s declares resume queue %q but the module producer is not wired", req.ID, req.ResumeRef.Queue)
 	}
 	payload, err := json.Marshal(map[string]any{
 		"approval_id": req.ID,
@@ -437,13 +537,34 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	} else if err := authorizeTenant(caller, grant, tenant); err != nil {
 		return err
 	}
-	if _, ok := LookupAuditEvent(EventType(eventType)); !ok {
-		return status.Errorf(codes.InvalidArgument, "audit event type %q is not registered", eventType)
-	}
-	payload := map[string]any{"solution": solution}
+	payload := make(map[string]any)
 	for k, v := range fields.AsMap() {
 		payload[k] = v
 	}
-	s.emit(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+	// The scope solution wins over any client-supplied "solution" field: the
+	// scope is the trusted value, and it is set last so a field cannot shadow it.
+	payload["solution"] = solution
+	// Enforce the registered schema at the boundary: an unregistered type or an
+	// unknown/mistyped field is rejected, not stored free-form. (Downstream
+	// registry validation is only advisory; this is where the module's typed-
+	// fields contract is actually enforced.)
+	if err := ValidatePayload(EventType(eventType), payload); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	// The emission IS the operation the module requested, so a failed write must
+	// surface as an error — not the fire-and-forget emit(), which swallows the
+	// error and would report success while the event was silently lost.
+	emit := func(ctx context.Context) error {
+		return s.emitTx(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+	}
+	if tenant == "" {
+		if err := s.store.WithControlPlane(ctx, emit); err != nil {
+			return status.Error(codes.Internal, err.Error())
+		}
+		return nil
+	}
+	if err := s.store.WithOrgTx(ctx, tenant, emit); err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
 	return nil
 }

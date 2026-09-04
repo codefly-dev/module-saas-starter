@@ -270,7 +270,7 @@ func (s *Service) CreateApprovalRequest(ctx context.Context, in *CreateApprovalR
 		wool.Field("resource", in.Resource),
 		wool.Field("action", in.Action))
 	if err := in.validate(); err != nil {
-		return "", w.Wrapf(err, "validate")
+		return "", NewStoreError(w.Wrapf(err, "validate"), ErrTypeValidation)
 	}
 	quorum := resolvedQuorum(in.Quorum)
 
