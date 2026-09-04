@@ -19,6 +19,7 @@ type OwnedResourceStore interface {
 	GetWebhookSubscription(ctx context.Context, id string) (*WebhookSubscription, error)
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
 	GetPrincipal(ctx context.Context, id string) (*Principal, error)
+	GetDashboard(ctx context.Context, id string) (*Dashboard, error)
 }
 
 // ownedResourceResolver maps one owned-resource id to its owning organization.
@@ -31,6 +32,10 @@ type ownedResourceResolver func(ctx context.Context, store OwnedResourceStore, i
 // method's resource binding; this map only selects the kind-specific lookup.
 // A method absent here has no resolver and stays unsupported.
 var ownedResourceResolvers = map[string]ownedResourceResolver{
+	"/saas.accounts.v1.DashboardService/DeleteDashboard":   resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/GetDashboard":      resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/ShareDashboard":    resolveDashboardOrg,
+	"/saas.accounts.v1.DashboardService/UpdateDashboard":   resolveDashboardOrg,
 	"/saas.accounts.v1.InvitationService/ResendInvitation": resolveInvitationOrg,
 	"/saas.accounts.v1.InvitationService/RevokeInvitation": resolveInvitationOrg,
 	"/saas.accounts.v1.WebhookService/DeleteSubscription":  resolveSubscriptionOrg,
@@ -40,6 +45,14 @@ var ownedResourceResolvers = map[string]ownedResourceResolver{
 	"/saas.accounts.v1.WebhookService/GetDelivery":         resolveDeliveryOrg,
 	"/saas.accounts.v1.WebhookService/ReplayDelivery":      resolveDeliveryOrg,
 	"/saas.accounts.v1.PrincipalService/RevokePrincipal":   resolvePrincipalOrg,
+}
+
+func resolveDashboardOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {
+	dashboard, err := store.GetDashboard(ctx, id)
+	if err != nil || dashboard == nil {
+		return "", err
+	}
+	return dashboard.OrgID, nil
 }
 
 func resolveInvitationOrg(ctx context.Context, store OwnedResourceStore, id string) (string, error) {

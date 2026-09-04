@@ -153,12 +153,12 @@ func TestClassifyCentralCoverageBuckets(t *testing.T) {
 	}
 }
 
-// The eight invitation and webhook owned-resource methods the epic calls out
-// each have a registered ownership resolver, so static classification no longer
-// pins them at unsupported. They remain gap — not ok — because they also
-// declare an org tenant and permission the interceptor does not yet resolve; a
-// resolution miss on a real request downgrades the shadow signal back to
-// unsupported (covered in the adapters shadow test).
+// The invitation, webhook, principal, and dashboard owned-resource methods each
+// have a registered ownership resolver, so static classification no longer pins
+// them at unsupported. They remain gap — not ok — because they also declare an
+// org tenant and permission the interceptor does not yet resolve; a resolution
+// miss on a real request downgrades the shadow signal back to unsupported
+// (covered in the adapters shadow test).
 func TestOwnedResourceMethodsAreResolvableGap(t *testing.T) {
 	for _, method := range []string{
 		"/saas.accounts.v1.InvitationService/ResendInvitation",
@@ -170,6 +170,10 @@ func TestOwnedResourceMethodsAreResolvableGap(t *testing.T) {
 		"/saas.accounts.v1.WebhookService/RotateSecret",
 		"/saas.accounts.v1.WebhookService/TestWebhook",
 		"/saas.accounts.v1.PrincipalService/RevokePrincipal",
+		"/saas.accounts.v1.DashboardService/GetDashboard",
+		"/saas.accounts.v1.DashboardService/UpdateDashboard",
+		"/saas.accounts.v1.DashboardService/DeleteDashboard",
+		"/saas.accounts.v1.DashboardService/ShareDashboard",
 	} {
 		policy, ok := LookupRPCPolicy(method)
 		require.True(t, ok, method)

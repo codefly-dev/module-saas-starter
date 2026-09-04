@@ -61,6 +61,18 @@
       ]
     },
     {
+      "name": "DashboardService",
+      "full_name": "saas.accounts.v1.DashboardService",
+      "procedures": [
+        "/saas.accounts.v1.DashboardService/CreateDashboard",
+        "/saas.accounts.v1.DashboardService/DeleteDashboard",
+        "/saas.accounts.v1.DashboardService/GetDashboard",
+        "/saas.accounts.v1.DashboardService/ListDashboards",
+        "/saas.accounts.v1.DashboardService/ShareDashboard",
+        "/saas.accounts.v1.DashboardService/UpdateDashboard"
+      ]
+    },
+    {
       "name": "DatasourceService",
       "full_name": "saas.accounts.v1.DatasourceService",
       "procedures": [
@@ -1566,6 +1578,314 @@
       },
       "policy_tier": "auth",
       "description": "Persist purpose-based optional tracking choices and withdrawals.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/CreateDashboard",
+      "service": "DashboardService",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "CreateDashboard",
+      "input_type": "saas.accounts.v1.CreateDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:write"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.created"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "Create a named, user-owned dashboard from a validated spec.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/DeleteDashboard",
+      "service": "DashboardService",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "DeleteDashboard",
+      "input_type": "saas.accounts.v1.DeleteDashboardRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:write"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.deleted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "Delete a dashboard the caller owns or administers.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/GetDashboard",
+      "service": "DashboardService",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "GetDashboard",
+      "input_type": "saas.accounts.v1.GetDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:read"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "Open one dashboard the caller owns or that is shared to the org.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/ListDashboards",
+      "service": "DashboardService",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "ListDashboards",
+      "input_type": "saas.accounts.v1.ListDashboardsRequest",
+      "output_type": "saas.accounts.v1.ListDashboardsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:read"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "List the caller's own and org-shared dashboards.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/ShareDashboard",
+      "service": "DashboardService",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "ShareDashboard",
+      "input_type": "saas.accounts.v1.ShareDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "dashboards:share"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.shared"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Change a dashboard's visibility between private and org-shared.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/UpdateDashboard",
+      "service": "DashboardService",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "UpdateDashboard",
+      "input_type": "saas.accounts.v1.UpdateDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:write"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "description": "Rename or replace the spec of a dashboard the caller owns or administers.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8771,6 +9091,40 @@
         "admin (via *:*)"
       ],
       "api_key_scope": true
+    },
+    {
+      "permission": "dashboards:read",
+      "resource": "dashboards",
+      "action": "read",
+      "description": "List and open own and org-shared dashboards.",
+      "built_in_roles": [
+        "admin (via *:*)",
+        "editor",
+        "viewer"
+      ],
+      "api_key_scope": false
+    },
+    {
+      "permission": "dashboards:share",
+      "resource": "dashboards",
+      "action": "share",
+      "description": "Promote a dashboard to org-shared visibility.",
+      "built_in_roles": [
+        "admin (via *:*)"
+      ],
+      "api_key_scope": false
+    },
+    {
+      "permission": "dashboards:write",
+      "resource": "dashboards",
+      "action": "write",
+      "description": "Create, rename, edit, and delete own dashboards.",
+      "built_in_roles": [
+        "admin (via *:*)",
+        "editor",
+        "viewer"
+      ],
+      "api_key_scope": false
     },
     {
       "permission": "entitlements:read",

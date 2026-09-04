@@ -941,6 +941,278 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.DashboardService/CreateDashboard",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "CreateDashboard",
+      "input_type": "saas.accounts.v1.CreateDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:write"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.created"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "policy_sha256": "e0675b74f40c8da330fbf342afe7aa4d61c6c1660a797961e23a95511090e843",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/DeleteDashboard",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "DeleteDashboard",
+      "input_type": "saas.accounts.v1.DeleteDashboardRequest",
+      "output_type": "google.protobuf.Empty",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:write"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.deleted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "policy_sha256": "3cc6cd06d9e9ca8252334efe9fb1fb517d118ef45065a01f427c5cf7f57871dc",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/GetDashboard",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "GetDashboard",
+      "input_type": "saas.accounts.v1.GetDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:read"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "policy_sha256": "b82db0cbef864b241dd3752429a13a36a63ae9f06ad5fa5065b09589bc548b80",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/ListDashboards",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "ListDashboards",
+      "input_type": "saas.accounts.v1.ListDashboardsRequest",
+      "output_type": "saas.accounts.v1.ListDashboardsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:read"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "policy_sha256": "5eacda2b5cc5dc922184138b6bfcf3d2a3010b24e1545b3b10f42581cd93d0cb",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/ShareDashboard",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "ShareDashboard",
+      "input_type": "saas.accounts.v1.ShareDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [
+          "dashboards:share"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.shared"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "policy_sha256": "bbbc01486375fe90884c9af4afe88c2f5e70ac1910ac7e2b48add0ba0cba4def",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.DashboardService/UpdateDashboard",
+      "full_service": "saas.accounts.v1.DashboardService",
+      "method": "UpdateDashboard",
+      "input_type": "saas.accounts.v1.UpdateDashboardRequest",
+      "output_type": "saas.accounts.v1.Dashboard",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [
+          "dashboards:write"
+        ],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "id",
+            "target": "RESOURCE_TARGET_OWNED_RESOURCE",
+            "lookup": "RESOURCE_LOOKUP_RESOURCE_TO_ORGANIZATION"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "dashboard.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_member",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/dashboards.proto",
+      "policy_sha256": "1c8a444b4fd62a54408fef5b208f7747c5c27020d301208948c9a274a3be80dd",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/AddGitHubSource",
       "full_service": "saas.accounts.v1.DatasourceService",
       "method": "AddGitHubSource",
