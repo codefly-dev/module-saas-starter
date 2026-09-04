@@ -53,6 +53,16 @@
 			"types": "./dist/layout/index.d.ts",
 			"import": "./dist/layout/index.js",
 			"default": "./dist/layout/index.js"
+		},
+		"./table": {
+			"types": "./dist/table/index.d.ts",
+			"import": "./dist/table/index.js",
+			"default": "./dist/table/index.js"
+		},
+		"./form": {
+			"types": "./dist/form/index.d.ts",
+			"import": "./dist/form/index.js",
+			"default": "./dist/form/index.js"
 		}
 	},
 	"scripts": {

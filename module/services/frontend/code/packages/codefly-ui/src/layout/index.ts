@@ -9,6 +9,19 @@
 export { Card, type CardProps, Section, type SectionProps } from "./card.js";
 export { type TabItem, Tabs, type TabsProps } from "./tabs.js";
 
+// Shell / navigation
+export { Breadcrumbs, type Crumb } from "./breadcrumbs.js";
+export { PageHeader } from "./page-header.js";
+
+// Feedback / state
+export { Banner, bannerVariants } from "./banner.js";
+export { EmptyState } from "./empty-state.js";
+export { ErrorState } from "./error-state.js";
+export { Spinner, spinnerVariants } from "./spinner.js";
+export { StatTile } from "./stat-tile.js";
+export { Pagination } from "./pagination.js";
+export { RadioGroup, RadioGroupItem } from "./radio-group.js";
+
 // Actions
 export { Button, buttonVariants } from "./button.js";
 
