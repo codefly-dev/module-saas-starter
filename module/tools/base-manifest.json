@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1982,
+  "fileCount": 1983,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "04b26fa6b1fc30d14bba63807aa55e5291175d1e2817b75826defc053f77927e",
@@ -909,7 +909,8 @@
     "services/frontend/code/next.config.mjs": "1b1d7f364b8f7f1614c119ab92016a4fe722b7da9b7dae26d7d237dff52f0d91",
     "services/frontend/code/package.json": "56fc2ea7fedfe3912ba369c6aae1df4d7801abe4665a8b924566400b68b5c4e9",
     "services/frontend/code/packages/codefly-ui/ARCHITECTURE.md": "0aa863222730e5dc0097800aef72628ecd868c93917ed45d644ccd11bf928c14",
-    "services/frontend/code/packages/codefly-ui/README.md": "4f642096e77da74ac36ffb9987ff530f45cafde6eb91a85807df6695e3a7eb20",
+    "services/frontend/code/packages/codefly-ui/CATALOG.md": "370a558b449136195867d87320d565b9394c0746cf1d7a252655105de592fc3c",
+    "services/frontend/code/packages/codefly-ui/README.md": "4973cbac4c66f784f062385846aa1e990cf418725a5326ddeff910d0afc8e1c1",
     "services/frontend/code/packages/codefly-ui/TOKENS.md": "01bca272f0232aa05a03100f79f3e2660df7ddaa184ffbe92dab3212d1c89cbc",
     "services/frontend/code/packages/codefly-ui/package.json": "e059a75443add9173f088b7408441cfb47723766bd93853e61dd9cfb3aed80b8",
     "services/frontend/code/packages/codefly-ui/src/__tests__/architecture.test.ts": "d84234fbce2d271de48c2e79b7312e0c6bb1853f0eb15a50ea3ec9dbdeb0dbe6",
