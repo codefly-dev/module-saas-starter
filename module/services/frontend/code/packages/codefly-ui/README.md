@@ -8,7 +8,9 @@ downstream skin (tokens as data), never code in the kit.
 
 The layered design every primitive is checked against — the tier stack, the
 compose-don't-re-inline / singleton / pure-data-in invariants, and the guard
-that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
+that enforces them — lives in [ARCHITECTURE.md](./ARCHITECTURE.md). *Which*
+components the kit ships — the agreed catalog (ships today / promote / propose)
+and the v1 subset — is [CATALOG.md](./CATALOG.md).
 
 ## What ships here
 
