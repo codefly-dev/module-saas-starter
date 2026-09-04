@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 1982,
+  "fileCount": 1983,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "04b26fa6b1fc30d14bba63807aa55e5291175d1e2817b75826defc053f77927e",
@@ -183,6 +183,7 @@
     "services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go": "b06547347a3186248a81bb289175280b79431a3ac5e710bad43cd01c9888cd33",
     "services/accounts/code/pkg/adapters/rest_surface_test.go": "3a79e3d3076a259d9feef4fe2f1775158dd67dd9627a0e60df5da5e292166a66",
     "services/accounts/code/pkg/adapters/rpc_policy_enforce_test.go": "db0584340713ae946b7bb8343e4721d20a3caa310bf3bcef539a4be8836bc8e9",
+    "services/accounts/code/pkg/adapters/rpc_policy_global_scope_test.go": "5e99a0eebeb79e74cc8a036254fedca4389283a3493e270e3cde136ccf47a70f",
     "services/accounts/code/pkg/adapters/rpc_policy_interceptor_test.go": "01c6a3b2ac24f03bb81b0d48784c8e83ee714d5e58ec037d1a00ecc4bdd6c7b9",
     "services/accounts/code/pkg/adapters/rpc_policy_lockstep_test.go": "31e06bef64da7dfd837dd5df4ff0b7c79508a3b3254e84ed92ed9c02739a5ee1",
     "services/accounts/code/pkg/adapters/rpc_policy_shadow_test.go": "04f5d9e85f4bce9b609268ff75ae5c24c20869dea8a56dadf057817b8d0adde4",
@@ -385,8 +386,8 @@
     "services/accounts/code/pkg/business/rls_webhooks_test.go": "902c109df2153fba333c41d81c25ad99ade68fc4a44010fec31c3d70b0d2739e",
     "services/accounts/code/pkg/business/role_assignment_e2e_test.go": "d0f9414fbc977422e1010be407b2d715184ce09adb1deb23d07f24d544892e41",
     "services/accounts/code/pkg/business/rpc_policy.go": "448d71b6b8f0b45bc816a3453612f0cade5ed3af775238e764aa68840f72dec2",
-    "services/accounts/code/pkg/business/rpc_policy_coverage.go": "839a74e9560d57178978b336a52f6aad04c7dd5c8adfda2071824270ef4ef1c0",
-    "services/accounts/code/pkg/business/rpc_policy_coverage_test.go": "af496d99a852ddbad69f2eec2311592d43862cffda8f03c6d0fd6147aad28cab",
+    "services/accounts/code/pkg/business/rpc_policy_coverage.go": "725229a9d74770a544ee6b99bd5482c7255bdf167cf68e59ec246e76a94cce54",
+    "services/accounts/code/pkg/business/rpc_policy_coverage_test.go": "7c7171d94ca72e13de10f5ca360969062b9f8a97dd91fbfb7d1c8690d2583cac",
     "services/accounts/code/pkg/business/rpc_policy_matrix.go": "22fa98916318fc1f04bc9b51ae9bfbc00dccd970ab61dd552c190c3d45ed8851",
     "services/accounts/code/pkg/business/service.go": "2f1a2b4142fbe3e61ea9cef8146bec1b1d376e9ba60d9420a1debd7cea1299e4",
     "services/accounts/code/pkg/business/service_catalog.go": "40d80216aa9d956dafb962c10c00897e4da2afedd0a445756f63345a91399222",

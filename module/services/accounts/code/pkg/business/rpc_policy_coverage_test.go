@@ -107,6 +107,39 @@ func TestCentralTenantEnforcementImpliesOK(t *testing.T) {
 	}
 }
 
+// The requireRoleScope family (role/scope/share mutations) carries a global-scope
+// escape hatch — platform admin when the org scope is empty — that the flat IDL
+// cannot express as an alternative to its ORG_ADMIN floor. The central
+// interceptor cannot resolve that empty-org branch (it never reads the request
+// body), so these methods must not be centrally enforced and must classify
+// honestly as gap, not ok. Without the escape set the ORG_ADMIN scope/share
+// methods read as ok (centrally enforced), which both over-denies a platform
+// admin on global scope and hides the broadening of an org admin on global scope.
+// TestGlobalScopeEscapeHatchMatchesHandlers (adapters) pins this set to the real
+// requireRoleScope call sites so it cannot drift.
+func TestGlobalScopeEscapeMethodsClassifyGapAndAreNotEnforced(t *testing.T) {
+	want := []string{
+		"/saas.accounts.v1.PermissionService/AssignRole",
+		"/saas.accounts.v1.PermissionService/CreateRole",
+		"/saas.accounts.v1.PermissionService/GrantScope",
+		"/saas.accounts.v1.PermissionService/ListShares",
+		"/saas.accounts.v1.PermissionService/RegisterScopeNode",
+		"/saas.accounts.v1.PermissionService/RevokeRole",
+		"/saas.accounts.v1.PermissionService/RevokeScope",
+		"/saas.accounts.v1.PermissionService/RevokeShare",
+		"/saas.accounts.v1.PermissionService/ShareRecord",
+	}
+	require.Len(t, globalScopeEscapeMethods, len(want), "escape set size drifted from the pinned list")
+	for _, method := range want {
+		require.Contains(t, globalScopeEscapeMethods, method)
+		policy, ok := LookupRPCPolicy(method)
+		require.Truef(t, ok, "%s is not classified", method)
+		require.Equalf(t, CoverageGap, ClassifyCentralCoverage(policy), "%s must classify gap", method)
+		_, enforced := CentralTenantEnforcement(policy)
+		require.Falsef(t, enforced, "%s must not be centrally enforced", method)
+	}
+}
+
 func TestClassifyCentralCoverageBuckets(t *testing.T) {
 	cases := map[string]CentralCoverage{
 		// Public and internal exposure is fully enforced by the interceptor.
