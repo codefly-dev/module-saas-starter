@@ -121,9 +121,9 @@ to first-class kit components de-duplicates real code rather than speculating.
 
 ## Decisions
 
-The issue's four open questions. #448 (CSS) and #450 (sealing) have since landed,
-so the two questions the catalog was *gated* on now have answers rather than
-options.
+The issue's four open questions. The two the catalog was *gated* on are now
+decided: CSS ownership resolved to host authority (core-solutions#48) and sealing
+landed (#450) — so they have answers rather than options.
 
 ### D1. Primitive ownership
 
@@ -141,12 +141,18 @@ keeps zero primitive *definitions*.
 
 ### D2. CSS ownership
 
-**Settled by #448 / core-solutions#48: the kit ships its own compiled CSS; the host
-owns only token *values* (the skin).** A remote/module renders styled standalone,
-without a host-provided global stylesheet. That is what unblocks this catalog —
-every component here renders with Tailwind/shadcn classes, and until the kit emitted
-its own stylesheet a promoted primitive would have rendered unstyled in a remote.
-With #448 landed, promotion no longer waits on anything.
+**Settled by core-solutions#48: the host is the single CSS authority.** The host
+builds the one compiled stylesheet and owns the `:root` token *values* (the skin);
+the kit and every module/remote ship **no** CSS of their own and are not expected to
+render standalone. (#448 tracked the alternative — the kit shipping its own compiled
+CSS — and was closed in favour of host authority; don't re-open it.)
+
+What this means for the catalog: because the host owns the stylesheet, its Tailwind
+build must *see* every consumer's class strings. So promoting a primitive into the
+kit requires the host's Tailwind scan to cover the kit source (`@source` /
+`content`), and that scan generalizes to module UI and solution remotes as they move
+into the kit. Every component here renders with Tailwind/shadcn classes, so the
+catalog is gated on that scan — not on the kit emitting anything.
 
 ### D3. v1 scope
 
