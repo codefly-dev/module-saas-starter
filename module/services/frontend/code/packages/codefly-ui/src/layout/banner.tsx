@@ -57,7 +57,9 @@ function Banner({
 			className={cn(bannerVariants({ tone }), className)}
 			{...props}
 		>
-			{icon ?? <Icon aria-hidden />}
+			{/* An explicit `icon` (including `null` to suppress) wins; only an
+			    omitted prop falls back to the tone's default icon. */}
+			{icon === undefined ? <Icon aria-hidden /> : icon}
 			<div className="flex-1 space-y-0.5">
 				{title && <p className="font-medium">{title}</p>}
 				{children && <div className="text-muted-foreground">{children}</div>}

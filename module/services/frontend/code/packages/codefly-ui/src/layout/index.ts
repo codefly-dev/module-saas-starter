@@ -12,6 +12,7 @@ export { type TabItem, Tabs, type TabsProps } from "./tabs.js";
 // Shell / navigation
 export { Breadcrumbs, type Crumb } from "./breadcrumbs.js";
 export { PageHeader } from "./page-header.js";
+export { Pagination } from "./pagination.js";
 
 // Feedback / state
 export { Banner, bannerVariants } from "./banner.js";
@@ -19,8 +20,6 @@ export { EmptyState } from "./empty-state.js";
 export { ErrorState } from "./error-state.js";
 export { Spinner, spinnerVariants } from "./spinner.js";
 export { StatTile } from "./stat-tile.js";
-export { Pagination } from "./pagination.js";
-export { RadioGroup, RadioGroupItem } from "./radio-group.js";
 
 // Actions
 export { Button, buttonVariants } from "./button.js";
@@ -31,6 +30,7 @@ export { Textarea } from "./textarea.js";
 export { Label } from "./label.js";
 export { Checkbox } from "./checkbox.js";
 export { Switch } from "./switch.js";
+export { RadioGroup, RadioGroupItem } from "./radio-group.js";
 export {
 	Select,
 	SelectContent,

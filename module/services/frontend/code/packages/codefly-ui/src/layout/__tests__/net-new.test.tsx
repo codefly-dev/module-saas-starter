@@ -33,6 +33,18 @@ describe("StatTile", () => {
 		);
 		expect(container.querySelector(".lucide-arrow-up")).toBeTruthy();
 	});
+
+	it("shows no arrow and a neutral tone for a flat (zero) delta", () => {
+		const { container } = render(
+			<StatTile label="Sessions" value="500" delta="0%" />,
+		);
+		expect(container.querySelector(".lucide-arrow-up")).toBeNull();
+		expect(container.querySelector(".lucide-arrow-down")).toBeNull();
+		// Neutral tone → muted, not the positive chart-2 color.
+		const badge = screen.getByText("0%");
+		expect(badge.className).toContain("muted");
+		expect(badge.className).not.toContain("chart-2");
+	});
 });
 
 describe("Banner", () => {
@@ -49,6 +61,18 @@ describe("Banner", () => {
 		expect(screen.getByText("Heads up")).toBeTruthy();
 		expect(screen.getByText("body copy")).toBeTruthy();
 		expect(screen.getByRole("button", { name: "Fix" })).toBeTruthy();
+	});
+
+	it("renders the tone's default icon when none is given", () => {
+		const { container } = render(<Banner tone="warning" title="Heads up" />);
+		expect(container.querySelector("svg")).toBeTruthy();
+	});
+
+	it("suppresses the icon when icon={null} is passed explicitly", () => {
+		const { container } = render(
+			<Banner tone="warning" title="Heads up" icon={null} />,
+		);
+		expect(container.querySelector("svg")).toBeNull();
 	});
 });
 

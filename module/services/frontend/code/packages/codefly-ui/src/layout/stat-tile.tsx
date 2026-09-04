@@ -31,12 +31,18 @@ function StatTile({
 	/** A trailing visual — a sparkline (`StatChart`), a small chart, etc. */
 	visual?: React.ReactNode;
 }) {
-	const isNegativeValue = delta?.trim().startsWith("-") ?? false;
+	// The delta's numeric magnitude gives a three-way sign, so a flat delta
+	// ("0%") is neutral with no arrow rather than a spurious positive/up. Strip
+	// everything but digits and the sign/decimal so "+12%", "-8.0%", "1,284%" all
+	// parse; a non-numeric or absent delta reads as sign 0 (neutral).
+	const magnitude = delta
+		? Number.parseFloat(delta.replace(/[^\d.+-]/g, ""))
+		: Number.NaN;
+	const sign = Number.isNaN(magnitude) ? 0 : Math.sign(magnitude);
 	// Color reads the semantics (a caller may mark a decline "positive", e.g.
 	// fewer failed logins); the arrow always follows the number's actual sign.
 	const tone: DeltaTone =
-		deltaTone ??
-		(isNegativeValue ? "negative" : delta ? "positive" : "neutral");
+		deltaTone ?? (sign < 0 ? "negative" : sign > 0 ? "positive" : "neutral");
 	return (
 		<Card className={cn("flex flex-col gap-2", className)} {...props}>
 			<div className="flex items-start justify-between gap-2">
@@ -64,11 +70,11 @@ function StatTile({
 							tone === "neutral" && "bg-muted text-muted-foreground",
 						)}
 					>
-						{isNegativeValue ? (
+						{sign < 0 ? (
 							<ArrowDownIcon className="size-3" aria-hidden />
-						) : (
+						) : sign > 0 ? (
 							<ArrowUpIcon className="size-3" aria-hidden />
-						)}
+						) : null}
 						{delta}
 					</span>
 					{deltaLabel && (
