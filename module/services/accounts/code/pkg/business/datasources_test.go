@@ -10,7 +10,9 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/apisource"
+	"accounts/pkg/datasource/crawler"
 	"accounts/pkg/datasource/github"
+	"accounts/pkg/datasource/objectstore"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 )
 
@@ -520,6 +522,211 @@ func TestAddSource_GitHubBranchThroughGenericCall(t *testing.T) {
 	}
 	if source.Provider != business.DatasourceProviderGitHub || source.Repo != "acme/docs" || source.Branch != "main" {
 		t.Fatalf("github source = %+v", source)
+	}
+}
+
+// fakeCrawlerClient returns fixed crawled pages without a live website.
+type fakeCrawlerClient struct {
+	pages []crawler.Page
+	err   error
+	calls int
+}
+
+func (f *fakeCrawlerClient) Fetch(context.Context) ([]crawler.Page, error) {
+	f.calls++
+	return f.pages, f.err
+}
+
+// fakeUploadClient returns fixed objects without a live object store.
+type fakeUploadClient struct {
+	objects []objectstore.Object
+	err     error
+	calls   int
+}
+
+func (f *fakeUploadClient) Fetch(context.Context) ([]objectstore.Object, error) {
+	f.calls++
+	return f.objects, f.err
+}
+
+func crawlerConfig() *business.CrawlerDatasourceConfig {
+	return &business.CrawlerDatasourceConfig{SitemapURL: "https://docs.example.com/sitemap.xml"}
+}
+
+func uploadConfig() *business.UploadDatasourceConfig {
+	return &business.UploadDatasourceConfig{
+		Endpoint:    "https://s3.us-east-1.amazonaws.com",
+		Region:      "us-east-1",
+		Bucket:      "docs",
+		Prefix:      "kb/",
+		AccessKeyID: "AKIAEXAMPLE",
+	}
+}
+
+func TestAddSource_CrawlerStoresConfigAndTakesNoCredential(t *testing.T) {
+	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID:            testOrg,
+		Provider:         business.DatasourceProviderCrawler,
+		TargetCollection: "wiki",
+		Crawler:          crawlerConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Provider != business.DatasourceProviderCrawler || source.Crawler == nil ||
+		source.Crawler.SitemapURL != "https://docs.example.com/sitemap.xml" {
+		t.Fatalf("crawler source = %+v", source)
+	}
+	if source.CredentialSecretRef != "" {
+		t.Fatalf("crawler must store no credential, got %q", source.CredentialSecretRef)
+	}
+	if source.WebhookConfigured() {
+		t.Fatal("crawler must not be webhook-configured")
+	}
+	if got := audit.types(); len(got) != 1 || got[0] != business.EventDatasourceSourceAdded {
+		t.Fatalf("audit events = %v", got)
+	}
+}
+
+func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID:            testOrg,
+		Provider:         business.DatasourceProviderUpload,
+		TargetCollection: "wiki",
+		Credential:       "secretkey",
+		Upload:           uploadConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Upload == nil || source.Upload.Bucket != "docs" || source.Upload.AccessKeyID != "AKIAEXAMPLE" {
+		t.Fatalf("upload config = %+v", source.Upload)
+	}
+	wantCred := "enc:" + business.DatasourceConnectorSecretPurpose(source.ID) + ":secretkey"
+	if source.CredentialSecretRef != wantCred {
+		t.Fatalf("credential ref = %q, want %q", source.CredentialSecretRef, wantCred)
+	}
+}
+
+func TestAddSource_NewProviderValidation(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+	cases := map[string]business.AddSourceInput{
+		"crawler without config": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki"},
+		"crawler bad sitemap": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki",
+			Crawler: &business.CrawlerDatasourceConfig{SitemapURL: "ftp://x"}},
+		"crawler with credential": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki",
+			Credential: "nope", Crawler: crawlerConfig()},
+		"crawler with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki",
+			WebhookSecret: "whsec", Crawler: crawlerConfig()},
+		"upload without config": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c"},
+		"upload without credential": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki",
+			Upload: uploadConfig()},
+		"upload bad endpoint": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c",
+			Upload: &business.UploadDatasourceConfig{Endpoint: "ftp://x", Region: "us-east-1", Bucket: "b", AccessKeyID: "k"}},
+		"upload missing region": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c",
+			Upload: &business.UploadDatasourceConfig{Endpoint: "https://s3.example.com", Bucket: "b", AccessKeyID: "k"}},
+		"upload with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c",
+			WebhookSecret: "whsec", Upload: uploadConfig()},
+	}
+	for name, in := range cases {
+		if _, err := svc.AddSource(context.Background(), "actor-1", in); err == nil {
+			t.Errorf("%s: want error, got nil", name)
+		}
+	}
+}
+
+func TestRunDatasourceSync_CrawlerEnqueuesPerPage(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	fake := &fakeCrawlerClient{pages: []crawler.Page{
+		{URL: "https://docs.example.com/a", Body: []byte("A"), ContentType: "text/html"},
+		{URL: "https://docs.example.com/b", Body: []byte("B"), ContentType: "text/html"},
+	}}
+	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki", Crawler: crawlerConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enqueued != 2 || len(producer.jobs) != 2 || fake.calls != 1 {
+		t.Fatalf("enqueued=%d jobs=%d calls=%d, want 2/2/1", enqueued, len(producer.jobs), fake.calls)
+	}
+	job := producer.jobs[0]
+	if job.GetTopic() != "datasource.crawler.sync" || !job.GetScope().GetGlobal() {
+		t.Fatalf("topic=%q scope=%v", job.GetTopic(), job.GetScope())
+	}
+	if string(job.GetPayload()) != "A" || job.GetContentType() != "text/html" {
+		t.Fatalf("payload=%q type=%q", job.GetPayload(), job.GetContentType())
+	}
+	attrs := job.GetAttributes()
+	if attrs["datasource.source_id"] != source.ID || attrs["datasource.org_id"] != testOrg ||
+		attrs["crawler.url"] != "https://docs.example.com/a" || attrs["crawler.content_sha"] == "" ||
+		attrs["datasource.target_collection"] != "wiki" {
+		t.Fatalf("attributes = %v", attrs)
+	}
+	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
+		t.Fatal("idempotency keys collided across pages")
+	}
+}
+
+func TestRunDatasourceSync_UploadEnqueuesPerObject(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	var gotSecret string
+	fake := &fakeUploadClient{objects: []objectstore.Object{
+		{Key: "kb/a.pdf", Body: []byte("PDFA"), ContentType: "application/pdf", ETag: "etag-a"},
+		{Key: "kb/b.pdf", Body: []byte("PDFB"), ContentType: "application/pdf", ETag: "etag-b"},
+	}}
+	svc.SetDatasourceUploadClientFactory(func(_ business.UploadDatasourceConfig, secret string) business.UploadContentClient {
+		gotSecret = secret
+		return fake
+	})
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki",
+		Credential: "secretkey", Upload: uploadConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enqueued != 2 || len(producer.jobs) != 2 || fake.calls != 1 {
+		t.Fatalf("enqueued=%d jobs=%d calls=%d, want 2/2/1", enqueued, len(producer.jobs), fake.calls)
+	}
+	// The decrypted secret access key must reach the connector factory.
+	if gotSecret != "secretkey" {
+		t.Fatalf("secret handed to connector = %q, want the decrypted secret key", gotSecret)
+	}
+	job := producer.jobs[0]
+	if job.GetTopic() != "datasource.upload.sync" || !job.GetScope().GetGlobal() {
+		t.Fatalf("topic=%q scope=%v", job.GetTopic(), job.GetScope())
+	}
+	if string(job.GetPayload()) != "PDFA" || job.GetContentType() != "application/pdf" {
+		t.Fatalf("payload=%q type=%q", job.GetPayload(), job.GetContentType())
+	}
+	attrs := job.GetAttributes()
+	if attrs["datasource.source_id"] != source.ID || attrs["upload.bucket"] != "docs" ||
+		attrs["upload.key"] != "kb/a.pdf" || attrs["upload.etag"] != "etag-a" ||
+		attrs["datasource.target_collection"] != "wiki" {
+		t.Fatalf("attributes = %v", attrs)
+	}
+	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
+		t.Fatal("idempotency keys collided across objects")
 	}
 }
 

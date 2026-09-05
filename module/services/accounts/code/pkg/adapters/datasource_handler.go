@@ -76,6 +76,22 @@ func (h *datasourceConnectHandler) AddSource(
 			CredentialHeader: api.CredentialHeader,
 		}
 	}
+	if c := req.Msg.GetCrawler(); c != nil {
+		input.Crawler = &business.CrawlerDatasourceConfig{
+			SitemapURL: c.SitemapUrl,
+			MaxPages:   int(c.MaxPages),
+		}
+	}
+	if up := req.Msg.GetUpload(); up != nil {
+		input.Upload = &business.UploadDatasourceConfig{
+			Endpoint:    up.Endpoint,
+			Region:      up.Region,
+			Bucket:      up.Bucket,
+			Prefix:      up.Prefix,
+			AccessKeyID: up.AccessKeyId,
+			MaxObjects:  int(up.MaxObjects),
+		}
+	}
 	source, err := h.svc.AddSource(ctx, actorID, input)
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -208,6 +224,22 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 			CredentialHeader: source.API.CredentialHeader,
 		}
 	}
+	if source.Crawler != nil {
+		out.Crawler = &gen.CrawlerDatasourceConfig{
+			SitemapUrl: source.Crawler.SitemapURL,
+			MaxPages:   uint32(source.Crawler.MaxPages),
+		}
+	}
+	if source.Upload != nil {
+		out.Upload = &gen.UploadDatasourceConfig{
+			Endpoint:    source.Upload.Endpoint,
+			Region:      source.Upload.Region,
+			Bucket:      source.Upload.Bucket,
+			Prefix:      source.Upload.Prefix,
+			AccessKeyId: source.Upload.AccessKeyID,
+			MaxObjects:  uint32(source.Upload.MaxObjects),
+		}
+	}
 	if source.LastSyncedAt != nil {
 		out.LastSyncedAt = timestamppb.New(*source.LastSyncedAt)
 	}
@@ -220,6 +252,10 @@ func datasourceProviderToProto(provider string) gen.DatasourceProvider {
 		return gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB
 	case business.DatasourceProviderAPI:
 		return gen.DatasourceProvider_DATASOURCE_PROVIDER_API
+	case business.DatasourceProviderCrawler:
+		return gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER
+	case business.DatasourceProviderUpload:
+		return gen.DatasourceProvider_DATASOURCE_PROVIDER_UPLOAD
 	default:
 		return gen.DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED
 	}
@@ -231,6 +267,10 @@ func datasourceProviderFromProto(provider gen.DatasourceProvider) string {
 		return business.DatasourceProviderGitHub
 	case gen.DatasourceProvider_DATASOURCE_PROVIDER_API:
 		return business.DatasourceProviderAPI
+	case gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER:
+		return business.DatasourceProviderCrawler
+	case gen.DatasourceProvider_DATASOURCE_PROVIDER_UPLOAD:
+		return business.DatasourceProviderUpload
 	default:
 		return ""
 	}
@@ -288,6 +328,30 @@ func datasourceCatalog() *gen.GetDatasourceCatalogResponse {
 					{Key: "resource_path", DisplayName: "Resource path", Help: "Path fetched on sync, relative to the base URL.", Required: false},
 					{Key: "credential_kind", DisplayName: "Credential kind", Help: "How the credential is sent: bearer, basic, or header.", Required: true},
 					{Key: "credential_header", DisplayName: "Credential header", Help: "Header name, when the credential kind is header.", Required: false},
+				},
+				SupportsWebhook: false,
+			},
+			{
+				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER,
+				DisplayName: "Web crawler",
+				Description: "A documentation website, ingested from its sitemap.xml on sync. Needs no credential.",
+				ConfigFields: []*gen.DatasourceConfigField{
+					{Key: "sitemap_url", DisplayName: "Sitemap URL", Help: "Absolute http(s) URL of the site's sitemap.xml.", Required: true},
+					{Key: "max_pages", DisplayName: "Max pages", Help: "Upper bound on pages fetched per sync; empty applies the default.", Required: false},
+				},
+				SupportsWebhook: false,
+			},
+			{
+				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_UPLOAD,
+				DisplayName: "Object storage",
+				Description: "An S3-compatible bucket; objects under a prefix are pulled on sync. The credential is the secret access key.",
+				ConfigFields: []*gen.DatasourceConfigField{
+					{Key: "endpoint", DisplayName: "Endpoint", Help: "Absolute http(s) endpoint, e.g. https://s3.us-east-1.amazonaws.com", Required: true},
+					{Key: "region", DisplayName: "Region", Help: "Signing region, e.g. us-east-1.", Required: true},
+					{Key: "bucket", DisplayName: "Bucket", Help: "Bucket to pull from.", Required: true},
+					{Key: "prefix", DisplayName: "Prefix", Help: "Key prefix to pull under; empty pulls the whole bucket.", Required: false},
+					{Key: "access_key_id", DisplayName: "Access key id", Help: "AWS-style access key id; the secret access key is the credential.", Required: true},
+					{Key: "max_objects", DisplayName: "Max objects", Help: "Upper bound on objects fetched per sync; empty applies the default.", Required: false},
 				},
 				SupportsWebhook: false,
 			},

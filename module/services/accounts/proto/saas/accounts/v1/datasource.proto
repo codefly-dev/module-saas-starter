@@ -19,12 +19,15 @@ import "saas/policy/v1/options.proto";
 // DatasourceProvider identifies the external system a datasource connects to.
 // GitHub is the bespoke connector; API is the generic "HTTP API with a stored
 // credential" connector that covers a large class of sources without a
-// per-provider proto change. The enum is the extension point for further
-// connectors.
+// per-provider proto change; CRAWLER ingests a documentation website from its
+// sitemap.xml; UPLOAD pulls objects from an S3-compatible object store. The enum
+// is the extension point for further connectors.
 enum DatasourceProvider {
   DATASOURCE_PROVIDER_UNSPECIFIED = 0;
   DATASOURCE_PROVIDER_GITHUB = 1;
   DATASOURCE_PROVIDER_API = 2;
+  DATASOURCE_PROVIDER_CRAWLER = 3;
+  DATASOURCE_PROVIDER_UPLOAD = 4;
 }
 
 // DatasourceStatus is the datasource lifecycle. A datasource is active from
@@ -79,9 +82,40 @@ message ApiDatasourceConfig {
   string credential_header = 4;
 }
 
+// CrawlerDatasourceConfig is the public configuration of a web/sitemap crawler
+// datasource. It needs no credential: it reads the sitemap and fetches the
+// listed pages over public HTTP.
+message CrawlerDatasourceConfig {
+  // Absolute http(s) URL of the site's sitemap.xml.
+  string sitemap_url = 1;
+  // Upper bound on pages fetched per sync. Zero applies the connector default.
+  uint32 max_pages = 2;
+}
+
+// UploadDatasourceConfig is the public, non-secret configuration of an
+// S3-compatible object-storage datasource. The secret access key is never
+// carried here; it lives only as a SecretCipher envelope in the credential
+// store. Addressing is path-style, so it works against MinIO and other
+// S3-compatible stores as well as AWS S3.
+message UploadDatasourceConfig {
+  // Absolute http(s) endpoint of the object store, e.g.
+  // "https://s3.us-east-1.amazonaws.com" or a MinIO endpoint.
+  string endpoint = 1;
+  // Signing region, e.g. "us-east-1".
+  string region = 2;
+  string bucket = 3;
+  // Key prefix to pull under; empty pulls the whole bucket.
+  string prefix = 4;
+  // AWS-style access key id. The matching secret access key is the credential.
+  string access_key_id = 5;
+  // Upper bound on objects fetched per sync. Zero applies the connector default.
+  uint32 max_objects = 6;
+}
+
 // Datasource is one connected external datasource. It is org-scoped and carries
 // only non-secret projection fields; credential material is deliberately absent.
-// Exactly one provider config (github or api) is set, matching provider.
+// Exactly one provider config (github, api, crawler, or upload) is set, matching
+// provider.
 message Datasource {
   string id = 1;
   string org_id = 2;
@@ -97,6 +131,8 @@ message Datasource {
   google.protobuf.Timestamp updated_at = 9;
   google.protobuf.Timestamp last_synced_at = 10;
   ApiDatasourceConfig api = 11;
+  CrawlerDatasourceConfig crawler = 12;
+  UploadDatasourceConfig upload = 13;
 }
 
 message AddGitHubSourceRequest {
@@ -159,12 +195,15 @@ message AddSourceRequest {
   oneof config {
     GitHubDatasourceConfig github = 4;
     ApiDatasourceConfig api = 5;
+    CrawlerDatasourceConfig crawler = 8;
+    UploadDatasourceConfig upload = 9;
   }
-  // Plaintext credential the connector authenticates with. Encrypted at receipt.
-  string credential = 6 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 4096
-  }];
+  // Plaintext credential the connector authenticates with (a GitHub token, the
+  // API connector's bearer/basic/header credential, or the object store's secret
+  // access key). Optional for providers that need none, such as the crawler.
+  // Encrypted at receipt. Its absence for a credential-taking provider is
+  // rejected by the connector.
+  string credential = 6 [(buf.validate.field).string.max_len = 4096];
   // Plaintext webhook signing secret. Optional; when omitted, live webhook
   // ingestion stays off until a later call supplies one. Encrypted at receipt.
   string webhook_secret = 7 [(buf.validate.field).string.max_len = 1024];
