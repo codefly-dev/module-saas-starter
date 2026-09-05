@@ -9,14 +9,14 @@ import (
 
 func TestGuardDial_BlocksNonPublicAddresses(t *testing.T) {
 	blocked := []string{
-		"127.0.0.1:80",        // loopback
-		"[::1]:443",           // loopback v6
-		"10.1.2.3:80",         // private
-		"192.168.0.1:80",      // private
-		"172.16.0.1:80",       // private
-		"169.254.169.254:80",  // link-local (cloud metadata endpoint)
-		"0.0.0.0:80",          // unspecified
-		"not-an-ip:80",        // unresolved
+		"127.0.0.1:80",       // loopback
+		"[::1]:443",          // loopback v6
+		"10.1.2.3:80",        // private
+		"192.168.0.1:80",     // private
+		"172.16.0.1:80",      // private
+		"169.254.169.254:80", // link-local (cloud metadata endpoint)
+		"0.0.0.0:80",         // unspecified
+		"not-an-ip:80",       // unresolved
 	}
 	for _, addr := range blocked {
 		if err := guardDial("tcp", addr, nil); err == nil {
