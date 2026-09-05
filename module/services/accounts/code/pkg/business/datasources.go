@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"accounts/pkg/datasource/apisource"
+	"accounts/pkg/datasource/crawler"
 	"accounts/pkg/datasource/github"
+	"accounts/pkg/datasource/objectstore"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
@@ -20,8 +22,10 @@ import (
 // Datasource providers and lifecycle statuses. The provider string is recorded
 // on every Source row and selects the connector.
 const (
-	DatasourceProviderGitHub = "github"
-	DatasourceProviderAPI    = "api"
+	DatasourceProviderGitHub  = "github"
+	DatasourceProviderAPI     = "api"
+	DatasourceProviderCrawler = "crawler"
+	DatasourceProviderUpload  = "upload"
 
 	DatasourceStatusActive = "active"
 	DatasourceStatusPaused = "paused"
@@ -90,6 +94,21 @@ const (
 	attrAPIURL        = "api.url"
 	attrAPIContentSHA = "api.content_sha"
 
+	// The crawler and object-storage connectors land on the same shared
+	// "datasource" queue with their own topic/source so the documents consumer
+	// routes each apart from a GitHub or API pull. The fetched bytes travel as the
+	// payload; the resource identity and a content hash travel in attributes.
+	datasourceCrawlerSyncTopic  = "datasource.crawler.sync"
+	datasourceCrawlerSyncSource = "crawler.sync"
+	datasourceUploadSyncTopic   = "datasource.upload.sync"
+	datasourceUploadSyncSource  = "upload.sync"
+
+	attrCrawlerURL        = "crawler.url"
+	attrCrawlerContentSHA = "crawler.content_sha"
+	attrUploadBucket      = "upload.bucket"
+	attrUploadKey         = "upload.key"
+	attrUploadETag        = "upload.etag"
+
 	changeTypeAdded = "added"
 )
 
@@ -122,10 +141,30 @@ type APIDatasourceConfig struct {
 	CredentialHeader string `json:"credential_header,omitempty"`
 }
 
+// CrawlerDatasourceConfig is the non-secret configuration of a web/sitemap
+// crawler Source. It is persisted as the Source row's config JSONB. The crawler
+// needs no credential.
+type CrawlerDatasourceConfig struct {
+	SitemapURL string `json:"sitemap_url"`
+	MaxPages   int    `json:"max_pages,omitempty"`
+}
+
+// UploadDatasourceConfig is the non-secret configuration of an S3-compatible
+// object-storage Source. It is persisted as the Source row's config JSONB; the
+// secret access key lives only as a SecretCipher envelope in CredentialSecretRef.
+type UploadDatasourceConfig struct {
+	Endpoint    string `json:"endpoint"`
+	Region      string `json:"region"`
+	Bucket      string `json:"bucket"`
+	Prefix      string `json:"prefix,omitempty"`
+	AccessKeyID string `json:"access_key_id"`
+	MaxObjects  int    `json:"max_objects,omitempty"`
+}
+
 // DatasourceSource is one connected external datasource. CredentialSecretRef and
 // WebhookSecretRef hold SecretCipher envelopes (references into the secret
 // provider), never plaintext. Repo/Paths/Branch are set for the GitHub provider;
-// API is set for the generic API provider.
+// API/Crawler/Upload is set for the matching generic provider.
 type DatasourceSource struct {
 	ID                  string
 	OrgID               string
@@ -134,6 +173,8 @@ type DatasourceSource struct {
 	Paths               []string
 	Branch              string
 	API                 *APIDatasourceConfig
+	Crawler             *CrawlerDatasourceConfig
+	Upload              *UploadDatasourceConfig
 	TargetCollection    string
 	CredentialSecretRef string
 	WebhookSecretRef    string
@@ -177,6 +218,22 @@ type APIContentClient interface {
 	Fetch(ctx context.Context) (*apisource.Result, error)
 }
 
+// CrawlerContentClient is the subset of the crawler connector the Service needs.
+// The Service builds one per Source from its config and drives it item-at-a-time
+// (List then Fetch) so an entire site is never held in memory at once.
+type CrawlerContentClient interface {
+	List(ctx context.Context) ([]string, error)
+	Fetch(ctx context.Context, pageURL string) (crawler.Page, error)
+}
+
+// UploadContentClient is the subset of the object-storage connector the Service
+// needs. The Service builds one per Source from its config and decrypted secret
+// access key and drives it item-at-a-time (List then Fetch).
+type UploadContentClient interface {
+	List(ctx context.Context) ([]objectstore.Entry, error)
+	Fetch(ctx context.Context, key string) (objectstore.Object, error)
+}
+
 // SetDatasourceConnector wires the fail-closed credential cipher, the privileged
 // inbox producer used for ingest deliveries, and the GitHub API base URL. It is
 // the one setter #274 adds; production passes Vault transit and the durable job
@@ -200,6 +257,23 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 			}, credential)
 		}
 	}
+	if s.newCrawlerClient == nil {
+		s.newCrawlerClient = func(cfg CrawlerDatasourceConfig) CrawlerContentClient {
+			return crawler.New(crawler.Config{SitemapURL: cfg.SitemapURL, MaxPages: cfg.MaxPages})
+		}
+	}
+	if s.newUploadClient == nil {
+		s.newUploadClient = func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient {
+			return objectstore.New(objectstore.Config{
+				Endpoint:    cfg.Endpoint,
+				Region:      cfg.Region,
+				Bucket:      cfg.Bucket,
+				Prefix:      cfg.Prefix,
+				AccessKeyID: cfg.AccessKeyID,
+				MaxObjects:  cfg.MaxObjects,
+			}, secretAccessKey)
+		}
+	}
 }
 
 // SetDatasourceGitHubClientFactory overrides how per-Source GitHub clients are
@@ -212,6 +286,18 @@ func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) Gi
 // Tests use it to inject a fake without a live HTTP endpoint.
 func (s *Service) SetDatasourceAPIClientFactory(factory func(cfg APIDatasourceConfig, credential string) APIContentClient) {
 	s.newAPIClient = factory
+}
+
+// SetDatasourceCrawlerClientFactory overrides how per-Source crawler clients are
+// built. Tests use it to inject a fake without a live website.
+func (s *Service) SetDatasourceCrawlerClientFactory(factory func(cfg CrawlerDatasourceConfig) CrawlerContentClient) {
+	s.newCrawlerClient = factory
+}
+
+// SetDatasourceUploadClientFactory overrides how per-Source object-storage
+// clients are built. Tests use it to inject a fake without a live object store.
+func (s *Service) SetDatasourceUploadClientFactory(factory func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient) {
+	s.newUploadClient = factory
 }
 
 // AddGitHubSource registers a GitHub repository as a Source. The access token
@@ -293,6 +379,12 @@ type AddSourceInput struct {
 
 	// API provider config.
 	API *APIDatasourceConfig
+
+	// Crawler provider config.
+	Crawler *CrawlerDatasourceConfig
+
+	// Upload (object-storage) provider config.
+	Upload *UploadDatasourceConfig
 }
 
 // AddSource registers a datasource for any provider. It validates the config for
@@ -310,9 +402,6 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	if targetCollection == "" {
 		return nil, w.NewError("target collection is required")
 	}
-	if strings.TrimSpace(input.Credential) == "" {
-		return nil, w.NewError("credential is required")
-	}
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
@@ -325,8 +414,13 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		Status:           DatasourceStatusActive,
 	}
 
+	credential := strings.TrimSpace(input.Credential)
+
 	switch input.Provider {
 	case DatasourceProviderGitHub:
+		if credential == "" {
+			return nil, w.NewError("credential is required")
+		}
 		repo := strings.TrimSpace(input.Repo)
 		if !validRepo(repo) {
 			return nil, w.NewError("repo must be in owner/name form")
@@ -335,6 +429,9 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		source.Paths = normalizePaths(input.Paths)
 		source.Branch = strings.TrimSpace(input.Branch)
 	case DatasourceProviderAPI:
+		if credential == "" {
+			return nil, w.NewError("credential is required")
+		}
 		// The generic API provider has no webhook receiver yet; refuse a secret
 		// nothing would ever verify rather than storing dead credential material.
 		if strings.TrimSpace(input.WebhookSecret) != "" {
@@ -345,15 +442,45 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 			return nil, w.Wrap(err)
 		}
 		source.API = cfg
+	case DatasourceProviderCrawler:
+		// The crawler reads public pages: it takes no credential and has no webhook
+		// receiver. Reject either rather than storing material nothing would use.
+		if credential != "" {
+			return nil, w.NewError("crawler provider does not take a credential")
+		}
+		if strings.TrimSpace(input.WebhookSecret) != "" {
+			return nil, w.NewError("crawler provider does not support webhooks")
+		}
+		cfg, err := normalizeCrawlerConfig(input.Crawler)
+		if err != nil {
+			return nil, w.Wrap(err)
+		}
+		source.Crawler = cfg
+	case DatasourceProviderUpload:
+		if credential == "" {
+			return nil, w.NewError("credential is required")
+		}
+		// Object storage is pulled, not pushed: refuse a webhook secret nothing
+		// would verify.
+		if strings.TrimSpace(input.WebhookSecret) != "" {
+			return nil, w.NewError("upload provider does not support webhooks")
+		}
+		cfg, err := normalizeUploadConfig(input.Upload)
+		if err != nil {
+			return nil, w.Wrap(err)
+		}
+		source.Upload = cfg
 	default:
 		return nil, w.NewError("unknown datasource provider")
 	}
 
-	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), input.Credential)
-	if err != nil {
-		return nil, w.Wrapf(err, "encrypt credential")
+	if credential != "" {
+		credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credential)
+		if err != nil {
+			return nil, w.Wrapf(err, "encrypt credential")
+		}
+		source.CredentialSecretRef = credentialRef
 	}
-	source.CredentialSecretRef = credentialRef
 
 	if secret := strings.TrimSpace(input.WebhookSecret); secret != "" {
 		webhookRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceWebhookSecretPurpose(source.ID), secret)
@@ -397,6 +524,56 @@ func normalizeAPIConfig(cfg *APIDatasourceConfig) (*APIDatasourceConfig, error) 
 		}
 	default:
 		return nil, errors.New("api credential kind must be bearer, basic, or header")
+	}
+	return out, nil
+}
+
+// normalizeCrawlerConfig validates and trims a crawler provider config.
+func normalizeCrawlerConfig(cfg *CrawlerDatasourceConfig) (*CrawlerDatasourceConfig, error) {
+	if cfg == nil {
+		return nil, errors.New("crawler config is required")
+	}
+	sitemapURL := strings.TrimSpace(cfg.SitemapURL)
+	parsed, err := url.Parse(sitemapURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, errors.New("crawler sitemap url must be an absolute http(s) url")
+	}
+	maxPages := cfg.MaxPages
+	if maxPages < 0 {
+		return nil, errors.New("crawler max pages must not be negative")
+	}
+	return &CrawlerDatasourceConfig{SitemapURL: sitemapURL, MaxPages: maxPages}, nil
+}
+
+// normalizeUploadConfig validates and trims an object-storage provider config.
+func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig, error) {
+	if cfg == nil {
+		return nil, errors.New("upload config is required")
+	}
+	endpoint := strings.TrimSpace(cfg.Endpoint)
+	parsed, err := url.Parse(endpoint)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, errors.New("upload endpoint must be an absolute http(s) url")
+	}
+	out := &UploadDatasourceConfig{
+		Endpoint:    endpoint,
+		Region:      strings.TrimSpace(cfg.Region),
+		Bucket:      strings.TrimSpace(cfg.Bucket),
+		Prefix:      strings.TrimSpace(cfg.Prefix),
+		AccessKeyID: strings.TrimSpace(cfg.AccessKeyID),
+		MaxObjects:  cfg.MaxObjects,
+	}
+	if out.Region == "" {
+		return nil, errors.New("upload region is required")
+	}
+	if out.Bucket == "" {
+		return nil, errors.New("upload bucket is required")
+	}
+	if out.AccessKeyID == "" {
+		return nil, errors.New("upload access key id is required")
+	}
+	if out.MaxObjects < 0 {
+		return nil, errors.New("upload max objects must not be negative")
 	}
 	return out, nil
 }
@@ -514,6 +691,10 @@ func (s *Service) RunDatasourceSync(ctx context.Context, sourceID string) (int, 
 		return s.runGitHubSync(ctx, source)
 	case DatasourceProviderAPI:
 		return s.runAPISync(ctx, source)
+	case DatasourceProviderCrawler:
+		return s.runCrawlerSync(ctx, source)
+	case DatasourceProviderUpload:
+		return s.runUploadSync(ctx, source)
 	default:
 		return 0, w.NewError("unknown datasource provider")
 	}
@@ -657,6 +838,230 @@ func apiResourceURL(cfg *APIDatasourceConfig) string {
 		return cfg.BaseURL
 	}
 	return strings.TrimRight(cfg.BaseURL, "/") + "/" + strings.TrimLeft(cfg.ResourcePath, "/")
+}
+
+// runCrawlerSync reads the source's sitemap and fetches each listed page one at a
+// time, enqueuing an ingest delivery per page. Pages are streamed (never all held
+// in memory), a page too large to deliver is recorded and surfaced rather than
+// silently dropped, and a sitemap that yields no deliverable page fails the sync
+// rather than recording an empty success.
+func (s *Service) runCrawlerSync(ctx context.Context, source *DatasourceSource) (int, error) {
+	w := wool.Get(ctx).In("runCrawlerSync")
+	if s.newCrawlerClient == nil {
+		return 0, w.NewError("datasource connector is not configured")
+	}
+	if source.Crawler == nil {
+		return 0, w.NewError("crawler source has no config")
+	}
+	client := s.newCrawlerClient(*source.Crawler)
+
+	urls, err := client.List(ctx)
+	if err != nil {
+		return 0, w.Wrapf(err, "list sitemap")
+	}
+
+	enqueued := 0
+	oversized := 0
+	for _, u := range urls {
+		page, err := client.Fetch(ctx, u)
+		if err != nil {
+			if errors.Is(err, crawler.ErrPageTooLarge) {
+				oversized++
+				continue
+			}
+			// One unreachable page must not abort the whole crawl; skip it
+			// best-effort. A crawl that reaches none of its pages is caught below.
+			w.Warn("skipping unfetchable page", wool.Field("url", u), wool.ErrField(err))
+			continue
+		}
+		if len(page.Body) > maxIngestPayload {
+			oversized++
+			continue
+		}
+		if err := s.enqueueCrawlerIngest(ctx, source, page); err != nil {
+			return enqueued, w.Wrapf(err, "enqueue %s", u)
+		}
+		enqueued++
+	}
+
+	// A sitemap that listed pages but produced no delivery and no oversized page
+	// means every fetch failed — a wholesale outage, not an empty site.
+	if len(urls) > 0 && enqueued == 0 && oversized == 0 {
+		return 0, w.NewError("crawl fetched none of the sitemap's pages")
+	}
+	// Pages too large for the ingest inbox cannot be delivered and the consumer
+	// holds no credentials to re-fetch them; surface it instead of a clean sync.
+	if oversized > 0 {
+		return enqueued, w.NewError("%d crawled page(s) exceed the ingest payload limit", oversized)
+	}
+
+	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
+		return s.store.SetDatasourceSourceSynced(ctx, source.OrgID, source.ID, time.Now().UTC())
+	}); err != nil {
+		return enqueued, w.Wrapf(err, "record sync time")
+	}
+	return enqueued, nil
+}
+
+func (s *Service) enqueueCrawlerIngest(ctx context.Context, source *DatasourceSource, page crawler.Page) error {
+	contentType := page.ContentType
+	if contentType == "" {
+		contentType = datasourceIngestContentType
+	}
+	digest := sha256.Sum256(page.Body)
+	contentSHA := hex.EncodeToString(digest[:])
+	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+		Job: &jobsv1.NewJob{
+			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+			Queue:          datasourceIngestQueue,
+			Topic:          datasourceCrawlerSyncTopic,
+			Source:         datasourceCrawlerSyncSource,
+			IdempotencyKey: crawlerIngestIdempotencyKey(source.ID, page.URL, contentSHA),
+			SchemaVersion:  datasourceIngestSchemaVersion,
+			Payload:        page.Body,
+			ContentType:    contentType,
+			MaxAttempts:    datasourceIngestMaxAttempts,
+			Attributes: map[string]string{
+				attrSourceID:          source.ID,
+				attrOrgID:             source.OrgID,
+				attrTargetCollection:  source.TargetCollection,
+				attrCrawlerURL:        page.URL,
+				attrCrawlerContentSHA: contentSHA,
+				attrChangeType:        changeTypeAdded,
+			},
+		},
+	})
+	return err
+}
+
+// crawlerIngestIdempotencyKey is deterministic in (source, url, content hash) and
+// bounded: a re-crawl of an unchanged page dedupes to the stored delivery, while
+// changed content at the same URL keys distinctly and is re-delivered.
+func crawlerIngestIdempotencyKey(sourceID, pageURL, contentSHA string) string {
+	digest := sha256.Sum256([]byte(sourceID + "\x00" + pageURL + "\x00" + contentSHA))
+	return "datasource-crawler-sync/" + hex.EncodeToString(digest[:])
+}
+
+// runUploadSync lists the source's objects and fetches each one at a time,
+// enqueuing an ingest delivery per object. Objects are streamed (never all held
+// in memory); a listed object deleted before its fetch is skipped, an object too
+// large to deliver is recorded and surfaced, and any real fetch failure (a
+// permission or transport error) aborts the sync rather than reading as an empty
+// bucket.
+func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (int, error) {
+	w := wool.Get(ctx).In("runUploadSync")
+	if s.newUploadClient == nil {
+		return 0, w.NewError("datasource connector is not configured")
+	}
+	if source.Upload == nil {
+		return 0, w.NewError("upload source has no config")
+	}
+
+	secretKey, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	if err != nil {
+		return 0, w.Wrapf(err, "decrypt secret access key")
+	}
+	client := s.newUploadClient(*source.Upload, secretKey)
+
+	entries, err := client.List(ctx)
+	if err != nil {
+		return 0, w.Wrapf(err, "list objects")
+	}
+
+	enqueued := 0
+	oversized := 0
+	for _, entry := range entries {
+		object, err := client.Fetch(ctx, entry.Key)
+		if err != nil {
+			if errors.Is(err, objectstore.ErrObjectNotFound) {
+				// Deleted between listing and fetch; skip best-effort.
+				w.Warn("skipping vanished object", wool.Field("key", entry.Key))
+				continue
+			}
+			if errors.Is(err, objectstore.ErrObjectTooLarge) {
+				oversized++
+				continue
+			}
+			// A permission or transport failure must not read as an empty bucket:
+			// surface it so the sync is retried and the misconfiguration is visible.
+			return enqueued, w.Wrapf(err, "fetch %s", entry.Key)
+		}
+		if len(object.Body) > maxIngestPayload {
+			oversized++
+			continue
+		}
+		if err := s.enqueueUploadIngest(ctx, source, object, uploadFingerprint(object, entry)); err != nil {
+			return enqueued, w.Wrapf(err, "enqueue %s", entry.Key)
+		}
+		enqueued++
+	}
+
+	// Objects too large for the ingest inbox cannot be delivered and the consumer
+	// holds no credentials to re-fetch them; surface it instead of a clean sync.
+	if oversized > 0 {
+		return enqueued, w.NewError("%d object(s) exceed the ingest payload limit", oversized)
+	}
+
+	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
+		return s.store.SetDatasourceSourceSynced(ctx, source.OrgID, source.ID, time.Now().UTC())
+	}); err != nil {
+		return enqueued, w.Wrapf(err, "record sync time")
+	}
+	return enqueued, nil
+}
+
+// uploadFingerprint is the object's content fingerprint used to key delivery
+// idempotency: the ETag from the GET response, else the ETag from the listing,
+// else a hash of the body — so a re-pull of unchanged content always dedupes.
+func uploadFingerprint(object objectstore.Object, entry objectstore.Entry) string {
+	if object.ETag != "" {
+		return object.ETag
+	}
+	if entry.ETag != "" {
+		return entry.ETag
+	}
+	digest := sha256.Sum256(object.Body)
+	return hex.EncodeToString(digest[:])
+}
+
+func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string) error {
+	contentType := object.ContentType
+	if contentType == "" {
+		contentType = datasourceIngestContentType
+	}
+	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+		Job: &jobsv1.NewJob{
+			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+			Queue:          datasourceIngestQueue,
+			Topic:          datasourceUploadSyncTopic,
+			Source:         datasourceUploadSyncSource,
+			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint),
+			SchemaVersion:  datasourceIngestSchemaVersion,
+			Payload:        object.Body,
+			ContentType:    contentType,
+			MaxAttempts:    datasourceIngestMaxAttempts,
+			Attributes: map[string]string{
+				attrSourceID:         source.ID,
+				attrOrgID:            source.OrgID,
+				attrTargetCollection: source.TargetCollection,
+				attrUploadBucket:     source.Upload.Bucket,
+				attrUploadKey:        object.Key,
+				attrUploadETag:       fingerprint,
+				attrChangeType:       changeTypeAdded,
+			},
+		},
+	})
+	return err
+}
+
+// uploadIngestIdempotencyKey is deterministic in (source, key, fingerprint) and
+// bounded: a re-pull of an unchanged object dedupes, while a changed object at
+// the same key keys distinctly and is re-delivered.
+func uploadIngestIdempotencyKey(sourceID, key, fingerprint string) string {
+	digest := sha256.Sum256([]byte(sourceID + "\x00" + key + "\x00" + fingerprint))
+	return "datasource-upload-sync/" + hex.EncodeToString(digest[:])
 }
 
 // NewDatasourceSyncJobHandler adapts RunDatasourceSync to the generic leased

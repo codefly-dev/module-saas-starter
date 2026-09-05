@@ -30,11 +30,26 @@ func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 		return nil, err
 	}
 	if len(config) > 0 {
-		var api business.APIDatasourceConfig
-		if err := json.Unmarshal(config, &api); err != nil {
-			return nil, err
+		switch d.Provider {
+		case business.DatasourceProviderAPI:
+			var api business.APIDatasourceConfig
+			if err := json.Unmarshal(config, &api); err != nil {
+				return nil, err
+			}
+			d.API = &api
+		case business.DatasourceProviderCrawler:
+			var c business.CrawlerDatasourceConfig
+			if err := json.Unmarshal(config, &c); err != nil {
+				return nil, err
+			}
+			d.Crawler = &c
+		case business.DatasourceProviderUpload:
+			var u business.UploadDatasourceConfig
+			if err := json.Unmarshal(config, &u); err != nil {
+				return nil, err
+			}
+			d.Upload = &u
 		}
-		d.API = &api
 	}
 	return &d, nil
 }
@@ -46,9 +61,18 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	if paths == nil {
 		paths = []string{}
 	}
+	var payload any
+	switch {
+	case source.API != nil:
+		payload = source.API
+	case source.Crawler != nil:
+		payload = source.Crawler
+	case source.Upload != nil:
+		payload = source.Upload
+	}
 	var config []byte
-	if source.API != nil {
-		encoded, err := json.Marshal(source.API)
+	if payload != nil {
+		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return err
 		}
