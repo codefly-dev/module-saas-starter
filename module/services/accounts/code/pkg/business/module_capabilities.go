@@ -475,7 +475,12 @@ func moduleApprovalError(err error) error {
 // is the idempotency key: a retried decision resolves to the same durable job
 // rather than resuming the gated action twice. No-op when no resume queue is
 // declared or the producer is not wired.
-func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalRequest) error {
+//
+// The payload stamps the outcome so the module's handler need not read it back:
+// decision, and decider — the single approver whose vote completed quorum, not
+// the full approver set. When quorum > 1 the other approvers are recoverable
+// from approval_decisions via the stamped approval_id.
+func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalRequest, decision ApprovalDecisionKind, decider string) error {
 	if req.ResumeRef.Queue == "" {
 		return nil
 	}
@@ -488,6 +493,8 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 	}
 	payload, err := json.Marshal(map[string]any{
 		"approval_id": req.ID,
+		"decision":    string(decision),
+		"decider":     decider,
 		"resource":    req.Resource,
 		"action":      req.Action,
 		"subject":     req.Subject,

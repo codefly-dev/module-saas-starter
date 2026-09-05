@@ -402,7 +402,7 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 			// Enqueue the resume outbox job in this same tx, so the gated action
 			// can never be resumed twice or lost: the approved transition and its
 			// resume job commit together or not at all (APPROVALS_DESIGN.md §6).
-			if err := s.enqueueApprovalResume(ctx, req); err != nil {
+			if err := s.enqueueApprovalResume(ctx, req, in.Decision, in.Decider); err != nil {
 				return err
 			}
 			return s.emitTx(ctx, in.Decider, "user", EventApprovalApproved, "approval_request", id, orgID,
