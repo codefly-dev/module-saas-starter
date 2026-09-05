@@ -460,7 +460,7 @@
     "services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml": "2064a973ccacd726c3beeb6f29cdac9c5bee5f8910cd9b5af507b5d75e690ba7",
     "services/accounts/code/pkg/cataloggen/testmain_lifecycle_test.go": "ecd390985d00fcb118d00fc6345ced88de7cab18a0c0095008da6ebf5bbc0906",
     "services/accounts/code/pkg/datasource/apisource/client.go": "b72b5e2d20df3b7d27b23a4587cb4ba806bd590a260cb21ea58ea316483dae02",
-    "services/accounts/code/pkg/datasource/apisource/client_test.go": "8ace30d2578d306deaf3e80bd84786400b2497ed675bf4212f141a0fab9b6828",
+    "services/accounts/code/pkg/datasource/apisource/client_test.go": "e5d71b8693ca09750166d287c68a6d7eb431c0ef90a3e0307fe13476319a22b7",
     "services/accounts/code/pkg/datasource/github/client.go": "d0b2ec2d231844834925053e4ef10b8c21a7ddec3617cda47c80601d81c1e696",
     "services/accounts/code/pkg/datasource/github/client_test.go": "4c5f6e6ac1c8912225115295fdc0e92e4ee282aa4ac941f30cd207aa7252279f",
     "services/accounts/code/pkg/datasource/handler.go": "9cd851cfb521825284a83127f43ccb9a51ab1cbf406c20df4bfcc9124efa686a",
