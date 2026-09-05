@@ -193,7 +193,14 @@ type Store interface {
 	// CheckAccess resolves the record's scope from resource_id itself, never a
 	// caller-supplied path.
 	CheckAccess(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, resourceID, action string) (bool, string, error)
+	// ListAccessibleScopes is the list-objects companion to CheckAccess: the scope
+	// nodes the subject may act on with (resourceType, action), resolved through
+	// the same grant + share union so the two never disagree.
+	ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action string) ([]*gen.AccessibleScope, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
+	// ScopeNodeExists reports whether a scope node id is visible in the caller's
+	// tenant (run under WithOrgTx so RLS confines the probe to the org).
+	ScopeNodeExists(ctx context.Context, nodeID string) (bool, error)
 	GrantScope(ctx context.Context, grant *gen.ScopeGrant) error
 	RevokeScope(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, scopePath, roleID string) error
 	ShareRecord(ctx context.Context, share *gen.RecordShare) error

@@ -146,11 +146,11 @@ message UploadDatasourceConfig {
 // Exactly one provider config (github, api, crawler, or upload) is set, matching
 // provider.
 message Datasource {
+  reserved 4;
+  reserved "target_collection";
   string id = 1;
   string org_id = 2;
   DatasourceProvider provider = 3;
-  // Documents-store collection the pulled Entries land in.
-  string target_collection = 4;
   GitHubDatasourceConfig github = 5;
   DatasourceStatus status = 6;
   // True once a webhook signing secret has been stored for the datasource, so
@@ -162,6 +162,9 @@ message Datasource {
   ApiDatasourceConfig api = 11;
   CrawlerDatasourceConfig crawler = 12;
   UploadDatasourceConfig upload = 13;
+  // The scope node whose subtree the pulled Entries land in — the data boundary
+  // this source writes into (issue #473). Grantable like any scope node.
+  string boundary_node_id = 14;
 }
 
 message AddGitHubSourceRequest {
@@ -182,11 +185,19 @@ message AddGitHubSourceRequest {
     }
   }];
   string branch = 4 [(buf.validate.field).string.max_len = 255];
-  // Documents-store collection the pulled Entries land in.
-  string target_collection = 5 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 255
-  }];
+  reserved 5;
+  reserved "target_collection";
+  // The data boundary the pulled Entries land in (issue #473): either an
+  // existing scope node's id, or a label to mint a new `collection` node under
+  // the org. Exactly one is required.
+  oneof boundary {
+    option (buf.validate.oneof).required = true;
+    string boundary_node_id = 8 [(buf.validate.field).string.uuid = true];
+    string collection_label = 9 [(buf.validate.field).string = {
+      min_len: 1
+      max_len: 255
+    }];
+  }
   // Plaintext GitHub token (a PAT or a GitHub App installation token) used to
   // read the repository. Encrypted through the SecretCipher at receipt; only its
   // envelope reference is persisted.
@@ -216,16 +227,24 @@ message AddSourceRequest {
     defined_only: true
     not_in: [0]
   }];
-  // Documents-store collection the pulled Entries land in.
-  string target_collection = 3 [(buf.validate.field).string = {
-    min_len: 1
-    max_len: 255
-  }];
+  reserved 3;
+  reserved "target_collection";
   oneof config {
     GitHubDatasourceConfig github = 4;
     ApiDatasourceConfig api = 5;
     CrawlerDatasourceConfig crawler = 8;
     UploadDatasourceConfig upload = 9;
+  }
+  // The data boundary the pulled Entries land in (issue #473): either an
+  // existing scope node's id, or a label to mint a new `collection` node under
+  // the org. Exactly one is required.
+  oneof boundary {
+    option (buf.validate.oneof).required = true;
+    string boundary_node_id = 12 [(buf.validate.field).string.uuid = true];
+    string collection_label = 13 [(buf.validate.field).string = {
+      min_len: 1
+      max_len: 255
+    }];
   }
   // Plaintext credential the connector authenticates with (a GitHub token, the
   // API connector's bearer/basic/header credential, or the object store's secret

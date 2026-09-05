@@ -135,6 +135,87 @@ func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subje
 	return true, "granted via " + via, nil
 }
 
+// ListAccessibleScopes enumerates the scope nodes subject may act on with
+// (resourceType, action) — the list-objects companion to CheckAccess. A node is
+// returned when EITHER a scope grant at an ancestor-or-equal path carries a role
+// permitting (resourceType, action), OR the node is a placed record of that type
+// with a per-record share permitting it. Both branches match roles through the
+// same role_permissions rows and the same wildcard rule as CheckAccess, so the
+// set returned here and CheckAccess's per-record verdict never disagree.
+//
+// Runs inside WithOrgTx: RLS confines every table to the caller's tenant.
+func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action string) ([]*gen.AccessibleScope, error) {
+	w := wool.Get(ctx).In("ListAccessibleScopes")
+	executor := s.getQueryExecutor(ctx)
+
+	scopePred, err := layeredSubjectPredicate(subjectKind, "g")
+	if err != nil {
+		return nil, err
+	}
+	sharePred, err := layeredSubjectPredicate(subjectKind, "sh")
+	if err != nil {
+		return nil, err
+	}
+
+	// $1 subject, $2 resource_type, $3 action. UNION dedupes a node reachable
+	// through both a grant and a share. The share branch's ancestor join is on the
+	// placed-record identity, so only nodes of the queried resource_type appear
+	// there — structural nodes (NULL resource columns) never match.
+	query := `
+		SELECT n.id::text, n.scope_path::text, n.kind
+		FROM scope_nodes n
+		JOIN scope_grants g ON g.scope_path @> n.scope_path
+		JOIN role_permissions rp ON rp.role_id = g.role_id
+		WHERE ` + scopePred + `
+		  AND (g.expires_at IS NULL OR g.expires_at > now())
+		  AND (rp.resource = '*' OR rp.resource = $2)
+		  AND (rp.action   = '*' OR rp.action   = $3)
+		UNION
+		SELECT n.id::text, n.scope_path::text, n.kind
+		FROM scope_nodes n
+		JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
+		JOIN role_permissions rp ON rp.role_id = sh.role_id
+		WHERE ` + sharePred + `
+		  AND sh.resource_type = $2
+		  AND (sh.expires_at IS NULL OR sh.expires_at > now())
+		  AND (rp.resource = '*' OR rp.resource = $2)
+		  AND (rp.action   = '*' OR rp.action   = $3)
+		ORDER BY 2`
+
+	rows, err := executor.Query(ctx, query, subjectID, resourceType, action)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list accessible scopes")
+	}
+	defer rows.Close()
+
+	var out []*gen.AccessibleScope
+	for rows.Next() {
+		var node gen.AccessibleScope
+		if err := rows.Scan(&node.NodeId, &node.ScopePath, &node.Kind); err != nil {
+			return nil, w.Wrapf(err, "failed to scan accessible scope")
+		}
+		out = append(out, &node)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "iterating accessible scope rows")
+	}
+	return out, nil
+}
+
+// ScopeNodeExists reports whether nodeID is a scope node visible in the caller's
+// tenant. Run under WithOrgTx so the RLS policy confines the probe to the org;
+// this is the org-membership check the datasource boundary FK cannot make (RI
+// bypasses RLS, so the FK alone would accept another org's node id).
+func (s *PostgresStore) ScopeNodeExists(ctx context.Context, nodeID string) (bool, error) {
+	var exists bool
+	if err := s.getQueryExecutor(ctx).QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM scope_nodes WHERE id = $1)`, nodeID,
+	).Scan(&exists); err != nil {
+		return false, wool.Get(ctx).In("ScopeNodeExists").Wrapf(err, "failed to check scope node")
+	}
+	return exists, nil
+}
+
 // scopeParentPath returns the immediate parent of a dotted ltree path, or "" if
 // the path is a root (a single label with no separator).
 func scopeParentPath(path string) string {

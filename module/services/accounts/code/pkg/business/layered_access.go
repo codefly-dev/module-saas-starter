@@ -8,6 +8,17 @@ import (
 	"github.com/codefly-dev/core/wool"
 )
 
+// Scope-node kind conventions (issue #473; documented in AUTHZ.md). A `solution`
+// node is the one node per solution install under the org root; a `collection`
+// node is a data container a solution creates under its node — the data boundary
+// a datasource binds to. Every other kind stays product-defined; the registry
+// stores kind verbatim and never branches on it, so these are conventions, not
+// enforced enums.
+const (
+	ScopeNodeKindSolution   = "solution"
+	ScopeNodeKindCollection = "collection"
+)
+
 // CheckAccess is the hierarchical + per-record authorization decision (#178),
 // the companion to CheckPermission. Always org-scoped — a record lives in
 // exactly one tenant — so it always runs under WithOrgTx. The store resolves the
@@ -24,6 +35,23 @@ func (s *Service) CheckAccess(ctx context.Context, req *gen.CheckAccessRequest) 
 		return nil, err
 	}
 	return &gen.CheckAccessResponse{Allowed: allowed, Reason: reason}, nil
+}
+
+// ListAccessibleScopes enumerates the scope nodes a subject may act on with
+// (resource_type, action) — the list-objects companion to CheckAccess. Always
+// org-scoped, so it runs under WithOrgTx; the store resolves the same grant +
+// share union as CheckAccess, so the two never disagree.
+func (s *Service) ListAccessibleScopes(ctx context.Context, req *gen.ListAccessibleScopesRequest) (*gen.ListAccessibleScopesResponse, error) {
+	var scopes []*gen.AccessibleScope
+	wrap := func(ctx context.Context) error {
+		out, err := s.store.ListAccessibleScopes(ctx, req.SubjectId, req.SubjectKind, req.ResourceType, req.Action)
+		scopes = out
+		return err
+	}
+	if err := s.store.WithOrgTx(ctx, req.OrgId, wrap); err != nil {
+		return nil, err
+	}
+	return &gen.ListAccessibleScopesResponse{Scopes: scopes}, nil
 }
 
 // RegisterScopeNode adds a node to the org's scope tree (or places a product

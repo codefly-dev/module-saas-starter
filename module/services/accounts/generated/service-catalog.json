@@ -218,6 +218,7 @@
         "/saas.accounts.v1.PermissionService/Decide",
         "/saas.accounts.v1.PermissionService/DeleteRole",
         "/saas.accounts.v1.PermissionService/GrantScope",
+        "/saas.accounts.v1.PermissionService/ListAccessibleScopes",
         "/saas.accounts.v1.PermissionService/ListRoleAssignments",
         "/saas.accounts.v1.PermissionService/ListRoles",
         "/saas.accounts.v1.PermissionService/ListShares",
@@ -5509,6 +5510,48 @@
       },
       "policy_tier": "org_admin",
       "description": "Grant a role at a scope node (inherits to subtree).",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/ListAccessibleScopes",
+      "service": "PermissionService",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "ListAccessibleScopes",
+      "input_type": "saas.accounts.v1.ListAccessibleScopesRequest",
+      "output_type": "saas.accounts.v1.ListAccessibleScopesResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Internal list of scope nodes a subject may act on (list-objects companion to CheckAccess).",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

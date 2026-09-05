@@ -2,15 +2,18 @@ package business_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 func insertDatasourceSource(t *testing.T, ctx context.Context, orgID, repo string) *business.DatasourceSource {
 	t.Helper()
+	nodeID := business.NewIDString()
 	source := &business.DatasourceSource{
 		ID:                  business.NewIDString(),
 		OrgID:               orgID,
@@ -18,12 +21,21 @@ func insertDatasourceSource(t *testing.T, ctx context.Context, orgID, repo strin
 		Repo:                repo,
 		Paths:               []string{"docs"},
 		Branch:              "main",
-		TargetCollection:    "wiki",
+		BoundaryNodeID:      nodeID,
 		CredentialSecretRef: "cfs1:vault-transit:token-" + orgID,
 		WebhookSecretRef:    "cfs1:vault-transit:hook-" + orgID,
 		Status:              business.DatasourceStatusActive,
 	}
 	require.NoError(t, testStore.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := testStore.RegisterScopeNode(ctx, &gen.ScopeNode{
+			Id:        nodeID,
+			OrgId:     orgID,
+			Kind:      business.ScopeNodeKindCollection,
+			Label:     "wiki",
+			ScopePath: strings.ReplaceAll(nodeID, "-", "_"),
+		}); err != nil {
+			return err
+		}
 		return testStore.InsertDatasourceSource(ctx, source)
 	}))
 	return source

@@ -50,3 +50,9 @@ breaking:
     # the single message — the comment records the intended scope.
     MESSAGE_NO_DELETE:
       - saas/exports/v1/jobs.proto
+    # target_collection (a free-text string that was neither resolvable nor
+    # grantable) is replaced by a scope-node boundary binding across the three
+    # datasource messages (issue #473). Waive only field deletion for this file;
+    # every other breaking rule still guards it.
+    FIELD_NO_DELETE:
+      - saas/accounts/v1/datasource.proto

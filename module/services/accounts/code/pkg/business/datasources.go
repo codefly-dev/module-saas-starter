@@ -14,6 +14,7 @@ import (
 	"accounts/pkg/datasource/crawler"
 	"accounts/pkg/datasource/github"
 	"accounts/pkg/datasource/objectstore"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
@@ -89,15 +90,15 @@ const (
 	// the connector's API client rather than inlining an oversized payload.
 	maxIngestPayload = 960 * 1024
 
-	attrSourceID         = "datasource.source_id"
-	attrOrgID            = "datasource.org_id"
-	attrTargetCollection = "datasource.target_collection"
-	attrRepo             = "github.repo"
-	attrPath             = "github.path"
-	attrRef              = "github.ref"
-	attrSHA              = "github.sha"
-	attrCommit           = "github.commit"
-	attrChangeType       = "github.change_type"
+	attrSourceID   = "datasource.source_id"
+	attrOrgID      = "datasource.org_id"
+	attrBoundaryID = "datasource.boundary_id"
+	attrRepo       = "github.repo"
+	attrPath       = "github.path"
+	attrRef        = "github.ref"
+	attrSHA        = "github.sha"
+	attrCommit     = "github.commit"
+	attrChangeType = "github.change_type"
 
 	// The generic API connector lands on the same shared "datasource" queue; a
 	// distinct topic/source lets the documents consumer route an API pull apart
@@ -218,7 +219,7 @@ type DatasourceSource struct {
 	API                 *APIDatasourceConfig
 	Crawler             *CrawlerDatasourceConfig
 	Upload              *UploadDatasourceConfig
-	TargetCollection    string
+	BoundaryNodeID      string
 	CredentialSecretRef string
 	WebhookSecretRef    string
 	Status              string
@@ -237,13 +238,16 @@ func (d *DatasourceSource) WebhookConfigured() bool {
 // AccessToken and WebhookSecret are plaintext; each is encrypted through the
 // SecretCipher and only its envelope reference is persisted.
 type AddGitHubSourceInput struct {
-	OrgID            string
-	Repo             string
-	Paths            []string
-	Branch           string
-	TargetCollection string
-	AccessToken      string
-	WebhookSecret    string
+	OrgID  string
+	Repo   string
+	Paths  []string
+	Branch string
+	// The data boundary the source writes into: exactly one of an existing scope
+	// node's id, or a label to mint a new `collection` node (issue #473).
+	BoundaryNodeID  string
+	CollectionLabel string
+	AccessToken     string
+	WebhookSecret   string
 }
 
 // GitHubContentClient is the subset of the api.github.com client the datasource
@@ -373,9 +377,8 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	if !validRepo(repo) {
 		return nil, w.NewError("repo must be in owner/name form")
 	}
-	targetCollection := strings.TrimSpace(input.TargetCollection)
-	if targetCollection == "" {
-		return nil, w.NewError("target collection is required")
+	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
+		return nil, w.Wrap(err)
 	}
 	if strings.TrimSpace(input.AccessToken) == "" {
 		return nil, w.NewError("access token is required")
@@ -385,14 +388,13 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}
 
 	source := &DatasourceSource{
-		ID:               NewIDString(),
-		OrgID:            orgID,
-		Provider:         DatasourceProviderGitHub,
-		Repo:             repo,
-		Paths:            normalizePaths(input.Paths),
-		Branch:           strings.TrimSpace(input.Branch),
-		TargetCollection: targetCollection,
-		Status:           DatasourceStatusActive,
+		ID:       NewIDString(),
+		OrgID:    orgID,
+		Provider: DatasourceProviderGitHub,
+		Repo:     repo,
+		Paths:    normalizePaths(input.Paths),
+		Branch:   strings.TrimSpace(input.Branch),
+		Status:   DatasourceStatusActive,
 	}
 
 	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), input.AccessToken)
@@ -410,6 +412,11 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		boundaryID, err := s.resolveBoundary(ctx, orgID, input.BoundaryNodeID, input.CollectionLabel)
+		if err != nil {
+			return err
+		}
+		source.BoundaryNodeID = boundaryID
 		return s.store.InsertDatasourceSource(ctx, source)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
@@ -425,11 +432,14 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 // each encrypted through the SecretCipher and persisted only as an envelope
 // reference.
 type AddSourceInput struct {
-	OrgID            string
-	Provider         string
-	TargetCollection string
-	Credential       string
-	WebhookSecret    string
+	OrgID    string
+	Provider string
+	// The data boundary the source writes into: exactly one of an existing scope
+	// node's id, or a label to mint a new `collection` node (issue #473).
+	BoundaryNodeID  string
+	CollectionLabel string
+	Credential      string
+	WebhookSecret   string
 
 	// GitHub provider config.
 	Repo   string
@@ -462,20 +472,18 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	if orgID == "" {
 		return nil, w.NewError("org id is required")
 	}
-	targetCollection := strings.TrimSpace(input.TargetCollection)
-	if targetCollection == "" {
-		return nil, w.NewError("target collection is required")
+	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
+		return nil, w.Wrap(err)
 	}
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 
 	source := &DatasourceSource{
-		ID:               NewIDString(),
-		OrgID:            orgID,
-		Provider:         input.Provider,
-		TargetCollection: targetCollection,
-		Status:           DatasourceStatusActive,
+		ID:       NewIDString(),
+		OrgID:    orgID,
+		Provider: input.Provider,
+		Status:   DatasourceStatusActive,
 	}
 
 	credential := strings.TrimSpace(input.Credential)
@@ -559,6 +567,11 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		boundaryID, err := s.resolveBoundary(ctx, orgID, input.BoundaryNodeID, input.CollectionLabel)
+		if err != nil {
+			return err
+		}
+		source.BoundaryNodeID = boundaryID
 		return s.store.InsertDatasourceSource(ctx, source)
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
@@ -566,6 +579,51 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	s.emit(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
 		map[string]any{"provider": source.Provider})
 	return source, nil
+}
+
+// requireBoundarySpec rejects a connect input that names neither or both of a
+// boundary node id and a collection label; the caller must pick exactly one.
+func requireBoundarySpec(boundaryNodeID, collectionLabel string) error {
+	hasID := strings.TrimSpace(boundaryNodeID) != ""
+	hasLabel := strings.TrimSpace(collectionLabel) != ""
+	switch {
+	case hasID && hasLabel:
+		return errors.New("boundary node id and collection label are mutually exclusive")
+	case !hasID && !hasLabel:
+		return errors.New("a boundary node id or collection label is required")
+	default:
+		return nil
+	}
+}
+
+// resolveBoundary maps a connect input's boundary spec to a scope-node id: an
+// existing node is validated for tenant visibility; a collection label mints a
+// new `collection` node registered as a root (a child of the org's solution node
+// once installation identity lands). Runs inside the source-insert transaction so
+// a minted node and the source that binds it commit together.
+func (s *Service) resolveBoundary(ctx context.Context, orgID, boundaryNodeID, collectionLabel string) (string, error) {
+	w := wool.Get(ctx).In("resolveBoundary")
+	if boundaryNodeID = strings.TrimSpace(boundaryNodeID); boundaryNodeID != "" {
+		exists, err := s.store.ScopeNodeExists(ctx, boundaryNodeID)
+		if err != nil {
+			return "", w.Wrap(err)
+		}
+		if !exists {
+			return "", w.NewError("boundary node is not a scope node in this org")
+		}
+		return boundaryNodeID, nil
+	}
+	node := &gen.ScopeNode{
+		Id:    NewIDString(),
+		OrgId: orgID,
+		Kind:  ScopeNodeKindCollection,
+		Label: strings.TrimSpace(collectionLabel),
+	}
+	node.ScopePath = strings.ReplaceAll(node.Id, "-", "_")
+	if err := s.store.RegisterScopeNode(ctx, node); err != nil {
+		return "", w.Wrapf(err, "register collection node")
+	}
+	return node.Id, nil
 }
 
 // normalizeAPIConfig validates and trims a generic API provider config.
@@ -1017,6 +1075,9 @@ func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *Datasour
 }
 
 func (s *Service) enqueueAPIIngest(ctx context.Context, source *DatasourceSource, result *apisource.Result) error {
+	if source.BoundaryNodeID == "" {
+		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
+	}
 	contentType := result.ContentType
 	if contentType == "" {
 		contentType = datasourceIngestContentType
@@ -1036,12 +1097,12 @@ func (s *Service) enqueueAPIIngest(ctx context.Context, source *DatasourceSource
 			ContentType:    contentType,
 			MaxAttempts:    datasourceIngestMaxAttempts,
 			Attributes: map[string]string{
-				attrSourceID:         source.ID,
-				attrOrgID:            source.OrgID,
-				attrTargetCollection: source.TargetCollection,
-				attrAPIURL:           apiResourceURL(source.API),
-				attrAPIContentSHA:    contentSHA,
-				attrChangeType:       changeTypeAdded,
+				attrSourceID:      source.ID,
+				attrOrgID:         source.OrgID,
+				attrBoundaryID:    source.BoundaryNodeID,
+				attrAPIURL:        apiResourceURL(source.API),
+				attrAPIContentSHA: contentSHA,
+				attrChangeType:    changeTypeAdded,
 			},
 		},
 	})
@@ -1119,6 +1180,9 @@ func (s *Service) runCrawlerSync(ctx context.Context, source *DatasourceSource) 
 }
 
 func (s *Service) enqueueCrawlerIngest(ctx context.Context, source *DatasourceSource, page crawler.Page) error {
+	if source.BoundaryNodeID == "" {
+		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
+	}
 	contentType := page.ContentType
 	if contentType == "" {
 		contentType = datasourceIngestContentType
@@ -1140,7 +1204,7 @@ func (s *Service) enqueueCrawlerIngest(ctx context.Context, source *DatasourceSo
 			Attributes: map[string]string{
 				attrSourceID:          source.ID,
 				attrOrgID:             source.OrgID,
-				attrTargetCollection:  source.TargetCollection,
+				attrBoundaryID:        source.BoundaryNodeID,
 				attrCrawlerURL:        page.URL,
 				attrCrawlerContentSHA: contentSHA,
 				attrChangeType:        changeTypeAdded,
@@ -1241,6 +1305,9 @@ func uploadFingerprint(object objectstore.Object, entry objectstore.Entry) strin
 }
 
 func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string) error {
+	if source.BoundaryNodeID == "" {
+		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
+	}
 	contentType := object.ContentType
 	if contentType == "" {
 		contentType = datasourceIngestContentType
@@ -1258,13 +1325,13 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 			ContentType:    contentType,
 			MaxAttempts:    datasourceIngestMaxAttempts,
 			Attributes: map[string]string{
-				attrSourceID:         source.ID,
-				attrOrgID:            source.OrgID,
-				attrTargetCollection: source.TargetCollection,
-				attrUploadBucket:     source.Upload.Bucket,
-				attrUploadKey:        object.Key,
-				attrUploadETag:       fingerprint,
-				attrChangeType:       changeTypeAdded,
+				attrSourceID:     source.ID,
+				attrOrgID:        source.OrgID,
+				attrBoundaryID:   source.BoundaryNodeID,
+				attrUploadBucket: source.Upload.Bucket,
+				attrUploadKey:    object.Key,
+				attrUploadETag:   fingerprint,
+				attrChangeType:   changeTypeAdded,
 			},
 		},
 	})
@@ -1331,6 +1398,9 @@ func (s *Service) SigningSecret(ctx context.Context, sourceID string) (string, e
 }
 
 func (s *Service) enqueueIngest(ctx context.Context, source *DatasourceSource, path, ref, commit, sha, changeType string, content []byte) error {
+	if source.BoundaryNodeID == "" {
+		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
+	}
 	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction: jobsv1.JobDirection_JOB_DIRECTION_INBOX,
@@ -1348,15 +1418,15 @@ func (s *Service) enqueueIngest(ctx context.Context, source *DatasourceSource, p
 			ContentType:    datasourceIngestContentType,
 			MaxAttempts:    datasourceIngestMaxAttempts,
 			Attributes: map[string]string{
-				attrSourceID:         source.ID,
-				attrOrgID:            source.OrgID,
-				attrTargetCollection: source.TargetCollection,
-				attrRepo:             source.Repo,
-				attrPath:             path,
-				attrRef:              ref,
-				attrSHA:              sha,
-				attrCommit:           commit,
-				attrChangeType:       changeType,
+				attrSourceID:   source.ID,
+				attrOrgID:      source.OrgID,
+				attrBoundaryID: source.BoundaryNodeID,
+				attrRepo:       source.Repo,
+				attrPath:       path,
+				attrRef:        ref,
+				attrSHA:        sha,
+				attrCommit:     commit,
+				attrChangeType: changeType,
 			},
 		},
 	})
