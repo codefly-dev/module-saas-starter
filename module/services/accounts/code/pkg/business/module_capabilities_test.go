@@ -443,6 +443,60 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 	}
 }
 
+// TestApprovalResumeStampsCompletingDecider pins the resume-outcome contract for
+// a multi-approver quorum: no resume enqueues until quorum is reached, and the
+// resume stamps the approver whose vote completed quorum — not the first
+// approver — so the module's handler attributes the decision to the right actor.
+func TestApprovalResumeStampsCompletingDecider(t *testing.T) {
+	store := newApprovalEngineStore()
+	svc, err := business.NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	backend := &fakeJobBackend{}
+	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Queues: []string{"documents"}},
+	})
+	id, err := svc.CreateApprovalRequest(context.Background(), &business.CreateApprovalRequestInput{
+		OrgID: moduleTenantA, Resource: "document_quarantine", Action: "release", RequestedBy: "requester-1",
+		Quorum:    2,
+		Policy:    business.ApprovalPolicy{ApproverSet: []string{"approver-1", "approver-2"}},
+		ResumeRef: business.ResumeRef{Queue: "documents", Topic: "document.quarantine_released"},
+	})
+	if err != nil {
+		t.Fatalf("CreateApprovalRequest: %v", err)
+	}
+
+	first, err := svc.Decide(context.Background(), moduleTenantA, id, business.DecideInput{Decider: "approver-1", Decision: business.DecisionApprove})
+	if err != nil {
+		t.Fatalf("Decide (first): %v", err)
+	}
+	if first.Approved {
+		t.Fatal("first sub-quorum decision must not approve")
+	}
+	if len(backend.enqueued) != 0 {
+		t.Fatalf("no resume must enqueue before quorum, got %d", len(backend.enqueued))
+	}
+
+	second, err := svc.Decide(context.Background(), moduleTenantA, id, business.DecideInput{Decider: "approver-2", Decision: business.DecisionApprove})
+	if err != nil {
+		t.Fatalf("Decide (second): %v", err)
+	}
+	if !second.Approved {
+		t.Fatal("second decision must reach quorum and approve")
+	}
+	if len(backend.enqueued) != 1 {
+		t.Fatalf("expected exactly 1 resume enqueue on quorum, got %d", len(backend.enqueued))
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(backend.enqueued[0].GetJob().GetPayload(), &payload); err != nil {
+		t.Fatalf("resume payload is not valid JSON: %v", err)
+	}
+	if payload["decider"] != "approver-2" {
+		t.Fatalf("resume payload decider = %v, want the completing approver %q", payload["decider"], "approver-2")
+	}
+}
+
 // TestApprovalResume_ErrorsWhenProducerUnwired pins the fix for silently dropping
 // a resume: a request that declares a resume queue must fail its decision when no
 // producer is wired, rather than transitioning to approved with no resume job.

@@ -476,9 +476,10 @@ func moduleApprovalError(err error) error {
 // rather than resuming the gated action twice. No-op when no resume queue is
 // declared or the producer is not wired.
 //
-// The payload stamps the decision outcome — decision and the deciding actor —
-// alongside the request head, so the module's handler can act on the resume
-// without a second round-trip to read who approved it and how.
+// The payload stamps the outcome so the module's handler need not read it back:
+// decision, and decider — the single approver whose vote completed quorum, not
+// the full approver set. When quorum > 1 the other approvers are recoverable
+// from approval_decisions via the stamped approval_id.
 func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalRequest, decision ApprovalDecisionKind, decider string) error {
 	if req.ResumeRef.Queue == "" {
 		return nil
