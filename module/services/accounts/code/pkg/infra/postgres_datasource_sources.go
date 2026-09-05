@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -10,21 +11,30 @@ import (
 )
 
 // datasourceSourceColumns is the shared projection; COALESCE keeps the optional
-// text columns non-null so they scan into plain strings, while last_synced_at
-// stays nullable and scans into *time.Time.
+// text columns non-null so they scan into plain strings (repo is null for
+// providers that have no repository), while last_synced_at and config stay
+// nullable.
 const datasourceSourceColumns = `
-	id::text, org_id::text, provider, repo, paths, COALESCE(branch, ''),
+	id::text, org_id::text, provider, COALESCE(repo, ''), paths, COALESCE(branch, ''),
 	target_collection, credential_secret_ref, COALESCE(webhook_secret_ref, ''),
-	status, last_synced_at, created_at, updated_at`
+	status, last_synced_at, created_at, updated_at, config`
 
 func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	var d business.DatasourceSource
+	var config []byte
 	if err := row.Scan(
 		&d.ID, &d.OrgID, &d.Provider, &d.Repo, &d.Paths, &d.Branch,
 		&d.TargetCollection, &d.CredentialSecretRef, &d.WebhookSecretRef,
-		&d.Status, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt,
+		&d.Status, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
 	); err != nil {
 		return nil, err
+	}
+	if len(config) > 0 {
+		var api business.APIDatasourceConfig
+		if err := json.Unmarshal(config, &api); err != nil {
+			return nil, err
+		}
+		d.API = &api
 	}
 	return &d, nil
 }
@@ -36,13 +46,21 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	if paths == nil {
 		paths = []string{}
 	}
+	var config []byte
+	if source.API != nil {
+		encoded, err := json.Marshal(source.API)
+		if err != nil {
+			return err
+		}
+		config = encoded
+	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
 			id, org_id, provider, repo, paths, branch, target_collection,
-			credential_secret_ref, webhook_secret_ref, status)
-		VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10)`,
+			credential_secret_ref, webhook_secret_ref, status, config)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10, $11)`,
 		source.ID, source.OrgID, source.Provider, source.Repo, paths, source.Branch,
-		source.TargetCollection, source.CredentialSecretRef, source.WebhookSecretRef, source.Status,
+		source.TargetCollection, source.CredentialSecretRef, source.WebhookSecretRef, source.Status, config,
 	)
 	return err
 }

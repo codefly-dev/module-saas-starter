@@ -54,6 +54,7 @@ type Service struct {
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
 	githubBaseURL             string                     // api.github.com override for the datasource connector
 	newGitHubClient           func(token string) GitHubContentClient
+	newAPIClient              func(cfg APIDatasourceConfig, credential string) APIContentClient
 	moduleProducer            jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
 	moduleJobStore            jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
 	modulePrincipals          ModulePrincipalRegistry // per-principal capability grants for the module-facing surface

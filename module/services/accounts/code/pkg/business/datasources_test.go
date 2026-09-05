@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/datasource/github"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 )
@@ -411,4 +412,149 @@ func TestRunDatasourceSync_CommitKeyedIdempotency(t *testing.T) {
 func mut(in business.AddGitHubSourceInput, f func(*business.AddGitHubSourceInput)) business.AddGitHubSourceInput {
 	f(&in)
 	return in
+}
+
+// fakeAPIClient returns a fixed API fetch result without a live endpoint.
+type fakeAPIClient struct {
+	result *apisource.Result
+	err    error
+	calls  int
+}
+
+func (f *fakeAPIClient) Fetch(context.Context) (*apisource.Result, error) {
+	f.calls++
+	return f.result, f.err
+}
+
+func apiConfig() *business.APIDatasourceConfig {
+	return &business.APIDatasourceConfig{
+		BaseURL:        "https://api.example.com",
+		ResourcePath:   "/v1/docs",
+		CredentialKind: business.APICredentialKindBearer,
+	}
+}
+
+func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
+	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID:            testOrg,
+		Provider:         business.DatasourceProviderAPI,
+		TargetCollection: "wiki",
+		Credential:       "sekret",
+		API:              apiConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Provider != business.DatasourceProviderAPI || source.Status != business.DatasourceStatusActive {
+		t.Fatalf("provider/status = %q/%q", source.Provider, source.Status)
+	}
+	if source.Repo != "" {
+		t.Fatalf("api source must have no repo, got %q", source.Repo)
+	}
+	if source.API == nil || source.API.BaseURL != "https://api.example.com" ||
+		source.API.CredentialKind != business.APICredentialKindBearer {
+		t.Fatalf("api config = %+v", source.API)
+	}
+	wantCred := "enc:" + business.DatasourceConnectorSecretPurpose(source.ID) + ":sekret"
+	if source.CredentialSecretRef != wantCred {
+		t.Fatalf("credential ref = %q, want %q", source.CredentialSecretRef, wantCred)
+	}
+	if source.WebhookConfigured() {
+		t.Fatal("api source must not be webhook-configured")
+	}
+	if got := audit.types(); len(got) != 1 || got[0] != business.EventDatasourceSourceAdded {
+		t.Fatalf("audit events = %v", got)
+	}
+}
+
+func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+	_, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		Credential: "sekret", API: apiConfig(), WebhookSecret: "whsec",
+	})
+	if err == nil {
+		t.Fatal("api provider must reject a webhook secret it cannot verify")
+	}
+}
+
+func TestAddSource_Validation(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+	base := business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki", Credential: "c", API: apiConfig()}
+	cases := map[string]business.AddSourceInput{
+		"missing credential":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki", API: apiConfig()},
+		"missing collection":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, Credential: "c", API: apiConfig()},
+		"unknown provider":    {OrgID: testOrg, Provider: "gitlab", TargetCollection: "wiki", Credential: "c"},
+		"api without config":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki", Credential: "c"},
+		"github without repo": {OrgID: testOrg, Provider: business.DatasourceProviderGitHub, TargetCollection: "wiki", Credential: "c"},
+	}
+	cases["bad base url"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.BaseURL = "ftp://x" })
+	cases["bad credential kind"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.CredentialKind = "oauth" })
+	cases["header kind without header"] = withAPI(base, func(c *business.APIDatasourceConfig) {
+		c.CredentialKind = business.APICredentialKindHeader
+	})
+	for name, in := range cases {
+		if _, err := svc.AddSource(context.Background(), "actor-1", in); err == nil {
+			t.Errorf("%s: want error, got nil", name)
+		}
+	}
+}
+
+func withAPI(in business.AddSourceInput, f func(*business.APIDatasourceConfig)) business.AddSourceInput {
+	cfg := *in.API
+	f(&cfg)
+	in.API = &cfg
+	return in
+}
+
+func TestAddSource_GitHubBranchThroughGenericCall(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, TargetCollection: "wiki",
+		Credential: "ghp", Repo: "acme/docs", Branch: "main",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.Provider != business.DatasourceProviderGitHub || source.Repo != "acme/docs" || source.Branch != "main" {
+		t.Fatalf("github source = %+v", source)
+	}
+}
+
+func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	fake := &fakeAPIClient{result: &apisource.Result{Body: []byte(`{"x":1}`), ContentType: "application/json"}}
+	svc.SetDatasourceAPIClientFactory(func(business.APIDatasourceConfig, string) business.APIContentClient { return fake })
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		Credential: "sekret", API: apiConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if enqueued != 1 || len(producer.jobs) != 1 || fake.calls != 1 {
+		t.Fatalf("enqueued=%d jobs=%d fetch calls=%d, want 1/1/1", enqueued, len(producer.jobs), fake.calls)
+	}
+	job := producer.jobs[0]
+	if job.GetTopic() != "datasource.api.sync" || !job.GetScope().GetGlobal() {
+		t.Fatalf("topic=%q scope=%v", job.GetTopic(), job.GetScope())
+	}
+	if string(job.GetPayload()) != `{"x":1}` || job.GetContentType() != "application/json" {
+		t.Fatalf("payload=%q type=%q", job.GetPayload(), job.GetContentType())
+	}
+	attrs := job.GetAttributes()
+	if attrs["datasource.source_id"] != source.ID || attrs["datasource.org_id"] != testOrg ||
+		attrs["datasource.target_collection"] != "wiki" || attrs["api.url"] != "https://api.example.com/v1/docs" ||
+		attrs["api.content_sha"] == "" {
+		t.Fatalf("attributes = %v", attrs)
+	}
 }

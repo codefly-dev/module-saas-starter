@@ -20,11 +20,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DatasourceService_AddGitHubSource_FullMethodName = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
-	DatasourceService_ListSources_FullMethodName     = "/saas.accounts.v1.DatasourceService/ListSources"
-	DatasourceService_GetSource_FullMethodName       = "/saas.accounts.v1.DatasourceService/GetSource"
-	DatasourceService_SyncSource_FullMethodName      = "/saas.accounts.v1.DatasourceService/SyncSource"
-	DatasourceService_DeleteSource_FullMethodName    = "/saas.accounts.v1.DatasourceService/DeleteSource"
+	DatasourceService_AddGitHubSource_FullMethodName      = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
+	DatasourceService_AddSource_FullMethodName            = "/saas.accounts.v1.DatasourceService/AddSource"
+	DatasourceService_GetDatasourceCatalog_FullMethodName = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
+	DatasourceService_ListSources_FullMethodName          = "/saas.accounts.v1.DatasourceService/ListSources"
+	DatasourceService_GetSource_FullMethodName            = "/saas.accounts.v1.DatasourceService/GetSource"
+	DatasourceService_SyncSource_FullMethodName           = "/saas.accounts.v1.DatasourceService/SyncSource"
+	DatasourceService_DeleteSource_FullMethodName         = "/saas.accounts.v1.DatasourceService/DeleteSource"
 )
 
 // DatasourceServiceClient is the client API for DatasourceService service.
@@ -38,6 +40,15 @@ type DatasourceServiceClient interface {
 	// stores its access token (and optional webhook signing secret), and returns
 	// the non-secret projection.
 	AddGitHubSource(ctx context.Context, in *AddGitHubSourceRequest, opts ...grpc.CallOption) (*AddGitHubSourceResponse, error)
+	// AddSource registers a datasource for any provider: it selects the connector
+	// by provider, stores the config and the encrypted credential (and optional
+	// webhook signing secret), and returns the non-secret projection.
+	AddSource(ctx context.Context, in *AddSourceRequest, opts ...grpc.CallOption) (*AddSourceResponse, error)
+	// GetDatasourceCatalog returns the registry of available provider types and
+	// their per-provider connect metadata, so a client can enumerate and render
+	// the "connect a source" surface without provider-specific code. The catalog
+	// is static, non-secret, and identical for every tenant.
+	GetDatasourceCatalog(ctx context.Context, in *GetDatasourceCatalogRequest, opts ...grpc.CallOption) (*GetDatasourceCatalogResponse, error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(ctx context.Context, in *ListSourcesRequest, opts ...grpc.CallOption) (*ListSourcesResponse, error)
 	// GetSource returns one connected datasource in the calling org.
@@ -61,6 +72,26 @@ func (c *datasourceServiceClient) AddGitHubSource(ctx context.Context, in *AddGi
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(AddGitHubSourceResponse)
 	err := c.cc.Invoke(ctx, DatasourceService_AddGitHubSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) AddSource(ctx context.Context, in *AddSourceRequest, opts ...grpc.CallOption) (*AddSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AddSourceResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_AddSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *datasourceServiceClient) GetDatasourceCatalog(ctx context.Context, in *GetDatasourceCatalogRequest, opts ...grpc.CallOption) (*GetDatasourceCatalogResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDatasourceCatalogResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_GetDatasourceCatalog_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +149,15 @@ type DatasourceServiceServer interface {
 	// stores its access token (and optional webhook signing secret), and returns
 	// the non-secret projection.
 	AddGitHubSource(context.Context, *AddGitHubSourceRequest) (*AddGitHubSourceResponse, error)
+	// AddSource registers a datasource for any provider: it selects the connector
+	// by provider, stores the config and the encrypted credential (and optional
+	// webhook signing secret), and returns the non-secret projection.
+	AddSource(context.Context, *AddSourceRequest) (*AddSourceResponse, error)
+	// GetDatasourceCatalog returns the registry of available provider types and
+	// their per-provider connect metadata, so a client can enumerate and render
+	// the "connect a source" surface without provider-specific code. The catalog
+	// is static, non-secret, and identical for every tenant.
+	GetDatasourceCatalog(context.Context, *GetDatasourceCatalogRequest) (*GetDatasourceCatalogResponse, error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error)
 	// GetSource returns one connected datasource in the calling org.
@@ -139,6 +179,12 @@ type UnimplementedDatasourceServiceServer struct{}
 
 func (UnimplementedDatasourceServiceServer) AddGitHubSource(context.Context, *AddGitHubSourceRequest) (*AddGitHubSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method AddGitHubSource not implemented")
+}
+func (UnimplementedDatasourceServiceServer) AddSource(context.Context, *AddSourceRequest) (*AddSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AddSource not implemented")
+}
+func (UnimplementedDatasourceServiceServer) GetDatasourceCatalog(context.Context, *GetDatasourceCatalogRequest) (*GetDatasourceCatalogResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDatasourceCatalog not implemented")
 }
 func (UnimplementedDatasourceServiceServer) ListSources(context.Context, *ListSourcesRequest) (*ListSourcesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListSources not implemented")
@@ -187,6 +233,42 @@ func _DatasourceService_AddGitHubSource_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DatasourceServiceServer).AddGitHubSource(ctx, req.(*AddGitHubSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_AddSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).AddSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_AddSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).AddSource(ctx, req.(*AddSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatasourceService_GetDatasourceCatalog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDatasourceCatalogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).GetDatasourceCatalog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_GetDatasourceCatalog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).GetDatasourceCatalog(ctx, req.(*GetDatasourceCatalogRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -273,6 +355,14 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AddGitHubSource",
 			Handler:    _DatasourceService_AddGitHubSource_Handler,
+		},
+		{
+			MethodName: "AddSource",
+			Handler:    _DatasourceService_AddSource_Handler,
+		},
+		{
+			MethodName: "GetDatasourceCatalog",
+			Handler:    _DatasourceService_GetDatasourceCatalog_Handler,
 		},
 		{
 			MethodName: "ListSources",

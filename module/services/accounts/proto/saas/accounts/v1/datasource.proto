@@ -17,11 +17,14 @@ import "saas/policy/v1/options.proto";
 // ============================================================================
 
 // DatasourceProvider identifies the external system a datasource connects to.
-// Only GitHub is implemented today; the enum is the extension point for further
+// GitHub is the bespoke connector; API is the generic "HTTP API with a stored
+// credential" connector that covers a large class of sources without a
+// per-provider proto change. The enum is the extension point for further
 // connectors.
 enum DatasourceProvider {
   DATASOURCE_PROVIDER_UNSPECIFIED = 0;
   DATASOURCE_PROVIDER_GITHUB = 1;
+  DATASOURCE_PROVIDER_API = 2;
 }
 
 // DatasourceStatus is the datasource lifecycle. A datasource is active from
@@ -45,8 +48,40 @@ message GitHubDatasourceConfig {
   string branch = 3;
 }
 
+// ApiCredentialKind is how the generic API connector presents its stored
+// credential on every outbound request. The credential material itself lives in
+// the secret store; only the kind (and, for KIND_HEADER, the header name) is
+// non-secret config.
+enum ApiCredentialKind {
+  API_CREDENTIAL_KIND_UNSPECIFIED = 0;
+  // Authorization: Bearer <credential>.
+  API_CREDENTIAL_KIND_BEARER = 1;
+  // Authorization: Basic <credential>, where the stored credential is the
+  // already-encoded "user:password" pair.
+  API_CREDENTIAL_KIND_BASIC = 2;
+  // <credential_header>: <credential>, for APIs that take a raw token in a
+  // named header (e.g. X-API-Key).
+  API_CREDENTIAL_KIND_HEADER = 3;
+}
+
+// ApiDatasourceConfig is the public, non-secret configuration of a generic
+// API-with-credentials datasource. The credential value (bearer/basic/header
+// token) and any webhook signing secret are never carried here; they live only
+// as SecretCipher envelopes in the credential store.
+message ApiDatasourceConfig {
+  // Base URL of the API, e.g. "https://api.example.com".
+  string base_url = 1;
+  // Resource path, relative to base_url, whose response is pulled and handed to
+  // the ingest inbox, e.g. "/v1/documents".
+  string resource_path = 2;
+  ApiCredentialKind credential_kind = 3;
+  // Header name for API_CREDENTIAL_KIND_HEADER; ignored for the other kinds.
+  string credential_header = 4;
+}
+
 // Datasource is one connected external datasource. It is org-scoped and carries
 // only non-secret projection fields; credential material is deliberately absent.
+// Exactly one provider config (github or api) is set, matching provider.
 message Datasource {
   string id = 1;
   string org_id = 2;
@@ -61,6 +96,7 @@ message Datasource {
   google.protobuf.Timestamp created_at = 8;
   google.protobuf.Timestamp updated_at = 9;
   google.protobuf.Timestamp last_synced_at = 10;
+  ApiDatasourceConfig api = 11;
 }
 
 message AddGitHubSourceRequest {
@@ -101,6 +137,69 @@ message AddGitHubSourceRequest {
 
 message AddGitHubSourceResponse {
   Datasource datasource = 1;
+}
+
+// AddSourceRequest is the provider-agnostic connect call. provider selects the
+// connector; the config oneof carries that provider's non-secret configuration
+// (the variant must match provider); credential carries the plaintext secret the
+// connector authenticates with (a GitHub token, or the API connector's
+// bearer/basic/header credential), encrypted through the SecretCipher at receipt
+// so only its envelope reference is persisted.
+message AddSourceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  DatasourceProvider provider = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  // Documents-store collection the pulled Entries land in.
+  string target_collection = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  oneof config {
+    GitHubDatasourceConfig github = 4;
+    ApiDatasourceConfig api = 5;
+  }
+  // Plaintext credential the connector authenticates with. Encrypted at receipt.
+  string credential = 6 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 4096
+  }];
+  // Plaintext webhook signing secret. Optional; when omitted, live webhook
+  // ingestion stays off until a later call supplies one. Encrypted at receipt.
+  string webhook_secret = 7 [(buf.validate.field).string.max_len = 1024];
+}
+
+message AddSourceResponse {
+  Datasource datasource = 1;
+}
+
+// DatasourceConfigField describes one non-secret config input a provider needs,
+// so the UI can render the connect form from the catalog rather than hardcoding
+// it per provider.
+message DatasourceConfigField {
+  // Config field key, matching the provider's config message field name.
+  string key = 1;
+  string display_name = 2;
+  string help = 3;
+  bool required = 4;
+}
+
+// DatasourceProviderDescriptor is one catalog entry: everything the UI needs to
+// offer and configure a provider without provider-specific code.
+message DatasourceProviderDescriptor {
+  DatasourceProvider provider = 1;
+  string display_name = 2;
+  string description = 3;
+  repeated DatasourceConfigField config_fields = 4;
+  // Whether the provider can verify inbound webhook deliveries.
+  bool supports_webhook = 5;
+}
+
+message GetDatasourceCatalogRequest {}
+
+message GetDatasourceCatalogResponse {
+  repeated DatasourceProviderDescriptor providers = 1;
 }
 
 message ListSourcesRequest {
@@ -162,6 +261,47 @@ service DatasourceService {
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // AddSource registers a datasource for any provider: it selects the connector
+  // by provider, stores the config and the encrypted credential (and optional
+  // webhook signing secret), and returns the non-secret projection.
+  rpc AddSource(AddSourceRequest) returns (AddSourceResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "datasource.source.added"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetDatasourceCatalog returns the registry of available provider types and
+  // their per-provider connect metadata, so a client can enumerate and render
+  // the "connect a source" surface without provider-specific code. The catalog
+  // is static, non-secret, and identical for every tenant.
+  rpc GetDatasourceCatalog(GetDatasourceCatalogRequest) returns (GetDatasourceCatalogResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_INTERNAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
