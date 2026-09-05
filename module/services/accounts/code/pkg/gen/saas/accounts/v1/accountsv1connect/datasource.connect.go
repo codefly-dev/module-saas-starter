@@ -37,6 +37,12 @@ const (
 	// DatasourceServiceAddGitHubSourceProcedure is the fully-qualified name of the DatasourceService's
 	// AddGitHubSource RPC.
 	DatasourceServiceAddGitHubSourceProcedure = "/saas.accounts.v1.DatasourceService/AddGitHubSource"
+	// DatasourceServiceAddSourceProcedure is the fully-qualified name of the DatasourceService's
+	// AddSource RPC.
+	DatasourceServiceAddSourceProcedure = "/saas.accounts.v1.DatasourceService/AddSource"
+	// DatasourceServiceGetDatasourceCatalogProcedure is the fully-qualified name of the
+	// DatasourceService's GetDatasourceCatalog RPC.
+	DatasourceServiceGetDatasourceCatalogProcedure = "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog"
 	// DatasourceServiceListSourcesProcedure is the fully-qualified name of the DatasourceService's
 	// ListSources RPC.
 	DatasourceServiceListSourcesProcedure = "/saas.accounts.v1.DatasourceService/ListSources"
@@ -57,6 +63,15 @@ type DatasourceServiceClient interface {
 	// stores its access token (and optional webhook signing secret), and returns
 	// the non-secret projection.
 	AddGitHubSource(context.Context, *connect.Request[v1.AddGitHubSourceRequest]) (*connect.Response[v1.AddGitHubSourceResponse], error)
+	// AddSource registers a datasource for any provider: it selects the connector
+	// by provider, stores the config and the encrypted credential (and optional
+	// webhook signing secret), and returns the non-secret projection.
+	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
+	// GetDatasourceCatalog returns the registry of available provider types and
+	// their per-provider connect metadata, so a client can enumerate and render
+	// the "connect a source" surface without provider-specific code. The catalog
+	// is static, non-secret, and identical for every tenant.
+	GetDatasourceCatalog(context.Context, *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(context.Context, *connect.Request[v1.ListSourcesRequest]) (*connect.Response[v1.ListSourcesResponse], error)
 	// GetSource returns one connected datasource in the calling org.
@@ -83,6 +98,18 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+DatasourceServiceAddGitHubSourceProcedure,
 			connect.WithSchema(datasourceServiceMethods.ByName("AddGitHubSource")),
+			connect.WithClientOptions(opts...),
+		),
+		addSource: connect.NewClient[v1.AddSourceRequest, v1.AddSourceResponse](
+			httpClient,
+			baseURL+DatasourceServiceAddSourceProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("AddSource")),
+			connect.WithClientOptions(opts...),
+		),
+		getDatasourceCatalog: connect.NewClient[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse](
+			httpClient,
+			baseURL+DatasourceServiceGetDatasourceCatalogProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("GetDatasourceCatalog")),
 			connect.WithClientOptions(opts...),
 		),
 		listSources: connect.NewClient[v1.ListSourcesRequest, v1.ListSourcesResponse](
@@ -114,16 +141,28 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 
 // datasourceServiceClient implements DatasourceServiceClient.
 type datasourceServiceClient struct {
-	addGitHubSource *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
-	listSources     *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
-	getSource       *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
-	syncSource      *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
-	deleteSource    *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
+	addGitHubSource      *connect.Client[v1.AddGitHubSourceRequest, v1.AddGitHubSourceResponse]
+	addSource            *connect.Client[v1.AddSourceRequest, v1.AddSourceResponse]
+	getDatasourceCatalog *connect.Client[v1.GetDatasourceCatalogRequest, v1.GetDatasourceCatalogResponse]
+	listSources          *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
+	getSource            *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
+	syncSource           *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
+	deleteSource         *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
 }
 
 // AddGitHubSource calls saas.accounts.v1.DatasourceService.AddGitHubSource.
 func (c *datasourceServiceClient) AddGitHubSource(ctx context.Context, req *connect.Request[v1.AddGitHubSourceRequest]) (*connect.Response[v1.AddGitHubSourceResponse], error) {
 	return c.addGitHubSource.CallUnary(ctx, req)
+}
+
+// AddSource calls saas.accounts.v1.DatasourceService.AddSource.
+func (c *datasourceServiceClient) AddSource(ctx context.Context, req *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error) {
+	return c.addSource.CallUnary(ctx, req)
+}
+
+// GetDatasourceCatalog calls saas.accounts.v1.DatasourceService.GetDatasourceCatalog.
+func (c *datasourceServiceClient) GetDatasourceCatalog(ctx context.Context, req *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error) {
+	return c.getDatasourceCatalog.CallUnary(ctx, req)
 }
 
 // ListSources calls saas.accounts.v1.DatasourceService.ListSources.
@@ -152,6 +191,15 @@ type DatasourceServiceHandler interface {
 	// stores its access token (and optional webhook signing secret), and returns
 	// the non-secret projection.
 	AddGitHubSource(context.Context, *connect.Request[v1.AddGitHubSourceRequest]) (*connect.Response[v1.AddGitHubSourceResponse], error)
+	// AddSource registers a datasource for any provider: it selects the connector
+	// by provider, stores the config and the encrypted credential (and optional
+	// webhook signing secret), and returns the non-secret projection.
+	AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error)
+	// GetDatasourceCatalog returns the registry of available provider types and
+	// their per-provider connect metadata, so a client can enumerate and render
+	// the "connect a source" surface without provider-specific code. The catalog
+	// is static, non-secret, and identical for every tenant.
+	GetDatasourceCatalog(context.Context, *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error)
 	// ListSources returns the calling org's connected datasources.
 	ListSources(context.Context, *connect.Request[v1.ListSourcesRequest]) (*connect.Response[v1.ListSourcesResponse], error)
 	// GetSource returns one connected datasource in the calling org.
@@ -174,6 +222,18 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		DatasourceServiceAddGitHubSourceProcedure,
 		svc.AddGitHubSource,
 		connect.WithSchema(datasourceServiceMethods.ByName("AddGitHubSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceAddSourceHandler := connect.NewUnaryHandler(
+		DatasourceServiceAddSourceProcedure,
+		svc.AddSource,
+		connect.WithSchema(datasourceServiceMethods.ByName("AddSource")),
+		connect.WithHandlerOptions(opts...),
+	)
+	datasourceServiceGetDatasourceCatalogHandler := connect.NewUnaryHandler(
+		DatasourceServiceGetDatasourceCatalogProcedure,
+		svc.GetDatasourceCatalog,
+		connect.WithSchema(datasourceServiceMethods.ByName("GetDatasourceCatalog")),
 		connect.WithHandlerOptions(opts...),
 	)
 	datasourceServiceListSourcesHandler := connect.NewUnaryHandler(
@@ -204,6 +264,10 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		switch r.URL.Path {
 		case DatasourceServiceAddGitHubSourceProcedure:
 			datasourceServiceAddGitHubSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceAddSourceProcedure:
+			datasourceServiceAddSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceGetDatasourceCatalogProcedure:
+			datasourceServiceGetDatasourceCatalogHandler.ServeHTTP(w, r)
 		case DatasourceServiceListSourcesProcedure:
 			datasourceServiceListSourcesHandler.ServeHTTP(w, r)
 		case DatasourceServiceGetSourceProcedure:
@@ -223,6 +287,14 @@ type UnimplementedDatasourceServiceHandler struct{}
 
 func (UnimplementedDatasourceServiceHandler) AddGitHubSource(context.Context, *connect.Request[v1.AddGitHubSourceRequest]) (*connect.Response[v1.AddGitHubSourceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.AddGitHubSource is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) AddSource(context.Context, *connect.Request[v1.AddSourceRequest]) (*connect.Response[v1.AddSourceResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.AddSource is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) GetDatasourceCatalog(context.Context, *connect.Request[v1.GetDatasourceCatalogRequest]) (*connect.Response[v1.GetDatasourceCatalogResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.GetDatasourceCatalog is not implemented"))
 }
 
 func (UnimplementedDatasourceServiceHandler) ListSources(context.Context, *connect.Request[v1.ListSourcesRequest]) (*connect.Response[v1.ListSourcesResponse], error) {

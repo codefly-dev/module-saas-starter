@@ -5,9 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 
+	"accounts/pkg/datasource/apisource"
 	"accounts/pkg/datasource/github"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
@@ -15,13 +17,22 @@ import (
 	"github.com/codefly-dev/core/wool"
 )
 
-// Datasource providers and lifecycle statuses. Only GitHub is implemented; the
-// provider string is the extension point recorded on every Source row.
+// Datasource providers and lifecycle statuses. The provider string is recorded
+// on every Source row and selects the connector.
 const (
 	DatasourceProviderGitHub = "github"
+	DatasourceProviderAPI    = "api"
 
 	DatasourceStatusActive = "active"
 	DatasourceStatusPaused = "paused"
+)
+
+// API credential kinds mirror saas.accounts.v1.ApiCredentialKind; they select
+// how the stored credential is presented on the generic connector's requests.
+const (
+	APICredentialKindBearer = apisource.CredentialKindBearer
+	APICredentialKindBasic  = apisource.CredentialKindBasic
+	APICredentialKindHeader = apisource.CredentialKindHeader
 )
 
 const (
@@ -69,6 +80,16 @@ const (
 	attrCommit           = "github.commit"
 	attrChangeType       = "github.change_type"
 
+	// The generic API connector lands on the same shared "datasource" queue; a
+	// distinct topic/source lets the documents consumer route an API pull apart
+	// from a GitHub one. The fetched body travels as the payload; the resource
+	// URL and a content hash travel in attributes.
+	datasourceAPISyncTopic  = "datasource.api.sync"
+	datasourceAPISyncSource = "api.sync"
+
+	attrAPIURL        = "api.url"
+	attrAPIContentSHA = "api.content_sha"
+
 	changeTypeAdded = "added"
 )
 
@@ -90,9 +111,21 @@ func DatasourceWebhookSecretPurpose(sourceID string) string {
 	return datasourceWebhookSecretPurposePrefix + sourceID
 }
 
+// APIDatasourceConfig is the non-secret configuration of a generic
+// API-with-credentials Source. It is persisted as the Source row's config JSONB;
+// the credential itself lives only as a SecretCipher envelope in
+// CredentialSecretRef.
+type APIDatasourceConfig struct {
+	BaseURL          string `json:"base_url"`
+	ResourcePath     string `json:"resource_path"`
+	CredentialKind   string `json:"credential_kind"`
+	CredentialHeader string `json:"credential_header,omitempty"`
+}
+
 // DatasourceSource is one connected external datasource. CredentialSecretRef and
 // WebhookSecretRef hold SecretCipher envelopes (references into the secret
-// provider), never plaintext.
+// provider), never plaintext. Repo/Paths/Branch are set for the GitHub provider;
+// API is set for the generic API provider.
 type DatasourceSource struct {
 	ID                  string
 	OrgID               string
@@ -100,6 +133,7 @@ type DatasourceSource struct {
 	Repo                string
 	Paths               []string
 	Branch              string
+	API                 *APIDatasourceConfig
 	TargetCollection    string
 	CredentialSecretRef string
 	WebhookSecretRef    string
@@ -137,6 +171,12 @@ type GitHubContentClient interface {
 	GetFileContent(ctx context.Context, repo, ref, path string) ([]byte, error)
 }
 
+// APIContentClient is the subset of the generic API connector the Service needs.
+// The Service builds one per Source from its config and decrypted credential.
+type APIContentClient interface {
+	Fetch(ctx context.Context) (*apisource.Result, error)
+}
+
 // SetDatasourceConnector wires the fail-closed credential cipher, the privileged
 // inbox producer used for ingest deliveries, and the GitHub API base URL. It is
 // the one setter #274 adds; production passes Vault transit and the durable job
@@ -150,12 +190,28 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 			return github.New(token, s.githubBaseURL)
 		}
 	}
+	if s.newAPIClient == nil {
+		s.newAPIClient = func(cfg APIDatasourceConfig, credential string) APIContentClient {
+			return apisource.New(apisource.Config{
+				BaseURL:          cfg.BaseURL,
+				ResourcePath:     cfg.ResourcePath,
+				CredentialKind:   cfg.CredentialKind,
+				CredentialHeader: cfg.CredentialHeader,
+			}, credential)
+		}
+	}
 }
 
 // SetDatasourceGitHubClientFactory overrides how per-Source GitHub clients are
 // built. Tests use it to inject a fake without a live api.github.com.
 func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) GitHubContentClient) {
 	s.newGitHubClient = factory
+}
+
+// SetDatasourceAPIClientFactory overrides how per-Source API clients are built.
+// Tests use it to inject a fake without a live HTTP endpoint.
+func (s *Service) SetDatasourceAPIClientFactory(factory func(cfg APIDatasourceConfig, credential string) APIContentClient) {
+	s.newAPIClient = factory
 }
 
 // AddGitHubSource registers a GitHub repository as a Source. The access token
@@ -216,6 +272,133 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	s.emit(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
 		map[string]any{"repo": source.Repo})
 	return source, nil
+}
+
+// AddSourceInput is the provider-agnostic connect input. Provider selects the
+// connector; the matching config fields are read (Repo/Paths/Branch for GitHub,
+// API for the generic API provider). Credential and WebhookSecret are plaintext,
+// each encrypted through the SecretCipher and persisted only as an envelope
+// reference.
+type AddSourceInput struct {
+	OrgID            string
+	Provider         string
+	TargetCollection string
+	Credential       string
+	WebhookSecret    string
+
+	// GitHub provider config.
+	Repo   string
+	Paths  []string
+	Branch string
+
+	// API provider config.
+	API *APIDatasourceConfig
+}
+
+// AddSource registers a datasource for any provider. It validates the config for
+// the selected provider, encrypts the credential (and, where the provider
+// supports webhooks, the signing secret), persists the non-secret row, and
+// returns it without credential material.
+func (s *Service) AddSource(ctx context.Context, actorID string, input AddSourceInput) (*DatasourceSource, error) {
+	w := wool.Get(ctx).In("AddSource")
+
+	orgID := strings.TrimSpace(input.OrgID)
+	if orgID == "" {
+		return nil, w.NewError("org id is required")
+	}
+	targetCollection := strings.TrimSpace(input.TargetCollection)
+	if targetCollection == "" {
+		return nil, w.NewError("target collection is required")
+	}
+	if strings.TrimSpace(input.Credential) == "" {
+		return nil, w.NewError("credential is required")
+	}
+	if s.datasourceCipher == nil {
+		return nil, w.NewError("datasource secret cipher is not configured")
+	}
+
+	source := &DatasourceSource{
+		ID:               NewIDString(),
+		OrgID:            orgID,
+		Provider:         input.Provider,
+		TargetCollection: targetCollection,
+		Status:           DatasourceStatusActive,
+	}
+
+	switch input.Provider {
+	case DatasourceProviderGitHub:
+		repo := strings.TrimSpace(input.Repo)
+		if !validRepo(repo) {
+			return nil, w.NewError("repo must be in owner/name form")
+		}
+		source.Repo = repo
+		source.Paths = normalizePaths(input.Paths)
+		source.Branch = strings.TrimSpace(input.Branch)
+	case DatasourceProviderAPI:
+		// The generic API provider has no webhook receiver yet; refuse a secret
+		// nothing would ever verify rather than storing dead credential material.
+		if strings.TrimSpace(input.WebhookSecret) != "" {
+			return nil, w.NewError("api provider does not support webhooks")
+		}
+		cfg, err := normalizeAPIConfig(input.API)
+		if err != nil {
+			return nil, w.Wrap(err)
+		}
+		source.API = cfg
+	default:
+		return nil, w.NewError("unknown datasource provider")
+	}
+
+	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), input.Credential)
+	if err != nil {
+		return nil, w.Wrapf(err, "encrypt credential")
+	}
+	source.CredentialSecretRef = credentialRef
+
+	if secret := strings.TrimSpace(input.WebhookSecret); secret != "" {
+		webhookRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceWebhookSecretPurpose(source.ID), secret)
+		if err != nil {
+			return nil, w.Wrapf(err, "encrypt webhook secret")
+		}
+		source.WebhookSecretRef = webhookRef
+	}
+
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		return s.store.InsertDatasourceSource(ctx, source)
+	}); err != nil {
+		return nil, w.Wrapf(err, "persist datasource source")
+	}
+	s.emit(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
+		map[string]any{"provider": source.Provider})
+	return source, nil
+}
+
+// normalizeAPIConfig validates and trims a generic API provider config.
+func normalizeAPIConfig(cfg *APIDatasourceConfig) (*APIDatasourceConfig, error) {
+	if cfg == nil {
+		return nil, errors.New("api config is required")
+	}
+	baseURL := strings.TrimSpace(cfg.BaseURL)
+	parsed, err := url.Parse(baseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, errors.New("api base url must be an absolute http(s) url")
+	}
+	out := &APIDatasourceConfig{
+		BaseURL:        baseURL,
+		ResourcePath:   strings.TrimSpace(cfg.ResourcePath),
+		CredentialKind: strings.TrimSpace(cfg.CredentialKind),
+	}
+	switch out.CredentialKind {
+	case APICredentialKindBearer, APICredentialKindBasic:
+	case APICredentialKindHeader:
+		out.CredentialHeader = strings.TrimSpace(cfg.CredentialHeader)
+		if out.CredentialHeader == "" {
+			return nil, errors.New("api header credential kind requires a header name")
+		}
+	default:
+		return nil, errors.New("api credential kind must be bearer, basic, or header")
+	}
+	return out, nil
 }
 
 // ListDatasourceSources returns the org's connected Sources.
@@ -310,15 +493,12 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	return response.GetJobId(), nil
 }
 
-// RunDatasourceSync performs the actual pull for one Source: it resolves the ref
-// to a commit, lists the in-scope files, and enqueues one ingest delivery per
-// file onto the durable inbox seam the documents module consumes. It is invoked
-// by the leased sync worker, never by request traffic. Files too large for the
-// contents API are skipped rather than aborting the walk. Returns the number of
-// files enqueued.
+// RunDatasourceSync performs the actual pull for one Source, dispatched by
+// provider. It is invoked by the leased sync worker, never by request traffic.
+// Returns the number of ingest deliveries enqueued.
 func (s *Service) RunDatasourceSync(ctx context.Context, sourceID string) (int, error) {
 	w := wool.Get(ctx).In("RunDatasourceSync")
-	if s.datasourceCipher == nil || s.datasourceJobs == nil || s.newGitHubClient == nil {
+	if s.datasourceCipher == nil || s.datasourceJobs == nil {
 		return 0, w.NewError("datasource connector is not configured")
 	}
 	source, err := s.store.GetDatasourceSourceByID(ctx, sourceID)
@@ -327,6 +507,25 @@ func (s *Service) RunDatasourceSync(ctx context.Context, sourceID string) (int, 
 	}
 	if source == nil {
 		return 0, ErrDatasourceSourceNotFound
+	}
+
+	switch source.Provider {
+	case DatasourceProviderGitHub:
+		return s.runGitHubSync(ctx, source)
+	case DatasourceProviderAPI:
+		return s.runAPISync(ctx, source)
+	default:
+		return 0, w.NewError("unknown datasource provider")
+	}
+}
+
+// runGitHubSync resolves the ref to a commit, lists the in-scope files, and
+// enqueues one ingest delivery per file. Files too large for the contents API
+// are skipped rather than aborting the walk.
+func (s *Service) runGitHubSync(ctx context.Context, source *DatasourceSource) (int, error) {
+	w := wool.Get(ctx).In("runGitHubSync")
+	if s.newGitHubClient == nil {
+		return 0, w.NewError("datasource connector is not configured")
 	}
 
 	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
@@ -383,6 +582,81 @@ func (s *Service) RunDatasourceSync(ctx context.Context, sourceID string) (int, 
 		return enqueued, w.Wrapf(err, "record sync time")
 	}
 	return enqueued, nil
+}
+
+// runAPISync fetches the API source's configured resource and enqueues its body
+// as a single ingest delivery. Re-sync with unchanged content dedupes on the
+// content hash; changed content is re-delivered.
+func (s *Service) runAPISync(ctx context.Context, source *DatasourceSource) (int, error) {
+	w := wool.Get(ctx).In("runAPISync")
+	if s.newAPIClient == nil {
+		return 0, w.NewError("datasource connector is not configured")
+	}
+	if source.API == nil {
+		return 0, w.NewError("api source has no config")
+	}
+
+	credential, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	if err != nil {
+		return 0, w.Wrapf(err, "decrypt credential")
+	}
+
+	result, err := s.newAPIClient(*source.API, credential).Fetch(ctx)
+	if err != nil {
+		return 0, w.Wrapf(err, "fetch api resource")
+	}
+	if len(result.Body) > maxIngestPayload {
+		return 0, w.NewError("api response exceeds the ingest payload limit")
+	}
+	if err := s.enqueueAPIIngest(ctx, source, result); err != nil {
+		return 0, w.Wrapf(err, "enqueue api delivery")
+	}
+
+	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
+		return s.store.SetDatasourceSourceSynced(ctx, source.OrgID, source.ID, time.Now().UTC())
+	}); err != nil {
+		return 1, w.Wrapf(err, "record sync time")
+	}
+	return 1, nil
+}
+
+func (s *Service) enqueueAPIIngest(ctx context.Context, source *DatasourceSource, result *apisource.Result) error {
+	contentType := result.ContentType
+	if contentType == "" {
+		contentType = datasourceIngestContentType
+	}
+	digest := sha256.Sum256(result.Body)
+	contentSHA := hex.EncodeToString(digest[:])
+	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
+		Job: &jobsv1.NewJob{
+			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+			Queue:          datasourceIngestQueue,
+			Topic:          datasourceAPISyncTopic,
+			Source:         datasourceAPISyncSource,
+			IdempotencyKey: "datasource-api-sync/" + source.ID + "/" + contentSHA,
+			SchemaVersion:  datasourceIngestSchemaVersion,
+			Payload:        result.Body,
+			ContentType:    contentType,
+			MaxAttempts:    datasourceIngestMaxAttempts,
+			Attributes: map[string]string{
+				attrSourceID:         source.ID,
+				attrOrgID:            source.OrgID,
+				attrTargetCollection: source.TargetCollection,
+				attrAPIURL:           apiResourceURL(source.API),
+				attrAPIContentSHA:    contentSHA,
+				attrChangeType:       changeTypeAdded,
+			},
+		},
+	})
+	return err
+}
+
+func apiResourceURL(cfg *APIDatasourceConfig) string {
+	if cfg.ResourcePath == "" {
+		return cfg.BaseURL
+	}
+	return strings.TrimRight(cfg.BaseURL, "/") + "/" + strings.TrimLeft(cfg.ResourcePath, "/")
 }
 
 // NewDatasourceSyncJobHandler adapts RunDatasourceSync to the generic leased

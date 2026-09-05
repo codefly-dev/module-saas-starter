@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **173 RPCs** across **28 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **175 RPCs** across **28 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -38,10 +38,12 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DashboardService/ShareDashboard` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=dashboards:share | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: dashboard.shared | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Change a dashboard's visibility between private and org-shared. |
 | `/saas.accounts.v1.DashboardService/UpdateDashboard` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=dashboards:write | id → OWNED_RESOURCE/RESOURCE_TO_ORGANIZATION | SUCCESS: dashboard.updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Rename or replace the spec of a dashboard the caller owns or administers. |
 | `/saas.accounts.v1.DatasourceService/AddGitHubSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source.added | FORBIDDEN / STANDARD_WRITE | SECRET → CONFIDENTIAL | Connect a GitHub repository as a datasource, storing its access token and optional webhook secret encrypted. |
+| `/saas.accounts.v1.DatasourceService/AddSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source.added | FORBIDDEN / STANDARD_WRITE | SECRET → CONFIDENTIAL | Connect a datasource for any provider, storing its config and encrypted credential. |
 | `/saas.accounts.v1.DatasourceService/DeleteSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source.removed | FORBIDDEN / STANDARD_WRITE | INTERNAL → INTERNAL | Remove a connected datasource and its stored credentials. |
+| `/saas.accounts.v1.DatasourceService/GetDatasourceCatalog` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | — | FORBIDDEN / STANDARD_READ | INTERNAL → INTERNAL | List the available datasource provider types and their connect metadata. |
 | `/saas.accounts.v1.DatasourceService/GetSource` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | Read one connected datasource in the org. |
 | `/saas.accounts.v1.DatasourceService/ListSources` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | List the org's connected datasources. |
-| `/saas.accounts.v1.DatasourceService/SyncSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source.synced | FORBIDDEN / STANDARD_WRITE | INTERNAL → INTERNAL | Pull the repository's current contents and enqueue ingestion deliveries. |
+| `/saas.accounts.v1.DatasourceService/SyncSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: datasource.source.synced | FORBIDDEN / STANDARD_WRITE | INTERNAL → INTERNAL | Pull the source's current contents and enqueue ingestion deliveries. |
 | `/saas.accounts.v1.DelegationService/DecideDelegation` | unary | `POST /v1/delegations/{id}:decide` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: delegation.approved, delegation.denied | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Approve or deny a delegation request. |
 | `/saas.accounts.v1.DelegationService/ListPendingDelegations` | unary | `GET /v1/delegations:pending` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List pending organization delegations. |
 | `/saas.accounts.v1.DelegationService/RequestDelegation` | unary | `POST /v1/delegations` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: delegation.requested, delegation.auto_approved | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Request a scoped authority delegation. |
@@ -184,10 +186,10 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 38
+- `auth`: 39
 - `internal`: 23
 - `mfa`: 3
-- `org_admin`: 36
+- `org_admin`: 37
 - `org_member`: 35
 - `platform_admin`: 22
 - `public`: 16

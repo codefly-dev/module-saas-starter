@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/datasource.proto.
  */
 export const file_saas_accounts_v1_datasource: GenFile = /*@__PURE__*/
-  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL2RhdGFzb3VyY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiRQoWR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIMCgRyZXBvGAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBmJyYW5jaBgDIAEoCSKZAwoKRGF0YXNvdXJjZRIKCgJpZBgBIAEoCRIOCgZvcmdfaWQYAiABKAkSNgoIcHJvdmlkZXIYAyABKA4yJC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlchIZChF0YXJnZXRfY29sbGVjdGlvbhgEIAEoCRI4CgZnaXRodWIYBSABKAsyKC5zYWFzLmFjY291bnRzLnYxLkdpdEh1YkRhdGFzb3VyY2VDb25maWcSMgoGc3RhdHVzGAYgASgOMiIuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlU3RhdHVzEhoKEndlYmhvb2tfY29uZmlndXJlZBgHIAEoCBIuCgpjcmVhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIyCg5sYXN0X3N5bmNlZF9hdBgKIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAilgIKFkFkZEdpdEh1YlNvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARI7CgRyZXBvGAIgASgJQi26SCpyKBADGP8BMiFeW0EtWmEtejAtOV8uLV0rL1tBLVphLXowLTlfLi1dKyQSIAoFcGF0aHMYAyADKAlCEbpIDpIBCxBAIgdyBRABGIAEEhgKBmJyYW5jaBgEIAEoCUIIukgFcgMY/wESJQoRdGFyZ2V0X2NvbGxlY3Rpb24YBSABKAlCCrpIB3IFEAEY/wESIAoMYWNjZXNzX3Rva2VuGAYgASgJQgq6SAdyBRABGIAIEiAKDndlYmhvb2tfc2VjcmV0GAcgASgJQgi6SAVyAxiACCJLChdBZGRHaXRIdWJTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIi4KEkxpc3RTb3VyY2VzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIkgKE0xpc3RTb3VyY2VzUmVzcG9uc2USMQoLZGF0YXNvdXJjZXMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2UiQgoQR2V0U291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASJFChFHZXRTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIkMKEVN5bmNTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFAoCaWQYAiABKAlCCLpIBXIDsAEBIiQKElN5bmNTb3VyY2VSZXNwb25zZRIOCgZqb2JfaWQYASABKAkiRQoTRGVsZXRlU291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASIWChREZWxldGVTb3VyY2VSZXNwb25zZSpZChJEYXRhc291cmNlUHJvdmlkZXISIwofREFUQVNPVVJDRV9QUk9WSURFUl9VTlNQRUNJRklFRBAAEh4KGkRBVEFTT1VSQ0VfUFJPVklERVJfR0lUSFVCEAEqcQoQRGF0YXNvdXJjZVN0YXR1cxIhCh1EQVRBU09VUkNFX1NUQVRVU19VTlNQRUNJRklFRBAAEhwKGERBVEFTT1VSQ0VfU1RBVFVTX0FDVElWRRABEhwKGERBVEFTT1VSQ0VfU1RBVFVTX1BBVVNFRBACMv8FChFEYXRhc291cmNlU2VydmljZRKnAQoPQWRkR2l0SHViU291cmNlEiguc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXNwb25zZSI/wvMYOwgCEAQqDAoGb3JnX2lkEAIYATABOhsKF2RhdGFzb3VyY2Uuc291cmNlLmFkZGVkEAJAAUgEUARYA2ABEoIBCgtMaXN0U291cmNlcxIkLnNhYXMuYWNjb3VudHMudjEuTGlzdFNvdXJjZXNSZXF1ZXN0GiUuc2Fhcy5hY2NvdW50cy52MS5MaXN0U291cmNlc1Jlc3BvbnNlIibC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ACWANgARJ8CglHZXRTb3VyY2USIi5zYWFzLmFjY291bnRzLnYxLkdldFNvdXJjZVJlcXVlc3QaIy5zYWFzLmFjY291bnRzLnYxLkdldFNvdXJjZVJlc3BvbnNlIibC8xgiCAIQAyoMCgZvcmdfaWQQAhgBMAE6AhABQAFIA1ACWANgARKZAQoKU3luY1NvdXJjZRIjLnNhYXMuYWNjb3VudHMudjEuU3luY1NvdXJjZVJlcXVlc3QaJC5zYWFzLmFjY291bnRzLnYxLlN5bmNTb3VyY2VSZXNwb25zZSJAwvMYPAgCEAQqDAoGb3JnX2lkEAIYATABOhwKGGRhdGFzb3VyY2Uuc291cmNlLnN5bmNlZBACQAFIBFACWAJgARKgAQoMRGVsZXRlU291cmNlEiUuc2Fhcy5hY2NvdW50cy52MS5EZWxldGVTb3VyY2VSZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5EZWxldGVTb3VyY2VSZXNwb25zZSJBwvMYPQgCEAQqDAoGb3JnX2lkEAIYATABOh0KGWRhdGFzb3VyY2Uuc291cmNlLnJlbW92ZWQQAkABSARQAlgCYAFCtwEKFGNvbS5zYWFzLmFjY291bnRzLnYxQg9EYXRhc291cmNlUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL2RhdGFzb3VyY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiRQoWR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIMCgRyZXBvGAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBmJyYW5jaBgDIAEoCSKXAQoTQXBpRGF0YXNvdXJjZUNvbmZpZxIQCghiYXNlX3VybBgBIAEoCRIVCg1yZXNvdXJjZV9wYXRoGAIgASgJEjwKD2NyZWRlbnRpYWxfa2luZBgDIAEoDjIjLnNhYXMuYWNjb3VudHMudjEuQXBpQ3JlZGVudGlhbEtpbmQSGQoRY3JlZGVudGlhbF9oZWFkZXIYBCABKAkizQMKCkRhdGFzb3VyY2USCgoCaWQYASABKAkSDgoGb3JnX2lkGAIgASgJEjYKCHByb3ZpZGVyGAMgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXISGQoRdGFyZ2V0X2NvbGxlY3Rpb24YBCABKAkSOAoGZ2l0aHViGAUgASgLMiguc2Fhcy5hY2NvdW50cy52MS5HaXRIdWJEYXRhc291cmNlQ29uZmlnEjIKBnN0YXR1cxgGIAEoDjIiLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVN0YXR1cxIaChJ3ZWJob29rX2NvbmZpZ3VyZWQYByABKAgSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoObGFzdF9zeW5jZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjIKA2FwaRgLIAEoCzIlLnNhYXMuYWNjb3VudHMudjEuQXBpRGF0YXNvdXJjZUNvbmZpZyKWAgoWQWRkR2l0SHViU291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEjsKBHJlcG8YAiABKAlCLbpIKnIoEAMY/wEyIV5bQS1aYS16MC05Xy4tXSsvW0EtWmEtejAtOV8uLV0rJBIgCgVwYXRocxgDIAMoCUIRukgOkgELEEAiB3IFEAEYgAQSGAoGYnJhbmNoGAQgASgJQgi6SAVyAxj/ARIlChF0YXJnZXRfY29sbGVjdGlvbhgFIAEoCUIKukgHcgUQARj/ARIgCgxhY2Nlc3NfdG9rZW4YBiABKAlCCrpIB3IFEAEYgAgSIAoOd2ViaG9va19zZWNyZXQYByABKAlCCLpIBXIDGIAIIksKF0FkZEdpdEh1YlNvdXJjZVJlc3BvbnNlEjAKCmRhdGFzb3VyY2UYASABKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2Ui1QIKEEFkZFNvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARJCCghwcm92aWRlchgCIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVByb3ZpZGVyQgq6SAeCAQQQASAAEiUKEXRhcmdldF9jb2xsZWN0aW9uGAMgASgJQgq6SAdyBRABGP8BEjoKBmdpdGh1YhgEIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuR2l0SHViRGF0YXNvdXJjZUNvbmZpZ0gAEjQKA2FwaRgFIAEoCzIlLnNhYXMuYWNjb3VudHMudjEuQXBpRGF0YXNvdXJjZUNvbmZpZ0gAEh4KCmNyZWRlbnRpYWwYBiABKAlCCrpIB3IFEAEYgCASIAoOd2ViaG9va19zZWNyZXQYByABKAlCCLpIBXIDGIAIQggKBmNvbmZpZyJFChFBZGRTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIloKFURhdGFzb3VyY2VDb25maWdGaWVsZBILCgNrZXkYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEgwKBGhlbHAYAyABKAkSEAoIcmVxdWlyZWQYBCABKAgi2wEKHERhdGFzb3VyY2VQcm92aWRlckRlc2NyaXB0b3ISNgoIcHJvdmlkZXIYASABKA4yJC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlchIUCgxkaXNwbGF5X25hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSPgoNY29uZmlnX2ZpZWxkcxgEIAMoCzInLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZUNvbmZpZ0ZpZWxkEhgKEHN1cHBvcnRzX3dlYmhvb2sYBSABKAgiHQobR2V0RGF0YXNvdXJjZUNhdGFsb2dSZXF1ZXN0ImEKHEdldERhdGFzb3VyY2VDYXRhbG9nUmVzcG9uc2USQQoJcHJvdmlkZXJzGAEgAygLMi4uc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXJEZXNjcmlwdG9yIi4KEkxpc3RTb3VyY2VzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIkgKE0xpc3RTb3VyY2VzUmVzcG9uc2USMQoLZGF0YXNvdXJjZXMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2UiQgoQR2V0U291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASJFChFHZXRTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIkMKEVN5bmNTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFAoCaWQYAiABKAlCCLpIBXIDsAEBIiQKElN5bmNTb3VyY2VSZXNwb25zZRIOCgZqb2JfaWQYASABKAkiRQoTRGVsZXRlU291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASIWChREZWxldGVTb3VyY2VSZXNwb25zZSp2ChJEYXRhc291cmNlUHJvdmlkZXISIwofREFUQVNPVVJDRV9QUk9WSURFUl9VTlNQRUNJRklFRBAAEh4KGkRBVEFTT1VSQ0VfUFJPVklERVJfR0lUSFVCEAESGwoXREFUQVNPVVJDRV9QUk9WSURFUl9BUEkQAipxChBEYXRhc291cmNlU3RhdHVzEiEKHURBVEFTT1VSQ0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHAoYREFUQVNPVVJDRV9TVEFUVVNfQUNUSVZFEAESHAoYREFUQVNPVVJDRV9TVEFUVVNfUEFVU0VEEAIqlwEKEUFwaUNyZWRlbnRpYWxLaW5kEiMKH0FQSV9DUkVERU5USUFMX0tJTkRfVU5TUEVDSUZJRUQQABIeChpBUElfQ1JFREVOVElBTF9LSU5EX0JFQVJFUhABEh0KGUFQSV9DUkVERU5USUFMX0tJTkRfQkFTSUMQAhIeChpBUElfQ1JFREVOVElBTF9LSU5EX0hFQURFUhADMqkIChFEYXRhc291cmNlU2VydmljZRKnAQoPQWRkR2l0SHViU291cmNlEiguc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXNwb25zZSI/wvMYOwgCEAQqDAoGb3JnX2lkEAIYATABOhsKF2RhdGFzb3VyY2Uuc291cmNlLmFkZGVkEAJAAUgEUARYA2ABEpUBCglBZGRTb3VyY2USIi5zYWFzLmFjY291bnRzLnYxLkFkZFNvdXJjZVJlcXVlc3QaIy5zYWFzLmFjY291bnRzLnYxLkFkZFNvdXJjZVJlc3BvbnNlIj/C8xg7CAIQBCoMCgZvcmdfaWQQAhgBMAE6GwoXZGF0YXNvdXJjZS5zb3VyY2UuYWRkZWQQAkABSARQBFgDYAESjwEKFEdldERhdGFzb3VyY2VDYXRhbG9nEi0uc2Fhcy5hY2NvdW50cy52MS5HZXREYXRhc291cmNlQ2F0YWxvZ1JlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkdldERhdGFzb3VyY2VDYXRhbG9nUmVzcG9uc2UiGMLzGBQIAhABMAE6AhABQAFIA1ACWAJgARKCAQoLTGlzdFNvdXJjZXMSJC5zYWFzLmFjY291bnRzLnYxLkxpc3RTb3VyY2VzUmVxdWVzdBolLnNhYXMuYWNjb3VudHMudjEuTGlzdFNvdXJjZXNSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESfAoJR2V0U291cmNlEiIuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESmQEKClN5bmNTb3VyY2USIy5zYWFzLmFjY291bnRzLnYxLlN5bmNTb3VyY2VSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5TeW5jU291cmNlUmVzcG9uc2UiQMLzGDwIAhAEKgwKBm9yZ19pZBACGAEwATocChhkYXRhc291cmNlLnNvdXJjZS5zeW5jZWQQAkABSARQAlgCYAESoAEKDERlbGV0ZVNvdXJjZRIlLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVzcG9uc2UiQcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlkYXRhc291cmNlLnNvdXJjZS5yZW1vdmVkEAJAAUgEUAJYAmABYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
@@ -54,8 +54,53 @@ export const GitHubDatasourceConfigSchema: GenMessage<GitHubDatasourceConfig> = 
   messageDesc(file_saas_accounts_v1_datasource, 0);
 
 /**
+ * ApiDatasourceConfig is the public, non-secret configuration of a generic
+ * API-with-credentials datasource. The credential value (bearer/basic/header
+ * token) and any webhook signing secret are never carried here; they live only
+ * as SecretCipher envelopes in the credential store.
+ *
+ * @generated from message saas.accounts.v1.ApiDatasourceConfig
+ */
+export type ApiDatasourceConfig = Message<"saas.accounts.v1.ApiDatasourceConfig"> & {
+  /**
+   * Base URL of the API, e.g. "https://api.example.com".
+   *
+   * @generated from field: string base_url = 1;
+   */
+  baseUrl: string;
+
+  /**
+   * Resource path, relative to base_url, whose response is pulled and handed to
+   * the ingest inbox, e.g. "/v1/documents".
+   *
+   * @generated from field: string resource_path = 2;
+   */
+  resourcePath: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.ApiCredentialKind credential_kind = 3;
+   */
+  credentialKind: ApiCredentialKind;
+
+  /**
+   * Header name for API_CREDENTIAL_KIND_HEADER; ignored for the other kinds.
+   *
+   * @generated from field: string credential_header = 4;
+   */
+  credentialHeader: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ApiDatasourceConfig.
+ * Use `create(ApiDatasourceConfigSchema)` to create a new message.
+ */
+export const ApiDatasourceConfigSchema: GenMessage<ApiDatasourceConfig> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 1);
+
+/**
  * Datasource is one connected external datasource. It is org-scoped and carries
  * only non-secret projection fields; credential material is deliberately absent.
+ * Exactly one provider config (github or api) is set, matching provider.
  *
  * @generated from message saas.accounts.v1.Datasource
  */
@@ -114,6 +159,11 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
    * @generated from field: google.protobuf.Timestamp last_synced_at = 10;
    */
   lastSyncedAt?: Timestamp;
+
+  /**
+   * @generated from field: saas.accounts.v1.ApiDatasourceConfig api = 11;
+   */
+  api?: ApiDatasourceConfig;
 };
 
 /**
@@ -121,7 +171,7 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
  * Use `create(DatasourceSchema)` to create a new message.
  */
 export const DatasourceSchema: GenMessage<Datasource> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 1);
+  messageDesc(file_saas_accounts_v1_datasource, 2);
 
 /**
  * @generated from message saas.accounts.v1.AddGitHubSourceRequest
@@ -180,7 +230,7 @@ export type AddGitHubSourceRequest = Message<"saas.accounts.v1.AddGitHubSourceRe
  * Use `create(AddGitHubSourceRequestSchema)` to create a new message.
  */
 export const AddGitHubSourceRequestSchema: GenMessage<AddGitHubSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 2);
+  messageDesc(file_saas_accounts_v1_datasource, 3);
 
 /**
  * @generated from message saas.accounts.v1.AddGitHubSourceResponse
@@ -197,7 +247,202 @@ export type AddGitHubSourceResponse = Message<"saas.accounts.v1.AddGitHubSourceR
  * Use `create(AddGitHubSourceResponseSchema)` to create a new message.
  */
 export const AddGitHubSourceResponseSchema: GenMessage<AddGitHubSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 3);
+  messageDesc(file_saas_accounts_v1_datasource, 4);
+
+/**
+ * AddSourceRequest is the provider-agnostic connect call. provider selects the
+ * connector; the config oneof carries that provider's non-secret configuration
+ * (the variant must match provider); credential carries the plaintext secret the
+ * connector authenticates with (a GitHub token, or the API connector's
+ * bearer/basic/header credential), encrypted through the SecretCipher at receipt
+ * so only its envelope reference is persisted.
+ *
+ * @generated from message saas.accounts.v1.AddSourceRequest
+ */
+export type AddSourceRequest = Message<"saas.accounts.v1.AddSourceRequest"> & {
+  /**
+   * @generated from field: string org_id = 1;
+   */
+  orgId: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.DatasourceProvider provider = 2;
+   */
+  provider: DatasourceProvider;
+
+  /**
+   * Documents-store collection the pulled Entries land in.
+   *
+   * @generated from field: string target_collection = 3;
+   */
+  targetCollection: string;
+
+  /**
+   * @generated from oneof saas.accounts.v1.AddSourceRequest.config
+   */
+  config: {
+    /**
+     * @generated from field: saas.accounts.v1.GitHubDatasourceConfig github = 4;
+     */
+    value: GitHubDatasourceConfig;
+    case: "github";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.ApiDatasourceConfig api = 5;
+     */
+    value: ApiDatasourceConfig;
+    case: "api";
+  } | { case: undefined; value?: undefined };
+
+  /**
+   * Plaintext credential the connector authenticates with. Encrypted at receipt.
+   *
+   * @generated from field: string credential = 6;
+   */
+  credential: string;
+
+  /**
+   * Plaintext webhook signing secret. Optional; when omitted, live webhook
+   * ingestion stays off until a later call supplies one. Encrypted at receipt.
+   *
+   * @generated from field: string webhook_secret = 7;
+   */
+  webhookSecret: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AddSourceRequest.
+ * Use `create(AddSourceRequestSchema)` to create a new message.
+ */
+export const AddSourceRequestSchema: GenMessage<AddSourceRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 5);
+
+/**
+ * @generated from message saas.accounts.v1.AddSourceResponse
+ */
+export type AddSourceResponse = Message<"saas.accounts.v1.AddSourceResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.Datasource datasource = 1;
+   */
+  datasource?: Datasource;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AddSourceResponse.
+ * Use `create(AddSourceResponseSchema)` to create a new message.
+ */
+export const AddSourceResponseSchema: GenMessage<AddSourceResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 6);
+
+/**
+ * DatasourceConfigField describes one non-secret config input a provider needs,
+ * so the UI can render the connect form from the catalog rather than hardcoding
+ * it per provider.
+ *
+ * @generated from message saas.accounts.v1.DatasourceConfigField
+ */
+export type DatasourceConfigField = Message<"saas.accounts.v1.DatasourceConfigField"> & {
+  /**
+   * Config field key, matching the provider's config message field name.
+   *
+   * @generated from field: string key = 1;
+   */
+  key: string;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: string help = 3;
+   */
+  help: string;
+
+  /**
+   * @generated from field: bool required = 4;
+   */
+  required: boolean;
+};
+
+/**
+ * Describes the message saas.accounts.v1.DatasourceConfigField.
+ * Use `create(DatasourceConfigFieldSchema)` to create a new message.
+ */
+export const DatasourceConfigFieldSchema: GenMessage<DatasourceConfigField> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 7);
+
+/**
+ * DatasourceProviderDescriptor is one catalog entry: everything the UI needs to
+ * offer and configure a provider without provider-specific code.
+ *
+ * @generated from message saas.accounts.v1.DatasourceProviderDescriptor
+ */
+export type DatasourceProviderDescriptor = Message<"saas.accounts.v1.DatasourceProviderDescriptor"> & {
+  /**
+   * @generated from field: saas.accounts.v1.DatasourceProvider provider = 1;
+   */
+  provider: DatasourceProvider;
+
+  /**
+   * @generated from field: string display_name = 2;
+   */
+  displayName: string;
+
+  /**
+   * @generated from field: string description = 3;
+   */
+  description: string;
+
+  /**
+   * @generated from field: repeated saas.accounts.v1.DatasourceConfigField config_fields = 4;
+   */
+  configFields: DatasourceConfigField[];
+
+  /**
+   * Whether the provider can verify inbound webhook deliveries.
+   *
+   * @generated from field: bool supports_webhook = 5;
+   */
+  supportsWebhook: boolean;
+};
+
+/**
+ * Describes the message saas.accounts.v1.DatasourceProviderDescriptor.
+ * Use `create(DatasourceProviderDescriptorSchema)` to create a new message.
+ */
+export const DatasourceProviderDescriptorSchema: GenMessage<DatasourceProviderDescriptor> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 8);
+
+/**
+ * @generated from message saas.accounts.v1.GetDatasourceCatalogRequest
+ */
+export type GetDatasourceCatalogRequest = Message<"saas.accounts.v1.GetDatasourceCatalogRequest"> & {
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetDatasourceCatalogRequest.
+ * Use `create(GetDatasourceCatalogRequestSchema)` to create a new message.
+ */
+export const GetDatasourceCatalogRequestSchema: GenMessage<GetDatasourceCatalogRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 9);
+
+/**
+ * @generated from message saas.accounts.v1.GetDatasourceCatalogResponse
+ */
+export type GetDatasourceCatalogResponse = Message<"saas.accounts.v1.GetDatasourceCatalogResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.DatasourceProviderDescriptor providers = 1;
+   */
+  providers: DatasourceProviderDescriptor[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.GetDatasourceCatalogResponse.
+ * Use `create(GetDatasourceCatalogResponseSchema)` to create a new message.
+ */
+export const GetDatasourceCatalogResponseSchema: GenMessage<GetDatasourceCatalogResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 10);
 
 /**
  * @generated from message saas.accounts.v1.ListSourcesRequest
@@ -214,7 +459,7 @@ export type ListSourcesRequest = Message<"saas.accounts.v1.ListSourcesRequest"> 
  * Use `create(ListSourcesRequestSchema)` to create a new message.
  */
 export const ListSourcesRequestSchema: GenMessage<ListSourcesRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 4);
+  messageDesc(file_saas_accounts_v1_datasource, 11);
 
 /**
  * @generated from message saas.accounts.v1.ListSourcesResponse
@@ -231,7 +476,7 @@ export type ListSourcesResponse = Message<"saas.accounts.v1.ListSourcesResponse"
  * Use `create(ListSourcesResponseSchema)` to create a new message.
  */
 export const ListSourcesResponseSchema: GenMessage<ListSourcesResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 5);
+  messageDesc(file_saas_accounts_v1_datasource, 12);
 
 /**
  * @generated from message saas.accounts.v1.GetSourceRequest
@@ -253,7 +498,7 @@ export type GetSourceRequest = Message<"saas.accounts.v1.GetSourceRequest"> & {
  * Use `create(GetSourceRequestSchema)` to create a new message.
  */
 export const GetSourceRequestSchema: GenMessage<GetSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 6);
+  messageDesc(file_saas_accounts_v1_datasource, 13);
 
 /**
  * @generated from message saas.accounts.v1.GetSourceResponse
@@ -270,7 +515,7 @@ export type GetSourceResponse = Message<"saas.accounts.v1.GetSourceResponse"> & 
  * Use `create(GetSourceResponseSchema)` to create a new message.
  */
 export const GetSourceResponseSchema: GenMessage<GetSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 7);
+  messageDesc(file_saas_accounts_v1_datasource, 14);
 
 /**
  * @generated from message saas.accounts.v1.SyncSourceRequest
@@ -292,7 +537,7 @@ export type SyncSourceRequest = Message<"saas.accounts.v1.SyncSourceRequest"> & 
  * Use `create(SyncSourceRequestSchema)` to create a new message.
  */
 export const SyncSourceRequestSchema: GenMessage<SyncSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 8);
+  messageDesc(file_saas_accounts_v1_datasource, 15);
 
 /**
  * @generated from message saas.accounts.v1.SyncSourceResponse
@@ -312,7 +557,7 @@ export type SyncSourceResponse = Message<"saas.accounts.v1.SyncSourceResponse"> 
  * Use `create(SyncSourceResponseSchema)` to create a new message.
  */
 export const SyncSourceResponseSchema: GenMessage<SyncSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 9);
+  messageDesc(file_saas_accounts_v1_datasource, 16);
 
 /**
  * @generated from message saas.accounts.v1.DeleteSourceRequest
@@ -334,7 +579,7 @@ export type DeleteSourceRequest = Message<"saas.accounts.v1.DeleteSourceRequest"
  * Use `create(DeleteSourceRequestSchema)` to create a new message.
  */
 export const DeleteSourceRequestSchema: GenMessage<DeleteSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 10);
+  messageDesc(file_saas_accounts_v1_datasource, 17);
 
 /**
  * @generated from message saas.accounts.v1.DeleteSourceResponse
@@ -347,11 +592,13 @@ export type DeleteSourceResponse = Message<"saas.accounts.v1.DeleteSourceRespons
  * Use `create(DeleteSourceResponseSchema)` to create a new message.
  */
 export const DeleteSourceResponseSchema: GenMessage<DeleteSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 11);
+  messageDesc(file_saas_accounts_v1_datasource, 18);
 
 /**
  * DatasourceProvider identifies the external system a datasource connects to.
- * Only GitHub is implemented today; the enum is the extension point for further
+ * GitHub is the bespoke connector; API is the generic "HTTP API with a stored
+ * credential" connector that covers a large class of sources without a
+ * per-provider proto change. The enum is the extension point for further
  * connectors.
  *
  * @generated from enum saas.accounts.v1.DatasourceProvider
@@ -366,6 +613,11 @@ export enum DatasourceProvider {
    * @generated from enum value: DATASOURCE_PROVIDER_GITHUB = 1;
    */
   GITHUB = 1,
+
+  /**
+   * @generated from enum value: DATASOURCE_PROVIDER_API = 2;
+   */
+  API = 2,
 }
 
 /**
@@ -405,6 +657,50 @@ export const DatasourceStatusSchema: GenEnum<DatasourceStatus> = /*@__PURE__*/
   enumDesc(file_saas_accounts_v1_datasource, 1);
 
 /**
+ * ApiCredentialKind is how the generic API connector presents its stored
+ * credential on every outbound request. The credential material itself lives in
+ * the secret store; only the kind (and, for KIND_HEADER, the header name) is
+ * non-secret config.
+ *
+ * @generated from enum saas.accounts.v1.ApiCredentialKind
+ */
+export enum ApiCredentialKind {
+  /**
+   * @generated from enum value: API_CREDENTIAL_KIND_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * Authorization: Bearer <credential>.
+   *
+   * @generated from enum value: API_CREDENTIAL_KIND_BEARER = 1;
+   */
+  BEARER = 1,
+
+  /**
+   * Authorization: Basic <credential>, where the stored credential is the
+   * already-encoded "user:password" pair.
+   *
+   * @generated from enum value: API_CREDENTIAL_KIND_BASIC = 2;
+   */
+  BASIC = 2,
+
+  /**
+   * <credential_header>: <credential>, for APIs that take a raw token in a
+   * named header (e.g. X-API-Key).
+   *
+   * @generated from enum value: API_CREDENTIAL_KIND_HEADER = 3;
+   */
+  HEADER = 3,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.ApiCredentialKind.
+ */
+export const ApiCredentialKindSchema: GenEnum<ApiCredentialKind> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_datasource, 2);
+
+/**
  * DatasourceService is the tenant-facing surface a solution drives (directly or
  * through the generated SDK) to declare and operate connected datasources.
  *
@@ -422,6 +718,31 @@ export const DatasourceService: GenService<{
     methodKind: "unary";
     input: typeof AddGitHubSourceRequestSchema;
     output: typeof AddGitHubSourceResponseSchema;
+  },
+  /**
+   * AddSource registers a datasource for any provider: it selects the connector
+   * by provider, stores the config and the encrypted credential (and optional
+   * webhook signing secret), and returns the non-secret projection.
+   *
+   * @generated from rpc saas.accounts.v1.DatasourceService.AddSource
+   */
+  addSource: {
+    methodKind: "unary";
+    input: typeof AddSourceRequestSchema;
+    output: typeof AddSourceResponseSchema;
+  },
+  /**
+   * GetDatasourceCatalog returns the registry of available provider types and
+   * their per-provider connect metadata, so a client can enumerate and render
+   * the "connect a source" surface without provider-specific code. The catalog
+   * is static, non-secret, and identical for every tenant.
+   *
+   * @generated from rpc saas.accounts.v1.DatasourceService.GetDatasourceCatalog
+   */
+  getDatasourceCatalog: {
+    methodKind: "unary";
+    input: typeof GetDatasourceCatalogRequestSchema;
+    output: typeof GetDatasourceCatalogResponseSchema;
   },
   /**
    * ListSources returns the calling org's connected datasources.

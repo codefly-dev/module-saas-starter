@@ -44,6 +44,56 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 	return connect.NewResponse(&gen.AddGitHubSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
 }
 
+func (h *datasourceConnectHandler) AddSource(
+	ctx context.Context,
+	req *connect.Request[gen.AddSourceRequest],
+) (*connect.Response[gen.AddSourceResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	input := business.AddSourceInput{
+		OrgID:            req.Msg.OrgId,
+		Provider:         datasourceProviderFromProto(req.Msg.Provider),
+		TargetCollection: req.Msg.TargetCollection,
+		Credential:       req.Msg.Credential,
+		WebhookSecret:    req.Msg.WebhookSecret,
+	}
+	if gh := req.Msg.GetGithub(); gh != nil {
+		input.Repo = gh.Repo
+		input.Paths = gh.Paths
+		input.Branch = gh.Branch
+	}
+	if api := req.Msg.GetApi(); api != nil {
+		input.API = &business.APIDatasourceConfig{
+			BaseURL:          api.BaseUrl,
+			ResourcePath:     api.ResourcePath,
+			CredentialKind:   apiCredentialKindFromProto(api.CredentialKind),
+			CredentialHeader: api.CredentialHeader,
+		}
+	}
+	source, err := h.svc.AddSource(ctx, actorID, input)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&gen.AddSourceResponse{Datasource: datasourceSourceToProto(source)}), nil
+}
+
+func (h *datasourceConnectHandler) GetDatasourceCatalog(
+	ctx context.Context,
+	req *connect.Request[gen.GetDatasourceCatalogRequest],
+) (*connect.Response[gen.GetDatasourceCatalogResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	if _, err := callerID(ctx); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(datasourceCatalog()), nil
+}
+
 func (h *datasourceConnectHandler) ListSources(
 	ctx context.Context,
 	req *connect.Request[gen.ListSourcesRequest],
@@ -150,6 +200,14 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 			Branch: source.Branch,
 		}
 	}
+	if source.API != nil {
+		out.Api = &gen.ApiDatasourceConfig{
+			BaseUrl:          source.API.BaseURL,
+			ResourcePath:     source.API.ResourcePath,
+			CredentialKind:   apiCredentialKindToProto(source.API.CredentialKind),
+			CredentialHeader: source.API.CredentialHeader,
+		}
+	}
 	if source.LastSyncedAt != nil {
 		out.LastSyncedAt = timestamppb.New(*source.LastSyncedAt)
 	}
@@ -157,10 +215,84 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 }
 
 func datasourceProviderToProto(provider string) gen.DatasourceProvider {
-	if provider == business.DatasourceProviderGitHub {
+	switch provider {
+	case business.DatasourceProviderGitHub:
 		return gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB
+	case business.DatasourceProviderAPI:
+		return gen.DatasourceProvider_DATASOURCE_PROVIDER_API
+	default:
+		return gen.DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED
 	}
-	return gen.DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED
+}
+
+func datasourceProviderFromProto(provider gen.DatasourceProvider) string {
+	switch provider {
+	case gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB:
+		return business.DatasourceProviderGitHub
+	case gen.DatasourceProvider_DATASOURCE_PROVIDER_API:
+		return business.DatasourceProviderAPI
+	default:
+		return ""
+	}
+}
+
+func apiCredentialKindFromProto(kind gen.ApiCredentialKind) string {
+	switch kind {
+	case gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER:
+		return business.APICredentialKindBearer
+	case gen.ApiCredentialKind_API_CREDENTIAL_KIND_BASIC:
+		return business.APICredentialKindBasic
+	case gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER:
+		return business.APICredentialKindHeader
+	default:
+		return ""
+	}
+}
+
+func apiCredentialKindToProto(kind string) gen.ApiCredentialKind {
+	switch kind {
+	case business.APICredentialKindBearer:
+		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER
+	case business.APICredentialKindBasic:
+		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_BASIC
+	case business.APICredentialKindHeader:
+		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER
+	default:
+		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_UNSPECIFIED
+	}
+}
+
+// datasourceCatalog is the static provider registry the UI enumerates to render
+// the "connect a source" surface. Config field keys match the provider config
+// message field names.
+func datasourceCatalog() *gen.GetDatasourceCatalogResponse {
+	return &gen.GetDatasourceCatalogResponse{
+		Providers: []*gen.DatasourceProviderDescriptor{
+			{
+				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_GITHUB,
+				DisplayName: "GitHub",
+				Description: "A GitHub repository, pulled on sync and kept fresh through push webhooks.",
+				ConfigFields: []*gen.DatasourceConfigField{
+					{Key: "repo", DisplayName: "Repository", Help: "owner/name, e.g. codefly-dev/module-saas-starter", Required: true},
+					{Key: "paths", DisplayName: "Paths", Help: "Path prefixes to ingest; empty means the whole repository.", Required: false},
+					{Key: "branch", DisplayName: "Branch", Help: "Git ref to pull; empty resolves to the default branch.", Required: false},
+				},
+				SupportsWebhook: true,
+			},
+			{
+				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_API,
+				DisplayName: "HTTP API",
+				Description: "An HTTP API with a stored credential; a configured resource is fetched on sync.",
+				ConfigFields: []*gen.DatasourceConfigField{
+					{Key: "base_url", DisplayName: "Base URL", Help: "Absolute http(s) URL, e.g. https://api.example.com", Required: true},
+					{Key: "resource_path", DisplayName: "Resource path", Help: "Path fetched on sync, relative to the base URL.", Required: false},
+					{Key: "credential_kind", DisplayName: "Credential kind", Help: "How the credential is sent: bearer, basic, or header.", Required: true},
+					{Key: "credential_header", DisplayName: "Credential header", Help: "Header name, when the credential kind is header.", Required: false},
+				},
+				SupportsWebhook: false,
+			},
+		},
+	}
 }
 
 func datasourceStatusToProto(status string) gen.DatasourceStatus {

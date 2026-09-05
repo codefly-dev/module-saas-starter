@@ -77,7 +77,9 @@
       "full_name": "saas.accounts.v1.DatasourceService",
       "procedures": [
         "/saas.accounts.v1.DatasourceService/AddGitHubSource",
+        "/saas.accounts.v1.DatasourceService/AddSource",
         "/saas.accounts.v1.DatasourceService/DeleteSource",
+        "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog",
         "/saas.accounts.v1.DatasourceService/GetSource",
         "/saas.accounts.v1.DatasourceService/ListSources",
         "/saas.accounts.v1.DatasourceService/SyncSource"
@@ -1958,6 +1960,56 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.DatasourceService/AddSource",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "AddSource",
+      "input_type": "saas.accounts.v1.AddSourceRequest",
+      "output_type": "saas.accounts.v1.AddSourceResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "datasource.source.added"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Connect a datasource for any provider, storing its config and encrypted credential.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.DatasourceService/DeleteSource",
       "service": "DatasourceService",
       "full_service": "saas.accounts.v1.DatasourceService",
@@ -2002,6 +2054,48 @@
       },
       "policy_tier": "org_admin",
       "description": "Remove a connected datasource and its stored credentials.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "GetDatasourceCatalog",
+      "input_type": "saas.accounts.v1.GetDatasourceCatalogRequest",
+      "output_type": "saas.accounts.v1.GetDatasourceCatalogResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_INTERNAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "auth",
+      "description": "List the available datasource provider types and their connect metadata.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -2147,7 +2241,7 @@
         "conditions": []
       },
       "policy_tier": "org_admin",
-      "description": "Pull the repository's current contents and enqueue ingestion deliveries.",
+      "description": "Pull the source's current contents and enqueue ingestion deliveries.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
