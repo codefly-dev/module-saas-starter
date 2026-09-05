@@ -25,6 +25,7 @@ const (
 	WorkContextService_AuthorizeEvidenceRead_FullMethodName      = "/saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead"
 	WorkContextService_ConsumeSingleUse_FullMethodName           = "/saas.accounts.v1.WorkContextService/ConsumeSingleUse"
 	WorkContextService_StartTask_FullMethodName                  = "/saas.accounts.v1.WorkContextService/StartTask"
+	WorkContextService_StartInstallationTask_FullMethodName      = "/saas.accounts.v1.WorkContextService/StartInstallationTask"
 	WorkContextService_StartRootSession_FullMethodName           = "/saas.accounts.v1.WorkContextService/StartRootSession"
 	WorkContextService_ExchangeAudience_FullMethodName           = "/saas.accounts.v1.WorkContextService/ExchangeAudience"
 	WorkContextService_StartChildSession_FullMethodName          = "/saas.accounts.v1.WorkContextService/StartChildSession"
@@ -57,6 +58,15 @@ type WorkContextServiceClient interface {
 	// capability being spent and fail the operation closed, not retry it.
 	ConsumeSingleUse(ctx context.Context, in *ConsumeSingleUseWorkContextRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	StartTask(ctx context.Context, in *StartTaskWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
+	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
+	// service credential rather than a bearer: it resolves the installation's owner
+	// of record as the context owner and the installation's agent principal as the
+	// sole actor, with authority drawn from the agent's standing scope grants
+	// (intersected with its registered ceiling), resolved live. It records the same
+	// durable actor-chain hop as every other mint and fails closed on a revoked or
+	// disabled agent, a missing standing grant, or an installation with no
+	// currently-admin owner or co-owner.
+	StartInstallationTask(ctx context.Context, in *StartInstallationTaskRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	StartRootSession(ctx context.Context, in *StartRootSessionWorkContextRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
 	// without changing the Task, Session, owner, or delegation identity.
@@ -113,6 +123,16 @@ func (c *workContextServiceClient) StartTask(ctx context.Context, in *StartTaskW
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IssuedWorkContext)
 	err := c.cc.Invoke(ctx, WorkContextService_StartTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *workContextServiceClient) StartInstallationTask(ctx context.Context, in *StartInstallationTaskRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssuedWorkContext)
+	err := c.cc.Invoke(ctx, WorkContextService_StartInstallationTask_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +205,15 @@ type WorkContextServiceServer interface {
 	// capability being spent and fail the operation closed, not retry it.
 	ConsumeSingleUse(context.Context, *ConsumeSingleUseWorkContextRequest) (*emptypb.Empty, error)
 	StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error)
+	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
+	// service credential rather than a bearer: it resolves the installation's owner
+	// of record as the context owner and the installation's agent principal as the
+	// sole actor, with authority drawn from the agent's standing scope grants
+	// (intersected with its registered ceiling), resolved live. It records the same
+	// durable actor-chain hop as every other mint and fails closed on a revoked or
+	// disabled agent, a missing standing grant, or an installation with no
+	// currently-admin owner or co-owner.
+	StartInstallationTask(context.Context, *StartInstallationTaskRequest) (*IssuedWorkContext, error)
 	StartRootSession(context.Context, *StartRootSessionWorkContextRequest) (*IssuedWorkContext, error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
 	// without changing the Task, Session, owner, or delegation identity.
@@ -218,6 +247,9 @@ func (UnimplementedWorkContextServiceServer) ConsumeSingleUse(context.Context, *
 }
 func (UnimplementedWorkContextServiceServer) StartTask(context.Context, *StartTaskWorkContextRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartTask not implemented")
+}
+func (UnimplementedWorkContextServiceServer) StartInstallationTask(context.Context, *StartInstallationTaskRequest) (*IssuedWorkContext, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartInstallationTask not implemented")
 }
 func (UnimplementedWorkContextServiceServer) StartRootSession(context.Context, *StartRootSessionWorkContextRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method StartRootSession not implemented")
@@ -324,6 +356,24 @@ func _WorkContextService_StartTask_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WorkContextService_StartInstallationTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartInstallationTaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WorkContextServiceServer).StartInstallationTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: WorkContextService_StartInstallationTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WorkContextServiceServer).StartInstallationTask(ctx, req.(*StartInstallationTaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _WorkContextService_StartRootSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(StartRootSessionWorkContextRequest)
 	if err := dec(in); err != nil {
@@ -418,6 +468,10 @@ var WorkContextService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "StartTask",
 			Handler:    _WorkContextService_StartTask_Handler,
+		},
+		{
+			MethodName: "StartInstallationTask",
+			Handler:    _WorkContextService_StartInstallationTask_Handler,
 		},
 		{
 			MethodName: "StartRootSession",

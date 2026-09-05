@@ -45,6 +45,11 @@ services:
     source:
       kind: grpc
       name: Ident
+  InstallationService:
+    handler: installationConnectHandler
+    source:
+      kind: singleton
+      name: InstallationSingleton
   IntrospectionService:
     handler: introspectionConnectHandler
     source:

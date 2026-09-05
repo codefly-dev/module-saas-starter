@@ -22,8 +22,10 @@ import (
 )
 
 type workContextAuthorityFake struct {
-	facts *business.WorkContextAuthorityFacts
-	err   error
+	facts            *business.WorkContextAuthorityFacts
+	err              error
+	installationFcts *business.InstallationAuthorityFacts
+	installationErr  error
 }
 
 func (f *workContextAuthorityFake) ResolveWorkContextAuthority(
@@ -34,6 +36,15 @@ func (f *workContextAuthorityFake) ResolveWorkContextAuthority(
 	_ []business.WorkContextPermission,
 ) (*business.WorkContextAuthorityFacts, error) {
 	return f.facts, f.err
+}
+
+func (f *workContextAuthorityFake) ResolveInstallationAuthority(
+	_ context.Context,
+	_ string,
+	_ string,
+	_ []business.WorkContextPermission,
+) (*business.InstallationAuthorityFacts, error) {
+	return f.installationFcts, f.installationErr
 }
 
 type workContextConsumerAuthorityFake struct {

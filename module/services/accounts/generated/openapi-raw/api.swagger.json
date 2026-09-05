@@ -42,6 +42,9 @@
       "name": "IdentityService"
     },
     {
+      "name": "InstallationService"
+    },
+    {
       "name": "IntrospectionService"
     },
     {
@@ -1225,6 +1228,155 @@
         ],
         "tags": [
           "GDPRService"
+        ]
+      }
+    },
+    "/v1/installations": {
+      "post": {
+        "summary": "InstallSolution composes an installation in one transaction: an idempotent\nagent Principal with its ceiling, a solution scope node, the agent's standing\nleast-privilege grant at that node, and the installation row with its owner of\nrecord. Emits installation.created with the grantor and ceiling.",
+        "operationId": "InstallationService_InstallSolution",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1InstallSolutionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}": {
+      "get": {
+        "summary": "GetInstallation returns one installation plus its live health, so an admin UI\ncan see when an installation has gone unhealthy (owner offboarded, agent\ndisabled, grant expired) before the next headless task fails closed.",
+        "operationId": "InstallationService_GetInstallation",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetInstallationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:transfer-ownership": {
+      "post": {
+        "summary": "TransferInstallationOwnership reassigns the owner of record and replaces the\nco-owner succession set. This is how a \"connection owner left the org\"\nfailure is repaired: an admin transfers the installation to a current admin,\nrestoring its health.",
+        "operationId": "InstallationService_TransferInstallationOwnership",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1Installation"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceTransferInstallationOwnershipBody"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
+        ]
+      }
+    },
+    "/v1/installations/{installationId}:uninstall": {
+      "post": {
+        "summary": "UninstallSolution reverses an install: it revokes the agent principal and its\nstanding grant, soft-deletes the solution scope node, and marks the\ninstallation revoked. Idempotent on an already-revoked installation.",
+        "operationId": "InstallationService_UninstallSolution",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "type": "object",
+              "properties": {}
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "installationId",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/InstallationServiceUninstallSolutionBody"
+            }
+          }
+        ],
+        "tags": [
+          "InstallationService"
         ]
       }
     },
@@ -5133,6 +5285,33 @@
         }
       }
     },
+    "InstallationServiceTransferInstallationOwnershipBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "newOwnerPrincipalId": {
+          "type": "string",
+          "description": "The new owner of record. Must be a current org admin."
+        },
+        "coOwnerPrincipalIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Replaces the co-owner succession set wholesale."
+        }
+      }
+    },
+    "InstallationServiceUninstallSolutionBody": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        }
+      }
+    },
     "InvitationServiceResendInvitationBody": {
       "type": "object"
     },
@@ -6341,6 +6520,18 @@
         }
       }
     },
+    "v1GetInstallationResponse": {
+      "type": "object",
+      "properties": {
+        "installation": {
+          "$ref": "#/definitions/v1Installation"
+        },
+        "health": {
+          "$ref": "#/definitions/v1InstallationHealth",
+          "description": "Resolved live at read time from current authority facts."
+        }
+      }
+    },
     "v1GetJobOperationsResponse": {
       "type": "object",
       "properties": {
@@ -6586,6 +6777,124 @@
           "type": "string"
         }
       }
+    },
+    "v1InstallSolutionRequest": {
+      "type": "object",
+      "properties": {
+        "orgId": {
+          "type": "string"
+        },
+        "agentIdentifier": {
+          "type": "string",
+          "description": "Canonical \"publisher/name:version\" of the solution's agent. The agent\nPrincipal is created idempotently per version."
+        },
+        "solutionIdentifier": {
+          "type": "string"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Human display name for the agent principal. Empty defaults to the identifier."
+        },
+        "rootScopePath": {
+          "type": "string",
+          "description": "The solution's authority-root scope node, registered with kind='solution'.\nA lowercase ltree path of [a-z0-9_] labels (RFC-0001 label encoding)."
+        },
+        "rootScopeLabel": {
+          "type": "string"
+        },
+        "roleId": {
+          "type": "string",
+          "description": "The least-privilege role granted to the agent at the root node. This is\ndeliberately NOT the full \"\u003cnamespace\u003e:catalog\" role; widening is a separate,\naudited admin action."
+        },
+        "ownerPrincipalId": {
+          "type": "string",
+          "description": "The accountable human of record. Must be a current org admin. Empty defaults\nto the calling admin."
+        },
+        "coOwnerPrincipalIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Succession set: any one being a current org admin keeps the installation\nhealthy. Each must be a human principal."
+        },
+        "allowedAudiences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The agent's delegated-execution ceiling (migration 108): the Work Context\naudiences it may be minted for and the resource kinds it may ever touch.\nEmpty = unrestricted."
+        },
+        "allowedScopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1Installation": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "orgId": {
+          "type": "string"
+        },
+        "agentPrincipalId": {
+          "type": "string"
+        },
+        "solutionIdentifier": {
+          "type": "string"
+        },
+        "ownerPrincipalId": {
+          "type": "string"
+        },
+        "coOwnerPrincipalIds": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rootScopeNodeId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/v1InstallationStatus"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "revokedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "description": "Installation is one solution's bound identity in an org. Server-assigned ids;\nthe browser cannot attest to tenancy, the agent principal, or the scope node."
+    },
+    "v1InstallationHealth": {
+      "type": "string",
+      "enum": [
+        "INSTALLATION_HEALTH_UNSPECIFIED",
+        "INSTALLATION_HEALTH_HEALTHY",
+        "INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER",
+        "INSTALLATION_HEALTH_AGENT_REVOKED",
+        "INSTALLATION_HEALTH_AGENT_DISABLED",
+        "INSTALLATION_HEALTH_STANDING_GRANT_MISSING"
+      ],
+      "default": "INSTALLATION_HEALTH_UNSPECIFIED",
+      "description": "InstallationHealth is resolved live from current authority facts, never\nstored. It is the observable form of the fail-closed mint rule: a\nStartInstallationTask fails exactly when health is not HEALTHY, and transfer\nor re-enable restores it. NO_ELIGIBLE_OWNER means neither the owner of record\nnor any co-owner is currently an org admin (the Zapier-class \"connection owner\nleft the org\" failure), surfaced rather than silently reassigned."
+    },
+    "v1InstallationStatus": {
+      "type": "string",
+      "enum": [
+        "INSTALLATION_STATUS_UNSPECIFIED",
+        "INSTALLATION_STATUS_ACTIVE",
+        "INSTALLATION_STATUS_REVOKED"
+      ],
+      "default": "INSTALLATION_STATUS_UNSPECIFIED",
+      "description": "InstallationStatus is the lifecycle of an installation row. An uninstall is a\nsoft delete (status=revoked, revoked_at set) so the agent, grants, and audit\ntrail remain resolvable."
     },
     "v1Invitation": {
       "type": "object",

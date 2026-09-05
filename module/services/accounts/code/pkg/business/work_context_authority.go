@@ -49,6 +49,37 @@ type WorkContextAuthorityStore interface {
 		actorPrincipalID string,
 		permissions []WorkContextPermission,
 	) (*WorkContextAuthorityFacts, error)
+	// ResolveInstallationAuthority is the headless (no-user-present) counterpart.
+	// It resolves the installation's owner of record (fail-closed if none of the
+	// owner/co-owners is currently an org admin), the agent principal actor
+	// (fail-closed if revoked or disabled), and every requested permission against
+	// the agent's STANDING scope grants (not owner ∩ actor RBAC). Fails with
+	// ErrTypePermission when a requested scope is outside the standing grant.
+	ResolveInstallationAuthority(
+		ctx context.Context,
+		orgID string,
+		installationID string,
+		permissions []WorkContextPermission,
+	) (*InstallationAuthorityFacts, error)
+}
+
+// InstallationAuthorityFacts is the headless-mint authority snapshot: the owner
+// of record chosen live, the agent actor, and the sealed revision. Unlike the
+// delegated path the authority is the agent's own standing grants, so there is
+// no separate owner authority slice to intersect with.
+type InstallationAuthorityFacts struct {
+	OwnerPrincipalID       string
+	Actor                  *Principal
+	OrganizationRevision   uint64
+	OwnerPrincipalRevision uint64
+	AttributionTeamIDs     []string
+}
+
+func (f InstallationAuthorityFacts) EffectiveRevision() uint64 {
+	if f.OwnerPrincipalRevision > f.OrganizationRevision {
+		return f.OwnerPrincipalRevision
+	}
+	return f.OrganizationRevision
 }
 
 // WorkContextRevisionSubject is one current principal authority slice a

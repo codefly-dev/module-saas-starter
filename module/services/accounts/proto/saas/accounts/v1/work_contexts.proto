@@ -72,6 +72,40 @@ message StartTaskWorkContextRequest {
   ];
 }
 
+// StartInstallationTaskRequest is the headless (no-user-present) mint path. The
+// caller is a trusted internal service (a job consumer leasing an ingest job),
+// not a bearer: owner := the installation's owner of record; actor := the agent
+// principal; authority := the agent's standing scope grants ∩ its ceiling,
+// resolved live. It fails closed when the agent is revoked/disabled, the standing
+// grant is gone, or no owner/co-owner is currently an org admin.
+message StartInstallationTaskRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  string task_id = 3 [(buf.validate.field).string.uuid = true];
+  string session_id = 4 [(buf.validate.field).string.uuid = true];
+  repeated WorkContextScope authority_scopes = 5 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 64
+  ];
+  string audience = 6 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  WorkContextReplayPolicy replay_policy = 7;
+  int32 ttl_seconds = 8 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+  optional string workspace_id = 9 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  optional string project_id = 10 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+}
+
 message StartRootSessionWorkContextRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string parent_work_context_token = 2 [
@@ -324,6 +358,31 @@ service WorkContextService {
     option (google.api.http) = {
       post: "/v1/work-contexts:task"
       body: "*"
+    };
+  }
+
+  // StartInstallationTask is the headless mint. Unlike StartTask it opens with a
+  // service credential rather than a bearer: it resolves the installation's owner
+  // of record as the context owner and the installation's agent principal as the
+  // sole actor, with authority drawn from the agent's standing scope grants
+  // (intersected with its registered ceiling), resolved live. It records the same
+  // durable actor-chain hop as every other mint and fails closed on a revoked or
+  // disabled agent, a missing standing grant, or an installation with no
+  // currently-admin owner or co-owner.
+  rpc StartInstallationTask(StartInstallationTaskRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      // The durable, attributable record of a headless mint is the actor-chain
+      // journal hop (RFC-0003), written on every issuance — not an audit event.
+      // This matches the other internal WorkContext RPCs, which emit none.
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }
 
