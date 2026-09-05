@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +33,7 @@ func sitemapXML(locs ...string) string {
 	return b.String()
 }
 
-func TestFetchHappyPath(t *testing.T) {
+func TestListAndFetchHappyPath(t *testing.T) {
 	allowLoopback(t)
 
 	mux := http.NewServeMux()
@@ -53,16 +54,20 @@ func TestFetchHappyPath(t *testing.T) {
 	})
 
 	c := New(Config{SitemapURL: server.URL + "/sitemap.xml"})
-	pages, err := c.Fetch(context.Background())
+	urls, err := c.List(context.Background())
 	if err != nil {
-		t.Fatalf("Fetch: %v", err)
+		t.Fatalf("List: %v", err)
 	}
-	if len(pages) != 2 {
-		t.Fatalf("got %d pages, want 2", len(pages))
+	if len(urls) != 2 {
+		t.Fatalf("got %d urls, want 2", len(urls))
 	}
 
 	byURL := map[string]Page{}
-	for _, p := range pages {
+	for _, u := range urls {
+		p, err := c.Fetch(context.Background(), u)
+		if err != nil {
+			t.Fatalf("Fetch %s: %v", u, err)
+		}
 		byURL[p.URL] = p
 	}
 	a, ok := byURL[server.URL+"/a"]
@@ -87,7 +92,7 @@ func TestFetchHappyPath(t *testing.T) {
 	}
 }
 
-func TestFetchRespectsMaxPages(t *testing.T) {
+func TestListRespectsMaxPages(t *testing.T) {
 	allowLoopback(t)
 
 	mux := http.NewServeMux()
@@ -102,64 +107,59 @@ func TestFetchRespectsMaxPages(t *testing.T) {
 		w.Header().Set("Content-Type", "application/xml")
 		fmt.Fprint(w, sitemapXML(locs...))
 	})
-	for i := 0; i < 5; i++ {
-		path := fmt.Sprintf("/p%d", i)
-		mux.HandleFunc(path, func(w http.ResponseWriter, _ *http.Request) {
-			fmt.Fprint(w, "body")
-		})
-	}
 
 	c := New(Config{SitemapURL: server.URL + "/sitemap.xml", MaxPages: 2})
-	pages, err := c.Fetch(context.Background())
+	urls, err := c.List(context.Background())
 	if err != nil {
-		t.Fatalf("Fetch: %v", err)
+		t.Fatalf("List: %v", err)
 	}
-	if len(pages) != 2 {
-		t.Fatalf("got %d pages, want 2", len(pages))
+	if len(urls) != 2 {
+		t.Fatalf("got %d urls, want 2", len(urls))
 	}
 }
 
-func TestFetchSkipsFailingPage(t *testing.T) {
+func TestFetchReportsFailingPage(t *testing.T) {
 	allowLoopback(t)
 
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
-	mux.HandleFunc("/sitemap.xml", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/xml")
-		fmt.Fprint(w, sitemapXML(server.URL+"/ok", server.URL+"/boom", server.URL+"/ok2"))
-	})
-	mux.HandleFunc("/ok", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "ok body")
-	})
-	mux.HandleFunc("/ok2", func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, "ok2 body")
-	})
 	mux.HandleFunc("/boom", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	})
 
+	// A failing page now surfaces as a returned error (the caller decides whether
+	// to skip it best-effort), not a silently dropped result.
 	c := New(Config{SitemapURL: server.URL + "/sitemap.xml"})
-	pages, err := c.Fetch(context.Background())
-	if err != nil {
-		t.Fatalf("Fetch: %v", err)
-	}
-	if len(pages) != 2 {
-		t.Fatalf("got %d pages, want 2 (the 500 must be skipped)", len(pages))
-	}
-	for _, p := range pages {
-		if strings.HasSuffix(p.URL, "/boom") {
-			t.Fatalf("failing page /boom must not be returned")
-		}
+	if _, err := c.Fetch(context.Background(), server.URL+"/boom"); err == nil {
+		t.Fatal("a 500 page must return an error, not be silently dropped")
 	}
 }
 
-func TestFetchBlocksLoopbackByDefault(t *testing.T) {
+func TestFetchReportsTooLargePage(t *testing.T) {
+	allowLoopback(t)
+
+	mux := http.NewServeMux()
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	mux.HandleFunc("/big", func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(make([]byte, maxResponseBytes+1))
+	})
+
+	c := New(Config{SitemapURL: server.URL + "/sitemap.xml"})
+	_, err := c.Fetch(context.Background(), server.URL+"/big")
+	if !errors.Is(err, ErrPageTooLarge) {
+		t.Fatalf("oversized page: err = %v, want ErrPageTooLarge", err)
+	}
+}
+
+func TestListBlocksLoopbackByDefault(t *testing.T) {
 	// No allowLoopback here: the default guard must reject a loopback target.
 	c := New(Config{SitemapURL: "http://127.0.0.1:1/sitemap.xml"})
-	_, err := c.Fetch(context.Background())
+	_, err := c.List(context.Background())
 	if err == nil {
-		t.Fatal("Fetch to a loopback address must return an error")
+		t.Fatal("List against a loopback address must return an error")
 	}
 }

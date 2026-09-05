@@ -55,6 +55,15 @@ const emptyPayloadHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca49599
 // connector to map the cluster's internal network.
 var ErrBlockedAddress = errors.New("objectstore: request target is not a public address")
 
+// ErrObjectNotFound reports that a listed key returned 404 on GET — it was
+// deleted between the listing and the fetch. The caller may skip it best-effort.
+var ErrObjectNotFound = errors.New("objectstore: object not found")
+
+// ErrObjectTooLarge reports that an object body exceeds the connector's transport
+// ceiling. It is distinct from a generic failure so the caller can surface an
+// undeliverable object rather than silently discard it.
+var ErrObjectTooLarge = errors.New("objectstore: object exceeds the maximum size")
+
 // Config is the non-secret configuration of one object-storage source.
 type Config struct {
 	Endpoint    string // absolute http(s) base URL, e.g. https://s3.us-east-1.amazonaws.com or a MinIO endpoint
@@ -140,57 +149,20 @@ func New(cfg Config, secretAccessKey string) *Client {
 	return c
 }
 
-// Fetch lists objects under the prefix and fetches each, returning one Object per
-// successfully fetched key. An object that individually fails (non-2xx, too
-// large) is skipped, not fatal. Listing failure is a returned error.
-func (c *Client) Fetch(ctx context.Context) ([]Object, error) {
+// Entry is one row of a ListObjectsV2 result: an object key and its ETag.
+type Entry struct {
+	Key  string
+	ETag string
+}
+
+// List issues one ListObjectsV2 request and returns its entries, bounded by the
+// configured object cap. Listing failure (including a non-2xx list) is a returned
+// error so a credential or permission problem surfaces rather than reading as an
+// empty bucket.
+func (c *Client) List(ctx context.Context) ([]Entry, error) {
 	if c.baseErr != nil {
 		return nil, c.baseErr
 	}
-	entries, err := c.list(ctx)
-	if err != nil {
-		return nil, err
-	}
-	limit := c.cfg.MaxObjects
-	if limit <= 0 {
-		limit = defaultMaxObjects
-	}
-	if limit > maxObjectsCeiling {
-		limit = maxObjectsCeiling
-	}
-	if len(entries) > limit {
-		entries = entries[:limit]
-	}
-	out := make([]Object, 0, len(entries))
-	for _, e := range entries {
-		obj, err := c.get(ctx, e.Key)
-		if err != nil {
-			// An individual object that fails (non-2xx, too large) is skipped.
-			continue
-		}
-		if obj.ETag == "" {
-			obj.ETag = e.ETag
-		}
-		out = append(out, obj)
-	}
-	return out, nil
-}
-
-// listEntry is one <Contents> row of a ListBucketResult.
-type listEntry struct {
-	Key  string `xml:"Key"`
-	ETag string `xml:"ETag"`
-}
-
-type listBucketResult struct {
-	XMLName  xml.Name    `xml:"ListBucketResult"`
-	Contents []listEntry `xml:"Contents"`
-}
-
-// list issues one ListObjectsV2 request and parses its first page. Pagination
-// (continuation tokens) is intentionally ignored for this tier: only the first
-// page, up to the configured cap, is returned.
-func (c *Client) list(ctx context.Context) ([]listEntry, error) {
 	u := *c.base
 	u.Path = "/" + c.cfg.Bucket
 	u.RawPath = "/" + rfc3986Escape(c.cfg.Bucket)
@@ -209,12 +181,43 @@ func (c *Client) list(ctx context.Context) ([]listEntry, error) {
 	if err := xml.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("objectstore: parse listing: %w", err)
 	}
-	return parsed.Contents, nil
+	limit := c.cfg.MaxObjects
+	if limit <= 0 {
+		limit = defaultMaxObjects
+	}
+	if limit > maxObjectsCeiling {
+		limit = maxObjectsCeiling
+	}
+	entries := make([]Entry, 0, len(parsed.Contents))
+	for _, e := range parsed.Contents {
+		if len(entries) >= limit {
+			break
+		}
+		entries = append(entries, Entry{Key: e.Key, ETag: e.ETag})
+	}
+	return entries, nil
 }
 
-// get fetches one object. A non-2xx status or an over-large body is returned as
-// an error so Fetch can skip the object.
-func (c *Client) get(ctx context.Context, key string) (Object, error) {
+// listEntry is one <Contents> row of a ListBucketResult.
+type listEntry struct {
+	Key  string `xml:"Key"`
+	ETag string `xml:"ETag"`
+}
+
+type listBucketResult struct {
+	XMLName  xml.Name    `xml:"ListBucketResult"`
+	Contents []listEntry `xml:"Contents"`
+}
+
+// Fetch retrieves one object by key. The caller drives it per Entry from List, so
+// only one object body is ever held in memory at a time. A 404 returns
+// ErrObjectNotFound (the key was deleted between listing and fetch); a body over
+// the transport ceiling returns ErrObjectTooLarge; any other non-2xx or transport
+// error is returned so the caller can treat it as a real failure.
+func (c *Client) Fetch(ctx context.Context, key string) (Object, error) {
+	if c.baseErr != nil {
+		return Object{}, c.baseErr
+	}
 	u := *c.base
 	u.Path = "/" + c.cfg.Bucket + "/" + key
 	// Path-escape each key segment but keep the "/" separators.
@@ -223,7 +226,13 @@ func (c *Client) get(ctx context.Context, key string) (Object, error) {
 
 	body, status, header, err := c.do(ctx, &u)
 	if err != nil {
+		if errors.Is(err, errBodyTooLarge) {
+			return Object{}, ErrObjectTooLarge
+		}
 		return Object{}, err
+	}
+	if status == http.StatusNotFound {
+		return Object{}, ErrObjectNotFound
 	}
 	if status < 200 || status >= 300 {
 		return Object{}, fmt.Errorf("objectstore: get %q returned status %d", key, status)
@@ -236,8 +245,12 @@ func (c *Client) get(ctx context.Context, key string) (Object, error) {
 	}, nil
 }
 
+// errBodyTooLarge is the internal signal do() raises when a response body exceeds
+// the transport ceiling; Fetch translates it to the exported ErrObjectTooLarge.
+var errBodyTooLarge = errors.New("objectstore: response exceeds the maximum size")
+
 // do builds, signs, and sends a GET request for u, returning the bounded body,
-// the status code, and the response header. An over-large body is an error.
+// the status code, and the response header. An over-large body is errBodyTooLarge.
 func (c *Client) do(ctx context.Context, u *url.URL) ([]byte, int, http.Header, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base.String(), nil)
 	if err != nil {
@@ -259,7 +272,7 @@ func (c *Client) do(ctx context.Context, u *url.URL) ([]byte, int, http.Header, 
 		return nil, 0, nil, fmt.Errorf("objectstore: read response: %w", err)
 	}
 	if len(body) > maxResponseBytes {
-		return nil, 0, nil, fmt.Errorf("objectstore: response exceeds %d bytes", maxResponseBytes)
+		return nil, 0, nil, errBodyTooLarge
 	}
 	return body, resp.StatusCode, resp.Header, nil
 }

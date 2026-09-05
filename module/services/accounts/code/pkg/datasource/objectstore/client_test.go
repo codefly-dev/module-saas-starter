@@ -3,6 +3,7 @@ package objectstore
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -71,15 +72,19 @@ func TestFetchHappyPath(t *testing.T) {
 		AccessKeyID: "AKIAIOSFODNN7EXAMPLE",
 	}, "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY")
 
-	objs, err := c.Fetch(context.Background())
+	entries, err := c.List(context.Background())
 	if err != nil {
-		t.Fatalf("Fetch: %v", err)
+		t.Fatalf("List: %v", err)
 	}
-	if len(objs) != 2 {
-		t.Fatalf("want 2 objects, got %d", len(objs))
+	if len(entries) != 2 {
+		t.Fatalf("want 2 entries, got %d", len(entries))
 	}
 	byKey := map[string]Object{}
-	for _, o := range objs {
+	for _, e := range entries {
+		o, err := c.Fetch(context.Background(), e.Key)
+		if err != nil {
+			t.Fatalf("Fetch %s: %v", e.Key, err)
+		}
 		byKey[o.Key] = o
 	}
 	a, ok := byKey["docs/a.txt"]
@@ -123,8 +128,8 @@ func TestAuthorizationHeaderStructure(t *testing.T) {
 		Bucket:      "b",
 		AccessKeyID: "AKIAIOSFODNN7EXAMPLE",
 	}, "secret")
-	if _, err := c.Fetch(context.Background()); err != nil {
-		t.Fatalf("Fetch: %v", err)
+	if _, err := c.List(context.Background()); err != nil {
+		t.Fatalf("List: %v", err)
 	}
 
 	re := regexp.MustCompile(`^AWS4-HMAC-SHA256 Credential=AKIA[^ ]+/\d{8}/us-east-1/s3/aws4_request, SignedHeaders=host;x-amz-content-sha256;x-amz-date, Signature=[0-9a-f]{64}$`)
@@ -215,18 +220,14 @@ func TestEmptyPayloadHash(t *testing.T) {
 	}
 }
 
-func TestFetchSkipsFailingObject(t *testing.T) {
+// TestFetchDistinguishesFailures proves a benign miss (404, deleted between list
+// and fetch) is reported as ErrObjectNotFound so the caller can skip it, while a
+// real failure (500 — e.g. a permission problem) surfaces as a generic error so
+// the caller does NOT mistake it for an empty result.
+func TestFetchDistinguishesFailures(t *testing.T) {
 	allowDial(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("list-type") == "2" {
-			w.Header().Set("Content-Type", "application/xml")
-			w.Write([]byte(`<ListBucketResult>
-  <Contents><Key>ok.txt</Key><ETag>"e1"</ETag></Contents>
-  <Contents><Key>boom.txt</Key><ETag>"e2"</ETag></Contents>
-</ListBucketResult>`))
-			return
-		}
 		switch r.URL.Path {
 		case "/b/ok.txt":
 			w.Header().Set("Content-Type", "text/plain")
@@ -246,15 +247,36 @@ func TestFetchSkipsFailingObject(t *testing.T) {
 		AccessKeyID: "AKIAEXAMPLE",
 	}, "secret")
 
-	objs, err := c.Fetch(context.Background())
-	if err != nil {
-		t.Fatalf("Fetch: %v", err)
+	ok, err := c.Fetch(context.Background(), "ok.txt")
+	if err != nil || string(ok.Body) != "fine" {
+		t.Fatalf("ok.txt: body=%q err=%v", ok.Body, err)
 	}
-	if len(objs) != 1 {
-		t.Fatalf("want 1 object (the 500 skipped), got %d: %+v", len(objs), objs)
+	if _, err := c.Fetch(context.Background(), "boom.txt"); err == nil || errors.Is(err, ErrObjectNotFound) {
+		t.Fatalf("a 500 must be a real error (not ErrObjectNotFound), got %v", err)
 	}
-	if objs[0].Key != "ok.txt" || string(objs[0].Body) != "fine" {
-		t.Errorf("unexpected surviving object: %+v", objs[0])
+	if _, err := c.Fetch(context.Background(), "gone.txt"); !errors.Is(err, ErrObjectNotFound) {
+		t.Fatalf("a 404 must be ErrObjectNotFound, got %v", err)
+	}
+}
+
+// TestFetchReportsTooLarge proves an object over the transport ceiling surfaces
+// as ErrObjectTooLarge rather than being silently discarded.
+func TestFetchReportsTooLarge(t *testing.T) {
+	allowDial(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(make([]byte, maxResponseBytes+1))
+	}))
+	defer srv.Close()
+
+	c := New(Config{
+		Endpoint:    srv.URL,
+		Region:      "us-east-1",
+		Bucket:      "b",
+		AccessKeyID: "AKIAEXAMPLE",
+	}, "secret")
+	if _, err := c.Fetch(context.Background(), "big.bin"); !errors.Is(err, ErrObjectTooLarge) {
+		t.Fatalf("oversized object: err = %v, want ErrObjectTooLarge", err)
 	}
 }
 
@@ -267,7 +289,7 @@ func TestSSRFGuardBlocksLoopback(t *testing.T) {
 		Region:      "us-east-1",
 		AccessKeyID: "AKIAEXAMPLE",
 	}, "secret")
-	if _, err := c.Fetch(context.Background()); err == nil {
-		t.Fatal("expected an error fetching a loopback endpoint, got nil")
+	if _, err := c.List(context.Background()); err == nil {
+		t.Fatal("expected an error listing a loopback endpoint, got nil")
 	}
 }

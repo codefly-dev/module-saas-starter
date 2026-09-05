@@ -87,29 +87,59 @@ func New(cfg Config) *Client {
 	}
 }
 
-// Fetch reads the sitemap, then fetches each listed URL, returning one Page per
-// successfully fetched document. Pages that individually fail (non-2xx, too
-// large, network error) are skipped, not fatal — a single bad page must not
-// abort the whole crawl. A failing sitemap fetch is a returned error.
-func (c *Client) Fetch(ctx context.Context) ([]Page, error) {
+// ErrPageTooLarge reports that a page body exceeds the connector's transport
+// ceiling. It is distinct from a generic fetch failure so the caller can account
+// for an undeliverable page rather than mistaking it for a transient miss.
+var ErrPageTooLarge = errors.New("crawler: page exceeds the maximum size")
+
+// List reads the sitemap and returns the page URLs to crawl, already bounded by
+// the configured page limit. A failing sitemap fetch is a returned error so a
+// wholesale outage is never mistaken for an empty site.
+func (c *Client) List(ctx context.Context) ([]string, error) {
 	locs, err := c.fetchSitemap(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	limit := c.pageLimit()
-	pages := make([]Page, 0, len(locs))
-	for _, loc := range locs {
-		if len(pages) >= limit {
-			break
-		}
-		page, ok := c.fetchPage(ctx, loc)
-		if !ok {
-			continue
-		}
-		pages = append(pages, page)
+	if limit := c.pageLimit(); len(locs) > limit {
+		locs = locs[:limit]
 	}
-	return pages, nil
+	return locs, nil
+}
+
+// Fetch retrieves one page. The caller drives it per URL from List, so only one
+// page body is ever held in memory at a time. A non-http(s) URL, a non-2xx
+// status, or a network error is a returned error; a body over the transport
+// ceiling returns ErrPageTooLarge so the caller can surface an undeliverable
+// page distinctly.
+func (c *Client) Fetch(ctx context.Context, pageURL string) (Page, error) {
+	target, err := requireHTTPURL(pageURL)
+	if err != nil {
+		return Page{}, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return Page{}, fmt.Errorf("crawler: build page request: %w", err)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return Page{}, fmt.Errorf("crawler: fetch page: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return Page{}, fmt.Errorf("crawler: page fetch returned status %d", resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return Page{}, fmt.Errorf("crawler: read page: %w", err)
+	}
+	if len(body) > maxResponseBytes {
+		return Page{}, ErrPageTooLarge
+	}
+	return Page{
+		URL:         target,
+		Body:        body,
+		ContentType: resp.Header.Get("Content-Type"),
+	}, nil
 }
 
 // pageLimit resolves the number of <loc> entries to fetch, applying the default
@@ -167,40 +197,6 @@ func (c *Client) fetchSitemap(ctx context.Context) ([]string, error) {
 		}
 	}
 	return locs, nil
-}
-
-// fetchPage retrieves one page. It reports ok=false — to be skipped — on any
-// individual failure: a non-http(s) loc, a network error, a non-2xx status, or
-// an over-large body.
-func (c *Client) fetchPage(ctx context.Context, loc string) (Page, bool) {
-	pageURL, err := requireHTTPURL(loc)
-	if err != nil {
-		return Page{}, false
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
-	if err != nil {
-		return Page{}, false
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return Page{}, false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Page{}, false
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil {
-		return Page{}, false
-	}
-	if len(body) > maxResponseBytes {
-		return Page{}, false
-	}
-	return Page{
-		URL:         pageURL,
-		Body:        body,
-		ContentType: resp.Header.Get("Content-Type"),
-	}, true
 }
 
 // requireHTTPURL validates that raw is an absolute http(s) URL with a host and

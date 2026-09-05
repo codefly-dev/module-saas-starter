@@ -525,28 +525,65 @@ func TestAddSource_GitHubBranchThroughGenericCall(t *testing.T) {
 	}
 }
 
-// fakeCrawlerClient returns fixed crawled pages without a live website.
+// fakeCrawlerClient serves fixed pages without a live website, driven one URL at
+// a time. fetchErr injects a per-URL error (e.g. crawler.ErrPageTooLarge or a
+// generic failure); listErr fails the listing.
 type fakeCrawlerClient struct {
-	pages []crawler.Page
-	err   error
-	calls int
+	pages      []crawler.Page
+	fetchErr   map[string]error
+	listErr    error
+	listCalls  int
+	fetchCalls int
 }
 
-func (f *fakeCrawlerClient) Fetch(context.Context) ([]crawler.Page, error) {
-	f.calls++
-	return f.pages, f.err
+func (f *fakeCrawlerClient) List(context.Context) ([]string, error) {
+	f.listCalls++
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
+	urls := make([]string, len(f.pages))
+	for i, p := range f.pages {
+		urls[i] = p.URL
+	}
+	return urls, nil
 }
 
-// fakeUploadClient returns fixed objects without a live object store.
+func (f *fakeCrawlerClient) Fetch(_ context.Context, pageURL string) (crawler.Page, error) {
+	f.fetchCalls++
+	if err := f.fetchErr[pageURL]; err != nil {
+		return crawler.Page{}, err
+	}
+	for _, p := range f.pages {
+		if p.URL == pageURL {
+			return p, nil
+		}
+	}
+	return crawler.Page{}, errors.New("unknown page")
+}
+
+// fakeUploadClient serves fixed objects without a live object store, driven one
+// key at a time. fetchErr injects a per-key error (e.g. objectstore.ErrObjectNotFound,
+// objectstore.ErrObjectTooLarge, or a generic failure); listErr fails the listing.
 type fakeUploadClient struct {
-	objects []objectstore.Object
-	err     error
-	calls   int
+	entries    []objectstore.Entry
+	objects    map[string]objectstore.Object
+	fetchErr   map[string]error
+	listErr    error
+	listCalls  int
+	fetchCalls int
 }
 
-func (f *fakeUploadClient) Fetch(context.Context) ([]objectstore.Object, error) {
-	f.calls++
-	return f.objects, f.err
+func (f *fakeUploadClient) List(context.Context) ([]objectstore.Entry, error) {
+	f.listCalls++
+	return f.entries, f.listErr
+}
+
+func (f *fakeUploadClient) Fetch(_ context.Context, key string) (objectstore.Object, error) {
+	f.fetchCalls++
+	if err := f.fetchErr[key]; err != nil {
+		return objectstore.Object{}, err
+	}
+	return f.objects[key], nil
 }
 
 func crawlerConfig() *business.CrawlerDatasourceConfig {
@@ -639,7 +676,30 @@ func TestAddSource_NewProviderValidation(t *testing.T) {
 	}
 }
 
-func TestRunDatasourceSync_CrawlerEnqueuesPerPage(t *testing.T) {
+func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
+	t.Helper()
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki", Crawler: crawlerConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return source
+}
+
+func newUploadSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
+	t.Helper()
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki",
+		Credential: "secretkey", Upload: uploadConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return source
+}
+
+func TestRunDatasourceSync_CrawlerStreamsPerPage(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
 	fake := &fakeCrawlerClient{pages: []crawler.Page{
@@ -647,20 +707,15 @@ func TestRunDatasourceSync_CrawlerEnqueuesPerPage(t *testing.T) {
 		{URL: "https://docs.example.com/b", Body: []byte("B"), ContentType: "text/html"},
 	}}
 	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
-
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki", Crawler: crawlerConfig(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	source := newCrawlerSource(t, svc)
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if enqueued != 2 || len(producer.jobs) != 2 || fake.calls != 1 {
-		t.Fatalf("enqueued=%d jobs=%d calls=%d, want 2/2/1", enqueued, len(producer.jobs), fake.calls)
+	// One List then one Fetch per page — the whole site is never materialized.
+	if enqueued != 2 || len(producer.jobs) != 2 || fake.listCalls != 1 || fake.fetchCalls != 2 {
+		t.Fatalf("enqueued=%d jobs=%d list=%d fetch=%d, want 2/2/1/2", enqueued, len(producer.jobs), fake.listCalls, fake.fetchCalls)
 	}
 	job := producer.jobs[0]
 	if job.GetTopic() != "datasource.crawler.sync" || !job.GetScope().GetGlobal() {
@@ -680,35 +735,77 @@ func TestRunDatasourceSync_CrawlerEnqueuesPerPage(t *testing.T) {
 	}
 }
 
-func TestRunDatasourceSync_UploadEnqueuesPerObject(t *testing.T) {
+// A page too large to deliver must surface as a sync error (the good pages still
+// enqueue), never a silent drop reported as success.
+func TestRunDatasourceSync_CrawlerSurfacesOversizedPage(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	fake := &fakeCrawlerClient{
+		pages: []crawler.Page{
+			{URL: "https://docs.example.com/small", Body: []byte("ok"), ContentType: "text/html"},
+			{URL: "https://docs.example.com/huge"},
+		},
+		fetchErr: map[string]error{"https://docs.example.com/huge": crawler.ErrPageTooLarge},
+	}
+	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
+	source := newCrawlerSource(t, svc)
+
+	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
+	if err == nil {
+		t.Fatal("an oversized page must surface as an error, not a silent success")
+	}
+	if enqueued != 1 || len(producer.jobs) != 1 {
+		t.Fatalf("the deliverable page must still enqueue: enqueued=%d jobs=%d", enqueued, len(producer.jobs))
+	}
+}
+
+// A sitemap whose every page fails to fetch must fail the sync, not record an
+// empty success that looks like a healthy but contentless site.
+func TestRunDatasourceSync_CrawlerWholesaleFailureIsNotEmptySuccess(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	fake := &fakeCrawlerClient{
+		pages: []crawler.Page{{URL: "https://docs.example.com/a"}, {URL: "https://docs.example.com/b"}},
+		fetchErr: map[string]error{
+			"https://docs.example.com/a": errors.New("timeout"),
+			"https://docs.example.com/b": errors.New("timeout"),
+		},
+	}
+	svc.SetDatasourceCrawlerClientFactory(func(business.CrawlerDatasourceConfig) business.CrawlerContentClient { return fake })
+	source := newCrawlerSource(t, svc)
+
+	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
+		t.Fatal("a crawl that reached no page must fail, not report an empty success")
+	}
+	if len(producer.jobs) != 0 {
+		t.Fatalf("no deliveries expected, got %d", len(producer.jobs))
+	}
+}
+
+func TestRunDatasourceSync_UploadStreamsPerObject(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
 	var gotSecret string
-	fake := &fakeUploadClient{objects: []objectstore.Object{
-		{Key: "kb/a.pdf", Body: []byte("PDFA"), ContentType: "application/pdf", ETag: "etag-a"},
-		{Key: "kb/b.pdf", Body: []byte("PDFB"), ContentType: "application/pdf", ETag: "etag-b"},
-	}}
+	fake := &fakeUploadClient{
+		entries: []objectstore.Entry{{Key: "kb/a.pdf", ETag: "etag-a"}, {Key: "kb/b.pdf", ETag: "etag-b"}},
+		objects: map[string]objectstore.Object{
+			"kb/a.pdf": {Key: "kb/a.pdf", Body: []byte("PDFA"), ContentType: "application/pdf", ETag: "etag-a"},
+			"kb/b.pdf": {Key: "kb/b.pdf", Body: []byte("PDFB"), ContentType: "application/pdf", ETag: "etag-b"},
+		},
+	}
 	svc.SetDatasourceUploadClientFactory(func(_ business.UploadDatasourceConfig, secret string) business.UploadContentClient {
 		gotSecret = secret
 		return fake
 	})
-
-	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki",
-		Credential: "secretkey", Upload: uploadConfig(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	source := newUploadSource(t, svc)
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if enqueued != 2 || len(producer.jobs) != 2 || fake.calls != 1 {
-		t.Fatalf("enqueued=%d jobs=%d calls=%d, want 2/2/1", enqueued, len(producer.jobs), fake.calls)
+	if enqueued != 2 || len(producer.jobs) != 2 || fake.listCalls != 1 || fake.fetchCalls != 2 {
+		t.Fatalf("enqueued=%d jobs=%d list=%d fetch=%d, want 2/2/1/2", enqueued, len(producer.jobs), fake.listCalls, fake.fetchCalls)
 	}
-	// The decrypted secret access key must reach the connector factory.
 	if gotSecret != "secretkey" {
 		t.Fatalf("secret handed to connector = %q, want the decrypted secret key", gotSecret)
 	}
@@ -727,6 +824,49 @@ func TestRunDatasourceSync_UploadEnqueuesPerObject(t *testing.T) {
 	}
 	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
 		t.Fatal("idempotency keys collided across objects")
+	}
+}
+
+// A permission/transport failure on an object must abort the sync, not be skipped
+// so that a wrong secret key reads as an empty bucket (successful zero-doc sync).
+func TestRunDatasourceSync_UploadPropagatesFetchFailure(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	fake := &fakeUploadClient{
+		entries:  []objectstore.Entry{{Key: "kb/a.pdf", ETag: "e"}},
+		fetchErr: map[string]error{"kb/a.pdf": errors.New("AccessDenied")},
+	}
+	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	source := newUploadSource(t, svc)
+
+	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err == nil {
+		t.Fatal("a 403 on every object must fail the sync, not read as an empty bucket")
+	}
+}
+
+// A listed object deleted before its fetch (404) is skipped best-effort while the
+// rest still deliver; an oversized object is surfaced as an error.
+func TestRunDatasourceSync_UploadSkipsVanishedAndSurfacesOversized(t *testing.T) {
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, nil)
+	fake := &fakeUploadClient{
+		entries: []objectstore.Entry{{Key: "ok.pdf", ETag: "e1"}, {Key: "gone.pdf", ETag: "e2"}, {Key: "huge.pdf", ETag: "e3"}},
+		objects: map[string]objectstore.Object{"ok.pdf": {Key: "ok.pdf", Body: []byte("OK"), ETag: "e1"}},
+		fetchErr: map[string]error{
+			"gone.pdf": objectstore.ErrObjectNotFound,
+			"huge.pdf": objectstore.ErrObjectTooLarge,
+		},
+	}
+	svc.SetDatasourceUploadClientFactory(func(business.UploadDatasourceConfig, string) business.UploadContentClient { return fake })
+	source := newUploadSource(t, svc)
+
+	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
+	if err == nil {
+		t.Fatal("the oversized object must surface as an error")
+	}
+	// The vanished object is skipped and the deliverable one still enqueues.
+	if enqueued != 1 || len(producer.jobs) != 1 || producer.jobs[0].GetAttributes()["upload.key"] != "ok.pdf" {
+		t.Fatalf("enqueued=%d jobs=%d, want only ok.pdf delivered", enqueued, len(producer.jobs))
 	}
 }
 

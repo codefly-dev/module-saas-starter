@@ -219,16 +219,19 @@ type APIContentClient interface {
 }
 
 // CrawlerContentClient is the subset of the crawler connector the Service needs.
-// The Service builds one per Source from its config.
+// The Service builds one per Source from its config and drives it item-at-a-time
+// (List then Fetch) so an entire site is never held in memory at once.
 type CrawlerContentClient interface {
-	Fetch(ctx context.Context) ([]crawler.Page, error)
+	List(ctx context.Context) ([]string, error)
+	Fetch(ctx context.Context, pageURL string) (crawler.Page, error)
 }
 
 // UploadContentClient is the subset of the object-storage connector the Service
 // needs. The Service builds one per Source from its config and decrypted secret
-// access key.
+// access key and drives it item-at-a-time (List then Fetch).
 type UploadContentClient interface {
-	Fetch(ctx context.Context) ([]objectstore.Object, error)
+	List(ctx context.Context) ([]objectstore.Entry, error)
+	Fetch(ctx context.Context, key string) (objectstore.Object, error)
 }
 
 // SetDatasourceConnector wires the fail-closed credential cipher, the privileged
@@ -837,9 +840,11 @@ func apiResourceURL(cfg *APIDatasourceConfig) string {
 	return strings.TrimRight(cfg.BaseURL, "/") + "/" + strings.TrimLeft(cfg.ResourcePath, "/")
 }
 
-// runCrawlerSync reads the source's sitemap, fetches each listed page, and
-// enqueues one ingest delivery per page. A page larger than the inbox payload
-// cap is skipped rather than aborting the crawl.
+// runCrawlerSync reads the source's sitemap and fetches each listed page one at a
+// time, enqueuing an ingest delivery per page. Pages are streamed (never all held
+// in memory), a page too large to deliver is recorded and surfaced rather than
+// silently dropped, and a sitemap that yields no deliverable page fails the sync
+// rather than recording an empty success.
 func (s *Service) runCrawlerSync(ctx context.Context, source *DatasourceSource) (int, error) {
 	w := wool.Get(ctx).In("runCrawlerSync")
 	if s.newCrawlerClient == nil {
@@ -848,22 +853,46 @@ func (s *Service) runCrawlerSync(ctx context.Context, source *DatasourceSource) 
 	if source.Crawler == nil {
 		return 0, w.NewError("crawler source has no config")
 	}
+	client := s.newCrawlerClient(*source.Crawler)
 
-	pages, err := s.newCrawlerClient(*source.Crawler).Fetch(ctx)
+	urls, err := client.List(ctx)
 	if err != nil {
-		return 0, w.Wrapf(err, "crawl sitemap")
+		return 0, w.Wrapf(err, "list sitemap")
 	}
 
 	enqueued := 0
-	for _, page := range pages {
+	oversized := 0
+	for _, u := range urls {
+		page, err := client.Fetch(ctx, u)
+		if err != nil {
+			if errors.Is(err, crawler.ErrPageTooLarge) {
+				oversized++
+				continue
+			}
+			// One unreachable page must not abort the whole crawl; skip it
+			// best-effort. A crawl that reaches none of its pages is caught below.
+			w.Warn("skipping unfetchable page", wool.Field("url", u), wool.ErrField(err))
+			continue
+		}
 		if len(page.Body) > maxIngestPayload {
-			w.Warn("skipping oversized page", wool.Field("url", page.URL), wool.Field("bytes", len(page.Body)))
+			oversized++
 			continue
 		}
 		if err := s.enqueueCrawlerIngest(ctx, source, page); err != nil {
-			return enqueued, w.Wrapf(err, "enqueue %s", page.URL)
+			return enqueued, w.Wrapf(err, "enqueue %s", u)
 		}
 		enqueued++
+	}
+
+	// A sitemap that listed pages but produced no delivery and no oversized page
+	// means every fetch failed — a wholesale outage, not an empty site.
+	if len(urls) > 0 && enqueued == 0 && oversized == 0 {
+		return 0, w.NewError("crawl fetched none of the sitemap's pages")
+	}
+	// Pages too large for the ingest inbox cannot be delivered and the consumer
+	// holds no credentials to re-fetch them; surface it instead of a clean sync.
+	if oversized > 0 {
+		return enqueued, w.NewError("%d crawled page(s) exceed the ingest payload limit", oversized)
 	}
 
 	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
@@ -914,9 +943,12 @@ func crawlerIngestIdempotencyKey(sourceID, pageURL, contentSHA string) string {
 	return "datasource-crawler-sync/" + hex.EncodeToString(digest[:])
 }
 
-// runUploadSync lists the source's objects and enqueues one ingest delivery per
-// object. An object larger than the inbox payload cap is skipped rather than
-// aborting the pull.
+// runUploadSync lists the source's objects and fetches each one at a time,
+// enqueuing an ingest delivery per object. Objects are streamed (never all held
+// in memory); a listed object deleted before its fetch is skipped, an object too
+// large to deliver is recorded and surfaced, and any real fetch failure (a
+// permission or transport error) aborts the sync rather than reading as an empty
+// bucket.
 func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (int, error) {
 	w := wool.Get(ctx).In("runUploadSync")
 	if s.newUploadClient == nil {
@@ -930,22 +962,45 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	if err != nil {
 		return 0, w.Wrapf(err, "decrypt secret access key")
 	}
+	client := s.newUploadClient(*source.Upload, secretKey)
 
-	objects, err := s.newUploadClient(*source.Upload, secretKey).Fetch(ctx)
+	entries, err := client.List(ctx)
 	if err != nil {
 		return 0, w.Wrapf(err, "list objects")
 	}
 
 	enqueued := 0
-	for _, object := range objects {
+	oversized := 0
+	for _, entry := range entries {
+		object, err := client.Fetch(ctx, entry.Key)
+		if err != nil {
+			if errors.Is(err, objectstore.ErrObjectNotFound) {
+				// Deleted between listing and fetch; skip best-effort.
+				w.Warn("skipping vanished object", wool.Field("key", entry.Key))
+				continue
+			}
+			if errors.Is(err, objectstore.ErrObjectTooLarge) {
+				oversized++
+				continue
+			}
+			// A permission or transport failure must not read as an empty bucket:
+			// surface it so the sync is retried and the misconfiguration is visible.
+			return enqueued, w.Wrapf(err, "fetch %s", entry.Key)
+		}
 		if len(object.Body) > maxIngestPayload {
-			w.Warn("skipping oversized object", wool.Field("key", object.Key), wool.Field("bytes", len(object.Body)))
+			oversized++
 			continue
 		}
-		if err := s.enqueueUploadIngest(ctx, source, object); err != nil {
-			return enqueued, w.Wrapf(err, "enqueue %s", object.Key)
+		if err := s.enqueueUploadIngest(ctx, source, object, uploadFingerprint(object, entry)); err != nil {
+			return enqueued, w.Wrapf(err, "enqueue %s", entry.Key)
 		}
 		enqueued++
+	}
+
+	// Objects too large for the ingest inbox cannot be delivered and the consumer
+	// holds no credentials to re-fetch them; surface it instead of a clean sync.
+	if oversized > 0 {
+		return enqueued, w.NewError("%d object(s) exceed the ingest payload limit", oversized)
 	}
 
 	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
@@ -956,18 +1011,24 @@ func (s *Service) runUploadSync(ctx context.Context, source *DatasourceSource) (
 	return enqueued, nil
 }
 
-func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object) error {
+// uploadFingerprint is the object's content fingerprint used to key delivery
+// idempotency: the ETag from the GET response, else the ETag from the listing,
+// else a hash of the body — so a re-pull of unchanged content always dedupes.
+func uploadFingerprint(object objectstore.Object, entry objectstore.Entry) string {
+	if object.ETag != "" {
+		return object.ETag
+	}
+	if entry.ETag != "" {
+		return entry.ETag
+	}
+	digest := sha256.Sum256(object.Body)
+	return hex.EncodeToString(digest[:])
+}
+
+func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSource, object objectstore.Object, fingerprint string) error {
 	contentType := object.ContentType
 	if contentType == "" {
 		contentType = datasourceIngestContentType
-	}
-	// The object's ETag is its content fingerprint for a simple (non-multipart)
-	// upload, so it keys delivery idempotency; a store that omits it falls back to
-	// hashing the body so a re-pull still dedupes.
-	fingerprint := object.ETag
-	if fingerprint == "" {
-		digest := sha256.Sum256(object.Body)
-		fingerprint = hex.EncodeToString(digest[:])
 	}
 	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
@@ -987,7 +1048,7 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 				attrTargetCollection: source.TargetCollection,
 				attrUploadBucket:     source.Upload.Bucket,
 				attrUploadKey:        object.Key,
-				attrUploadETag:       object.ETag,
+				attrUploadETag:       fingerprint,
 				attrChangeType:       changeTypeAdded,
 			},
 		},
