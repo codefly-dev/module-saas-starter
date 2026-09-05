@@ -2,6 +2,7 @@ package business_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -426,6 +427,19 @@ func TestApprovalResumeEnqueuedOnQuorum(t *testing.T) {
 	}
 	if job.GetIdempotencyKey() != "approval-resume:"+id {
 		t.Fatalf("unexpected resume idempotency key %q", job.GetIdempotencyKey())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(job.GetPayload(), &payload); err != nil {
+		t.Fatalf("resume payload is not valid JSON: %v", err)
+	}
+	if payload["approval_id"] != id {
+		t.Fatalf("resume payload approval_id = %v, want %q", payload["approval_id"], id)
+	}
+	if payload["decision"] != "approve" {
+		t.Fatalf("resume payload decision = %v, want %q", payload["decision"], "approve")
+	}
+	if payload["decider"] != "approver-1" {
+		t.Fatalf("resume payload decider = %v, want %q", payload["decider"], "approver-1")
 	}
 }
 
