@@ -226,7 +226,7 @@ service InstallationService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {
-      post: "/v1/installations/{installation_id}:transfer-ownership"
+      post: "/v1/installations/{installation_id}:transferOwnership"
       body: "*"
     };
   }

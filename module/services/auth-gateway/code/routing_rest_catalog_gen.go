@@ -93,7 +93,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/gdpr/delete", Procedure: "/saas.accounts.v1.GDPRService/RequestDeletion"},
 		{Service: "accounts", Method: "POST", Path: "/v1/gdpr/export", Procedure: "/saas.accounts.v1.GDPRService/RequestExport"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations", Procedure: "/saas.accounts.v1.InstallationService/InstallSolution"},
-		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:transfer-ownership", Procedure: "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"},
+		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:transferOwnership", Procedure: "/saas.accounts.v1.InstallationService/TransferInstallationOwnership"},
 		{Service: "accounts", Method: "POST", Path: "/v1/installations/{installation_id}:uninstall", Procedure: "/saas.accounts.v1.InstallationService/UninstallSolution"},
 		{Service: "accounts", Method: "POST", Path: "/v1/invitations", Procedure: "/saas.accounts.v1.InvitationService/CreateInvitation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/invitations/{id}:resend", Procedure: "/saas.accounts.v1.InvitationService/ResendInvitation"},

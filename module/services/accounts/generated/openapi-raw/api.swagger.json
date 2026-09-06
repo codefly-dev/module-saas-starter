@@ -1301,7 +1301,7 @@
         ]
       }
     },
-    "/v1/installations/{installationId}:transfer-ownership": {
+    "/v1/installations/{installationId}:transferOwnership": {
       "post": {
         "summary": "TransferInstallationOwnership reassigns the owner of record and replaces the\nco-owner succession set. This is how a \"connection owner left the org\"\nfailure is repaired: an admin transfers the installation to a current admin,\nrestoring its health.",
         "operationId": "InstallationService_TransferInstallationOwnership",

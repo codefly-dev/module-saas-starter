@@ -257,7 +257,7 @@ func RegisterInstallationServiceHandlerServer(ctx context.Context, mux *runtime.
 		var stream runtime.ServerTransportStream
 		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.InstallationService/TransferInstallationOwnership", runtime.WithHTTPPathPattern("/v1/installations/{installation_id}:transfer-ownership"))
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.InstallationService/TransferInstallationOwnership", runtime.WithHTTPPathPattern("/v1/installations/{installation_id}:transferOwnership"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -369,7 +369,7 @@ func RegisterInstallationServiceHandlerClient(ctx context.Context, mux *runtime.
 		ctx, cancel := context.WithCancel(req.Context())
 		defer cancel()
 		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
-		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.InstallationService/TransferInstallationOwnership", runtime.WithHTTPPathPattern("/v1/installations/{installation_id}:transfer-ownership"))
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.InstallationService/TransferInstallationOwnership", runtime.WithHTTPPathPattern("/v1/installations/{installation_id}:transferOwnership"))
 		if err != nil {
 			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 			return
@@ -405,7 +405,7 @@ func RegisterInstallationServiceHandlerClient(ctx context.Context, mux *runtime.
 var (
 	pattern_InstallationService_InstallSolution_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "installations"}, ""))
 	pattern_InstallationService_UninstallSolution_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "installations", "installation_id"}, "uninstall"))
-	pattern_InstallationService_TransferInstallationOwnership_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "installations", "installation_id"}, "transfer-ownership"))
+	pattern_InstallationService_TransferInstallationOwnership_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "installations", "installation_id"}, "transferOwnership"))
 	pattern_InstallationService_GetInstallation_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "installations", "installation_id"}, ""))
 )
 

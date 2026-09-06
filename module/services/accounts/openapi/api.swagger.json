@@ -5714,7 +5714,7 @@
         ]
       }
     },
-    "/v1/installations/{installationId}:transfer-ownership": {
+    "/v1/installations/{installationId}:transferOwnership": {
       "post": {
         "operationId": "InstallationService_TransferInstallationOwnership",
         "parameters": [

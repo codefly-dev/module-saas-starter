@@ -227,7 +227,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "PATCH", path: regexp.MustCompile("^/v1/teams/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},
-	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:transfer-ownership$")},
+	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:transferOwnership$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/installations/[^/]+:uninstall$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/invitations/[^/]+:resend$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/notifications/[^/]+:read$")},

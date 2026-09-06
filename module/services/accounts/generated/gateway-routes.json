@@ -6420,7 +6420,7 @@
     {
       "protocol": "GATEWAY_PROTOCOL_REST",
       "method": "POST",
-      "path": "/v1/installations/{installation_id}:transfer-ownership",
+      "path": "/v1/installations/{installation_id}:transferOwnership",
       "match": "GATEWAY_MATCH_PATH_TEMPLATE",
       "procedure": "/saas.accounts.v1.InstallationService/TransferInstallationOwnership",
       "owner": {

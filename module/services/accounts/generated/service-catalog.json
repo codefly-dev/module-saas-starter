@@ -2867,7 +2867,7 @@
       "http_bindings": [
         {
           "method": "POST",
-          "path": "/v1/installations/{installation_id}:transfer-ownership",
+          "path": "/v1/installations/{installation_id}:transferOwnership",
           "body": "*",
           "response_body": ""
         }
