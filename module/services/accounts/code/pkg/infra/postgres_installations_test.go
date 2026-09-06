@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -243,6 +244,37 @@ func TestResolveInstallationAuthorityFailsClosedWhenNoOwnerIsAdminThenTransferRe
 		writeScope("doc", "write", boundaryID))
 	require.NoError(t, err)
 	require.Equal(t, newOwner, facts.OwnerPrincipalID)
+}
+
+// An installation-minted Work Context must survive the consumer-side revocation
+// seam (CheckWorkContextAuthorizationRevision), which resolves an actor's
+// authority — here it must honor the agent's standing scope_grant, not only flat
+// role_assignments, or every valid headless token would be rejected as stale. And
+// revoking that grant must flip the recheck to fail closed.
+func TestInstallationTokenRevalidatesThroughConsumerRevisionSeam(t *testing.T) {
+	orgID, ownerID, roleID, installation, rootPath := installFixture(t, "doc", "write")
+	boundaryID, _ := registerBoundary(t, orgID, rootPath, "boundary_a")
+
+	perms := writeScope("doc", "write", boundaryID)
+	facts, err := testStore.ResolveInstallationAuthority(testCtx, orgID, installation.Id, perms)
+	require.NoError(t, err)
+	sealed := facts.EffectiveRevision()
+
+	subjects := []business.WorkContextRevisionSubject{
+		{PrincipalID: ownerID, Permissions: perms},
+		{PrincipalID: installation.AgentPrincipalId, Permissions: perms},
+	}
+	verified := auth.WithVerifiedDatabaseIdentity(testCtx, ownerID, orgID)
+	require.NoError(t, testStore.CheckWorkContextAuthorizationRevision(verified, orgID, ownerID, sealed, subjects),
+		"an installation-minted token must revalidate through the consumer revision seam")
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.RevokeScope(ctx, orgID, installation.AgentPrincipalId,
+			gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, rootPath, roleID)
+	}))
+	err = testStore.CheckWorkContextAuthorizationRevision(verified, orgID, ownerID, sealed, subjects)
+	require.ErrorIs(t, err, business.ErrWorkContextAuthorizationStale,
+		"revoking the standing grant must flip the recheck to fail closed")
 }
 
 func TestUninstallSolutionReversesCompositionAndIsIdempotent(t *testing.T) {

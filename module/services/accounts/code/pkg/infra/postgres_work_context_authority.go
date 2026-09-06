@@ -32,6 +32,9 @@ func (s *PostgresStore) ResolveWorkContextAuthority(
 			ownerPrincipalID,
 			actorPrincipalID,
 			permissions,
+			// The mint path resolves flat RBAC only; installation authority is
+			// resolved by the installation store, not here.
+			false,
 		)
 		return resolveErr
 	})
@@ -41,6 +44,13 @@ func (s *PostgresStore) ResolveWorkContextAuthority(
 	return facts, nil
 }
 
+// includeScopeGrants widens each permission check to also accept a hierarchical
+// scope_grant (the installation authority store), not only a flat role_assignment.
+// It is the consumer-revalidation seam's counterpart to the installation mint:
+// StartInstallationTask draws an agent's authority from scope_grants, so
+// CheckWorkContextAuthorizationRevision must resolve it the same way or it would
+// reject every validly-minted installation token as stale. It stays OFF for the
+// mint paths so delegated (owner ∩ actor via RBAC) minting is unchanged.
 func resolveWorkContextAuthority(
 	ctx context.Context,
 	reader ReadQueryExecutor,
@@ -48,6 +58,7 @@ func resolveWorkContextAuthority(
 	ownerPrincipalID string,
 	actorPrincipalID string,
 	permissions []business.WorkContextPermission,
+	includeScopeGrants bool,
 ) (*business.WorkContextAuthorityFacts, error) {
 	facts := &business.WorkContextAuthorityFacts{}
 	var orgRevision int64
@@ -140,7 +151,7 @@ func resolveWorkContextAuthority(
 
 	for _, permission := range permissions {
 		ownerAllowed, err := workContextPermissionAllowed(
-			ctx, reader, orgID, ownerPrincipalID, true, permission,
+			ctx, reader, orgID, ownerPrincipalID, true, permission, includeScopeGrants,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("check owner work-context permission: %w", err)
@@ -159,7 +170,7 @@ func resolveWorkContextAuthority(
 			continue
 		}
 		actorAllowed, err := workContextPermissionAllowed(
-			ctx, reader, orgID, actorPrincipalID, false, permission,
+			ctx, reader, orgID, actorPrincipalID, false, permission, includeScopeGrants,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("check actor work-context permission: %w", err)
@@ -198,6 +209,10 @@ func (s *PostgresStore) CheckWorkContextAuthorizationRevision(
 				ownerPrincipalID,
 				actorID,
 				subject.Permissions,
+				// A previously issued Work Context may be installation-derived, whose
+				// actor authority lives in scope_grants; honor it here so a valid
+				// headless token is not rejected as stale.
+				true,
 			)
 			if err != nil {
 				var storeErr *business.StoreError
@@ -264,6 +279,7 @@ func (s *PostgresStore) AuthorizeEvidenceRead(
 				Action:       "read",
 				ResourceID:   resourceID,
 			},
+			false,
 		)
 		if err != nil {
 			return fmt.Errorf("check Evidence read permission: %w", err)
@@ -282,6 +298,7 @@ func workContextPermissionAllowed(
 	principalID string,
 	includeTeamsAndOrgAdministration bool,
 	permission business.WorkContextPermission,
+	includeScopeGrants bool,
 ) (bool, error) {
 	var allowed bool
 	err := reader.QueryRow(ctx, `
@@ -325,6 +342,30 @@ func workContextPermissionAllowed(
 		              ($6 = '' AND assignment.scope IS NULL)
 		              OR ($6 <> '' AND (assignment.scope IS NULL OR assignment.scope = $6))
 		          )
+		    )
+		    -- Installation authority: a hierarchical scope_grant at an ancestor-or-
+		    -- equal of the boundary node named by resource_id (never trusted from the
+		    -- request — resolved from the node's own row), with a role permitting the
+		    -- (kind, action). Only the recheck seam sets $7; an empty resource_id
+		    -- matches no node, so an unscoped permission never resolves here.
+		    OR (
+		        $7
+		        AND EXISTS (
+		            SELECT 1
+		            FROM scope_grants AS sg
+		            JOIN role_permissions AS sg_permission
+		              ON sg_permission.role_id = sg.role_id
+		            JOIN scope_nodes AS boundary
+		              ON boundary.org_id = $1
+		             AND boundary.id::text = $6
+		            WHERE sg.org_id = $1
+		              AND sg.subject_kind = 'principal'
+		              AND sg.subject_id = $2
+		              AND sg.scope_path @> boundary.scope_path
+		              AND (sg.expires_at IS NULL OR sg.expires_at > now())
+		              AND (sg_permission.resource = '*' OR sg_permission.resource = $3)
+		              AND (sg_permission.action = '*' OR sg_permission.action = $4)
+		        )
 		    )`,
 		orgID,
 		principalID,
@@ -332,6 +373,7 @@ func workContextPermissionAllowed(
 		permission.Action,
 		includeTeamsAndOrgAdministration,
 		permission.ResourceID,
+		includeScopeGrants,
 	).Scan(&allowed)
 	return allowed, err
 }
