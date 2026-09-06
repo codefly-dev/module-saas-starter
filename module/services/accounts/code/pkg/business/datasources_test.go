@@ -2,6 +2,7 @@ package business_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"accounts/pkg/datasource/github"
 	"accounts/pkg/datasource/objectstore"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/jobs"
 )
 
 // datasourceFakeStore is a partial fake: it embeds Store (panics on any
@@ -88,6 +90,24 @@ func (f *datasourceFakeStore) SetDatasourceSourceSynced(_ context.Context, orgID
 	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
 		at := syncedAt
 		s.LastSyncedAt = &at
+	}
+	return nil
+}
+
+func (f *datasourceFakeStore) LockDatasourceSourceCredentialRef(_ context.Context, orgID, id string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
+		return s.CredentialSecretRef, nil
+	}
+	return "", errors.New("not found")
+}
+
+func (f *datasourceFakeStore) UpdateDatasourceSourceCredential(_ context.Context, orgID, id, credentialRef string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
+		s.CredentialSecretRef = credentialRef
 	}
 	return nil
 }
@@ -497,6 +517,20 @@ func TestAddSource_Validation(t *testing.T) {
 	cases["header kind without header"] = withAPI(base, func(c *business.APIDatasourceConfig) {
 		c.CredentialKind = business.APICredentialKindHeader
 	})
+	cases["query kind without param"] = withAPI(base, func(c *business.APIDatasourceConfig) {
+		c.CredentialKind = business.APICredentialKindQuery
+	})
+	cases["oauth2 kind without config"] = withAPI(base, func(c *business.APIDatasourceConfig) {
+		c.CredentialKind = business.APICredentialKindOAuth2
+	})
+	cases["oauth2 bad token url"] = withAPI(base, func(c *business.APIDatasourceConfig) {
+		c.CredentialKind = business.APICredentialKindOAuth2
+		c.OAuth2 = &business.APIOAuth2Config{TokenURL: "ftp://x", ClientID: "id"}
+	})
+	cases["oauth2 missing client id"] = withAPI(base, func(c *business.APIDatasourceConfig) {
+		c.CredentialKind = business.APICredentialKindOAuth2
+		c.OAuth2 = &business.APIOAuth2Config{TokenURL: "https://oauth.example.com/token"}
+	})
 	for name, in := range cases {
 		if _, err := svc.AddSource(context.Background(), "actor-1", in); err == nil {
 			t.Errorf("%s: want error, got nil", name)
@@ -903,5 +937,266 @@ func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
 		attrs["datasource.target_collection"] != "wiki" || attrs["api.url"] != "https://api.example.com/v1/docs" ||
 		attrs["api.content_sha"] == "" {
 		t.Fatalf("attributes = %v", attrs)
+	}
+}
+
+func oauthConfig() *business.APIDatasourceConfig {
+	return &business.APIDatasourceConfig{
+		BaseURL:        "https://api.example.com",
+		ResourcePath:   "/v1/docs",
+		CredentialKind: business.APICredentialKindOAuth2,
+		OAuth2: &business.APIOAuth2Config{
+			TokenURL: "https://oauth.example.com/token",
+			ClientID: "client-id",
+			Scopes:   []string{"read"},
+		},
+	}
+}
+
+// TestAddSource_OAuth2StoresTokenSet proves an OAuth2 source stores its refresh
+// token and client secret in the Vault envelope as a token set, projects only
+// the non-secret oauth2 config, and carries no access token until first fetch.
+func TestAddSource_OAuth2StoresTokenSet(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID:              testOrg,
+		Provider:           business.DatasourceProviderAPI,
+		TargetCollection:   "wiki",
+		Credential:         "refresh-tok",
+		OAuth2ClientSecret: "client-sekret",
+		API:                oauthConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.API == nil || source.API.OAuth2 == nil ||
+		source.API.OAuth2.TokenURL != "https://oauth.example.com/token" || source.API.OAuth2.ClientID != "client-id" {
+		t.Fatalf("oauth2 config projection = %+v", source.API)
+	}
+	// The stored envelope holds the token set, not a bare string.
+	plain, err := (purposeCipher{}).DecryptSecret(context.Background(),
+		business.DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		RefreshToken string `json:"refresh_token"`
+		ClientSecret string `json:"client_secret"`
+		AccessToken  string `json:"access_token"`
+	}
+	if err := json.Unmarshal([]byte(plain), &stored); err != nil {
+		t.Fatalf("stored credential is not a token set: %v (%q)", err, plain)
+	}
+	if stored.RefreshToken != "refresh-tok" || stored.ClientSecret != "client-sekret" {
+		t.Fatalf("stored token set = %+v, want refresh+client secret", stored)
+	}
+	if stored.AccessToken != "" {
+		t.Fatalf("no access token should be stored before first fetch, got %q", stored.AccessToken)
+	}
+}
+
+// TestRunDatasourceSync_OAuth2RefreshesRotatesAndBearer proves the OAuth2 flow
+// end to end: the first sync refreshes at the token endpoint, presents the
+// access token to the connector as a bearer credential, and rotates the stored
+// token set (a new refresh token is persisted); a second sync reuses the
+// still-valid access token without refreshing again.
+func TestRunDatasourceSync_OAuth2RefreshesRotatesAndBearer(t *testing.T) {
+	store := newDatasourceFakeStore()
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(store, producer, nil)
+
+	var gotKind, gotCredential string
+	fake := &fakeAPIClient{result: &apisource.Result{Body: []byte("{}"), ContentType: "application/json"}}
+	svc.SetDatasourceAPIClientFactory(func(cfg business.APIDatasourceConfig, cred string) business.APIContentClient {
+		gotKind, gotCredential = cfg.CredentialKind, cred
+		return fake
+	})
+
+	refreshCalls := 0
+	var gotRefreshToken, gotClientSecret, gotTokenURL string
+	svc.SetDatasourceOAuth2RefreshFunc(func(_ context.Context, cfg apisource.OAuth2Config, refreshToken, clientSecret string) (*apisource.OAuth2Token, error) {
+		refreshCalls++
+		gotRefreshToken, gotClientSecret, gotTokenURL = refreshToken, clientSecret, cfg.TokenURL
+		return &apisource.OAuth2Token{AccessToken: "access-1", RefreshToken: "refresh-2", ExpiresIn: time.Hour}, nil
+	})
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		Credential: "refresh-tok", OAuth2ClientSecret: "client-sekret", API: oauthConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("first sync refresh calls = %d, want 1", refreshCalls)
+	}
+	if gotKind != business.APICredentialKindBearer || gotCredential != "access-1" {
+		t.Fatalf("connector built with kind=%q credential=%q, want bearer/access-1", gotKind, gotCredential)
+	}
+	if gotRefreshToken != "refresh-tok" || gotClientSecret != "client-sekret" || gotTokenURL != "https://oauth.example.com/token" {
+		t.Fatalf("refresh called with refresh=%q secret=%q url=%q", gotRefreshToken, gotClientSecret, gotTokenURL)
+	}
+
+	// Rotation persisted: the envelope now holds the fresh access + rotated refresh token.
+	rotated, _ := store.GetDatasourceSourceByID(context.Background(), source.ID)
+	plain, err := (purposeCipher{}).DecryptSecret(context.Background(),
+		business.DatasourceConnectorSecretPurpose(source.ID), rotated.CredentialSecretRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored struct {
+		RefreshToken string `json:"refresh_token"`
+		AccessToken  string `json:"access_token"`
+		ExpiresAt    int64  `json:"expires_at"`
+	}
+	if err := json.Unmarshal([]byte(plain), &stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored.AccessToken != "access-1" || stored.RefreshToken != "refresh-2" || stored.ExpiresAt == 0 {
+		t.Fatalf("rotated token set = %+v, want access-1/refresh-2/expiry", stored)
+	}
+
+	// A second sync reuses the still-valid access token without refreshing.
+	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("second sync refresh calls = %d, want still 1 (reuse the valid token)", refreshCalls)
+	}
+}
+
+// TestRunDatasourceSync_OAuth2RereadsRotatedCredentialUnderLock proves the
+// concurrency fix: the refresh reads the credential envelope under a row lock,
+// so a sync that runs after another worker has already refreshed and rotated the
+// token picks up the fresh envelope and skips its own refresh — a single-use
+// refresh token is never spent twice.
+func TestRunDatasourceSync_OAuth2RereadsRotatedCredentialUnderLock(t *testing.T) {
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, &recordingProducer{}, nil)
+
+	var gotCredential string
+	fake := &fakeAPIClient{result: &apisource.Result{Body: []byte("{}"), ContentType: "application/json"}}
+	svc.SetDatasourceAPIClientFactory(func(_ business.APIDatasourceConfig, cred string) business.APIContentClient {
+		gotCredential = cred
+		return fake
+	})
+	refreshCalls := 0
+	svc.SetDatasourceOAuth2RefreshFunc(func(context.Context, apisource.OAuth2Config, string, string) (*apisource.OAuth2Token, error) {
+		refreshCalls++
+		return &apisource.OAuth2Token{AccessToken: "must-not-be-used", ExpiresIn: time.Hour}, nil
+	})
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		Credential: "refresh-tok", API: oauthConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Simulate another worker having already refreshed and rotated the token set.
+	blob, _ := json.Marshal(map[string]any{
+		"refresh_token": "rotated",
+		"access_token":  "already-valid",
+		"expires_at":    time.Now().Add(time.Hour).Unix(),
+	})
+	ref, _ := (purposeCipher{}).EncryptSecret(context.Background(),
+		business.DatasourceConnectorSecretPurpose(source.ID), string(blob))
+	if err := store.UpdateDatasourceSourceCredential(context.Background(), testOrg, source.ID, ref); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
+		t.Fatal(err)
+	}
+	if refreshCalls != 0 {
+		t.Fatalf("locked re-read must skip refresh when a valid token is already stored, got %d refreshes", refreshCalls)
+	}
+	if gotCredential != "already-valid" {
+		t.Fatalf("connector credential = %q, want the stored valid access token", gotCredential)
+	}
+}
+
+// TestRunDatasourceSync_OAuth2DefaultTTLWhenNoExpiry proves that a token
+// endpoint that omits expires_in does not force a refresh on every sync: the
+// access token is trusted for the default TTL, so a second sync reuses it.
+func TestRunDatasourceSync_OAuth2DefaultTTLWhenNoExpiry(t *testing.T) {
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, &recordingProducer{}, nil)
+	svc.SetDatasourceAPIClientFactory(func(business.APIDatasourceConfig, string) business.APIContentClient {
+		return &fakeAPIClient{result: &apisource.Result{Body: []byte("{}")}}
+	})
+	refreshCalls := 0
+	svc.SetDatasourceOAuth2RefreshFunc(func(context.Context, apisource.OAuth2Config, string, string) (*apisource.OAuth2Token, error) {
+		refreshCalls++
+		// No ExpiresIn: the provider omitted expires_in.
+		return &apisource.OAuth2Token{AccessToken: "access-1"}, nil
+	})
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		Credential: "refresh-tok", API: oauthConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if refreshCalls != 1 {
+		t.Fatalf("refresh calls = %d, want 1 — a missing expires_in must not refresh every sync", refreshCalls)
+	}
+}
+
+// TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal proves a permanently
+// rejected refresh token surfaces as ErrOAuth2ReauthRequired and makes the sync
+// job fail terminally (non-retryable), so the worker stops replaying the dead
+// token instead of burning its retry budget.
+func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
+	store := newDatasourceFakeStore()
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(store, producer, nil)
+	svc.SetDatasourceOAuth2RefreshFunc(func(context.Context, apisource.OAuth2Config, string, string) (*apisource.OAuth2Token, error) {
+		return nil, apisource.ErrRefreshRejected
+	})
+
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		Credential: "refresh-tok", API: oauthConfig(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = svc.RunDatasourceSync(context.Background(), source.ID)
+	if !errors.Is(err, business.ErrOAuth2ReauthRequired) {
+		t.Fatalf("rejected refresh must surface as ErrOAuth2ReauthRequired, got %v", err)
+	}
+
+	// Drive the sync job handler with the real routing an enqueued request carries.
+	if _, err := svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID); err != nil {
+		t.Fatal(err)
+	}
+	reqJob := producer.jobs[len(producer.jobs)-1]
+	env := &jobsv1.JobEnvelope{
+		Queue:      reqJob.GetQueue(),
+		Topic:      reqJob.GetTopic(),
+		Attributes: reqJob.GetAttributes(),
+	}
+	jobErr := svc.NewDatasourceSyncJobHandler()(context.Background(), env)
+	var procErr *jobs.ProcessingError
+	if !errors.As(jobErr, &procErr) {
+		t.Fatalf("handler error = %v, want a *jobs.ProcessingError", jobErr)
+	}
+	if procErr.Retryable {
+		t.Fatal("a permanently rejected refresh must be a non-retryable job failure")
 	}
 }

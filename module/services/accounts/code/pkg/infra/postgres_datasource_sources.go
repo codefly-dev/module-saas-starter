@@ -146,6 +146,36 @@ func (s *PostgresStore) SetDatasourceSourceSynced(ctx context.Context, orgID, id
 	return err
 }
 
+// LockDatasourceSourceCredentialRef reads the credential envelope under a row
+// lock so a refresh-and-rotate cycle (OAuth 2.0) serializes against a concurrent
+// sync of the same source: the second caller blocks here until the first commits,
+// then reads the freshly rotated envelope and skips its own refresh. Runs under
+// the caller's WithOrgTx; the FOR UPDATE lock is held until that transaction
+// commits. Returns ErrNoRows when the source is gone.
+func (s *PostgresStore) LockDatasourceSourceCredentialRef(ctx context.Context, orgID, id string) (string, error) {
+	var ref string
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT credential_secret_ref
+		  FROM datasource_sources
+		 WHERE org_id = $1 AND id = $2
+		   FOR UPDATE`, orgID, id).Scan(&ref)
+	if err != nil {
+		return "", err
+	}
+	return ref, nil
+}
+
+// UpdateDatasourceSourceCredential rotates the stored credential envelope in
+// place, for a connector (OAuth 2.0) that refreshes and re-persists its token
+// set at fetch time. Runs under the caller's WithOrgTx.
+func (s *PostgresStore) UpdateDatasourceSourceCredential(ctx context.Context, orgID, id, credentialRef string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET credential_secret_ref = $3, updated_at = NOW()
+		 WHERE org_id = $1 AND id = $2`, orgID, id, credentialRef)
+	return err
+}
+
 // GetDatasourceSourceByID is the unauthenticated webhook-receipt lookup: no
 // tenant context, so it opens its own control-plane transaction (BYPASSRLS is a
 // database capability, not a client-settable GUC). Returns (nil, nil) on miss.

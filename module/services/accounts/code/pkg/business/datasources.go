@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"strings"
@@ -33,11 +34,25 @@ const (
 
 // API credential kinds mirror saas.accounts.v1.ApiCredentialKind; they select
 // how the stored credential is presented on the generic connector's requests.
+// OAuth2 is resolved in this layer (refresh + rotation) and handed to the
+// connector as a bearer credential, so it has no apisource presentation kind.
 const (
 	APICredentialKindBearer = apisource.CredentialKindBearer
 	APICredentialKindBasic  = apisource.CredentialKindBasic
 	APICredentialKindHeader = apisource.CredentialKindHeader
+	APICredentialKindQuery  = apisource.CredentialKindQuery
+	APICredentialKindOAuth2 = "oauth2"
 )
+
+// oauth2ExpiryLeeway refreshes a stored access token slightly before it expires
+// so a token that lapses mid-fetch does not fail the sync.
+const oauth2ExpiryLeeway = 60 * time.Second
+
+// oauth2DefaultTTL bounds how long an access token is trusted when the token
+// endpoint omits expires_in. Without it a missing expiry would force a refresh
+// on every sync (and every retry), needlessly rotating single-use refresh tokens
+// and hammering the endpoint during a retry storm.
+const oauth2DefaultTTL = 5 * time.Minute
 
 const (
 	datasourceConnectorSecretPurposePrefix = "github-connector:"
@@ -117,6 +132,12 @@ const (
 // unknown source and an unconfigured one are indistinguishable to a caller.
 var ErrDatasourceSourceNotFound = errors.New("datasource: source not found")
 
+// ErrOAuth2ReauthRequired reports that an OAuth 2.0 source's refresh token was
+// permanently rejected by the token endpoint: the stored grant can never
+// succeed again and the source must be reconnected. It is terminal, so the sync
+// worker stops retrying rather than replaying the dead token indefinitely.
+var ErrOAuth2ReauthRequired = errors.New("datasource: oauth2 source requires reconnection")
+
 // DatasourceConnectorSecretPurpose binds an access-token envelope to one Source
 // so ciphertext cannot be replayed across rows. The row id is the binding
 // because a repo may be connected more than once.
@@ -135,10 +156,32 @@ func DatasourceWebhookSecretPurpose(sourceID string) string {
 // the credential itself lives only as a SecretCipher envelope in
 // CredentialSecretRef.
 type APIDatasourceConfig struct {
-	BaseURL          string `json:"base_url"`
-	ResourcePath     string `json:"resource_path"`
-	CredentialKind   string `json:"credential_kind"`
-	CredentialHeader string `json:"credential_header,omitempty"`
+	BaseURL              string           `json:"base_url"`
+	ResourcePath         string           `json:"resource_path"`
+	CredentialKind       string           `json:"credential_kind"`
+	CredentialHeader     string           `json:"credential_header,omitempty"`
+	CredentialQueryParam string           `json:"credential_query_param,omitempty"`
+	OAuth2               *APIOAuth2Config `json:"oauth2,omitempty"`
+}
+
+// APIOAuth2Config is the non-secret OAuth 2.0 configuration of an API Source.
+// The refresh token and client secret are never held here; they live only in
+// the SecretCipher credential envelope (oauthStoredCredential).
+type APIOAuth2Config struct {
+	TokenURL string   `json:"token_url"`
+	ClientID string   `json:"client_id"`
+	Scopes   []string `json:"scopes,omitempty"`
+}
+
+// oauthStoredCredential is the JSON shape encrypted into the credential envelope
+// for an OAuth 2.0 API Source. The refresh token (and client secret, for a
+// confidential client) come from the connect call; the access token and its
+// expiry are filled in and rotated in place on each refresh.
+type oauthStoredCredential struct {
+	RefreshToken string `json:"refresh_token"`
+	ClientSecret string `json:"client_secret,omitempty"`
+	AccessToken  string `json:"access_token,omitempty"`
+	ExpiresAt    int64  `json:"expires_at,omitempty"`
 }
 
 // CrawlerDatasourceConfig is the non-secret configuration of a web/sitemap
@@ -234,6 +277,11 @@ type UploadContentClient interface {
 	Fetch(ctx context.Context, key string) (objectstore.Object, error)
 }
 
+// OAuth2RefreshFunc exchanges an OAuth 2.0 refresh token for a fresh access
+// token. It matches apisource.RefreshOAuth2; tests substitute a deterministic
+// implementation.
+type OAuth2RefreshFunc func(ctx context.Context, cfg apisource.OAuth2Config, refreshToken, clientSecret string) (*apisource.OAuth2Token, error)
+
 // SetDatasourceConnector wires the fail-closed credential cipher, the privileged
 // inbox producer used for ingest deliveries, and the GitHub API base URL. It is
 // the one setter #274 adds; production passes Vault transit and the durable job
@@ -250,10 +298,11 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 	if s.newAPIClient == nil {
 		s.newAPIClient = func(cfg APIDatasourceConfig, credential string) APIContentClient {
 			return apisource.New(apisource.Config{
-				BaseURL:          cfg.BaseURL,
-				ResourcePath:     cfg.ResourcePath,
-				CredentialKind:   cfg.CredentialKind,
-				CredentialHeader: cfg.CredentialHeader,
+				BaseURL:              cfg.BaseURL,
+				ResourcePath:         cfg.ResourcePath,
+				CredentialKind:       cfg.CredentialKind,
+				CredentialHeader:     cfg.CredentialHeader,
+				CredentialQueryParam: cfg.CredentialQueryParam,
 			}, credential)
 		}
 	}
@@ -273,6 +322,9 @@ func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Prod
 				MaxObjects:  cfg.MaxObjects,
 			}, secretAccessKey)
 		}
+	}
+	if s.newOAuth2Refresh == nil {
+		s.newOAuth2Refresh = apisource.RefreshOAuth2
 	}
 }
 
@@ -298,6 +350,13 @@ func (s *Service) SetDatasourceCrawlerClientFactory(factory func(cfg CrawlerData
 // clients are built. Tests use it to inject a fake without a live object store.
 func (s *Service) SetDatasourceUploadClientFactory(factory func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient) {
 	s.newUploadClient = factory
+}
+
+// SetDatasourceOAuth2RefreshFunc overrides how an OAuth 2.0 access token is
+// refreshed. Tests use it to inject a deterministic token without a live token
+// endpoint.
+func (s *Service) SetDatasourceOAuth2RefreshFunc(fn OAuth2RefreshFunc) {
+	s.newOAuth2Refresh = fn
 }
 
 // AddGitHubSource registers a GitHub repository as a Source. The access token
@@ -385,6 +444,11 @@ type AddSourceInput struct {
 
 	// Upload (object-storage) provider config.
 	Upload *UploadDatasourceConfig
+
+	// OAuth2ClientSecret is the confidential-client secret for an API source
+	// whose credential kind is OAuth2; it is stored with the refresh token
+	// (Credential) in the credential envelope and never projected.
+	OAuth2ClientSecret string
 }
 
 // AddSource registers a datasource for any provider. It validates the config for
@@ -475,7 +539,11 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 	}
 
 	if credential != "" {
-		credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credential)
+		credentialPlaintext, err := connectorCredentialPlaintext(source, credential, input.OAuth2ClientSecret)
+		if err != nil {
+			return nil, w.Wrap(err)
+		}
+		credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), credentialPlaintext)
 		if err != nil {
 			return nil, w.Wrapf(err, "encrypt credential")
 		}
@@ -522,8 +590,19 @@ func normalizeAPIConfig(cfg *APIDatasourceConfig) (*APIDatasourceConfig, error) 
 		if out.CredentialHeader == "" {
 			return nil, errors.New("api header credential kind requires a header name")
 		}
+	case APICredentialKindQuery:
+		out.CredentialQueryParam = strings.TrimSpace(cfg.CredentialQueryParam)
+		if out.CredentialQueryParam == "" {
+			return nil, errors.New("api query credential kind requires a query parameter name")
+		}
+	case APICredentialKindOAuth2:
+		oauth, err := normalizeOAuth2Config(cfg.OAuth2)
+		if err != nil {
+			return nil, err
+		}
+		out.OAuth2 = oauth
 	default:
-		return nil, errors.New("api credential kind must be bearer, basic, or header")
+		return nil, errors.New("api credential kind must be bearer, basic, header, query, or oauth2")
 	}
 	return out, nil
 }
@@ -576,6 +655,47 @@ func normalizeUploadConfig(cfg *UploadDatasourceConfig) (*UploadDatasourceConfig
 		return nil, errors.New("upload max objects must not be negative")
 	}
 	return out, nil
+}
+
+// normalizeOAuth2Config validates and trims the non-secret OAuth 2.0 config.
+func normalizeOAuth2Config(cfg *APIOAuth2Config) (*APIOAuth2Config, error) {
+	if cfg == nil {
+		return nil, errors.New("api oauth2 credential kind requires oauth2 config")
+	}
+	tokenURL := strings.TrimSpace(cfg.TokenURL)
+	parsed, err := url.Parse(tokenURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, errors.New("api oauth2 token url must be an absolute http(s) url")
+	}
+	clientID := strings.TrimSpace(cfg.ClientID)
+	if clientID == "" {
+		return nil, errors.New("api oauth2 config requires a client id")
+	}
+	var scopes []string
+	for _, s := range cfg.Scopes {
+		if s = strings.TrimSpace(s); s != "" {
+			scopes = append(scopes, s)
+		}
+	}
+	return &APIOAuth2Config{TokenURL: tokenURL, ClientID: clientID, Scopes: scopes}, nil
+}
+
+// connectorCredentialPlaintext returns the plaintext to encrypt into the
+// credential envelope. For every kind but OAuth2 that is the raw credential; an
+// OAuth2 source stores a JSON token set so the access token and its expiry can
+// be rotated in place, keyed by the same envelope.
+func connectorCredentialPlaintext(source *DatasourceSource, credential, oauth2ClientSecret string) (string, error) {
+	if source.API == nil || source.API.CredentialKind != APICredentialKindOAuth2 {
+		return credential, nil
+	}
+	blob, err := json.Marshal(oauthStoredCredential{
+		RefreshToken: credential,
+		ClientSecret: strings.TrimSpace(oauth2ClientSecret),
+	})
+	if err != nil {
+		return "", err
+	}
+	return string(blob), nil
 }
 
 // ListDatasourceSources returns the org's connected Sources.
@@ -777,12 +897,24 @@ func (s *Service) runAPISync(ctx context.Context, source *DatasourceSource) (int
 		return 0, w.NewError("api source has no config")
 	}
 
-	credential, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
-	if err != nil {
-		return 0, w.Wrapf(err, "decrypt credential")
+	fetchConfig := *source.API
+	var fetchCredential string
+	if source.API.CredentialKind == APICredentialKindOAuth2 {
+		accessToken, err := s.resolveOAuth2AccessToken(ctx, source)
+		if err != nil {
+			return 0, w.Wrapf(err, "resolve oauth2 access token")
+		}
+		fetchConfig.CredentialKind = APICredentialKindBearer
+		fetchCredential = accessToken
+	} else {
+		stored, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+		if err != nil {
+			return 0, w.Wrapf(err, "decrypt credential")
+		}
+		fetchCredential = stored
 	}
 
-	result, err := s.newAPIClient(*source.API, credential).Fetch(ctx)
+	result, err := s.newAPIClient(fetchConfig, fetchCredential).Fetch(ctx)
 	if err != nil {
 		return 0, w.Wrapf(err, "fetch api resource")
 	}
@@ -799,6 +931,89 @@ func (s *Service) runAPISync(ctx context.Context, source *DatasourceSource) (int
 		return 1, w.Wrapf(err, "record sync time")
 	}
 	return 1, nil
+}
+
+// resolveOAuth2AccessToken returns a live access token for an OAuth 2.0 source,
+// refreshing at the token endpoint when the stored token is absent or within its
+// expiry leeway. The whole read-modify-write runs inside one org transaction
+// that first takes a row lock on the source: a concurrent sync of the same
+// source blocks until this commits, then re-reads the freshly rotated envelope
+// and skips its own refresh — so a single-use refresh token is never spent twice
+// and a rotated token is never clobbered. A permanent rejection surfaces as
+// ErrOAuth2ReauthRequired (terminal). source.CredentialSecretRef is updated to
+// the rotated envelope.
+func (s *Service) resolveOAuth2AccessToken(ctx context.Context, source *DatasourceSource) (string, error) {
+	w := wool.Get(ctx).In("resolveOAuth2AccessToken")
+	if s.newOAuth2Refresh == nil {
+		return "", w.NewError("datasource connector is not configured")
+	}
+	if source.API.OAuth2 == nil {
+		return "", w.NewError("oauth2 source has no oauth2 config")
+	}
+
+	var accessToken string
+	err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
+		ref, err := s.store.LockDatasourceSourceCredentialRef(ctx, source.OrgID, source.ID)
+		if err != nil {
+			return w.Wrapf(err, "lock credential")
+		}
+		stored, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), ref)
+		if err != nil {
+			return w.Wrapf(err, "decrypt credential")
+		}
+		var cred oauthStoredCredential
+		if err := json.Unmarshal([]byte(stored), &cred); err != nil {
+			return w.Wrapf(err, "decode stored oauth2 credential")
+		}
+
+		now := time.Now().UTC()
+		if cred.AccessToken != "" && cred.ExpiresAt > now.Add(oauth2ExpiryLeeway).Unix() {
+			accessToken = cred.AccessToken
+			source.CredentialSecretRef = ref
+			return nil
+		}
+
+		token, err := s.newOAuth2Refresh(ctx, apisource.OAuth2Config{
+			TokenURL: source.API.OAuth2.TokenURL,
+			ClientID: source.API.OAuth2.ClientID,
+			Scopes:   source.API.OAuth2.Scopes,
+		}, cred.RefreshToken, cred.ClientSecret)
+		if err != nil {
+			if errors.Is(err, apisource.ErrRefreshRejected) {
+				return ErrOAuth2ReauthRequired
+			}
+			return w.Wrapf(err, "refresh oauth2 token")
+		}
+
+		cred.AccessToken = token.AccessToken
+		ttl := token.ExpiresIn
+		if ttl <= 0 {
+			ttl = oauth2DefaultTTL
+		}
+		cred.ExpiresAt = now.Add(ttl).Unix()
+		if token.RefreshToken != "" {
+			cred.RefreshToken = token.RefreshToken
+		}
+
+		blob, err := json.Marshal(cred)
+		if err != nil {
+			return w.Wrapf(err, "encode rotated oauth2 credential")
+		}
+		newRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), string(blob))
+		if err != nil {
+			return w.Wrapf(err, "encrypt rotated oauth2 credential")
+		}
+		if err := s.store.UpdateDatasourceSourceCredential(ctx, source.OrgID, source.ID, newRef); err != nil {
+			return w.Wrapf(err, "persist rotated oauth2 credential")
+		}
+		source.CredentialSecretRef = newRef
+		accessToken = cred.AccessToken
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return accessToken, nil
 }
 
 func (s *Service) enqueueAPIIngest(ctx context.Context, source *DatasourceSource, result *apisource.Result) error {
@@ -1078,10 +1293,17 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 		if sourceID == "" {
 			return jobs.NewProcessingError("datasource.invalid_job", "datasource sync job has no source id", false)
 		}
-		if _, err := s.RunDatasourceSync(ctx, sourceID); err != nil && !errors.Is(err, ErrDatasourceSourceNotFound) {
+		_, err := s.RunDatasourceSync(ctx, sourceID)
+		switch {
+		case err == nil, errors.Is(err, ErrDatasourceSourceNotFound):
+			return nil
+		case errors.Is(err, ErrOAuth2ReauthRequired):
+			// The refresh token is permanently dead; replaying it can never
+			// succeed, so fail the job terminally rather than burning retries.
+			return jobs.NewProcessingError("datasource.oauth2_reauth_required", err.Error(), false)
+		default:
 			return err
 		}
-		return nil
 	}
 }
 

@@ -53,7 +53,8 @@ message GitHubDatasourceConfig {
 
 // ApiCredentialKind is how the generic API connector presents its stored
 // credential on every outbound request. The credential material itself lives in
-// the secret store; only the kind (and, for KIND_HEADER, the header name) is
+// the secret store; only the kind (and, for KIND_HEADER/KIND_QUERY, the header
+// or parameter name, and for KIND_OAUTH2 the token endpoint and client id) is
 // non-secret config.
 enum ApiCredentialKind {
   API_CREDENTIAL_KIND_UNSPECIFIED = 0;
@@ -65,6 +66,28 @@ enum ApiCredentialKind {
   // <credential_header>: <credential>, for APIs that take a raw token in a
   // named header (e.g. X-API-Key).
   API_CREDENTIAL_KIND_HEADER = 3;
+  // <credential_query_param>=<credential> appended to the request query, for
+  // APIs that take the key as a query-string parameter (e.g. ?api_key=…).
+  API_CREDENTIAL_KIND_QUERY = 4;
+  // OAuth 2.0 refresh-token flow: the stored credential is a refresh token
+  // (plus, for a confidential client, a client secret). saas exchanges it for a
+  // short-lived access token at fetch time, rotates the stored token set, and
+  // presents the access token as Authorization: Bearer.
+  API_CREDENTIAL_KIND_OAUTH2 = 5;
+}
+
+// ApiOAuth2Config is the non-secret OAuth 2.0 configuration of an API source
+// whose credential_kind is API_CREDENTIAL_KIND_OAUTH2. The refresh token and
+// client secret are never carried here; they live only as a SecretCipher
+// envelope in the credential store and are rotated in place on refresh.
+message ApiOAuth2Config {
+  // Token endpoint the refresh_token grant is exchanged at, e.g.
+  // "https://oauth2.example.com/token". Absolute http(s) URL.
+  string token_url = 1;
+  // OAuth client id presented on the refresh request.
+  string client_id = 2;
+  // Scopes requested on refresh; empty requests the token's existing scopes.
+  repeated string scopes = 3;
 }
 
 // ApiDatasourceConfig is the public, non-secret configuration of a generic
@@ -80,6 +103,12 @@ message ApiDatasourceConfig {
   ApiCredentialKind credential_kind = 3;
   // Header name for API_CREDENTIAL_KIND_HEADER; ignored for the other kinds.
   string credential_header = 4;
+  // Query-string parameter name for API_CREDENTIAL_KIND_QUERY; ignored for the
+  // other kinds.
+  string credential_query_param = 5;
+  // OAuth 2.0 configuration for API_CREDENTIAL_KIND_OAUTH2; unset for the other
+  // kinds.
+  ApiOAuth2Config oauth2 = 6;
 }
 
 // CrawlerDatasourceConfig is the public configuration of a web/sitemap crawler
@@ -207,6 +236,10 @@ message AddSourceRequest {
   // Plaintext webhook signing secret. Optional; when omitted, live webhook
   // ingestion stays off until a later call supplies one. Encrypted at receipt.
   string webhook_secret = 7 [(buf.validate.field).string.max_len = 1024];
+  // Plaintext OAuth 2.0 client secret, for API_CREDENTIAL_KIND_OAUTH2 with a
+  // confidential client. Optional (a public client omits it). Encrypted at
+  // receipt alongside the refresh token carried in credential; never projected.
+  string oauth2_client_secret = 10 [(buf.validate.field).string.max_len = 1024];
 }
 
 message AddSourceResponse {
@@ -233,6 +266,10 @@ message DatasourceProviderDescriptor {
   repeated DatasourceConfigField config_fields = 4;
   // Whether the provider can verify inbound webhook deliveries.
   bool supports_webhook = 5;
+  // Credential kinds this connector accepts, so the UI can offer the matching
+  // credential inputs. Empty for a connector with a bespoke credential shape
+  // (GitHub: an access token plus an optional webhook secret).
+  repeated ApiCredentialKind supported_credential_kinds = 6;
 }
 
 message GetDatasourceCatalogRequest {}

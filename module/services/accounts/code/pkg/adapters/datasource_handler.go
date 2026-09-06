@@ -57,11 +57,12 @@ func (h *datasourceConnectHandler) AddSource(
 		return nil, translateGRPCError(err)
 	}
 	input := business.AddSourceInput{
-		OrgID:            req.Msg.OrgId,
-		Provider:         datasourceProviderFromProto(req.Msg.Provider),
-		TargetCollection: req.Msg.TargetCollection,
-		Credential:       req.Msg.Credential,
-		WebhookSecret:    req.Msg.WebhookSecret,
+		OrgID:              req.Msg.OrgId,
+		Provider:           datasourceProviderFromProto(req.Msg.Provider),
+		TargetCollection:   req.Msg.TargetCollection,
+		Credential:         req.Msg.Credential,
+		WebhookSecret:      req.Msg.WebhookSecret,
+		OAuth2ClientSecret: req.Msg.Oauth2ClientSecret,
 	}
 	if gh := req.Msg.GetGithub(); gh != nil {
 		input.Repo = gh.Repo
@@ -70,10 +71,18 @@ func (h *datasourceConnectHandler) AddSource(
 	}
 	if api := req.Msg.GetApi(); api != nil {
 		input.API = &business.APIDatasourceConfig{
-			BaseURL:          api.BaseUrl,
-			ResourcePath:     api.ResourcePath,
-			CredentialKind:   apiCredentialKindFromProto(api.CredentialKind),
-			CredentialHeader: api.CredentialHeader,
+			BaseURL:              api.BaseUrl,
+			ResourcePath:         api.ResourcePath,
+			CredentialKind:       apiCredentialKindFromProto(api.CredentialKind),
+			CredentialHeader:     api.CredentialHeader,
+			CredentialQueryParam: api.CredentialQueryParam,
+		}
+		if oauth := api.GetOauth2(); oauth != nil {
+			input.API.OAuth2 = &business.APIOAuth2Config{
+				TokenURL: oauth.TokenUrl,
+				ClientID: oauth.ClientId,
+				Scopes:   oauth.Scopes,
+			}
 		}
 	}
 	if c := req.Msg.GetCrawler(); c != nil {
@@ -218,10 +227,18 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 	}
 	if source.API != nil {
 		out.Api = &gen.ApiDatasourceConfig{
-			BaseUrl:          source.API.BaseURL,
-			ResourcePath:     source.API.ResourcePath,
-			CredentialKind:   apiCredentialKindToProto(source.API.CredentialKind),
-			CredentialHeader: source.API.CredentialHeader,
+			BaseUrl:              source.API.BaseURL,
+			ResourcePath:         source.API.ResourcePath,
+			CredentialKind:       apiCredentialKindToProto(source.API.CredentialKind),
+			CredentialHeader:     source.API.CredentialHeader,
+			CredentialQueryParam: source.API.CredentialQueryParam,
+		}
+		if source.API.OAuth2 != nil {
+			out.Api.Oauth2 = &gen.ApiOAuth2Config{
+				TokenUrl: source.API.OAuth2.TokenURL,
+				ClientId: source.API.OAuth2.ClientID,
+				Scopes:   source.API.OAuth2.Scopes,
+			}
 		}
 	}
 	if source.Crawler != nil {
@@ -284,6 +301,10 @@ func apiCredentialKindFromProto(kind gen.ApiCredentialKind) string {
 		return business.APICredentialKindBasic
 	case gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER:
 		return business.APICredentialKindHeader
+	case gen.ApiCredentialKind_API_CREDENTIAL_KIND_QUERY:
+		return business.APICredentialKindQuery
+	case gen.ApiCredentialKind_API_CREDENTIAL_KIND_OAUTH2:
+		return business.APICredentialKindOAuth2
 	default:
 		return ""
 	}
@@ -297,6 +318,10 @@ func apiCredentialKindToProto(kind string) gen.ApiCredentialKind {
 		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_BASIC
 	case business.APICredentialKindHeader:
 		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER
+	case business.APICredentialKindQuery:
+		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_QUERY
+	case business.APICredentialKindOAuth2:
+		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_OAUTH2
 	default:
 		return gen.ApiCredentialKind_API_CREDENTIAL_KIND_UNSPECIFIED
 	}
@@ -326,10 +351,19 @@ func datasourceCatalog() *gen.GetDatasourceCatalogResponse {
 				ConfigFields: []*gen.DatasourceConfigField{
 					{Key: "base_url", DisplayName: "Base URL", Help: "Absolute http(s) URL, e.g. https://api.example.com", Required: true},
 					{Key: "resource_path", DisplayName: "Resource path", Help: "Path fetched on sync, relative to the base URL.", Required: false},
-					{Key: "credential_kind", DisplayName: "Credential kind", Help: "How the credential is sent: bearer, basic, or header.", Required: true},
+					{Key: "credential_kind", DisplayName: "Credential kind", Help: "How the credential is sent: bearer, basic, header, query, or oauth2.", Required: true},
 					{Key: "credential_header", DisplayName: "Credential header", Help: "Header name, when the credential kind is header.", Required: false},
+					{Key: "credential_query_param", DisplayName: "Credential query parameter", Help: "Query parameter name, when the credential kind is query.", Required: false},
+					{Key: "oauth2", DisplayName: "OAuth 2.0 config", Help: "Token URL and client id, when the credential kind is oauth2; the refresh token is the credential.", Required: false},
 				},
 				SupportsWebhook: false,
+				SupportedCredentialKinds: []gen.ApiCredentialKind{
+					gen.ApiCredentialKind_API_CREDENTIAL_KIND_BEARER,
+					gen.ApiCredentialKind_API_CREDENTIAL_KIND_BASIC,
+					gen.ApiCredentialKind_API_CREDENTIAL_KIND_HEADER,
+					gen.ApiCredentialKind_API_CREDENTIAL_KIND_QUERY,
+					gen.ApiCredentialKind_API_CREDENTIAL_KIND_OAUTH2,
+				},
 			},
 			{
 				Provider:    gen.DatasourceProvider_DATASOURCE_PROVIDER_CRAWLER,
