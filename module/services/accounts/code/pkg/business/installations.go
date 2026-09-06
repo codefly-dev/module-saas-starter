@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"fmt"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -62,6 +63,16 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	params.GrantedBy = actorID
 	if params.OwnerPrincipalID == "" {
 		params.OwnerPrincipalID = actorID
+	}
+	// Composing at the store level (one transaction) skips the friendly
+	// Principal.Validate() check the CreateAgentPrincipal domain path runs, so a
+	// malformed identifier would otherwise surface as an opaque DB CHECK violation
+	// mapped to Internal. Validate the shape here at the boundary instead.
+	if !looksLikeAgentIdentifier(params.AgentIdentifier) {
+		return nil, NewStoreError(
+			fmt.Errorf("agent_identifier %q must be 'publisher/name:version'", params.AgentIdentifier),
+			ErrTypeValidation,
+		)
 	}
 	var installation *gen.Installation
 	if err := s.store.WithOrgTx(ctx, params.OrgID, func(ctx context.Context) error {

@@ -268,6 +268,12 @@ func (x *StartTaskWorkContextRequest) GetProjectId() string {
 // principal; authority := the agent's standing scope grants ∩ its ceiling,
 // resolved live. It fails closed when the agent is revoked/disabled, the standing
 // grant is gone, or no owner/co-owner is currently an org admin.
+//
+// On this RPC each authority_scopes.resource_ids entry is a SCOPE NODE id (a data
+// boundary, #473), NOT a product-record id — the mint resolves the boundary from
+// that node's own row and checks the agent holds a standing grant at an
+// ancestor-or-equal of it. This differs from CheckAccess, where resource_id is a
+// placed-record id; do not pass a record id here.
 type StartInstallationTaskRequest struct {
 	state           protoimpl.MessageState  `protogen:"open.v1"`
 	OrgId           string                  `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`

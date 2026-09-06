@@ -310,6 +310,27 @@ func TestUninstallSolutionReversesCompositionAndIsIdempotent(t *testing.T) {
 	require.False(t, transitioned)
 }
 
+// A second solution must not silently co-mint onto the scope node an active
+// installation already anchors — that would share one authority root between two
+// solutions.
+func TestInstallSolutionRefusesRootNodeAnchoredByAnotherActiveInstallation(t *testing.T) {
+	orgID, ownerID, roleID, _, rootPath := installFixture(t, "doc", "write")
+
+	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		_, e := testStore.InstallSolution(ctx, &business.InstallSolutionParams{
+			OrgID:              orgID,
+			AgentIdentifier:    "acme.example/other:1.0.0",
+			SolutionIdentifier: "acme.example/other",
+			RootScopePath:      rootPath, // same authority root as the first install
+			RoleID:             roleID,
+			OwnerPrincipalID:   ownerID,
+			GrantedBy:          ownerID,
+		})
+		return e
+	})
+	requireStoreErrorType(t, err, business.ErrTypeConflict)
+}
+
 func requireStoreErrorType(t *testing.T, err error, want business.StoreErrorType) {
 	t.Helper()
 	require.Error(t, err)

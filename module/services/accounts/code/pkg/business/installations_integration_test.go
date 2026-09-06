@@ -60,4 +60,24 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 	require.Equal(t, roleID, entry.Payload["role_id"])
 }
 
-var _ = context.Background
+// A malformed agent identifier is a boundary input: it must be rejected as a
+// validation error, not surface as an opaque Internal from a DB CHECK violation.
+// Store-level composition skips business.Principal.Validate(), so InstallSolution
+// validates the shape itself.
+func TestInstallSolutionRejectsMalformedAgentIdentifier(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	adminID, orgID := mustUserAndOrg(t, ctx, "badagent@example.com", "badagent", "Bad Agent Co")
+
+	_, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
+		OrgID:              orgID,
+		AgentIdentifier:    "notacanonicalidentifier", // no '/' or ':'
+		SolutionIdentifier: "acme.example/solution",
+		RootScopePath:      "sol_bad",
+		RoleID:             business.NewIDString(),
+	})
+	require.Error(t, err)
+	var se *business.StoreError
+	require.ErrorAs(t, err, &se)
+	require.Equal(t, business.ErrTypeValidation, se.StoreErrorType)
+}

@@ -341,6 +341,12 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	if err != nil {
 		return nil, err
 	}
+	// An installation context is always agent-actored; a nil actor means the store
+	// broke its contract (a healthy resolve always names the agent). Fail closed
+	// rather than mint an unattributed token.
+	if facts.Actor == nil {
+		return nil, status.Error(codes.Internal, "installation authority resolved without an agent actor")
+	}
 	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
 		return nil, err
 	}

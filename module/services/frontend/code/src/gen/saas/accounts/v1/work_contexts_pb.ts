@@ -126,6 +126,12 @@ export const StartTaskWorkContextRequestSchema: GenMessage<StartTaskWorkContextR
  * resolved live. It fails closed when the agent is revoked/disabled, the standing
  * grant is gone, or no owner/co-owner is currently an org admin.
  *
+ * On this RPC each authority_scopes.resource_ids entry is a SCOPE NODE id (a data
+ * boundary, #473), NOT a product-record id — the mint resolves the boundary from
+ * that node's own row and checks the agent holds a standing grant at an
+ * ancestor-or-equal of it. This differs from CheckAccess, where resource_id is a
+ * placed-record id; do not pass a record id here.
+ *
  * @generated from message saas.accounts.v1.StartInstallationTaskRequest
  */
 export type StartInstallationTaskRequest = Message<"saas.accounts.v1.StartInstallationTaskRequest"> & {

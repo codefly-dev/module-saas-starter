@@ -162,6 +162,16 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		stringArray(params.CoOwnerPrincipalIDs), nodeID,
 	))
 	if err != nil {
+		// A concurrent install of the same solution won the race between the
+		// idempotent-existing check above and this INSERT; the active-solution
+		// unique index rejects the second row. Surface it as a retryable conflict
+		// (the caller's retry hits the idempotent path) rather than an opaque 500.
+		if isUniqueViolation(err) {
+			return nil, business.NewStoreError(
+				fmt.Errorf("solution %s is already being installed in org %s", params.SolutionIdentifier, params.OrgID),
+				business.ErrTypeConflict,
+			)
+		}
 		return nil, w.Wrapf(err, "failed to insert installation")
 	}
 	return installation, nil
@@ -201,11 +211,35 @@ func (s *PostgresStore) getOrCreateAgentPrincipal(ctx context.Context, params *b
 func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *business.InstallSolutionParams) (string, error) {
 	w := wool.Get(ctx).In("getOrRegisterSolutionNode")
 	executor := s.getQueryExecutor(ctx)
-	var nodeID string
+	var nodeID, nodeKind string
 	err := executor.QueryRow(ctx,
-		`SELECT id::text FROM scope_nodes WHERE org_id = $1 AND scope_path = $2::ltree`,
-		params.OrgID, params.RootScopePath).Scan(&nodeID)
+		`SELECT id::text, kind FROM scope_nodes WHERE org_id = $1 AND scope_path = $2::ltree`,
+		params.OrgID, params.RootScopePath).Scan(&nodeID, &nodeKind)
 	if err == nil {
+		// A node already exists at this path. Reuse is only safe when it's a
+		// solution root left behind by an earlier (now-revoked) install; refuse to
+		// co-mint onto a structural/record node or a node another ACTIVE
+		// installation already anchors, either of which would silently share one
+		// authority root between two solutions. (An idempotent re-install of the
+		// same active solution returns before reaching here.)
+		if nodeKind != "solution" {
+			return "", business.NewStoreError(
+				fmt.Errorf("scope path %q is already a %q node, not a solution root", params.RootScopePath, nodeKind),
+				business.ErrTypeConflict)
+		}
+		var anchored bool
+		if e := executor.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM installations
+				WHERE org_id = $1 AND root_scope_node_id = $2 AND status = 'active'
+			)`, params.OrgID, nodeID).Scan(&anchored); e != nil {
+			return "", w.Wrapf(e, "failed to check solution node ownership")
+		}
+		if anchored {
+			return "", business.NewStoreError(
+				fmt.Errorf("scope path %q is already the root of an active installation", params.RootScopePath),
+				business.ErrTypeConflict)
+		}
 		return nodeID, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {

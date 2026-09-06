@@ -119,6 +119,8 @@ func mapInstallationError(err error) error {
 			return status.Error(codes.FailedPrecondition, err.Error())
 		case business.ErrTypePermission:
 			return status.Error(codes.PermissionDenied, err.Error())
+		case business.ErrTypeValidation:
+			return status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
 	return status.Error(codes.Internal, err.Error())
