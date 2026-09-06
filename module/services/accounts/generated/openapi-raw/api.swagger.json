@@ -122,6 +122,64 @@
         ]
       }
     },
+    "/v1/accessible-scopes": {
+      "get": {
+        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal ListAccessibleScopes: a signed-in org member enumerates the scope\nnodes THEY may act on with (resource_type, action) through the gateway with a\nnormal bearer. The subject is the bearer's own principal — no subject_id in\nthe request — so it can never be an oracle about other principals. Same grant\n+ share union and same pagination as the internal RPC.",
+        "operationId": "PermissionService_ListMyAccessibleScopes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAccessibleScopesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "resourceType",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "description": "Page bound, same ceiling as the internal RPC.",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "description": "Opaque cursor from a previous response's next_page_token; empty for page one.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
     "/v1/acquisition": {
       "get": {
         "operationId": "WaitlistService_GetAcquisitionStatus",
@@ -5633,6 +5691,20 @@
         }
       }
     },
+    "v1AccessibleScope": {
+      "type": "object",
+      "properties": {
+        "nodeId": {
+          "type": "string"
+        },
+        "scopePath": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      }
+    },
     "v1AcquisitionMode": {
       "type": "string",
       "enum": [
@@ -7453,6 +7525,22 @@
         },
         "nextPageToken": {
           "type": "string"
+        }
+      }
+    },
+    "v1ListAccessibleScopesResponse": {
+      "type": "object",
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AccessibleScope"
+          }
+        },
+        "nextPageToken": {
+          "type": "string",
+          "description": "Set when more scopes remain; pass it back as page_token. Empty on the last page."
         }
       }
     },

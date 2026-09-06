@@ -172,6 +172,129 @@ func TestListAccessibleScopes_Paginates(t *testing.T) {
 	require.GreaterOrEqual(t, pages, 4, "7 nodes at page_size 2 must span multiple pages")
 }
 
+// TestListAccessibleScopes_ListedNodesAuthorizeRecords is the round-trip property
+// the issue asked for (#481 ask 3): over random trees, grants, and shares, every
+// node the list returns authorizes a record placed at it under CheckAccess, and
+// every placed record CheckAccess allows has its node in the list. A structural
+// node carries no resource of its own, so it is probed with a record placed
+// directly beneath it (a listed structural node means a grant at-or-above it,
+// which must reach that child); a record node is its own placed record.
+func TestListAccessibleScopes_ListedNodesAuthorizeRecords(t *testing.T) {
+	rng := rand.New(rand.NewSource(0x5C0DE))
+	resources := []string{"doc", "*", "other"}
+	actions := []string{"read", "*", "write"}
+
+	for iter := 0; iter < 12; iter++ {
+		clearData(t)
+		ctx := testCtx
+		owner, org := mustUserAndOrg(t, ctx,
+			fmt.Sprintf("round-%d@rls-test.com", iter), fmt.Sprintf("round-%d", iter), "Round Org")
+
+		var roles []string
+		for r := 0; r < 1+rng.Intn(3); r++ {
+			rid := business.NewIDString()
+			perm := &gen.Permission{Resource: resources[rng.Intn(len(resources))], Action: actions[rng.Intn(len(actions))]}
+			require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+				return testStore.CreateRole(ctx, &gen.Role{
+					Id: rid, Name: "role " + rid, OrgId: org, Permissions: []*gen.Permission{perm},
+				})
+			}))
+			roles = append(roles, rid)
+		}
+
+		register := func(path, rtype, rid string) {
+			_, err := testService.RegisterScopeNode(ctx, owner, &gen.RegisterScopeNodeRequest{
+				OrgId: org, ScopePath: path, Kind: "node", Label: path, ResourceType: rtype, ResourceId: rid,
+			})
+			require.NoError(t, err)
+		}
+
+		// Structural tree: a root and a few children, each carrying exactly one
+		// placed doc record directly beneath it. recByNode maps a structural node to
+		// the record probing it; recByPath maps a record's own node path to it.
+		type rec struct{ path, id string }
+		recByNode := map[string]rec{}
+		recByPath := map[string]rec{}
+		var records []rec
+		var structural []string
+		recID := 0
+		addStructural := func(node string) {
+			structural = append(structural, node)
+			r := rec{path: node + ".rec", id: fmt.Sprintf("doc-%d", recID)}
+			recID++
+			register(r.path, "doc", r.id)
+			recByNode[node] = r
+			recByPath[r.path] = r
+			records = append(records, r)
+		}
+		register("root", "", "")
+		addStructural("root")
+		for c := 0; c < 1+rng.Intn(3); c++ {
+			p := fmt.Sprintf("root.n%d", c)
+			register(p, "", "")
+			addStructural(p)
+		}
+
+		grantTargets := append([]string{}, structural...)
+		for _, r := range records {
+			grantTargets = append(grantTargets, r.path)
+		}
+		for g := 0; g < rng.Intn(len(grantTargets)+1); g++ {
+			_, err := testService.GrantScope(ctx, owner, &gen.GrantScopeRequest{
+				OrgId: org, SubjectId: owner, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+				ScopePath: grantTargets[rng.Intn(len(grantTargets))], RoleId: roles[rng.Intn(len(roles))],
+			})
+			require.NoError(t, err)
+		}
+		for s := 0; s < rng.Intn(len(records)+1); s++ {
+			r := records[rng.Intn(len(records))]
+			_, err := testService.ShareRecord(ctx, owner, &gen.ShareRecordRequest{
+				OrgId: org, ResourceType: "doc", ResourceId: r.id,
+				SubjectId: owner, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, RoleId: roles[rng.Intn(len(roles))],
+			})
+			require.NoError(t, err)
+		}
+
+		checkAccess := func(id, action string) bool {
+			var allowed bool
+			require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+				var e error
+				allowed, _, e = testStore.CheckAccess(ctx, owner, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", id, action)
+				return e
+			}))
+			return allowed
+		}
+
+		for _, action := range []string{"read", "write"} {
+			listed := listScopePaths(t, ctx, org, owner, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", action)
+
+			// Forward: every listed node authorizes a record placed at it.
+			for path := range listed {
+				if r, ok := recByNode[path]; ok {
+					require.Truef(t, checkAccess(r.id, action),
+						"iter %d action %q: listed structural node %s must authorize a record placed beneath it",
+						iter, action, path)
+				} else if r, ok := recByPath[path]; ok {
+					require.Truef(t, checkAccess(r.id, action),
+						"iter %d action %q: listed record node %s must pass CheckAccess",
+						iter, action, path)
+				} else {
+					t.Fatalf("iter %d: listed node %s is neither a known structural nor record node", iter, path)
+				}
+			}
+
+			// Backward: every placed record CheckAccess allows has its node listed.
+			for _, r := range records {
+				if checkAccess(r.id, action) {
+					require.Truef(t, listed[r.path],
+						"iter %d action %q: CheckAccess allows record %s but its node is not listed",
+						iter, action, r.path)
+				}
+			}
+		}
+	}
+}
+
 // TestListAccessibleScopes_AgreesWithCheckAccess is the never-disagree property:
 // over random trees, roles, grants, and shares, a placed-record node is in
 // ListAccessibleScopes exactly when CheckAccess allows the same (subject,

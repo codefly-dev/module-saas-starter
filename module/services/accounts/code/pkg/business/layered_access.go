@@ -62,7 +62,7 @@ func (s *Service) ListAccessibleScopes(ctx context.Context, req *gen.ListAccessi
 
 	var scopes []*gen.AccessibleScope
 	wrap := func(ctx context.Context) error {
-		out, err := s.store.ListAccessibleScopes(ctx, req.SubjectId, req.SubjectKind, req.ResourceType, req.Action, req.PageToken, pageSize+1)
+		out, err := s.store.ListAccessibleScopes(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ResourceType, req.Action, req.PageToken, pageSize+1)
 		scopes = out
 		return err
 	}

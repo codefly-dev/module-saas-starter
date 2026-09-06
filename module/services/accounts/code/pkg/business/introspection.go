@@ -161,6 +161,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PermissionService/AssignRole":                      "Grant a role to a principal/team.",
 	"PermissionService/CheckAccess":                     "Internal hierarchical + per-record authz decision.",
 	"PermissionService/ListAccessibleScopes":            "Internal list of scope nodes a subject may act on (list-objects companion to CheckAccess).",
+	"PermissionService/ListMyAccessibleScopes":          "List the scope nodes the authenticated caller may act on (bearer-derived subject).",
 	"PermissionService/CheckPermission":                 "Internal authz decision (auth-gateway caller).",
 	"PermissionService/CreateRole":                      "Create a role (org-scoped or platform).",
 	"PermissionService/Decide":                          "Internal principal-aware authz decision (successor to CheckPermission).",
