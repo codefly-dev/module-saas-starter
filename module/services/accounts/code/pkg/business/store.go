@@ -100,6 +100,13 @@ type Store interface {
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	DeleteDatasourceSource(ctx context.Context, orgID, id string) error
 	SetDatasourceSourceSynced(ctx context.Context, orgID, id string, syncedAt time.Time) error
+	// LockDatasourceSourceCredentialRef reads the source's current credential
+	// envelope under a row lock (SELECT … FOR UPDATE) so a refresh-and-rotate
+	// read-modify-write serializes against concurrent syncs of the same source.
+	// MUST run inside the caller's WithOrgTx; the lock is held until that
+	// transaction commits.
+	LockDatasourceSourceCredentialRef(ctx context.Context, orgID, id string) (string, error)
+	UpdateDatasourceSourceCredential(ctx context.Context, orgID, id, credentialRef string) error
 	GetDatasourceSourceByID(ctx context.Context, id string) (*DatasourceSource, error)
 
 	// Organizations

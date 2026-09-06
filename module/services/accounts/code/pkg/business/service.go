@@ -57,6 +57,7 @@ type Service struct {
 	newAPIClient              func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient          func(cfg CrawlerDatasourceConfig) CrawlerContentClient
 	newUploadClient           func(cfg UploadDatasourceConfig, secretAccessKey string) UploadContentClient
+	newOAuth2Refresh          OAuth2RefreshFunc       // refreshes an OAuth 2.0 API source's access token
 	moduleProducer            jobs.Producer           // request-scoped, transactional outbox producer for the module-facing surface
 	moduleJobStore            jobs.Store              // privileged worker store (claim/finalize) for the module-facing surface
 	modulePrincipals          ModulePrincipalRegistry // per-principal capability grants for the module-facing surface

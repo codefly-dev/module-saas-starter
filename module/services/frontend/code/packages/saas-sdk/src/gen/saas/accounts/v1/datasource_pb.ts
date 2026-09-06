@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/datasource.proto.
  */
 export const file_saas_accounts_v1_datasource: GenFile = /*@__PURE__*/
-  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL2RhdGFzb3VyY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiRQoWR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIMCgRyZXBvGAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBmJyYW5jaBgDIAEoCSKXAQoTQXBpRGF0YXNvdXJjZUNvbmZpZxIQCghiYXNlX3VybBgBIAEoCRIVCg1yZXNvdXJjZV9wYXRoGAIgASgJEjwKD2NyZWRlbnRpYWxfa2luZBgDIAEoDjIjLnNhYXMuYWNjb3VudHMudjEuQXBpQ3JlZGVudGlhbEtpbmQSGQoRY3JlZGVudGlhbF9oZWFkZXIYBCABKAkizQMKCkRhdGFzb3VyY2USCgoCaWQYASABKAkSDgoGb3JnX2lkGAIgASgJEjYKCHByb3ZpZGVyGAMgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXISGQoRdGFyZ2V0X2NvbGxlY3Rpb24YBCABKAkSOAoGZ2l0aHViGAUgASgLMiguc2Fhcy5hY2NvdW50cy52MS5HaXRIdWJEYXRhc291cmNlQ29uZmlnEjIKBnN0YXR1cxgGIAEoDjIiLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVN0YXR1cxIaChJ3ZWJob29rX2NvbmZpZ3VyZWQYByABKAgSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoObGFzdF9zeW5jZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjIKA2FwaRgLIAEoCzIlLnNhYXMuYWNjb3VudHMudjEuQXBpRGF0YXNvdXJjZUNvbmZpZyKWAgoWQWRkR2l0SHViU291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEjsKBHJlcG8YAiABKAlCLbpIKnIoEAMY/wEyIV5bQS1aYS16MC05Xy4tXSsvW0EtWmEtejAtOV8uLV0rJBIgCgVwYXRocxgDIAMoCUIRukgOkgELEEAiB3IFEAEYgAQSGAoGYnJhbmNoGAQgASgJQgi6SAVyAxj/ARIlChF0YXJnZXRfY29sbGVjdGlvbhgFIAEoCUIKukgHcgUQARj/ARIgCgxhY2Nlc3NfdG9rZW4YBiABKAlCCrpIB3IFEAEYgAgSIAoOd2ViaG9va19zZWNyZXQYByABKAlCCLpIBXIDGIAIIksKF0FkZEdpdEh1YlNvdXJjZVJlc3BvbnNlEjAKCmRhdGFzb3VyY2UYASABKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2Ui1QIKEEFkZFNvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARJCCghwcm92aWRlchgCIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVByb3ZpZGVyQgq6SAeCAQQQASAAEiUKEXRhcmdldF9jb2xsZWN0aW9uGAMgASgJQgq6SAdyBRABGP8BEjoKBmdpdGh1YhgEIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuR2l0SHViRGF0YXNvdXJjZUNvbmZpZ0gAEjQKA2FwaRgFIAEoCzIlLnNhYXMuYWNjb3VudHMudjEuQXBpRGF0YXNvdXJjZUNvbmZpZ0gAEh4KCmNyZWRlbnRpYWwYBiABKAlCCrpIB3IFEAEYgCASIAoOd2ViaG9va19zZWNyZXQYByABKAlCCLpIBXIDGIAIQggKBmNvbmZpZyJFChFBZGRTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIloKFURhdGFzb3VyY2VDb25maWdGaWVsZBILCgNrZXkYASABKAkSFAoMZGlzcGxheV9uYW1lGAIgASgJEgwKBGhlbHAYAyABKAkSEAoIcmVxdWlyZWQYBCABKAgi2wEKHERhdGFzb3VyY2VQcm92aWRlckRlc2NyaXB0b3ISNgoIcHJvdmlkZXIYASABKA4yJC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlchIUCgxkaXNwbGF5X25hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSPgoNY29uZmlnX2ZpZWxkcxgEIAMoCzInLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZUNvbmZpZ0ZpZWxkEhgKEHN1cHBvcnRzX3dlYmhvb2sYBSABKAgiHQobR2V0RGF0YXNvdXJjZUNhdGFsb2dSZXF1ZXN0ImEKHEdldERhdGFzb3VyY2VDYXRhbG9nUmVzcG9uc2USQQoJcHJvdmlkZXJzGAEgAygLMi4uc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXJEZXNjcmlwdG9yIi4KEkxpc3RTb3VyY2VzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIkgKE0xpc3RTb3VyY2VzUmVzcG9uc2USMQoLZGF0YXNvdXJjZXMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2UiQgoQR2V0U291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASJFChFHZXRTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIkMKEVN5bmNTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFAoCaWQYAiABKAlCCLpIBXIDsAEBIiQKElN5bmNTb3VyY2VSZXNwb25zZRIOCgZqb2JfaWQYASABKAkiRQoTRGVsZXRlU291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASIWChREZWxldGVTb3VyY2VSZXNwb25zZSp2ChJEYXRhc291cmNlUHJvdmlkZXISIwofREFUQVNPVVJDRV9QUk9WSURFUl9VTlNQRUNJRklFRBAAEh4KGkRBVEFTT1VSQ0VfUFJPVklERVJfR0lUSFVCEAESGwoXREFUQVNPVVJDRV9QUk9WSURFUl9BUEkQAipxChBEYXRhc291cmNlU3RhdHVzEiEKHURBVEFTT1VSQ0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHAoYREFUQVNPVVJDRV9TVEFUVVNfQUNUSVZFEAESHAoYREFUQVNPVVJDRV9TVEFUVVNfUEFVU0VEEAIqlwEKEUFwaUNyZWRlbnRpYWxLaW5kEiMKH0FQSV9DUkVERU5USUFMX0tJTkRfVU5TUEVDSUZJRUQQABIeChpBUElfQ1JFREVOVElBTF9LSU5EX0JFQVJFUhABEh0KGUFQSV9DUkVERU5USUFMX0tJTkRfQkFTSUMQAhIeChpBUElfQ1JFREVOVElBTF9LSU5EX0hFQURFUhADMqkIChFEYXRhc291cmNlU2VydmljZRKnAQoPQWRkR2l0SHViU291cmNlEiguc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXNwb25zZSI/wvMYOwgCEAQqDAoGb3JnX2lkEAIYATABOhsKF2RhdGFzb3VyY2Uuc291cmNlLmFkZGVkEAJAAUgEUARYA2ABEpUBCglBZGRTb3VyY2USIi5zYWFzLmFjY291bnRzLnYxLkFkZFNvdXJjZVJlcXVlc3QaIy5zYWFzLmFjY291bnRzLnYxLkFkZFNvdXJjZVJlc3BvbnNlIj/C8xg7CAIQBCoMCgZvcmdfaWQQAhgBMAE6GwoXZGF0YXNvdXJjZS5zb3VyY2UuYWRkZWQQAkABSARQBFgDYAESjwEKFEdldERhdGFzb3VyY2VDYXRhbG9nEi0uc2Fhcy5hY2NvdW50cy52MS5HZXREYXRhc291cmNlQ2F0YWxvZ1JlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkdldERhdGFzb3VyY2VDYXRhbG9nUmVzcG9uc2UiGMLzGBQIAhABMAE6AhABQAFIA1ACWAJgARKCAQoLTGlzdFNvdXJjZXMSJC5zYWFzLmFjY291bnRzLnYxLkxpc3RTb3VyY2VzUmVxdWVzdBolLnNhYXMuYWNjb3VudHMudjEuTGlzdFNvdXJjZXNSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESfAoJR2V0U291cmNlEiIuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESmQEKClN5bmNTb3VyY2USIy5zYWFzLmFjY291bnRzLnYxLlN5bmNTb3VyY2VSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5TeW5jU291cmNlUmVzcG9uc2UiQMLzGDwIAhAEKgwKBm9yZ19pZBACGAEwATocChhkYXRhc291cmNlLnNvdXJjZS5zeW5jZWQQAkABSARQAlgCYAESoAEKDERlbGV0ZVNvdXJjZRIlLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVzcG9uc2UiQcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlkYXRhc291cmNlLnNvdXJjZS5yZW1vdmVkEAJAAUgEUAJYAmABYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
+  fileDesc("CiFzYWFzL2FjY291bnRzL3YxL2RhdGFzb3VyY2UucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiRQoWR2l0SHViRGF0YXNvdXJjZUNvbmZpZxIMCgRyZXBvGAEgASgJEg0KBXBhdGhzGAIgAygJEg4KBmJyYW5jaBgDIAEoCSJHCg9BcGlPQXV0aDJDb25maWcSEQoJdG9rZW5fdXJsGAEgASgJEhEKCWNsaWVudF9pZBgCIAEoCRIOCgZzY29wZXMYAyADKAki6gEKE0FwaURhdGFzb3VyY2VDb25maWcSEAoIYmFzZV91cmwYASABKAkSFQoNcmVzb3VyY2VfcGF0aBgCIAEoCRI8Cg9jcmVkZW50aWFsX2tpbmQYAyABKA4yIy5zYWFzLmFjY291bnRzLnYxLkFwaUNyZWRlbnRpYWxLaW5kEhkKEWNyZWRlbnRpYWxfaGVhZGVyGAQgASgJEh4KFmNyZWRlbnRpYWxfcXVlcnlfcGFyYW0YBSABKAkSMQoGb2F1dGgyGAYgASgLMiEuc2Fhcy5hY2NvdW50cy52MS5BcGlPQXV0aDJDb25maWciQQoXQ3Jhd2xlckRhdGFzb3VyY2VDb25maWcSEwoLc2l0ZW1hcF91cmwYASABKAkSEQoJbWF4X3BhZ2VzGAIgASgNIoYBChZVcGxvYWREYXRhc291cmNlQ29uZmlnEhAKCGVuZHBvaW50GAEgASgJEg4KBnJlZ2lvbhgCIAEoCRIOCgZidWNrZXQYAyABKAkSDgoGcHJlZml4GAQgASgJEhUKDWFjY2Vzc19rZXlfaWQYBSABKAkSEwoLbWF4X29iamVjdHMYBiABKA0iwwQKCkRhdGFzb3VyY2USCgoCaWQYASABKAkSDgoGb3JnX2lkGAIgASgJEjYKCHByb3ZpZGVyGAMgASgOMiQuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXISGQoRdGFyZ2V0X2NvbGxlY3Rpb24YBCABKAkSOAoGZ2l0aHViGAUgASgLMiguc2Fhcy5hY2NvdW50cy52MS5HaXRIdWJEYXRhc291cmNlQ29uZmlnEjIKBnN0YXR1cxgGIAEoDjIiLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVN0YXR1cxIaChJ3ZWJob29rX2NvbmZpZ3VyZWQYByABKAgSLgoKY3JlYXRlZF9hdBgIIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgJIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASMgoObGFzdF9zeW5jZWRfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjIKA2FwaRgLIAEoCzIlLnNhYXMuYWNjb3VudHMudjEuQXBpRGF0YXNvdXJjZUNvbmZpZxI6CgdjcmF3bGVyGAwgASgLMikuc2Fhcy5hY2NvdW50cy52MS5DcmF3bGVyRGF0YXNvdXJjZUNvbmZpZxI4CgZ1cGxvYWQYDSABKAsyKC5zYWFzLmFjY291bnRzLnYxLlVwbG9hZERhdGFzb3VyY2VDb25maWcilgIKFkFkZEdpdEh1YlNvdXJjZVJlcXVlc3QSGAoGb3JnX2lkGAEgASgJQgi6SAVyA7ABARI7CgRyZXBvGAIgASgJQi26SCpyKBADGP8BMiFeW0EtWmEtejAtOV8uLV0rL1tBLVphLXowLTlfLi1dKyQSIAoFcGF0aHMYAyADKAlCEbpIDpIBCxBAIgdyBRABGIAEEhgKBmJyYW5jaBgEIAEoCUIIukgFcgMY/wESJQoRdGFyZ2V0X2NvbGxlY3Rpb24YBSABKAlCCrpIB3IFEAEY/wESIAoMYWNjZXNzX3Rva2VuGAYgASgJQgq6SAdyBRABGIAIEiAKDndlYmhvb2tfc2VjcmV0GAcgASgJQgi6SAVyAxiACCJLChdBZGRHaXRIdWJTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIvUDChBBZGRTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESQgoIcHJvdmlkZXIYAiABKA4yJC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2VQcm92aWRlckIKukgHggEEEAEgABIlChF0YXJnZXRfY29sbGVjdGlvbhgDIAEoCUIKukgHcgUQARj/ARI6CgZnaXRodWIYBCABKAsyKC5zYWFzLmFjY291bnRzLnYxLkdpdEh1YkRhdGFzb3VyY2VDb25maWdIABI0CgNhcGkYBSABKAsyJS5zYWFzLmFjY291bnRzLnYxLkFwaURhdGFzb3VyY2VDb25maWdIABI8CgdjcmF3bGVyGAggASgLMikuc2Fhcy5hY2NvdW50cy52MS5DcmF3bGVyRGF0YXNvdXJjZUNvbmZpZ0gAEjoKBnVwbG9hZBgJIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuVXBsb2FkRGF0YXNvdXJjZUNvbmZpZ0gAEhwKCmNyZWRlbnRpYWwYBiABKAlCCLpIBXIDGIAgEiAKDndlYmhvb2tfc2VjcmV0GAcgASgJQgi6SAVyAxiACBImChRvYXV0aDJfY2xpZW50X3NlY3JldBgKIAEoCUIIukgFcgMYgAhCCAoGY29uZmlnIkUKEUFkZFNvdXJjZVJlc3BvbnNlEjAKCmRhdGFzb3VyY2UYASABKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2UiWgoVRGF0YXNvdXJjZUNvbmZpZ0ZpZWxkEgsKA2tleRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkSDAoEaGVscBgDIAEoCRIQCghyZXF1aXJlZBgEIAEoCCKkAgocRGF0YXNvdXJjZVByb3ZpZGVyRGVzY3JpcHRvchI2Cghwcm92aWRlchgBIAEoDjIkLnNhYXMuYWNjb3VudHMudjEuRGF0YXNvdXJjZVByb3ZpZGVyEhQKDGRpc3BsYXlfbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRI+Cg1jb25maWdfZmllbGRzGAQgAygLMicuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlQ29uZmlnRmllbGQSGAoQc3VwcG9ydHNfd2ViaG9vaxgFIAEoCBJHChpzdXBwb3J0ZWRfY3JlZGVudGlhbF9raW5kcxgGIAMoDjIjLnNhYXMuYWNjb3VudHMudjEuQXBpQ3JlZGVudGlhbEtpbmQiHQobR2V0RGF0YXNvdXJjZUNhdGFsb2dSZXF1ZXN0ImEKHEdldERhdGFzb3VyY2VDYXRhbG9nUmVzcG9uc2USQQoJcHJvdmlkZXJzGAEgAygLMi4uc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlUHJvdmlkZXJEZXNjcmlwdG9yIi4KEkxpc3RTb3VyY2VzUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBIkgKE0xpc3RTb3VyY2VzUmVzcG9uc2USMQoLZGF0YXNvdXJjZXMYASADKAsyHC5zYWFzLmFjY291bnRzLnYxLkRhdGFzb3VyY2UiQgoQR2V0U291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASJFChFHZXRTb3VyY2VSZXNwb25zZRIwCgpkYXRhc291cmNlGAEgASgLMhwuc2Fhcy5hY2NvdW50cy52MS5EYXRhc291cmNlIkMKEVN5bmNTb3VyY2VSZXF1ZXN0EhgKBm9yZ19pZBgBIAEoCUIIukgFcgOwAQESFAoCaWQYAiABKAlCCLpIBXIDsAEBIiQKElN5bmNTb3VyY2VSZXNwb25zZRIOCgZqb2JfaWQYASABKAkiRQoTRGVsZXRlU291cmNlUmVxdWVzdBIYCgZvcmdfaWQYASABKAlCCLpIBXIDsAEBEhQKAmlkGAIgASgJQgi6SAVyA7ABASIWChREZWxldGVTb3VyY2VSZXNwb25zZSq3AQoSRGF0YXNvdXJjZVByb3ZpZGVyEiMKH0RBVEFTT1VSQ0VfUFJPVklERVJfVU5TUEVDSUZJRUQQABIeChpEQVRBU09VUkNFX1BST1ZJREVSX0dJVEhVQhABEhsKF0RBVEFTT1VSQ0VfUFJPVklERVJfQVBJEAISHwobREFUQVNPVVJDRV9QUk9WSURFUl9DUkFXTEVSEAMSHgoaREFUQVNPVVJDRV9QUk9WSURFUl9VUExPQUQQBCpxChBEYXRhc291cmNlU3RhdHVzEiEKHURBVEFTT1VSQ0VfU1RBVFVTX1VOU1BFQ0lGSUVEEAASHAoYREFUQVNPVVJDRV9TVEFUVVNfQUNUSVZFEAESHAoYREFUQVNPVVJDRV9TVEFUVVNfUEFVU0VEEAIq1gEKEUFwaUNyZWRlbnRpYWxLaW5kEiMKH0FQSV9DUkVERU5USUFMX0tJTkRfVU5TUEVDSUZJRUQQABIeChpBUElfQ1JFREVOVElBTF9LSU5EX0JFQVJFUhABEh0KGUFQSV9DUkVERU5USUFMX0tJTkRfQkFTSUMQAhIeChpBUElfQ1JFREVOVElBTF9LSU5EX0hFQURFUhADEh0KGUFQSV9DUkVERU5USUFMX0tJTkRfUVVFUlkQBBIeChpBUElfQ1JFREVOVElBTF9LSU5EX09BVVRIMhAFMqkIChFEYXRhc291cmNlU2VydmljZRKnAQoPQWRkR2l0SHViU291cmNlEiguc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXF1ZXN0Gikuc2Fhcy5hY2NvdW50cy52MS5BZGRHaXRIdWJTb3VyY2VSZXNwb25zZSI/wvMYOwgCEAQqDAoGb3JnX2lkEAIYATABOhsKF2RhdGFzb3VyY2Uuc291cmNlLmFkZGVkEAJAAUgEUARYA2ABEpUBCglBZGRTb3VyY2USIi5zYWFzLmFjY291bnRzLnYxLkFkZFNvdXJjZVJlcXVlc3QaIy5zYWFzLmFjY291bnRzLnYxLkFkZFNvdXJjZVJlc3BvbnNlIj/C8xg7CAIQBCoMCgZvcmdfaWQQAhgBMAE6GwoXZGF0YXNvdXJjZS5zb3VyY2UuYWRkZWQQAkABSARQBFgDYAESjwEKFEdldERhdGFzb3VyY2VDYXRhbG9nEi0uc2Fhcy5hY2NvdW50cy52MS5HZXREYXRhc291cmNlQ2F0YWxvZ1JlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkdldERhdGFzb3VyY2VDYXRhbG9nUmVzcG9uc2UiGMLzGBQIAhABMAE6AhABQAFIA1ACWAJgARKCAQoLTGlzdFNvdXJjZXMSJC5zYWFzLmFjY291bnRzLnYxLkxpc3RTb3VyY2VzUmVxdWVzdBolLnNhYXMuYWNjb3VudHMudjEuTGlzdFNvdXJjZXNSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESfAoJR2V0U291cmNlEiIuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXF1ZXN0GiMuc2Fhcy5hY2NvdW50cy52MS5HZXRTb3VyY2VSZXNwb25zZSImwvMYIggCEAMqDAoGb3JnX2lkEAIYATABOgIQAUABSANQAlgDYAESmQEKClN5bmNTb3VyY2USIy5zYWFzLmFjY291bnRzLnYxLlN5bmNTb3VyY2VSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5TeW5jU291cmNlUmVzcG9uc2UiQMLzGDwIAhAEKgwKBm9yZ19pZBACGAEwATocChhkYXRhc291cmNlLnNvdXJjZS5zeW5jZWQQAkABSARQAlgCYAESoAEKDERlbGV0ZVNvdXJjZRIlLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuRGVsZXRlU291cmNlUmVzcG9uc2UiQcLzGD0IAhAEKgwKBm9yZ19pZBACGAEwATodChlkYXRhc291cmNlLnNvdXJjZS5yZW1vdmVkEAJAAUgEUAJYAmABYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp, file_saas_policy_v1_options]);
 
 /**
  * GitHubDatasourceConfig is the public, non-secret configuration of a GitHub
@@ -54,6 +54,45 @@ export const GitHubDatasourceConfigSchema: GenMessage<GitHubDatasourceConfig> = 
   messageDesc(file_saas_accounts_v1_datasource, 0);
 
 /**
+ * ApiOAuth2Config is the non-secret OAuth 2.0 configuration of an API source
+ * whose credential_kind is API_CREDENTIAL_KIND_OAUTH2. The refresh token and
+ * client secret are never carried here; they live only as a SecretCipher
+ * envelope in the credential store and are rotated in place on refresh.
+ *
+ * @generated from message saas.accounts.v1.ApiOAuth2Config
+ */
+export type ApiOAuth2Config = Message<"saas.accounts.v1.ApiOAuth2Config"> & {
+  /**
+   * Token endpoint the refresh_token grant is exchanged at, e.g.
+   * "https://oauth2.example.com/token". Absolute http(s) URL.
+   *
+   * @generated from field: string token_url = 1;
+   */
+  tokenUrl: string;
+
+  /**
+   * OAuth client id presented on the refresh request.
+   *
+   * @generated from field: string client_id = 2;
+   */
+  clientId: string;
+
+  /**
+   * Scopes requested on refresh; empty requests the token's existing scopes.
+   *
+   * @generated from field: repeated string scopes = 3;
+   */
+  scopes: string[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.ApiOAuth2Config.
+ * Use `create(ApiOAuth2ConfigSchema)` to create a new message.
+ */
+export const ApiOAuth2ConfigSchema: GenMessage<ApiOAuth2Config> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 1);
+
+/**
  * ApiDatasourceConfig is the public, non-secret configuration of a generic
  * API-with-credentials datasource. The credential value (bearer/basic/header
  * token) and any webhook signing secret are never carried here; they live only
@@ -88,6 +127,22 @@ export type ApiDatasourceConfig = Message<"saas.accounts.v1.ApiDatasourceConfig"
    * @generated from field: string credential_header = 4;
    */
   credentialHeader: string;
+
+  /**
+   * Query-string parameter name for API_CREDENTIAL_KIND_QUERY; ignored for the
+   * other kinds.
+   *
+   * @generated from field: string credential_query_param = 5;
+   */
+  credentialQueryParam: string;
+
+  /**
+   * OAuth 2.0 configuration for API_CREDENTIAL_KIND_OAUTH2; unset for the other
+   * kinds.
+   *
+   * @generated from field: saas.accounts.v1.ApiOAuth2Config oauth2 = 6;
+   */
+  oauth2?: ApiOAuth2Config;
 };
 
 /**
@@ -95,12 +150,102 @@ export type ApiDatasourceConfig = Message<"saas.accounts.v1.ApiDatasourceConfig"
  * Use `create(ApiDatasourceConfigSchema)` to create a new message.
  */
 export const ApiDatasourceConfigSchema: GenMessage<ApiDatasourceConfig> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 1);
+  messageDesc(file_saas_accounts_v1_datasource, 2);
+
+/**
+ * CrawlerDatasourceConfig is the public configuration of a web/sitemap crawler
+ * datasource. It needs no credential: it reads the sitemap and fetches the
+ * listed pages over public HTTP.
+ *
+ * @generated from message saas.accounts.v1.CrawlerDatasourceConfig
+ */
+export type CrawlerDatasourceConfig = Message<"saas.accounts.v1.CrawlerDatasourceConfig"> & {
+  /**
+   * Absolute http(s) URL of the site's sitemap.xml.
+   *
+   * @generated from field: string sitemap_url = 1;
+   */
+  sitemapUrl: string;
+
+  /**
+   * Upper bound on pages fetched per sync. Zero applies the connector default.
+   *
+   * @generated from field: uint32 max_pages = 2;
+   */
+  maxPages: number;
+};
+
+/**
+ * Describes the message saas.accounts.v1.CrawlerDatasourceConfig.
+ * Use `create(CrawlerDatasourceConfigSchema)` to create a new message.
+ */
+export const CrawlerDatasourceConfigSchema: GenMessage<CrawlerDatasourceConfig> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 3);
+
+/**
+ * UploadDatasourceConfig is the public, non-secret configuration of an
+ * S3-compatible object-storage datasource. The secret access key is never
+ * carried here; it lives only as a SecretCipher envelope in the credential
+ * store. Addressing is path-style, so it works against MinIO and other
+ * S3-compatible stores as well as AWS S3.
+ *
+ * @generated from message saas.accounts.v1.UploadDatasourceConfig
+ */
+export type UploadDatasourceConfig = Message<"saas.accounts.v1.UploadDatasourceConfig"> & {
+  /**
+   * Absolute http(s) endpoint of the object store, e.g.
+   * "https://s3.us-east-1.amazonaws.com" or a MinIO endpoint.
+   *
+   * @generated from field: string endpoint = 1;
+   */
+  endpoint: string;
+
+  /**
+   * Signing region, e.g. "us-east-1".
+   *
+   * @generated from field: string region = 2;
+   */
+  region: string;
+
+  /**
+   * @generated from field: string bucket = 3;
+   */
+  bucket: string;
+
+  /**
+   * Key prefix to pull under; empty pulls the whole bucket.
+   *
+   * @generated from field: string prefix = 4;
+   */
+  prefix: string;
+
+  /**
+   * AWS-style access key id. The matching secret access key is the credential.
+   *
+   * @generated from field: string access_key_id = 5;
+   */
+  accessKeyId: string;
+
+  /**
+   * Upper bound on objects fetched per sync. Zero applies the connector default.
+   *
+   * @generated from field: uint32 max_objects = 6;
+   */
+  maxObjects: number;
+};
+
+/**
+ * Describes the message saas.accounts.v1.UploadDatasourceConfig.
+ * Use `create(UploadDatasourceConfigSchema)` to create a new message.
+ */
+export const UploadDatasourceConfigSchema: GenMessage<UploadDatasourceConfig> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_datasource, 4);
 
 /**
  * Datasource is one connected external datasource. It is org-scoped and carries
  * only non-secret projection fields; credential material is deliberately absent.
- * Exactly one provider config (github or api) is set, matching provider.
+ * Exactly one provider config (github, api, crawler, or upload) is set, matching
+ * provider.
  *
  * @generated from message saas.accounts.v1.Datasource
  */
@@ -164,6 +309,16 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
    * @generated from field: saas.accounts.v1.ApiDatasourceConfig api = 11;
    */
   api?: ApiDatasourceConfig;
+
+  /**
+   * @generated from field: saas.accounts.v1.CrawlerDatasourceConfig crawler = 12;
+   */
+  crawler?: CrawlerDatasourceConfig;
+
+  /**
+   * @generated from field: saas.accounts.v1.UploadDatasourceConfig upload = 13;
+   */
+  upload?: UploadDatasourceConfig;
 };
 
 /**
@@ -171,7 +326,7 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
  * Use `create(DatasourceSchema)` to create a new message.
  */
 export const DatasourceSchema: GenMessage<Datasource> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 2);
+  messageDesc(file_saas_accounts_v1_datasource, 5);
 
 /**
  * @generated from message saas.accounts.v1.AddGitHubSourceRequest
@@ -230,7 +385,7 @@ export type AddGitHubSourceRequest = Message<"saas.accounts.v1.AddGitHubSourceRe
  * Use `create(AddGitHubSourceRequestSchema)` to create a new message.
  */
 export const AddGitHubSourceRequestSchema: GenMessage<AddGitHubSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 3);
+  messageDesc(file_saas_accounts_v1_datasource, 6);
 
 /**
  * @generated from message saas.accounts.v1.AddGitHubSourceResponse
@@ -247,7 +402,7 @@ export type AddGitHubSourceResponse = Message<"saas.accounts.v1.AddGitHubSourceR
  * Use `create(AddGitHubSourceResponseSchema)` to create a new message.
  */
 export const AddGitHubSourceResponseSchema: GenMessage<AddGitHubSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 4);
+  messageDesc(file_saas_accounts_v1_datasource, 7);
 
 /**
  * AddSourceRequest is the provider-agnostic connect call. provider selects the
@@ -292,10 +447,26 @@ export type AddSourceRequest = Message<"saas.accounts.v1.AddSourceRequest"> & {
      */
     value: ApiDatasourceConfig;
     case: "api";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.CrawlerDatasourceConfig crawler = 8;
+     */
+    value: CrawlerDatasourceConfig;
+    case: "crawler";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.UploadDatasourceConfig upload = 9;
+     */
+    value: UploadDatasourceConfig;
+    case: "upload";
   } | { case: undefined; value?: undefined };
 
   /**
-   * Plaintext credential the connector authenticates with. Encrypted at receipt.
+   * Plaintext credential the connector authenticates with (a GitHub token, the
+   * API connector's bearer/basic/header credential, or the object store's secret
+   * access key). Optional for providers that need none, such as the crawler.
+   * Encrypted at receipt. Its absence for a credential-taking provider is
+   * rejected by the connector.
    *
    * @generated from field: string credential = 6;
    */
@@ -308,6 +479,15 @@ export type AddSourceRequest = Message<"saas.accounts.v1.AddSourceRequest"> & {
    * @generated from field: string webhook_secret = 7;
    */
   webhookSecret: string;
+
+  /**
+   * Plaintext OAuth 2.0 client secret, for API_CREDENTIAL_KIND_OAUTH2 with a
+   * confidential client. Optional (a public client omits it). Encrypted at
+   * receipt alongside the refresh token carried in credential; never projected.
+   *
+   * @generated from field: string oauth2_client_secret = 10;
+   */
+  oauth2ClientSecret: string;
 };
 
 /**
@@ -315,7 +495,7 @@ export type AddSourceRequest = Message<"saas.accounts.v1.AddSourceRequest"> & {
  * Use `create(AddSourceRequestSchema)` to create a new message.
  */
 export const AddSourceRequestSchema: GenMessage<AddSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 5);
+  messageDesc(file_saas_accounts_v1_datasource, 8);
 
 /**
  * @generated from message saas.accounts.v1.AddSourceResponse
@@ -332,7 +512,7 @@ export type AddSourceResponse = Message<"saas.accounts.v1.AddSourceResponse"> & 
  * Use `create(AddSourceResponseSchema)` to create a new message.
  */
 export const AddSourceResponseSchema: GenMessage<AddSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 6);
+  messageDesc(file_saas_accounts_v1_datasource, 9);
 
 /**
  * DatasourceConfigField describes one non-secret config input a provider needs,
@@ -370,7 +550,7 @@ export type DatasourceConfigField = Message<"saas.accounts.v1.DatasourceConfigFi
  * Use `create(DatasourceConfigFieldSchema)` to create a new message.
  */
 export const DatasourceConfigFieldSchema: GenMessage<DatasourceConfigField> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 7);
+  messageDesc(file_saas_accounts_v1_datasource, 10);
 
 /**
  * DatasourceProviderDescriptor is one catalog entry: everything the UI needs to
@@ -405,6 +585,15 @@ export type DatasourceProviderDescriptor = Message<"saas.accounts.v1.DatasourceP
    * @generated from field: bool supports_webhook = 5;
    */
   supportsWebhook: boolean;
+
+  /**
+   * Credential kinds this connector accepts, so the UI can offer the matching
+   * credential inputs. Empty for a connector with a bespoke credential shape
+   * (GitHub: an access token plus an optional webhook secret).
+   *
+   * @generated from field: repeated saas.accounts.v1.ApiCredentialKind supported_credential_kinds = 6;
+   */
+  supportedCredentialKinds: ApiCredentialKind[];
 };
 
 /**
@@ -412,7 +601,7 @@ export type DatasourceProviderDescriptor = Message<"saas.accounts.v1.DatasourceP
  * Use `create(DatasourceProviderDescriptorSchema)` to create a new message.
  */
 export const DatasourceProviderDescriptorSchema: GenMessage<DatasourceProviderDescriptor> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 8);
+  messageDesc(file_saas_accounts_v1_datasource, 11);
 
 /**
  * @generated from message saas.accounts.v1.GetDatasourceCatalogRequest
@@ -425,7 +614,7 @@ export type GetDatasourceCatalogRequest = Message<"saas.accounts.v1.GetDatasourc
  * Use `create(GetDatasourceCatalogRequestSchema)` to create a new message.
  */
 export const GetDatasourceCatalogRequestSchema: GenMessage<GetDatasourceCatalogRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 9);
+  messageDesc(file_saas_accounts_v1_datasource, 12);
 
 /**
  * @generated from message saas.accounts.v1.GetDatasourceCatalogResponse
@@ -442,7 +631,7 @@ export type GetDatasourceCatalogResponse = Message<"saas.accounts.v1.GetDatasour
  * Use `create(GetDatasourceCatalogResponseSchema)` to create a new message.
  */
 export const GetDatasourceCatalogResponseSchema: GenMessage<GetDatasourceCatalogResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 10);
+  messageDesc(file_saas_accounts_v1_datasource, 13);
 
 /**
  * @generated from message saas.accounts.v1.ListSourcesRequest
@@ -459,7 +648,7 @@ export type ListSourcesRequest = Message<"saas.accounts.v1.ListSourcesRequest"> 
  * Use `create(ListSourcesRequestSchema)` to create a new message.
  */
 export const ListSourcesRequestSchema: GenMessage<ListSourcesRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 11);
+  messageDesc(file_saas_accounts_v1_datasource, 14);
 
 /**
  * @generated from message saas.accounts.v1.ListSourcesResponse
@@ -476,7 +665,7 @@ export type ListSourcesResponse = Message<"saas.accounts.v1.ListSourcesResponse"
  * Use `create(ListSourcesResponseSchema)` to create a new message.
  */
 export const ListSourcesResponseSchema: GenMessage<ListSourcesResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 12);
+  messageDesc(file_saas_accounts_v1_datasource, 15);
 
 /**
  * @generated from message saas.accounts.v1.GetSourceRequest
@@ -498,7 +687,7 @@ export type GetSourceRequest = Message<"saas.accounts.v1.GetSourceRequest"> & {
  * Use `create(GetSourceRequestSchema)` to create a new message.
  */
 export const GetSourceRequestSchema: GenMessage<GetSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 13);
+  messageDesc(file_saas_accounts_v1_datasource, 16);
 
 /**
  * @generated from message saas.accounts.v1.GetSourceResponse
@@ -515,7 +704,7 @@ export type GetSourceResponse = Message<"saas.accounts.v1.GetSourceResponse"> & 
  * Use `create(GetSourceResponseSchema)` to create a new message.
  */
 export const GetSourceResponseSchema: GenMessage<GetSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 14);
+  messageDesc(file_saas_accounts_v1_datasource, 17);
 
 /**
  * @generated from message saas.accounts.v1.SyncSourceRequest
@@ -537,7 +726,7 @@ export type SyncSourceRequest = Message<"saas.accounts.v1.SyncSourceRequest"> & 
  * Use `create(SyncSourceRequestSchema)` to create a new message.
  */
 export const SyncSourceRequestSchema: GenMessage<SyncSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 15);
+  messageDesc(file_saas_accounts_v1_datasource, 18);
 
 /**
  * @generated from message saas.accounts.v1.SyncSourceResponse
@@ -557,7 +746,7 @@ export type SyncSourceResponse = Message<"saas.accounts.v1.SyncSourceResponse"> 
  * Use `create(SyncSourceResponseSchema)` to create a new message.
  */
 export const SyncSourceResponseSchema: GenMessage<SyncSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 16);
+  messageDesc(file_saas_accounts_v1_datasource, 19);
 
 /**
  * @generated from message saas.accounts.v1.DeleteSourceRequest
@@ -579,7 +768,7 @@ export type DeleteSourceRequest = Message<"saas.accounts.v1.DeleteSourceRequest"
  * Use `create(DeleteSourceRequestSchema)` to create a new message.
  */
 export const DeleteSourceRequestSchema: GenMessage<DeleteSourceRequest> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 17);
+  messageDesc(file_saas_accounts_v1_datasource, 20);
 
 /**
  * @generated from message saas.accounts.v1.DeleteSourceResponse
@@ -592,14 +781,15 @@ export type DeleteSourceResponse = Message<"saas.accounts.v1.DeleteSourceRespons
  * Use `create(DeleteSourceResponseSchema)` to create a new message.
  */
 export const DeleteSourceResponseSchema: GenMessage<DeleteSourceResponse> = /*@__PURE__*/
-  messageDesc(file_saas_accounts_v1_datasource, 18);
+  messageDesc(file_saas_accounts_v1_datasource, 21);
 
 /**
  * DatasourceProvider identifies the external system a datasource connects to.
  * GitHub is the bespoke connector; API is the generic "HTTP API with a stored
  * credential" connector that covers a large class of sources without a
- * per-provider proto change. The enum is the extension point for further
- * connectors.
+ * per-provider proto change; CRAWLER ingests a documentation website from its
+ * sitemap.xml; UPLOAD pulls objects from an S3-compatible object store. The enum
+ * is the extension point for further connectors.
  *
  * @generated from enum saas.accounts.v1.DatasourceProvider
  */
@@ -618,6 +808,16 @@ export enum DatasourceProvider {
    * @generated from enum value: DATASOURCE_PROVIDER_API = 2;
    */
   API = 2,
+
+  /**
+   * @generated from enum value: DATASOURCE_PROVIDER_CRAWLER = 3;
+   */
+  CRAWLER = 3,
+
+  /**
+   * @generated from enum value: DATASOURCE_PROVIDER_UPLOAD = 4;
+   */
+  UPLOAD = 4,
 }
 
 /**
@@ -659,7 +859,8 @@ export const DatasourceStatusSchema: GenEnum<DatasourceStatus> = /*@__PURE__*/
 /**
  * ApiCredentialKind is how the generic API connector presents its stored
  * credential on every outbound request. The credential material itself lives in
- * the secret store; only the kind (and, for KIND_HEADER, the header name) is
+ * the secret store; only the kind (and, for KIND_HEADER/KIND_QUERY, the header
+ * or parameter name, and for KIND_OAUTH2 the token endpoint and client id) is
  * non-secret config.
  *
  * @generated from enum saas.accounts.v1.ApiCredentialKind
@@ -692,6 +893,24 @@ export enum ApiCredentialKind {
    * @generated from enum value: API_CREDENTIAL_KIND_HEADER = 3;
    */
   HEADER = 3,
+
+  /**
+   * <credential_query_param>=<credential> appended to the request query, for
+   * APIs that take the key as a query-string parameter (e.g. ?api_key=…).
+   *
+   * @generated from enum value: API_CREDENTIAL_KIND_QUERY = 4;
+   */
+  QUERY = 4,
+
+  /**
+   * OAuth 2.0 refresh-token flow: the stored credential is a refresh token
+   * (plus, for a confidential client, a client secret). saas exchanges it for a
+   * short-lived access token at fetch time, rotates the stored token set, and
+   * presents the access token as Authorization: Bearer.
+   *
+   * @generated from enum value: API_CREDENTIAL_KIND_OAUTH2 = 5;
+   */
+  OAUTH2 = 5,
 }
 
 /**
