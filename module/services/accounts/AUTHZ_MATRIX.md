@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **180 RPCs** across **29 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **181 RPCs** across **29 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -107,6 +107,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PermissionService/Decide` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal principal-aware authz decision (successor to CheckPermission). |
 | `/saas.accounts.v1.PermissionService/DeleteRole` | unary | `DELETE /v1/roles/{id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=ANY | — | — | SUCCESS: role.deleted | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Delete a custom role. |
 | `/saas.accounts.v1.PermissionService/GrantScope` | unary | `POST /v1/scope-grants` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.granted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Grant a role at a scope node (inherits to subtree). |
+| `/saas.accounts.v1.PermissionService/ListAccessibleScopes` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Internal list of scope nodes a subject may act on (list-objects companion to CheckAccess). |
 | `/saas.accounts.v1.PermissionService/ListRoleAssignments` | unary | `GET /v1/role-assignments` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List assignments in an org. |
 | `/saas.accounts.v1.PermissionService/ListRoles` | unary | `GET /v1/roles` | `auth` | exposure=AUTHENTICATED; tenant=USER | — | — | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List built-in + org-scoped roles. |
 | `/saas.accounts.v1.PermissionService/ListShares` | unary | `GET /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the shares on a specific record. |
@@ -192,7 +193,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 39
-- `internal`: 24
+- `internal`: 25
 - `mfa`: 3
 - `org_admin`: 40
 - `org_member`: 36
