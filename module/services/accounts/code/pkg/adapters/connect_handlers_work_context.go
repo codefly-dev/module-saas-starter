@@ -44,6 +44,13 @@ func (h *workContextConnectHandler) StartTask(
 	return unary(ctx, req, h.inner.StartTask)
 }
 
+func (h *workContextConnectHandler) StartInstallationTask(
+	ctx context.Context,
+	req *connect.Request[gen.StartInstallationTaskRequest],
+) (*connect.Response[gen.IssuedWorkContext], error) {
+	return unary(ctx, req, h.inner.StartInstallationTask)
+}
+
 func (h *workContextConnectHandler) StartRootSession(
 	ctx context.Context,
 	req *connect.Request[gen.StartRootSessionWorkContextRequest],

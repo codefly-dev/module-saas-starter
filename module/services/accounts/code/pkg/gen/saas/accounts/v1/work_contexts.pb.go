@@ -262,6 +262,134 @@ func (x *StartTaskWorkContextRequest) GetProjectId() string {
 	return ""
 }
 
+// StartInstallationTaskRequest is the headless (no-user-present) mint path. The
+// caller is a trusted internal service (a job consumer leasing an ingest job),
+// not a bearer: owner := the installation's owner of record; actor := the agent
+// principal; authority := the agent's standing scope grants ∩ its ceiling,
+// resolved live. It fails closed when the agent is revoked/disabled, the standing
+// grant is gone, or no owner/co-owner is currently an org admin.
+//
+// On this RPC each authority_scopes.resource_ids entry is a SCOPE NODE id (a data
+// boundary, #473), NOT a product-record id — the mint resolves the boundary from
+// that node's own row and checks the agent holds a standing grant at an
+// ancestor-or-equal of it. This differs from CheckAccess, where resource_id is a
+// placed-record id; do not pass a record id here.
+type StartInstallationTaskRequest struct {
+	state           protoimpl.MessageState  `protogen:"open.v1"`
+	OrgId           string                  `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	InstallationId  string                  `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
+	TaskId          string                  `protobuf:"bytes,3,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SessionId       string                  `protobuf:"bytes,4,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	AuthorityScopes []*WorkContextScope     `protobuf:"bytes,5,rep,name=authority_scopes,json=authorityScopes,proto3" json:"authority_scopes,omitempty"`
+	Audience        string                  `protobuf:"bytes,6,opt,name=audience,proto3" json:"audience,omitempty"`
+	ReplayPolicy    WorkContextReplayPolicy `protobuf:"varint,7,opt,name=replay_policy,json=replayPolicy,proto3,enum=saas.accounts.v1.WorkContextReplayPolicy" json:"replay_policy,omitempty"`
+	TtlSeconds      int32                   `protobuf:"varint,8,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	WorkspaceId     *string                 `protobuf:"bytes,9,opt,name=workspace_id,json=workspaceId,proto3,oneof" json:"workspace_id,omitempty"`
+	ProjectId       *string                 `protobuf:"bytes,10,opt,name=project_id,json=projectId,proto3,oneof" json:"project_id,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *StartInstallationTaskRequest) Reset() {
+	*x = StartInstallationTaskRequest{}
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartInstallationTaskRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartInstallationTaskRequest) ProtoMessage() {}
+
+func (x *StartInstallationTaskRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartInstallationTaskRequest.ProtoReflect.Descriptor instead.
+func (*StartInstallationTaskRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *StartInstallationTaskRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *StartInstallationTaskRequest) GetInstallationId() string {
+	if x != nil {
+		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *StartInstallationTaskRequest) GetTaskId() string {
+	if x != nil {
+		return x.TaskId
+	}
+	return ""
+}
+
+func (x *StartInstallationTaskRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StartInstallationTaskRequest) GetAuthorityScopes() []*WorkContextScope {
+	if x != nil {
+		return x.AuthorityScopes
+	}
+	return nil
+}
+
+func (x *StartInstallationTaskRequest) GetAudience() string {
+	if x != nil {
+		return x.Audience
+	}
+	return ""
+}
+
+func (x *StartInstallationTaskRequest) GetReplayPolicy() WorkContextReplayPolicy {
+	if x != nil {
+		return x.ReplayPolicy
+	}
+	return WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED
+}
+
+func (x *StartInstallationTaskRequest) GetTtlSeconds() int32 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *StartInstallationTaskRequest) GetWorkspaceId() string {
+	if x != nil && x.WorkspaceId != nil {
+		return *x.WorkspaceId
+	}
+	return ""
+}
+
+func (x *StartInstallationTaskRequest) GetProjectId() string {
+	if x != nil && x.ProjectId != nil {
+		return *x.ProjectId
+	}
+	return ""
+}
+
 type StartRootSessionWorkContextRequest struct {
 	state                  protoimpl.MessageState  `protogen:"open.v1"`
 	OrgId                  string                  `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -276,7 +404,7 @@ type StartRootSessionWorkContextRequest struct {
 
 func (x *StartRootSessionWorkContextRequest) Reset() {
 	*x = StartRootSessionWorkContextRequest{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -288,7 +416,7 @@ func (x *StartRootSessionWorkContextRequest) String() string {
 func (*StartRootSessionWorkContextRequest) ProtoMessage() {}
 
 func (x *StartRootSessionWorkContextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[2]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -301,7 +429,7 @@ func (x *StartRootSessionWorkContextRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use StartRootSessionWorkContextRequest.ProtoReflect.Descriptor instead.
 func (*StartRootSessionWorkContextRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{2}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *StartRootSessionWorkContextRequest) GetOrgId() string {
@@ -363,7 +491,7 @@ type ExchangeWorkContextAudienceRequest struct {
 
 func (x *ExchangeWorkContextAudienceRequest) Reset() {
 	*x = ExchangeWorkContextAudienceRequest{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -375,7 +503,7 @@ func (x *ExchangeWorkContextAudienceRequest) String() string {
 func (*ExchangeWorkContextAudienceRequest) ProtoMessage() {}
 
 func (x *ExchangeWorkContextAudienceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[3]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -388,7 +516,7 @@ func (x *ExchangeWorkContextAudienceRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ExchangeWorkContextAudienceRequest.ProtoReflect.Descriptor instead.
 func (*ExchangeWorkContextAudienceRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{3}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ExchangeWorkContextAudienceRequest) GetOrgId() string {
@@ -449,7 +577,7 @@ type StartChildSessionWorkContextRequest struct {
 
 func (x *StartChildSessionWorkContextRequest) Reset() {
 	*x = StartChildSessionWorkContextRequest{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -461,7 +589,7 @@ func (x *StartChildSessionWorkContextRequest) String() string {
 func (*StartChildSessionWorkContextRequest) ProtoMessage() {}
 
 func (x *StartChildSessionWorkContextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[4]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -474,7 +602,7 @@ func (x *StartChildSessionWorkContextRequest) ProtoReflect() protoreflect.Messag
 
 // Deprecated: Use StartChildSessionWorkContextRequest.ProtoReflect.Descriptor instead.
 func (*StartChildSessionWorkContextRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{4}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *StartChildSessionWorkContextRequest) GetOrgId() string {
@@ -557,7 +685,7 @@ type RenewWorkContextRequest struct {
 
 func (x *RenewWorkContextRequest) Reset() {
 	*x = RenewWorkContextRequest{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -569,7 +697,7 @@ func (x *RenewWorkContextRequest) String() string {
 func (*RenewWorkContextRequest) ProtoMessage() {}
 
 func (x *RenewWorkContextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[5]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -582,7 +710,7 @@ func (x *RenewWorkContextRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RenewWorkContextRequest.ProtoReflect.Descriptor instead.
 func (*RenewWorkContextRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{5}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RenewWorkContextRequest) GetOrgId() string {
@@ -649,7 +777,7 @@ type IssuedWorkContext struct {
 
 func (x *IssuedWorkContext) Reset() {
 	*x = IssuedWorkContext{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -661,7 +789,7 @@ func (x *IssuedWorkContext) String() string {
 func (*IssuedWorkContext) ProtoMessage() {}
 
 func (x *IssuedWorkContext) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -674,7 +802,7 @@ func (x *IssuedWorkContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IssuedWorkContext.ProtoReflect.Descriptor instead.
 func (*IssuedWorkContext) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{6}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *IssuedWorkContext) GetToken() string {
@@ -766,7 +894,7 @@ type WorkContextRevisionSubject struct {
 
 func (x *WorkContextRevisionSubject) Reset() {
 	*x = WorkContextRevisionSubject{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -778,7 +906,7 @@ func (x *WorkContextRevisionSubject) String() string {
 func (*WorkContextRevisionSubject) ProtoMessage() {}
 
 func (x *WorkContextRevisionSubject) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -791,7 +919,7 @@ func (x *WorkContextRevisionSubject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkContextRevisionSubject.ProtoReflect.Descriptor instead.
 func (*WorkContextRevisionSubject) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{7}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *WorkContextRevisionSubject) GetPrincipalId() string {
@@ -823,7 +951,7 @@ type CheckAuthorizationRevisionRequest struct {
 
 func (x *CheckAuthorizationRevisionRequest) Reset() {
 	*x = CheckAuthorizationRevisionRequest{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +963,7 @@ func (x *CheckAuthorizationRevisionRequest) String() string {
 func (*CheckAuthorizationRevisionRequest) ProtoMessage() {}
 
 func (x *CheckAuthorizationRevisionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +976,7 @@ func (x *CheckAuthorizationRevisionRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CheckAuthorizationRevisionRequest.ProtoReflect.Descriptor instead.
 func (*CheckAuthorizationRevisionRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{8}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CheckAuthorizationRevisionRequest) GetOrgId() string {
@@ -895,7 +1023,7 @@ type AuthorizeEvidenceReadRequest struct {
 
 func (x *AuthorizeEvidenceReadRequest) Reset() {
 	*x = AuthorizeEvidenceReadRequest{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -907,7 +1035,7 @@ func (x *AuthorizeEvidenceReadRequest) String() string {
 func (*AuthorizeEvidenceReadRequest) ProtoMessage() {}
 
 func (x *AuthorizeEvidenceReadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -920,7 +1048,7 @@ func (x *AuthorizeEvidenceReadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorizeEvidenceReadRequest.ProtoReflect.Descriptor instead.
 func (*AuthorizeEvidenceReadRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{9}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AuthorizeEvidenceReadRequest) GetOrgId() string {
@@ -978,7 +1106,7 @@ type ConsumeSingleUseWorkContextRequest struct {
 
 func (x *ConsumeSingleUseWorkContextRequest) Reset() {
 	*x = ConsumeSingleUseWorkContextRequest{}
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -990,7 +1118,7 @@ func (x *ConsumeSingleUseWorkContextRequest) String() string {
 func (*ConsumeSingleUseWorkContextRequest) ProtoMessage() {}
 
 func (x *ConsumeSingleUseWorkContextRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_work_contexts_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1003,7 +1131,7 @@ func (x *ConsumeSingleUseWorkContextRequest) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use ConsumeSingleUseWorkContextRequest.ProtoReflect.Descriptor instead.
 func (*ConsumeSingleUseWorkContextRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{10}
+	return file_saas_accounts_v1_work_contexts_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *ConsumeSingleUseWorkContextRequest) GetOrgId() string {
@@ -1043,6 +1171,28 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\n" +
 	"session_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12,\n" +
 	"\x12actor_principal_id\x18\x04 \x01(\tR\x10actorPrincipalId\x12Y\n" +
+	"\x10authority_scopes\x18\x05 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\n" +
+	"\xbaH\a\x92\x01\x04\b\x01\x10@R\x0fauthorityScopes\x12&\n" +
+	"\baudience\x18\x06 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\baudience\x12N\n" +
+	"\rreplay_policy\x18\a \x01(\x0e2).saas.accounts.v1.WorkContextReplayPolicyR\freplayPolicy\x12+\n" +
+	"\vttl_seconds\x18\b \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\x84\a(\x00R\n" +
+	"ttlSeconds\x122\n" +
+	"\fworkspace_id\x18\t \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x00R\vworkspaceId\x88\x01\x01\x12.\n" +
+	"\n" +
+	"project_id\x18\n" +
+	" \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04H\x01R\tprojectId\x88\x01\x01B\x0f\n" +
+	"\r_workspace_idB\r\n" +
+	"\v_project_id\"\xc2\x04\n" +
+	"\x1cStartInstallationTaskRequest\x12\x1f\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
+	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\x12!\n" +
+	"\atask_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06taskId\x12'\n" +
+	"\n" +
+	"session_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsessionId\x12Y\n" +
 	"\x10authority_scopes\x18\x05 \x03(\v2\".saas.accounts.v1.WorkContextScopeB\n" +
 	"\xbaH\a\x92\x01\x04\b\x01\x10@R\x0fauthorityScopes\x12&\n" +
 	"\baudience\x18\x06 \x01(\tB\n" +
@@ -1157,14 +1307,15 @@ const file_saas_accounts_v1_work_contexts_proto_rawDesc = "" +
 	"\x17WorkContextReplayPolicy\x12*\n" +
 	"&WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED\x10\x00\x12)\n" +
 	"%WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT\x10\x01\x12)\n" +
-	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\xcf\v\n" +
+	"%WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE\x10\x022\xd8\f\n" +
 	"\x12WorkContextService\x12\x83\x01\n" +
 	"\x1aCheckAuthorizationRevision\x123.saas.accounts.v1.CheckAuthorizationRevisionRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12y\n" +
 	"\x15AuthorizeEvidenceRead\x12..saas.accounts.v1.AuthorizeEvidenceReadRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12z\n" +
 	"\x10ConsumeSingleUse\x124.saas.accounts.v1.ConsumeSingleUseWorkContextRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xc3\x01\n" +
 	"\tStartTask\x12-.saas.accounts.v1.StartTaskWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"b\xc2\xf3\x18=\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
-	"\x19work_context.task_started\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/work-contexts:task\x12\xe1\x01\n" +
+	"\x19work_context.task_started\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/work-contexts:task\x12\x86\x01\n" +
+	"\x15StartInstallationTask\x12..saas.accounts.v1.StartInstallationTaskRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x04`\x01\x12\xe1\x01\n" +
 	"\x10StartRootSession\x124.saas.accounts.v1.StartRootSessionWorkContextRequest\x1a#.saas.accounts.v1.IssuedWorkContext\"r\xc2\xf3\x18E\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:%\n" +
 	"!work_context.root_session_started\x10\x02@\x01H\x05P\x04X\x04`\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/work-contexts:root-session\x12\xe4\x01\n" +
@@ -1192,58 +1343,63 @@ func file_saas_accounts_v1_work_contexts_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_accounts_v1_work_contexts_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_saas_accounts_v1_work_contexts_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_saas_accounts_v1_work_contexts_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_saas_accounts_v1_work_contexts_proto_goTypes = []any{
 	(WorkContextReplayPolicy)(0),                // 0: saas.accounts.v1.WorkContextReplayPolicy
 	(*WorkContextScope)(nil),                    // 1: saas.accounts.v1.WorkContextScope
 	(*StartTaskWorkContextRequest)(nil),         // 2: saas.accounts.v1.StartTaskWorkContextRequest
-	(*StartRootSessionWorkContextRequest)(nil),  // 3: saas.accounts.v1.StartRootSessionWorkContextRequest
-	(*ExchangeWorkContextAudienceRequest)(nil),  // 4: saas.accounts.v1.ExchangeWorkContextAudienceRequest
-	(*StartChildSessionWorkContextRequest)(nil), // 5: saas.accounts.v1.StartChildSessionWorkContextRequest
-	(*RenewWorkContextRequest)(nil),             // 6: saas.accounts.v1.RenewWorkContextRequest
-	(*IssuedWorkContext)(nil),                   // 7: saas.accounts.v1.IssuedWorkContext
-	(*WorkContextRevisionSubject)(nil),          // 8: saas.accounts.v1.WorkContextRevisionSubject
-	(*CheckAuthorizationRevisionRequest)(nil),   // 9: saas.accounts.v1.CheckAuthorizationRevisionRequest
-	(*AuthorizeEvidenceReadRequest)(nil),        // 10: saas.accounts.v1.AuthorizeEvidenceReadRequest
-	(*ConsumeSingleUseWorkContextRequest)(nil),  // 11: saas.accounts.v1.ConsumeSingleUseWorkContextRequest
-	(*timestamppb.Timestamp)(nil),               // 12: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                       // 13: google.protobuf.Empty
+	(*StartInstallationTaskRequest)(nil),        // 3: saas.accounts.v1.StartInstallationTaskRequest
+	(*StartRootSessionWorkContextRequest)(nil),  // 4: saas.accounts.v1.StartRootSessionWorkContextRequest
+	(*ExchangeWorkContextAudienceRequest)(nil),  // 5: saas.accounts.v1.ExchangeWorkContextAudienceRequest
+	(*StartChildSessionWorkContextRequest)(nil), // 6: saas.accounts.v1.StartChildSessionWorkContextRequest
+	(*RenewWorkContextRequest)(nil),             // 7: saas.accounts.v1.RenewWorkContextRequest
+	(*IssuedWorkContext)(nil),                   // 8: saas.accounts.v1.IssuedWorkContext
+	(*WorkContextRevisionSubject)(nil),          // 9: saas.accounts.v1.WorkContextRevisionSubject
+	(*CheckAuthorizationRevisionRequest)(nil),   // 10: saas.accounts.v1.CheckAuthorizationRevisionRequest
+	(*AuthorizeEvidenceReadRequest)(nil),        // 11: saas.accounts.v1.AuthorizeEvidenceReadRequest
+	(*ConsumeSingleUseWorkContextRequest)(nil),  // 12: saas.accounts.v1.ConsumeSingleUseWorkContextRequest
+	(*timestamppb.Timestamp)(nil),               // 13: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                       // 14: google.protobuf.Empty
 }
 var file_saas_accounts_v1_work_contexts_proto_depIdxs = []int32{
 	1,  // 0: saas.accounts.v1.StartTaskWorkContextRequest.authority_scopes:type_name -> saas.accounts.v1.WorkContextScope
 	0,  // 1: saas.accounts.v1.StartTaskWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
-	0,  // 2: saas.accounts.v1.StartRootSessionWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
-	1,  // 3: saas.accounts.v1.ExchangeWorkContextAudienceRequest.attenuated_scopes:type_name -> saas.accounts.v1.WorkContextScope
-	0,  // 4: saas.accounts.v1.ExchangeWorkContextAudienceRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
-	1,  // 5: saas.accounts.v1.StartChildSessionWorkContextRequest.granted_scopes:type_name -> saas.accounts.v1.WorkContextScope
-	0,  // 6: saas.accounts.v1.StartChildSessionWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
-	1,  // 7: saas.accounts.v1.RenewWorkContextRequest.attenuated_scopes:type_name -> saas.accounts.v1.WorkContextScope
-	0,  // 8: saas.accounts.v1.RenewWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
-	12, // 9: saas.accounts.v1.IssuedWorkContext.expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 10: saas.accounts.v1.WorkContextRevisionSubject.scopes:type_name -> saas.accounts.v1.WorkContextScope
-	8,  // 11: saas.accounts.v1.CheckAuthorizationRevisionRequest.subjects:type_name -> saas.accounts.v1.WorkContextRevisionSubject
-	12, // 12: saas.accounts.v1.ConsumeSingleUseWorkContextRequest.expires_at:type_name -> google.protobuf.Timestamp
-	9,  // 13: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:input_type -> saas.accounts.v1.CheckAuthorizationRevisionRequest
-	10, // 14: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:input_type -> saas.accounts.v1.AuthorizeEvidenceReadRequest
-	11, // 15: saas.accounts.v1.WorkContextService.ConsumeSingleUse:input_type -> saas.accounts.v1.ConsumeSingleUseWorkContextRequest
-	2,  // 16: saas.accounts.v1.WorkContextService.StartTask:input_type -> saas.accounts.v1.StartTaskWorkContextRequest
-	3,  // 17: saas.accounts.v1.WorkContextService.StartRootSession:input_type -> saas.accounts.v1.StartRootSessionWorkContextRequest
-	4,  // 18: saas.accounts.v1.WorkContextService.ExchangeAudience:input_type -> saas.accounts.v1.ExchangeWorkContextAudienceRequest
-	5,  // 19: saas.accounts.v1.WorkContextService.StartChildSession:input_type -> saas.accounts.v1.StartChildSessionWorkContextRequest
-	6,  // 20: saas.accounts.v1.WorkContextService.RenewWorkContext:input_type -> saas.accounts.v1.RenewWorkContextRequest
-	13, // 21: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:output_type -> google.protobuf.Empty
-	13, // 22: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:output_type -> google.protobuf.Empty
-	13, // 23: saas.accounts.v1.WorkContextService.ConsumeSingleUse:output_type -> google.protobuf.Empty
-	7,  // 24: saas.accounts.v1.WorkContextService.StartTask:output_type -> saas.accounts.v1.IssuedWorkContext
-	7,  // 25: saas.accounts.v1.WorkContextService.StartRootSession:output_type -> saas.accounts.v1.IssuedWorkContext
-	7,  // 26: saas.accounts.v1.WorkContextService.ExchangeAudience:output_type -> saas.accounts.v1.IssuedWorkContext
-	7,  // 27: saas.accounts.v1.WorkContextService.StartChildSession:output_type -> saas.accounts.v1.IssuedWorkContext
-	7,  // 28: saas.accounts.v1.WorkContextService.RenewWorkContext:output_type -> saas.accounts.v1.IssuedWorkContext
-	21, // [21:29] is the sub-list for method output_type
-	13, // [13:21] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	1,  // 2: saas.accounts.v1.StartInstallationTaskRequest.authority_scopes:type_name -> saas.accounts.v1.WorkContextScope
+	0,  // 3: saas.accounts.v1.StartInstallationTaskRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
+	0,  // 4: saas.accounts.v1.StartRootSessionWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
+	1,  // 5: saas.accounts.v1.ExchangeWorkContextAudienceRequest.attenuated_scopes:type_name -> saas.accounts.v1.WorkContextScope
+	0,  // 6: saas.accounts.v1.ExchangeWorkContextAudienceRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
+	1,  // 7: saas.accounts.v1.StartChildSessionWorkContextRequest.granted_scopes:type_name -> saas.accounts.v1.WorkContextScope
+	0,  // 8: saas.accounts.v1.StartChildSessionWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
+	1,  // 9: saas.accounts.v1.RenewWorkContextRequest.attenuated_scopes:type_name -> saas.accounts.v1.WorkContextScope
+	0,  // 10: saas.accounts.v1.RenewWorkContextRequest.replay_policy:type_name -> saas.accounts.v1.WorkContextReplayPolicy
+	13, // 11: saas.accounts.v1.IssuedWorkContext.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 12: saas.accounts.v1.WorkContextRevisionSubject.scopes:type_name -> saas.accounts.v1.WorkContextScope
+	9,  // 13: saas.accounts.v1.CheckAuthorizationRevisionRequest.subjects:type_name -> saas.accounts.v1.WorkContextRevisionSubject
+	13, // 14: saas.accounts.v1.ConsumeSingleUseWorkContextRequest.expires_at:type_name -> google.protobuf.Timestamp
+	10, // 15: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:input_type -> saas.accounts.v1.CheckAuthorizationRevisionRequest
+	11, // 16: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:input_type -> saas.accounts.v1.AuthorizeEvidenceReadRequest
+	12, // 17: saas.accounts.v1.WorkContextService.ConsumeSingleUse:input_type -> saas.accounts.v1.ConsumeSingleUseWorkContextRequest
+	2,  // 18: saas.accounts.v1.WorkContextService.StartTask:input_type -> saas.accounts.v1.StartTaskWorkContextRequest
+	3,  // 19: saas.accounts.v1.WorkContextService.StartInstallationTask:input_type -> saas.accounts.v1.StartInstallationTaskRequest
+	4,  // 20: saas.accounts.v1.WorkContextService.StartRootSession:input_type -> saas.accounts.v1.StartRootSessionWorkContextRequest
+	5,  // 21: saas.accounts.v1.WorkContextService.ExchangeAudience:input_type -> saas.accounts.v1.ExchangeWorkContextAudienceRequest
+	6,  // 22: saas.accounts.v1.WorkContextService.StartChildSession:input_type -> saas.accounts.v1.StartChildSessionWorkContextRequest
+	7,  // 23: saas.accounts.v1.WorkContextService.RenewWorkContext:input_type -> saas.accounts.v1.RenewWorkContextRequest
+	14, // 24: saas.accounts.v1.WorkContextService.CheckAuthorizationRevision:output_type -> google.protobuf.Empty
+	14, // 25: saas.accounts.v1.WorkContextService.AuthorizeEvidenceRead:output_type -> google.protobuf.Empty
+	14, // 26: saas.accounts.v1.WorkContextService.ConsumeSingleUse:output_type -> google.protobuf.Empty
+	8,  // 27: saas.accounts.v1.WorkContextService.StartTask:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 28: saas.accounts.v1.WorkContextService.StartInstallationTask:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 29: saas.accounts.v1.WorkContextService.StartRootSession:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 30: saas.accounts.v1.WorkContextService.ExchangeAudience:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 31: saas.accounts.v1.WorkContextService.StartChildSession:output_type -> saas.accounts.v1.IssuedWorkContext
+	8,  // 32: saas.accounts.v1.WorkContextService.RenewWorkContext:output_type -> saas.accounts.v1.IssuedWorkContext
+	24, // [24:33] is the sub-list for method output_type
+	15, // [15:24] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_work_contexts_proto_init() }
@@ -1252,16 +1408,17 @@ func file_saas_accounts_v1_work_contexts_proto_init() {
 		return
 	}
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[1].OneofWrappers = []any{}
-	file_saas_accounts_v1_work_contexts_proto_msgTypes[5].OneofWrappers = []any{}
+	file_saas_accounts_v1_work_contexts_proto_msgTypes[2].OneofWrappers = []any{}
 	file_saas_accounts_v1_work_contexts_proto_msgTypes[6].OneofWrappers = []any{}
-	file_saas_accounts_v1_work_contexts_proto_msgTypes[9].OneofWrappers = []any{}
+	file_saas_accounts_v1_work_contexts_proto_msgTypes[7].OneofWrappers = []any{}
+	file_saas_accounts_v1_work_contexts_proto_msgTypes[10].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_work_contexts_proto_rawDesc), len(file_saas_accounts_v1_work_contexts_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

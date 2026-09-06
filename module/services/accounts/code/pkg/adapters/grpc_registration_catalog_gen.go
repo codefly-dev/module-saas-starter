@@ -17,6 +17,7 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 	gen.RegisterAuthServiceServer(registrar, server.Auth)
 	gen.RegisterDelegationServiceServer(registrar, DelegationSingleton())
 	gen.RegisterIdentityServiceServer(registrar, server.Ident)
+	gen.RegisterInstallationServiceServer(registrar, InstallationSingleton())
 	gen.RegisterIntrospectionServiceServer(registrar, server.Introspection)
 	gen.RegisterInvitationServiceServer(registrar, server.Invitation)
 	gen.RegisterMFAServiceServer(registrar, server.MFA)
@@ -37,6 +38,7 @@ var catalogGRPCServiceNames = []string{
 	"saas.accounts.v1.AuthService",
 	"saas.accounts.v1.DelegationService",
 	"saas.accounts.v1.IdentityService",
+	"saas.accounts.v1.InstallationService",
 	"saas.accounts.v1.IntrospectionService",
 	"saas.accounts.v1.InvitationService",
 	"saas.accounts.v1.MFAService",

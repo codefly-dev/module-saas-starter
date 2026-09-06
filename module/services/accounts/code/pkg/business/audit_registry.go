@@ -135,6 +135,10 @@ const (
 	EventRecordShared        EventType = "record.shared"
 	EventRecordShareRevoked  EventType = "record.share_revoked"
 
+	EventInstallationCreated              EventType = "installation.created"
+	EventInstallationRevoked              EventType = "installation.revoked"
+	EventInstallationOwnershipTransferred EventType = "installation.ownership_transferred"
+
 	EventWorkContextTaskStarted  EventType = "work_context.task_started"
 	EventWorkContextRootSession  EventType = "work_context.root_session_started"
 	EventWorkContextChildSession EventType = "work_context.child_session_started"
@@ -265,6 +269,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
 	def(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
 	def(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
+	def(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
+		uid("agent_principal_id"), str("solution_identifier"), uid("role_id")),
+	def(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled: its agent principal and standing grant were revoked and its scope node soft-deleted.",
+		str("solution_identifier")),
+	def(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
+		uid("owner_principal_id")),
 	def(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
 	def(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
 	def(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),

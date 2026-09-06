@@ -311,6 +311,97 @@ func (s *WorkContextAuthorityServer) StartTask(
 	return issuedWorkContext(token, signed), nil
 }
 
+// StartInstallationTask is the headless mint. It opens with a service credential
+// instead of a bearer and draws its authority from an installation: the owner of
+// record becomes the context owner, the installation's agent principal the sole
+// actor, and the agent's standing scope grants (∩ ceiling) the authority. The
+// installation store resolves all of this live and fails closed on a revoked or
+// disabled agent, an expired/absent standing grant, or an installation whose
+// owner and co-owners have all lost org-admin status.
+func (s *WorkContextAuthorityServer) StartInstallationTask(
+	ctx context.Context,
+	req *gen.StartInstallationTaskRequest,
+) (*gen.IssuedWorkContext, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	if s == nil || s.configureErr != nil || s.signer == nil || s.authority == nil {
+		return nil, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
+	}
+	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	facts, err := s.resolveInstallationAuthority(
+		ctx, req.GetOrgId(), req.GetInstallationId(), permissions,
+	)
+	if err != nil {
+		return nil, err
+	}
+	// An installation context is always agent-actored; a nil actor means the store
+	// broke its contract (a healthy resolve always names the agent). Fail closed
+	// rather than mint an unattributed token.
+	if facts.Actor == nil {
+		return nil, status.Error(codes.Internal, "installation authority resolved without an agent actor")
+	}
+	if err := enforceActorCeiling(facts.Actor, req.GetAudience(), scopes); err != nil {
+		return nil, err
+	}
+	actors := []*basev0.WorkActorV1{{
+		PrincipalId:   facts.Actor.ID,
+		PrincipalKind: facts.Actor.Kind,
+		DelegationId:  uuid.NewString(),
+		GrantedScopes: cloneWorkScopes(scopes),
+	}}
+	token, signed, err := s.signer.StartTask(codefly.StartTaskInput{
+		Audience:              req.GetAudience(),
+		TenantID:              req.GetOrgId(),
+		OwnerPrincipalID:      facts.OwnerPrincipalID,
+		TaskID:                req.GetTaskId(),
+		SessionID:             req.GetSessionId(),
+		AuthorizationRevision: facts.EffectiveRevision(),
+		ReplayPolicy:          workContextReplayPolicy(req.GetReplayPolicy()),
+		AuthorityScopes:       scopes,
+		ActorChain:            actors,
+		AttributionTeamIDs:    facts.AttributionTeamIDs,
+		WorkspaceID:           req.GetWorkspaceId(),
+		ProjectID:             req.GetProjectId(),
+		TTL:                   workContextTTL(req.GetTtlSeconds()),
+	})
+	if err != nil {
+		return nil, mapWorkContextError(err)
+	}
+	if err := s.journalActorHop(ctx, signed); err != nil {
+		return nil, err
+	}
+	return issuedWorkContext(token, signed), nil
+}
+
+func (s *WorkContextAuthorityServer) resolveInstallationAuthority(
+	ctx context.Context,
+	orgID string,
+	installationID string,
+	permissions []business.WorkContextPermission,
+) (*business.InstallationAuthorityFacts, error) {
+	facts, err := s.authority.ResolveInstallationAuthority(ctx, orgID, installationID, permissions)
+	if err == nil {
+		return facts, nil
+	}
+	var storeErr *business.StoreError
+	if errors.As(err, &storeErr) {
+		switch storeErr.StoreErrorType {
+		case business.ErrTypeNotFound:
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		case business.ErrTypePermission:
+			return nil, status.Error(codes.PermissionDenied, err.Error())
+		}
+	}
+	return nil, status.Error(codes.Internal, "cannot resolve installation authority")
+}
+
 func (s *WorkContextAuthorityServer) StartRootSession(
 	ctx context.Context,
 	req *gen.StartRootSessionWorkContextRequest,

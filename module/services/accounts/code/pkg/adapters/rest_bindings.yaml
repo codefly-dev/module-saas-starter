@@ -15,6 +15,9 @@ services:
     plugin: permissions
   GDPRService:
     kind: generated
+  InstallationService:
+    kind: plugin
+    plugin: permissions
   IntrospectionService:
     kind: generated
   InvitationService:

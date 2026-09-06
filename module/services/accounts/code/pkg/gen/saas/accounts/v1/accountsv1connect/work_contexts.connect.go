@@ -47,6 +47,9 @@ const (
 	// WorkContextServiceStartTaskProcedure is the fully-qualified name of the WorkContextService's
 	// StartTask RPC.
 	WorkContextServiceStartTaskProcedure = "/saas.accounts.v1.WorkContextService/StartTask"
+	// WorkContextServiceStartInstallationTaskProcedure is the fully-qualified name of the
+	// WorkContextService's StartInstallationTask RPC.
+	WorkContextServiceStartInstallationTaskProcedure = "/saas.accounts.v1.WorkContextService/StartInstallationTask"
 	// WorkContextServiceStartRootSessionProcedure is the fully-qualified name of the
 	// WorkContextService's StartRootSession RPC.
 	WorkContextServiceStartRootSessionProcedure = "/saas.accounts.v1.WorkContextService/StartRootSession"
@@ -81,6 +84,15 @@ type WorkContextServiceClient interface {
 	// capability being spent and fail the operation closed, not retry it.
 	ConsumeSingleUse(context.Context, *connect.Request[v1.ConsumeSingleUseWorkContextRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
+	// service credential rather than a bearer: it resolves the installation's owner
+	// of record as the context owner and the installation's agent principal as the
+	// sole actor, with authority drawn from the agent's standing scope grants
+	// (intersected with its registered ceiling), resolved live. It records the same
+	// durable actor-chain hop as every other mint and fails closed on a revoked or
+	// disabled agent, a missing standing grant, or an installation with no
+	// currently-admin owner or co-owner.
+	StartInstallationTask(context.Context, *connect.Request[v1.StartInstallationTaskRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
 	// without changing the Task, Session, owner, or delegation identity.
@@ -130,6 +142,12 @@ func NewWorkContextServiceClient(httpClient connect.HTTPClient, baseURL string, 
 			connect.WithSchema(workContextServiceMethods.ByName("StartTask")),
 			connect.WithClientOptions(opts...),
 		),
+		startInstallationTask: connect.NewClient[v1.StartInstallationTaskRequest, v1.IssuedWorkContext](
+			httpClient,
+			baseURL+WorkContextServiceStartInstallationTaskProcedure,
+			connect.WithSchema(workContextServiceMethods.ByName("StartInstallationTask")),
+			connect.WithClientOptions(opts...),
+		),
 		startRootSession: connect.NewClient[v1.StartRootSessionWorkContextRequest, v1.IssuedWorkContext](
 			httpClient,
 			baseURL+WorkContextServiceStartRootSessionProcedure,
@@ -163,6 +181,7 @@ type workContextServiceClient struct {
 	authorizeEvidenceRead      *connect.Client[v1.AuthorizeEvidenceReadRequest, emptypb.Empty]
 	consumeSingleUse           *connect.Client[v1.ConsumeSingleUseWorkContextRequest, emptypb.Empty]
 	startTask                  *connect.Client[v1.StartTaskWorkContextRequest, v1.IssuedWorkContext]
+	startInstallationTask      *connect.Client[v1.StartInstallationTaskRequest, v1.IssuedWorkContext]
 	startRootSession           *connect.Client[v1.StartRootSessionWorkContextRequest, v1.IssuedWorkContext]
 	exchangeAudience           *connect.Client[v1.ExchangeWorkContextAudienceRequest, v1.IssuedWorkContext]
 	startChildSession          *connect.Client[v1.StartChildSessionWorkContextRequest, v1.IssuedWorkContext]
@@ -187,6 +206,11 @@ func (c *workContextServiceClient) ConsumeSingleUse(ctx context.Context, req *co
 // StartTask calls saas.accounts.v1.WorkContextService.StartTask.
 func (c *workContextServiceClient) StartTask(ctx context.Context, req *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return c.startTask.CallUnary(ctx, req)
+}
+
+// StartInstallationTask calls saas.accounts.v1.WorkContextService.StartInstallationTask.
+func (c *workContextServiceClient) StartInstallationTask(ctx context.Context, req *connect.Request[v1.StartInstallationTaskRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return c.startInstallationTask.CallUnary(ctx, req)
 }
 
 // StartRootSession calls saas.accounts.v1.WorkContextService.StartRootSession.
@@ -230,6 +254,15 @@ type WorkContextServiceHandler interface {
 	// capability being spent and fail the operation closed, not retry it.
 	ConsumeSingleUse(context.Context, *connect.Request[v1.ConsumeSingleUseWorkContextRequest]) (*connect.Response[emptypb.Empty], error)
 	StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// StartInstallationTask is the headless mint. Unlike StartTask it opens with a
+	// service credential rather than a bearer: it resolves the installation's owner
+	// of record as the context owner and the installation's agent principal as the
+	// sole actor, with authority drawn from the agent's standing scope grants
+	// (intersected with its registered ceiling), resolved live. It records the same
+	// durable actor-chain hop as every other mint and fails closed on a revoked or
+	// disabled agent, a missing standing grant, or an installation with no
+	// currently-admin owner or co-owner.
+	StartInstallationTask(context.Context, *connect.Request[v1.StartInstallationTaskRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// ExchangeAudience derives a least-privilege, audience-bound capability
 	// without changing the Task, Session, owner, or delegation identity.
@@ -275,6 +308,12 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 		connect.WithSchema(workContextServiceMethods.ByName("StartTask")),
 		connect.WithHandlerOptions(opts...),
 	)
+	workContextServiceStartInstallationTaskHandler := connect.NewUnaryHandler(
+		WorkContextServiceStartInstallationTaskProcedure,
+		svc.StartInstallationTask,
+		connect.WithSchema(workContextServiceMethods.ByName("StartInstallationTask")),
+		connect.WithHandlerOptions(opts...),
+	)
 	workContextServiceStartRootSessionHandler := connect.NewUnaryHandler(
 		WorkContextServiceStartRootSessionProcedure,
 		svc.StartRootSession,
@@ -309,6 +348,8 @@ func NewWorkContextServiceHandler(svc WorkContextServiceHandler, opts ...connect
 			workContextServiceConsumeSingleUseHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartTaskProcedure:
 			workContextServiceStartTaskHandler.ServeHTTP(w, r)
+		case WorkContextServiceStartInstallationTaskProcedure:
+			workContextServiceStartInstallationTaskHandler.ServeHTTP(w, r)
 		case WorkContextServiceStartRootSessionProcedure:
 			workContextServiceStartRootSessionHandler.ServeHTTP(w, r)
 		case WorkContextServiceExchangeAudienceProcedure:
@@ -340,6 +381,10 @@ func (UnimplementedWorkContextServiceHandler) ConsumeSingleUse(context.Context, 
 
 func (UnimplementedWorkContextServiceHandler) StartTask(context.Context, *connect.Request[v1.StartTaskWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.StartTask is not implemented"))
+}
+
+func (UnimplementedWorkContextServiceHandler) StartInstallationTask(context.Context, *connect.Request[v1.StartInstallationTaskRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.WorkContextService.StartInstallationTask is not implemented"))
 }
 
 func (UnimplementedWorkContextServiceHandler) StartRootSession(context.Context, *connect.Request[v1.StartRootSessionWorkContextRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
