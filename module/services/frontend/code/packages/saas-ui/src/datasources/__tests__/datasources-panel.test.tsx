@@ -42,7 +42,7 @@ const sampleSource: DatasourceView = {
 	repo: "codefly-dev/module-saas-starter",
 	paths: ["docs/"],
 	branch: "main",
-	targetCollection: "docs",
+	boundaryNodeId: "11111111-1111-1111-1111-111111111111",
 	webhookConfigured: true,
 	status: "active",
 	lastSyncedAt: undefined,

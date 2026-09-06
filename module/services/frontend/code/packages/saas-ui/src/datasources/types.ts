@@ -16,7 +16,8 @@ export interface DatasourceView {
 	repo: string;
 	paths: string[];
 	branch: string;
-	targetCollection: string;
+	/** The scope node the source's Entries land in (issue #473). */
+	boundaryNodeId: string;
 	webhookConfigured: boolean;
 	status: DatasourceStatusName;
 	lastSyncedAt: string | undefined;
