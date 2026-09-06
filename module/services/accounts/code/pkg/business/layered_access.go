@@ -8,6 +8,17 @@ import (
 	"github.com/codefly-dev/core/wool"
 )
 
+// Scope-node kind conventions (issue #473; documented in AUTHZ.md). A `solution`
+// node is the one node per solution install under the org root; a `collection`
+// node is a data container a solution creates under its node — the data boundary
+// a datasource binds to. Every other kind stays product-defined; the registry
+// stores kind verbatim and never branches on it, so these are conventions, not
+// enforced enums.
+const (
+	ScopeNodeKindSolution   = "solution"
+	ScopeNodeKindCollection = "collection"
+)
+
 // CheckAccess is the hierarchical + per-record authorization decision (#178),
 // the companion to CheckPermission. Always org-scoped — a record lives in
 // exactly one tenant — so it always runs under WithOrgTx. The store resolves the
@@ -24,6 +35,47 @@ func (s *Service) CheckAccess(ctx context.Context, req *gen.CheckAccessRequest) 
 		return nil, err
 	}
 	return &gen.CheckAccessResponse{Allowed: allowed, Reason: reason}, nil
+}
+
+// listAccessibleScopesDefaultPageSize / …MaxPageSize bound the result: a subject
+// entitled at a broad ancestor can reach every node in that subtree (including
+// every placed record), so an unbounded list would be a scaling hazard. The max
+// mirrors the proto ceiling.
+const (
+	listAccessibleScopesDefaultPageSize = 500
+	listAccessibleScopesMaxPageSize     = 1000
+)
+
+// ListAccessibleScopes enumerates the scope nodes a subject may act on with
+// (resource_type, action) — the list-objects companion to CheckAccess. Always
+// org-scoped, so it runs under WithOrgTx; the store resolves the same grant +
+// share union as CheckAccess, so the two never disagree. Cursor-paginated on
+// scope_path: an over-fetch of one row detects whether a further page exists.
+func (s *Service) ListAccessibleScopes(ctx context.Context, req *gen.ListAccessibleScopesRequest) (*gen.ListAccessibleScopesResponse, error) {
+	pageSize := int(req.PageSize)
+	if pageSize <= 0 {
+		pageSize = listAccessibleScopesDefaultPageSize
+	}
+	if pageSize > listAccessibleScopesMaxPageSize {
+		pageSize = listAccessibleScopesMaxPageSize
+	}
+
+	var scopes []*gen.AccessibleScope
+	wrap := func(ctx context.Context) error {
+		out, err := s.store.ListAccessibleScopes(ctx, req.SubjectId, req.SubjectKind, req.ResourceType, req.Action, req.PageToken, pageSize+1)
+		scopes = out
+		return err
+	}
+	if err := s.store.WithOrgTx(ctx, req.OrgId, wrap); err != nil {
+		return nil, err
+	}
+
+	var nextToken string
+	if len(scopes) > pageSize {
+		scopes = scopes[:pageSize]
+		nextToken = scopes[pageSize-1].ScopePath
+	}
+	return &gen.ListAccessibleScopesResponse{Scopes: scopes, NextPageToken: nextToken}, nil
 }
 
 // RegisterScopeNode adds a node to the org's scope tree (or places a product

@@ -21,21 +21,22 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PermissionService_CreateRole_FullMethodName          = "/saas.accounts.v1.PermissionService/CreateRole"
-	PermissionService_ListRoles_FullMethodName           = "/saas.accounts.v1.PermissionService/ListRoles"
-	PermissionService_DeleteRole_FullMethodName          = "/saas.accounts.v1.PermissionService/DeleteRole"
-	PermissionService_AssignRole_FullMethodName          = "/saas.accounts.v1.PermissionService/AssignRole"
-	PermissionService_RevokeRole_FullMethodName          = "/saas.accounts.v1.PermissionService/RevokeRole"
-	PermissionService_ListRoleAssignments_FullMethodName = "/saas.accounts.v1.PermissionService/ListRoleAssignments"
-	PermissionService_CheckPermission_FullMethodName     = "/saas.accounts.v1.PermissionService/CheckPermission"
-	PermissionService_Decide_FullMethodName              = "/saas.accounts.v1.PermissionService/Decide"
-	PermissionService_CheckAccess_FullMethodName         = "/saas.accounts.v1.PermissionService/CheckAccess"
-	PermissionService_RegisterScopeNode_FullMethodName   = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
-	PermissionService_GrantScope_FullMethodName          = "/saas.accounts.v1.PermissionService/GrantScope"
-	PermissionService_RevokeScope_FullMethodName         = "/saas.accounts.v1.PermissionService/RevokeScope"
-	PermissionService_ShareRecord_FullMethodName         = "/saas.accounts.v1.PermissionService/ShareRecord"
-	PermissionService_RevokeShare_FullMethodName         = "/saas.accounts.v1.PermissionService/RevokeShare"
-	PermissionService_ListShares_FullMethodName          = "/saas.accounts.v1.PermissionService/ListShares"
+	PermissionService_CreateRole_FullMethodName           = "/saas.accounts.v1.PermissionService/CreateRole"
+	PermissionService_ListRoles_FullMethodName            = "/saas.accounts.v1.PermissionService/ListRoles"
+	PermissionService_DeleteRole_FullMethodName           = "/saas.accounts.v1.PermissionService/DeleteRole"
+	PermissionService_AssignRole_FullMethodName           = "/saas.accounts.v1.PermissionService/AssignRole"
+	PermissionService_RevokeRole_FullMethodName           = "/saas.accounts.v1.PermissionService/RevokeRole"
+	PermissionService_ListRoleAssignments_FullMethodName  = "/saas.accounts.v1.PermissionService/ListRoleAssignments"
+	PermissionService_CheckPermission_FullMethodName      = "/saas.accounts.v1.PermissionService/CheckPermission"
+	PermissionService_Decide_FullMethodName               = "/saas.accounts.v1.PermissionService/Decide"
+	PermissionService_CheckAccess_FullMethodName          = "/saas.accounts.v1.PermissionService/CheckAccess"
+	PermissionService_ListAccessibleScopes_FullMethodName = "/saas.accounts.v1.PermissionService/ListAccessibleScopes"
+	PermissionService_RegisterScopeNode_FullMethodName    = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
+	PermissionService_GrantScope_FullMethodName           = "/saas.accounts.v1.PermissionService/GrantScope"
+	PermissionService_RevokeScope_FullMethodName          = "/saas.accounts.v1.PermissionService/RevokeScope"
+	PermissionService_ShareRecord_FullMethodName          = "/saas.accounts.v1.PermissionService/ShareRecord"
+	PermissionService_RevokeShare_FullMethodName          = "/saas.accounts.v1.PermissionService/RevokeShare"
+	PermissionService_ListShares_FullMethodName           = "/saas.accounts.v1.PermissionService/ListShares"
 )
 
 // PermissionServiceClient is the client API for PermissionService service.
@@ -60,6 +61,10 @@ type PermissionServiceClient interface {
 	// CheckAccess is the hierarchical + per-record authz decision (issue #178).
 	// Internal decision oracle, same trust boundary as CheckPermission.
 	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
+	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
+	// (resource_type, action) — the list-objects companion to CheckAccess, same
+	// internal trust boundary. Org-bound; resolved live on the DB path.
+	ListAccessibleScopes(ctx context.Context, in *ListAccessibleScopesRequest, opts ...grpc.CallOption) (*ListAccessibleScopesResponse, error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error)
@@ -178,6 +183,16 @@ func (c *permissionServiceClient) CheckAccess(ctx context.Context, in *CheckAcce
 	return out, nil
 }
 
+func (c *permissionServiceClient) ListAccessibleScopes(ctx context.Context, in *ListAccessibleScopesRequest, opts ...grpc.CallOption) (*ListAccessibleScopesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAccessibleScopesResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ListAccessibleScopes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(RegisterScopeNodeResponse)
@@ -260,6 +275,10 @@ type PermissionServiceServer interface {
 	// CheckAccess is the hierarchical + per-record authz decision (issue #178).
 	// Internal decision oracle, same trust boundary as CheckPermission.
 	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
+	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
+	// (resource_type, action) — the list-objects companion to CheckAccess, same
+	// internal trust boundary. Org-bound; resolved live on the DB path.
+	ListAccessibleScopes(context.Context, *ListAccessibleScopesRequest) (*ListAccessibleScopesResponse, error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error)
@@ -314,6 +333,9 @@ func (UnimplementedPermissionServiceServer) Decide(context.Context, *DecideReque
 }
 func (UnimplementedPermissionServiceServer) CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckAccess not implemented")
+}
+func (UnimplementedPermissionServiceServer) ListAccessibleScopes(context.Context, *ListAccessibleScopesRequest) (*ListAccessibleScopesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAccessibleScopes not implemented")
 }
 func (UnimplementedPermissionServiceServer) RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterScopeNode not implemented")
@@ -516,6 +538,24 @@ func _PermissionService_CheckAccess_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PermissionService_ListAccessibleScopes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAccessibleScopesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ListAccessibleScopes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ListAccessibleScopes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ListAccessibleScopes(ctx, req.(*ListAccessibleScopesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PermissionService_RegisterScopeNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RegisterScopeNodeRequest)
 	if err := dec(in); err != nil {
@@ -666,6 +706,10 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckAccess",
 			Handler:    _PermissionService_CheckAccess_Handler,
+		},
+		{
+			MethodName: "ListAccessibleScopes",
+			Handler:    _PermissionService_ListAccessibleScopes_Handler,
 		},
 		{
 			MethodName: "RegisterScopeNode",

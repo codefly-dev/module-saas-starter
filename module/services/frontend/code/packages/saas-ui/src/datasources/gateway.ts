@@ -52,7 +52,18 @@ export function datasourceClientOverTransport(
 			return response.datasources.map(toDatasourceView);
 		},
 		async addGitHubSource(input) {
-			await client.addGitHubSource(input);
+			// The form's collection name mints a `collection` boundary node
+			// server-side; reuse of an existing boundary is the boundaryNodeId path,
+			// which this connect form does not expose.
+			await client.addGitHubSource({
+				orgId: input.orgId,
+				repo: input.repo,
+				paths: input.paths,
+				branch: input.branch,
+				accessToken: input.accessToken,
+				webhookSecret: input.webhookSecret,
+				boundary: { case: "collectionLabel", value: input.targetCollection },
+			});
 		},
 		async syncSource(orgId, id) {
 			const response = await client.syncSource({ orgId, id });
@@ -110,7 +121,7 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		repo: source.github?.repo ?? "",
 		paths: source.github ? [...source.github.paths] : [],
 		branch: source.github?.branch ?? "",
-		targetCollection: source.targetCollection,
+		boundaryNodeId: source.boundaryNodeId,
 		webhookConfigured: source.webhookConfigured,
 		status:
 			source.status === DatasourceStatus.ACTIVE

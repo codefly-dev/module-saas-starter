@@ -599,14 +599,12 @@ func (x *UploadDatasourceConfig) GetMaxObjects() uint32 {
 // Exactly one provider config (github, api, crawler, or upload) is set, matching
 // provider.
 type Datasource struct {
-	state    protoimpl.MessageState `protogen:"open.v1"`
-	Id       string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	OrgId    string                 `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	Provider DatasourceProvider     `protobuf:"varint,3,opt,name=provider,proto3,enum=saas.accounts.v1.DatasourceProvider" json:"provider,omitempty"`
-	// Documents-store collection the pulled Entries land in.
-	TargetCollection string                  `protobuf:"bytes,4,opt,name=target_collection,json=targetCollection,proto3" json:"target_collection,omitempty"`
-	Github           *GitHubDatasourceConfig `protobuf:"bytes,5,opt,name=github,proto3" json:"github,omitempty"`
-	Status           DatasourceStatus        `protobuf:"varint,6,opt,name=status,proto3,enum=saas.accounts.v1.DatasourceStatus" json:"status,omitempty"`
+	state    protoimpl.MessageState  `protogen:"open.v1"`
+	Id       string                  `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	OrgId    string                  `protobuf:"bytes,2,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Provider DatasourceProvider      `protobuf:"varint,3,opt,name=provider,proto3,enum=saas.accounts.v1.DatasourceProvider" json:"provider,omitempty"`
+	Github   *GitHubDatasourceConfig `protobuf:"bytes,5,opt,name=github,proto3" json:"github,omitempty"`
+	Status   DatasourceStatus        `protobuf:"varint,6,opt,name=status,proto3,enum=saas.accounts.v1.DatasourceStatus" json:"status,omitempty"`
 	// True once a webhook signing secret has been stored for the datasource, so
 	// clients can reflect whether live updates are wired without exposing it.
 	WebhookConfigured bool                     `protobuf:"varint,7,opt,name=webhook_configured,json=webhookConfigured,proto3" json:"webhook_configured,omitempty"`
@@ -616,8 +614,11 @@ type Datasource struct {
 	Api               *ApiDatasourceConfig     `protobuf:"bytes,11,opt,name=api,proto3" json:"api,omitempty"`
 	Crawler           *CrawlerDatasourceConfig `protobuf:"bytes,12,opt,name=crawler,proto3" json:"crawler,omitempty"`
 	Upload            *UploadDatasourceConfig  `protobuf:"bytes,13,opt,name=upload,proto3" json:"upload,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// The scope node whose subtree the pulled Entries land in — the data boundary
+	// this source writes into (issue #473). Grantable like any scope node.
+	BoundaryNodeId string `protobuf:"bytes,14,opt,name=boundary_node_id,json=boundaryNodeId,proto3" json:"boundary_node_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Datasource) Reset() {
@@ -669,13 +670,6 @@ func (x *Datasource) GetProvider() DatasourceProvider {
 		return x.Provider
 	}
 	return DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED
-}
-
-func (x *Datasource) GetTargetCollection() string {
-	if x != nil {
-		return x.TargetCollection
-	}
-	return ""
 }
 
 func (x *Datasource) GetGithub() *GitHubDatasourceConfig {
@@ -741,6 +735,13 @@ func (x *Datasource) GetUpload() *UploadDatasourceConfig {
 	return nil
 }
 
+func (x *Datasource) GetBoundaryNodeId() string {
+	if x != nil {
+		return x.BoundaryNodeId
+	}
+	return ""
+}
+
 type AddGitHubSourceRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -748,8 +749,15 @@ type AddGitHubSourceRequest struct {
 	Repo   string   `protobuf:"bytes,2,opt,name=repo,proto3" json:"repo,omitempty"`
 	Paths  []string `protobuf:"bytes,3,rep,name=paths,proto3" json:"paths,omitempty"`
 	Branch string   `protobuf:"bytes,4,opt,name=branch,proto3" json:"branch,omitempty"`
-	// Documents-store collection the pulled Entries land in.
-	TargetCollection string `protobuf:"bytes,5,opt,name=target_collection,json=targetCollection,proto3" json:"target_collection,omitempty"`
+	// The data boundary the pulled Entries land in (issue #473): either an
+	// existing scope node's id, or a label to mint a new `collection` node under
+	// the org. Exactly one is required.
+	//
+	// Types that are valid to be assigned to Boundary:
+	//
+	//	*AddGitHubSourceRequest_BoundaryNodeId
+	//	*AddGitHubSourceRequest_CollectionLabel
+	Boundary isAddGitHubSourceRequest_Boundary `protobuf_oneof:"boundary"`
 	// Plaintext GitHub token (a PAT or a GitHub App installation token) used to
 	// read the repository. Encrypted through the SecretCipher at receipt; only its
 	// envelope reference is persisted.
@@ -820,9 +828,27 @@ func (x *AddGitHubSourceRequest) GetBranch() string {
 	return ""
 }
 
-func (x *AddGitHubSourceRequest) GetTargetCollection() string {
+func (x *AddGitHubSourceRequest) GetBoundary() isAddGitHubSourceRequest_Boundary {
 	if x != nil {
-		return x.TargetCollection
+		return x.Boundary
+	}
+	return nil
+}
+
+func (x *AddGitHubSourceRequest) GetBoundaryNodeId() string {
+	if x != nil {
+		if x, ok := x.Boundary.(*AddGitHubSourceRequest_BoundaryNodeId); ok {
+			return x.BoundaryNodeId
+		}
+	}
+	return ""
+}
+
+func (x *AddGitHubSourceRequest) GetCollectionLabel() string {
+	if x != nil {
+		if x, ok := x.Boundary.(*AddGitHubSourceRequest_CollectionLabel); ok {
+			return x.CollectionLabel
+		}
 	}
 	return ""
 }
@@ -840,6 +866,22 @@ func (x *AddGitHubSourceRequest) GetWebhookSecret() string {
 	}
 	return ""
 }
+
+type isAddGitHubSourceRequest_Boundary interface {
+	isAddGitHubSourceRequest_Boundary()
+}
+
+type AddGitHubSourceRequest_BoundaryNodeId struct {
+	BoundaryNodeId string `protobuf:"bytes,8,opt,name=boundary_node_id,json=boundaryNodeId,proto3,oneof"`
+}
+
+type AddGitHubSourceRequest_CollectionLabel struct {
+	CollectionLabel string `protobuf:"bytes,9,opt,name=collection_label,json=collectionLabel,proto3,oneof"`
+}
+
+func (*AddGitHubSourceRequest_BoundaryNodeId) isAddGitHubSourceRequest_Boundary() {}
+
+func (*AddGitHubSourceRequest_CollectionLabel) isAddGitHubSourceRequest_Boundary() {}
 
 type AddGitHubSourceResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -895,8 +937,6 @@ type AddSourceRequest struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	OrgId    string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
 	Provider DatasourceProvider     `protobuf:"varint,2,opt,name=provider,proto3,enum=saas.accounts.v1.DatasourceProvider" json:"provider,omitempty"`
-	// Documents-store collection the pulled Entries land in.
-	TargetCollection string `protobuf:"bytes,3,opt,name=target_collection,json=targetCollection,proto3" json:"target_collection,omitempty"`
 	// Types that are valid to be assigned to Config:
 	//
 	//	*AddSourceRequest_Github
@@ -904,6 +944,15 @@ type AddSourceRequest struct {
 	//	*AddSourceRequest_Crawler
 	//	*AddSourceRequest_Upload
 	Config isAddSourceRequest_Config `protobuf_oneof:"config"`
+	// The data boundary the pulled Entries land in (issue #473): either an
+	// existing scope node's id, or a label to mint a new `collection` node under
+	// the org. Exactly one is required.
+	//
+	// Types that are valid to be assigned to Boundary:
+	//
+	//	*AddSourceRequest_BoundaryNodeId
+	//	*AddSourceRequest_CollectionLabel
+	Boundary isAddSourceRequest_Boundary `protobuf_oneof:"boundary"`
 	// Plaintext credential the connector authenticates with (a GitHub token, the
 	// API connector's bearer/basic/header credential, or the object store's secret
 	// access key). Optional for providers that need none, such as the crawler.
@@ -965,13 +1014,6 @@ func (x *AddSourceRequest) GetProvider() DatasourceProvider {
 	return DatasourceProvider_DATASOURCE_PROVIDER_UNSPECIFIED
 }
 
-func (x *AddSourceRequest) GetTargetCollection() string {
-	if x != nil {
-		return x.TargetCollection
-	}
-	return ""
-}
-
 func (x *AddSourceRequest) GetConfig() isAddSourceRequest_Config {
 	if x != nil {
 		return x.Config
@@ -1013,6 +1055,31 @@ func (x *AddSourceRequest) GetUpload() *UploadDatasourceConfig {
 		}
 	}
 	return nil
+}
+
+func (x *AddSourceRequest) GetBoundary() isAddSourceRequest_Boundary {
+	if x != nil {
+		return x.Boundary
+	}
+	return nil
+}
+
+func (x *AddSourceRequest) GetBoundaryNodeId() string {
+	if x != nil {
+		if x, ok := x.Boundary.(*AddSourceRequest_BoundaryNodeId); ok {
+			return x.BoundaryNodeId
+		}
+	}
+	return ""
+}
+
+func (x *AddSourceRequest) GetCollectionLabel() string {
+	if x != nil {
+		if x, ok := x.Boundary.(*AddSourceRequest_CollectionLabel); ok {
+			return x.CollectionLabel
+		}
+	}
+	return ""
 }
 
 func (x *AddSourceRequest) GetCredential() string {
@@ -1063,6 +1130,22 @@ func (*AddSourceRequest_Api) isAddSourceRequest_Config() {}
 func (*AddSourceRequest_Crawler) isAddSourceRequest_Config() {}
 
 func (*AddSourceRequest_Upload) isAddSourceRequest_Config() {}
+
+type isAddSourceRequest_Boundary interface {
+	isAddSourceRequest_Boundary()
+}
+
+type AddSourceRequest_BoundaryNodeId struct {
+	BoundaryNodeId string `protobuf:"bytes,12,opt,name=boundary_node_id,json=boundaryNodeId,proto3,oneof"`
+}
+
+type AddSourceRequest_CollectionLabel struct {
+	CollectionLabel string `protobuf:"bytes,13,opt,name=collection_label,json=collectionLabel,proto3,oneof"`
+}
+
+func (*AddSourceRequest_BoundaryNodeId) isAddSourceRequest_Boundary() {}
+
+func (*AddSourceRequest_CollectionLabel) isAddSourceRequest_Boundary() {}
 
 type AddSourceResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1751,13 +1834,12 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12\x1f\n" +
 	"\vmax_objects\x18\x06 \x01(\rR\n" +
-	"maxObjects\"\xc7\x05\n" +
+	"maxObjects\"\xdd\x05\n" +
 	"\n" +
 	"Datasource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12@\n" +
-	"\bprovider\x18\x03 \x01(\x0e2$.saas.accounts.v1.DatasourceProviderR\bprovider\x12+\n" +
-	"\x11target_collection\x18\x04 \x01(\tR\x10targetCollection\x12@\n" +
+	"\bprovider\x18\x03 \x01(\x0e2$.saas.accounts.v1.DatasourceProviderR\bprovider\x12@\n" +
 	"\x06github\x18\x05 \x01(\v2(.saas.accounts.v1.GitHubDatasourceConfigR\x06github\x12:\n" +
 	"\x06status\x18\x06 \x01(\x0e2\".saas.accounts.v1.DatasourceStatusR\x06status\x12-\n" +
 	"\x12webhook_configured\x18\a \x01(\bR\x11webhookConfigured\x129\n" +
@@ -1769,38 +1851,43 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\flastSyncedAt\x127\n" +
 	"\x03api\x18\v \x01(\v2%.saas.accounts.v1.ApiDatasourceConfigR\x03api\x12C\n" +
 	"\acrawler\x18\f \x01(\v2).saas.accounts.v1.CrawlerDatasourceConfigR\acrawler\x12@\n" +
-	"\x06upload\x18\r \x01(\v2(.saas.accounts.v1.UploadDatasourceConfigR\x06upload\"\xe0\x02\n" +
+	"\x06upload\x18\r \x01(\v2(.saas.accounts.v1.UploadDatasourceConfigR\x06upload\x12(\n" +
+	"\x10boundary_node_id\x18\x0e \x01(\tR\x0eboundaryNodeIdJ\x04\b\x04\x10\x05R\x11target_collection\"\xc2\x03\n" +
 	"\x16AddGitHubSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12A\n" +
 	"\x04repo\x18\x02 \x01(\tB-\xbaH*r(\x10\x03\x18\xff\x012!^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$R\x04repo\x12'\n" +
 	"\x05paths\x18\x03 \x03(\tB\x11\xbaH\x0e\x92\x01\v\x10@\"\ar\x05\x10\x01\x18\x80\x04R\x05paths\x12 \n" +
-	"\x06branch\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x06branch\x127\n" +
-	"\x11target_collection\x18\x05 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x10targetCollection\x12-\n" +
+	"\x06branch\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x06branch\x124\n" +
+	"\x10boundary_node_id\x18\b \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x00R\x0eboundaryNodeId\x127\n" +
+	"\x10collection_label\x18\t \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01H\x00R\x0fcollectionLabel\x12-\n" +
 	"\faccess_token\x18\x06 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\bR\vaccessToken\x12/\n" +
-	"\x0ewebhook_secret\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\rwebhookSecret\"W\n" +
+	"\x0ewebhook_secret\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\rwebhookSecretB\x11\n" +
+	"\bboundary\x12\x05\xbaH\x02\b\x01J\x04\b\x05\x10\x06R\x11target_collection\"W\n" +
 	"\x17AddGitHubSourceResponse\x12<\n" +
 	"\n" +
 	"datasource\x18\x01 \x01(\v2\x1c.saas.accounts.v1.DatasourceR\n" +
-	"datasource\"\xe5\x04\n" +
+	"datasource\"\xc7\x05\n" +
 	"\x10AddSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12L\n" +
 	"\bprovider\x18\x02 \x01(\x0e2$.saas.accounts.v1.DatasourceProviderB\n" +
-	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x127\n" +
-	"\x11target_collection\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x10targetCollection\x12B\n" +
+	"\xbaH\a\x82\x01\x04\x10\x01 \x00R\bprovider\x12B\n" +
 	"\x06github\x18\x04 \x01(\v2(.saas.accounts.v1.GitHubDatasourceConfigH\x00R\x06github\x129\n" +
 	"\x03api\x18\x05 \x01(\v2%.saas.accounts.v1.ApiDatasourceConfigH\x00R\x03api\x12E\n" +
 	"\acrawler\x18\b \x01(\v2).saas.accounts.v1.CrawlerDatasourceConfigH\x00R\acrawler\x12B\n" +
-	"\x06upload\x18\t \x01(\v2(.saas.accounts.v1.UploadDatasourceConfigH\x00R\x06upload\x12(\n" +
+	"\x06upload\x18\t \x01(\v2(.saas.accounts.v1.UploadDatasourceConfigH\x00R\x06upload\x124\n" +
+	"\x10boundary_node_id\x18\f \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01H\x01R\x0eboundaryNodeId\x127\n" +
+	"\x10collection_label\x18\r \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01H\x01R\x0fcollectionLabel\x12(\n" +
 	"\n" +
 	"credential\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\n" +
 	"credential\x12/\n" +
 	"\x0ewebhook_secret\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\rwebhookSecret\x12:\n" +
 	"\x14oauth2_client_secret\x18\n" +
 	" \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\x12oauth2ClientSecretB\b\n" +
-	"\x06config\"Q\n" +
+	"\x06configB\x11\n" +
+	"\bboundary\x12\x05\xbaH\x02\b\x01J\x04\b\x03\x10\x04R\x11target_collection\"Q\n" +
 	"\x11AddSourceResponse\x12<\n" +
 	"\n" +
 	"datasource\x18\x01 \x01(\v2\x1c.saas.accounts.v1.DatasourceR\n" +
@@ -1971,11 +2058,17 @@ func file_saas_accounts_v1_datasource_proto_init() {
 	if File_saas_accounts_v1_datasource_proto != nil {
 		return
 	}
+	file_saas_accounts_v1_datasource_proto_msgTypes[6].OneofWrappers = []any{
+		(*AddGitHubSourceRequest_BoundaryNodeId)(nil),
+		(*AddGitHubSourceRequest_CollectionLabel)(nil),
+	}
 	file_saas_accounts_v1_datasource_proto_msgTypes[8].OneofWrappers = []any{
 		(*AddSourceRequest_Github)(nil),
 		(*AddSourceRequest_Api)(nil),
 		(*AddSourceRequest_Crawler)(nil),
 		(*AddSourceRequest_Upload)(nil),
+		(*AddSourceRequest_BoundaryNodeId)(nil),
+		(*AddSourceRequest_CollectionLabel)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{

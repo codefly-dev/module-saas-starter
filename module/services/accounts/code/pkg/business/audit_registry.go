@@ -348,14 +348,27 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
-	def(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", str("solution"), str("version")),
-	def(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", str("solution"), str("version")),
-	def(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", str("solution"), str("version")),
-	def(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", str("solution"), str("version")),
-	def(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", str("solution"), str("version")),
-	def(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", str("solution"), str("version")),
-	def(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", str("solution"), str("version")),
-	def(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", str("solution"), str("version")),
+	def(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", documentFields...),
+	def(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
+	def(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),
+	def(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", documentFields...),
+	def(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
+	def(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
+	def(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
+	def(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
+}
+
+// documentFields is the shared payload of every document.* event. `solution`
+// and `version` name the write; `boundary` is the data boundary (scope node) it
+// landed in; actor/owner principal ids and `initiator` (a provenance string,
+// e.g. a webhook delivery id) make a solution-owned write attributable (#473).
+var documentFields = []PayloadField{
+	str("solution"),
+	str("version"),
+	str("boundary"),
+	uid("actor_principal_id"),
+	uid("owner_principal_id"),
+	str("initiator"),
 }
 
 // auditEventIndex resolves an event type to its definition. Built once.

@@ -281,6 +281,45 @@ message CheckAccessResponse {
   string reason = 2;
 }
 
+// --- ListAccessibleScopes (Zanzibar "ListObjects" over the scope tree) ---
+//
+// ListAccessibleScopes is the list-objects companion to CheckAccess: rather than
+// answering "may this subject act on this one record?", it enumerates the scope
+// nodes the subject may perform (resource_type, action) on. A module uses it to
+// pre-filter `boundary_id IN (...)` before loading content, so it never fetches
+// what the subject cannot see. It resolves through the same union as CheckAccess
+// — an ancestor-or-equal scope grant, or a direct per-record share on a placed
+// node — so the two never disagree.
+
+message AccessibleScope {
+  string node_id = 1;
+  string scope_path = 2;
+  string kind = 3;
+}
+
+message ListAccessibleScopesRequest {
+  string subject_id = 1 [(buf.validate.field).string.uuid = true];
+  SubjectKind subject_kind = 2;
+  string resource_type = 3 [(buf.validate.field).string.min_len = 1];
+  string action = 4 [(buf.validate.field).string.min_len = 1];
+  string org_id = 5 [(buf.validate.field).string.uuid = true];
+  // Page bound. 0 → server default; capped so a broad grant (one at the org root
+  // covers every node in the subtree, including every placed record) can never
+  // return an unbounded result in one call.
+  int32 page_size = 6 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 7;
+}
+
+message ListAccessibleScopesResponse {
+  repeated AccessibleScope scopes = 1;
+  // Set when more scopes remain; pass it back as page_token. Empty on the last page.
+  string next_page_token = 2;
+}
+
 // --- Principal CRUD (M1 promoted to RPCs in M2) ---
 
 message GetPrincipalRequest {
@@ -491,6 +530,23 @@ service PermissionService {
   // CheckAccess is the hierarchical + per-record authz decision (issue #178).
   // Internal decision oracle, same trust boundary as CheckPermission.
   rpc CheckAccess(CheckAccessRequest) returns (CheckAccessResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // ListAccessibleScopes enumerates the scope nodes a subject may act on with
+  // (resource_type, action) — the list-objects companion to CheckAccess, same
+  // internal trust boundary. Org-bound; resolved live on the DB path.
+  rpc ListAccessibleScopes(ListAccessibleScopesRequest) returns (ListAccessibleScopesResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

@@ -645,6 +645,19 @@ func (s *PermServer) CheckAccess(ctx context.Context, req *gen.CheckAccessReques
 	return service.CheckAccess(ctx, req)
 }
 
+// ListAccessibleScopes is the list-objects companion to CheckAccess — same
+// internal trust boundary, since it discloses which scope nodes subject X may
+// act on.
+func (s *PermServer) ListAccessibleScopes(ctx context.Context, req *gen.ListAccessibleScopesRequest) (*gen.ListAccessibleScopesResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if err := requireInternalCredential(ctx); err != nil {
+		return nil, err
+	}
+	return service.ListAccessibleScopes(ctx, req)
+}
+
 // The scope-tree and share management RPCs below are deliberately org-admin
 // scoped (requireRoleScope). The starter has no per-record ownership model, so
 // "the owner may share their own record" cannot be expressed yet; admin-only is

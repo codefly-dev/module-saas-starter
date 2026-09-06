@@ -30,13 +30,14 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 		return nil, translateGRPCError(err)
 	}
 	source, err := h.svc.AddGitHubSource(ctx, actorID, business.AddGitHubSourceInput{
-		OrgID:            req.Msg.OrgId,
-		Repo:             req.Msg.Repo,
-		Paths:            req.Msg.Paths,
-		Branch:           req.Msg.Branch,
-		TargetCollection: req.Msg.TargetCollection,
-		AccessToken:      req.Msg.AccessToken,
-		WebhookSecret:    req.Msg.WebhookSecret,
+		OrgID:           req.Msg.OrgId,
+		Repo:            req.Msg.Repo,
+		Paths:           req.Msg.Paths,
+		Branch:          req.Msg.Branch,
+		BoundaryNodeID:  req.Msg.GetBoundaryNodeId(),
+		CollectionLabel: req.Msg.GetCollectionLabel(),
+		AccessToken:     req.Msg.AccessToken,
+		WebhookSecret:   req.Msg.WebhookSecret,
 	})
 	if err != nil {
 		return nil, translateGRPCError(err)
@@ -59,7 +60,8 @@ func (h *datasourceConnectHandler) AddSource(
 	input := business.AddSourceInput{
 		OrgID:              req.Msg.OrgId,
 		Provider:           datasourceProviderFromProto(req.Msg.Provider),
-		TargetCollection:   req.Msg.TargetCollection,
+		BoundaryNodeID:     req.Msg.GetBoundaryNodeId(),
+		CollectionLabel:    req.Msg.GetCollectionLabel(),
 		Credential:         req.Msg.Credential,
 		WebhookSecret:      req.Msg.WebhookSecret,
 		OAuth2ClientSecret: req.Msg.Oauth2ClientSecret,
@@ -212,7 +214,7 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 		Id:                source.ID,
 		OrgId:             source.OrgID,
 		Provider:          datasourceProviderToProto(source.Provider),
-		TargetCollection:  source.TargetCollection,
+		BoundaryNodeId:    source.BoundaryNodeID,
 		Status:            datasourceStatusToProto(source.Status),
 		WebhookConfigured: source.WebhookConfigured(),
 		CreatedAt:         timestamppb.New(source.CreatedAt),

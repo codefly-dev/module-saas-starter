@@ -314,6 +314,9 @@ func (h *permConnectHandler) Decide(ctx context.Context, req *connect.Request[ge
 func (h *permConnectHandler) CheckAccess(ctx context.Context, req *connect.Request[gen.CheckAccessRequest]) (*connect.Response[gen.CheckAccessResponse], error) {
 	return unary(ctx, req, h.inner.CheckAccess)
 }
+func (h *permConnectHandler) ListAccessibleScopes(ctx context.Context, req *connect.Request[gen.ListAccessibleScopesRequest]) (*connect.Response[gen.ListAccessibleScopesResponse], error) {
+	return unary(ctx, req, h.inner.ListAccessibleScopes)
+}
 func (h *permConnectHandler) RegisterScopeNode(ctx context.Context, req *connect.Request[gen.RegisterScopeNodeRequest]) (*connect.Response[gen.RegisterScopeNodeResponse], error) {
 	return unary(ctx, req, h.inner.RegisterScopeNode)
 }

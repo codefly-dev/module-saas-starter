@@ -14,6 +14,7 @@ import (
 	"accounts/pkg/datasource/crawler"
 	"accounts/pkg/datasource/github"
 	"accounts/pkg/datasource/objectstore"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 )
@@ -22,12 +23,42 @@ import (
 // unimplemented method) and keeps sources in memory keyed by id.
 type datasourceFakeStore struct {
 	business.Store
-	mu      sync.Mutex
-	sources map[string]*business.DatasourceSource
+	mu          sync.Mutex
+	sources     map[string]*business.DatasourceSource
+	nodes       map[string]bool
+	collections map[string]string // label -> node id
 }
 
 func newDatasourceFakeStore() *datasourceFakeStore {
-	return &datasourceFakeStore{sources: map[string]*business.DatasourceSource{}}
+	return &datasourceFakeStore{
+		sources:     map[string]*business.DatasourceSource{},
+		nodes:       map[string]bool{},
+		collections: map[string]string{},
+	}
+}
+
+func (f *datasourceFakeStore) RegisterScopeNode(_ context.Context, node *gen.ScopeNode) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nodes[node.Id] = true
+	return nil
+}
+
+func (f *datasourceFakeStore) GetOrCreateCollectionNode(_ context.Context, node *gen.ScopeNode) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.collections[node.Label]; ok {
+		return id, nil
+	}
+	f.nodes[node.Id] = true
+	f.collections[node.Label] = node.Id
+	return node.Id, nil
+}
+
+func (f *datasourceFakeStore) ScopeNodeExists(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nodes[id], nil
 }
 
 func (f *datasourceFakeStore) WithOrgTx(ctx context.Context, _ string, fn func(ctx context.Context) error) error {
@@ -220,12 +251,12 @@ func TestAddGitHubSource_EncryptsPerSourceAndOmitsSecrets(t *testing.T) {
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID:            testOrg,
-		Repo:             "acme/docs",
-		Paths:            []string{"docs", "docs"}, // duplicate is normalized away
-		TargetCollection: "wiki",
-		AccessToken:      "ghp_secret",
-		WebhookSecret:    "whsec",
+		OrgID:           testOrg,
+		Repo:            "acme/docs",
+		Paths:           []string{"docs", "docs"}, // duplicate is normalized away
+		CollectionLabel: "wiki",
+		AccessToken:     "ghp_secret",
+		WebhookSecret:   "whsec",
 	})
 	if source.Provider != business.DatasourceProviderGitHub || source.Status != business.DatasourceStatusActive {
 		t.Fatalf("provider/status = %q/%q", source.Provider, source.Status)
@@ -250,11 +281,11 @@ func TestAddGitHubSource_EncryptsPerSourceAndOmitsSecrets(t *testing.T) {
 
 func TestAddGitHubSource_Validation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
-	base := business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", TargetCollection: "wiki", AccessToken: "t"}
+	base := business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t"}
 	cases := map[string]business.AddGitHubSourceInput{
-		"missing repo":       {OrgID: testOrg, TargetCollection: "wiki", AccessToken: "t"},
+		"missing repo":       {OrgID: testOrg, CollectionLabel: "wiki", AccessToken: "t"},
 		"bad repo":           mut(base, func(i *business.AddGitHubSourceInput) { i.Repo = "not-a-repo" }),
-		"missing collection": mut(base, func(i *business.AddGitHubSourceInput) { i.TargetCollection = "" }),
+		"missing collection": mut(base, func(i *business.AddGitHubSourceInput) { i.CollectionLabel = "" }),
 		"missing token":      mut(base, func(i *business.AddGitHubSourceInput) { i.AccessToken = "" }),
 	}
 	for name, in := range cases {
@@ -268,7 +299,7 @@ func TestSigningSecret_ResolvesPerSource(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	withHook := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", TargetCollection: "wiki", AccessToken: "t", WebhookSecret: "whsec",
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t", WebhookSecret: "whsec",
 	})
 	secret, err := svc.SigningSecret(context.Background(), withHook.ID)
 	if err != nil || secret != "whsec" {
@@ -276,7 +307,7 @@ func TestSigningSecret_ResolvesPerSource(t *testing.T) {
 	}
 
 	noHook := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/other", TargetCollection: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/other", CollectionLabel: "wiki", AccessToken: "t",
 	})
 	if _, err := svc.SigningSecret(context.Background(), noHook.ID); !errors.Is(err, business.ErrDatasourceSourceNotFound) {
 		t.Fatalf("unconfigured source: err = %v, want ErrDatasourceSourceNotFound", err)
@@ -293,7 +324,7 @@ func TestSyncDatasourceSource_SchedulesRequest(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), producer, &fakeGitHub{})
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", TargetCollection: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t",
 	})
 
 	jobID, err := svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID)
@@ -326,7 +357,7 @@ func TestRunDatasourceSync_EnqueuesPerFile(t *testing.T) {
 	}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", TargetCollection: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t",
 	})
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
@@ -348,7 +379,8 @@ func TestRunDatasourceSync_EnqueuesPerFile(t *testing.T) {
 	attrs := job.GetAttributes()
 	if attrs["datasource.source_id"] != source.ID || attrs["datasource.org_id"] != testOrg ||
 		attrs["github.ref"] != "trunk" || attrs["github.commit"] != "c0ffee" ||
-		attrs["github.change_type"] != "added" || attrs["datasource.target_collection"] != "wiki" {
+		attrs["github.change_type"] != "added" ||
+		attrs["datasource.boundary_id"] == "" || attrs["datasource.boundary_id"] != source.BoundaryNodeID {
 		t.Fatalf("attributes = %v", attrs)
 	}
 	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
@@ -376,7 +408,7 @@ func TestRunDatasourceSync_SkipsUnfetchableFiles(t *testing.T) {
 	}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", Branch: "main", TargetCollection: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", Branch: "main", CollectionLabel: "wiki", AccessToken: "t",
 	})
 
 	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
@@ -404,7 +436,7 @@ func TestRunDatasourceSync_CommitKeyedIdempotency(t *testing.T) {
 	}
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", Branch: "main", TargetCollection: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", Branch: "main", CollectionLabel: "wiki", AccessToken: "t",
 	})
 
 	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
@@ -460,11 +492,11 @@ func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID:            testOrg,
-		Provider:         business.DatasourceProviderAPI,
-		TargetCollection: "wiki",
-		Credential:       "sekret",
-		API:              apiConfig(),
+		OrgID:           testOrg,
+		Provider:        business.DatasourceProviderAPI,
+		CollectionLabel: "wiki",
+		Credential:      "sekret",
+		API:             apiConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -494,7 +526,7 @@ func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	_, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "sekret", API: apiConfig(), WebhookSecret: "whsec",
 	})
 	if err == nil {
@@ -504,13 +536,13 @@ func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
 
 func TestAddSource_Validation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
-	base := business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki", Credential: "c", API: apiConfig()}
+	base := business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", Credential: "c", API: apiConfig()}
 	cases := map[string]business.AddSourceInput{
-		"missing credential":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki", API: apiConfig()},
+		"missing credential":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", API: apiConfig()},
 		"missing collection":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, Credential: "c", API: apiConfig()},
-		"unknown provider":    {OrgID: testOrg, Provider: "gitlab", TargetCollection: "wiki", Credential: "c"},
-		"api without config":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki", Credential: "c"},
-		"github without repo": {OrgID: testOrg, Provider: business.DatasourceProviderGitHub, TargetCollection: "wiki", Credential: "c"},
+		"unknown provider":    {OrgID: testOrg, Provider: "gitlab", CollectionLabel: "wiki", Credential: "c"},
+		"api without config":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", Credential: "c"},
+		"github without repo": {OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "wiki", Credential: "c"},
 	}
 	cases["bad base url"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.BaseURL = "ftp://x" })
 	cases["bad credential kind"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.CredentialKind = "oauth" })
@@ -548,7 +580,7 @@ func withAPI(in business.AddSourceInput, f func(*business.APIDatasourceConfig)) 
 func TestAddSource_GitHubBranchThroughGenericCall(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "wiki",
 		Credential: "ghp", Repo: "acme/docs", Branch: "main",
 	})
 	if err != nil {
@@ -638,10 +670,10 @@ func TestAddSource_CrawlerStoresConfigAndTakesNoCredential(t *testing.T) {
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID:            testOrg,
-		Provider:         business.DatasourceProviderCrawler,
-		TargetCollection: "wiki",
-		Crawler:          crawlerConfig(),
+		OrgID:           testOrg,
+		Provider:        business.DatasourceProviderCrawler,
+		CollectionLabel: "wiki",
+		Crawler:         crawlerConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -665,11 +697,11 @@ func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID:            testOrg,
-		Provider:         business.DatasourceProviderUpload,
-		TargetCollection: "wiki",
-		Credential:       "secretkey",
-		Upload:           uploadConfig(),
+		OrgID:           testOrg,
+		Provider:        business.DatasourceProviderUpload,
+		CollectionLabel: "wiki",
+		Credential:      "secretkey",
+		Upload:          uploadConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -686,21 +718,21 @@ func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 func TestAddSource_NewProviderValidation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	cases := map[string]business.AddSourceInput{
-		"crawler without config": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki"},
-		"crawler bad sitemap": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki",
+		"crawler without config": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki"},
+		"crawler bad sitemap": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
 			Crawler: &business.CrawlerDatasourceConfig{SitemapURL: "ftp://x"}},
-		"crawler with credential": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki",
+		"crawler with credential": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
 			Credential: "nope", Crawler: crawlerConfig()},
-		"crawler with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki",
+		"crawler with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
 			WebhookSecret: "whsec", Crawler: crawlerConfig()},
-		"upload without config": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c"},
-		"upload without credential": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki",
+		"upload without config": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c"},
+		"upload without credential": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki",
 			Upload: uploadConfig()},
-		"upload bad endpoint": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c",
+		"upload bad endpoint": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
 			Upload: &business.UploadDatasourceConfig{Endpoint: "ftp://x", Region: "us-east-1", Bucket: "b", AccessKeyID: "k"}},
-		"upload missing region": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c",
+		"upload missing region": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
 			Upload: &business.UploadDatasourceConfig{Endpoint: "https://s3.example.com", Bucket: "b", AccessKeyID: "k"}},
-		"upload with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki", Credential: "c",
+		"upload with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
 			WebhookSecret: "whsec", Upload: uploadConfig()},
 	}
 	for name, in := range cases {
@@ -713,7 +745,7 @@ func TestAddSource_NewProviderValidation(t *testing.T) {
 func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, TargetCollection: "wiki", Crawler: crawlerConfig(),
+		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki", Crawler: crawlerConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -724,7 +756,7 @@ func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceS
 func newUploadSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderUpload, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki",
 		Credential: "secretkey", Upload: uploadConfig(),
 	})
 	if err != nil {
@@ -761,7 +793,7 @@ func TestRunDatasourceSync_CrawlerStreamsPerPage(t *testing.T) {
 	attrs := job.GetAttributes()
 	if attrs["datasource.source_id"] != source.ID || attrs["datasource.org_id"] != testOrg ||
 		attrs["crawler.url"] != "https://docs.example.com/a" || attrs["crawler.content_sha"] == "" ||
-		attrs["datasource.target_collection"] != "wiki" {
+		attrs["datasource.boundary_id"] == "" || attrs["datasource.boundary_id"] != source.BoundaryNodeID {
 		t.Fatalf("attributes = %v", attrs)
 	}
 	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
@@ -853,7 +885,7 @@ func TestRunDatasourceSync_UploadStreamsPerObject(t *testing.T) {
 	attrs := job.GetAttributes()
 	if attrs["datasource.source_id"] != source.ID || attrs["upload.bucket"] != "docs" ||
 		attrs["upload.key"] != "kb/a.pdf" || attrs["upload.etag"] != "etag-a" ||
-		attrs["datasource.target_collection"] != "wiki" {
+		attrs["datasource.boundary_id"] == "" || attrs["datasource.boundary_id"] != source.BoundaryNodeID {
 		t.Fatalf("attributes = %v", attrs)
 	}
 	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
@@ -911,7 +943,7 @@ func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
 	svc.SetDatasourceAPIClientFactory(func(business.APIDatasourceConfig, string) business.APIContentClient { return fake })
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "sekret", API: apiConfig(),
 	})
 	if err != nil {
@@ -934,8 +966,8 @@ func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
 	}
 	attrs := job.GetAttributes()
 	if attrs["datasource.source_id"] != source.ID || attrs["datasource.org_id"] != testOrg ||
-		attrs["datasource.target_collection"] != "wiki" || attrs["api.url"] != "https://api.example.com/v1/docs" ||
-		attrs["api.content_sha"] == "" {
+		attrs["datasource.boundary_id"] == "" || attrs["datasource.boundary_id"] != source.BoundaryNodeID ||
+		attrs["api.url"] != "https://api.example.com/v1/docs" || attrs["api.content_sha"] == "" {
 		t.Fatalf("attributes = %v", attrs)
 	}
 }
@@ -962,7 +994,7 @@ func TestAddSource_OAuth2StoresTokenSet(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:              testOrg,
 		Provider:           business.DatasourceProviderAPI,
-		TargetCollection:   "wiki",
+		CollectionLabel:    "wiki",
 		Credential:         "refresh-tok",
 		OAuth2ClientSecret: "client-sekret",
 		API:                oauthConfig(),
@@ -1022,7 +1054,7 @@ func TestRunDatasourceSync_OAuth2RefreshesRotatesAndBearer(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", OAuth2ClientSecret: "client-sekret", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1092,7 +1124,7 @@ func TestRunDatasourceSync_OAuth2RereadsRotatedCredentialUnderLock(t *testing.T)
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1139,7 +1171,7 @@ func TestRunDatasourceSync_OAuth2DefaultTTLWhenNoExpiry(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1169,7 +1201,7 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1198,5 +1230,51 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 	}
 	if procErr.Retryable {
 		t.Fatal("a permanently rejected refresh must be a non-retryable job failure")
+	}
+}
+
+// TestAddSource_ReusesCollectionNodeByLabel proves the connect path does not
+// fragment a boundary: connecting several sources to the same collection label
+// converges on one grantable node, while a distinct label resolves elsewhere.
+func TestAddSource_ReusesCollectionNodeByLabel(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+
+	a := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/a", CollectionLabel: "wiki", AccessToken: "t",
+	})
+	b := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/b", CollectionLabel: "wiki", AccessToken: "t",
+	})
+	c := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/c", CollectionLabel: "docs", AccessToken: "t",
+	})
+
+	if a.BoundaryNodeID == "" || a.BoundaryNodeID != b.BoundaryNodeID {
+		t.Fatalf("same collection label must reuse one boundary node, got %q and %q", a.BoundaryNodeID, b.BoundaryNodeID)
+	}
+	if c.BoundaryNodeID == a.BoundaryNodeID {
+		t.Fatal("a distinct collection label must resolve to a different boundary node")
+	}
+}
+
+// TestAddSource_BoundaryNodeIDMustExist proves the reuse path validates tenant
+// visibility: an unregistered node id is refused, a registered one is bound.
+func TestAddSource_BoundaryNodeIDMustExist(t *testing.T) {
+	fs := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(fs, &recordingProducer{}, nil)
+	const nodeID = "22222222-2222-2222-2222-222222222222"
+
+	if _, err := svc.AddGitHubSource(context.Background(), "actor-1", business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/a", BoundaryNodeID: nodeID, AccessToken: "t",
+	}); err == nil {
+		t.Fatal("an unregistered boundary node id must be rejected")
+	}
+
+	fs.nodes[nodeID] = true
+	src := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/a", BoundaryNodeID: nodeID, AccessToken: "t",
+	})
+	if src.BoundaryNodeID != nodeID {
+		t.Fatalf("boundary node id = %q, want %q", src.BoundaryNodeID, nodeID)
 	}
 }

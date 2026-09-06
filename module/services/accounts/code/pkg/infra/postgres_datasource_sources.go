@@ -16,7 +16,7 @@ import (
 // nullable.
 const datasourceSourceColumns = `
 	id::text, org_id::text, provider, COALESCE(repo, ''), paths, COALESCE(branch, ''),
-	target_collection, credential_secret_ref, COALESCE(webhook_secret_ref, ''),
+	boundary_node_id::text, credential_secret_ref, COALESCE(webhook_secret_ref, ''),
 	status, last_synced_at, created_at, updated_at, config`
 
 func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
@@ -24,7 +24,7 @@ func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	var config []byte
 	if err := row.Scan(
 		&d.ID, &d.OrgID, &d.Provider, &d.Repo, &d.Paths, &d.Branch,
-		&d.TargetCollection, &d.CredentialSecretRef, &d.WebhookSecretRef,
+		&d.BoundaryNodeID, &d.CredentialSecretRef, &d.WebhookSecretRef,
 		&d.Status, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
 	); err != nil {
 		return nil, err
@@ -80,11 +80,11 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	}
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
-			id, org_id, provider, repo, paths, branch, target_collection,
+			id, org_id, provider, repo, paths, branch, boundary_node_id,
 			credential_secret_ref, webhook_secret_ref, status, config)
 		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10, $11)`,
 		source.ID, source.OrgID, source.Provider, source.Repo, paths, source.Branch,
-		source.TargetCollection, source.CredentialSecretRef, source.WebhookSecretRef, source.Status, config,
+		source.BoundaryNodeID, source.CredentialSecretRef, source.WebhookSecretRef, source.Status, config,
 	)
 	return err
 }
