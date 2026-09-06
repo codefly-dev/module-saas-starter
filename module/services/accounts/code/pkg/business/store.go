@@ -197,7 +197,8 @@ type Store interface {
 	// nodes the subject may act on with (resourceType, action), resolved through
 	// the same grant + share union so the two never disagree. Ordered by scope_path
 	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
-	ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
+	// Confined to orgID with an explicit predicate on top of the RLS tenant floor.
+	ListAccessibleScopes(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
 	// GetOrCreateCollectionNode reuses an existing collection node with node.Label
 	// in the tenant, or registers node and returns its id — one boundary per

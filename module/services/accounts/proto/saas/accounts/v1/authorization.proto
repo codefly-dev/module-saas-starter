@@ -320,6 +320,23 @@ message ListAccessibleScopesResponse {
   string next_page_token = 2;
 }
 
+// ListMyAccessibleScopesRequest is the authenticated caller-scoped form of
+// ListAccessibleScopesRequest: the subject is the bearer's own principal, so
+// there is deliberately NO subject_id field. The caller can therefore only ever
+// enumerate their own boundaries and never probe another principal's (I5).
+message ListMyAccessibleScopesRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string resource_type = 2 [(buf.validate.field).string.min_len = 1];
+  string action = 3 [(buf.validate.field).string.min_len = 1];
+  // Page bound, same ceiling as the internal RPC.
+  int32 page_size = 4 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 5;
+}
+
 // --- Principal CRUD (M1 promoted to RPCs in M2) ---
 
 message GetPrincipalRequest {
@@ -558,6 +575,32 @@ service PermissionService {
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
+  }
+
+  // ListMyAccessibleScopes is the authenticated, caller-scoped companion to the
+  // internal ListAccessibleScopes: a signed-in org member enumerates the scope
+  // nodes THEY may act on with (resource_type, action) through the gateway with a
+  // normal bearer. The subject is the bearer's own principal — no subject_id in
+  // the request — so it can never be an oracle about other principals. Same grant
+  // + share union and same pagination as the internal RPC.
+  rpc ListMyAccessibleScopes(ListMyAccessibleScopesRequest) returns (ListAccessibleScopesResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/accessible-scopes"};
   }
 
   // RegisterScopeNode adds a node to the org's scope tree, or places a product

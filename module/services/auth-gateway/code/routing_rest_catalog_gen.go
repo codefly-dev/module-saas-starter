@@ -20,6 +20,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "DELETE", Path: "/v1/users/{uuid}", Procedure: "/saas.accounts.v1.UserService/DeleteUser"},
 		{Service: "accounts", Method: "DELETE", Path: "/v1/webhooks/{id}", Procedure: "/saas.accounts.v1.WebhookService/DeleteSubscription"},
 		{Service: "accounts", Method: "GET", Path: "/v1/.well-known/service-info", Procedure: "/saas.accounts.v1.IntrospectionService/GetServiceInfo"},
+		{Service: "accounts", Method: "GET", Path: "/v1/accessible-scopes", Procedure: "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes"},
 		{Service: "accounts", Method: "GET", Path: "/v1/acquisition", Procedure: "/saas.accounts.v1.WaitlistService/GetAcquisitionStatus"},
 		{Service: "accounts", Method: "GET", Path: "/v1/api-keys", Procedure: "/saas.accounts.v1.APIKeyService/ListAPIKeys"},
 		{Service: "accounts", Method: "GET", Path: "/v1/audit-event-types", Procedure: "/saas.accounts.v1.AuditService/ListAuditEventTypes"},
