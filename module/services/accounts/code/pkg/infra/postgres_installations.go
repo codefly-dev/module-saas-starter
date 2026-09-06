@@ -442,7 +442,7 @@ func (s *PostgresStore) ResolveInstallationAuthority(ctx context.Context, orgID,
 func resolveInstallationAuthority(ctx context.Context, executor QueryExecutor, orgID, installationID string, permissions []business.WorkContextPermission) (*business.InstallationAuthorityFacts, error) {
 	var (
 		agentID, ownerID, rootNodeID, rootScopePath string
-		coOwners                                     []string
+		coOwners                                    []string
 	)
 	err := executor.QueryRow(ctx, `
 		SELECT i.agent_principal_id::text, i.owner_principal_id::text,
