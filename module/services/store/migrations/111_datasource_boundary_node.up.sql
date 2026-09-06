@@ -20,9 +20,16 @@
 ALTER TABLE datasource_sources
     ADD COLUMN boundary_node_id UUID REFERENCES scope_nodes(id);
 
-WITH minted AS (
-    SELECT DISTINCT org_id, target_collection, gen_random_uuid() AS node_id
+WITH distinct_collections AS (
+    -- DISTINCT must be taken BEFORE assigning ids: a volatile gen_random_uuid()
+    -- in the same SELECT list is evaluated per row, so DISTINCT over it would
+    -- keep every row (one node per source) instead of one node per collection.
+    SELECT DISTINCT org_id, target_collection
     FROM datasource_sources
+),
+minted AS (
+    SELECT org_id, target_collection, gen_random_uuid() AS node_id
+    FROM distinct_collections
 ),
 inserted AS (
     INSERT INTO scope_nodes (id, org_id, scope_path, kind, label)
