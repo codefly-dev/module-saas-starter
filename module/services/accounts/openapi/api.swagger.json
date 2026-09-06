@@ -1508,10 +1508,7 @@
           "type": "string"
         },
         "rootScopeLabel": {
-          "type": "string"
-        },
-        "rootScopePath": {
-          "description": "The solution's authority-root scope node, registered with kind='solution'.\nA lowercase ltree path of [a-z0-9_] labels (RFC-0001 label encoding).",
+          "description": "Human-readable display label for the solution's authority-root scope node\n(kind='solution'). The node's ltree path is derived server-side, not this.",
           "type": "string"
         },
         "solutionIdentifier": {
@@ -5787,7 +5784,7 @@
             }
           }
         },
-        "summary": "UninstallSolution reverses an install: it revokes the agent principal and its\nstanding grant, soft-deletes the solution scope node, and marks the\ninstallation revoked. Idempotent on an already-revoked installation.",
+        "summary": "UninstallSolution reverses an install: it revokes the agent principal, removes\nits standing grant, and marks the installation revoked. The solution scope node\nis left in place (inert without a grant or a live agent) so a reinstall reuses\nit. Idempotent on an already-revoked installation.",
         "tags": [
           "InstallationService"
         ]

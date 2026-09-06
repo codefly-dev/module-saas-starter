@@ -74,12 +74,13 @@ message InstallSolutionRequest {
   ];
   // Human display name for the agent principal. Empty defaults to the identifier.
   string display_name = 4 [(buf.validate.field).string.max_len = 512];
-  // The solution's authority-root scope node, registered with kind='solution'.
-  // A lowercase ltree path of [a-z0-9_] labels (RFC-0001 label encoding).
-  string root_scope_path = 5 [
-    (buf.validate.field).string.min_len = 1,
-    (buf.validate.field).string.max_len = 512
-  ];
+  // The authority-root scope path is derived server-side from the created node id
+  // (a depth-1 ltree label, ADR-0002), never chosen by the caller: a caller-picked
+  // path let two installs collide or nest one under another.
+  reserved 5;
+  reserved "root_scope_path";
+  // Human-readable display label for the solution's authority-root scope node
+  // (kind='solution'). The node's ltree path is derived server-side, not this.
   string root_scope_label = 6 [(buf.validate.field).string.max_len = 512];
   // The least-privilege role granted to the agent at the root node. This is
   // deliberately NOT the full "<namespace>:catalog" role; widening is a separate,
@@ -172,9 +173,10 @@ service InstallationService {
     };
   }
 
-  // UninstallSolution reverses an install: it revokes the agent principal and its
-  // standing grant, soft-deletes the solution scope node, and marks the
-  // installation revoked. Idempotent on an already-revoked installation.
+  // UninstallSolution reverses an install: it revokes the agent principal, removes
+  // its standing grant, and marks the installation revoked. The solution scope node
+  // is left in place (inert without a grant or a live agent) so a reinstall reuses
+  // it. Idempotent on an already-revoked installation.
   rpc UninstallSolution(UninstallSolutionRequest) returns (google.protobuf.Empty) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

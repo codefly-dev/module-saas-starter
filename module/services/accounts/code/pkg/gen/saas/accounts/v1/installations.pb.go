@@ -270,9 +270,8 @@ type InstallSolutionRequest struct {
 	SolutionIdentifier string `protobuf:"bytes,3,opt,name=solution_identifier,json=solutionIdentifier,proto3" json:"solution_identifier,omitempty"`
 	// Human display name for the agent principal. Empty defaults to the identifier.
 	DisplayName string `protobuf:"bytes,4,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	// The solution's authority-root scope node, registered with kind='solution'.
-	// A lowercase ltree path of [a-z0-9_] labels (RFC-0001 label encoding).
-	RootScopePath  string `protobuf:"bytes,5,opt,name=root_scope_path,json=rootScopePath,proto3" json:"root_scope_path,omitempty"`
+	// Human-readable display label for the solution's authority-root scope node
+	// (kind='solution'). The node's ltree path is derived server-side, not this.
 	RootScopeLabel string `protobuf:"bytes,6,opt,name=root_scope_label,json=rootScopeLabel,proto3" json:"root_scope_label,omitempty"`
 	// The least-privilege role granted to the agent at the root node. This is
 	// deliberately NOT the full "<namespace>:catalog" role; widening is a separate,
@@ -347,13 +346,6 @@ func (x *InstallSolutionRequest) GetSolutionIdentifier() string {
 func (x *InstallSolutionRequest) GetDisplayName() string {
 	if x != nil {
 		return x.DisplayName
-	}
-	return ""
-}
-
-func (x *InstallSolutionRequest) GetRootScopePath() string {
-	if x != nil {
-		return x.RootScopePath
 	}
 	return ""
 }
@@ -646,7 +638,7 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\n" +
 	"revoked_at\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampH\x00R\trevokedAt\x88\x01\x01B\r\n" +
-	"\v_revoked_at\"\xdc\x04\n" +
+	"\v_revoked_at\"\xbf\x04\n" +
 	"\x16InstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x125\n" +
 	"\x10agent_identifier\x18\x02 \x01(\tB\n" +
@@ -654,15 +646,13 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"\x13solution_identifier\x18\x03 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x12solutionIdentifier\x12+\n" +
 	"\fdisplay_name\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\vdisplayName\x122\n" +
-	"\x0froot_scope_path\x18\x05 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\rrootScopePath\x122\n" +
 	"\x10root_scope_label\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x04R\x0erootScopeLabel\x12!\n" +
 	"\arole_id\x18\a \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06roleId\x129\n" +
 	"\x12owner_principal_id\x18\b \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\x10ownerPrincipalId\x12D\n" +
 	"\x16co_owner_principal_ids\x18\t \x03(\tB\x0f\xbaH\f\x92\x01\t\x10 \"\x05r\x03\xb0\x01\x01R\x13coOwnerPrincipalIds\x12<\n" +
 	"\x11allowed_audiences\x18\n" +
 	" \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x04R\x10allowedAudiences\x126\n" +
-	"\x0eallowed_scopes\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x01R\rallowedScopes\"n\n" +
+	"\x0eallowed_scopes\x18\v \x03(\tB\x0f\xbaH\f\x92\x01\t\x10@\"\x05r\x03\x18\x80\x01R\rallowedScopesJ\x04\b\x05\x10\x06R\x0froot_scope_path\"n\n" +
 	"\x18UninstallSolutionRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x121\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x0einstallationId\"\xff\x01\n" +
