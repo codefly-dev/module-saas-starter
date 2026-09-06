@@ -597,10 +597,12 @@ func requireBoundarySpec(boundaryNodeID, collectionLabel string) error {
 }
 
 // resolveBoundary maps a connect input's boundary spec to a scope-node id: an
-// existing node is validated for tenant visibility; a collection label mints a
-// new `collection` node registered as a root (a child of the org's solution node
-// once installation identity lands). Runs inside the source-insert transaction so
-// a minted node and the source that binds it commit together.
+// existing node is validated for tenant visibility; a collection label resolves
+// to the tenant's collection node of that name, creating one (registered as a
+// root — a child of the org's solution node once installation identity lands) on
+// first use. Reusing by label keeps every source of one collection under a single
+// grantable boundary. Runs inside the source-insert transaction so a minted node
+// and the source that binds it commit together.
 func (s *Service) resolveBoundary(ctx context.Context, orgID, boundaryNodeID, collectionLabel string) (string, error) {
 	w := wool.Get(ctx).In("resolveBoundary")
 	if boundaryNodeID = strings.TrimSpace(boundaryNodeID); boundaryNodeID != "" {
@@ -620,10 +622,11 @@ func (s *Service) resolveBoundary(ctx context.Context, orgID, boundaryNodeID, co
 		Label: strings.TrimSpace(collectionLabel),
 	}
 	node.ScopePath = strings.ReplaceAll(node.Id, "-", "_")
-	if err := s.store.RegisterScopeNode(ctx, node); err != nil {
-		return "", w.Wrapf(err, "register collection node")
+	boundaryID, err := s.store.GetOrCreateCollectionNode(ctx, node)
+	if err != nil {
+		return "", w.Wrapf(err, "resolve collection node")
 	}
-	return node.Id, nil
+	return boundaryID, nil
 }
 
 // normalizeAPIConfig validates and trims a generic API provider config.

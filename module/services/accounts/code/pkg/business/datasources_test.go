@@ -23,15 +23,17 @@ import (
 // unimplemented method) and keeps sources in memory keyed by id.
 type datasourceFakeStore struct {
 	business.Store
-	mu      sync.Mutex
-	sources map[string]*business.DatasourceSource
-	nodes   map[string]bool
+	mu          sync.Mutex
+	sources     map[string]*business.DatasourceSource
+	nodes       map[string]bool
+	collections map[string]string // label -> node id
 }
 
 func newDatasourceFakeStore() *datasourceFakeStore {
 	return &datasourceFakeStore{
-		sources: map[string]*business.DatasourceSource{},
-		nodes:   map[string]bool{},
+		sources:     map[string]*business.DatasourceSource{},
+		nodes:       map[string]bool{},
+		collections: map[string]string{},
 	}
 }
 
@@ -40,6 +42,17 @@ func (f *datasourceFakeStore) RegisterScopeNode(_ context.Context, node *gen.Sco
 	defer f.mu.Unlock()
 	f.nodes[node.Id] = true
 	return nil
+}
+
+func (f *datasourceFakeStore) GetOrCreateCollectionNode(_ context.Context, node *gen.ScopeNode) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if id, ok := f.collections[node.Label]; ok {
+		return id, nil
+	}
+	f.nodes[node.Id] = true
+	f.collections[node.Label] = node.Id
+	return node.Id, nil
 }
 
 func (f *datasourceFakeStore) ScopeNodeExists(_ context.Context, id string) (bool, error) {
@@ -657,10 +670,10 @@ func TestAddSource_CrawlerStoresConfigAndTakesNoCredential(t *testing.T) {
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID:            testOrg,
-		Provider:         business.DatasourceProviderCrawler,
+		OrgID:           testOrg,
+		Provider:        business.DatasourceProviderCrawler,
 		CollectionLabel: "wiki",
-		Crawler:          crawlerConfig(),
+		Crawler:         crawlerConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -684,11 +697,11 @@ func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID:            testOrg,
-		Provider:         business.DatasourceProviderUpload,
+		OrgID:           testOrg,
+		Provider:        business.DatasourceProviderUpload,
 		CollectionLabel: "wiki",
-		Credential:       "secretkey",
-		Upload:           uploadConfig(),
+		Credential:      "secretkey",
+		Upload:          uploadConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -981,7 +994,7 @@ func TestAddSource_OAuth2StoresTokenSet(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:              testOrg,
 		Provider:           business.DatasourceProviderAPI,
-		TargetCollection:   "wiki",
+		CollectionLabel:    "wiki",
 		Credential:         "refresh-tok",
 		OAuth2ClientSecret: "client-sekret",
 		API:                oauthConfig(),
@@ -1041,7 +1054,7 @@ func TestRunDatasourceSync_OAuth2RefreshesRotatesAndBearer(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", OAuth2ClientSecret: "client-sekret", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1111,7 +1124,7 @@ func TestRunDatasourceSync_OAuth2RereadsRotatedCredentialUnderLock(t *testing.T)
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1158,7 +1171,7 @@ func TestRunDatasourceSync_OAuth2DefaultTTLWhenNoExpiry(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1188,7 +1201,7 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, TargetCollection: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1217,5 +1230,51 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 	}
 	if procErr.Retryable {
 		t.Fatal("a permanently rejected refresh must be a non-retryable job failure")
+	}
+}
+
+// TestAddSource_ReusesCollectionNodeByLabel proves the connect path does not
+// fragment a boundary: connecting several sources to the same collection label
+// converges on one grantable node, while a distinct label resolves elsewhere.
+func TestAddSource_ReusesCollectionNodeByLabel(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+
+	a := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/a", CollectionLabel: "wiki", AccessToken: "t",
+	})
+	b := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/b", CollectionLabel: "wiki", AccessToken: "t",
+	})
+	c := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/c", CollectionLabel: "docs", AccessToken: "t",
+	})
+
+	if a.BoundaryNodeID == "" || a.BoundaryNodeID != b.BoundaryNodeID {
+		t.Fatalf("same collection label must reuse one boundary node, got %q and %q", a.BoundaryNodeID, b.BoundaryNodeID)
+	}
+	if c.BoundaryNodeID == a.BoundaryNodeID {
+		t.Fatal("a distinct collection label must resolve to a different boundary node")
+	}
+}
+
+// TestAddSource_BoundaryNodeIDMustExist proves the reuse path validates tenant
+// visibility: an unregistered node id is refused, a registered one is bound.
+func TestAddSource_BoundaryNodeIDMustExist(t *testing.T) {
+	fs := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(fs, &recordingProducer{}, nil)
+	const nodeID = "22222222-2222-2222-2222-222222222222"
+
+	if _, err := svc.AddGitHubSource(context.Background(), "actor-1", business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/a", BoundaryNodeID: nodeID, AccessToken: "t",
+	}); err == nil {
+		t.Fatal("an unregistered boundary node id must be rejected")
+	}
+
+	fs.nodes[nodeID] = true
+	src := addSource(t, svc, business.AddGitHubSourceInput{
+		OrgID: testOrg, Repo: "acme/a", BoundaryNodeID: nodeID, AccessToken: "t",
+	})
+	if src.BoundaryNodeID != nodeID {
+		t.Fatalf("boundary node id = %q, want %q", src.BoundaryNodeID, nodeID)
 	}
 }

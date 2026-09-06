@@ -216,6 +216,46 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, subjectID stri
 	return out, nil
 }
 
+// GetOrCreateCollectionNode resolves a `collection` boundary by its label: if the
+// tenant already has a collection node with that label it is reused, otherwise
+// the supplied node is registered and its id returned. This keeps one boundary
+// per collection name, so connecting several sources to the same collection (the
+// only path the connect UI exposes) converges on one grantable node instead of
+// minting a fresh, separately-granted node each time. A per-(org,label) advisory
+// lock held to commit serializes concurrent first-time creates so a race cannot
+// still split them. Runs inside WithOrgTx; RLS confines the lookup to the tenant.
+func (s *PostgresStore) GetOrCreateCollectionNode(ctx context.Context, node *gen.ScopeNode) (string, error) {
+	w := wool.Get(ctx).In("GetOrCreateCollectionNode")
+	executor := s.getQueryExecutor(ctx)
+
+	if err := validateScopePath(node.ScopePath); err != nil {
+		return "", err
+	}
+	if _, err := executor.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`, node.OrgId, node.Label,
+	); err != nil {
+		return "", w.Wrapf(err, "failed to lock collection label")
+	}
+
+	var existing string
+	err := executor.QueryRow(ctx, `
+		SELECT id::text FROM scope_nodes
+		WHERE kind = $1 AND label = $2
+		ORDER BY created_at
+		LIMIT 1`, node.Kind, node.Label,
+	).Scan(&existing)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", w.Wrapf(err, "failed to look up collection node")
+	}
+	if err := s.RegisterScopeNode(ctx, node); err != nil {
+		return "", err
+	}
+	return node.Id, nil
+}
+
 // ScopeNodeExists reports whether nodeID is a scope node visible in the caller's
 // tenant. Run under WithOrgTx so the RLS policy confines the probe to the org;
 // this is the org-membership check the datasource boundary FK cannot make (RI

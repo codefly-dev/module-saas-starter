@@ -105,3 +105,41 @@ func TestDatasourceSource_DeleteRemovesRow(t *testing.T) {
 	_, err := testService.GetDatasourceSource(ctx, org, source.ID)
 	require.ErrorIs(t, err, business.ErrDatasourceSourceNotFound)
 }
+
+// TestGetOrCreateCollectionNode_ReusesByLabelPerOrg exercises the real store
+// resolution: within one tenant a collection label maps to a single node
+// (so multiple sources share one grantable boundary), a distinct label is a
+// distinct node, and the same label in another tenant is a separate node — RLS
+// keeps the lookup tenant-local.
+func TestGetOrCreateCollectionNode_ReusesByLabelPerOrg(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	_, orgA := mustUserAndOrg(t, ctx, "coll-a@rls-test.com", "coll-a-rls", "Coll A")
+	_, orgB := mustUserAndOrg(t, ctx, "coll-b@rls-test.com", "coll-b-rls", "Coll B")
+
+	create := func(org, label string) string {
+		t.Helper()
+		var id string
+		require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+			nodeID := business.NewIDString()
+			out, err := testStore.GetOrCreateCollectionNode(ctx, &gen.ScopeNode{
+				Id: nodeID, OrgId: org, Kind: business.ScopeNodeKindCollection, Label: label,
+				ScopePath: strings.ReplaceAll(nodeID, "-", "_"),
+			})
+			id = out
+			return err
+		}))
+		return id
+	}
+
+	a1 := create(orgA, "wiki")
+	a2 := create(orgA, "wiki")
+	require.Equal(t, a1, a2, "the same label in one org must reuse the node")
+
+	aDocs := create(orgA, "docs")
+	require.NotEqual(t, a1, aDocs, "a different label must be a different node")
+
+	b1 := create(orgB, "wiki")
+	require.NotEqual(t, a1, b1, "the same label in another org must be a distinct, tenant-isolated node")
+}

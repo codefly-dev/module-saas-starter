@@ -199,6 +199,10 @@ type Store interface {
 	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
 	ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
+	// GetOrCreateCollectionNode reuses an existing collection node with node.Label
+	// in the tenant, or registers node and returns its id — one boundary per
+	// collection name. Run under WithOrgTx.
+	GetOrCreateCollectionNode(ctx context.Context, node *gen.ScopeNode) (string, error)
 	// ScopeNodeExists reports whether a scope node id is visible in the caller's
 	// tenant (run under WithOrgTx so RLS confines the probe to the org).
 	ScopeNodeExists(ctx context.Context, nodeID string) (bool, error)
