@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -111,12 +113,18 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 	}
 
 	// Idempotent re-install: an active installation for this solution already
-	// composed the agent, node, and grant; return it unchanged.
+	// composed the agent, node, and grant. A re-install that names the same
+	// authority envelope (ceiling, standing-grant role, co-owner set) returns the
+	// existing row unchanged; one that names a different envelope is rejected rather
+	// than silently ignored — a changed ceiling is applied by uninstall + reinstall.
 	existing, err := scanInstallation(executor.QueryRow(ctx,
 		`SELECT `+installationColumns+` FROM installations
 		 WHERE org_id = $1 AND solution_identifier = $2 AND status = 'active'`,
 		params.OrgID, params.SolutionIdentifier))
 	if err == nil {
+		if e := reconcileExistingInstallation(ctx, executor, existing, params); e != nil {
+			return nil, e
+		}
 		w.Trace("solution already installed; returning existing installation",
 			wool.Field("installation_id", existing.Id))
 		return existing, nil
@@ -131,8 +139,9 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		return nil, err
 	}
 
-	// 2. Solution scope node, idempotent on (org, path).
-	nodeID, err := s.getOrRegisterSolutionNode(ctx, params)
+	// 2. Solution scope node with a server-derived, UUID-labelled path; reused if a
+	// prior revoked install of this solution left one behind.
+	nodeID, nodePath, err := s.getOrRegisterSolutionNode(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +152,7 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		OrgId:       params.OrgID,
 		SubjectId:   agentID,
 		SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
-		ScopePath:   params.RootScopePath,
+		ScopePath:   nodePath,
 		RoleId:      params.RoleID,
 		GrantedBy:   params.GrantedBy,
 	}
@@ -208,58 +217,100 @@ func (s *PostgresStore) getOrCreateAgentPrincipal(ctx context.Context, params *b
 	return agent.ID, nil
 }
 
-func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *business.InstallSolutionParams) (string, error) {
+// getOrRegisterSolutionNode returns the (id, ltree path) of the installation's
+// authority-root scope node. On a reinstall it reuses the solution node a prior
+// revoked install of this solution left behind (uninstall removes the grant and
+// revokes the agent but leaves the node), so the authority root — and any paths
+// registered beneath it — stay stable across reinstall. Otherwise it mints a fresh
+// node whose path is a depth-1 ltree label derived from the node id (ADR-0002:
+// labels are node UUIDs, never caller-chosen strings), which makes collisions and
+// nesting between installs impossible.
+func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *business.InstallSolutionParams) (string, string, error) {
 	w := wool.Get(ctx).In("getOrRegisterSolutionNode")
 	executor := s.getQueryExecutor(ctx)
-	var nodeID, nodeKind string
-	err := executor.QueryRow(ctx,
-		`SELECT id::text, kind FROM scope_nodes WHERE org_id = $1 AND scope_path = $2::ltree`,
-		params.OrgID, params.RootScopePath).Scan(&nodeID, &nodeKind)
+	var nodeID, nodePath string
+	err := executor.QueryRow(ctx, `
+		SELECT n.id::text, n.scope_path::text
+		FROM installations i
+		JOIN scope_nodes n ON n.id = i.root_scope_node_id
+		WHERE i.org_id = $1 AND i.solution_identifier = $2 AND i.status = 'revoked'
+		  AND n.kind = 'solution'
+		ORDER BY i.revoked_at DESC
+		LIMIT 1`,
+		params.OrgID, params.SolutionIdentifier).Scan(&nodeID, &nodePath)
 	if err == nil {
-		// A node already exists at this path. Reuse is only safe when it's a
-		// solution root left behind by an earlier (now-revoked) install; refuse to
-		// co-mint onto a structural/record node or a node another ACTIVE
-		// installation already anchors, either of which would silently share one
-		// authority root between two solutions. (An idempotent re-install of the
-		// same active solution returns before reaching here.)
-		if nodeKind != "solution" {
-			return "", business.NewStoreError(
-				fmt.Errorf("scope path %q is already a %q node, not a solution root", params.RootScopePath, nodeKind),
-				business.ErrTypeConflict)
-		}
-		var anchored bool
-		if e := executor.QueryRow(ctx, `
-			SELECT EXISTS (
-				SELECT 1 FROM installations
-				WHERE org_id = $1 AND root_scope_node_id = $2 AND status = 'active'
-			)`, params.OrgID, nodeID).Scan(&anchored); e != nil {
-			return "", w.Wrapf(e, "failed to check solution node ownership")
-		}
-		if anchored {
-			return "", business.NewStoreError(
-				fmt.Errorf("scope path %q is already the root of an active installation", params.RootScopePath),
-				business.ErrTypeConflict)
-		}
-		return nodeID, nil
+		return nodeID, nodePath, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return "", w.Wrapf(err, "failed to look up solution scope node")
+		return "", "", w.Wrapf(err, "failed to look up prior solution scope node")
 	}
 	label := params.RootScopeLabel
 	if label == "" {
 		label = params.SolutionIdentifier
 	}
 	node := &gen.ScopeNode{
-		Id:        business.NewIDString(),
-		OrgId:     params.OrgID,
-		ScopePath: params.RootScopePath,
-		Kind:      "solution",
-		Label:     label,
+		Id:    business.NewIDString(),
+		OrgId: params.OrgID,
+		Kind:  "solution",
+		Label: label,
 	}
+	node.ScopePath = strings.ReplaceAll(node.Id, "-", "_")
 	if err := s.RegisterScopeNode(ctx, node); err != nil {
-		return "", w.Wrapf(err, "failed to register solution scope node")
+		return "", "", w.Wrapf(err, "failed to register solution scope node")
 	}
-	return node.Id, nil
+	return node.Id, node.ScopePath, nil
+}
+
+// reconcileExistingInstallation guards the idempotent re-install path: it returns
+// a conflict when a re-install of an already-active solution names a different
+// authority envelope (ceiling, standing-grant role, or co-owner set) than the one
+// on record, so a narrowed ceiling is never silently discarded. Identical params
+// reconcile to a no-op and the caller returns the existing row.
+func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, existing *gen.Installation, params *business.InstallSolutionParams) error {
+	var allowedAudiences, allowedScopes []string
+	if err := executor.QueryRow(ctx,
+		`SELECT allowed_audiences, allowed_scopes FROM principals WHERE id = $1 AND org_id = $2`,
+		existing.AgentPrincipalId, existing.OrgId).Scan(&allowedAudiences, &allowedScopes); err != nil {
+		return fmt.Errorf("load existing agent ceiling: %w", err)
+	}
+	// A missing standing grant (an admin revoked it out from under an active
+	// install) leaves roleID empty, which mismatches the requested role below and
+	// fails closed to a conflict rather than an opaque Internal from ErrNoRows.
+	var roleID string
+	if err := executor.QueryRow(ctx, `
+		SELECT g.role_id::text
+		FROM scope_grants g
+		JOIN scope_nodes n ON n.id = $2
+		WHERE g.org_id = $1 AND g.subject_kind = 'principal'
+		  AND g.subject_id = $3 AND g.scope_path = n.scope_path
+		LIMIT 1`,
+		existing.OrgId, existing.RootScopeNodeId, existing.AgentPrincipalId).Scan(&roleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("load existing standing grant role: %w", err)
+	}
+	if roleID == params.RoleID &&
+		sameStringSet(allowedAudiences, params.AllowedAudiences) &&
+		sameStringSet(allowedScopes, params.AllowedScopes) &&
+		sameStringSet(existing.CoOwnerPrincipalIds, params.CoOwnerPrincipalIDs) {
+		return nil
+	}
+	return business.NewStoreError(
+		fmt.Errorf("solution %s is already installed with a different ceiling, role, or co-owner set; uninstall and reinstall to change it",
+			params.SolutionIdentifier),
+		business.ErrTypeConflict)
+}
+
+// sameStringSet reports whether two string slices hold the same values regardless
+// of order. A nil and an empty slice are equal (both mean "unrestricted" for a
+// ceiling).
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	sortedA := append([]string(nil), a...)
+	sortedB := append([]string(nil), b...)
+	slices.Sort(sortedA)
+	slices.Sort(sortedB)
+	return slices.Equal(sortedA, sortedB)
 }
 
 // GetInstallation loads one installation and resolves its health live from the
@@ -370,8 +421,9 @@ func (s *PostgresStore) TransferInstallationOwnership(ctx context.Context, orgID
 }
 
 // UninstallSolution soft-deletes the installation and reverses the composition:
-// it revokes the agent principal and its standing grant and soft-deletes the
-// solution scope node. Idempotent on an already-revoked installation.
+// it removes the agent's standing grant and revokes the agent principal. The
+// solution scope node is left in place (inert without a grant or a live agent) so
+// a reinstall reuses it. Idempotent on an already-revoked installation.
 func (s *PostgresStore) UninstallSolution(ctx context.Context, orgID, installationID string) (*gen.Installation, bool, error) {
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	executor := s.getQueryExecutor(ctx)
@@ -558,9 +610,13 @@ func resolveInstallationAuthority(ctx context.Context, executor QueryExecutor, o
 // installationScopeAllowed resolves whether the agent's standing scope grant
 // authorizes one requested (kind, action) at a boundary. The boundary's scope
 // path is resolved from its own registered node (resource_id) — never trusted
-// from the request — and the grant must sit at an ancestor-or-equal of it, with
-// a role permitting the (kind, action). An unscoped request (empty ResourceID)
-// resolves against the installation's own root path.
+// from the request — and must be a descendant-or-equal of the installation's own
+// root; the grant must then sit at an ancestor-or-equal of the boundary, with a
+// role permitting the (kind, action). Bounding the boundary by the root is what
+// keeps a grant the agent later receives elsewhere (a record share, another
+// install's node, an admin's ad-hoc GrantScope) from widening what this headless
+// path may mint for. An unscoped request (empty ResourceID) resolves against the
+// installation's own root path.
 func installationScopeAllowed(ctx context.Context, executor QueryExecutor, orgID, agentID, rootScopePath string, permission business.WorkContextPermission) (bool, error) {
 	var allowed bool
 	err := executor.QueryRow(ctx, `
@@ -579,6 +635,7 @@ func installationScopeAllowed(ctx context.Context, executor QueryExecutor, orgID
 			  AND g.subject_kind = 'principal'
 			  AND g.subject_id = $2
 			  AND boundary.scope_path IS NOT NULL
+			  AND boundary.scope_path <@ $6::ltree
 			  AND g.scope_path @> boundary.scope_path
 			  AND (g.expires_at IS NULL OR g.expires_at > now())
 			  AND (rp.resource = '*' OR rp.resource = $3)

@@ -50,7 +50,10 @@ func (s *PostgresStore) ResolveWorkContextAuthority(
 // StartInstallationTask draws an agent's authority from scope_grants, so
 // CheckWorkContextAuthorizationRevision must resolve it the same way or it would
 // reject every validly-minted installation token as stale. It stays OFF for the
-// mint paths so delegated (owner ∩ actor via RBAC) minting is unchanged.
+// mint paths so delegated (owner ∩ actor via RBAC) minting is unchanged. The
+// scope_grant branch self-gates to agent actors: it joins the principal's own
+// active installation to bound the boundary by that install's root, so a non-agent
+// principal (an owner checked here) matches nothing through it.
 func resolveWorkContextAuthority(
 	ctx context.Context,
 	reader ReadQueryExecutor,
@@ -346,8 +349,14 @@ func workContextPermissionAllowed(
 		    -- Installation authority: a hierarchical scope_grant at an ancestor-or-
 		    -- equal of the boundary node named by resource_id (never trusted from the
 		    -- request — resolved from the node's own row), with a role permitting the
-		    -- (kind, action). Only the recheck seam sets $7; an empty resource_id
-		    -- matches no node, so an unscoped permission never resolves here.
+		    -- (kind, action). The boundary must also be a descendant-or-equal of an
+		    -- active installation's root that THIS principal anchors, so a grant the
+		    -- agent later receives elsewhere cannot widen what the headless path
+		    -- revalidates for — the same root bound the mint applies. Joining
+		    -- installations also gates this branch to agent actors that anchor an
+		    -- install: a non-agent principal matches no row here. Only the recheck
+		    -- seam sets $7; an empty resource_id matches no node, so an unscoped
+		    -- permission never resolves here.
 		    OR (
 		        $7
 		        AND EXISTS (
@@ -358,10 +367,17 @@ func workContextPermissionAllowed(
 		            JOIN scope_nodes AS boundary
 		              ON boundary.org_id = $1
 		             AND boundary.id::text = $6
+		            JOIN installations AS install
+		              ON install.org_id = $1
+		             AND install.agent_principal_id = $2
+		             AND install.status = 'active'
+		            JOIN scope_nodes AS root
+		              ON root.id = install.root_scope_node_id
 		            WHERE sg.org_id = $1
 		              AND sg.subject_kind = 'principal'
 		              AND sg.subject_id = $2
 		              AND sg.scope_path @> boundary.scope_path
+		              AND boundary.scope_path <@ root.scope_path
 		              AND (sg.expires_at IS NULL OR sg.expires_at > now())
 		              AND (sg_permission.resource = '*' OR sg_permission.resource = $3)
 		              AND (sg_permission.action = '*' OR sg_permission.action = $4)

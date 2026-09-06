@@ -36,7 +36,6 @@ func (s *InstallationServer) InstallSolution(ctx context.Context, req *gen.Insta
 		AgentIdentifier:     req.GetAgentIdentifier(),
 		SolutionIdentifier:  req.GetSolutionIdentifier(),
 		DisplayName:         req.GetDisplayName(),
-		RootScopePath:       req.GetRootScopePath(),
 		RootScopeLabel:      req.GetRootScopeLabel(),
 		RoleID:              req.GetRoleId(),
 		OwnerPrincipalID:    req.GetOwnerPrincipalId(),
