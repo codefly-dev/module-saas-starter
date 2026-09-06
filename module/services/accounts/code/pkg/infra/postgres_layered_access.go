@@ -143,8 +143,11 @@ func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subje
 // same role_permissions rows and the same wildcard rule as CheckAccess, so the
 // set returned here and CheckAccess's per-record verdict never disagree.
 //
-// Runs inside WithOrgTx: RLS confines every table to the caller's tenant.
-func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action string) ([]*gen.AccessibleScope, error) {
+// Runs inside WithOrgTx: RLS confines every table to the caller's tenant. Results
+// are ordered by scope_path and windowed with a keyset cursor (afterPath) plus a
+// row limit, so a subject entitled at a broad ancestor (whose subtree can hold
+// every placed record in the org) is paged rather than returned all at once.
+func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error) {
 	w := wool.Get(ctx).In("ListAccessibleScopes")
 	executor := s.getQueryExecutor(ctx)
 
@@ -157,32 +160,43 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, subjectID stri
 		return nil, err
 	}
 
-	// $1 subject, $2 resource_type, $3 action. UNION dedupes a node reachable
-	// through both a grant and a share. The share branch's ancestor join is on the
-	// placed-record identity, so only nodes of the queried resource_type appear
-	// there — structural nodes (NULL resource columns) never match.
+	// $1 subject, $2 resource_type, $3 action, $4 cursor (NULL=first page), $5
+	// limit. scope_path is UNIQUE per org, so it is a total keyset cursor. UNION
+	// dedupes a node reachable through both a grant and a share. The share branch's
+	// ancestor join is on the placed-record identity, so only nodes of the queried
+	// resource_type appear there — structural nodes (NULL resource columns) never
+	// match.
 	query := `
-		SELECT n.id::text, n.scope_path::text, n.kind
-		FROM scope_nodes n
-		JOIN scope_grants g ON g.scope_path @> n.scope_path
-		JOIN role_permissions rp ON rp.role_id = g.role_id
-		WHERE ` + scopePred + `
-		  AND (g.expires_at IS NULL OR g.expires_at > now())
-		  AND (rp.resource = '*' OR rp.resource = $2)
-		  AND (rp.action   = '*' OR rp.action   = $3)
-		UNION
-		SELECT n.id::text, n.scope_path::text, n.kind
-		FROM scope_nodes n
-		JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
-		JOIN role_permissions rp ON rp.role_id = sh.role_id
-		WHERE ` + sharePred + `
-		  AND sh.resource_type = $2
-		  AND (sh.expires_at IS NULL OR sh.expires_at > now())
-		  AND (rp.resource = '*' OR rp.resource = $2)
-		  AND (rp.action   = '*' OR rp.action   = $3)
-		ORDER BY 2`
+		SELECT node_id, scope_path, kind FROM (
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.scope_path AS path
+			FROM scope_nodes n
+			JOIN scope_grants g ON g.scope_path @> n.scope_path
+			JOIN role_permissions rp ON rp.role_id = g.role_id
+			WHERE ` + scopePred + `
+			  AND (g.expires_at IS NULL OR g.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $3)
+			  AND ($4::ltree IS NULL OR n.scope_path > $4::ltree)
+			UNION
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.scope_path AS path
+			FROM scope_nodes n
+			JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
+			JOIN role_permissions rp ON rp.role_id = sh.role_id
+			WHERE ` + sharePred + `
+			  AND sh.resource_type = $2
+			  AND (sh.expires_at IS NULL OR sh.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $3)
+			  AND ($4::ltree IS NULL OR n.scope_path > $4::ltree)
+		) accessible
+		ORDER BY path
+		LIMIT $5`
 
-	rows, err := executor.Query(ctx, query, subjectID, resourceType, action)
+	var cursor any
+	if afterPath != "" {
+		cursor = afterPath
+	}
+	rows, err := executor.Query(ctx, query, subjectID, resourceType, action, cursor, limit)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list accessible scopes")
 	}

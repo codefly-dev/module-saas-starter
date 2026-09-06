@@ -2108,12 +2108,18 @@ func (x *AccessibleScope) GetKind() string {
 }
 
 type ListAccessibleScopesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SubjectId     string                 `protobuf:"bytes,1,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
-	SubjectKind   SubjectKind            `protobuf:"varint,2,opt,name=subject_kind,json=subjectKind,proto3,enum=saas.accounts.v1.SubjectKind" json:"subject_kind,omitempty"`
-	ResourceType  string                 `protobuf:"bytes,3,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
-	Action        string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
-	OrgId         string                 `protobuf:"bytes,5,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	SubjectId    string                 `protobuf:"bytes,1,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
+	SubjectKind  SubjectKind            `protobuf:"varint,2,opt,name=subject_kind,json=subjectKind,proto3,enum=saas.accounts.v1.SubjectKind" json:"subject_kind,omitempty"`
+	ResourceType string                 `protobuf:"bytes,3,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
+	Action       string                 `protobuf:"bytes,4,opt,name=action,proto3" json:"action,omitempty"`
+	OrgId        string                 `protobuf:"bytes,5,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// Page bound. 0 → server default; capped so a broad grant (one at the org root
+	// covers every node in the subtree, including every placed record) can never
+	// return an unbounded result in one call.
+	PageSize int32 `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	// Opaque cursor from a previous response's next_page_token; empty for page one.
+	PageToken     string `protobuf:"bytes,7,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2183,9 +2189,25 @@ func (x *ListAccessibleScopesRequest) GetOrgId() string {
 	return ""
 }
 
+func (x *ListAccessibleScopesRequest) GetPageSize() int32 {
+	if x != nil {
+		return x.PageSize
+	}
+	return 0
+}
+
+func (x *ListAccessibleScopesRequest) GetPageToken() string {
+	if x != nil {
+		return x.PageToken
+	}
+	return ""
+}
+
 type ListAccessibleScopesResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Scopes        []*AccessibleScope     `protobuf:"bytes,1,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Scopes []*AccessibleScope     `protobuf:"bytes,1,rep,name=scopes,proto3" json:"scopes,omitempty"`
+	// Set when more scopes remain; pass it back as page_token. Empty on the last page.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2225,6 +2247,13 @@ func (x *ListAccessibleScopesResponse) GetScopes() []*AccessibleScope {
 		return x.Scopes
 	}
 	return nil
+}
+
+func (x *ListAccessibleScopesResponse) GetNextPageToken() string {
+	if x != nil {
+		return x.NextPageToken
+	}
+	return ""
 }
 
 type GetPrincipalRequest struct {
@@ -2864,16 +2893,21 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
 	"scope_path\x18\x02 \x01(\tR\tscopePath\x12\x12\n" +
-	"\x04kind\x18\x03 \x01(\tR\x04kind\"\xf8\x01\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\"\xc0\x02\n" +
 	"\x1bListAccessibleScopesRequest\x12'\n" +
 	"\n" +
 	"subject_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsubjectId\x12@\n" +
 	"\fsubject_kind\x18\x02 \x01(\x0e2\x1d.saas.accounts.v1.SubjectKindR\vsubjectKind\x12,\n" +
 	"\rresource_type\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fresourceType\x12\x1f\n" +
 	"\x06action\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06action\x12\x1f\n" +
-	"\x06org_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"Y\n" +
+	"\x06org_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12'\n" +
+	"\tpage_size\x18\x06 \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\"\x81\x01\n" +
 	"\x1cListAccessibleScopesResponse\x129\n" +
-	"\x06scopes\x18\x01 \x03(\v2!.saas.accounts.v1.AccessibleScopeR\x06scopes\"/\n" +
+	"\x06scopes\x18\x01 \x03(\v2!.saas.accounts.v1.AccessibleScopeR\x06scopes\x12&\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"/\n" +
 	"\x13GetPrincipalRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"o\n" +
 	"\x18GetAgentPrincipalRequest\x12\x1f\n" +

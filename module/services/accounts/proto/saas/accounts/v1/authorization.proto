@@ -303,10 +303,21 @@ message ListAccessibleScopesRequest {
   string resource_type = 3 [(buf.validate.field).string.min_len = 1];
   string action = 4 [(buf.validate.field).string.min_len = 1];
   string org_id = 5 [(buf.validate.field).string.uuid = true];
+  // Page bound. 0 → server default; capped so a broad grant (one at the org root
+  // covers every node in the subtree, including every placed record) can never
+  // return an unbounded result in one call.
+  int32 page_size = 6 [(buf.validate.field).int32 = {
+    gte: 0
+    lte: 1000
+  }];
+  // Opaque cursor from a previous response's next_page_token; empty for page one.
+  string page_token = 7;
 }
 
 message ListAccessibleScopesResponse {
   repeated AccessibleScope scopes = 1;
+  // Set when more scopes remain; pass it back as page_token. Empty on the last page.
+  string next_page_token = 2;
 }
 
 // --- Principal CRUD (M1 promoted to RPCs in M2) ---

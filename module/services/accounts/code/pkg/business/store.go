@@ -195,8 +195,9 @@ type Store interface {
 	CheckAccess(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, resourceID, action string) (bool, string, error)
 	// ListAccessibleScopes is the list-objects companion to CheckAccess: the scope
 	// nodes the subject may act on with (resourceType, action), resolved through
-	// the same grant + share union so the two never disagree.
-	ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action string) ([]*gen.AccessibleScope, error)
+	// the same grant + share union so the two never disagree. Ordered by scope_path
+	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
+	ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
 	// ScopeNodeExists reports whether a scope node id is visible in the caller's
 	// tenant (run under WithOrgTx so RLS confines the probe to the org).

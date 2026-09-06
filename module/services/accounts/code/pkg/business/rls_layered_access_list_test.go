@@ -110,6 +110,68 @@ func TestListAccessibleScopes_GrantRevokeAndShare(t *testing.T) {
 		"a share surfaces only the shared record's node")
 }
 
+// TestListAccessibleScopes_Paginates proves the result is bounded and resumable:
+// a broad grant reaches many nodes, but a small page_size returns them in
+// scope_path-ordered pages that together cover every node exactly once, with an
+// empty next_page_token only on the final page.
+func TestListAccessibleScopes_Paginates(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	owner, org := mustUserAndOrg(t, ctx, "page-owner@rls-test.com", "page-owner", "Page Org")
+	roleID := business.NewIDString()
+	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		return testStore.CreateRole(ctx, &gen.Role{
+			Id: roleID, Name: "viewer " + roleID, OrgId: org,
+			Permissions: []*gen.Permission{{Resource: "doc", Action: "read"}},
+		})
+	}))
+
+	// A root plus several children; a grant at the root reaches the whole subtree.
+	_, err := testService.RegisterScopeNode(ctx, owner, &gen.RegisterScopeNodeRequest{
+		OrgId: org, ScopePath: "root", Kind: "space", Label: "Root",
+	})
+	require.NoError(t, err)
+	want := map[string]bool{"root": true}
+	for i := 0; i < 6; i++ {
+		p := fmt.Sprintf("root.n%d", i)
+		_, err := testService.RegisterScopeNode(ctx, owner, &gen.RegisterScopeNodeRequest{
+			OrgId: org, ScopePath: p, Kind: "node", Label: p,
+		})
+		require.NoError(t, err)
+		want[p] = true
+	}
+	_, err = testService.GrantScope(ctx, owner, &gen.GrantScopeRequest{
+		OrgId: org, SubjectId: owner, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+		ScopePath: "root", RoleId: roleID,
+	})
+	require.NoError(t, err)
+
+	got := map[string]bool{}
+	token := ""
+	pages := 0
+	for {
+		resp, err := testService.ListAccessibleScopes(ctx, &gen.ListAccessibleScopesRequest{
+			OrgId: org, SubjectId: owner, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			ResourceType: "doc", Action: "read", PageSize: 2, PageToken: token,
+		})
+		require.NoError(t, err)
+		require.LessOrEqual(t, len(resp.GetScopes()), 2, "a page must not exceed page_size")
+		for _, s := range resp.GetScopes() {
+			require.False(t, got[s.GetScopePath()], "node %s returned on more than one page", s.GetScopePath())
+			got[s.GetScopePath()] = true
+		}
+		pages++
+		token = resp.GetNextPageToken()
+		if token == "" {
+			break
+		}
+		require.Less(t, pages, 100, "pagination did not terminate")
+	}
+	require.Equal(t, want, got, "the pages together must cover every accessible node exactly once")
+	require.GreaterOrEqual(t, pages, 4, "7 nodes at page_size 2 must span multiple pages")
+}
+
 // TestListAccessibleScopes_AgreesWithCheckAccess is the never-disagree property:
 // over random trees, roles, grants, and shares, a placed-record node is in
 // ListAccessibleScopes exactly when CheckAccess allows the same (subject,
