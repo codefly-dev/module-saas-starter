@@ -35,6 +35,8 @@ const (
 	FixturesOutput           = "deployment/generated/contributed-fixtures.json"
 	TopologyBindingsOutput   = "deployment/generated/contributed-topology.json"
 	PermissionGoOutput       = "services/accounts/code/pkg/permissioncatalog/catalog_gen.go"
+	EventCatalogOutput       = "deployment/generated/event-catalog.json"
+	EventGoOutput            = "services/accounts/code/pkg/eventcatalog/catalog_gen.go"
 	CompositionCatalogOut    = corecomposition.CompositionCatalogName
 )
 
@@ -57,6 +59,7 @@ type Options struct {
 	Permissions []string
 	Fixtures    []string
 	Topology    []string
+	Events      []string
 }
 
 type FrontendContribution struct {
@@ -228,12 +231,31 @@ func Generate(options Options) error {
 	if err := validate(frontends, settings, permissions, fixtures, topologies, manifest); err != nil {
 		return err
 	}
+	events, err := readDocuments[EventsContribution](options.Events)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Join(options.OutputRoot, "services/accounts/proto/contributed"), 0o755); err != nil {
 		return fmt.Errorf("create contributed settings source directory: %w", err)
 	}
 	files, err := render(frontends, settings, permissions, fixtures, topologies)
 	if err != nil {
 		return err
+	}
+	priorCatalog, err := readEventCatalog(options.OutputRoot)
+	if err != nil {
+		return err
+	}
+	catalog, err := buildEventCatalog(events, manifest, filepath.Join(options.ModuleRoot, "services/accounts/proto"), priorCatalog)
+	if err != nil {
+		return err
+	}
+	eventFiles, err := renderEventCatalog(catalog)
+	if err != nil {
+		return err
+	}
+	for path, body := range eventFiles {
+		files[path] = body
 	}
 	for path, body := range files {
 		absolute := filepath.Join(options.OutputRoot, filepath.FromSlash(path))

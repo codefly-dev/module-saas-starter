@@ -16,7 +16,7 @@ composes the starter into another workspace.
 | Shared method policy options | `saas.policy.v1` | `saas/policy/v1` | generated inside each consuming module | `policyv1` |
 | Normalized generator catalog | `saas.catalog.v1` | `saas/catalog/v1` | `accounts/pkg/gen/saas/catalog/v1` | `catalogv1` |
 | Durable job primitives | `saas.jobs.v1` | `saas/jobs/v1` | `accounts/pkg/gen/saas/jobs/v1` | `jobsv1` |
-| Domain event envelope (reserved, P1) | `saas.events.v1` | `saas/events/v1` | `accounts/pkg/gen/saas/events/v1` (not yet generated) | `eventsv1` |
+| Domain event envelope | `saas.events.v1` | `saas/events/v1` | `accounts/pkg/gen/saas/events/v1` | `eventsv1` |
 | Frontend plugin capability handshake | `saas.frontend.plugin.v1` | `services/frontend/code/packages/saas-plugin-contract/proto/saas/frontend/plugin/v1` | consumer-owned generated output | `frontendpluginv1` |
 
 The accounts contract will be split into bounded-context files under the same
@@ -43,9 +43,11 @@ so producers and consumers generate one type across languages; the durable
 representation and fan-out live in the jobs platform and the `domain_events`
 relation rather than in this package. It is a separate protobuf package because
 its lifecycle is independent of the accounts API: the transport under it may be
-swapped for a broker without touching the accounts service. The package is
-reserved and defined in [EVENTS.md](./EVENTS.md); its proto and generated
-bindings land with the P1 contract phase.
+swapped for a broker without touching the accounts service. It is a message-only
+package with no service: the accounts service catalog is pinned to one proto
+package, so the envelope folds in as messages rather than a second service. The
+package is defined in [EVENTS.md](./EVENTS.md); its `EventEnvelope` proto and the
+generated Go and TypeScript bindings ship with the P1 contract phase.
 
 `saas.frontend.plugin.v1` is a product-neutral runtime compatibility handshake
 published with `@codefly/saas-plugin-contract`. Product backends generate native
