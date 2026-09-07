@@ -11,6 +11,7 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/github"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/jobs"
 )
 
 // pushDelivery builds a raw GitHub push payload the compiler parses.
@@ -490,6 +491,35 @@ func TestCompileDelivery_CarriesSourceTokenOnEveryCall(t *testing.T) {
 		if tok != "t" {
 			t.Fatalf("client built with token %q, want the decrypted source token", tok)
 		}
+	}
+}
+
+func TestDeliveryHandler_DropsNonGitHubSourceTerminally(t *testing.T) {
+	// Defense in depth: only GitHub sources are enqueued onto the delivery queue,
+	// but if one for another provider ever arrived the handler must drop it
+	// terminally rather than driving GitHub calls (which would burn retries).
+	producer := &recordingProducer{}
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, producer, &fakeGitHub{})
+	store.mu.Lock()
+	store.sources["api-1"] = &business.DatasourceSource{
+		ID: "api-1", OrgID: testOrg, Provider: business.DatasourceProviderAPI, Status: business.DatasourceStatusActive,
+	}
+	store.mu.Unlock()
+
+	handler := svc.NewDatasourceDeliveryJobHandler()
+	err := handler(context.Background(), &jobsv1.JobEnvelope{
+		Queue:      business.DatasourceDeliveryQueue,
+		Topic:      "datasource.github.push",
+		Attributes: map[string]string{"datasource.source_id": "api-1"},
+		Payload:    pushDelivery("refs/heads/main", "A", "B", false, false),
+	})
+	var pe *jobs.ProcessingError
+	if !errors.As(err, &pe) || pe.Retryable {
+		t.Fatalf("err = %v, want a terminal (non-retryable) ProcessingError", err)
+	}
+	if len(producer.jobs) != 0 {
+		t.Fatalf("enqueued %d jobs, want 0 for a dropped non-GitHub delivery", len(producer.jobs))
 	}
 }
 

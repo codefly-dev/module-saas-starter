@@ -183,6 +183,36 @@ func TestCompareTruncatesAtFileCap(t *testing.T) {
 	}
 }
 
+func TestCompareStopsOnNonPaginatingResponse(t *testing.T) {
+	// An endpoint that ignores ?page and re-serves the same 100 files must not
+	// loop into a false 300-file truncation or emit duplicate ops. The dedup +
+	// progress check terminates it at the real 100 distinct files.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var b strings.Builder
+		b.WriteString(`{"status":"ahead","files":[`)
+		for i := 0; i < 100; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(`{"filename":"docs/` + strconv.Itoa(i) + `.md","status":"added","sha":"s"}`)
+		}
+		b.WriteString(`]}`)
+		_, _ = w.Write([]byte(b.String()))
+	}))
+	defer srv.Close()
+
+	cmp, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "base", "head")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmp.Truncated {
+		t.Fatalf("a repeated non-paginating page must not read as truncated")
+	}
+	if len(cmp.Files) != 100 {
+		t.Fatalf("files = %d, want 100 distinct (no duplicates)", len(cmp.Files))
+	}
+}
+
 func TestGetBlobDecodesAndEnforcesLimit(t *testing.T) {
 	payload := []byte("blob-bytes")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

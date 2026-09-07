@@ -199,6 +199,13 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		if source == nil {
 			return nil
 		}
+		// Only GitHub sources are enqueued here today, but the compiler and
+		// reconcile paths assume a GitHub token + repo; a non-GitHub source would
+		// never become processable, so drop it terminally rather than driving
+		// GitHub calls against it.
+		if source.Provider != DatasourceProviderGitHub {
+			return jobs.NewProcessingError("datasource.not_github", "datasource delivery for a non-GitHub source", false)
+		}
 
 		switch envelope.GetTopic() {
 		case datasourcePushTopic:

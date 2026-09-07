@@ -65,7 +65,6 @@ type ChangedFile struct {
 	PreviousFilename string
 	Status           string
 	SHA              string
-	Size             int64
 }
 
 // Comparison is the result of comparing two commits. Status is the overall
@@ -166,6 +165,7 @@ func (c *Client) ListFiles(ctx context.Context, repo, ref string, prefixes []str
 // ErrNotFound, which the caller also handles by snapshotting.
 func (c *Client) Compare(ctx context.Context, repo, base, head string) (*Comparison, error) {
 	result := &Comparison{}
+	seen := map[string]bool{}
 	for page := 1; ; page++ {
 		var out struct {
 			Status string `json:"status"`
@@ -185,7 +185,17 @@ func (c *Client) Compare(ctx context.Context, repo, base, head string) (*Compari
 		if page == 1 {
 			result.Status = out.Status
 		}
+		// Dedup by filename: a diff never lists a path twice, so a repeat means an
+		// endpoint that ignored ?page and re-served an earlier page. Counting only
+		// newly-seen files both drops those duplicates and lets the progress check
+		// below terminate instead of looping to a false 300-file truncation.
+		added := 0
 		for _, f := range out.Files {
+			if seen[f.Filename] {
+				continue
+			}
+			seen[f.Filename] = true
+			added++
 			result.Files = append(result.Files, ChangedFile{
 				Filename:         f.Filename,
 				PreviousFilename: f.PreviousFilename,
@@ -198,9 +208,10 @@ func (c *Client) Compare(ctx context.Context, repo, base, head string) (*Compari
 			result.Files = result.Files[:compareFileCap]
 			return result, nil
 		}
-		// A short page is the last page: GitHub returns up to per_page files while
-		// more remain.
-		if len(out.Files) < 100 {
+		// Fewer than a full page of new files means no more progress is possible:
+		// either a genuine last page (< per_page returned) or a non-paginating
+		// endpoint that only repeated files already seen.
+		if added < 100 {
 			return result, nil
 		}
 	}
