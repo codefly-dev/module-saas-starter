@@ -121,9 +121,10 @@ services:
     agent:
       kind: codefly:service
       name: redis
-      # 0.0.82: read-replica runtime-load fix (two tcp endpoints on one port),
-      # codefly-dev/service-redis#16 — resolved, hold lifted.
-      version: 0.0.84
+      # 0.0.86: readiness probe targets the correct port (6379),
+      # codefly-dev/service-redis#28 — probe-port bug fixed (0.0.84 probed the
+      # wrong port and failed with "redis is not ready").
+      version: 0.0.86
       publisher: codefly.dev
     endpoints:
       - name: read

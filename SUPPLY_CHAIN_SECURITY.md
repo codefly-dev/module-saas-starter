@@ -33,7 +33,7 @@ the pin is raised.
 
 Currently tracked (agents already at their latest published versions):
 
-- **`cache`** (redis agent `0.0.84`) — CVE-2026-14456 (HIGH), Alpine
+- **`cache`** (redis agent `0.0.86`) — CVE-2026-14456 (HIGH), Alpine
   `libcrypto3`/`libssl3` `3.5.7-r0` → `3.5.8-r0` (the same OpenSSL rebuild
   postgres shipped in `0.0.130`). Upstream: codefly-dev/service-redis#26.
 
