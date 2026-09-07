@@ -215,6 +215,9 @@ func (f *FakeTransport) Replay(_ context.Context, sel ReplaySelector) (int, erro
 		}
 		replayed++
 		for _, subscription := range f.subscriptions {
+			if sel.SubscriberPrincipalID != "" && subscription.SubscriberPrincipalID != sel.SubscriberPrincipalID {
+				continue
+			}
 			if !Matches(subscription.TypePattern, e.GetType()) {
 				continue
 			}

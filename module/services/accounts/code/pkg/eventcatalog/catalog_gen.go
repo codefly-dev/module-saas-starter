@@ -18,9 +18,17 @@ type ConsumedEvent struct {
 	Delivery   string
 }
 
-var published = [...]PublishedEvent{}
+var published = [...]PublishedEvent{
+	{Type: "installation.created", Namespace: "installation", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "internal", Partition: "{tenant_id}", Retention: "30d"},
+	{Type: "installation.revoked", Namespace: "installation", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "internal", Partition: "{tenant_id}", Retention: "30d"},
+	{Type: "reference.console.viewed", Namespace: "reference", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "tenant", Partition: "{tenant_id}", Retention: "30d"},
+	{Type: "scope.granted", Namespace: "scope", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "tenant", Partition: "{tenant_id}", Retention: "30d"},
+	{Type: "scope.revoked", Namespace: "scope", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "tenant", Partition: "{tenant_id}", Retention: "30d"},
+}
 
-var consumed = [...]ConsumedEvent{}
+var consumed = [...]ConsumedEvent{
+	{Type: "reference.console.viewed", Subscriber: "reference", Queue: "reference.ingest", Delivery: "unordered"},
+}
 
 func Published() []PublishedEvent {
 	return append([]PublishedEvent(nil), published[:]...)

@@ -1,8 +1,9 @@
 package infra
 
 import (
+	"bytes"
 	"context"
-	"encoding/json"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strconv"
@@ -18,15 +19,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-// eventsRelayQueue holds the durable, replayable event-of-record row for every
-// published envelope. No consumer claims it in P1; the relay worker that drains
-// it into per-subscription deliveries is P2. Publishing writes this row even
-// with zero subscribers, so a zero-subscriber event stays durable and
-// replayable.
+// eventsRelayQueue is the reserved queue name of the relay worker. Nothing else
+// may claim it and no subscription may name it (enforced by the
+// event_subscriptions queue CHECK). The relay's work source is the
+// domain_events relation, not claimed jobs on this queue; the name identifies
+// the workload and reserves the namespace.
 const eventsRelayQueue = "events.relay"
 
 const eventDeliveryMaxAttempts = 5
@@ -35,15 +37,22 @@ const eventDeliveryMaxAttempts = 5
 // caller asking for more does not trip generated-command validation.
 const maxClaimBatch = 100
 
+// relayBatchSize bounds one relay transaction. The relay loops until it drains
+// every unpublished event, one bounded batch per transaction so a large backlog
+// never opens an unbounded transaction.
+const relayBatchSize = 100
+
 // PostgresEventTransport is the reference events.Transport: it maps the
 // CloudEvents envelope onto the durable jobs platform with no schema change.
-// Publishing writes the event-of-record and one inbox delivery per matching
-// subscription; claiming, acking, nacking, and heartbeating are the jobs lease
-// lifecycle; replay re-fans-out from the event-of-record rows.
+// Publishing inserts one row into the durable domain_events relation — the
+// event-of-record — inside the producer's transaction. Fan-out is separate: the
+// relay reads unpublished events in (partition_key, seq) order, resolves matching
+// non-revoked event_subscriptions, and enqueues one ordinary inbox job per
+// subscription, so claiming, acking, nacking, and heartbeating are the unchanged
+// jobs lease lifecycle and replay re-fans-out from domain_events.
 type PostgresEventTransport struct {
 	store         *PostgresJobStore
 	pool          *pgxpool.Pool
-	subscriptions []events.Subscription
 	workerID      string
 	leaseDuration time.Duration
 }
@@ -51,14 +60,12 @@ type PostgresEventTransport struct {
 func NewPostgresEventTransport(
 	store *PostgresJobStore,
 	pool *pgxpool.Pool,
-	subscriptions []events.Subscription,
 	workerID string,
 	leaseDuration time.Duration,
 ) *PostgresEventTransport {
 	return &PostgresEventTransport{
 		store:         store,
 		pool:          pool,
-		subscriptions: subscriptions,
 		workerID:      workerID,
 		leaseDuration: leaseDuration,
 	}
@@ -66,42 +73,149 @@ func NewPostgresEventTransport(
 
 var _ events.Transport = (*PostgresEventTransport)(nil)
 
+// Publish inserts the event-of-record into domain_events, keyed on the envelope
+// id. With a caller transaction the insert joins it — the transactional-outbox
+// rule — and the asynchronous relay worker fans out after commit. Without one
+// (unit tests and simple callers) the insert commits on its own and the relay is
+// drained inline, so a single-shot publish then claim observes the delivery.
 func (p *PostgresEventTransport) Publish(ctx context.Context, tx events.TxHandle, e *eventsv1.EventEnvelope) error {
 	if e.GetId() == "" || e.GetType() == "" || e.GetSource() == "" {
 		return events.ErrInvalidEnvelope
 	}
-	requests := []*jobsv1.EnqueueJobRequest{p.eventOfRecord(e)}
-	for _, subscription := range p.subscriptions {
-		if !events.Matches(subscription.TypePattern, e.GetType()) {
-			continue
-		}
-		requests = append(requests, p.delivery(e, subscription, e.GetId()+":"+subscription.ID))
+	fingerprint, err := eventFingerprint(e)
+	if err != nil {
+		return err
 	}
-	return p.enqueueAll(ctx, tx, requests)
+	if pgtx, ok := tx.(pgx.Tx); ok {
+		return p.insertDomainEvent(ctx, pgtx, e, fingerprint)
+	}
+	if err := pgx.BeginFunc(ctx, p.pool, func(pgtx pgx.Tx) error {
+		return p.insertDomainEvent(ctx, pgtx, e, fingerprint)
+	}); err != nil {
+		return err
+	}
+	_, err = p.RelayOnce(ctx)
+	return err
 }
 
-// enqueueAll commits the event-of-record and every delivery as one unit: within
-// the caller's transaction when one is supplied, otherwise in a single
-// transaction of its own. A mid-fan-out failure therefore leaves no partially
-// published event behind.
-func (p *PostgresEventTransport) enqueueAll(ctx context.Context, tx events.TxHandle, requests []*jobsv1.EnqueueJobRequest) error {
-	if pgtx, ok := tx.(pgx.Tx); ok {
-		for _, request := range requests {
-			if err := enqueueOne(ctx, pgtx, request); err != nil {
-				return mapEnqueueError(err)
-			}
-		}
-		return nil
+// eventFingerprint is the idempotency witness stored beside the event id: two
+// publishes of one id must carry the same fact. A deterministic proto encoding
+// makes the digest stable across processes and languages.
+func eventFingerprint(e *eventsv1.EventEnvelope) ([]byte, error) {
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(e)
+	if err != nil {
+		return nil, events.ErrInvalidEnvelope
 	}
-	err := pgx.BeginFunc(ctx, p.pool, func(pgtx pgx.Tx) error {
-		for _, request := range requests {
-			if err := enqueueOne(ctx, pgtx, request); err != nil {
-				return err
+	sum := sha256.Sum256(raw)
+	return sum[:], nil
+}
+
+const publishDomainEventSQL = `
+	SELECT event_id, stored_fingerprint, inserted
+	FROM public.publish_domain_event(
+		$1::uuid, $2, $3, $4, $5::timestamptz, $6, $7, $8, $9::bytea, $10::uuid,
+		$11, $12, $13, $14, $15, $16, $17, $18::int, $19::bytea
+	)`
+
+func (p *PostgresEventTransport) insertDomainEvent(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, fingerprint []byte) error {
+	var eventTime any
+	if e.GetTime() != nil {
+		eventTime = e.GetTime().AsTime().UTC()
+	}
+	var eventID string
+	var stored []byte
+	var inserted bool
+	err := tx.QueryRow(ctx, publishDomainEventSQL,
+		e.GetId(), e.GetType(), e.GetSource(), e.GetSubject(), eventTime,
+		e.GetSpecversion(), e.GetDatacontenttype(), e.GetDataschema(), e.GetData(),
+		nullableUUID(e.GetTenantId()), e.GetBoundaryId(), e.GetPartitionKey(),
+		e.GetCorrelationId(), e.GetCausationId(), e.GetActorPrincipalId(),
+		e.GetOwnerPrincipalId(), e.GetTraceparent(), int32(eventSchemaVersion(e)),
+		fingerprint,
+	).Scan(&eventID, &stored, &inserted)
+	if err != nil {
+		return fmt.Errorf("events: publish domain event: %w", err)
+	}
+	if !inserted && !bytes.Equal(stored, fingerprint) {
+		return events.ErrIdempotencyConflict
+	}
+	return nil
+}
+
+// RelayOnce drains every unpublished event, one bounded batch per transaction,
+// and returns how many events it relayed. The asynchronous relay worker calls it
+// on a tick; Publish calls it inline for the no-transaction path.
+func (p *PostgresEventTransport) RelayOnce(ctx context.Context) (int, error) {
+	relayed := 0
+	for {
+		batch, err := p.relayBatch(ctx)
+		if err != nil {
+			return relayed, err
+		}
+		relayed += batch
+		if batch == 0 {
+			return relayed, nil
+		}
+	}
+}
+
+const relaySelectUnpublishedSQL = `
+	SELECT id, type, source, subject, event_time, specversion, datacontenttype,
+	       dataschema, data, tenant_id, boundary_id, partition_key, correlation_id,
+	       causation_id, actor_principal_id, owner_principal_id, traceparent,
+	       schema_version
+	FROM public.domain_events
+	WHERE published_at IS NULL
+	ORDER BY partition_key, seq
+	LIMIT $1
+	FOR UPDATE SKIP LOCKED`
+
+const relayMarkPublishedSQL = `UPDATE public.domain_events SET published_at = NOW() WHERE id = $1::uuid`
+
+// relayBatch locks up to one batch of unpublished events with SKIP LOCKED so
+// concurrent relays never fan the same event out twice, enqueues one inbox
+// delivery per matching non-revoked subscription, and marks each event
+// published — all in one transaction, so a delivery failure rolls the whole
+// batch back and the events stay unpublished for the next tick.
+func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
+	processed := 0
+	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, relaySelectUnpublishedSQL, relayBatchSize)
+		if err != nil {
+			return fmt.Errorf("events: select unpublished: %w", err)
+		}
+		pending, err := scanDomainEvents(rows)
+		if err != nil {
+			return err
+		}
+		if len(pending) == 0 {
+			return nil
+		}
+		subscriptions, err := liveSubscriptions(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, e := range pending {
+			for _, subscription := range subscriptions {
+				if !events.Matches(subscription.TypePattern, e.GetType()) {
+					continue
+				}
+				request := p.delivery(e, subscription, e.GetId()+":"+subscription.ID)
+				if err := enqueueOne(ctx, tx, request); err != nil {
+					return mapEnqueueError(err)
+				}
 			}
+			if _, err := tx.Exec(ctx, relayMarkPublishedSQL, e.GetId()); err != nil {
+				return fmt.Errorf("events: mark published: %w", err)
+			}
+			processed++
 		}
 		return nil
 	})
-	return mapEnqueueError(err)
+	if err != nil {
+		return 0, err
+	}
+	return processed, nil
 }
 
 func enqueueOne(ctx context.Context, tx pgx.Tx, request *jobsv1.EnqueueJobRequest) error {
@@ -120,21 +234,35 @@ func mapEnqueueError(err error) error {
 	return err
 }
 
-func (p *PostgresEventTransport) eventOfRecord(e *eventsv1.EventEnvelope) *jobsv1.EnqueueJobRequest {
-	return &jobsv1.EnqueueJobRequest{Job: &jobsv1.NewJob{
-		Direction:      jobsv1.JobDirection_JOB_DIRECTION_OUTBOX,
-		Scope:          eventScope(e.GetTenantId()),
-		Queue:          eventsRelayQueue,
-		Topic:          e.GetType(),
-		Source:         e.GetSource(),
-		IdempotencyKey: "event:" + e.GetId(),
-		Ordering:       eventOrdering(e.GetPartitionKey()),
-		SchemaVersion:  eventSchemaVersion(e),
-		Payload:        e.GetData(),
-		ContentType:    eventContentType(e),
-		Attributes:     eventAttributes(e),
-		MaxAttempts:    eventDeliveryMaxAttempts,
-	}}
+const liveSubscriptionsSQL = `
+	SELECT id, subscriber_principal_id, type_pattern, queue, delivery
+	FROM public.event_subscriptions
+	WHERE revoked_at IS NULL`
+
+func liveSubscriptions(ctx context.Context, tx pgx.Tx) ([]events.Subscription, error) {
+	rows, err := tx.Query(ctx, liveSubscriptionsSQL)
+	if err != nil {
+		return nil, fmt.Errorf("events: load subscriptions: %w", err)
+	}
+	defer rows.Close()
+	var subscriptions []events.Subscription
+	for rows.Next() {
+		var id, principal, pattern, queue, delivery string
+		if err := rows.Scan(&id, &principal, &pattern, &queue, &delivery); err != nil {
+			return nil, fmt.Errorf("events: scan subscription: %w", err)
+		}
+		subscriptions = append(subscriptions, events.Subscription{
+			ID:                    id,
+			SubscriberPrincipalID: principal,
+			TypePattern:           pattern,
+			Queue:                 queue,
+			Delivery:              events.Delivery(delivery),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("events: read subscriptions: %w", err)
+	}
+	return subscriptions, nil
 }
 
 func (p *PostgresEventTransport) delivery(e *eventsv1.EventEnvelope, subscription events.Subscription, idempotencyKey string) *jobsv1.EnqueueJobRequest {
@@ -218,59 +346,123 @@ func (p *PostgresEventTransport) Nack(ctx context.Context, token string, cause e
 	return mapLeaseError(err)
 }
 
+const replayDomainEventsSQL = `
+	SELECT id, type, source, subject, event_time, specversion, datacontenttype,
+	       dataschema, data, tenant_id, boundary_id, partition_key, correlation_id,
+	       causation_id, actor_principal_id, owner_principal_id, traceparent,
+	       schema_version
+	FROM public.domain_events
+	WHERE ($1::text IS NULL OR type = $1)
+	  AND ($2::uuid IS NULL OR tenant_id = $2)
+	  AND ($3::timestamptz IS NULL OR created_at >= $3)
+	ORDER BY partition_key, seq`
+
+// Replay re-fans-out the durable events matching the selector so a consumer that
+// attaches later receives history up to retention. Each redelivery carries a
+// fresh nonce in its idempotency key so it is never deduped against the original
+// delivery; the returned count is the number of events replayed, which is at
+// least one even when no subscription matches (the event is still durable).
 func (p *PostgresEventTransport) Replay(ctx context.Context, sel events.ReplaySelector) (int, error) {
-	rows, err := p.pool.Query(ctx, replayEventsSQL,
-		eventsRelayQueue,
+	rows, err := p.pool.Query(ctx, replayDomainEventsSQL,
 		nullableString(sel.Type),
-		nullableString(sel.TenantID),
+		nullableUUID(sel.TenantID),
 		nullableTime(sel.Since),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("events: query replay source: %w", err)
 	}
-	defer rows.Close()
-
-	var replay []*eventsv1.EventEnvelope
-	for rows.Next() {
-		var payload, attributesJSON []byte
-		if err := rows.Scan(&payload, &attributesJSON); err != nil {
-			return 0, fmt.Errorf("events: scan replay source: %w", err)
-		}
-		attributes := map[string]string{}
-		if err := json.Unmarshal(attributesJSON, &attributes); err != nil {
-			return 0, fmt.Errorf("events: decode replay attributes: %w", err)
-		}
-		replay = append(replay, envelopeFromAttributes(attributes, payload))
+	replay, err := scanDomainEvents(rows)
+	if err != nil {
+		return 0, err
 	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("events: read replay source: %w", err)
+	if len(replay) == 0 {
+		return 0, nil
 	}
 
-	var redeliveries []*jobsv1.EnqueueJobRequest
-	for _, e := range replay {
-		nonce := ":replay:" + uuid.NewString()
-		for _, subscription := range p.subscriptions {
-			if !events.Matches(subscription.TypePattern, e.GetType()) {
-				continue
+	err = pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+		subscriptions, err := liveSubscriptions(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, e := range replay {
+			nonce := ":replay:" + uuid.NewString()
+			for _, subscription := range subscriptions {
+				if sel.SubscriberPrincipalID != "" && subscription.SubscriberPrincipalID != sel.SubscriberPrincipalID {
+					continue
+				}
+				if !events.Matches(subscription.TypePattern, e.GetType()) {
+					continue
+				}
+				request := p.delivery(e, subscription, e.GetId()+":"+subscription.ID+nonce)
+				if err := enqueueOne(ctx, tx, request); err != nil {
+					return mapEnqueueError(err)
+				}
 			}
-			redeliveries = append(redeliveries, p.delivery(e, subscription, e.GetId()+":"+subscription.ID+nonce))
 		}
-	}
-	if err := p.enqueueAll(ctx, nil, redeliveries); err != nil {
+		return nil
+	})
+	if err != nil {
 		return 0, err
 	}
 	return len(replay), nil
 }
 
-const replayEventsSQL = `
-	SELECT payload, attributes::text
-	FROM job_messages
-	WHERE queue = $1
-	  AND direction = 'outbox'
-	  AND ($2::text IS NULL OR topic = $2)
-	  AND ($3::text IS NULL OR (scope_kind = 'tenant' AND organization_id::text = $3))
-	  AND ($4::timestamptz IS NULL OR created_at >= $4)
-	ORDER BY ordering_key NULLS FIRST, created_at, id`
+// scanDomainEvents reconstructs the envelope from its stored columns for every
+// row, closing the cursor before returning so the transaction is free for the
+// follow-on writes of a relay or replay.
+func scanDomainEvents(rows pgx.Rows) ([]*eventsv1.EventEnvelope, error) {
+	defer rows.Close()
+	var out []*eventsv1.EventEnvelope
+	for rows.Next() {
+		var (
+			id, eventType, source, subject                       string
+			specversion, datacontenttype, dataschema             string
+			boundaryID, partitionKey, correlationID, causationID string
+			actorPrincipalID, ownerPrincipalID, traceparent      string
+			data                                                 []byte
+			tenantID                                             *string
+			eventTime                                            *time.Time
+			schemaVersion                                        int32
+		)
+		if err := rows.Scan(
+			&id, &eventType, &source, &subject, &eventTime, &specversion,
+			&datacontenttype, &dataschema, &data, &tenantID, &boundaryID,
+			&partitionKey, &correlationID, &causationID, &actorPrincipalID,
+			&ownerPrincipalID, &traceparent, &schemaVersion,
+		); err != nil {
+			return nil, fmt.Errorf("events: scan domain event: %w", err)
+		}
+		e := &eventsv1.EventEnvelope{
+			Id:               id,
+			Type:             eventType,
+			Source:           source,
+			Subject:          subject,
+			Specversion:      specversion,
+			Datacontenttype:  datacontenttype,
+			Dataschema:       dataschema,
+			Data:             data,
+			BoundaryId:       boundaryID,
+			PartitionKey:     partitionKey,
+			CorrelationId:    correlationID,
+			CausationId:      causationID,
+			ActorPrincipalId: actorPrincipalID,
+			OwnerPrincipalId: ownerPrincipalID,
+			Traceparent:      traceparent,
+			SchemaVersion:    uint32(schemaVersion),
+		}
+		if tenantID != nil {
+			e.TenantId = *tenantID
+		}
+		if eventTime != nil {
+			e.Time = timestamppb.New(eventTime.UTC())
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("events: read domain events: %w", err)
+	}
+	return out, nil
+}
 
 // leaseToken carries the job id and its fencing token in the opaque lease token
 // the caller holds, so finalizers reconstruct the full lease reference without
@@ -427,6 +619,15 @@ func putAttribute(attributes map[string]string, key, value string) {
 }
 
 func nullableString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+// nullableUUID passes an empty id through as SQL NULL for a uuid parameter; a
+// non-empty id is sent as text and cast to uuid by the query.
+func nullableUUID(value string) *string {
 	if value == "" {
 		return nil
 	}

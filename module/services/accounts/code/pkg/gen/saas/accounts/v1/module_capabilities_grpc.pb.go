@@ -21,16 +21,21 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ModuleCapabilitiesService_EnqueueJob_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
-	ModuleCapabilitiesService_ClaimJobs_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
-	ModuleCapabilitiesService_HeartbeatJob_FullMethodName    = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
-	ModuleCapabilitiesService_AckJob_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
-	ModuleCapabilitiesService_NackJob_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
-	ModuleCapabilitiesService_NotifyUser_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
-	ModuleCapabilitiesService_RequestApproval_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
-	ModuleCapabilitiesService_GetApproval_FullMethodName     = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
-	ModuleCapabilitiesService_CancelApproval_FullMethodName  = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
-	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName  = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_EnqueueJob_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
+	ModuleCapabilitiesService_ClaimJobs_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
+	ModuleCapabilitiesService_HeartbeatJob_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
+	ModuleCapabilitiesService_AckJob_FullMethodName            = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
+	ModuleCapabilitiesService_NackJob_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
+	ModuleCapabilitiesService_NotifyUser_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	ModuleCapabilitiesService_RequestApproval_FullMethodName   = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+	ModuleCapabilitiesService_GetApproval_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
+	ModuleCapabilitiesService_CancelApproval_FullMethodName    = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
+	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName    = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_PublishEvent_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
+	ModuleCapabilitiesService_Subscribe_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
+	ModuleCapabilitiesService_Unsubscribe_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+	ModuleCapabilitiesService_ListSubscriptions_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
+	ModuleCapabilitiesService_ReplayEvents_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
 )
 
 // ModuleCapabilitiesServiceClient is the client API for ModuleCapabilitiesService service.
@@ -60,6 +65,16 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(ctx context.Context, in *ModuleSubscribeRequest, opts ...grpc.CallOption) (*ModuleSubscribeResponse, error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(ctx context.Context, in *ModuleUnsubscribeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(ctx context.Context, in *ModuleListSubscriptionsRequest, opts ...grpc.CallOption) (*ModuleListSubscriptionsResponse, error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(ctx context.Context, in *ModuleReplayEventsRequest, opts ...grpc.CallOption) (*ModuleReplayEventsResponse, error)
 }
 
 type moduleCapabilitiesServiceClient struct {
@@ -170,6 +185,56 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModulePublishEventResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_PublishEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) Subscribe(ctx context.Context, in *ModuleSubscribeRequest, opts ...grpc.CallOption) (*ModuleSubscribeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleSubscribeResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_Subscribe_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) Unsubscribe(ctx context.Context, in *ModuleUnsubscribeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_Unsubscribe_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ListSubscriptions(ctx context.Context, in *ModuleListSubscriptionsRequest, opts ...grpc.CallOption) (*ModuleListSubscriptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleListSubscriptionsResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ListSubscriptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *ModuleReplayEventsRequest, opts ...grpc.CallOption) (*ModuleReplayEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleReplayEventsResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ReplayEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ModuleCapabilitiesServiceServer is the server API for ModuleCapabilitiesService service.
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
@@ -197,6 +262,16 @@ type ModuleCapabilitiesServiceServer interface {
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(context.Context, *ModuleSubscribeRequest) (*ModuleSubscribeResponse, error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(context.Context, *ModuleUnsubscribeRequest) (*emptypb.Empty, error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(context.Context, *ModuleListSubscriptionsRequest) (*ModuleListSubscriptionsResponse, error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(context.Context, *ModuleReplayEventsRequest) (*ModuleReplayEventsResponse, error)
 	mustEmbedUnimplementedModuleCapabilitiesServiceServer()
 }
 
@@ -236,6 +311,21 @@ func (UnimplementedModuleCapabilitiesServiceServer) CancelApproval(context.Conte
 }
 func (UnimplementedModuleCapabilitiesServiceServer) EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmitAuditEvent not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) Subscribe(context.Context, *ModuleSubscribeRequest) (*ModuleSubscribeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Subscribe not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) Unsubscribe(context.Context, *ModuleUnsubscribeRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method Unsubscribe not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ListSubscriptions(context.Context, *ModuleListSubscriptionsRequest) (*ModuleListSubscriptionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSubscriptions not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ReplayEvents(context.Context, *ModuleReplayEventsRequest) (*ModuleReplayEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReplayEvents not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) mustEmbedUnimplementedModuleCapabilitiesServiceServer() {
 }
@@ -439,6 +529,96 @@ func _ModuleCapabilitiesService_EmitAuditEvent_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModulePublishEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).PublishEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_PublishEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).PublishEvent(ctx, req.(*ModulePublishEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_Subscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleSubscribeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).Subscribe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_Subscribe_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).Subscribe(ctx, req.(*ModuleSubscribeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_Unsubscribe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleUnsubscribeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).Unsubscribe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_Unsubscribe_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).Unsubscribe(ctx, req.(*ModuleUnsubscribeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ListSubscriptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleListSubscriptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubscriptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ListSubscriptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubscriptions(ctx, req.(*ModuleListSubscriptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ReplayEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleReplayEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ReplayEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ReplayEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ReplayEvents(ctx, req.(*ModuleReplayEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ModuleCapabilitiesService_ServiceDesc is the grpc.ServiceDesc for ModuleCapabilitiesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -485,6 +665,26 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EmitAuditEvent",
 			Handler:    _ModuleCapabilitiesService_EmitAuditEvent_Handler,
+		},
+		{
+			MethodName: "PublishEvent",
+			Handler:    _ModuleCapabilitiesService_PublishEvent_Handler,
+		},
+		{
+			MethodName: "Subscribe",
+			Handler:    _ModuleCapabilitiesService_Subscribe_Handler,
+		},
+		{
+			MethodName: "Unsubscribe",
+			Handler:    _ModuleCapabilitiesService_Unsubscribe_Handler,
+		},
+		{
+			MethodName: "ListSubscriptions",
+			Handler:    _ModuleCapabilitiesService_ListSubscriptions_Handler,
+		},
+		{
+			MethodName: "ReplayEvents",
+			Handler:    _ModuleCapabilitiesService_ReplayEvents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

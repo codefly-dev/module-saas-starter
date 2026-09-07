@@ -31,6 +31,13 @@ type InstallSolutionParams struct {
 	// GrantedBy is the installing admin — the standing grant's grantor and the
 	// default owner of record.
 	GrantedBy string
+	// ConsumesNamespaces is the set of event namespaces the installed solution
+	// declares it consumes from (its manifest `consumes`). At install these are
+	// materialized into durable subscriptions for the fresh agent principal from
+	// the composed catalog — the compose/install half of the Subscribe grant
+	// (EVENTS.md §Subscriptions). Empty means the solution consumes nothing, so
+	// no subscription is materialized.
+	ConsumesNamespaces []string
 }
 
 // InstallationStore is the narrow persistence surface the installation Service
@@ -79,7 +86,17 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 	if err := s.store.WithOrgTx(ctx, params.OrgID, func(ctx context.Context) error {
 		var e error
 		installation, e = s.installationStore().InstallSolution(ctx, params)
-		return e
+		if e != nil {
+			return e
+		}
+		// Publish installation.created in the same transaction (outbox). The
+		// boundary is the solution scope node the install just composed.
+		return s.publishLifecycleEvent(ctx, EventInstallationCreated, params.OrgID,
+			installation.GetRootScopeNodeId(), actorID, map[string]any{
+				"installation_id":     installation.GetId(),
+				"agent_principal_id":  installation.GetAgentPrincipalId(),
+				"solution_identifier": params.SolutionIdentifier,
+			})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot install solution")
 	}
@@ -91,6 +108,15 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 			"allowed_audiences":   params.AllowedAudiences,
 			"allowed_scopes":      params.AllowedScopes,
 		})
+	// Materialize the installed solution's declared consumes into durable
+	// subscriptions for its fresh agent principal (EVENTS.md §Subscriptions). This
+	// is a control-plane write, so it runs after the tenant install transaction
+	// commits rather than inside it; it is idempotent, so a failure here is
+	// recovered by a reinstall or a runtime Subscribe and never corrupts the
+	// install. A solution that consumes nothing materializes nothing.
+	if err := s.MaterializeSubscriptionsFromCatalog(ctx, installation.GetAgentPrincipalId(), actorID, params.ConsumesNamespaces); err != nil {
+		w.Warn("cannot materialize installed solution subscriptions", wool.ErrField(err))
+	}
 	return installation, nil
 }
 
@@ -141,7 +167,20 @@ func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, install
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var e error
 		installation, transitioned, e = s.installationStore().UninstallSolution(ctx, orgID, installationID)
-		return e
+		if e != nil {
+			return e
+		}
+		// Only a real active→revoked transition is a fact worth publishing;
+		// an idempotent re-uninstall emits neither event nor audit. Publish in
+		// the same transaction (outbox) so the revoke and its event are atomic.
+		if !transitioned {
+			return nil
+		}
+		return s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
+			installation.GetRootScopeNodeId(), actorID, map[string]any{
+				"installation_id":     installationID,
+				"solution_identifier": installation.GetSolutionIdentifier(),
+			})
 	}); err != nil {
 		return w.Wrapf(err, "cannot uninstall solution")
 	}

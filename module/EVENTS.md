@@ -1,13 +1,14 @@
 # Domain event contract
 
-Status: contract defined. This document is the authoritative standard for
+Status: pub/sub live (P2). This document is the authoritative standard for
 asynchronous, fan-out communication between modules and solutions. The transport
 is the durable jobs platform that already ships ([JOBS.md](./JOBS.md)); the
 `saas.events.v1` envelope package, the generated event catalog, the
 `domain_events` / `event_subscriptions` relations, the relay worker, the SDK
 `events` package, and the `ModuleCapabilitiesService` publish/subscribe surface
-are sequenced under [Phasing](#phasing). Nothing here changes the behavior of an
-existing queue; a command stays a command.
+are all in place — see [Phasing](#phasing) for what remains (P3 convergence).
+Nothing here changes the behavior of an existing queue; a command stays a
+command.
 
 A **domain event** is an immutable fact that something happened in a tenant,
 published once and delivered to every subscriber. This is distinct from a
@@ -294,10 +295,12 @@ No big bang. The existing string topics are reclassified, not rewritten:
   `events-contribution` schema plus `module-compose` validation; the SDK `events`
   package with the `PostgresTransport` mapping onto the existing jobs; the
   conformance suite. No behavior change for existing queues.
-- **P2 (pub/sub).** `domain_events` + `event_subscriptions` + the relay worker;
-  `Subscribe / Unsubscribe / ListSubscriptions / Publish / ReplayEvents` on
-  `ModuleCapabilitiesService`; the authority rules above; first producers and the
-  first consumer.
+- **P2 (pub/sub) — live.** `domain_events` + `event_subscriptions` + the
+  `events.relay` worker; `Subscribe / Unsubscribe / ListSubscriptions / Publish /
+  ReplayEvents` on `ModuleCapabilitiesService`; the authority rules above.
+  Accounts is the first producer (`installation.created / revoked`, `scope.granted
+  / revoked`); the `reference` namespace is the first consumer, its `consumes`
+  entry materialized into an `event_subscriptions` row at install.
 - **P3 (convergence).** Webhooks as subscribers; the AsyncAPI projection
   published; an admin "Events" page (types, subscribers, lag, dead-letters).
 - **Later, only if needed.** A broker transport behind the same port, chosen by

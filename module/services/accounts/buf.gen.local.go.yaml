@@ -1,0 +1,37 @@
+version: v2
+# Go-only generation template: the same pinned plugins as buf.gen.local.yaml
+# minus protoc-gen-es, so a workstation without the private @codefly npm
+# registry can still regenerate the Go/OpenAPI surface. clean is off so a
+# path-scoped run never deletes untargeted output. Not the sanctioned frontend
+# path — regenerate TypeScript with buf.gen.local.yaml when the es plugin is
+# available.
+clean: false
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package
+      module: buf.build/googleapis/googleapis
+    - file_option: go_package
+      module: buf.build/bufbuild/protovalidate
+  override:
+    - file_option: go_package_prefix
+      value: accounts/pkg/gen
+plugins:
+  - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.1]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.29.0]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0]
+    out: code/pkg/gen
+    opt: paths=source_relative
+  - local: [go, run, github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0]
+    out: generated/openapi-raw
+    strategy: all
+    opt:
+      - allow_merge=true
+      - merge_file_name=api

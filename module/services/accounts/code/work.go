@@ -36,6 +36,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 )
 
@@ -176,6 +177,16 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("parse module principal registry: %w", err)
 	}
 	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+
+	// Domain-event pub/sub (issue #493): the reference events.Transport over the
+	// durable jobs platform. A module publish joins its WithOrgTx transaction so
+	// the insert is the transactional outbox and the tenant gate re-checks under
+	// app_tenant; the relay worker then drains domain_events after commit, fanning
+	// each event out to matching subscriptions on the app_job_worker pool
+	// (BYPASSRLS, so it resolves events and subscriptions across every tenant).
+	eventTransport := infra.NewPostgresEventTransport(jobStore, jobWorkerPool, "events-relay-"+uuid.NewString(), time.Minute)
+	service.SetModuleEventTransport(eventTransport)
+	eventRelayWorker := infra.NewEventRelayWorker(eventTransport, 0)
 
 	eventRegistry, err := analytics.DefaultRegistry()
 	if err != nil {
@@ -761,6 +772,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
+	eventRelayWorker.Start(ctx)
 
 	return func() {
 		sw := wool.Get(ctx).In("shutdown")
@@ -812,6 +824,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := datasourceSyncWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("datasource sync worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping domain-event relay worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := eventRelayWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("domain-event relay worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("closing outbound webhook projection database pool")
