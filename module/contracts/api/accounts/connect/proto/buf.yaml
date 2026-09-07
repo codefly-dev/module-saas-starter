@@ -54,5 +54,11 @@ breaking:
     # grantable) is replaced by a scope-node boundary binding across the three
     # datasource messages (issue #473). Waive only field deletion for this file;
     # every other breaking rule still guards it.
+    #
+    # root_scope_path (a caller-chosen ltree path that let two installs collide or
+    # nest) is replaced by a server-derived, UUID-labelled root node (issue #480).
+    # Waive only field deletion for this file; every other breaking rule still
+    # guards it.
     FIELD_NO_DELETE:
       - saas/accounts/v1/datasource.proto
+      - saas/accounts/v1/installations.proto
