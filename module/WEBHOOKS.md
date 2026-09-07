@@ -11,6 +11,13 @@ ranges.
 This follows the application- and network-layer defense-in-depth guidance in
 the [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
 
+An outbound webhook is the external-facing subscriber kind of the
+[domain event contract](./EVENTS.md): a subscription with `delivery = webhook`
+whose consumer is the dispatcher described here. Only event types declared
+`visibility: external` in the event catalog are eligible to be carried over a
+webhook, so one subscription model governs both internal fan-out and external
+delivery.
+
 ## Secret lifecycle
 
 - Creation generates a 256-bit `whsec_...` key on the server, encrypts it with

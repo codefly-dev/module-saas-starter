@@ -11,6 +11,14 @@ plugins use the same envelope and lifecycle; they identify their own queue,
 topic, source, payload schema, and handler without changing the platform state
 machine.
 
+A **command** is inbox/outbox to one queue — work a single named consumer must
+perform — and is the whole of this contract. A **domain event** is a fact fanned
+out to every subscriber; it is published and consumed through the
+[EVENTS.md](./EVENTS.md) contract, whose Postgres transport is this jobs
+platform (`topic := type`, `idempotency_key := id`, `ordering := partition_key`).
+Never hand-enqueue to another module's queue: publish an event and let its
+subscriptions route it.
+
 ## Sources of truth
 
 1. `services/accounts/proto/saas/jobs/v1/jobs.proto` owns the versioned wire
