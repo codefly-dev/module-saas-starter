@@ -213,9 +213,131 @@ func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.
 	return &emptypb.Empty{}, nil
 }
 
+func (s *ModuleCapabilitiesServer) PublishEvent(ctx context.Context, req *gen.ModulePublishEventRequest) (*gen.ModulePublishEventResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	eventID, err := service.ModulePublishEvent(ctx, caller, req.GetTenant(), req.GetEnvelope())
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModulePublishEventResponse{EventId: eventID}, nil
+}
+
+func (s *ModuleCapabilitiesServer) Subscribe(ctx context.Context, req *gen.ModuleSubscribeRequest) (*gen.ModuleSubscribeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sub, err := service.ModuleSubscribe(ctx, caller, req.GetTypePattern(), req.GetQueue(), deliveryToString(req.GetDelivery()))
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModuleSubscribeResponse{Subscription: moduleSubscriptionProto(sub)}, nil
+}
+
+func (s *ModuleCapabilitiesServer) Unsubscribe(ctx context.Context, req *gen.ModuleUnsubscribeRequest) (*emptypb.Empty, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := service.ModuleUnsubscribe(ctx, caller, req.GetSubscriptionId()); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *ModuleCapabilitiesServer) ListSubscriptions(ctx context.Context, req *gen.ModuleListSubscriptionsRequest) (*gen.ModuleListSubscriptionsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	subs, err := service.ModuleListSubscriptions(ctx, caller)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*gen.ModuleSubscription, 0, len(subs))
+	for _, sub := range subs {
+		out = append(out, moduleSubscriptionProto(sub))
+	}
+	return &gen.ModuleListSubscriptionsResponse{Subscriptions: out}, nil
+}
+
+func (s *ModuleCapabilitiesServer) ReplayEvents(ctx context.Context, req *gen.ModuleReplayEventsRequest) (*gen.ModuleReplayEventsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var since time.Time
+	if req.GetSince() != nil {
+		since = req.GetSince().AsTime()
+	}
+	redelivered, err := service.ModuleReplayEvents(ctx, caller, req.GetTenant(), req.GetType(), since)
+	if err != nil {
+		return nil, err
+	}
+	return &gen.ModuleReplayEventsResponse{Redelivered: int32(redelivered)}, nil
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// deliveryToString narrows the wire enum to the business/DB spelling; an
+// unspecified delivery is left empty so the Store applies its 'unordered'
+// default.
+func deliveryToString(d gen.EventDelivery) string {
+	switch d {
+	case gen.EventDelivery_EVENT_DELIVERY_ORDERED:
+		return "ordered"
+	case gen.EventDelivery_EVENT_DELIVERY_UNORDERED:
+		return "unordered"
+	default:
+		return ""
+	}
+}
+
+// deliveryToProto is the inverse of deliveryToString for outbound subscriptions.
+func deliveryToProto(s string) gen.EventDelivery {
+	switch s {
+	case "ordered":
+		return gen.EventDelivery_EVENT_DELIVERY_ORDERED
+	case "unordered":
+		return gen.EventDelivery_EVENT_DELIVERY_UNORDERED
+	default:
+		return gen.EventDelivery_EVENT_DELIVERY_UNSPECIFIED
+	}
+}
+
+func moduleSubscriptionProto(sub *business.EventSubscription) *gen.ModuleSubscription {
+	if sub == nil {
+		return nil
+	}
+	return &gen.ModuleSubscription{
+		Id:                    sub.ID,
+		SubscriberPrincipalId: sub.SubscriberPrincipalID,
+		TypePattern:           sub.TypePattern,
+		Queue:                 sub.Queue,
+		Delivery:              deliveryToProto(sub.Delivery),
+		CreatedAt:             timestamppb.New(sub.CreatedAt),
+	}
+}
 
 func structToMap(s *structpb.Struct) map[string]any {
 	if s == nil {

@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	"accounts/pkg/eventcatalog"
+	"accounts/pkg/events"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
@@ -34,11 +36,13 @@ import (
 
 // ModulePrincipalGrant declares what a module service principal may do on the
 // capability surface. Queues bounds the queues it may enqueue to and claim from;
-// CrossTenant lets it act on tenants other than its bound org and enqueue global
-// (inbox-worker) jobs — the authority an inbox worker needs to service every
-// tenant's deliveries on its queue.
+// Namespaces bounds the event namespaces it may publish into (the leading dotted
+// segment of an event type); CrossTenant lets it act on tenants other than its
+// bound org and enqueue global (inbox-worker) jobs — the authority an inbox
+// worker needs to service every tenant's deliveries on its queue.
 type ModulePrincipalGrant struct {
 	Queues      []string
+	Namespaces  []string
 	CrossTenant bool
 }
 
@@ -51,19 +55,33 @@ func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
 	return false
 }
 
+// allowsNamespace reports whether the principal may publish an event whose
+// namespace is the given leading segment. The registry is the allowlist, so an
+// empty Namespaces denies every publish (fail-closed).
+func (g ModulePrincipalGrant) allowsNamespace(namespace string) bool {
+	for _, n := range g.Namespaces {
+		if n == namespace {
+			return true
+		}
+	}
+	return false
+}
+
 // ModulePrincipalRegistry maps a module service principal id to its grant.
 type ModulePrincipalRegistry map[string]ModulePrincipalGrant
 
 // ParseModulePrincipalRegistry decodes the deployment-provided registry of
 // module service principals. The document its JSON describes is a map of
-// principal id to {"queues": [...], "cross_tenant": bool}. An empty string
-// yields an empty registry, which denies every caller (fail-closed).
+// principal id to {"queues": [...], "namespaces": [...], "cross_tenant": bool}.
+// An empty string yields an empty registry, which denies every caller
+// (fail-closed).
 func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 	if raw == "" {
 		return ModulePrincipalRegistry{}, nil
 	}
 	var wire map[string]struct {
 		Queues      []string `json:"queues"`
+		Namespaces  []string `json:"namespaces"`
 		CrossTenant bool     `json:"cross_tenant"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
@@ -71,7 +89,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 	}
 	registry := make(ModulePrincipalRegistry, len(wire))
 	for id, grant := range wire {
-		registry[id] = ModulePrincipalGrant{Queues: grant.Queues, CrossTenant: grant.CrossTenant}
+		registry[id] = ModulePrincipalGrant{Queues: grant.Queues, Namespaces: grant.Namespaces, CrossTenant: grant.CrossTenant}
 	}
 	return registry, nil
 }
@@ -574,4 +592,223 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 		return status.Error(codes.Internal, err.Error())
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Domain events (pub/sub, issue #493)
+// ---------------------------------------------------------------------------
+
+// moduleTx surfaces the ambient pgx transaction the Store opened for this
+// request (WithOrgTx / WithControlPlane both carry it on ctx) so the events
+// transport can join it — the transactional-outbox rule. It is typed as the
+// port's opaque TxHandle, so the business layer never imports the concrete
+// driver; a nil handle (no active tx) makes the transport open its own, which
+// is only the test/simple-caller path, never a tenant publish.
+func moduleTx(ctx context.Context) events.TxHandle {
+	return ctx.Value("tx") //nolint:staticcheck // shared transaction context key with the Store layer
+}
+
+// mapPublishError narrows the transport's sentinel publish errors to gRPC codes:
+// a reused id carrying a different fact is a caller contract violation, and an
+// unroutable envelope is invalid input; anything else is an internal fault.
+func mapPublishError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, events.ErrIdempotencyConflict):
+		return status.Error(codes.FailedPrecondition, "event id reused with a different envelope")
+	case errors.Is(err, events.ErrInvalidEnvelope):
+		return status.Error(codes.InvalidArgument, "event envelope is not routable: id, type, and source are required")
+	default:
+		return status.Error(codes.Internal, err.Error())
+	}
+}
+
+// ModulePublishEvent appends one domain event to the transactional outbox for
+// the caller's tenant and returns the accepted envelope id. Authority is
+// namespace + tenant: the event type's namespace (the segment before the first
+// dot) must be one the principal declares, and the event is published for a
+// tenant the caller may act on. The insert joins the WithOrgTx transaction so
+// the security-definer publish gate re-checks tenant == current_org under the
+// app_tenant role; the relay fans the event out to matching subscriptions after
+// commit. Publishing is deliberately not audited per-event — the durable event
+// of record is itself the trail — so only subscription changes and replays emit
+// audit events.
+func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, tenant string, envelope *events.EventEnvelope) (string, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return "", err
+	}
+	if s.eventTransport == nil {
+		return "", status.Error(codes.Internal, "event transport is not configured")
+	}
+	if envelope == nil {
+		return "", status.Error(codes.InvalidArgument, "envelope is required")
+	}
+	if tenant == "" {
+		return "", status.Error(codes.InvalidArgument, "tenant is required")
+	}
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return "", err
+	}
+	namespace := eventcatalog.Namespace(envelope.GetType())
+	if !grant.allowsNamespace(namespace) {
+		return "", status.Errorf(codes.PermissionDenied, "principal %s may not publish events in namespace %q", caller.PrincipalID, namespace)
+	}
+	// The authorized tenant wins over any tenant id the client wrote into the
+	// envelope: a caller cannot smuggle another tenant's scope past the namespace
+	// gate. The DB gate re-checks it under the app_tenant role regardless.
+	envelope.TenantId = tenant
+	// Ordered delivery partitions on the envelope's partition key; an empty key
+	// makes eventOrdering return nil, so an ordered subscription would silently
+	// lose per-partition ordering. A module caller that omits the key must still
+	// get tenant-ordered delivery, so default it to the tenant — the same
+	// partition first-party producers use — while preserving a finer-grained key
+	// the caller set deliberately (e.g. per-aggregate ordering within a tenant).
+	if envelope.GetPartitionKey() == "" {
+		envelope.PartitionKey = tenant
+	}
+
+	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {
+		return s.eventTransport.Publish(ctx, moduleTx(ctx), envelope)
+	}); err != nil {
+		return "", mapPublishError(err)
+	}
+	return envelope.GetId(), nil
+}
+
+// ModuleSubscribe creates, or idempotently re-affirms, a durable subscription
+// delivering events matching typePattern onto queue for the calling principal.
+// Authority is the queue grant plus the internal-visibility rule: a solution
+// principal may never subscribe a pattern that matches an internal published
+// event, so internal events stay intra-platform. A re-subscribe of the same
+// (principal, pattern, queue) returns the existing live row and emits no second
+// audit event.
+func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, typePattern, queue, delivery string) (*EventSubscription, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return nil, err
+	}
+	if !grant.allowsQueue(queue) {
+		return nil, status.Errorf(codes.PermissionDenied, "principal %s may not use queue %q", caller.PrincipalID, queue)
+	}
+	// An internal-visibility event is never delivered to a tenant-scoped
+	// subscriber: reject a pattern that would match any internal published type.
+	for _, internalType := range eventcatalog.InternalPublishedTypes() {
+		if events.Matches(typePattern, internalType) {
+			return nil, status.Errorf(codes.PermissionDenied, "type pattern %q matches internal event %q, which is not subscribable", typePattern, internalType)
+		}
+	}
+
+	var created *EventSubscription
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		sub, inserted, e := s.store.CreateEventSubscription(ctx, &EventSubscription{
+			SubscriberPrincipalID: caller.PrincipalID,
+			TypePattern:           typePattern,
+			Queue:                 queue,
+			Delivery:              delivery,
+			CreatedBy:             caller.PrincipalID,
+		})
+		if e != nil {
+			return e
+		}
+		created = sub
+		if !inserted {
+			return nil // idempotent re-affirm of an existing subscription: no new audit event
+		}
+		return s.emitTx(ctx, caller.PrincipalID, "agent", EventEventSubscriptionCreated, "event_subscription", sub.ID, "", map[string]any{
+			"subscription_id":         sub.ID,
+			"subscriber_principal_id": sub.SubscriberPrincipalID,
+			"type_pattern":            sub.TypePattern,
+			"queue":                   sub.Queue,
+		})
+	}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return created, nil
+}
+
+// ModuleUnsubscribe revokes one of the caller's own subscriptions. The revoke is
+// scoped by subscriber principal, so a caller can only revoke what it owns;
+// revoking an unknown or already-revoked subscription is NotFound and emits no
+// audit event.
+func (s *Service) ModuleUnsubscribe(ctx context.Context, caller ModuleCaller, subscriptionID string) error {
+	if _, err := s.moduleGrant(caller); err != nil {
+		return err
+	}
+	var revoked bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		ok, e := s.store.RevokeEventSubscription(ctx, subscriptionID, caller.PrincipalID)
+		if e != nil {
+			return e
+		}
+		revoked = ok
+		if !ok {
+			return nil
+		}
+		return s.emitTx(ctx, caller.PrincipalID, "agent", EventEventSubscriptionRevoked, "event_subscription", subscriptionID, "", map[string]any{
+			"subscription_id": subscriptionID,
+		})
+	}); err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+	if !revoked {
+		return status.Errorf(codes.NotFound, "subscription %s not found for principal %s", subscriptionID, caller.PrincipalID)
+	}
+	return nil
+}
+
+// ModuleListSubscriptions returns the calling principal's live subscriptions.
+func (s *Service) ModuleListSubscriptions(ctx context.Context, caller ModuleCaller) ([]*EventSubscription, error) {
+	if _, err := s.moduleGrant(caller); err != nil {
+		return nil, err
+	}
+	var subscriptions []*EventSubscription
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var e error
+		subscriptions, e = s.store.ListEventSubscriptions(ctx, caller.PrincipalID)
+		return e
+	}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return subscriptions, nil
+}
+
+// ModuleReplayEvents re-delivers durable events of one type for the caller's
+// tenant, created at or after since, only to the caller's own subscriptions.
+// Each redelivery carries a fresh idempotency key so a consumer that already
+// acknowledged the event still receives the replay. The replay itself is
+// audited (a control-plane action) but the individual redeliveries are not.
+func (s *Service) ModuleReplayEvents(ctx context.Context, caller ModuleCaller, tenant, eventType string, since time.Time) (int, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return 0, err
+	}
+	if s.eventTransport == nil {
+		return 0, status.Error(codes.Internal, "event transport is not configured")
+	}
+	if tenant == "" {
+		return 0, status.Error(codes.InvalidArgument, "tenant is required")
+	}
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return 0, err
+	}
+	redelivered, err := s.eventTransport.Replay(ctx, events.ReplaySelector{
+		Type:                  eventType,
+		TenantID:              tenant,
+		Since:                 since,
+		SubscriberPrincipalID: caller.PrincipalID,
+	})
+	if err != nil {
+		return 0, status.Error(codes.Internal, err.Error())
+	}
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.emitTx(ctx, caller.PrincipalID, "agent", EventEventReplayed, "domain_event", eventType, "", map[string]any{
+			"type":        eventType,
+			"redelivered": redelivered,
+		})
+	}); err != nil {
+		return 0, status.Error(codes.Internal, err.Error())
+	}
+	return redelivered, nil
 }

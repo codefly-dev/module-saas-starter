@@ -7,6 +7,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/events/v1/events.proto";
 import "saas/jobs/v1/jobs.proto";
 import "saas/policy/v1/options.proto";
 
@@ -264,6 +265,102 @@ message ModuleEmitAuditEventRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Domain events (pub/sub, issue #493)
+// ---------------------------------------------------------------------------
+
+// EventDelivery is the ordering guarantee a subscription requests, mirroring
+// events.Delivery in the SDK: UNORDERED fans out with no per-key ordering;
+// ORDERED preserves FIFO within an event's partition key.
+enum EventDelivery {
+  EVENT_DELIVERY_UNSPECIFIED = 0;
+  EVENT_DELIVERY_UNORDERED = 1;
+  EVENT_DELIVERY_ORDERED = 2;
+}
+
+// ModulePublishEventRequest publishes one domain event for the caller's bound
+// tenant. The event type's namespace (the segment before the first dot) must be
+// one the caller's principal declares. The envelope id is the idempotency key:
+// republishing the same id with the identical fact is a no-op, and reusing an
+// id for a different fact is rejected.
+message ModulePublishEventRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  saas.events.v1.EventEnvelope envelope = 2 [(buf.validate.field).required = true];
+}
+
+message ModulePublishEventResponse {
+  // event_id echoes the accepted envelope id — the idempotency key the outbox
+  // stored the event of record under. A republish of the same id carrying the
+  // identical fact returns the same id and is an accepted no-op; reusing the id
+  // for a different fact is rejected with FailedPrecondition.
+  string event_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleSubscribeRequest creates, or idempotently re-affirms, a durable
+// subscription that delivers events matching type_pattern onto queue for the
+// calling principal. type_pattern is an exact type or a single trailing ".*"
+// prefix. An event type declared with internal visibility is not subscribable
+// by a solution principal.
+message ModuleSubscribeRequest {
+  string type_pattern = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+)*(?:\\.\\*)?$"
+  }];
+  string queue = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  EventDelivery delivery = 3;
+}
+
+// ModuleSubscription is one durable subscription row as the module sees it.
+message ModuleSubscription {
+  string id = 1;
+  string subscriber_principal_id = 2;
+  string type_pattern = 3;
+  string queue = 4;
+  EventDelivery delivery = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ModuleSubscribeResponse {
+  ModuleSubscription subscription = 1;
+}
+
+// ModuleUnsubscribeRequest revokes one of the caller's own subscriptions.
+message ModuleUnsubscribeRequest {
+  string subscription_id = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleListSubscriptionsRequest lists the calling principal's live
+// subscriptions. It carries no filter today.
+message ModuleListSubscriptionsRequest {}
+
+message ModuleListSubscriptionsResponse {
+  repeated ModuleSubscription subscriptions = 1;
+}
+
+// ModuleReplayEventsRequest re-delivers durable events of one type for the
+// caller's tenant, created at or after since, only to the calling principal's
+// own subscriptions. Each redelivery carries a fresh idempotency key so a
+// consumer that already acknowledged the event still receives the replay.
+message ModuleReplayEventsRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string type = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  google.protobuf.Timestamp since = 3;
+}
+
+message ModuleReplayEventsResponse {
+  // redelivered is the number of durable events re-fanned to the caller's
+  // subscriptions.
+  int32 redelivered = 1;
+}
+
+// ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
 
@@ -398,6 +495,76 @@ service ModuleCapabilitiesService {
   }
   // EmitAuditEvent records a registered audit event on the tenant's spine.
   rpc EmitAuditEvent(ModuleEmitAuditEventRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // PublishEvent appends one domain event to the outbox for the caller's tenant.
+  rpc PublishEvent(ModulePublishEventRequest) returns (ModulePublishEventResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // Subscribe creates or re-affirms a durable subscription for the caller.
+  rpc Subscribe(ModuleSubscribeRequest) returns (ModuleSubscribeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // Unsubscribe revokes one of the caller's own subscriptions.
+  rpc Unsubscribe(ModuleUnsubscribeRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSubscriptions returns the calling principal's live subscriptions.
+  rpc ListSubscriptions(ModuleListSubscriptionsRequest) returns (ModuleListSubscriptionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ReplayEvents re-delivers durable events to the caller's own subscriptions.
+  rpc ReplayEvents(ModuleReplayEventsRequest) returns (ModuleReplayEventsResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

@@ -16,9 +16,12 @@ perform — and is the whole of this contract. A **domain event** is a fact fann
 out to every subscriber; the [EVENTS.md](./EVENTS.md) contract defines it, and
 its Postgres transport maps onto this jobs platform (`topic := type`,
 `idempotency_key := id`, `ordering := partition_key`). That publish/subscribe
-path is being built (see the EVENTS.md phasing); once it ships, cross-module
-communication is an event publish rather than a hand-enqueue to another module's
-queue.
+path is live (EVENTS.md phasing P2): a `Publish` writes the event of record into
+its producer's transaction, and the `events.relay` worker fans each event out as
+one ordinary inbox job per subscription — so a domain-event delivery is a command
+on the subscriber's queue, claimed and acked through this same lifecycle.
+Cross-module communication is therefore an event publish rather than a
+hand-enqueue to another module's queue.
 
 ## Sources of truth
 

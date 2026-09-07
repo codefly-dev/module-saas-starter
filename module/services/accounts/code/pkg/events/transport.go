@@ -27,13 +27,14 @@ const (
 )
 
 // Subscription is a durable declaration that a subscriber receives events
-// matching TypePattern on Queue. In P1 subscriptions are transport
-// configuration; the event_subscriptions relation and runtime CRUD are P2.
+// matching TypePattern on Queue. SubscriberPrincipalID names the principal the
+// subscription belongs to, so a replay can be scoped to one subscriber.
 type Subscription struct {
-	ID          string
-	TypePattern string
-	Queue       string
-	Delivery    Delivery
+	ID                    string
+	SubscriberPrincipalID string
+	TypePattern           string
+	Queue                 string
+	Delivery              Delivery
 }
 
 // Leased is one at-least-once delivery of an envelope, fenced by an opaque
@@ -44,11 +45,15 @@ type Leased struct {
 }
 
 // ReplaySelector bounds a replay to one type within one tenant since a point in
-// time. A zero TenantID replays across tenants for a platform principal.
+// time. A zero TenantID replays across tenants for a platform principal. A
+// non-empty SubscriberPrincipalID restricts the re-fan-out to subscriptions
+// owned by that principal, so ReplayEvents re-delivers only to the caller's own
+// subscriptions; empty re-fans to every matching subscription.
 type ReplaySelector struct {
-	Type     string
-	TenantID string
-	Since    time.Time
+	Type                  string
+	TenantID              string
+	Since                 time.Time
+	SubscriberPrincipalID string
 }
 
 // TxHandle is an opaque producer transaction. Publish is transactional when it

@@ -40,7 +40,7 @@ contracts:
 generators:
   - name: composition
     working-directory: tools
-    command: [go, run, ./cmd/module-compose]
+    command: [go, run, ./cmd/module-compose, --events, ../contracts/accounts/installation.events.codefly.yaml, --events, ../contracts/accounts/scope.events.codefly.yaml, --events, ../contracts/reference/events.codefly.yaml]
   - name: composed-protobuf
     working-directory: services/accounts
     command: [buf, generate, proto, --path, proto/saas/composed/settings/v1/settings.proto, --path, proto/saas/composed/org_settings/v1/settings.proto, --path, proto/contributed, --template, buf.gen.composition.yaml]
