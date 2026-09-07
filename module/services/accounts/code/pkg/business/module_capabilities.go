@@ -622,6 +622,19 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	if err != nil {
 		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "decrypt access token").Error())
 	}
+	// Trust boundary: blobSHA is caller-supplied and NOT re-validated against the
+	// change set that referenced it. Authorization is enforced at the repository
+	// grain — the caller is authorized against source.OrgID, and the SHA is read
+	// only from that source's own repo (source.Repo) with that source's own token,
+	// so a module can never reach another tenant's repository through this call.
+	// Within the authorized repo, a git blob SHA is a content-addressed,
+	// unguessable (SHA-1/-256) capability that accounts only ever hands a module
+	// via an in-scope change-set payload, so an in-scope caller cannot fabricate a
+	// SHA for out-of-scope content it was not already given. Re-deriving the tree
+	// to prove the SHA is reachable from the source's branch would reintroduce the
+	// per-fetch ticket this RPC exists to remove and break the intended lag between
+	// a module's cursor and the repo head, so the repo-grained check is the
+	// boundary by design.
 	content, err := s.newGitHubClient(token).GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
 	if err != nil {
 		if errors.Is(err, github.ErrFileTooLarge) {

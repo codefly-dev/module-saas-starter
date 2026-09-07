@@ -237,8 +237,8 @@ type DatasourceSource struct {
 	// the compiler parked); empty for an active source.
 	StatusReason string
 	LastSyncedAt *time.Time
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 
 	// Ingest cursor (issue #487). LastIngestedCommit is the head commit fully
 	// enqueued as a change set; the compiler diffs from it, not from a delivery's

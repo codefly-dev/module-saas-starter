@@ -145,6 +145,25 @@ func (s *PostgresStore) MarkDatasourceSourceDegraded(ctx context.Context, source
 	return err
 }
 
+// ClearDatasourceSourceDegraded returns a degraded source to active after a
+// snapshot succeeds again, undoing MarkDatasourceSourceDegraded: it clears
+// status_reason and restores next_reconcile_at from the reconcile interval (or
+// leaves it NULL when reconcile is disabled) so the sweep resumes selecting it.
+// The status='degraded' guard makes it a no-op on a source an operator has since
+// paused, so recovery cannot silently override an operator pause. Runs under the
+// caller's WithControlPlane (the leased compiler has no tenant context).
+func (s *PostgresStore) ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET status            = 'active',
+		       status_reason     = '',
+		       next_reconcile_at = CASE WHEN reconcile_interval > INTERVAL '0'
+		                                THEN NOW() + reconcile_interval END,
+		       updated_at        = NOW()
+		 WHERE id = $1 AND status = 'degraded'`, sourceID)
+	return err
+}
+
 // ListDatasourceSourcesDueForReconcile returns active GitHub sources whose
 // reconcile is due, oldest schedule first. Runs under the caller's WithControlPlane.
 func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {

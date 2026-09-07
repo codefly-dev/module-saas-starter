@@ -196,6 +196,29 @@ func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, so
 	return nil
 }
 
+func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, sourceID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return errors.New("not found")
+	}
+	// Mirror the store's status='degraded' guard: only a degraded row is revived,
+	// so a paused source is left untouched.
+	if s.Status != business.DatasourceStatusDegraded {
+		return nil
+	}
+	s.Status = business.DatasourceStatusActive
+	s.StatusReason = ""
+	if s.ReconcileInterval > 0 {
+		next := time.Now().UTC().Add(s.ReconcileInterval)
+		s.NextReconcileAt = &next
+	} else {
+		s.NextReconcileAt = nil
+	}
+	return nil
+}
+
 func (f *datasourceFakeStore) ListDatasourceSourcesDueForReconcile(_ context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
