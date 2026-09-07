@@ -506,6 +506,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	// overlapping rotation window, so callers can be migrated without a flag day.
 	adapters.SetInternalTokenRotation(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN_PREVIOUS"))
 	adapters.SetGatewayToken(workspaceEnv("internal-auth", "CODEFLY_GATEWAY_TOKEN"))
+	// The datasource content-ticket signer is keyed from the same internal secret,
+	// domain-separated, so a change-set job's opaque content ticket verifies at
+	// redemption without a second key to provision.
+	service.SetDatasourceTicketKey([]byte(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN")))
 
 	centralEnforcement, err := configuredCentralEnforcement()
 	if err != nil {
@@ -675,6 +679,22 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
+	// The change-set compiler (issue #487): a leased worker that turns each raw
+	// GitHub delivery — and each periodic/forced reconcile request — into a set of
+	// per-file ingest ops, holding the source's decrypted token so all GitHub
+	// calls carry it. The queue's per-source FIFO ordering key keeps one delivery
+	// in flight per source, so a source's cursor is read and advanced without a
+	// second delivery racing it.
+	datasourceDeliveryWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.DatasourceDeliveryQueue,
+		Handler:    service.NewDatasourceDeliveryJobHandler(),
+		RetryDelay: business.DatasourceSyncRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// The inbound GitHub push webhook is an unauthenticated, un-rate-limited edge
 	// that resolves a per-source signing secret from the credential store (a
 	// control-plane DB read) on every request. It is opt-in per deployment so a
@@ -686,7 +706,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	if strings.EqualFold(strings.TrimSpace(os.Getenv("DATASOURCE_GITHUB_WEBHOOK_ENABLED")), "true") {
 		adapters.RegisterHTTPRoute(datasource.GitHubWebhookPath, datasource.NewHandler(
 			datasource.GitHubWebhookPath,
-			datasource.HandlerDeps{Producer: jobStore, Secrets: datasourceSigningSecretResolver{svc: service}},
+			datasource.HandlerDeps{Producer: jobStore, Sources: datasourceSourceResolver{svc: service}},
 		))
 		w.Info("GitHub datasource webhook enabled")
 	}
@@ -719,14 +739,30 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		// Datasource reconcile (issue #487 §6): the production safety net for lost
+		// webhooks and for local development without a public tunnel. Each sweep
+		// enqueues a reconcile job for every active GitHub source whose schedule has
+		// elapsed; the job resolves the head and snapshots only if it moved, so the
+		// sweep does no GitHub work itself.
+		sweepReconcile := func() {
+			if n, err := service.RunDatasourceReconcile(retentionCtx); err != nil {
+				rw.Warn("datasource reconcile sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("enqueued datasource reconciles", wool.Field("count", n))
+			}
+		}
+
 		// Run once immediately on startup.
 		runRetention()
 		sweepReplay()
+		sweepReconcile()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
+		reconcileTicker := time.NewTicker(time.Minute)
 		defer retentionTicker.Stop()
 		defer replayTicker.Stop()
+		defer reconcileTicker.Stop()
 		for {
 			select {
 			case <-retentionCtx.Done():
@@ -735,6 +771,8 @@ func doWork(ctx context.Context) (Clean, error) {
 				runRetention()
 			case <-replayTicker.C:
 				sweepReplay()
+			case <-reconcileTicker.C:
+				sweepReconcile()
 			}
 		}
 	}()
@@ -761,6 +799,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
+	datasourceDeliveryWorker.Start(ctx)
 
 	return func() {
 		sw := wool.Get(ctx).In("shutdown")
@@ -812,6 +851,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := datasourceSyncWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("datasource sync worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping datasource delivery worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := datasourceDeliveryWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("datasource delivery worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("closing outbound webhook projection database pool")

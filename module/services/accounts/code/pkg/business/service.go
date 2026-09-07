@@ -53,6 +53,7 @@ type Service struct {
 	datasourceCipher          SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
 	githubBaseURL             string                     // api.github.com override for the datasource connector
+	datasourceTicketSigner    *datasourceTicketSigner    // mints/verifies opaque content tickets for oversized change-set blobs
 	newGitHubClient           func(token string) GitHubContentClient
 	newAPIClient              func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient          func(cfg CrawlerDatasourceConfig) CrawlerContentClient

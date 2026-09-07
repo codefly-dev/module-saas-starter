@@ -17,9 +17,10 @@ type InstallSolutionParams struct {
 	AgentIdentifier    string // "publisher/name:version"
 	SolutionIdentifier string
 	DisplayName        string // empty defaults to AgentIdentifier
-	RootScopePath      string // ltree path of the kind='solution' node
-	RootScopeLabel     string
-	RoleID             string // the least-privilege role granted at the root node
+	// RootScopeLabel is the display label of the kind='solution' node. The node's
+	// ltree path is derived server-side from its id (ADR-0002), never caller-chosen.
+	RootScopeLabel string
+	RoleID         string // the least-privilege role granted at the root node
 	// OwnerPrincipalID is the accountable human of record; empty defaults to the
 	// installing admin (GrantedBy). Must be a current org admin.
 	OwnerPrincipalID    string
@@ -129,10 +130,10 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 	return installation, nil
 }
 
-// UninstallSolution reverses an install: it revokes the agent principal and its
-// standing grant, soft-deletes the solution scope node, and marks the
-// installation revoked. Idempotent on an already-revoked installation (no second
-// audit event).
+// UninstallSolution reverses an install: it revokes the agent principal, removes
+// its standing grant, and marks the installation revoked. The solution scope node
+// is left in place (inert without a grant or a live agent) so a reinstall reuses
+// it. Idempotent on an already-revoked installation (no second audit event).
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
 	var installation *gen.Installation

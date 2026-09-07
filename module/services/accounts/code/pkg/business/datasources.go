@@ -45,6 +45,11 @@ const (
 	APICredentialKindOAuth2 = "oauth2"
 )
 
+// defaultDatasourceReconcileInterval is the period at which a GitHub source is
+// snapshot-reconciled as a safety net for lost webhooks and for local
+// development without a public tunnel (issue #487 §6).
+const defaultDatasourceReconcileInterval = 30 * time.Minute
+
 // oauth2ExpiryLeeway refreshes a stored access token slightly before it expires
 // so a token that lapses mid-fetch does not fail the sync.
 const oauth2ExpiryLeeway = 60 * time.Second
@@ -226,6 +231,18 @@ type DatasourceSource struct {
 	LastSyncedAt        *time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+
+	// Ingest cursor (issue #487). LastIngestedCommit is the head commit fully
+	// enqueued as a change set; the compiler diffs from it, not from a delivery's
+	// own `before`, so a missed delivery is caught up by the next one.
+	// ReconcileInterval 0 disables the periodic snapshot (NextReconcileAt stays
+	// nil); otherwise NextReconcileAt is when the reconcile sweep next considers
+	// the source.
+	LastIngestedCommit string
+	LastIngestedAt     *time.Time
+	LastDeliveryID     string
+	ReconcileInterval  time.Duration
+	NextReconcileAt    *time.Time
 }
 
 // WebhookConfigured reports whether a signing secret is stored, i.e. whether
@@ -257,6 +274,8 @@ type GitHubContentClient interface {
 	ResolveCommit(ctx context.Context, repo, ref string) (string, error)
 	ListFiles(ctx context.Context, repo, ref string, prefixes []string) ([]github.File, error)
 	GetFileContent(ctx context.Context, repo, ref, path string) ([]byte, error)
+	Compare(ctx context.Context, repo, base, head string) (*github.Comparison, error)
+	GetBlob(ctx context.Context, repo, blobSHA string, max int64) ([]byte, error)
 }
 
 // APIContentClient is the subset of the generic API connector the Service needs.
@@ -338,6 +357,15 @@ func (s *Service) SetDatasourceGitHubClientFactory(factory func(token string) Gi
 	s.newGitHubClient = factory
 }
 
+// SetDatasourceTicketKey seeds the signer that mints and verifies the opaque
+// content tickets a change-set job carries in place of an oversized blob. The
+// seed is the deployment's internal key; the same seed must be present wherever
+// ResolveContentTicket runs so a ticket minted by the compiler verifies at
+// redemption.
+func (s *Service) SetDatasourceTicketKey(seed []byte) {
+	s.datasourceTicketSigner = newDatasourceTicketSigner(seed)
+}
+
 // SetDatasourceAPIClientFactory overrides how per-Source API clients are built.
 // Tests use it to inject a fake without a live HTTP endpoint.
 func (s *Service) SetDatasourceAPIClientFactory(factory func(cfg APIDatasourceConfig, credential string) APIContentClient) {
@@ -388,14 +416,17 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	}
 
 	source := &DatasourceSource{
-		ID:       NewIDString(),
-		OrgID:    orgID,
-		Provider: DatasourceProviderGitHub,
-		Repo:     repo,
-		Paths:    normalizePaths(input.Paths),
-		Branch:   strings.TrimSpace(input.Branch),
-		Status:   DatasourceStatusActive,
+		ID:                NewIDString(),
+		OrgID:             orgID,
+		Provider:          DatasourceProviderGitHub,
+		Repo:              repo,
+		Paths:             normalizePaths(input.Paths),
+		Branch:            strings.TrimSpace(input.Branch),
+		Status:            DatasourceStatusActive,
+		ReconcileInterval: defaultDatasourceReconcileInterval,
 	}
+	nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
+	source.NextReconcileAt = &nextReconcile
 
 	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), input.AccessToken)
 	if err != nil {
@@ -500,6 +531,9 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		source.Repo = repo
 		source.Paths = normalizePaths(input.Paths)
 		source.Branch = strings.TrimSpace(input.Branch)
+		source.ReconcileInterval = defaultDatasourceReconcileInterval
+		nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
+		source.NextReconcileAt = &nextReconcile
 	case DatasourceProviderAPI:
 		if credential == "" {
 			return nil, w.NewError("credential is required")
@@ -814,11 +848,13 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 	return nil
 }
 
-// SyncDatasourceSource enqueues a durable request to pull the Source's current
-// contents and returns the request's job id. The pull itself runs off-request in
-// a leased worker (RunDatasourceSync), so a large repository cannot block or time
-// out the RPC and the walk gets the jobs framework's retry/backoff — long enough
-// to outlast a GitHub rate-limit window. The Source must belong to orgID.
+// SyncDatasourceSource enqueues a durable "reconcile now" request and returns
+// the request's job id. The pull runs off-request in a leased worker, so a large
+// repository cannot block or time out the RPC and gets the jobs framework's
+// retry/backoff. For a GitHub source this is a forced snapshot at the branch head
+// (regardless of cursor equality), serialized behind any in-flight delivery for
+// the same source; other providers keep the full-refetch sync path. The Source
+// must belong to orgID.
 func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string) (string, error) {
 	w := wool.Get(ctx).In("SyncDatasourceSource")
 	source, err := s.GetDatasourceSource(ctx, orgID, id)
@@ -828,8 +864,28 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	if s.datasourceJobs == nil {
 		return "", w.NewError("datasource connector is not configured")
 	}
-	response, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
-		Job: &jobsv1.NewJob{
+
+	var job *jobsv1.NewJob
+	if source.Provider == DatasourceProviderGitHub {
+		job = &jobsv1.NewJob{
+			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+			Queue:          DatasourceDeliveryQueue,
+			Topic:          datasourceReconcileTopic,
+			Source:         datasourceReconcileSource,
+			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
+			IdempotencyKey: NewIDString(),
+			SchemaVersion:  datasourceChangeSetSchemaVersion,
+			MaxAttempts:    datasourceDeliveryMaxAttempts,
+			Attributes: map[string]string{
+				attrSourceID:      source.ID,
+				attrOrgID:         source.OrgID,
+				attrBoundaryID:    source.BoundaryNodeID,
+				attrReconcileMode: reconcileModeForce,
+			},
+		}
+	} else {
+		job = &jobsv1.NewJob{
 			Direction: jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:     &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: source.OrgID}},
 			Queue:     DatasourceSyncRequestQueue,
@@ -842,8 +898,10 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			SchemaVersion:  datasourceSyncRequestSchemaVersion,
 			MaxAttempts:    datasourceSyncRequestMaxAttempts,
 			Attributes:     map[string]string{attrSourceID: source.ID},
-		},
-	})
+		}
+	}
+
+	response, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{Job: job})
 	if err != nil {
 		return "", w.Wrapf(err, "enqueue sync request")
 	}
@@ -868,8 +926,6 @@ func (s *Service) RunDatasourceSync(ctx context.Context, sourceID string) (int, 
 	}
 
 	switch source.Provider {
-	case DatasourceProviderGitHub:
-		return s.runGitHubSync(ctx, source)
 	case DatasourceProviderAPI:
 		return s.runAPISync(ctx, source)
 	case DatasourceProviderCrawler:
@@ -877,73 +933,10 @@ func (s *Service) RunDatasourceSync(ctx context.Context, sourceID string) (int, 
 	case DatasourceProviderUpload:
 		return s.runUploadSync(ctx, source)
 	default:
-		return 0, w.NewError("unknown datasource provider")
+		// GitHub sources are reconciled through the change-set delivery worker
+		// (DatasourceDeliveryQueue), not this full-refetch path.
+		return 0, w.NewError("unsupported datasource provider for full sync")
 	}
-}
-
-// runGitHubSync resolves the ref to a commit, lists the in-scope files, and
-// enqueues one ingest delivery per file. Files too large for the contents API
-// are skipped rather than aborting the walk.
-func (s *Service) runGitHubSync(ctx context.Context, source *DatasourceSource) (int, error) {
-	w := wool.Get(ctx).In("runGitHubSync")
-	if s.newGitHubClient == nil {
-		return 0, w.NewError("datasource connector is not configured")
-	}
-
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
-	if err != nil {
-		return 0, w.Wrapf(err, "decrypt access token")
-	}
-	client := s.newGitHubClient(token)
-
-	ref := source.Branch
-	if ref == "" {
-		ref, err = client.DefaultBranch(ctx, source.Repo)
-		if err != nil {
-			return 0, w.Wrapf(err, "resolve default branch")
-		}
-	}
-	// The commit sha is monotonic across pushes even when file content reverts,
-	// so it keys delivery idempotency: an A→B→A revert lands under three distinct
-	// commits and is re-delivered, while a re-sync at the same commit dedupes.
-	commit, err := client.ResolveCommit(ctx, source.Repo, ref)
-	if err != nil {
-		return 0, w.Wrapf(err, "resolve commit")
-	}
-
-	files, err := client.ListFiles(ctx, source.Repo, ref, source.Paths)
-	if err != nil {
-		return 0, w.Wrapf(err, "list repository files")
-	}
-
-	enqueued := 0
-	for _, file := range files {
-		content, err := client.GetFileContent(ctx, source.Repo, ref, file.Path)
-		if err != nil {
-			// A missing or too-large file is skipped, not fatal: a single oversized
-			// asset must never abort ingestion of the rest of the repository.
-			if errors.Is(err, github.ErrNotFound) || errors.Is(err, github.ErrFileTooLarge) {
-				w.Warn("skipping file", wool.Field("path", file.Path), wool.ErrField(err))
-				continue
-			}
-			return enqueued, w.Wrapf(err, "fetch %s", file.Path)
-		}
-		if len(content) > maxIngestPayload {
-			w.Warn("skipping oversized file", wool.Field("path", file.Path), wool.Field("bytes", len(content)))
-			continue
-		}
-		if err := s.enqueueIngest(ctx, source, file.Path, ref, commit, file.SHA, changeTypeAdded, content); err != nil {
-			return enqueued, w.Wrapf(err, "enqueue %s", file.Path)
-		}
-		enqueued++
-	}
-
-	if err := s.store.WithOrgTx(ctx, source.OrgID, func(ctx context.Context) error {
-		return s.store.SetDatasourceSourceSynced(ctx, source.OrgID, source.ID, time.Now().UTC())
-	}); err != nil {
-		return enqueued, w.Wrapf(err, "record sync time")
-	}
-	return enqueued, nil
 }
 
 // runAPISync fetches the API source's configured resource and enqueues its body
@@ -1375,68 +1368,6 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 			return err
 		}
 	}
-}
-
-// SigningSecret resolves the plaintext HMAC signing secret for one Source. It is
-// the Vault-transit-backed replacement for the receiver's StaticSecretResolver
-// (pkg/datasource, issue #275): the unauthenticated webhook path has no tenant
-// context, so the lookup runs through the control-plane by-id read. An unknown
-// or webhook-unconfigured Source returns ErrDatasourceSourceNotFound.
-func (s *Service) SigningSecret(ctx context.Context, sourceID string) (string, error) {
-	sourceID = strings.TrimSpace(sourceID)
-	if sourceID == "" {
-		return "", ErrDatasourceSourceNotFound
-	}
-	if s.datasourceCipher == nil {
-		return "", errors.New("datasource secret cipher is not configured")
-	}
-	source, err := s.store.GetDatasourceSourceByID(ctx, sourceID)
-	if err != nil {
-		return "", err
-	}
-	if source == nil || !source.WebhookConfigured() {
-		return "", ErrDatasourceSourceNotFound
-	}
-	return s.datasourceCipher.DecryptSecret(ctx, DatasourceWebhookSecretPurpose(sourceID), source.WebhookSecretRef)
-}
-
-func (s *Service) enqueueIngest(ctx context.Context, source *DatasourceSource, path, ref, commit, sha, changeType string, content []byte) error {
-	if source.BoundaryNodeID == "" {
-		return wool.Get(ctx).NewError("datasource source has no resolvable boundary")
-	}
-	_, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
-		Job: &jobsv1.NewJob{
-			Direction: jobsv1.JobDirection_JOB_DIRECTION_INBOX,
-			// Global scope matches the inbound webhook producer (pkg/datasource) on
-			// the shared "datasource" queue, so the documents consumer sees one
-			// consistent scope across both producers; the owning org travels in the
-			// attributes for tenant attribution.
-			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
-			Topic:          datasourceSyncTopic,
-			Source:         datasourceSyncSource,
-			IdempotencyKey: ingestIdempotencyKey(source.ID, commit, path),
-			SchemaVersion:  datasourceIngestSchemaVersion,
-			Payload:        content,
-			ContentType:    datasourceIngestContentType,
-			MaxAttempts:    datasourceIngestMaxAttempts,
-			Attributes: map[string]string{
-				attrSourceID:   source.ID,
-				attrOrgID:      source.OrgID,
-				attrBoundaryID: source.BoundaryNodeID,
-				attrRepo:       source.Repo,
-				attrPath:       path,
-				attrRef:        ref,
-				attrSHA:        sha,
-				attrCommit:     commit,
-				attrChangeType: changeType,
-			},
-		},
-	})
-	// A re-sync at the same commit resolves to a durable duplicate (same key,
-	// same fingerprint) and returns no error; only a genuine fingerprint conflict
-	// on a reused key surfaces, which the caller propagates.
-	return err
 }
 
 // ingestIdempotencyKey is deterministic in (source, commit, path) and bounded,

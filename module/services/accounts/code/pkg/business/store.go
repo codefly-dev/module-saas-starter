@@ -108,6 +108,22 @@ type Store interface {
 	LockDatasourceSourceCredentialRef(ctx context.Context, orgID, id string) (string, error)
 	UpdateDatasourceSourceCredential(ctx context.Context, orgID, id, credentialRef string) error
 	GetDatasourceSourceByID(ctx context.Context, id string) (*DatasourceSource, error)
+	// AdvanceDatasourceCursor records the head commit fully enqueued as a change
+	// set, its delivery provenance, and pushes next_reconcile_at out by the
+	// source's reconcile interval (left NULL when reconcile is disabled). It runs
+	// under the leased worker's control-plane role (no tenant context) and is only
+	// ever called by the change-set compiler after every op of a delivery is
+	// durably enqueued; monotonicity is guaranteed upstream by the worker's
+	// ancestor check, which drops a delivery whose head is an ancestor of the
+	// cursor before this is reached.
+	AdvanceDatasourceCursor(ctx context.Context, sourceID, commit, deliveryID string) error
+	// ListDatasourceSourcesDueForReconcile returns active sources whose
+	// next_reconcile_at has elapsed, for the periodic reconcile sweep. Control-plane.
+	ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*DatasourceSource, error)
+	// BumpDatasourceReconcile pushes next_reconcile_at out by the source's
+	// reconcile interval without touching the cursor, so a reconcile that finds
+	// nothing to do still reschedules. Control-plane.
+	BumpDatasourceReconcile(ctx context.Context, sourceID string) error
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
@@ -197,7 +213,8 @@ type Store interface {
 	// nodes the subject may act on with (resourceType, action), resolved through
 	// the same grant + share union so the two never disagree. Ordered by scope_path
 	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
-	ListAccessibleScopes(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
+	// Confined to orgID with an explicit predicate on top of the RLS tenant floor.
+	ListAccessibleScopes(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
 	// GetOrCreateCollectionNode reuses an existing collection node with node.Label
 	// in the tenant, or registers node and returns its id — one boundary per

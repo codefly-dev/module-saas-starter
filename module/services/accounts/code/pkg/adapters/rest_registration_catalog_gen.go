@@ -103,6 +103,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"DELETE /v1/role-assignments":              {},
 	"DELETE /v1/scope-grants":                  {},
 	"GET /v1/.well-known/service-info":         {},
+	"GET /v1/accessible-scopes":                {},
 	"GET /v1/acquisition":                      {},
 	"GET /v1/api-keys":                         {},
 	"GET /v1/audit-event-types":                {},

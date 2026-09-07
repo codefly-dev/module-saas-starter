@@ -108,12 +108,14 @@ names a specific solution; the seam is generic.
 
 To run a solution against this host locally, drive it from the **solution's own**
 codefly workspace, which composes this repo as a module by path (`codefly add
-module --source <this-repo>/module`), copies this host's `configurations/local/*`
-groups in, and matches the `internal-auth` `CODEFLY_INTERNAL_TOKEN`. Then
-`codefly run service --fixture dev-admin` from the solution root boots this whole
-host underneath; a well-behaved solution runtime self-registers with both the
-host and the gateway autonomously via the codefly SDK. See the solution repo for
-its own instructions.
+module --source <this-repo>/module`). Composition provisions this host's
+`configurations/local/*` groups — `legal`, `identity`, `internal-auth` (token
+included), and the rest — into the solution workspace automatically, so the
+solution need not hand-author them; it overrides any group only by declaring one
+of the same name. Then `codefly run service --fixture dev-admin` from the
+solution root boots this whole host underneath; a well-behaved solution runtime
+self-registers with both the host and the gateway autonomously via the codefly
+SDK. See the solution repo for its own instructions.
 
 ## Building, testing, and CI
 

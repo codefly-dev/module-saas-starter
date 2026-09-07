@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -111,6 +113,125 @@ func TestGetFileContentTooLarge(t *testing.T) {
 	defer srv.Close()
 
 	if _, err := New("tok", srv.URL).GetFileContent(context.Background(), "acme/docs", "main", "big.png"); err != ErrFileTooLarge {
+		t.Fatalf("err = %v, want ErrFileTooLarge", err)
+	}
+}
+
+func TestCompareMapsStatusAndFiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/docs/compare/base...head" {
+			t.Errorf("unexpected compare path %q", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer tok" {
+			t.Errorf("authorization = %q, want Bearer tok", got)
+		}
+		_, _ = w.Write([]byte(`{"status":"ahead","files":[
+			{"filename":"docs/a.md","status":"modified","sha":"a1"},
+			{"filename":"src/new.go","previous_filename":"src/old.go","status":"renamed","sha":"r1"}
+		]}`))
+	}))
+	defer srv.Close()
+
+	cmp, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "base", "head")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmp.Status != CompareStatusAhead || cmp.Truncated || len(cmp.Files) != 2 {
+		t.Fatalf("comparison = %+v", cmp)
+	}
+	if cmp.Files[1].PreviousFilename != "src/old.go" || cmp.Files[1].Status != "renamed" {
+		t.Fatalf("rename file = %+v", cmp.Files[1])
+	}
+}
+
+func TestCompareNotFoundOnMissingBase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	defer srv.Close()
+
+	if _, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "gone", "head"); err != ErrNotFound {
+		t.Fatalf("err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCompareTruncatesAtFileCap(t *testing.T) {
+	// A page that keeps returning a full 100 files until the 300-file cap is hit
+	// must be reported Truncated so the caller snapshots instead of trusting a
+	// partial op list.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b strings.Builder
+		b.WriteString(`{"status":"ahead","files":[`)
+		for i := 0; i < 100; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(`{"filename":"docs/` + r.URL.Query().Get("page") + "-" + strconv.Itoa(i) + `.md","status":"added","sha":"s"}`)
+		}
+		b.WriteString(`]}`)
+		_, _ = w.Write([]byte(b.String()))
+	}))
+	defer srv.Close()
+
+	cmp, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "base", "head")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cmp.Truncated || len(cmp.Files) != 300 {
+		t.Fatalf("comparison truncated=%v files=%d, want truncated at 300", cmp.Truncated, len(cmp.Files))
+	}
+}
+
+func TestCompareStopsOnNonPaginatingResponse(t *testing.T) {
+	// An endpoint that ignores ?page and re-serves the same 100 files must not
+	// loop into a false 300-file truncation or emit duplicate ops. The dedup +
+	// progress check terminates it at the real 100 distinct files.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		var b strings.Builder
+		b.WriteString(`{"status":"ahead","files":[`)
+		for i := 0; i < 100; i++ {
+			if i > 0 {
+				b.WriteString(",")
+			}
+			b.WriteString(`{"filename":"docs/` + strconv.Itoa(i) + `.md","status":"added","sha":"s"}`)
+		}
+		b.WriteString(`]}`)
+		_, _ = w.Write([]byte(b.String()))
+	}))
+	defer srv.Close()
+
+	cmp, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "base", "head")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cmp.Truncated {
+		t.Fatalf("a repeated non-paginating page must not read as truncated")
+	}
+	if len(cmp.Files) != 100 {
+		t.Fatalf("files = %d, want 100 distinct (no duplicates)", len(cmp.Files))
+	}
+}
+
+func TestGetBlobDecodesAndEnforcesLimit(t *testing.T) {
+	payload := []byte("blob-bytes")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/acme/docs/git/blobs/sha1" {
+			t.Errorf("unexpected blob path %q", r.URL.Path)
+		}
+		encoded := base64.StdEncoding.EncodeToString(payload)
+		_, _ = w.Write([]byte(`{"encoding":"base64","size":10,"content":"` + encoded + `"}`))
+	}))
+	defer srv.Close()
+
+	got, err := New("tok", srv.URL).GetBlob(context.Background(), "acme/docs", "sha1", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("blob = %q, want %q", got, payload)
+	}
+	if _, err := New("tok", srv.URL).GetBlob(context.Background(), "acme/docs", "sha1", 5); err != ErrFileTooLarge {
 		t.Fatalf("err = %v, want ErrFileTooLarge", err)
 	}
 }

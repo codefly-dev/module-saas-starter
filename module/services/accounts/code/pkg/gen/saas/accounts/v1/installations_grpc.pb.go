@@ -40,9 +40,10 @@ type InstallationServiceClient interface {
 	// least-privilege grant at that node, and the installation row with its owner of
 	// record. Emits installation.created with the grantor and ceiling.
 	InstallSolution(ctx context.Context, in *InstallSolutionRequest, opts ...grpc.CallOption) (*Installation, error)
-	// UninstallSolution reverses an install: it revokes the agent principal and its
-	// standing grant, soft-deletes the solution scope node, and marks the
-	// installation revoked. Idempotent on an already-revoked installation.
+	// UninstallSolution reverses an install: it revokes the agent principal, removes
+	// its standing grant, and marks the installation revoked. The solution scope node
+	// is left in place (inert without a grant or a live agent) so a reinstall reuses
+	// it. Idempotent on an already-revoked installation.
 	UninstallSolution(ctx context.Context, in *UninstallSolutionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"
@@ -116,9 +117,10 @@ type InstallationServiceServer interface {
 	// least-privilege grant at that node, and the installation row with its owner of
 	// record. Emits installation.created with the grantor and ceiling.
 	InstallSolution(context.Context, *InstallSolutionRequest) (*Installation, error)
-	// UninstallSolution reverses an install: it revokes the agent principal and its
-	// standing grant, soft-deletes the solution scope node, and marks the
-	// installation revoked. Idempotent on an already-revoked installation.
+	// UninstallSolution reverses an install: it revokes the agent principal, removes
+	// its standing grant, and marks the installation revoked. The solution scope node
+	// is left in place (inert without a grant or a live agent) so a reinstall reuses
+	// it. Idempotent on an already-revoked installation.
 	UninstallSolution(context.Context, *UninstallSolutionRequest) (*emptypb.Empty, error)
 	// TransferInstallationOwnership reassigns the owner of record and replaces the
 	// co-owner succession set. This is how a "connection owner left the org"

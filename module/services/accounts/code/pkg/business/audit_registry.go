@@ -202,10 +202,13 @@ const (
 	EventWebhookSecretRotated EventType = "webhook.secret_rotated"
 	EventJobReplayed          EventType = "job.replayed"
 
-	EventDatasourceSourceAdded   EventType = "datasource.source.added"
-	EventDatasourceSourceSynced  EventType = "datasource.source.synced"
-	EventDatasourceSourceRemoved EventType = "datasource.source.removed"
-	EventFeatureFlagUpdated      EventType = "feature_flag.updated"
+	EventDatasourceSourceAdded         EventType = "datasource.source.added"
+	EventDatasourceSourceSynced        EventType = "datasource.source.synced"
+	EventDatasourceSourceRemoved       EventType = "datasource.source.removed"
+	EventDatasourceChangeSetCompiled   EventType = "datasource.change_set_compiled"
+	EventDatasourceForcePushReconciled EventType = "datasource.force_push_reconciled"
+	EventDatasourceBranchDeleted       EventType = "datasource.branch_deleted"
+	EventFeatureFlagUpdated            EventType = "feature_flag.updated"
 
 	EventDashboardCreated EventType = "dashboard.created"
 	EventDashboardUpdated EventType = "dashboard.updated"
@@ -345,6 +348,12 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
 	def(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested."),
 	def(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
+	def(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
+		str("base"), str("head"), PayloadField{Name: "ops", Kind: FieldInt}, enum("mode", "compare", "snapshot"), str("delivery_id")),
+	def(EventDatasourceForcePushReconciled, CategorySystem, "A GitHub force push or divergence was reconciled with a snapshot.",
+		str("head"), str("delivery_id")),
+	def(EventDatasourceBranchDeleted, CategorySystem, "A GitHub branch-deletion delivery was acknowledged without removing documents.",
+		str("ref"), str("delivery_id")),
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),

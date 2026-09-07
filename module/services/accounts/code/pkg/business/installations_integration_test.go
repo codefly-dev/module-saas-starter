@@ -2,7 +2,6 @@ package business_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"accounts/pkg/business"
@@ -32,12 +31,10 @@ func TestInstallSolutionEmitsAuditWithGrantorAndCeiling(t *testing.T) {
 		})
 	}))
 
-	rootPath := "sol_" + strings.ReplaceAll(business.NewIDString(), "-", "_")
 	installation, err := testService.InstallSolution(ctx, adminID, &business.InstallSolutionParams{
 		OrgID:              orgID,
 		AgentIdentifier:    "acme.example/solution:1.0.0",
 		SolutionIdentifier: "acme.example/solution",
-		RootScopePath:      rootPath,
 		RootScopeLabel:     "Acme Solution",
 		RoleID:             roleID,
 		AllowedAudiences:   []string{"acme.collection"},
@@ -73,7 +70,6 @@ func TestInstallSolutionRejectsMalformedAgentIdentifier(t *testing.T) {
 		OrgID:              orgID,
 		AgentIdentifier:    "notacanonicalidentifier", // no '/' or ':'
 		SolutionIdentifier: "acme.example/solution",
-		RootScopePath:      "sol_bad",
 		RoleID:             business.NewIDString(),
 	})
 	require.Error(t, err)

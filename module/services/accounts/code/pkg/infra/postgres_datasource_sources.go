@@ -17,18 +17,24 @@ import (
 const datasourceSourceColumns = `
 	id::text, org_id::text, provider, COALESCE(repo, ''), paths, COALESCE(branch, ''),
 	boundary_node_id::text, credential_secret_ref, COALESCE(webhook_secret_ref, ''),
-	status, last_synced_at, created_at, updated_at, config`
+	status, last_synced_at, created_at, updated_at, config,
+	COALESCE(last_ingested_commit, ''), last_ingested_at, COALESCE(last_delivery_id, ''),
+	(EXTRACT(EPOCH FROM reconcile_interval))::bigint, next_reconcile_at`
 
 func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	var d business.DatasourceSource
 	var config []byte
+	var reconcileIntervalSeconds int64
 	if err := row.Scan(
 		&d.ID, &d.OrgID, &d.Provider, &d.Repo, &d.Paths, &d.Branch,
 		&d.BoundaryNodeID, &d.CredentialSecretRef, &d.WebhookSecretRef,
 		&d.Status, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
+		&d.LastIngestedCommit, &d.LastIngestedAt, &d.LastDeliveryID,
+		&reconcileIntervalSeconds, &d.NextReconcileAt,
 	); err != nil {
 		return nil, err
 	}
+	d.ReconcileInterval = time.Duration(reconcileIntervalSeconds) * time.Second
 	if len(config) > 0 {
 		switch d.Provider {
 		case business.DatasourceProviderAPI:
@@ -81,12 +87,71 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		INSERT INTO datasource_sources (
 			id, org_id, provider, repo, paths, branch, boundary_node_id,
-			credential_secret_ref, webhook_secret_ref, status, config)
-		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10, $11)`,
+			credential_secret_ref, webhook_secret_ref, status, config,
+			reconcile_interval, next_reconcile_at)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10, $11,
+			make_interval(secs => $12), $13)`,
 		source.ID, source.OrgID, source.Provider, source.Repo, paths, source.Branch,
 		source.BoundaryNodeID, source.CredentialSecretRef, source.WebhookSecretRef, source.Status, config,
+		source.ReconcileInterval.Seconds(), source.NextReconcileAt,
 	)
 	return err
+}
+
+// AdvanceDatasourceCursor records the head commit fully enqueued as a change set
+// and reschedules the periodic reconcile. next_reconcile_at is pushed out by the
+// reconcile interval, or cleared when reconcile is disabled (interval 0). Runs
+// under the caller's WithControlPlane.
+func (s *PostgresStore) AdvanceDatasourceCursor(ctx context.Context, sourceID, commit, deliveryID string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET last_ingested_commit = $2,
+		       last_ingested_at     = NOW(),
+		       last_delivery_id      = NULLIF($3, ''),
+		       next_reconcile_at     = CASE WHEN reconcile_interval > INTERVAL '0'
+		                                    THEN NOW() + reconcile_interval END,
+		       updated_at            = NOW()
+		 WHERE id = $1`, sourceID, commit, deliveryID)
+	return err
+}
+
+// BumpDatasourceReconcile reschedules the periodic reconcile without touching the
+// cursor. Runs under the caller's WithControlPlane.
+func (s *PostgresStore) BumpDatasourceReconcile(ctx context.Context, sourceID string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET next_reconcile_at = CASE WHEN reconcile_interval > INTERVAL '0'
+		                                THEN NOW() + reconcile_interval END,
+		       updated_at        = NOW()
+		 WHERE id = $1`, sourceID)
+	return err
+}
+
+// ListDatasourceSourcesDueForReconcile returns active GitHub sources whose
+// reconcile is due, oldest schedule first. Runs under the caller's WithControlPlane.
+func (s *PostgresStore) ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx,
+		`SELECT `+datasourceSourceColumns+`
+		   FROM datasource_sources
+		  WHERE status = 'active'
+		    AND provider = 'github'
+		    AND next_reconcile_at IS NOT NULL
+		    AND next_reconcile_at <= $1
+		  ORDER BY next_reconcile_at
+		  LIMIT $2`, now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sources []*business.DatasourceSource
+	for rows.Next() {
+		source, err := scanDatasourceSource(rows)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
 }
 
 // ListDatasourceSources returns the org's Sources, newest first. Runs under the

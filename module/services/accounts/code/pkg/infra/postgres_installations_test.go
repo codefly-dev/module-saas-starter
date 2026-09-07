@@ -36,14 +36,12 @@ func installFixture(t *testing.T, resourceKind, action string) (orgID, ownerID, 
 		})
 	}))
 
-	rootPath = "sol_" + strings.ReplaceAll(business.NewIDString(), "-", "_")
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		var err error
 		installation, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
 			OrgID:              orgID,
 			AgentIdentifier:    "acme.example/solution:1.0.0",
 			SolutionIdentifier: "acme.example/solution",
-			RootScopePath:      rootPath,
 			RootScopeLabel:     "Acme Solution",
 			RoleID:             roleID,
 			OwnerPrincipalID:   ownerID,
@@ -53,7 +51,23 @@ func installFixture(t *testing.T, resourceKind, action string) (orgID, ownerID, 
 		})
 		return err
 	}))
+	// The root path is derived server-side from the created node; read it back so
+	// descendant boundaries can be registered beneath the real authority root.
+	rootPath = scopeNodePath(t, orgID, installation.RootScopeNodeId)
 	return orgID, ownerID, roleID, installation, rootPath
+}
+
+// scopeNodePath reads a scope node's ltree path under the org tenant floor.
+func scopeNodePath(t *testing.T, orgID, nodeID string) string {
+	t.Helper()
+	var path string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key
+		return tx.QueryRow(ctx,
+			`SELECT scope_path::text FROM scope_nodes WHERE id = $1 AND org_id = $2`,
+			nodeID, orgID).Scan(&path)
+	}))
+	return path
 }
 
 // registerBoundary registers a descendant node of a solution root and returns its
@@ -123,7 +137,7 @@ func TestInstallSolutionComposesAndResolvesHealthy(t *testing.T) {
 }
 
 func TestInstallSolutionIsIdempotentPerSolution(t *testing.T) {
-	orgID, ownerID, roleID, first, rootPath := installFixture(t, "doc", "write")
+	orgID, ownerID, roleID, first, _ := installFixture(t, "doc", "write")
 
 	var second *gen.Installation
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
@@ -132,14 +146,70 @@ func TestInstallSolutionIsIdempotentPerSolution(t *testing.T) {
 			OrgID:              orgID,
 			AgentIdentifier:    "acme.example/solution:1.0.0",
 			SolutionIdentifier: "acme.example/solution",
-			RootScopePath:      rootPath,
+			RootScopeLabel:     "Acme Solution",
 			RoleID:             roleID,
 			OwnerPrincipalID:   ownerID,
-			GrantedBy:          ownerID,
+			// Same authority envelope as installFixture: an identical re-install
+			// reconciles to a no-op and returns the existing row.
+			AllowedAudiences: []string{"acme.collection"},
+			AllowedScopes:    []string{"doc"},
+			GrantedBy:        ownerID,
 		})
 		return err
 	}))
 	require.Equal(t, first.Id, second.Id, "re-installing an active solution returns the same row")
+}
+
+// A re-install of an active solution that narrows the ceiling must not silently
+// return the old row; it fails closed so the change is applied deliberately
+// (uninstall + reinstall), not lost.
+func TestInstallSolutionRejectsChangedCeilingOnReinstall(t *testing.T) {
+	orgID, ownerID, roleID, _, _ := installFixture(t, "doc", "write")
+
+	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		_, e := testStore.InstallSolution(ctx, &business.InstallSolutionParams{
+			OrgID:              orgID,
+			AgentIdentifier:    "acme.example/solution:1.0.0",
+			SolutionIdentifier: "acme.example/solution",
+			RootScopeLabel:     "Acme Solution",
+			RoleID:             roleID,
+			OwnerPrincipalID:   ownerID,
+			// installFixture granted ["doc"]; narrowing to nothing must be rejected.
+			AllowedAudiences: []string{"acme.collection"},
+			AllowedScopes:    nil,
+			GrantedBy:        ownerID,
+		})
+		return e
+	})
+	requireStoreErrorType(t, err, business.ErrTypeConflict)
+}
+
+// A re-install of an active solution whose standing grant an admin has revoked
+// out from under it must fail closed with a conflict, not an opaque Internal error
+// from the reconciliation's role lookup finding no grant.
+func TestInstallSolutionReinstallWithRevokedStandingGrantConflicts(t *testing.T) {
+	orgID, ownerID, roleID, installation, rootPath := installFixture(t, "doc", "write")
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.RevokeScope(ctx, orgID, installation.AgentPrincipalId,
+			gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, rootPath, roleID)
+	}))
+
+	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		_, e := testStore.InstallSolution(ctx, &business.InstallSolutionParams{
+			OrgID:              orgID,
+			AgentIdentifier:    "acme.example/solution:1.0.0",
+			SolutionIdentifier: "acme.example/solution",
+			RootScopeLabel:     "Acme Solution",
+			RoleID:             roleID,
+			OwnerPrincipalID:   ownerID,
+			AllowedAudiences:   []string{"acme.collection"},
+			AllowedScopes:      []string{"doc"},
+			GrantedBy:          ownerID,
+		})
+		return e
+	})
+	requireStoreErrorType(t, err, business.ErrTypeConflict)
 }
 
 func TestResolveInstallationAuthorityMintsUnderOwnerOfRecordAndAgent(t *testing.T) {
@@ -310,25 +380,95 @@ func TestUninstallSolutionReversesCompositionAndIsIdempotent(t *testing.T) {
 	require.False(t, transitioned)
 }
 
-// A second solution must not silently co-mint onto the scope node an active
-// installation already anchors — that would share one authority root between two
-// solutions.
-func TestInstallSolutionRefusesRootNodeAnchoredByAnotherActiveInstallation(t *testing.T) {
-	orgID, ownerID, roleID, _, rootPath := installFixture(t, "doc", "write")
+// registerSiblingSolutionNode registers a depth-1 solution node OUTSIDE the
+// installation root and grants the agent roleID at it, then returns a boundary
+// under it. The agent thus holds a genuine ancestor scope_grant covering the
+// boundary — the case migration 112's root promise must still deny.
+func registerSiblingSolutionNode(t *testing.T, orgID, agentID, roleID string) (siblingBoundaryID string) {
+	t.Helper()
+	siblingPath := "sib_" + strings.ReplaceAll(business.NewIDString(), "-", "_")
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.RegisterScopeNode(ctx, &gen.ScopeNode{
+			Id: business.NewIDString(), OrgId: orgID, ScopePath: siblingPath, Kind: "solution", Label: "sibling",
+		})
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{
+			Id: business.NewIDString(), OrgId: orgID,
+			SubjectId: agentID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+			ScopePath: siblingPath, RoleId: roleID,
+		})
+	}))
+	siblingBoundaryID, _ = registerBoundary(t, orgID, siblingPath, "boundary_b")
+	return siblingBoundaryID
+}
 
-	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		_, e := testStore.InstallSolution(ctx, &business.InstallSolutionParams{
+// The requested boundary must fall within the installation's own root even when
+// the agent later holds an ancestor grant elsewhere. A grant at a sibling node
+// (a record share, another install's node, an admin's ad-hoc GrantScope) must not
+// widen what the headless mint can reach; only descendants of the root are minted.
+func TestResolveInstallationAuthorityBoundsRequestedBoundaryToRoot(t *testing.T) {
+	orgID, _, roleID, installation, rootPath := installFixture(t, "doc", "write")
+
+	// A descendant of the installation root is minted.
+	inRoot, _ := registerBoundary(t, orgID, rootPath, "boundary_a")
+	_, err := testStore.ResolveInstallationAuthority(testCtx, orgID, installation.Id,
+		writeScope("doc", "write", inRoot))
+	require.NoError(t, err)
+
+	// A sibling node the agent ALSO holds a doc:write grant at, but outside the
+	// root, is denied: the ancestor-grant check alone would allow it.
+	sibling := registerSiblingSolutionNode(t, orgID, installation.AgentPrincipalId, roleID)
+	_, err = testStore.ResolveInstallationAuthority(testCtx, orgID, installation.Id,
+		writeScope("doc", "write", sibling))
+	requireStoreErrorType(t, err, business.ErrTypePermission)
+}
+
+// An outstanding token that names a sibling-node boundary must fail the consumer
+// revision seam too, not only the mint — the mint and recheck apply the same root
+// bound, so a token can never be revalidated for a boundary it could not be minted
+// for.
+func TestInstallationTokenRecheckBoundsBoundaryToRoot(t *testing.T) {
+	orgID, ownerID, roleID, installation, _ := installFixture(t, "doc", "write")
+	sibling := registerSiblingSolutionNode(t, orgID, installation.AgentPrincipalId, roleID)
+
+	perms := writeScope("doc", "write", sibling)
+	verified := auth.WithVerifiedDatabaseIdentity(testCtx, ownerID, orgID)
+	subjects := []business.WorkContextRevisionSubject{
+		{PrincipalID: installation.AgentPrincipalId, Permissions: perms},
+	}
+	err := testStore.CheckWorkContextAuthorizationRevision(verified, orgID, ownerID, 1, subjects)
+	require.ErrorIs(t, err, business.ErrWorkContextAuthorizationStale,
+		"a token for a boundary outside the installation root must fail recheck")
+}
+
+// A solution reinstalled after uninstall reuses the authority-root node its prior
+// install left behind, so the root path — and any boundaries registered under it —
+// stay stable across the reinstall.
+func TestInstallSolutionReusesRootNodeOnReinstall(t *testing.T) {
+	orgID, ownerID, roleID, first, firstRoot := installFixture(t, "doc", "write")
+
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		_, _, err := testStore.UninstallSolution(ctx, orgID, first.Id)
+		return err
+	}))
+
+	var second *gen.Installation
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		var err error
+		second, err = testStore.InstallSolution(ctx, &business.InstallSolutionParams{
 			OrgID:              orgID,
-			AgentIdentifier:    "acme.example/other:1.0.0",
-			SolutionIdentifier: "acme.example/other",
-			RootScopePath:      rootPath, // same authority root as the first install
+			AgentIdentifier:    "acme.example/solution:2.0.0",
+			SolutionIdentifier: "acme.example/solution",
+			RootScopeLabel:     "Acme Solution",
 			RoleID:             roleID,
 			OwnerPrincipalID:   ownerID,
 			GrantedBy:          ownerID,
 		})
-		return e
-	})
-	requireStoreErrorType(t, err, business.ErrTypeConflict)
+		return err
+	}))
+	require.Equal(t, first.RootScopeNodeId, second.RootScopeNodeId, "reinstall reuses the prior solution node")
+	require.Equal(t, firstRoot, scopeNodePath(t, orgID, second.RootScopeNodeId))
 }
 
 func requireStoreErrorType(t *testing.T, err error, want business.StoreErrorType) {
