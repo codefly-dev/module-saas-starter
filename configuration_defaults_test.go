@@ -11,19 +11,26 @@ import (
 )
 
 // Services declare workspace-configuration-dependencies (legal, identity,
-// internal-auth, …). Codefly's composition provisions a composed module's own
-// workspace configurations into the consuming workspace: a solution that
-// references this module by path (`codefly add module --source <repo>/module`)
-// resolves the module's workspace root — this repository root — and reads its
-// configurations/local/* to satisfy those dependencies, so the solution boots
-// the host without hand-authoring the groups.
+// internal-auth, …). A composing solution must receive a local default for each
+// so it boots the host without hand-authoring the groups; a missing one fails at
+// runtime-init with "no configuration found for <group>".
 //
-// That only holds if this repository actually ships a local default for every
-// declared group. This test is the guard: add a workspace-configuration
-// dependency to a service and you must ship its default here, or a composing
-// solution breaks at runtime-init with "no configuration found for <group>".
+// The defaults must ship under the module/ subtree, because that is the only
+// tree lodestar base-syncs into a consumer's modules/saas. A default parked at
+// the repo root reaches a path-composed consumer (composition walks up to this
+// repo's workspace root) but never a lodestar-composed one, so it must live at
+// module/configurations/local/*.env. The repo-root configurations/local/ entries
+// are symlinks onto those files, so the in-repo dev workspace and path
+// composition keep reading the same values.
+//
+// This test is the guard: add a workspace-configuration dependency to a service
+// and you must ship its default under module/, or a lodestar-composed solution
+// breaks at runtime-init.
 
-const workspaceConfigLocalDir = "configurations/local"
+const (
+	moduleConfigLocalDir    = "module/configurations/local"
+	workspaceConfigLocalDir = "configurations/local"
+)
 
 func declaredWorkspaceConfigGroups(t *testing.T) []string {
 	t.Helper()
@@ -74,20 +81,32 @@ func declaresAtLeastOneVariable(data []byte) bool {
 	return false
 }
 
+// shipsDefault reports whether dir holds a default for group in either
+// <group>.env (non-secret) or <group>.secret.env (dev secret), reading through
+// symlinks. Values may live in either file; either satisfies the dependency.
+func shipsDefault(dir, group string) bool {
+	for _, name := range []string{group + ".env", group + ".secret.env"} {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err == nil && declaresAtLeastOneVariable(data) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
-		shipped := false
-		// A group's values may live in <group>.env (non-secret) and/or
-		// <group>.secret.env (dev secret); either satisfies the dependency.
-		for _, name := range []string{group + ".env", group + ".secret.env"} {
-			data, err := os.ReadFile(filepath.Join(workspaceConfigLocalDir, name))
-			if err == nil && declaresAtLeastOneVariable(data) {
-				shipped = true
-			}
+		// The base-synced location is what a lodestar-composed consumer inherits.
+		if !shipsDefault(moduleConfigLocalDir, group) {
+			t.Errorf("declared config group %q has no default under the base-synced module subtree: add a %s/%s.env (or .secret.env) that assigns at least one variable, so a lodestar-composed solution inherits it instead of dying at runtime-init with \"no configuration found for %s\"",
+				group, moduleConfigLocalDir, group, group)
 		}
-		if !shipped {
-			t.Errorf("declared config group %q has no local default: add a %s/%s.env (or .secret.env) that assigns at least one variable, so a composing solution provisions it via composition instead of hand-authoring it",
-				group, workspaceConfigLocalDir, group)
+		// The repo-root entry (a symlink onto the module default) is what the
+		// in-repo dev workspace and path composition read; a dangling or missing
+		// one silently regresses local boot.
+		if !shipsDefault(workspaceConfigLocalDir, group) {
+			t.Errorf("declared config group %q does not resolve under %s: keep the repo-root entry (a symlink onto %s/%s.env) so the in-repo workspace and path composition read the same default",
+				group, workspaceConfigLocalDir, moduleConfigLocalDir, group)
 		}
 	}
 }
