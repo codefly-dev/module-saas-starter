@@ -83,11 +83,13 @@ func declaresAtLeastOneVariable(data []byte) bool {
 }
 
 // envValue extracts the assigned value from an env line's right-hand side,
-// stripping surrounding quotes and any inline `# …` comment. Marker matching
-// must judge the token alone: a real credential trailed by a "# replace-me
-// later" note (sk_live_realtoken # replace-me) would otherwise borrow the
-// comment's placeholder marker and pass. A `#` embedded in the token (foo#bar)
-// stays part of the value; a value that is only a comment resolves to empty.
+// stripping surrounding quotes and any inline comment. Marker matching must
+// judge the token alone: a real credential trailed by a placeholder note
+// (sk_live_realtoken # replace-me, or the no-space sk_live_realtoken#replace-me)
+// would otherwise borrow the note's marker and pass. An unquoted `#` begins the
+// comment regardless of the preceding character — a guard must over-strip so a
+// marker can never ride in behind a real token; a literal `#` belongs in a
+// value only when quoted ("a#b"). A value that is only a comment is empty.
 func envValue(raw string) string {
 	v := strings.TrimLeft(raw, " \t")
 	if v == "" {
@@ -99,10 +101,8 @@ func envValue(raw string) string {
 		}
 		// Unterminated quote: fall through and treat the remainder literally.
 	}
-	for i := 0; i < len(v); i++ {
-		if v[i] == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t') {
-			return strings.TrimSpace(v[:i])
-		}
+	if i := strings.IndexByte(v, '#'); i >= 0 {
+		return strings.TrimSpace(v[:i])
 	}
 	return strings.TrimSpace(v)
 }
@@ -261,13 +261,14 @@ func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 func TestEnvValueStripsInlineCommentsAndQuotes(t *testing.T) {
 	cases := []struct{ raw, want string }{
 		{"sk_live_9f3aX7realtoken   # TODO replace-me before prod", "sk_live_9f3aX7realtoken"},
+		{"sk_live_9f3aX7realtoken#replace-me", "sk_live_9f3aX7realtoken"},
 		{"local-dev-only-replace-me", "local-dev-only-replace-me"},
 		{`"local-dev"  # quoted with trailing note`, "local-dev"},
+		{`"a#b"`, "a#b"},
 		{"'change-me'", "change-me"},
 		{"", ""},
 		{"   ", ""},
 		{"   # comment only, no value", ""},
-		{"token#notacomment", "token#notacomment"},
 	}
 	for _, tc := range cases {
 		if got := envValue(tc.raw); got != tc.want {
@@ -285,6 +286,11 @@ func TestSecretDefaultProblems(t *testing.T) {
 		{
 			"inline comment hides a real token (Finding 1)",
 			"CODEFLY_INTERNAL_TOKEN=sk_live_9f3aX7realtoken   # TODO replace-me before prod",
+			"not an obvious placeholder",
+		},
+		{
+			"no-space comment hides a real token (Finding 1, marker borrowed with no separating space)",
+			"CODEFLY_INTERNAL_TOKEN=sk_live_9f3aX7realtoken#replace-me",
 			"not an obvious placeholder",
 		},
 		{
