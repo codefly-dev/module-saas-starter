@@ -22,11 +22,11 @@ const (
 )
 
 var (
-	eventTypePattern    = regexp.MustCompile(`^[a-z][a-z0-9]*(?:\.[a-z0-9]+)+$`)
-	eventQueuePattern   = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
-	versionDirPattern   = regexp.MustCompile(`^v([0-9]+)$`)
-	eventVisibilitySet  = map[string]struct{}{"internal": {}, "tenant": {}, "external": {}}
-	eventDeliverySet    = map[string]struct{}{"ordered": {}, "unordered": {}}
+	eventTypePattern   = regexp.MustCompile(`^[a-z][a-z0-9]*(?:\.[a-z0-9]+)+$`)
+	eventQueuePattern  = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
+	versionDirPattern  = regexp.MustCompile(`^v([0-9]+)$`)
+	eventVisibilitySet = map[string]struct{}{"internal": {}, "tenant": {}, "external": {}}
+	eventDeliverySet   = map[string]struct{}{"ordered": {}, "unordered": {}}
 )
 
 // EventsContribution is one module's declaration of the domain events it
@@ -262,6 +262,14 @@ func messageFields(message *parser.Message) ([]eventField, error) {
 				return nil, fmt.Errorf("field %q has non-numeric number %q", field.MapName, field.FieldNumber)
 			}
 			fields = append(fields, eventField{Name: field.MapName, Number: number, Type: fmt.Sprintf("map<%s, %s>", field.KeyType, field.Type)})
+		case *parser.Oneof:
+			for _, member := range field.OneofFields {
+				number, err := strconv.Atoi(member.FieldNumber)
+				if err != nil {
+					return nil, fmt.Errorf("field %q has non-numeric number %q", member.FieldName, member.FieldNumber)
+				}
+				fields = append(fields, eventField{Name: member.FieldName, Number: number, Type: member.Type})
+			}
 		}
 	}
 	sort.Slice(fields, func(i, j int) bool { return fields[i].Number < fields[j].Number })

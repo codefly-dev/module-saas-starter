@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"sync"
+	"strings"
 	"time"
+	"unicode/utf8"
 
+	"accounts/pkg/events"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
-	"accounts/pkg/events"
 	"accounts/pkg/jobs"
 
 	"github.com/google/uuid"
@@ -30,6 +31,10 @@ const eventsRelayQueue = "events.relay"
 
 const eventDeliveryMaxAttempts = 5
 
+// maxClaimBatch bounds one Claim to the jobs platform's per-request limit, so a
+// caller asking for more does not trip generated-command validation.
+const maxClaimBatch = 100
+
 // PostgresEventTransport is the reference events.Transport: it maps the
 // CloudEvents envelope onto the durable jobs platform with no schema change.
 // Publishing writes the event-of-record and one inbox delivery per matching
@@ -41,9 +46,6 @@ type PostgresEventTransport struct {
 	subscriptions []events.Subscription
 	workerID      string
 	leaseDuration time.Duration
-
-	mu     sync.Mutex
-	leases map[string]string
 }
 
 func NewPostgresEventTransport(
@@ -59,7 +61,6 @@ func NewPostgresEventTransport(
 		subscriptions: subscriptions,
 		workerID:      workerID,
 		leaseDuration: leaseDuration,
-		leases:        map[string]string{},
 	}
 }
 
@@ -69,30 +70,53 @@ func (p *PostgresEventTransport) Publish(ctx context.Context, tx events.TxHandle
 	if e.GetId() == "" || e.GetType() == "" || e.GetSource() == "" {
 		return events.ErrInvalidEnvelope
 	}
-	if err := p.enqueue(ctx, tx, p.eventOfRecord(e)); err != nil {
-		return err
-	}
+	requests := []*jobsv1.EnqueueJobRequest{p.eventOfRecord(e)}
 	for _, subscription := range p.subscriptions {
 		if !events.Matches(subscription.TypePattern, e.GetType()) {
 			continue
 		}
-		if err := p.enqueue(ctx, tx, p.delivery(e, subscription, e.GetId()+":"+subscription.ID)); err != nil {
-			return err
-		}
+		requests = append(requests, p.delivery(e, subscription, e.GetId()+":"+subscription.ID))
 	}
-	return nil
+	return p.enqueueAll(ctx, tx, requests)
 }
 
-func (p *PostgresEventTransport) enqueue(ctx context.Context, tx events.TxHandle, request *jobsv1.EnqueueJobRequest) error {
+// enqueueAll commits the event-of-record and every delivery as one unit: within
+// the caller's transaction when one is supplied, otherwise in a single
+// transaction of its own. A mid-fan-out failure therefore leaves no partially
+// published event behind.
+func (p *PostgresEventTransport) enqueueAll(ctx context.Context, tx events.TxHandle, requests []*jobsv1.EnqueueJobRequest) error {
 	if pgtx, ok := tx.(pgx.Tx); ok {
-		prepared, err := prepareJobEnqueue(request)
-		if err != nil {
-			return err
+		for _, request := range requests {
+			if err := enqueueOne(ctx, pgtx, request); err != nil {
+				return mapEnqueueError(err)
+			}
 		}
-		_, err = enqueuePreparedJob(ctx, pgtx, prepared)
+		return nil
+	}
+	err := pgx.BeginFunc(ctx, p.pool, func(pgtx pgx.Tx) error {
+		for _, request := range requests {
+			if err := enqueueOne(ctx, pgtx, request); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return mapEnqueueError(err)
+}
+
+func enqueueOne(ctx context.Context, tx pgx.Tx, request *jobsv1.EnqueueJobRequest) error {
+	prepared, err := prepareJobEnqueue(request)
+	if err != nil {
 		return err
 	}
-	_, err := p.store.EnqueueJob(ctx, request)
+	_, err = enqueuePreparedJob(ctx, tx, prepared)
+	return err
+}
+
+func mapEnqueueError(err error) error {
+	if errors.Is(err, jobs.ErrIdempotencyConflict) {
+		return events.ErrIdempotencyConflict
+	}
 	return err
 }
 
@@ -135,6 +159,12 @@ func (p *PostgresEventTransport) delivery(e *eventsv1.EventEnvelope, subscriptio
 }
 
 func (p *PostgresEventTransport) Claim(ctx context.Context, queue string, max int) ([]events.Leased, error) {
+	if max < 1 {
+		return nil, nil
+	}
+	if max > maxClaimBatch {
+		max = maxClaimBatch
+	}
 	response, err := p.store.Claim(ctx, &jobsv1.ClaimJobsRequest{
 		Queue:         queue,
 		WorkerId:      p.workerID,
@@ -145,18 +175,14 @@ func (p *PostgresEventTransport) Claim(ctx context.Context, queue string, max in
 		return nil, err
 	}
 	leased := make([]events.Leased, 0, len(response.GetJobs()))
-	p.mu.Lock()
-	defer p.mu.Unlock()
 	for _, job := range response.GetJobs() {
-		token := job.GetLease().GetToken()
-		p.leases[token] = job.GetId()
-		leased = append(leased, events.Leased{Token: token, Envelope: envelopeFromJob(job)})
+		leased = append(leased, events.Leased{Token: leaseToken(job), Envelope: envelopeFromJob(job)})
 	}
 	return leased, nil
 }
 
 func (p *PostgresEventTransport) Heartbeat(ctx context.Context, token string) error {
-	lease, ok := p.leaseFor(token)
+	lease, ok := p.leaseReference(token)
 	if !ok {
 		return events.ErrLeaseLost
 	}
@@ -168,39 +194,28 @@ func (p *PostgresEventTransport) Heartbeat(ctx context.Context, token string) er
 }
 
 func (p *PostgresEventTransport) Ack(ctx context.Context, token string) error {
-	lease, ok := p.leaseFor(token)
+	lease, ok := p.leaseReference(token)
 	if !ok {
 		return events.ErrLeaseLost
 	}
-	if err := p.store.Complete(ctx, &jobsv1.CompleteJobRequest{Lease: lease}); err != nil {
-		return mapLeaseError(err)
-	}
-	p.forget(token)
-	return nil
+	return mapLeaseError(p.store.Complete(ctx, &jobsv1.CompleteJobRequest{Lease: lease}))
 }
 
 func (p *PostgresEventTransport) Nack(ctx context.Context, token string, cause error, permanent bool) error {
-	lease, ok := p.leaseFor(token)
+	lease, ok := p.leaseReference(token)
 	if !ok {
 		return events.ErrLeaseLost
 	}
 	failure := &jobsv1.JobFailure{Code: "events_nack", Message: nackMessage(cause)}
 	if permanent {
-		if err := p.store.DeadLetter(ctx, &jobsv1.DeadLetterJobRequest{Lease: lease, Failure: failure}); err != nil {
-			return mapLeaseError(err)
-		}
-		p.forget(token)
-		return nil
+		return mapLeaseError(p.store.DeadLetter(ctx, &jobsv1.DeadLetterJobRequest{Lease: lease, Failure: failure}))
 	}
-	if _, err := p.store.Retry(ctx, &jobsv1.RetryJobRequest{
+	_, err := p.store.Retry(ctx, &jobsv1.RetryJobRequest{
 		Lease:   lease,
 		Failure: failure,
 		RetryAt: timestamppb.New(time.Now()),
-	}); err != nil {
-		return mapLeaseError(err)
-	}
-	p.forget(token)
-	return nil
+	})
+	return mapLeaseError(err)
 }
 
 func (p *PostgresEventTransport) Replay(ctx context.Context, sel events.ReplaySelector) (int, error) {
@@ -231,16 +246,18 @@ func (p *PostgresEventTransport) Replay(ctx context.Context, sel events.ReplaySe
 		return 0, fmt.Errorf("events: read replay source: %w", err)
 	}
 
+	var redeliveries []*jobsv1.EnqueueJobRequest
 	for _, e := range replay {
 		nonce := ":replay:" + uuid.NewString()
 		for _, subscription := range p.subscriptions {
 			if !events.Matches(subscription.TypePattern, e.GetType()) {
 				continue
 			}
-			if err := p.enqueue(ctx, nil, p.delivery(e, subscription, e.GetId()+":"+subscription.ID+nonce)); err != nil {
-				return 0, err
-			}
+			redeliveries = append(redeliveries, p.delivery(e, subscription, e.GetId()+":"+subscription.ID+nonce))
 		}
+	}
+	if err := p.enqueueAll(ctx, nil, redeliveries); err != nil {
+		return 0, err
 	}
 	return len(replay), nil
 }
@@ -255,20 +272,20 @@ const replayEventsSQL = `
 	  AND ($4::timestamptz IS NULL OR created_at >= $4)
 	ORDER BY ordering_key NULLS FIRST, created_at, id`
 
-func (p *PostgresEventTransport) leaseFor(token string) (*jobsv1.JobLeaseReference, bool) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	jobID, ok := p.leases[token]
+// leaseToken carries the job id and its fencing token in the opaque lease token
+// the caller holds, so finalizers reconstruct the full lease reference without
+// per-transport state. A finalizer for an expired or superseded token names a
+// fencing value the database no longer holds and is rejected as a lost lease.
+func leaseToken(job *jobsv1.JobEnvelope) string {
+	return job.GetId() + "|" + job.GetLease().GetToken()
+}
+
+func (p *PostgresEventTransport) leaseReference(token string) (*jobsv1.JobLeaseReference, bool) {
+	jobID, fencingToken, ok := strings.Cut(token, "|")
 	if !ok {
 		return nil, false
 	}
-	return &jobsv1.JobLeaseReference{JobId: jobID, WorkerId: p.workerID, LeaseToken: token}, true
-}
-
-func (p *PostgresEventTransport) forget(token string) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	delete(p.leases, token)
+	return &jobsv1.JobLeaseReference{JobId: jobID, WorkerId: p.workerID, LeaseToken: fencingToken}, true
 }
 
 func mapLeaseError(err error) error {
@@ -283,10 +300,14 @@ func nackMessage(cause error) string {
 		return "nack"
 	}
 	message := cause.Error()
-	if len(message) > 4096 {
-		return message[:4096]
+	if len(message) <= 4096 {
+		return message
 	}
-	return message
+	truncated := message[:4096]
+	for len(truncated) > 0 && !utf8.ValidString(truncated) {
+		truncated = truncated[:len(truncated)-1]
+	}
+	return truncated
 }
 
 func eventScope(tenantID string) *jobsv1.JobScope {

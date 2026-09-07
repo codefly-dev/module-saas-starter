@@ -20,10 +20,10 @@ type FakeTransport struct {
 	leaseDuration time.Duration
 	maxAttempts   int
 
-	log      []*EventEnvelope
-	queues   map[string][]*fakeDelivery
-	byToken  map[string]*fakeDelivery
-	enqueued map[string]struct{}
+	log     []*EventEnvelope
+	queues  map[string][]*fakeDelivery
+	byToken map[string]*fakeDelivery
+	records map[string]*EventEnvelope
 }
 
 type fakeDelivery struct {
@@ -55,7 +55,7 @@ func NewFakeTransport(subscriptions []Subscription, leaseDuration time.Duration)
 		maxAttempts:   defaultMaxAttempts,
 		queues:        map[string][]*fakeDelivery{},
 		byToken:       map[string]*fakeDelivery{},
-		enqueued:      map[string]struct{}{},
+		records:       map[string]*EventEnvelope{},
 	}
 }
 
@@ -63,15 +63,35 @@ var _ Transport = (*FakeTransport)(nil)
 
 const defaultMaxAttempts = 3
 
+// maxClaimBatch matches the jobs platform's per-request claim limit, so a fake
+// and a Postgres transport answer an oversized Claim identically.
+const maxClaimBatch = 100
+
 func (f *FakeTransport) Publish(_ context.Context, _ TxHandle, e *EventEnvelope) error {
 	if e.GetId() == "" || e.GetType() == "" || e.GetSource() == "" {
 		return ErrInvalidEnvelope
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.log = append(f.log, proto.Clone(e).(*EventEnvelope))
+	key := recordKey(e)
+	if existing, ok := f.records[key]; ok {
+		if proto.Equal(existing, e) {
+			return nil
+		}
+		return ErrIdempotencyConflict
+	}
+	clone := proto.Clone(e).(*EventEnvelope)
+	f.records[key] = clone
+	f.log = append(f.log, clone)
 	f.fanOut(e)
 	return nil
+}
+
+// recordKey scopes idempotency the way the durable transport does: an id
+// identifies a fact within one tenant and source. Reusing it there for a
+// different envelope is the conflict every transport rejects.
+func recordKey(e *EventEnvelope) string {
+	return e.GetId() + "\x00" + e.GetTenantId() + "\x00" + e.GetSource()
 }
 
 func (f *FakeTransport) fanOut(e *EventEnvelope) {
@@ -79,11 +99,6 @@ func (f *FakeTransport) fanOut(e *EventEnvelope) {
 		if !Matches(subscription.TypePattern, e.GetType()) {
 			continue
 		}
-		key := e.GetId() + ":" + subscription.ID
-		if _, seen := f.enqueued[key]; seen {
-			continue
-		}
-		f.enqueued[key] = struct{}{}
 		f.queues[subscription.Queue] = append(f.queues[subscription.Queue], &fakeDelivery{
 			envelope:  proto.Clone(e).(*EventEnvelope),
 			partition: e.GetPartitionKey(),
@@ -94,6 +109,12 @@ func (f *FakeTransport) fanOut(e *EventEnvelope) {
 }
 
 func (f *FakeTransport) Claim(_ context.Context, queue string, max int) ([]Leased, error) {
+	if max < 1 {
+		return nil, nil
+	}
+	if max > maxClaimBatch {
+		max = maxClaimBatch
+	}
 	now := time.Now()
 	f.mu.Lock()
 	defer f.mu.Unlock()

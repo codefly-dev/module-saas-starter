@@ -133,6 +133,35 @@ func TestBuildEventCatalogRejectsBreakingFieldRemoval(t *testing.T) {
 	}
 }
 
+func TestBuildEventCatalogCatchesBreakingOneofFieldRemoval(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "documents/events/v1/choice.proto"), `syntax = "proto3";
+package documents.events.v1;
+message Choice {
+  string id = 1;
+  oneof body {
+    string a = 2;
+  }
+}
+`)
+	prior := eventCatalog{Schema: eventsCatalogSchema, Publishes: []eventCatalogPublish{{
+		Type:  "documents.entry.ingested",
+		Major: 1,
+		Fields: []eventField{
+			{Name: "id", Number: 1, Type: "string"},
+			{Name: "a", Number: 2, Type: "string"},
+			{Name: "b", Number: 3, Type: "string"},
+		},
+	}}}
+	contribution := documentsContribution()
+	contribution.Publishes[0].Schema = "documents/events/v1/choice.proto#Choice"
+	contribution.Consumes = nil
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, root, prior)
+	if err == nil || !strings.Contains(err.Error(), "removes field") {
+		t.Fatalf("removing a oneof member without a major bump must fail compose, got %v", err)
+	}
+}
+
 func TestBuildEventCatalogAllowsBreakingChangeBehindMajorBump(t *testing.T) {
 	prior := eventCatalog{Schema: eventsCatalogSchema, Publishes: []eventCatalogPublish{{
 		Type:  "documents.entry.ingested",

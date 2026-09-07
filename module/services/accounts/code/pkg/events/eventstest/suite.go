@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -40,6 +41,9 @@ func RunConformance(t *testing.T, h Harness) {
 	t.Run("Replay", func(t *testing.T) { testReplay(t, h) })
 	t.Run("TenantIsolation", func(t *testing.T) { testTenantIsolation(t, h) })
 	t.Run("ZeroSubscriberPublish", func(t *testing.T) { testZeroSubscriberPublish(t, h) })
+	t.Run("IDConflict", func(t *testing.T) { testIDConflict(t, h) })
+	t.Run("ClaimBatchLimit", func(t *testing.T) { testClaimBatchLimit(t, h) })
+	t.Run("FullEnvelopeFidelity", func(t *testing.T) { testFullEnvelopeFidelity(t, h) })
 }
 
 func suffix() string { return strings.ReplaceAll(uuid.NewString(), "-", "")[:12] }
@@ -56,9 +60,12 @@ func exactSubscription(queue, eventType string, delivery events.Delivery) events
 
 type envelopeOption func(*events.EventEnvelope)
 
-func withPartition(key string) envelopeOption { return func(e *events.EventEnvelope) { e.PartitionKey = key } }
-func withTenant(id string) envelopeOption     { return func(e *events.EventEnvelope) { e.TenantId = id } }
-func withData(data []byte) envelopeOption     { return func(e *events.EventEnvelope) { e.Data = data } }
+func withPartition(key string) envelopeOption {
+	return func(e *events.EventEnvelope) { e.PartitionKey = key }
+}
+func withTenant(id string) envelopeOption { return func(e *events.EventEnvelope) { e.TenantId = id } }
+func withData(data []byte) envelopeOption { return func(e *events.EventEnvelope) { e.Data = data } }
+func withID(id string) envelopeOption     { return func(e *events.EventEnvelope) { e.Id = id } }
 
 func newEnvelope(eventType string, options ...envelopeOption) *events.EventEnvelope {
 	e := &events.EventEnvelope{
@@ -239,4 +246,65 @@ func testZeroSubscriberPublish(t *testing.T, h Harness) {
 	replayed, err := transport.Replay(context.Background(), events.ReplaySelector{Type: event.GetType(), TenantID: event.GetTenantId()})
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, replayed, 1, "a zero-subscriber event is still durable and replayable")
+}
+
+func testIDConflict(t *testing.T, h Harness) {
+	subscription := exactSubscription("events.conflict", "documents.entry.ingested", events.DeliveryUnordered)
+	transport := h.New(t, []events.Subscription{subscription})
+	tenant := uuid.NewString()
+	event := newEnvelope("documents.entry.ingested", withTenant(tenant), withData([]byte("first")))
+	require.NoError(t, transport.Publish(context.Background(), nil, event))
+	require.NoError(t, transport.Publish(context.Background(), nil, event), "republishing the identical event is a no-op")
+
+	conflict := newEnvelope("documents.entry.ingested", withID(event.GetId()), withTenant(tenant), withData([]byte("second")))
+	err := transport.Publish(context.Background(), nil, conflict)
+	require.ErrorIs(t, err, events.ErrIdempotencyConflict, "reusing an id for a different envelope must be rejected")
+
+	require.Len(t, claimAll(t, transport, subscription.Queue, 10), 1, "only the first envelope is delivered")
+}
+
+func testClaimBatchLimit(t *testing.T, h Harness) {
+	subscription := exactSubscription("events.batch", "documents.entry.ingested", events.DeliveryUnordered)
+	transport := h.New(t, []events.Subscription{subscription})
+	require.NoError(t, transport.Publish(context.Background(), nil, newEnvelope("documents.entry.ingested")))
+	require.NoError(t, transport.Publish(context.Background(), nil, newEnvelope("documents.entry.ingested")))
+
+	empty, err := transport.Claim(context.Background(), subscription.Queue, 0)
+	require.NoError(t, err, "a zero-sized claim is empty, not an error")
+	require.Empty(t, empty)
+
+	one := claimAll(t, transport, subscription.Queue, 1)
+	require.Len(t, one, 1, "a claim honors its batch limit")
+	require.NoError(t, transport.Ack(context.Background(), one[0].Token))
+}
+
+func testFullEnvelopeFidelity(t *testing.T, h Harness) {
+	subscription := exactSubscription("events.fidelity", "documents.entry.ingested", events.DeliveryUnordered)
+	transport := h.New(t, []events.Subscription{subscription})
+	event := &events.EventEnvelope{
+		Id:               uuid.NewString(),
+		Type:             "documents.entry.ingested",
+		Source:           "urn:codefly:documents/ingest",
+		Subject:          "entry-77",
+		Time:             timestamppb.New(time.Now().UTC().Truncate(time.Microsecond)),
+		Specversion:      "1.0",
+		Datacontenttype:  "application/protobuf",
+		Dataschema:       "codefly/events/documents.entry.ingested@1",
+		Data:             []byte{0x00, 0x01, 0xff},
+		TenantId:         uuid.NewString(),
+		BoundaryId:       "scope-node-3",
+		PartitionKey:     "tenant/source",
+		CorrelationId:    "corr-9",
+		CausationId:      "cause-9",
+		ActorPrincipalId: "actor-9",
+		OwnerPrincipalId: "owner-9",
+		Traceparent:      "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+		SchemaVersion:    4,
+	}
+	require.NoError(t, transport.Publish(context.Background(), nil, event))
+
+	leased := claimAll(t, transport, subscription.Queue, 10)
+	require.Len(t, leased, 1)
+	require.True(t, proto.Equal(event, leased[0].Envelope), "the transport delivers every envelope attribute unchanged")
+	require.NoError(t, transport.Ack(context.Background(), leased[0].Token))
 }

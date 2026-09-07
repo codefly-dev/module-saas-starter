@@ -74,6 +74,10 @@ var (
 	// ErrInvalidEnvelope rejects an envelope that cannot be routed: missing id,
 	// type, or source, or a tenant id that is not a scope the transport accepts.
 	ErrInvalidEnvelope = errors.New("events: invalid envelope")
+	// ErrIdempotencyConflict means an id was republished with a different
+	// envelope. The id is the idempotency key at every hop, so the same id must
+	// carry the same fact; every transport rejects a reuse that does not.
+	ErrIdempotencyConflict = errors.New("events: id reused with a different envelope")
 )
 
 // Matches reports whether a subscription type pattern matches an event type. A
