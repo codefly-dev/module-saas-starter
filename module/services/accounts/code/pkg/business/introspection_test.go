@@ -134,6 +134,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
 		"/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
 		"/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
+		"/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
 		"/saas.accounts.v1.PermissionService/CheckAccess",
 		"/saas.accounts.v1.PermissionService/CheckPermission",
 		"/saas.accounts.v1.PermissionService/Decide",
@@ -149,6 +150,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.WorkContextService/StartInstallationTask",
 	}, internalWithoutHTTP, "the exact internal RPC inventory must remain off the REST surface")
 	require.True(t, streaming["/saas.accounts.v1.DelegationService/WaitForDelegation"], "server-streaming RPC must be present and marked streaming")
+	require.True(t, streaming["/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"], "server-streaming RPC must be present and marked streaming")
 }
 
 func TestRPCPolicyDescriptorFixesFormerManualDrift(t *testing.T) {

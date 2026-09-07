@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +79,10 @@ const (
 	DispositionIgnoredBranch DeliveryDisposition = "ignored_branch"
 	DispositionStale         DeliveryDisposition = "stale"
 	DispositionBranchDeleted DeliveryDisposition = "branch_deleted"
+	// DispositionDegraded is an acknowledged drop: the snapshot manifest was too
+	// large to ingest, so the source was parked in the degraded state for an
+	// operator instead of dead-lettering the reconcile every interval forever.
+	DispositionDegraded DeliveryDisposition = "degraded"
 )
 
 // ErrMalformedDelivery reports a delivery payload the compiler cannot parse. It
@@ -379,10 +384,22 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	}
 	if len(payload) > maxIngestPayload {
 		// Paging a large manifest across inbox jobs is issue #487 open question 3;
-		// until it is resolved a manifest past the inbox cap fails loudly rather
-		// than silently truncating a reconcile.
-		return "", jobs.NewProcessingError("datasource.snapshot_too_large",
-			"snapshot manifest exceeds the ingest payload limit", false)
+		// until the object-storage manifest seam lands, a manifest past the inbox
+		// cap cannot be delivered. Failing terminally here dead-letters the job, but
+		// the reconcile schedule was already bumped, so the source would re-enqueue
+		// and dead-letter every interval forever with no visible status. Instead
+		// park the source in the degraded state (which clears its schedule and drops
+		// it from the reconcile sweep) and record why, so an operator sees it and
+		// resets it once the manifest fits. Acknowledged, not retried.
+		reason := fmt.Sprintf("snapshot manifest is %d bytes, over the %d-byte ingest limit", len(payload), maxIngestPayload)
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return s.store.MarkDatasourceSourceDegraded(ctx, source.ID, reason)
+		}); err != nil {
+			return "", w.Wrapf(err, "degrade oversized source")
+		}
+		s.emit(ctx, source.ID, "system", EventDatasourceSnapshotTooLarge, "datasource", source.ID, source.OrgID,
+			map[string]any{"head": commit, "bytes": len(payload), "limit": maxIngestPayload, "delivery_id": deliveryID})
+		return DispositionDegraded, nil
 	}
 	if _, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{

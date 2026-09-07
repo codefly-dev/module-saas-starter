@@ -31,6 +31,11 @@ const (
 
 	DatasourceStatusActive = "active"
 	DatasourceStatusPaused = "paused"
+	// DatasourceStatusDegraded parks a source the change-set compiler cannot make
+	// progress on for a structural reason an operator must resolve (an oversized
+	// snapshot manifest). A degraded source is skipped by the reconcile sweep
+	// until an operator resets it to active; StatusReason records why.
+	DatasourceStatusDegraded = "degraded"
 )
 
 // API credential kinds mirror saas.accounts.v1.ApiCredentialKind; they select
@@ -228,7 +233,10 @@ type DatasourceSource struct {
 	CredentialSecretRef string
 	WebhookSecretRef    string
 	Status              string
-	LastSyncedAt        *time.Time
+	// StatusReason explains a non-active status (the degrade reason for a source
+	// the compiler parked); empty for an active source.
+	StatusReason string
+	LastSyncedAt *time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
 

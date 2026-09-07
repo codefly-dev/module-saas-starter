@@ -183,6 +183,19 @@ func (f *datasourceFakeStore) BumpDatasourceReconcile(_ context.Context, sourceI
 	return nil
 }
 
+func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, sourceID, reason string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return errors.New("not found")
+	}
+	s.Status = business.DatasourceStatusDegraded
+	s.StatusReason = reason
+	s.NextReconcileAt = nil
+	return nil
+}
+
 func (f *datasourceFakeStore) ListDatasourceSourcesDueForReconcile(_ context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -246,6 +259,7 @@ type fakeGitHub struct {
 	errs          map[string]error
 	compareFn     func(base, head string) (*github.Comparison, error)
 	blobs         map[string][]byte
+	blobErrs      map[string]error
 }
 
 func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
@@ -273,6 +287,9 @@ func (f *fakeGitHub) Compare(_ context.Context, _, base, head string) (*github.C
 	return nil, errors.New("compare not configured")
 }
 func (f *fakeGitHub) GetBlob(_ context.Context, _, blobSHA string, _ int64) ([]byte, error) {
+	if err, ok := f.blobErrs[blobSHA]; ok {
+		return nil, err
+	}
 	if b, ok := f.blobs[blobSHA]; ok {
 		return b, nil
 	}

@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **182 RPCs** across **29 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **183 RPCs** across **29 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -77,6 +77,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Lease a bounded batch of ready jobs from an allowed queue. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Emit a registered audit event on the tenant's spine. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Enqueue durable work for a tenant- or subject-scoped queue. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob` | server stream | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Stream a datasource file blob referenced by a change set. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/GetApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read one approval request on the caller's tenant. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Renew a live job lease by its fencing token. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/NackJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Fail a leased job as retryable or permanent. |
@@ -194,7 +195,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 39
-- `internal`: 25
+- `internal`: 26
 - `mfa`: 3
 - `org_admin`: 40
 - `org_member`: 37

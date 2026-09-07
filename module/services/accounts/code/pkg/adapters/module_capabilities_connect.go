@@ -55,3 +55,7 @@ func (h *moduleCapabilitiesConnectHandler) CancelApproval(ctx context.Context, r
 func (h *moduleCapabilitiesConnectHandler) EmitAuditEvent(ctx context.Context, req *connect.Request[gen.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.EmitAuditEvent)
 }
+
+func (h *moduleCapabilitiesConnectHandler) FetchDatasourceBlob(ctx context.Context, req *connect.Request[gen.FetchDatasourceBlobRequest], stream *connect.ServerStream[gen.FetchDatasourceBlobChunk]) error {
+	return streamDatasourceBlob(ctx, req.Msg, stream)
+}

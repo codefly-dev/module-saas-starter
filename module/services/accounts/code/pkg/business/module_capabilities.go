@@ -20,8 +20,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
+	"accounts/pkg/datasource/github"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
@@ -574,4 +576,58 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 		return status.Error(codes.Internal, err.Error())
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Datasource blobs
+// ---------------------------------------------------------------------------
+
+// ModuleFetchDatasourceBlob returns the bytes of a GitHub blob referenced by a
+// datasource change set, so the documents module can pull the content a delivery
+// omitted inline. It supersedes the signed content ticket: the module already
+// claims the datasource queue to receive the change set, and claiming that queue
+// is an inherently cross-tenant inbox operation (every tenant's ingest jobs land
+// on it), so a principal trusted to claim it is trusted to fetch the blobs those
+// jobs reference — no per-blob ticket is minted.
+//
+// Authorization is the caller's datasource-queue grant plus the source row's own
+// org, NOT a request-supplied tenant: the source is loaded by id and the fetch
+// is authorized against that source's org, so a cross-tenant claimer reaches any
+// source while a hypothetical org-bound principal reaches only its own. The blob
+// is re-fetched with the source's decrypted token and never leaves accounts;
+// anything over maxContentTicketBytes is refused rather than buffered.
+func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCaller, sourceID, blobSHA string) ([]byte, string, error) {
+	w := wool.Get(ctx).In("ModuleFetchDatasourceBlob")
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return nil, "", err
+	}
+	if !grant.allowsQueue(datasourceIngestQueue) {
+		return nil, "", status.Errorf(codes.PermissionDenied, "principal %s may not fetch datasource blobs: the %q queue grant is required", caller.PrincipalID, datasourceIngestQueue)
+	}
+	if s.datasourceCipher == nil || s.newGitHubClient == nil {
+		return nil, "", status.Error(codes.FailedPrecondition, "datasource connector is not configured")
+	}
+	source, err := s.store.GetDatasourceSourceByID(ctx, sourceID)
+	if err != nil {
+		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "load source").Error())
+	}
+	if source == nil || source.Provider != DatasourceProviderGitHub {
+		return nil, "", status.Errorf(codes.NotFound, "datasource source %s not found", sourceID)
+	}
+	if err := authorizeTenant(caller, grant, source.OrgID); err != nil {
+		return nil, "", err
+	}
+	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	if err != nil {
+		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "decrypt access token").Error())
+	}
+	content, err := s.newGitHubClient(token).GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
+	if err != nil {
+		if errors.Is(err, github.ErrFileTooLarge) {
+			return nil, "", status.Errorf(codes.FailedPrecondition, "blob exceeds the %d-byte fetch limit", maxContentTicketBytes)
+		}
+		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "fetch blob").Error())
+	}
+	return content, http.DetectContentType(content), nil
 }

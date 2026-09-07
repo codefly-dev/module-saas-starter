@@ -17,7 +17,7 @@ import (
 const datasourceSourceColumns = `
 	id::text, org_id::text, provider, COALESCE(repo, ''), paths, COALESCE(branch, ''),
 	boundary_node_id::text, credential_secret_ref, COALESCE(webhook_secret_ref, ''),
-	status, last_synced_at, created_at, updated_at, config,
+	status, COALESCE(status_reason, ''), last_synced_at, created_at, updated_at, config,
 	COALESCE(last_ingested_commit, ''), last_ingested_at, COALESCE(last_delivery_id, ''),
 	(EXTRACT(EPOCH FROM reconcile_interval))::bigint, next_reconcile_at`
 
@@ -28,7 +28,7 @@ func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	if err := row.Scan(
 		&d.ID, &d.OrgID, &d.Provider, &d.Repo, &d.Paths, &d.Branch,
 		&d.BoundaryNodeID, &d.CredentialSecretRef, &d.WebhookSecretRef,
-		&d.Status, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
+		&d.Status, &d.StatusReason, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
 		&d.LastIngestedCommit, &d.LastIngestedAt, &d.LastDeliveryID,
 		&reconcileIntervalSeconds, &d.NextReconcileAt,
 	); err != nil {
@@ -124,6 +124,24 @@ func (s *PostgresStore) BumpDatasourceReconcile(ctx context.Context, sourceID st
 		                                THEN NOW() + reconcile_interval END,
 		       updated_at        = NOW()
 		 WHERE id = $1`, sourceID)
+	return err
+}
+
+// MarkDatasourceSourceDegraded parks a source the compiler cannot make progress
+// on for a structural reason an operator must resolve (an oversized snapshot
+// manifest). Flipping status off 'active' removes it from the reconcile sweep and
+// its partial index, so it stops being re-selected — no schedule bump. Clearing
+// next_reconcile_at keeps the row out of the due set even after an operator
+// widens the interval. Runs under the caller's WithControlPlane (the leased
+// compiler has no tenant context).
+func (s *PostgresStore) MarkDatasourceSourceDegraded(ctx context.Context, sourceID, reason string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET status            = 'degraded',
+		       status_reason     = $2,
+		       next_reconcile_at = NULL,
+		       updated_at        = NOW()
+		 WHERE id = $1`, sourceID, reason)
 	return err
 }
 
