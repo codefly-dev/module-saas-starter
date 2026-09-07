@@ -29,10 +29,14 @@ func NewStaticSecretResolver(secrets map[string]string) (*StaticSecretResolver, 
 	return &StaticSecretResolver{secrets: copied}, nil
 }
 
-func (r *StaticSecretResolver) SigningSecret(_ context.Context, sourceID string) (string, error) {
+// ResolveSource returns the source's signing secret. It carries no tenant
+// attribution — the in-memory map predates per-source org/boundary — so a
+// delivery it admits is attributed by the compiler's own source lookup, not by
+// the receiver.
+func (r *StaticSecretResolver) ResolveSource(_ context.Context, sourceID string) (ResolvedSource, error) {
 	secret, ok := r.secrets[sourceID]
 	if !ok {
-		return "", ErrSourceNotFound
+		return ResolvedSource{}, ErrSourceNotFound
 	}
-	return secret, nil
+	return ResolvedSource{SigningSecret: secret}, nil
 }

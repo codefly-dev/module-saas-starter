@@ -102,7 +102,7 @@ func newTestServer(t *testing.T, producer *fakeJobProducer) *httptest.Server {
 	require.NoError(t, err)
 	handler := datasource.NewHandler(datasource.GitHubWebhookPath, datasource.HandlerDeps{
 		Producer: producer,
-		Secrets:  resolver,
+		Sources:  resolver,
 	})
 	// The httptest server serves from "/", so mount the handler under the same
 	// prefix the receiver strips to recover the source id.
@@ -193,6 +193,49 @@ func TestHandlerVerifiesAndDurablyQueuesRawDelivery(t *testing.T) {
 	require.Equal(t, body, job.GetPayload())
 	require.Equal(t, "push", job.GetAttributes()["github.event"])
 	require.Equal(t, testSourceID, job.GetAttributes()["datasource.source_id"])
+}
+
+// attributingResolver returns tenant/boundary attribution alongside the secret,
+// as the production store-backed resolver does.
+type attributingResolver struct {
+	secret, orgID, boundaryID string
+}
+
+func (r attributingResolver) ResolveSource(_ context.Context, sourceID string) (datasource.ResolvedSource, error) {
+	if sourceID != testSourceID {
+		return datasource.ResolvedSource{}, datasource.ErrSourceNotFound
+	}
+	return datasource.ResolvedSource{SigningSecret: r.secret, OrgID: r.orgID, BoundaryID: r.boundaryID}, nil
+}
+
+func TestHandlerStampsAttributionAndPerSourceOrdering(t *testing.T) {
+	// The compiler resolves a concrete tenant from these attributes and relies on
+	// the per-source ordering key to keep one in-flight delivery per source.
+	producer := newFakeJobProducer()
+	handler := datasource.NewHandler(datasource.GitHubWebhookPath, datasource.HandlerDeps{
+		Producer: producer,
+		Sources:  attributingResolver{secret: testSecret, orgID: "org-7", boundaryID: "boundary-9"},
+	})
+	mux := http.NewServeMux()
+	mux.Handle(datasource.GitHubWebhookPath, handler)
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	response := postPush(t, server, pushBody("refs/heads/main"), pushOptions{delivery: "d-attr"})
+	defer func() { _ = response.Body.Close() }()
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	request, ok := producer.request("d-attr")
+	require.True(t, ok)
+	job := request.GetJob()
+	require.Equal(t, datasource.GitHubWebhookQueue, job.GetQueue())
+	attrs := job.GetAttributes()
+	require.Equal(t, testSourceID, attrs["datasource.source_id"])
+	require.Equal(t, "org-7", attrs["datasource.org_id"])
+	require.Equal(t, "boundary-9", attrs["datasource.boundary_id"])
+	require.Equal(t, "d-attr", attrs["datasource.delivery_id"])
+	require.Equal(t, "datasource.delivery", job.GetOrdering().GetNamespace())
+	require.Equal(t, []string{testSourceID}, job.GetOrdering().GetComponents())
 }
 
 func TestHandlerAcknowledgesExactDuplicateAndRejectsConflictingReuse(t *testing.T) {
@@ -364,21 +407,21 @@ func TestHandlerRejectsNonPost(t *testing.T) {
 	require.Equal(t, http.StatusMethodNotAllowed, response.StatusCode)
 }
 
-func TestHandlerRelaysNonPushEventsVerbatim(t *testing.T) {
-	// The receiver is event-agnostic: it verifies and persists any signed GitHub
-	// event, tagging the event name for the ingest consumer to filter on. GitHub
-	// sends a signed "ping" on webhook creation and expects a 2xx.
+func TestHandlerAcknowledgesNonPushWithoutEnqueueing(t *testing.T) {
+	// Only a verified push is compiled into a change set. GitHub's setup ping and
+	// any other signed event must be acknowledged (so GitHub does not retry) but
+	// never enqueued — the change-set compiler only understands pushes.
 	producer := newFakeJobProducer()
 	server := newTestServer(t, producer)
-	body := []byte(`{"zen":"Keep it simple.","hook_id":42}`)
 
-	response := postPush(t, server, body, pushOptions{delivery: "d-ping", event: "ping"})
-	defer func() { _ = response.Body.Close() }()
-
-	require.Equal(t, http.StatusOK, response.StatusCode)
-	request, ok := producer.request("d-ping")
-	require.True(t, ok)
-	require.Equal(t, "ping", request.GetJob().GetAttributes()["github.event"])
+	for _, event := range []string{"ping", "release", "pull_request"} {
+		response := postPush(t, server, []byte(`{"zen":"Keep it simple.","hook_id":42}`),
+			pushOptions{delivery: "d-" + event, event: event})
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		require.Equal(t, "ignored", decodeStatus(t, response))
+		_ = response.Body.Close()
+	}
+	require.EqualValues(t, 0, producer.inserts.Load())
 }
 
 func TestHandlerRejectsInvalidCommandAsBadRequest(t *testing.T) {
@@ -407,7 +450,7 @@ func TestHandlerExtractsSourceIDUnderProductionDispatch(t *testing.T) {
 	require.NoError(t, err)
 	handler := datasource.NewHandler(datasource.GitHubWebhookPath, datasource.HandlerDeps{
 		Producer: producer,
-		Secrets:  resolver,
+		Sources:  resolver,
 	})
 
 	body := pushBody("refs/heads/main")
@@ -433,9 +476,9 @@ func TestStaticSecretResolverRejectsEmptyEntries(t *testing.T) {
 
 	resolver, err := datasource.NewStaticSecretResolver(map[string]string{testSourceID: testSecret})
 	require.NoError(t, err)
-	secret, err := resolver.SigningSecret(context.Background(), testSourceID)
+	resolved, err := resolver.ResolveSource(context.Background(), testSourceID)
 	require.NoError(t, err)
-	require.Equal(t, testSecret, secret)
-	_, err = resolver.SigningSecret(context.Background(), "missing")
+	require.Equal(t, testSecret, resolved.SigningSecret)
+	_, err = resolver.ResolveSource(context.Background(), "missing")
 	require.ErrorIs(t, err, datasource.ErrSourceNotFound)
 }

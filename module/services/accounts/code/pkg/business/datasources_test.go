@@ -143,6 +143,66 @@ func (f *datasourceFakeStore) UpdateDatasourceSourceCredential(_ context.Context
 	return nil
 }
 
+func (f *datasourceFakeStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
+func (f *datasourceFakeStore) AdvanceDatasourceCursor(_ context.Context, sourceID, commit, deliveryID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return errors.New("not found")
+	}
+	s.LastIngestedCommit = commit
+	s.LastDeliveryID = deliveryID
+	now := time.Now().UTC()
+	s.LastIngestedAt = &now
+	if s.ReconcileInterval > 0 {
+		next := now.Add(s.ReconcileInterval)
+		s.NextReconcileAt = &next
+	} else {
+		s.NextReconcileAt = nil
+	}
+	return nil
+}
+
+func (f *datasourceFakeStore) BumpDatasourceReconcile(_ context.Context, sourceID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return errors.New("not found")
+	}
+	if s.ReconcileInterval > 0 {
+		next := time.Now().UTC().Add(s.ReconcileInterval)
+		s.NextReconcileAt = &next
+	} else {
+		s.NextReconcileAt = nil
+	}
+	return nil
+}
+
+func (f *datasourceFakeStore) ListDatasourceSourcesDueForReconcile(_ context.Context, now time.Time, limit int) ([]*business.DatasourceSource, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*business.DatasourceSource
+	for _, s := range f.sources {
+		if s.Status != business.DatasourceStatusActive || s.Provider != business.DatasourceProviderGitHub {
+			continue
+		}
+		if s.NextReconcileAt == nil || s.NextReconcileAt.After(now) {
+			continue
+		}
+		cp := *s
+		out = append(out, &cp)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
 // purposeCipher is a deterministic, purpose-binding fake: the envelope embeds
 // the purpose, so DecryptSecret fails closed if replayed under a different one —
 // mirroring the Vault-transit binding the real cipher enforces.
@@ -184,6 +244,8 @@ type fakeGitHub struct {
 	files         []github.File
 	content       map[string][]byte
 	errs          map[string]error
+	compareFn     func(base, head string) (*github.Comparison, error)
+	blobs         map[string][]byte
 }
 
 func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
@@ -199,7 +261,22 @@ func (f *fakeGitHub) GetFileContent(_ context.Context, _, _, path string) ([]byt
 	if err, ok := f.errs[path]; ok {
 		return nil, err
 	}
-	return f.content[path], nil
+	if content, ok := f.content[path]; ok {
+		return content, nil
+	}
+	return nil, github.ErrNotFound
+}
+func (f *fakeGitHub) Compare(_ context.Context, _, base, head string) (*github.Comparison, error) {
+	if f.compareFn != nil {
+		return f.compareFn(base, head)
+	}
+	return nil, errors.New("compare not configured")
+}
+func (f *fakeGitHub) GetBlob(_ context.Context, _, blobSHA string, _ int64) ([]byte, error) {
+	if b, ok := f.blobs[blobSHA]; ok {
+		return b, nil
+	}
+	return nil, github.ErrNotFound
 }
 
 // recordingAudit captures emitted audit entries so a test can assert an RPC
@@ -295,32 +372,37 @@ func TestAddGitHubSource_Validation(t *testing.T) {
 	}
 }
 
-func TestSigningSecret_ResolvesPerSource(t *testing.T) {
+func TestResolveWebhookSource_ResolvesPerSource(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	withHook := addSource(t, svc, business.AddGitHubSourceInput{
 		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t", WebhookSecret: "whsec",
 	})
-	secret, err := svc.SigningSecret(context.Background(), withHook.ID)
-	if err != nil || secret != "whsec" {
-		t.Fatalf("SigningSecret = %q, %v; want whsec", secret, err)
+	resolved, err := svc.ResolveWebhookSource(context.Background(), withHook.ID)
+	if err != nil || resolved.SigningSecret != "whsec" {
+		t.Fatalf("ResolveWebhookSource secret = %q, %v; want whsec", resolved.SigningSecret, err)
+	}
+	// The receiver stamps the tenant/boundary from this attribution.
+	if resolved.OrgID != testOrg || resolved.BoundaryID != withHook.BoundaryNodeID {
+		t.Fatalf("attribution = %+v, want org %s boundary %s", resolved, testOrg, withHook.BoundaryNodeID)
 	}
 
 	noHook := addSource(t, svc, business.AddGitHubSourceInput{
 		OrgID: testOrg, Repo: "acme/other", CollectionLabel: "wiki", AccessToken: "t",
 	})
-	if _, err := svc.SigningSecret(context.Background(), noHook.ID); !errors.Is(err, business.ErrDatasourceSourceNotFound) {
+	if _, err := svc.ResolveWebhookSource(context.Background(), noHook.ID); !errors.Is(err, business.ErrDatasourceSourceNotFound) {
 		t.Fatalf("unconfigured source: err = %v, want ErrDatasourceSourceNotFound", err)
 	}
-	if _, err := svc.SigningSecret(context.Background(), "unknown"); !errors.Is(err, business.ErrDatasourceSourceNotFound) {
+	if _, err := svc.ResolveWebhookSource(context.Background(), "unknown"); !errors.Is(err, business.ErrDatasourceSourceNotFound) {
 		t.Fatalf("unknown source: err = %v, want ErrDatasourceSourceNotFound", err)
 	}
 }
 
-// TestSyncDatasourceSource_SchedulesRequest proves the RPC does NOT pull inline:
-// it enqueues exactly one sync-request job on the internal request queue, emits
-// the sync audit event, and returns the job id.
-func TestSyncDatasourceSource_SchedulesRequest(t *testing.T) {
+// TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot proves "Sync now" for a
+// GitHub source does NOT pull inline: it enqueues exactly one forced reconcile
+// job on the delivery queue (keyed for per-source ordering), emits the sync audit
+// event, and returns the job id.
+func TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), producer, &fakeGitHub{})
 	source := addSource(t, svc, business.AddGitHubSourceInput{
@@ -335,131 +417,22 @@ func TestSyncDatasourceSource_SchedulesRequest(t *testing.T) {
 		t.Fatalf("job id = %q, want the enqueued job id", jobID)
 	}
 	if len(producer.jobs) != 1 {
-		t.Fatalf("enqueued %d jobs, want exactly 1 sync request (no inline pull)", len(producer.jobs))
+		t.Fatalf("enqueued %d jobs, want exactly 1 reconcile request (no inline pull)", len(producer.jobs))
 	}
-	if producer.jobs[0].GetQueue() != business.DatasourceSyncRequestQueue {
-		t.Fatalf("queue = %q, want %q", producer.jobs[0].GetQueue(), business.DatasourceSyncRequestQueue)
+	job := producer.jobs[0]
+	if job.GetQueue() != business.DatasourceDeliveryQueue {
+		t.Fatalf("queue = %q, want %q", job.GetQueue(), business.DatasourceDeliveryQueue)
 	}
-	// The add above also audited; the sync must add its own event on top.
+	if job.GetAttributes()["datasource.reconcile_mode"] != "force" {
+		t.Fatalf("reconcile mode = %q, want force", job.GetAttributes()["datasource.reconcile_mode"])
+	}
+	if job.GetOrdering().GetNamespace() != "datasource.delivery" ||
+		len(job.GetOrdering().GetComponents()) != 1 || job.GetOrdering().GetComponents()[0] != source.ID {
+		t.Fatalf("ordering key = %v, want per-source", job.GetOrdering())
+	}
 	got := audit.types()
 	if len(got) == 0 || got[len(got)-1] != business.EventDatasourceSourceSynced {
 		t.Fatalf("audit events = %v, want last = %s", got, business.EventDatasourceSourceSynced)
-	}
-}
-
-func TestRunDatasourceSync_EnqueuesPerFile(t *testing.T) {
-	producer := &recordingProducer{}
-	gh := &fakeGitHub{
-		defaultBranch: "trunk",
-		commit:        "c0ffee",
-		files:         []github.File{{Path: "docs/a.md", SHA: "sa"}, {Path: "docs/b.md", SHA: "sb"}},
-		content:       map[string][]byte{"docs/a.md": []byte("A"), "docs/b.md": []byte("B")},
-	}
-	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
-	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t",
-	})
-
-	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if enqueued != 2 || len(producer.jobs) != 2 {
-		t.Fatalf("enqueued=%d jobs=%d, want 2", enqueued, len(producer.jobs))
-	}
-	job := producer.jobs[0]
-	if job.GetDirection() != jobsv1.JobDirection_JOB_DIRECTION_INBOX {
-		t.Fatalf("direction = %v, want INBOX", job.GetDirection())
-	}
-	// Ingest deliveries are Global-scoped to match the webhook producer on the
-	// shared queue; the org travels in an attribute.
-	if !job.GetScope().GetGlobal() {
-		t.Fatalf("scope = %v, want Global", job.GetScope())
-	}
-	attrs := job.GetAttributes()
-	if attrs["datasource.source_id"] != source.ID || attrs["datasource.org_id"] != testOrg ||
-		attrs["github.ref"] != "trunk" || attrs["github.commit"] != "c0ffee" ||
-		attrs["github.change_type"] != "added" ||
-		attrs["datasource.boundary_id"] == "" || attrs["datasource.boundary_id"] != source.BoundaryNodeID {
-		t.Fatalf("attributes = %v", attrs)
-	}
-	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
-		t.Fatal("idempotency keys collided across files")
-	}
-}
-
-// TestRunDatasourceSync_SkipsUnfetchableFiles proves a single oversized or
-// missing file no longer aborts the whole walk (finding #2): the good files
-// still get enqueued.
-func TestRunDatasourceSync_SkipsUnfetchableFiles(t *testing.T) {
-	producer := &recordingProducer{}
-	gh := &fakeGitHub{
-		commit: "c1",
-		files: []github.File{
-			{Path: "docs/ok.md", SHA: "s1"},
-			{Path: "docs/big.png", SHA: "s2"},
-			{Path: "docs/gone.md", SHA: "s3"},
-		},
-		content: map[string][]byte{"docs/ok.md": []byte("OK")},
-		errs: map[string]error{
-			"docs/big.png": github.ErrFileTooLarge,
-			"docs/gone.md": github.ErrNotFound,
-		},
-	}
-	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
-	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", Branch: "main", CollectionLabel: "wiki", AccessToken: "t",
-	})
-
-	enqueued, err := svc.RunDatasourceSync(context.Background(), source.ID)
-	if err != nil {
-		t.Fatalf("sync must not abort on a skippable file: %v", err)
-	}
-	if enqueued != 1 || len(producer.jobs) != 1 {
-		t.Fatalf("enqueued=%d jobs=%d, want only the fetchable file", enqueued, len(producer.jobs))
-	}
-	if producer.jobs[0].GetAttributes()["github.path"] != "docs/ok.md" {
-		t.Fatalf("enqueued the wrong file: %v", producer.jobs[0].GetAttributes())
-	}
-}
-
-// TestRunDatasourceSync_CommitKeyedIdempotency proves finding #6: a re-sync at
-// the same commit yields the same idempotency key (documents dedupes), while a
-// revert to earlier content under a NEW commit yields a distinct key so it is
-// re-delivered rather than silently dropped.
-func TestRunDatasourceSync_CommitKeyedIdempotency(t *testing.T) {
-	producer := &recordingProducer{}
-	gh := &fakeGitHub{
-		commit:  "commitA",
-		files:   []github.File{{Path: "docs/a.md", SHA: "blobA"}},
-		content: map[string][]byte{"docs/a.md": []byte("A")},
-	}
-	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
-	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", Branch: "main", CollectionLabel: "wiki", AccessToken: "t",
-	})
-
-	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
-		t.Fatal(err)
-	}
-	// Re-sync at the SAME commit → same key.
-	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
-		t.Fatal(err)
-	}
-	// Content reverts to A under a NEW commit → distinct key.
-	gh.commit = "commitC"
-	if _, err := svc.RunDatasourceSync(context.Background(), source.ID); err != nil {
-		t.Fatal(err)
-	}
-	if len(producer.jobs) != 3 {
-		t.Fatalf("want 3 enqueue calls, got %d", len(producer.jobs))
-	}
-	keyA1, keyA2, keyC := producer.jobs[0].GetIdempotencyKey(), producer.jobs[1].GetIdempotencyKey(), producer.jobs[2].GetIdempotencyKey()
-	if keyA1 != keyA2 {
-		t.Fatal("same commit must produce the same idempotency key (dedup)")
-	}
-	if keyC == keyA1 {
-		t.Fatal("a new commit must produce a distinct key so a revert is delivered, not dropped")
 	}
 }
 
