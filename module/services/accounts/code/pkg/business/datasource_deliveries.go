@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +79,10 @@ const (
 	DispositionIgnoredBranch DeliveryDisposition = "ignored_branch"
 	DispositionStale         DeliveryDisposition = "stale"
 	DispositionBranchDeleted DeliveryDisposition = "branch_deleted"
+	// DispositionDegraded is an acknowledged drop: the snapshot manifest was too
+	// large to ingest, so the source was parked in the degraded state for an
+	// operator instead of dead-lettering the reconcile every interval forever.
+	DispositionDegraded DeliveryDisposition = "degraded"
 )
 
 // ErrMalformedDelivery reports a delivery payload the compiler cannot parse. It
@@ -353,10 +358,16 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if !force && head == source.LastIngestedCommit {
 		return false, nil
 	}
-	if _, err := s.snapshotAt(ctx, source, client, head, "", false); err != nil {
+	disp, err := s.snapshotAt(ctx, source, client, head, "", false)
+	if err != nil {
 		return false, err
 	}
-	return true, nil
+	// Report whether a snapshot was actually enqueued. When the manifest overran
+	// the ingest cap, snapshotAt degrades the source and returns DispositionDegraded
+	// with a nil error; reporting true there would tell "Sync now" a snapshot was
+	// dispatched when the source was in fact parked, so key the bool off the
+	// disposition rather than the absence of an error.
+	return disp == DispositionSnapshot, nil
 }
 
 // snapshotAt enqueues a full-tree manifest at commit and advances the cursor. It
@@ -379,10 +390,32 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	}
 	if len(payload) > maxIngestPayload {
 		// Paging a large manifest across inbox jobs is issue #487 open question 3;
-		// until it is resolved a manifest past the inbox cap fails loudly rather
-		// than silently truncating a reconcile.
-		return "", jobs.NewProcessingError("datasource.snapshot_too_large",
-			"snapshot manifest exceeds the ingest payload limit", false)
+		// until the object-storage manifest seam lands, a manifest past the inbox
+		// cap cannot be delivered. Failing terminally here dead-letters the job, but
+		// the reconcile schedule was already bumped, so the source would re-enqueue
+		// and dead-letter every interval forever with no visible status. Instead
+		// park the source in the degraded state (which clears its schedule and drops
+		// it from the reconcile sweep) and record why, so an operator sees it and
+		// resets it once the manifest fits. Acknowledged, not retried.
+		reason := fmt.Sprintf("snapshot manifest is %d bytes, over the %d-byte ingest limit", len(payload), maxIngestPayload)
+		// Degrading is a state transition, so only write and audit when the
+		// source is not already degraded. A source stuck oversized is retried by
+		// "Sync now" (SyncDatasourceSource ignores status), and each such attempt
+		// re-enters this branch; without the guard every retry would rewrite the
+		// row and emit another snapshot_too_large event, burying the one real
+		// transition under audit spam. The status read is reliable because the
+		// per-source FIFO ordering key makes this the only in-flight delivery for
+		// the source. Acknowledged, not retried.
+		if source.Status != DatasourceStatusDegraded {
+			if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+				return s.store.MarkDatasourceSourceDegraded(ctx, source.ID, reason)
+			}); err != nil {
+				return "", w.Wrapf(err, "degrade oversized source")
+			}
+			s.emit(ctx, source.ID, "system", EventDatasourceSnapshotTooLarge, "datasource", source.ID, source.OrgID,
+				map[string]any{"head": commit, "bytes": len(payload), "limit": maxIngestPayload, "delivery_id": deliveryID})
+		}
+		return DispositionDegraded, nil
 	}
 	if _, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
@@ -410,6 +443,23 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	}
 	if err := s.advanceCursor(ctx, source.ID, commit, deliveryID); err != nil {
 		return "", w.Wrapf(err, "advance cursor")
+	}
+	if source.Status == DatasourceStatusDegraded {
+		// This source was parked degraded by an earlier oversized snapshot; a
+		// snapshot has now fit within the ingest cap, so return it to active and
+		// restore its reconcile schedule. Gated on the current status so the
+		// common already-active path neither writes nor emits. Recovery is
+		// snapshot-only on purpose: an incremental compare compiling proves
+		// nothing about the full-tree manifest size, so only snapshotAt — the
+		// full-tree path — clears the flag. The status read is reliable because
+		// the per-source FIFO ordering key makes this the only in-flight delivery.
+		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+			return s.store.ClearDatasourceSourceDegraded(ctx, source.ID)
+		}); err != nil {
+			return "", w.Wrapf(err, "clear degraded source")
+		}
+		s.emit(ctx, source.ID, "system", EventDatasourceSourceRecovered, "datasource", source.ID, source.OrgID,
+			map[string]any{"head": commit, "delivery_id": deliveryID})
 	}
 	if forcePush {
 		s.emit(ctx, source.ID, "system", EventDatasourceForcePushReconciled, "datasource", source.ID, source.OrgID,

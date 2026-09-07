@@ -66,6 +66,9 @@ const (
 	// ModuleCapabilitiesServiceEmitAuditEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EmitAuditEvent RPC.
 	ModuleCapabilitiesServiceEmitAuditEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	// ModuleCapabilitiesServiceFetchDatasourceBlobProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's FetchDatasourceBlob RPC.
+	ModuleCapabilitiesServiceFetchDatasourceBlobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
 )
 
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
@@ -91,6 +94,11 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
+	// upstream provider, to the module that resolves a change set's blob sha.
+	// Authorized by the caller principal's datasource-queue grant and the source
+	// row's own org/boundary, not the request tenant.
+	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error)
 }
 
 // NewModuleCapabilitiesServiceClient constructs a client for the
@@ -164,21 +172,28 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		fetchDatasourceBlob: connect.NewClient[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceFetchDatasourceBlobProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
-	enqueueJob      *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
-	claimJobs       *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
-	heartbeatJob    *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
-	ackJob          *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
-	nackJob         *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
-	notifyUser      *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
-	requestApproval *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
-	getApproval     *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
-	cancelApproval  *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
-	emitAuditEvent  *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	enqueueJob          *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
+	claimJobs           *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
+	heartbeatJob        *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
+	ackJob              *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
+	nackJob             *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
+	notifyUser          *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
+	requestApproval     *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
+	getApproval         *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
+	cancelApproval      *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
+	emitAuditEvent      *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	fetchDatasourceBlob *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
 }
 
 // EnqueueJob calls saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob.
@@ -231,6 +246,11 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, re
 	return c.emitAuditEvent.CallUnary(ctx, req)
 }
 
+// FetchDatasourceBlob calls saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob.
+func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, req *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error) {
+	return c.fetchDatasourceBlob.CallServerStream(ctx, req)
+}
+
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
@@ -254,6 +274,11 @@ type ModuleCapabilitiesServiceHandler interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
+	// upstream provider, to the module that resolves a change set's blob sha.
+	// Authorized by the caller principal's datasource-queue grant and the source
+	// row's own org/boundary, not the request tenant.
+	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error
 }
 
 // NewModuleCapabilitiesServiceHandler builds an HTTP handler from the service implementation. It
@@ -323,6 +348,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceFetchDatasourceBlobHandler := connect.NewServerStreamHandler(
+		ModuleCapabilitiesServiceFetchDatasourceBlobProcedure,
+		svc.FetchDatasourceBlob,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ModuleCapabilitiesServiceEnqueueJobProcedure:
@@ -345,6 +376,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceCancelApprovalHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEmitAuditEventProcedure:
 			moduleCapabilitiesServiceEmitAuditEventHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceFetchDatasourceBlobProcedure:
+			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -392,4 +425,8 @@ func (UnimplementedModuleCapabilitiesServiceHandler) CancelApproval(context.Cont
 
 func (UnimplementedModuleCapabilitiesServiceHandler) EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob is not implemented"))
 }

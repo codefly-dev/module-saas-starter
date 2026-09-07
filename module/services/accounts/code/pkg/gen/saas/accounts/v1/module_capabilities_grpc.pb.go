@@ -21,16 +21,17 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ModuleCapabilitiesService_EnqueueJob_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
-	ModuleCapabilitiesService_ClaimJobs_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
-	ModuleCapabilitiesService_HeartbeatJob_FullMethodName    = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
-	ModuleCapabilitiesService_AckJob_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
-	ModuleCapabilitiesService_NackJob_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
-	ModuleCapabilitiesService_NotifyUser_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
-	ModuleCapabilitiesService_RequestApproval_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
-	ModuleCapabilitiesService_GetApproval_FullMethodName     = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
-	ModuleCapabilitiesService_CancelApproval_FullMethodName  = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
-	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName  = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_EnqueueJob_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
+	ModuleCapabilitiesService_ClaimJobs_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
+	ModuleCapabilitiesService_HeartbeatJob_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
+	ModuleCapabilitiesService_AckJob_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
+	ModuleCapabilitiesService_NackJob_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
+	ModuleCapabilitiesService_NotifyUser_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	ModuleCapabilitiesService_RequestApproval_FullMethodName     = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+	ModuleCapabilitiesService_GetApproval_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
+	ModuleCapabilitiesService_CancelApproval_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
+	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
 )
 
 // ModuleCapabilitiesServiceClient is the client API for ModuleCapabilitiesService service.
@@ -60,6 +61,11 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
+	// upstream provider, to the module that resolves a change set's blob sha.
+	// Authorized by the caller principal's datasource-queue grant and the source
+	// row's own org/boundary, not the request tenant.
+	FetchDatasourceBlob(ctx context.Context, in *FetchDatasourceBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceBlobChunk], error)
 }
 
 type moduleCapabilitiesServiceClient struct {
@@ -170,6 +176,25 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, in *FetchDatasourceBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceBlobChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &ModuleCapabilitiesService_ServiceDesc.Streams[0], ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[FetchDatasourceBlobRequest, FetchDatasourceBlobChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ModuleCapabilitiesService_FetchDatasourceBlobClient = grpc.ServerStreamingClient[FetchDatasourceBlobChunk]
+
 // ModuleCapabilitiesServiceServer is the server API for ModuleCapabilitiesService service.
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
@@ -197,6 +222,11 @@ type ModuleCapabilitiesServiceServer interface {
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
+	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
+	// upstream provider, to the module that resolves a change set's blob sha.
+	// Authorized by the caller principal's datasource-queue grant and the source
+	// row's own org/boundary, not the request tenant.
+	FetchDatasourceBlob(*FetchDatasourceBlobRequest, grpc.ServerStreamingServer[FetchDatasourceBlobChunk]) error
 	mustEmbedUnimplementedModuleCapabilitiesServiceServer()
 }
 
@@ -236,6 +266,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) CancelApproval(context.Conte
 }
 func (UnimplementedModuleCapabilitiesServiceServer) EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmitAuditEvent not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceBlob(*FetchDatasourceBlobRequest, grpc.ServerStreamingServer[FetchDatasourceBlobChunk]) error {
+	return status.Error(codes.Unimplemented, "method FetchDatasourceBlob not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) mustEmbedUnimplementedModuleCapabilitiesServiceServer() {
 }
@@ -439,6 +472,17 @@ func _ModuleCapabilitiesService_EmitAuditEvent_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_FetchDatasourceBlob_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(FetchDatasourceBlobRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ModuleCapabilitiesServiceServer).FetchDatasourceBlob(m, &grpc.GenericServerStream[FetchDatasourceBlobRequest, FetchDatasourceBlobChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type ModuleCapabilitiesService_FetchDatasourceBlobServer = grpc.ServerStreamingServer[FetchDatasourceBlobChunk]
+
 // ModuleCapabilitiesService_ServiceDesc is the grpc.ServiceDesc for ModuleCapabilitiesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -487,6 +531,12 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _ModuleCapabilitiesService_EmitAuditEvent_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "FetchDatasourceBlob",
+			Handler:       _ModuleCapabilitiesService_FetchDatasourceBlob_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "saas/accounts/v1/module_capabilities.proto",
 }

@@ -156,41 +156,16 @@ func TestCompareNotFoundOnMissingBase(t *testing.T) {
 	}
 }
 
-func TestCompareTruncatesAtFileCap(t *testing.T) {
-	// A page that keeps returning a full 100 files until the 300-file cap is hit
-	// must be reported Truncated so the caller snapshots instead of trusting a
-	// partial op list.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// compareFilesServer serves a compare whose files array has n entries, and
+// records how many requests it received so the single-call contract can be
+// asserted (GitHub never paginates the files array).
+func compareFilesServer(t *testing.T, n int, calls *int) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		*calls++
 		var b strings.Builder
 		b.WriteString(`{"status":"ahead","files":[`)
-		for i := 0; i < 100; i++ {
-			if i > 0 {
-				b.WriteString(",")
-			}
-			b.WriteString(`{"filename":"docs/` + r.URL.Query().Get("page") + "-" + strconv.Itoa(i) + `.md","status":"added","sha":"s"}`)
-		}
-		b.WriteString(`]}`)
-		_, _ = w.Write([]byte(b.String()))
-	}))
-	defer srv.Close()
-
-	cmp, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "base", "head")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !cmp.Truncated || len(cmp.Files) != 300 {
-		t.Fatalf("comparison truncated=%v files=%d, want truncated at 300", cmp.Truncated, len(cmp.Files))
-	}
-}
-
-func TestCompareStopsOnNonPaginatingResponse(t *testing.T) {
-	// An endpoint that ignores ?page and re-serves the same 100 files must not
-	// loop into a false 300-file truncation or emit duplicate ops. The dedup +
-	// progress check terminates it at the real 100 distinct files.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		var b strings.Builder
-		b.WriteString(`{"status":"ahead","files":[`)
-		for i := 0; i < 100; i++ {
+		for i := 0; i < n; i++ {
 			if i > 0 {
 				b.WriteString(",")
 			}
@@ -199,17 +174,43 @@ func TestCompareStopsOnNonPaginatingResponse(t *testing.T) {
 		b.WriteString(`]}`)
 		_, _ = w.Write([]byte(b.String()))
 	}))
+}
+
+func TestCompareTruncatesAtFileCap(t *testing.T) {
+	// GitHub caps a comparison's files at 300; at the cap the result must read
+	// Truncated so the caller snapshots instead of trusting a partial op list.
+	// The files array is not paginated, so Compare makes exactly one request.
+	calls := 0
+	srv := compareFilesServer(t, 300, &calls)
 	defer srv.Close()
 
 	cmp, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "base", "head")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cmp.Truncated {
-		t.Fatalf("a repeated non-paginating page must not read as truncated")
+	if calls != 1 {
+		t.Fatalf("compare made %d requests, want exactly 1", calls)
 	}
-	if len(cmp.Files) != 100 {
-		t.Fatalf("files = %d, want 100 distinct (no duplicates)", len(cmp.Files))
+	if !cmp.Truncated || len(cmp.Files) != 300 {
+		t.Fatalf("comparison truncated=%v files=%d, want truncated at 300", cmp.Truncated, len(cmp.Files))
+	}
+}
+
+func TestCompareDoesNotTruncateBelowFileCap(t *testing.T) {
+	// One file short of the cap is a complete diff, not a truncated one.
+	calls := 0
+	srv := compareFilesServer(t, 299, &calls)
+	defer srv.Close()
+
+	cmp, err := New("tok", srv.URL).Compare(context.Background(), "acme/docs", "base", "head")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("compare made %d requests, want exactly 1", calls)
+	}
+	if cmp.Truncated || len(cmp.Files) != 299 {
+		t.Fatalf("comparison truncated=%v files=%d, want 299 and not truncated", cmp.Truncated, len(cmp.Files))
 	}
 }
 
