@@ -138,7 +138,7 @@ jobs:
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.144
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Check exported API contracts are in sync with the proto
         run: codefly generate contracts saas-starter --check
 
@@ -247,7 +247,7 @@ jobs:
           # sum.golang.org 500s/404s on fresh or private codefly-dev tags.
           # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.144
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Resolve affected services
         id: plan
         shell: bash
@@ -307,7 +307,7 @@ jobs:
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.144
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Reclaim runner disk space
         shell: bash
         run: |
@@ -387,7 +387,7 @@ jobs:
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.144
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       # Temporal's amd64 image expands beyond Core's managed 512 MiB Syft
       # scratch volume. A host binary lets Codefly use the runner's disk.
       - name: Install Syft
@@ -458,7 +458,7 @@ jobs:
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.144
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Reclaim runner disk space
         shell: bash
         run: |
