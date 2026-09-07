@@ -203,7 +203,12 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
 - Durable jobs (inbox/outbox, leased workers, DLQ, MFA-gated replay) ship
   ([module/JOBS.md](./module/JOBS.md)), and principal/actor-chain machinery
   exists (§1.3). A full capability registry with `/admin/*` `/*` `/external/*`
-  trust doors and a pub/sub event orchestrator is not built. The
+  trust doors is not built. The typed, fan-out **domain event** contract is now
+  defined ([module/EVENTS.md](./module/EVENTS.md)) — the CloudEvents envelope,
+  catalog format, subscription model, and Transport port are specified over the
+  Postgres outbox — but the envelope proto, catalog generator, subscriptions,
+  relay, and port are sequenced, not built. The pub/sub orchestrator is now a
+  build against a fixed contract rather than an open design question. The
   [APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md) primitive (§Approvals below) is the
   nearest in-flight control-plane work.
 
@@ -252,7 +257,7 @@ there.
 | Audit **emission** | stdout JSON | ↔ Postgres `audit_events` + typed registry (see §1.8); async tee to a swappable compliance sink + tiered retention planned ([ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md)) |
 | Audit/analytics **query** | Hand-written BigQuery SQL (❌ lock-in) | ✅ SQL over the same Postgres — no warehouse dialect to lock into |
 | Document/DB store | Firestore-first (❌) | ✅ Postgres-first |
-| Eventing | Pub/Sub only (❌) | 🟡 Durable Postgres jobs (inbox/outbox); no external broker adapter |
+| Eventing | Pub/Sub only (❌) | 🟡 Durable Postgres jobs (inbox/outbox); typed domain-event contract standardized over the outbox behind a Transport port ([module/EVENTS.md](./module/EVENTS.md)); pub/sub relay and external broker adapter sequenced, not built |
 | Scheduling + leases + idempotency | Zero abstraction (❌) | ✅ Leased workers + idempotency in the jobs layer ([module/JOBS.md](./module/JOBS.md)) |
 | Consumer IdP | Swappable in practice (⚠️) | ✅ Multi-provider adapters + own session JWT as the primary path |
 | LLM access | Provider port + capability flags | ⬜ Not a starter concern |
