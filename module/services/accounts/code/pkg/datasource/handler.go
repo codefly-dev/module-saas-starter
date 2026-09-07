@@ -40,12 +40,21 @@ import (
 const GitHubWebhookPath = "/v1/datasource/github/webhook/"
 
 const (
-	GitHubWebhookQueue         = "datasource"
+	// GitHubWebhookQueue is the accounts-owned delivery queue the change-set
+	// compiler leases (issue #487). The module never consumes raw GitHub payloads
+	// again; it only sees the compiled per-file ingest jobs the compiler emits.
+	GitHubWebhookQueue         = "datasource.deliveries"
 	GitHubWebhookTopic         = "datasource.github.push"
 	GitHubWebhookSource        = "github.webhook"
 	GitHubWebhookSchemaVersion = 1
 	GitHubWebhookMaxAttempts   = 24
 	gitHubWebhookContentType   = "application/json"
+
+	// deliveryOrderingNamespace scopes the per-source FIFO ordering key so the
+	// jobs platform leases exactly one in-flight delivery per source. It must
+	// match business.datasourceDeliveryOrderingNamespace, which the reconcile
+	// scheduler stamps on its own jobs so they serialize behind push deliveries.
+	deliveryOrderingNamespace = "datasource.delivery"
 
 	// GitHub caps webhook payloads at 25 MiB, but the generic inbox retains at
 	// most 1 MiB per job. A delivery whose verified body exceeds this bound is
@@ -57,25 +66,37 @@ const (
 	eventHeader     = "X-GitHub-Event"
 	signatureHeader = "X-Hub-Signature-256"
 
-	attrEvent    = "github.event"
-	attrSourceID = "datasource.source_id"
+	attrEvent      = "github.event"
+	attrSourceID   = "datasource.source_id"
+	attrOrgID      = "datasource.org_id"
+	attrBoundaryID = "datasource.boundary_id"
+	attrDeliveryID = "datasource.delivery_id"
 )
 
 // ErrSourceNotFound reports that no signing secret is registered for the source
 // named in the webhook path.
 var ErrSourceNotFound = errors.New("datasource: no signing secret for source")
 
-// SigningSecretResolver returns the HMAC signing secret registered for one
-// datasource. It is the receipt-time seam to the per-source credential store:
-// today an in-memory map, later the Vault-transit encrypted store.
-type SigningSecretResolver interface {
-	SigningSecret(ctx context.Context, sourceID string) (string, error)
+// ResolvedSource is the receipt-time attribution of one webhook: its signing
+// secret and the tenant/boundary the compiler stamps onto the delivery so the
+// change-set worker resolves a concrete tenant, not an empty one.
+type ResolvedSource struct {
+	SigningSecret string
+	OrgID         string
+	BoundaryID    string
+}
+
+// SourceResolver returns the signing secret and tenant attribution registered
+// for one datasource. It is the receipt-time seam to the per-source credential
+// store; an unknown or webhook-unconfigured source returns ErrSourceNotFound.
+type SourceResolver interface {
+	ResolveSource(ctx context.Context, sourceID string) (ResolvedSource, error)
 }
 
 // HandlerDeps are deliberately limited to receipt-time dependencies.
 type HandlerDeps struct {
 	Producer jobs.Producer
-	Secrets  SigningSecretResolver
+	Sources  SourceResolver
 }
 
 // NewHandler returns the fast, public GitHub webhook endpoint mounted at
@@ -104,17 +125,17 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the secret before reading the body so an unknown source is rejected
+	// Resolve the source before reading the body so an unknown source is rejected
 	// without draining a potentially large request. An unknown source, a resolver
 	// error, and a genuine signature mismatch all return an identical 401
 	// response — same status, same body — so the endpoint cannot be probed to
 	// enumerate configured sources. Only a small timing difference remains
 	// (unknown sources skip the body read), which is the accepted cost of not
 	// draining unauthenticated bodies.
-	secret, err := h.deps.Secrets.SigningSecret(r.Context(), sourceID)
+	resolved, err := h.deps.Sources.ResolveSource(r.Context(), sourceID)
 	if err != nil {
 		if !errors.Is(err, ErrSourceNotFound) {
-			log.Warn("resolve signing secret failed", wool.ErrField(err))
+			log.Warn("resolve source failed", wool.ErrField(err))
 		}
 		writeError(w, http.StatusUnauthorized, "invalid signature")
 		return
@@ -131,7 +152,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := verifySignature(body, r.Header.Get(signatureHeader), secret); err != nil {
+	if err := verifySignature(body, r.Header.Get(signatureHeader), resolved.SigningSecret); err != nil {
 		log.Warn("signature verification failed", wool.ErrField(err))
 		writeError(w, http.StatusUnauthorized, "invalid signature")
 		return
@@ -144,21 +165,37 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only a verified push is compiled into a change set. GitHub's setup ping and
+	// any other signed event are acknowledged (so GitHub does not retry) but never
+	// enqueued — the compiler only understands pushes.
+	if event != "push" {
+		log.Info("ignoring non-push event", wool.Field("event", event))
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ignored"})
+		return
+	}
+
 	response, err := h.deps.Producer.EnqueueJob(r.Context(), &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
-			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
-			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          GitHubWebhookQueue,
-			Topic:          GitHubWebhookTopic,
-			Source:         GitHubWebhookSource,
+			Direction: jobsv1.JobDirection_JOB_DIRECTION_INBOX,
+			Scope:     &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
+			Queue:     GitHubWebhookQueue,
+			Topic:     GitHubWebhookTopic,
+			Source:    GitHubWebhookSource,
+			Ordering: &jobsv1.JobOrderingKey{
+				Namespace:  deliveryOrderingNamespace,
+				Components: []string{sourceID},
+			},
 			IdempotencyKey: deliveryID,
 			SchemaVersion:  GitHubWebhookSchemaVersion,
 			Payload:        body,
 			ContentType:    gitHubWebhookContentType,
 			MaxAttempts:    GitHubWebhookMaxAttempts,
 			Attributes: map[string]string{
-				attrEvent:    event,
-				attrSourceID: sourceID,
+				attrEvent:      event,
+				attrSourceID:   sourceID,
+				attrOrgID:      resolved.OrgID,
+				attrBoundaryID: resolved.BoundaryID,
+				attrDeliveryID: deliveryID,
 			},
 		},
 	})

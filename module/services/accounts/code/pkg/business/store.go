@@ -108,6 +108,22 @@ type Store interface {
 	LockDatasourceSourceCredentialRef(ctx context.Context, orgID, id string) (string, error)
 	UpdateDatasourceSourceCredential(ctx context.Context, orgID, id, credentialRef string) error
 	GetDatasourceSourceByID(ctx context.Context, id string) (*DatasourceSource, error)
+	// AdvanceDatasourceCursor records the head commit fully enqueued as a change
+	// set, its delivery provenance, and pushes next_reconcile_at out by the
+	// source's reconcile interval (left NULL when reconcile is disabled). It runs
+	// under the leased worker's control-plane role (no tenant context) and is only
+	// ever called by the change-set compiler after every op of a delivery is
+	// durably enqueued; monotonicity is guaranteed upstream by the worker's
+	// ancestor check, which drops a delivery whose head is an ancestor of the
+	// cursor before this is reached.
+	AdvanceDatasourceCursor(ctx context.Context, sourceID, commit, deliveryID string) error
+	// ListDatasourceSourcesDueForReconcile returns active sources whose
+	// next_reconcile_at has elapsed, for the periodic reconcile sweep. Control-plane.
+	ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*DatasourceSource, error)
+	// BumpDatasourceReconcile pushes next_reconcile_at out by the source's
+	// reconcile interval without touching the cursor, so a reconcile that finds
+	// nothing to do still reschedules. Control-plane.
+	BumpDatasourceReconcile(ctx context.Context, sourceID string) error
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error

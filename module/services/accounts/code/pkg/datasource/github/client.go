@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -34,10 +35,46 @@ var ErrNotFound = errors.New("github: not found")
 // treating them as a hard error.
 var ErrFileTooLarge = errors.New("github: file too large for the contents API")
 
-// File is one repository blob discovered under a source's path prefixes.
+// File is one repository blob discovered under a source's path prefixes. Size is
+// the blob's byte length as reported by the tree, so a snapshot manifest can
+// carry it without fetching the blob.
 type File struct {
 	Path string
 	SHA  string
+	Size int64
+}
+
+// Compare statuses GitHub reports for a base...head comparison.
+const (
+	CompareStatusAhead     = "ahead"
+	CompareStatusBehind    = "behind"
+	CompareStatusIdentical = "identical"
+	CompareStatusDiverged  = "diverged"
+)
+
+// compareFileCap is GitHub's hard limit on the files a compare returns (300). A
+// diff that reaches it is truncated and must be reconciled with a snapshot
+// rather than trusted as a complete op list.
+const compareFileCap = 300
+
+// ChangedFile is one file in a base...head comparison. Status is GitHub's
+// per-file status (added, modified, removed, renamed, copied, changed); SHA is
+// the blob sha at head; PreviousFilename is set only for a rename or copy.
+type ChangedFile struct {
+	Filename         string
+	PreviousFilename string
+	Status           string
+	SHA              string
+	Size             int64
+}
+
+// Comparison is the result of comparing two commits. Status is the overall
+// relationship (ahead, behind, identical, diverged); Truncated reports that the
+// file list hit GitHub's 300-file cap and is therefore incomplete.
+type Comparison struct {
+	Status    string
+	Files     []ChangedFile
+	Truncated bool
 }
 
 // Client talks to a single GitHub deployment with a single token.
@@ -99,6 +136,7 @@ func (c *Client) ListFiles(ctx context.Context, repo, ref string, prefixes []str
 			Path string `json:"path"`
 			Type string `json:"type"`
 			SHA  string `json:"sha"`
+			Size int64  `json:"size"`
 		} `json:"tree"`
 		Truncated bool `json:"truncated"`
 	}
@@ -116,9 +154,110 @@ func (c *Client) ListFiles(ctx context.Context, repo, ref string, prefixes []str
 		if !pathMatches(entry.Path, prefixes) {
 			continue
 		}
-		files = append(files, File{Path: entry.Path, SHA: entry.SHA})
+		files = append(files, File{Path: entry.Path, SHA: entry.SHA, Size: entry.Size})
 	}
 	return files, nil
+}
+
+// Compare returns the changed files between base and head. GitHub caps the file
+// list at 300; when that cap is reached the result is marked Truncated so the
+// caller reconciles with a full snapshot instead of trusting a partial op list.
+// A 404 (base commit no longer reachable, e.g. after a force push) surfaces as
+// ErrNotFound, which the caller also handles by snapshotting.
+func (c *Client) Compare(ctx context.Context, repo, base, head string) (*Comparison, error) {
+	result := &Comparison{}
+	for page := 1; ; page++ {
+		var out struct {
+			Status string `json:"status"`
+			Files  []struct {
+				Filename         string `json:"filename"`
+				PreviousFilename string `json:"previous_filename"`
+				Status           string `json:"status"`
+				SHA              string `json:"sha"`
+			} `json:"files"`
+		}
+		target := "/repos/" + repo + "/compare/" +
+			url.PathEscape(base) + "..." + url.PathEscape(head) +
+			"?per_page=100&page=" + strconv.Itoa(page)
+		if err := c.getJSON(ctx, target, &out); err != nil {
+			return nil, err
+		}
+		if page == 1 {
+			result.Status = out.Status
+		}
+		for _, f := range out.Files {
+			result.Files = append(result.Files, ChangedFile{
+				Filename:         f.Filename,
+				PreviousFilename: f.PreviousFilename,
+				Status:           f.Status,
+				SHA:              f.SHA,
+			})
+		}
+		if len(result.Files) >= compareFileCap {
+			result.Truncated = true
+			result.Files = result.Files[:compareFileCap]
+			return result, nil
+		}
+		// A short page is the last page: GitHub returns up to per_page files while
+		// more remain.
+		if len(out.Files) < 100 {
+			return result, nil
+		}
+	}
+}
+
+// GetBlob returns the decoded bytes of a git blob by its sha, up to max bytes. It
+// is the content-ticket resolution path: the module holds no token, so accounts
+// re-fetches the blob with the source's token and streams it back. A blob larger
+// than max is rejected with ErrFileTooLarge.
+func (c *Client) GetBlob(ctx context.Context, repo, blobSHA string, max int64) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.baseURL+"/repos/"+repo+"/git/blobs/"+url.PathEscape(blobSHA), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(base64.StdEncoding.EncodedLen(int(max)))+4096))
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, ErrNotFound
+	case resp.StatusCode < 200 || resp.StatusCode >= 300:
+		return nil, fmt.Errorf("github: GET blob %s: unexpected status %d", blobSHA, resp.StatusCode)
+	}
+	var out struct {
+		Encoding string `json:"encoding"`
+		Content  string `json:"content"`
+		Size     int64  `json:"size"`
+	}
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("github: decode blob %s: %w", blobSHA, err)
+	}
+	if out.Size > max {
+		return nil, ErrFileTooLarge
+	}
+	if out.Encoding != "base64" {
+		return nil, fmt.Errorf("github: unexpected blob encoding %q for %q", out.Encoding, blobSHA)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(out.Content, "\n", ""))
+	if err != nil {
+		return nil, fmt.Errorf("github: decode blob %q: %w", blobSHA, err)
+	}
+	if int64(len(decoded)) > max {
+		return nil, ErrFileTooLarge
+	}
+	return decoded, nil
 }
 
 // GetFileContent returns the decoded bytes of one file at ref.
