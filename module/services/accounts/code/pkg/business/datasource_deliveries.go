@@ -102,19 +102,21 @@ type changeOp struct {
 	changeType string
 }
 
-// changeSetFile is the v2 per-file ingest payload. content is base64-encoded by
-// encoding/json; it is omitted (and contentTicket set) when the blob exceeds the
-// inline cap.
+// changeSetFile is the v2 per-file ingest payload. Content is base64-encoded by
+// encoding/json. It is a pointer so an empty file (0-length content) still
+// serializes as a present "content":"" — distinct from a delete or an oversized
+// blob, which omit content entirely (the latter setting content_ticket). The
+// invariant is: inline content present ⇔ an upsert whose blob fit the inline cap.
 type changeSetFile struct {
-	Repo          string `json:"repo"`
-	Path          string `json:"path"`
-	PrevPath      string `json:"prev_path,omitempty"`
-	Ref           string `json:"ref"`
-	Commit        string `json:"commit"`
-	BlobSHA       string `json:"blob_sha,omitempty"`
-	ChangeType    string `json:"change_type"`
-	Content       []byte `json:"content,omitempty"`
-	ContentTicket string `json:"content_ticket,omitempty"`
+	Repo          string  `json:"repo"`
+	Path          string  `json:"path"`
+	PrevPath      string  `json:"prev_path,omitempty"`
+	Ref           string  `json:"ref"`
+	Commit        string  `json:"commit"`
+	BlobSHA       string  `json:"blob_sha,omitempty"`
+	ChangeType    string  `json:"change_type"`
+	Content       *[]byte `json:"content,omitempty"`
+	ContentTicket string  `json:"content_ticket,omitempty"`
 }
 
 // snapshotManifest is the full-tree manifest a snapshot job carries: enough for
@@ -484,7 +486,7 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 			}
 			file.ContentTicket = ticket
 		default:
-			file.Content = content
+			file.Content = &content
 		}
 	}
 	payload, err := json.Marshal(file)

@@ -171,6 +171,38 @@ func TestCompileDelivery_PathFilterAndRenames(t *testing.T) {
 	}
 }
 
+func TestCompileDelivery_EmptyFileCarriesPresentContent(t *testing.T) {
+	// An empty file is a legitimate upsert (.gitkeep, empty __init__.py). Its
+	// 0-length content must serialize as a present "content":"", not vanish — an
+	// omitted content field with no ticket is ambiguous with "fetch via ticket".
+	producer := &recordingProducer{}
+	gh := &fakeGitHub{
+		content:   map[string][]byte{"docs/empty.md": {}},
+		compareFn: compareBetween("A", "B", []github.ChangedFile{{Filename: "docs/empty.md", Status: "added", SHA: "se"}}),
+	}
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), producer, gh)
+	source := githubSource(t, svc, "main", []string{"docs"}, "A")
+
+	if _, err := svc.CompileGitHubDelivery(context.Background(), source,
+		pushDelivery("refs/heads/main", "A", "B", false, false), "d"); err != nil {
+		t.Fatal(err)
+	}
+	if len(producer.jobs) != 1 {
+		t.Fatalf("enqueued %d jobs, want 1", len(producer.jobs))
+	}
+	file := decodeChangeSetFile(t, producer.jobs[0])
+	content, present := file["content"]
+	if !present {
+		t.Fatalf("empty file must carry a present content field, got %v", file)
+	}
+	if content != "" {
+		t.Fatalf("empty file content = %v, want empty string", content)
+	}
+	if _, hasTicket := file["content_ticket"]; hasTicket {
+		t.Fatalf("empty file must not carry a content ticket, got %v", file)
+	}
+}
+
 func TestCompileDelivery_OutOfOrderDropsStale(t *testing.T) {
 	producer := &recordingProducer{}
 	// Cursor already at C. A late delivery for A→B arrives: B is an ancestor of C
