@@ -202,6 +202,43 @@ func TestCompileDelivery_OutOfOrderDropsStale(t *testing.T) {
 	}
 }
 
+func TestCompileDelivery_BehindCompareNeverRewindsCursor(t *testing.T) {
+	producer := &recordingProducer{}
+	// A redelivered older push (after=B, an ancestor of the cursor C) arrives while
+	// the ancestry pre-check Compare(B...C) transiently fails. The main compare
+	// C...B then reports "behind"; compiling it would rewind the cursor to B and
+	// re-emit reverted content, so it must be dropped as stale with the cursor
+	// left at C.
+	gh := &fakeGitHub{compareFn: func(base, head string) (*github.Comparison, error) {
+		if base == "B" && head == "C" {
+			return nil, errors.New("transient GitHub error")
+		}
+		if base == "C" && head == "B" {
+			return &github.Comparison{Status: github.CompareStatusBehind}, nil
+		}
+		return nil, errors.New("unexpected compare " + base + "..." + head)
+	}}
+	store := newDatasourceFakeStore()
+	svc, _ := newDatasourceService(store, producer, gh)
+	source := githubSource(t, svc, "main", nil, "C")
+	setStoredCursor(store, source.ID, "C")
+
+	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
+		pushDelivery("refs/heads/main", "A", "B", false, false), "redelivery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disp != business.DispositionStale {
+		t.Fatalf("disposition = %q, want stale for a behind compare", disp)
+	}
+	if len(producer.jobs) != 0 {
+		t.Fatalf("enqueued %d jobs, want 0 for a behind (backward) delivery", len(producer.jobs))
+	}
+	if got := storedCursor(t, store, source.ID); got != "C" {
+		t.Fatalf("cursor rewound to %q, want it to stay at C", got)
+	}
+}
+
 func TestCompileDelivery_MissedDeliveryDiffsFromCursorNotBefore(t *testing.T) {
 	producer := &recordingProducer{}
 	var comparedBase string

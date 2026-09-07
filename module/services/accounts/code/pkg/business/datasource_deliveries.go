@@ -291,6 +291,14 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 	if comparison.Status == github.CompareStatusDiverged || comparison.Truncated {
 		return s.snapshotAt(ctx, source, client, push.After, deliveryID, true)
 	}
+	if comparison.Status == github.CompareStatusBehind {
+		// head is an ancestor of the base: a redelivered or out-of-order older
+		// push. The ancestry pre-check should have dropped it, but that check
+		// tolerates a transient Compare error — so guard here too, at the point the
+		// cursor would otherwise move backward. Compiling this diff would re-emit
+		// reverted content as new versions and rewind the cursor, so drop it.
+		return DispositionStale, nil
+	}
 
 	ops := s.changeOps(comparison.Files, source.Paths)
 	changeSet := base + "..." + push.After
