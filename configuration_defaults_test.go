@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -81,17 +82,29 @@ func declaresAtLeastOneVariable(data []byte) bool {
 	return false
 }
 
-// shipsDefault reports whether dir holds a default for group in either
-// <group>.env (non-secret) or <group>.secret.env (dev secret), reading through
-// symlinks. Values may live in either file; either satisfies the dependency.
-func shipsDefault(dir, group string) bool {
-	for _, name := range []string{group + ".env", group + ".secret.env"} {
-		data, err := os.ReadFile(filepath.Join(dir, name))
-		if err == nil && declaresAtLeastOneVariable(data) {
-			return true
+// envValue extracts the assigned value from an env line's right-hand side,
+// stripping surrounding quotes and any inline `# …` comment. Marker matching
+// must judge the token alone: a real credential trailed by a "# replace-me
+// later" note (sk_live_realtoken # replace-me) would otherwise borrow the
+// comment's placeholder marker and pass. A `#` embedded in the token (foo#bar)
+// stays part of the value; a value that is only a comment resolves to empty.
+func envValue(raw string) string {
+	v := strings.TrimLeft(raw, " \t")
+	if v == "" {
+		return ""
+	}
+	if q := v[0]; q == '"' || q == '\'' {
+		if end := strings.IndexByte(v[1:], q); end >= 0 {
+			return v[1 : 1+end]
+		}
+		// Unterminated quote: fall through and treat the remainder literally.
+	}
+	for i := 0; i < len(v); i++ {
+		if v[i] == '#' && (i == 0 || v[i-1] == ' ' || v[i-1] == '\t') {
+			return strings.TrimSpace(v[:i])
 		}
 	}
-	return false
+	return strings.TrimSpace(v)
 }
 
 // moduleDefaultFiles returns the default file names (e.g. "legal.env",
@@ -148,10 +161,13 @@ func repoRootMirrorsModule(t *testing.T, name string) {
 
 // placeholderMarkers flag a value as obviously non-production. Every one of the
 // secret defaults' current values carries at least one; requiring it is what
-// keeps a real credential from ever being committed as a "default".
+// keeps a real credential from ever being committed as a "default". Each marker
+// must be a distinctive placeholder phrase: common English words like "example"
+// or "dummy" are excluded because a production-shaped value
+// (example-corp-prod-live-key) would borrow them as a loose substring and pass.
 var placeholderMarkers = []string{
 	"replace-me", "replaceme", "change-me", "changeme",
-	"placeholder", "local-dev", "dev-only", "example", "dummy",
+	"placeholder", "local-dev", "dev-only",
 }
 
 func looksLikePlaceholder(value string) bool {
@@ -164,9 +180,43 @@ func looksLikePlaceholder(value string) bool {
 	return false
 }
 
+// secretDefaultProblems returns one human-readable problem per assignment in a
+// secret default that is unfit to ship in the immutable module package: an
+// empty value (a required secret default that boots nothing, so a
+// lodestar-composed consumer fails closed at runtime-init) or a value that is
+// not an obvious placeholder (a real credential riding along). Each value is
+// read through envValue, so a real token cannot borrow a placeholder marker
+// from a trailing "# replace-me later" comment, and a comment-only right-hand
+// side is treated as the empty value it is.
+func secretDefaultProblems(data []byte) []string {
+	var problems []string
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		key, rawValue, ok := strings.Cut(trimmed, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		switch value := envValue(rawValue); {
+		case value == "":
+			problems = append(problems, fmt.Sprintf(
+				"assigns %s an empty value: a shipped local secret default must provide a working placeholder so a lodestar-composed consumer boots, not an empty value that fails closed at runtime-init",
+				key))
+		case !looksLikePlaceholder(value):
+			problems = append(problems, fmt.Sprintf(
+				"assigns %s a value that is not an obvious placeholder (must contain one of %v): committed local secret defaults ship verbatim in the immutable module package, so they must be non-production placeholders, never a real credential",
+				key, placeholderMarkers))
+		}
+	}
+	return problems
+}
+
 // assertSecretDefaultIsPlaceholder fails if a shipped secret default assigns any
-// value that is not an obvious placeholder. The immutable module package
-// archives the whole module/ tree (git archive commit:module), so a
+// value that is empty or not an obvious placeholder. The immutable module
+// package archives the whole module/ tree (git archive commit:module), so a
 // module/configurations/local/*.secret.env file IS published to every consumer.
 // The base-integrity manifest deliberately excludes it from drift detection
 // (secrets are runtime-owned), which means nothing else stops a real credential
@@ -178,30 +228,16 @@ func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {
 	if err != nil {
 		t.Fatalf("read secret default %s/%s: %v", moduleConfigLocalDir, name, err)
 	}
-	for _, line := range strings.Split(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(trimmed, "=")
-		if !ok {
-			continue
-		}
-		key = strings.TrimSpace(key)
-		if value = strings.TrimSpace(value); value == "" {
-			continue
-		}
-		if !looksLikePlaceholder(value) {
-			t.Errorf("secret default %s/%s assigns %s a value that is not an obvious placeholder: committed local secret defaults ship in the immutable module package, so they must be non-production placeholders (containing one of %v), never a real credential",
-				moduleConfigLocalDir, name, key, placeholderMarkers)
-		}
+	for _, problem := range secretDefaultProblems(data) {
+		t.Errorf("secret default %s/%s %s", moduleConfigLocalDir, name, problem)
 	}
 }
 
 func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 	for _, group := range declaredWorkspaceConfigGroups(t) {
 		// The base-synced location is what a lodestar-composed consumer inherits.
-		if !shipsDefault(moduleConfigLocalDir, group) {
+		moduleDefaults := moduleDefaultFiles(group)
+		if len(moduleDefaults) == 0 {
 			t.Errorf("declared config group %q has no default under the base-synced module subtree: add a %s/%s.env (or .secret.env) that assigns at least one variable, so a lodestar-composed solution inherits it instead of dying at runtime-init with \"no configuration found for %s\"",
 				group, moduleConfigLocalDir, group, group)
 		}
@@ -209,11 +245,79 @@ func TestEveryDeclaredGroupShipsALocalDefault(t *testing.T) {
 		// symlink (so in-repo dev and path composition read the same source), and
 		// each secret default must hold only placeholder values (it is published
 		// verbatim in the immutable module package).
-		for _, name := range moduleDefaultFiles(group) {
+		for _, name := range moduleDefaults {
 			repoRootMirrorsModule(t, name)
 			if strings.HasSuffix(name, ".secret.env") {
 				assertSecretDefaultIsPlaceholder(t, name)
 			}
 		}
+	}
+}
+
+// TestEnvValueStripsInlineCommentsAndQuotes is the regression guard for the
+// parsing hole behind the secret check: before envValue, the marker match ran
+// over the whole right-hand side, so a comment could smuggle a placeholder
+// marker onto a real token.
+func TestEnvValueStripsInlineCommentsAndQuotes(t *testing.T) {
+	cases := []struct{ raw, want string }{
+		{"sk_live_9f3aX7realtoken   # TODO replace-me before prod", "sk_live_9f3aX7realtoken"},
+		{"local-dev-only-replace-me", "local-dev-only-replace-me"},
+		{`"local-dev"  # quoted with trailing note`, "local-dev"},
+		{"'change-me'", "change-me"},
+		{"", ""},
+		{"   ", ""},
+		{"   # comment only, no value", ""},
+		{"token#notacomment", "token#notacomment"},
+	}
+	for _, tc := range cases {
+		if got := envValue(tc.raw); got != tc.want {
+			t.Errorf("envValue(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+// TestSecretDefaultProblems is the regression guard for the secret check itself:
+// each malicious or broken secret default below must be reported, and the
+// shipped placeholder defaults must pass clean. Every case here previously
+// slipped through (inline-comment marker, common-word substring, empty value).
+func TestSecretDefaultProblems(t *testing.T) {
+	bad := []struct{ name, content, wantContains string }{
+		{
+			"inline comment hides a real token (Finding 1)",
+			"CODEFLY_INTERNAL_TOKEN=sk_live_9f3aX7realtoken   # TODO replace-me before prod",
+			"not an obvious placeholder",
+		},
+		{
+			"production-shaped value borrows a common word (Finding 2)",
+			"CODEFLY_INTERNAL_TOKEN=example-corp-prod-live-key-8f3a2b",
+			"not an obvious placeholder",
+		},
+		{
+			"empty required secret default (Finding 3)",
+			"CODEFLY_INTERNAL_TOKEN=",
+			"an empty value",
+		},
+		{
+			"comment-only right-hand side is an empty value (Findings 1+3)",
+			"CODEFLY_INTERNAL_TOKEN=   # fill me in later",
+			"an empty value",
+		},
+	}
+	for _, tc := range bad {
+		got := secretDefaultProblems([]byte(tc.content))
+		if len(got) == 0 {
+			t.Errorf("%s: secretDefaultProblems(%q) reported no problem; it must be caught before it ships", tc.name, tc.content)
+			continue
+		}
+		if !strings.Contains(got[0], tc.wantContains) {
+			t.Errorf("%s: problem = %q, want it to mention %q", tc.name, got[0], tc.wantContains)
+		}
+	}
+
+	good := "# leading comment\n" +
+		"CODEFLY_INTERNAL_TOKEN=local-dev-only-replace-me\n" +
+		"CODEFLY_GATEWAY_TOKEN=local-dev-gateway-only-replace-me\n"
+	if got := secretDefaultProblems([]byte(good)); len(got) != 0 {
+		t.Errorf("secretDefaultProblems(shipped placeholders) = %v, want none", got)
 	}
 }
