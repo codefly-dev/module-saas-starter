@@ -204,10 +204,11 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   ([module/JOBS.md](./module/JOBS.md)), and principal/actor-chain machinery
   exists (§1.3). A full capability registry with `/admin/*` `/*` `/external/*`
   trust doors is not built. The typed, fan-out **domain event** contract is now
-  standardized ([module/EVENTS.md](./module/EVENTS.md)) — CloudEvents envelope,
-  generated catalog, subscriptions, and a Transport port over the Postgres
-  outbox — so the pub/sub orchestrator is a sequenced build against a fixed
-  contract rather than an open design question. The
+  defined ([module/EVENTS.md](./module/EVENTS.md)) — the CloudEvents envelope,
+  catalog format, subscription model, and Transport port are specified over the
+  Postgres outbox — but the envelope proto, catalog generator, subscriptions,
+  relay, and port are sequenced, not built. The pub/sub orchestrator is now a
+  build against a fixed contract rather than an open design question. The
   [APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md) primitive (§Approvals below) is the
   nearest in-flight control-plane work.
 

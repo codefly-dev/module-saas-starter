@@ -104,6 +104,10 @@ Rules:
   platform principal.
 - `partition_key` is the only ordering knob a producer sets; it is the contract
   form of `JobOrderingKey`. Absent, the event is unordered.
+- `data` is capped at 960 KiB — below the 1 MiB `job_messages.payload` cap
+  ([JOBS.md](./JOBS.md)) on purpose, so the extension attributes stored beside it
+  in the same job row cannot push the message over that limit. Larger payloads
+  use a claim-check reference in `data`, never a raised cap.
 
 The Postgres transport stores the envelope in the existing `job_messages` row
 with no schema change:
@@ -166,7 +170,14 @@ behind the [Transport port](#transport-port).
   revoked_at)` is a control-plane-owned platform relation, materialized from each
   `consumes` entry at compose/install (the per-org install hook for solutions),
   plus runtime CRUD through `ModuleCapabilitiesService.Subscribe / Unsubscribe /
-  ListSubscriptions` for dynamic cases.
+  ListSubscriptions` for dynamic cases. `type_pattern` is matched against the
+  envelope `type`: a `consumes.type` from the catalog materializes as an exact
+  `type_pattern`; a runtime subscription may instead use a single trailing `.*`
+  to match a namespace or aggregate prefix (`documents.*`, `documents.entry.*`),
+  which is never valid mid-string. Each matching subscription row is fanned out
+  independently, so a subscriber holding two overlapping patterns receives two
+  at-least-once deliveries of one event and relies on the `id` dedupe like any
+  other duplicate.
 - **Publish path (transactional outbox).** `Publish(envelope)` inserts one row
   into `domain_events` (envelope columns + `published_at`, tenant RLS) **in the
   producer's transaction** — the same rule as today's outbox: request producers

@@ -16,7 +16,7 @@ composes the starter into another workspace.
 | Shared method policy options | `saas.policy.v1` | `saas/policy/v1` | generated inside each consuming module | `policyv1` |
 | Normalized generator catalog | `saas.catalog.v1` | `saas/catalog/v1` | `accounts/pkg/gen/saas/catalog/v1` | `catalogv1` |
 | Durable job primitives | `saas.jobs.v1` | `saas/jobs/v1` | `accounts/pkg/gen/saas/jobs/v1` | `jobsv1` |
-| Domain event envelope | `saas.events.v1` | `saas/events/v1` | `accounts/pkg/gen/saas/events/v1` | `eventsv1` |
+| Domain event envelope (reserved, P1) | `saas.events.v1` | `saas/events/v1` | `accounts/pkg/gen/saas/events/v1` (not yet generated) | `eventsv1` |
 | Frontend plugin capability handshake | `saas.frontend.plugin.v1` | `services/frontend/code/packages/saas-plugin-contract/proto/saas/frontend/plugin/v1` | consumer-owned generated output | `frontendpluginv1` |
 
 The accounts contract will be split into bounded-context files under the same

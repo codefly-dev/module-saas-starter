@@ -13,11 +13,12 @@ machine.
 
 A **command** is inbox/outbox to one queue — work a single named consumer must
 perform — and is the whole of this contract. A **domain event** is a fact fanned
-out to every subscriber; it is published and consumed through the
-[EVENTS.md](./EVENTS.md) contract, whose Postgres transport is this jobs
-platform (`topic := type`, `idempotency_key := id`, `ordering := partition_key`).
-Never hand-enqueue to another module's queue: publish an event and let its
-subscriptions route it.
+out to every subscriber; the [EVENTS.md](./EVENTS.md) contract defines it, and
+its Postgres transport maps onto this jobs platform (`topic := type`,
+`idempotency_key := id`, `ordering := partition_key`). That publish/subscribe
+path is being built (see the EVENTS.md phasing); once it ships, cross-module
+communication is an event publish rather than a hand-enqueue to another module's
+queue.
 
 ## Sources of truth
 

@@ -11,12 +11,14 @@ ranges.
 This follows the application- and network-layer defense-in-depth guidance in
 the [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
 
-An outbound webhook is the external-facing subscriber kind of the
-[domain event contract](./EVENTS.md): a subscription with `delivery = webhook`
-whose consumer is the dispatcher described here. Only event types declared
-`visibility: external` in the event catalog are eligible to be carried over a
-webhook, so one subscription model governs both internal fan-out and external
-delivery.
+The outbound webhook is the external-facing subscriber kind the
+[domain event contract](./EVENTS.md) will converge on: its P3 phase recasts a
+webhook as an event subscription with `delivery = webhook` whose consumer is the
+dispatcher described here, with only `visibility: external` event types eligible.
+That convergence is not built yet — the delivery path below (the audit emitter
+and `webhook_deliveries`) is unchanged, and the endpoint registrations this
+document manages are distinct from the event subscriptions that contract
+introduces.
 
 ## Secret lifecycle
 
