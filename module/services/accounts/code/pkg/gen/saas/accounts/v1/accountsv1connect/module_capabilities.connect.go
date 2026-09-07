@@ -72,6 +72,21 @@ const (
 	// ModuleCapabilitiesServiceMintModuleRegistrationProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's MintModuleRegistration RPC.
 	ModuleCapabilitiesServiceMintModuleRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+	// ModuleCapabilitiesServicePublishEventProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's PublishEvent RPC.
+	ModuleCapabilitiesServicePublishEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
+	// ModuleCapabilitiesServiceSubscribeProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's Subscribe RPC.
+	ModuleCapabilitiesServiceSubscribeProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
+	// ModuleCapabilitiesServiceUnsubscribeProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's Unsubscribe RPC.
+	ModuleCapabilitiesServiceUnsubscribeProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+	// ModuleCapabilitiesServiceListSubscriptionsProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ListSubscriptions RPC.
+	ModuleCapabilitiesServiceListSubscriptionsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
+	// ModuleCapabilitiesServiceReplayEventsProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ReplayEvents RPC.
+	ModuleCapabilitiesServiceReplayEventsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
 )
 
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
@@ -106,6 +121,16 @@ type ModuleCapabilitiesServiceClient interface {
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
 	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(context.Context, *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(context.Context, *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
 }
 
 // NewModuleCapabilitiesServiceClient constructs a client for the
@@ -191,6 +216,36 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
 			connect.WithClientOptions(opts...),
 		),
+		publishEvent: connect.NewClient[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServicePublishEventProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PublishEvent")),
+			connect.WithClientOptions(opts...),
+		),
+		subscribe: connect.NewClient[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceSubscribeProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Subscribe")),
+			connect.WithClientOptions(opts...),
+		),
+		unsubscribe: connect.NewClient[v1.ModuleUnsubscribeRequest, emptypb.Empty](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceUnsubscribeProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Unsubscribe")),
+			connect.WithClientOptions(opts...),
+		),
+		listSubscriptions: connect.NewClient[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceListSubscriptionsProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubscriptions")),
+			connect.WithClientOptions(opts...),
+		),
+		replayEvents: connect.NewClient[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceReplayEventsProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -208,6 +263,11 @@ type moduleCapabilitiesServiceClient struct {
 	emitAuditEvent         *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
 	fetchDatasourceBlob    *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
 	mintModuleRegistration *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
+	publishEvent           *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
+	subscribe              *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
+	unsubscribe            *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
+	listSubscriptions      *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
+	replayEvents           *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
 }
 
 // EnqueueJob calls saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob.
@@ -270,6 +330,31 @@ func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Con
 	return c.mintModuleRegistration.CallUnary(ctx, req)
 }
 
+// PublishEvent calls saas.accounts.v1.ModuleCapabilitiesService.PublishEvent.
+func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, req *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {
+	return c.publishEvent.CallUnary(ctx, req)
+}
+
+// Subscribe calls saas.accounts.v1.ModuleCapabilitiesService.Subscribe.
+func (c *moduleCapabilitiesServiceClient) Subscribe(ctx context.Context, req *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error) {
+	return c.subscribe.CallUnary(ctx, req)
+}
+
+// Unsubscribe calls saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe.
+func (c *moduleCapabilitiesServiceClient) Unsubscribe(ctx context.Context, req *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return c.unsubscribe.CallUnary(ctx, req)
+}
+
+// ListSubscriptions calls saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions.
+func (c *moduleCapabilitiesServiceClient) ListSubscriptions(ctx context.Context, req *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error) {
+	return c.listSubscriptions.CallUnary(ctx, req)
+}
+
+// ReplayEvents calls saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents.
+func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error) {
+	return c.replayEvents.CallUnary(ctx, req)
+}
+
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
@@ -302,6 +387,16 @@ type ModuleCapabilitiesServiceHandler interface {
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
 	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
+	// PublishEvent appends one domain event to the outbox for the caller's tenant.
+	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
+	// Subscribe creates or re-affirms a durable subscription for the caller.
+	Subscribe(context.Context, *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error)
+	// Unsubscribe revokes one of the caller's own subscriptions.
+	Unsubscribe(context.Context, *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubscriptions returns the calling principal's live subscriptions.
+	ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error)
+	// ReplayEvents re-delivers durable events to the caller's own subscriptions.
+	ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error)
 }
 
 // NewModuleCapabilitiesServiceHandler builds an HTTP handler from the service implementation. It
@@ -383,6 +478,36 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServicePublishEventHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServicePublishEventProcedure,
+		svc.PublishEvent,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PublishEvent")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceSubscribeHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceSubscribeProcedure,
+		svc.Subscribe,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Subscribe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceUnsubscribeHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceUnsubscribeProcedure,
+		svc.Unsubscribe,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("Unsubscribe")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceListSubscriptionsHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceListSubscriptionsProcedure,
+		svc.ListSubscriptions,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubscriptions")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceReplayEventsHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceReplayEventsProcedure,
+		svc.ReplayEvents,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ReplayEvents")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ModuleCapabilitiesServiceEnqueueJobProcedure:
@@ -409,6 +534,16 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
 			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServicePublishEventProcedure:
+			moduleCapabilitiesServicePublishEventHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceSubscribeProcedure:
+			moduleCapabilitiesServiceSubscribeHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceUnsubscribeProcedure:
+			moduleCapabilitiesServiceUnsubscribeHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceListSubscriptionsProcedure:
+			moduleCapabilitiesServiceListSubscriptionsHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceReplayEventsProcedure:
+			moduleCapabilitiesServiceReplayEventsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -464,4 +599,24 @@ func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context
 
 func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.PublishEvent is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) Subscribe(context.Context, *connect.Request[v1.ModuleSubscribeRequest]) (*connect.Response[v1.ModuleSubscribeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.Subscribe is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) Unsubscribe(context.Context, *connect.Request[v1.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ListSubscriptions(context.Context, *connect.Request[v1.ModuleListSubscriptionsRequest]) (*connect.Response[v1.ModuleListSubscriptionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ReplayEvents(context.Context, *connect.Request[v1.ModuleReplayEventsRequest]) (*connect.Response[v1.ModuleReplayEventsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents is not implemented"))
 }

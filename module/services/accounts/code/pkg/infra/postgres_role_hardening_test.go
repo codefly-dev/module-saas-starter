@@ -52,6 +52,7 @@ var relationsByScope = map[relationScope][]string{
 		"dashboards",
 		"datasource_sources",
 		"delegation_grants",
+		"domain_events",
 		"entitlement_overrides",
 		"installations",
 		"invitations",
@@ -99,6 +100,7 @@ var relationsByScope = map[relationScope][]string{
 	relationScopeWorker: {
 		"analytics_deliveries",
 		"email_delivery_events",
+		"event_subscriptions",
 		"job_attempts",
 		"job_state_transitions",
 	},
@@ -129,6 +131,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"platform_admins":         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
+	"event_subscriptions":     {}, // platform relation; request traffic has no direct access
 	"job_attempts":            {},
 	"job_messages":            {},
 	"job_state_transitions":   {},
@@ -146,6 +149,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"installations":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"datasource_sources":                   {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"delegation_grants":                    {selectRows: true, insertRows: true, updateRows: true},
+	"domain_events":                        {selectRows: true}, // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
 	"org_generic_settings":                 {selectRows: true, insertRows: true, updateRows: true},
@@ -391,6 +395,13 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// and deletes (the expiry sweep) but never updates a consumed marker.
 			if relation == "work_context_replay" {
 				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
+			}
+			// domain_events and event_subscriptions: the control plane publishes
+			// platform events and maintains subscriptions (materialize / subscribe /
+			// unsubscribe marks revoked_at), so it reads, inserts, and updates but
+			// never row-deletes — retention and revocation are soft.
+			if relation == "domain_events" || relation == "event_subscriptions" {
+				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 
 			var got relationPrivileges

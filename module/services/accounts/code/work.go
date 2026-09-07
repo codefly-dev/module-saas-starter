@@ -36,6 +36,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 	wooltel "github.com/codefly-dev/core/wool/otel"
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 )
 
@@ -176,6 +177,25 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("parse module principal registry: %w", err)
 	}
 	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+
+	// Domain-event pub/sub (issue #493): the reference events.Transport over the
+	// durable jobs platform. A module publish joins its WithOrgTx transaction so
+	// the insert is the transactional outbox and the tenant gate re-checks under
+	// app_tenant; the relay worker then drains domain_events after commit, fanning
+	// each event out to matching subscriptions on the app_job_worker pool
+	// (BYPASSRLS, so it resolves events and subscriptions across every tenant).
+	eventTransport := infra.NewPostgresEventTransport(jobStore, jobWorkerPool, "events-relay-"+uuid.NewString(), time.Minute)
+	service.SetModuleEventTransport(eventTransport)
+	eventRelayWorker := infra.NewEventRelayWorker(eventTransport, 0)
+
+	// Fail fast if a deployment ever ends up with live subscriptions but no
+	// transport: without one, every publish is a silent no-op and subscribers
+	// receive nothing. The transport is wired unconditionally just above, so this
+	// is a regression guard — but it converts a future mis-wiring from invisible
+	// event loss into a startup error.
+	if err := service.VerifyEventWiring(ctx); err != nil {
+		return nil, err
+	}
 
 	eventRegistry, err := analytics.DefaultRegistry()
 	if err != nil {
@@ -809,6 +829,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
 	datasourceDeliveryWorker.Start(ctx)
+	eventRelayWorker.Start(ctx)
 
 	return func() {
 		sw := wool.Get(ctx).In("shutdown")
@@ -866,6 +887,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := datasourceDeliveryWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("datasource delivery worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping domain-event relay worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := eventRelayWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("domain-event relay worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("closing outbound webhook projection database pool")

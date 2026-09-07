@@ -1,0 +1,18 @@
+schema: codefly/saas/events-contribution/v1
+namespace: scope
+queues: []
+publishes:
+  # Scope lifecycle is tenant-visible on purpose: RFC-0004 open question 4 — modules
+  # must be able to learn that a boundary they were granted went away, so a solution
+  # may subscribe to scope.revoked for its own tenant. Partitioned per tenant so an
+  # ordered subscriber observes grants and revocations in the order they happened.
+  - type: scope.granted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: tenant
+    partition: "{tenant_id}"
+    retention: 30d
+  - type: scope.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: tenant
+    partition: "{tenant_id}"
+    retention: 30d
