@@ -121,10 +121,12 @@ services:
     agent:
       kind: codefly:service
       name: redis
-      # 0.0.86: readiness probe targets the correct port (6379),
-      # codefly-dev/service-redis#28 — probe-port bug fixed (0.0.84 probed the
-      # wrong port and failed with "redis is not ready").
-      version: 0.0.86
+      # 0.0.87: runtime image served from public docker.io/codeflydev/redis
+      # instead of the private ghcr package, so anonymous composition/CI can
+      # pull it (private ghcr gave 401 -> "redis is not ready"). Carries the
+      # 0.0.86 readiness-probe fix (service-redis#28; 0.0.84 probed the wrong
+      # port).
+      version: 0.0.87
       publisher: codefly.dev
     endpoints:
       - name: read
