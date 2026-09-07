@@ -55,6 +55,10 @@ func (f *fakeSubStore) ListEventSubscriptions(_ context.Context, subscriberPrinc
 	return out, nil
 }
 
+func (f *fakeSubStore) CountLiveEventSubscriptions(context.Context) (int, error) {
+	return len(f.rows), nil
+}
+
 // newEventService wires a Service with the domain-event transport and a registry
 // granting the module principal the `reference` and `scope` namespaces (publish)
 // and the `reference.ingest` + two demo queues (subscribe/deliver) on its own
@@ -73,6 +77,55 @@ func newEventService(t *testing.T, store business.Store, transport events.Transp
 	})
 	svc.SetModuleEventTransport(transport)
 	return svc
+}
+
+// TestVerifyEventWiring is the startup-invariant guard: a module that has
+// accepted subscriptions must have a delivery transport wired, or every publish
+// would be a silent no-op and subscribers would receive nothing.
+func TestVerifyEventWiring(t *testing.T) {
+	// A wired transport passes without consulting the store at all. The store
+	// here embeds a nil business.Store, so any store access would panic — proving
+	// the healthy path short-circuits before the count query.
+	t.Run("transport wired short-circuits before the store", func(t *testing.T) {
+		svc, err := business.NewService(fakeTxStore{})
+		if err != nil {
+			t.Fatalf("NewService: %v", err)
+		}
+		svc.SetModuleEventTransport(events.NewFakeTransport(nil, time.Second))
+		if err := svc.VerifyEventWiring(context.Background()); err != nil {
+			t.Fatalf("wired transport must verify clean: %v", err)
+		}
+	})
+
+	// No transport and no subscriptions is a legitimate no-eventing deployment.
+	t.Run("no transport and no subscriptions is allowed", func(t *testing.T) {
+		svc, err := business.NewService(&fakeSubStore{})
+		if err != nil {
+			t.Fatalf("NewService: %v", err)
+		}
+		if err := svc.VerifyEventWiring(context.Background()); err != nil {
+			t.Fatalf("no transport with zero subscriptions must verify clean: %v", err)
+		}
+	})
+
+	// No transport WITH live subscriptions is the silent-loss misconfiguration:
+	// startup must refuse it.
+	t.Run("no transport with live subscriptions fails", func(t *testing.T) {
+		store := &fakeSubStore{rows: []*business.EventSubscription{{
+			ID:                    uuid.NewString(),
+			SubscriberPrincipalID: modulePrincSvc,
+			TypePattern:           "reference.*",
+			Queue:                 "reference.ingest",
+			Delivery:              "unordered",
+		}}}
+		svc, err := business.NewService(store)
+		if err != nil {
+			t.Fatalf("NewService: %v", err)
+		}
+		if err := svc.VerifyEventWiring(context.Background()); err == nil {
+			t.Fatal("live subscriptions with no transport must fail startup, got nil")
+		}
+	})
 }
 
 func demoEnvelope(eventType string) *events.EventEnvelope {
@@ -117,6 +170,33 @@ func TestModulePublishEventNamespaceAndTenantAuthority(t *testing.T) {
 	}
 	if env.GetTenantId() != moduleTenantA {
 		t.Fatalf("envelope tenant not forced to authorized tenant: %q", env.GetTenantId())
+	}
+}
+
+// TestModulePublishEventDefaultsPartitionKeyToTenant guards ordered delivery: a
+// caller that omits the partition key must still get tenant-partitioned events
+// (an empty key disables ordering downstream), while a deliberately-set finer
+// key is left untouched.
+func TestModulePublishEventDefaultsPartitionKeyToTenant(t *testing.T) {
+	svc := newEventService(t, fakeTxStore{}, events.NewFakeTransport(nil, time.Second))
+	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: moduleTenantA}
+
+	env := demoEnvelope("scope.granted")
+	env.PartitionKey = ""
+	if _, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, env); err != nil {
+		t.Fatalf("publish with empty partition key: %v", err)
+	}
+	if env.GetPartitionKey() != moduleTenantA {
+		t.Fatalf("empty partition key must default to tenant, got %q", env.GetPartitionKey())
+	}
+
+	fine := demoEnvelope("scope.granted")
+	fine.PartitionKey = "scope/aggregate-7"
+	if _, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, fine); err != nil {
+		t.Fatalf("publish with explicit partition key: %v", err)
+	}
+	if fine.GetPartitionKey() != "scope/aggregate-7" {
+		t.Fatalf("explicit partition key must be preserved, got %q", fine.GetPartitionKey())
 	}
 }
 

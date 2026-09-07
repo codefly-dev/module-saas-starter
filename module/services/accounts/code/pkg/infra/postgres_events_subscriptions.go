@@ -108,3 +108,19 @@ func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, subscriberPr
 	}
 	return out, rows.Err()
 }
+
+// CountLiveEventSubscriptions counts every live (non-revoked) subscription across
+// all principals. Like the other methods here it assumes a WithControlPlane
+// transaction on ctx (getQueryExecutor picks it up), since event_subscriptions is
+// only readable by app_control_plane / app_job_worker.
+func (s *PostgresStore) CountLiveEventSubscriptions(ctx context.Context) (int, error) {
+	q := s.getQueryExecutor(ctx)
+	var n int
+	if err := q.QueryRow(ctx, `
+		SELECT count(*) FROM public.event_subscriptions
+		WHERE revoked_at IS NULL`,
+	).Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}

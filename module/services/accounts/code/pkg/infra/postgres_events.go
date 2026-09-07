@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"accounts/pkg/eventcatalog"
 	"accounts/pkg/events"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
@@ -99,10 +100,27 @@ func (p *PostgresEventTransport) Publish(ctx context.Context, tx events.TxHandle
 }
 
 // eventFingerprint is the idempotency witness stored beside the event id: two
-// publishes of one id must carry the same fact. A deterministic proto encoding
-// makes the digest stable across processes and languages.
+// publishes of one id must carry the same fact, and publish_domain_event rejects
+// a re-publish whose fingerprint disagrees with the stored one. The digest must
+// therefore cover the event's semantic fact only — not the per-attempt transport
+// and trace metadata, which legitimately varies between two publishes of the
+// same logical event (a retry mints a fresh event_time and W3C traceparent, and
+// may re-thread correlation/causation ids). Hashing those would turn an ordinary
+// retry into a spurious ErrIdempotencyConflict. We clone the envelope, clear
+// exactly those volatile fields, and hash the rest with a deterministic proto
+// encoding so the digest is stable across processes and languages. Every other
+// field stays in the witness, so a genuine same-id redefinition of the fact is
+// still caught.
 func eventFingerprint(e *eventsv1.EventEnvelope) ([]byte, error) {
-	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(e)
+	core, ok := proto.Clone(e).(*eventsv1.EventEnvelope)
+	if !ok {
+		return nil, events.ErrInvalidEnvelope
+	}
+	core.Time = nil
+	core.Traceparent = ""
+	core.CorrelationId = ""
+	core.CausationId = ""
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(core)
 	if err != nil {
 		return nil, events.ErrInvalidEnvelope
 	}
@@ -173,10 +191,15 @@ const relaySelectUnpublishedSQL = `
 const relayMarkPublishedSQL = `UPDATE public.domain_events SET published_at = NOW() WHERE id = $1::uuid`
 
 // relayBatch locks up to one batch of unpublished events with SKIP LOCKED so
-// concurrent relays never fan the same event out twice, enqueues one inbox
-// delivery per matching non-revoked subscription, and marks each event
-// published — all in one transaction, so a delivery failure rolls the whole
-// batch back and the events stay unpublished for the next tick.
+// concurrent relays never fan the same event out twice, then fans each event out
+// to its matching non-revoked subscriptions and marks it published. Each event's
+// fan-out runs inside its own savepoint: a poison event (one whose enqueue keeps
+// failing) is rolled back and left unpublished for a later tick instead of
+// dragging the whole batch — and every other event's deliveries — back with it.
+// Ordering is preserved across the isolation: because pending is ordered by
+// (partition_key, seq), once an event in a partition fails the rest of that
+// partition is held back this batch, so a later same-partition event is never
+// published ahead of an earlier one that could not be delivered.
 func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
 	processed := 0
 	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
@@ -195,18 +218,32 @@ func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
 		if err != nil {
 			return err
 		}
+		blocked := make(map[string]bool)
 		for _, e := range pending {
-			for _, subscription := range subscriptions {
-				if !events.Matches(subscription.TypePattern, e.GetType()) {
-					continue
-				}
-				request := p.delivery(e, subscription, e.GetId()+":"+subscription.ID)
-				if err := enqueueOne(ctx, tx, request); err != nil {
-					return mapEnqueueError(err)
-				}
+			partition := e.GetPartitionKey()
+			// An earlier event in this partition failed to fan out; holding the rest
+			// of the partition keeps ordered delivery ordered — this event waits for
+			// the tick that clears the poison ahead of it.
+			if blocked[partition] {
+				continue
 			}
-			if _, err := tx.Exec(ctx, relayMarkPublishedSQL, e.GetId()); err != nil {
-				return fmt.Errorf("events: mark published: %w", err)
+			sp, err := tx.Begin(ctx)
+			if err != nil {
+				return fmt.Errorf("events: open savepoint: %w", err)
+			}
+			if ferr := p.relayEvent(ctx, sp, e, subscriptions); ferr != nil {
+				if rbErr := sp.Rollback(ctx); rbErr != nil {
+					// The savepoint rollback itself failed: the outer transaction is no
+					// longer usable, so abort the batch rather than press on blindly.
+					return fmt.Errorf("events: rollback poison event %s: %w", e.GetId(), rbErr)
+				}
+				// Poison event isolated: its partial fan-out is undone and it stays
+				// unpublished, and its partition is blocked so ordering holds.
+				blocked[partition] = true
+				continue
+			}
+			if err := sp.Commit(ctx); err != nil {
+				return fmt.Errorf("events: release savepoint for event %s: %w", e.GetId(), err)
 			}
 			processed++
 		}
@@ -216,6 +253,36 @@ func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return processed, nil
+}
+
+// relayEvent fans one event out to its matching subscriptions and marks it
+// published, all on the given (savepoint) transaction so the caller can isolate
+// a failure. Internal-visibility events are intra-platform and must never reach a
+// subscriber: both subscription-creation paths refuse an internal type, but a
+// wildcard subscription created before the type was registered (or before it
+// became internal) can still match here — a TOCTOU the subscribe-time gate
+// cannot close. Re-checking visibility at fan-out time marks such an event
+// published with no delivery.
+func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, subscriptions []events.Subscription) error {
+	if eventcatalog.IsInternalPublished(e.GetType()) {
+		if _, err := tx.Exec(ctx, relayMarkPublishedSQL, e.GetId()); err != nil {
+			return fmt.Errorf("events: mark published: %w", err)
+		}
+		return nil
+	}
+	for _, subscription := range subscriptions {
+		if !events.Matches(subscription.TypePattern, e.GetType()) {
+			continue
+		}
+		request := p.delivery(e, subscription, e.GetId()+":"+subscription.ID)
+		if err := enqueueOne(ctx, tx, request); err != nil {
+			return mapEnqueueError(err)
+		}
+	}
+	if _, err := tx.Exec(ctx, relayMarkPublishedSQL, e.GetId()); err != nil {
+		return fmt.Errorf("events: mark published: %w", err)
+	}
+	return nil
 }
 
 func enqueueOne(ctx context.Context, tx pgx.Tx, request *jobsv1.EnqueueJobRequest) error {
@@ -385,6 +452,13 @@ func (p *PostgresEventTransport) Replay(ctx context.Context, sel events.ReplaySe
 			return err
 		}
 		for _, e := range replay {
+			// An internal-visibility event is never delivered to a subscriber, on
+			// replay no less than on the live path (see relayBatch): skip its
+			// fan-out. It still counts toward the replayed total below — the event
+			// is durable, it simply has no eligible subscriber.
+			if eventcatalog.IsInternalPublished(e.GetType()) {
+				continue
+			}
 			nonce := ":replay:" + uuid.NewString()
 			for _, subscription := range subscriptions {
 				if sel.SubscriberPrincipalID != "" && subscription.SubscriberPrincipalID != sel.SubscriberPrincipalID {

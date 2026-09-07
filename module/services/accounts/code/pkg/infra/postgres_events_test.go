@@ -89,3 +89,84 @@ func TestPostgresEventTransportPublishJoinsCallerTransaction(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, replayed, "a rolled-back producer leaves no durable event-of-record behind")
 }
+
+// TestDomainEventsTenantIsolationUnderRLS pins the tenant boundary declared by
+// migration 114's domain_events_tenant policy (114:77-79): request traffic reads
+// only its own organization's events, and a connection with no tenant context
+// reads nothing. Both are load-bearing for a regulated-finance customer — a
+// cross-tenant read or a fail-open on an unset GUC would leak one tenant's event
+// stream to another. The publish path is function-only and BYPASSRLS-seeded here,
+// so this test isolates exactly the SELECT policy, which is the only way request
+// traffic ever touches the relation.
+func TestDomainEventsTenantIsolationUnderRLS(t *testing.T) {
+	pool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	store := infra.NewPostgresJobStore(pool)
+	transport := infra.NewPostgresEventTransport(store, pool, "events-rls-"+uuid.NewString(), 300*time.Millisecond)
+
+	tenantA := uuid.NewString()
+	tenantB := uuid.NewString()
+	eventA := &events.EventEnvelope{
+		Id:            uuid.NewString(),
+		Type:          "reference.console.viewed",
+		Source:        "urn:codefly:accounts",
+		Specversion:   "1.0",
+		TenantId:      tenantA,
+		SchemaVersion: 1,
+		Data:          []byte("a"),
+	}
+	eventB := &events.EventEnvelope{
+		Id:            uuid.NewString(),
+		Type:          "reference.console.viewed",
+		Source:        "urn:codefly:accounts",
+		Specversion:   "1.0",
+		TenantId:      tenantB,
+		SchemaVersion: 1,
+		Data:          []byte("b"),
+	}
+
+	// Seed one event per tenant through the outbox function under the relay
+	// worker's BYPASSRLS role, the only role that may publish for an arbitrary
+	// tenant. Committing makes the rows the durable event-of-record the tenant
+	// read below resolves under RLS.
+	seedTx, err := pool.Begin(testCtx)
+	require.NoError(t, err)
+	require.NoError(t, transport.Publish(testCtx, seedTx, eventA))
+	require.NoError(t, transport.Publish(testCtx, seedTx, eventB))
+	require.NoError(t, seedTx.Commit(testCtx))
+
+	seeded := []string{eventA.GetId(), eventB.GetId()}
+
+	// Sanity: both rows are durably present. The BYPASSRLS relay role sees the
+	// whole relation, so the fail-closed assertions below cannot be vacuous.
+	var total int
+	require.NoError(t, pool.QueryRow(testCtx,
+		`SELECT count(*) FROM public.domain_events WHERE id = ANY($1::uuid[])`, seeded,
+	).Scan(&total))
+	require.Equal(t, 2, total, "both tenants' events must be durably seeded")
+
+	// Tenant A's request role sees only tenant A's event, even when tenant B's
+	// id is named explicitly: the policy filters on app.current_org_id, not on
+	// the query predicate.
+	require.NoError(t, testStore.WithOrgTx(testCtx, tenantA, func(ctx context.Context) error {
+		tx := txFromCtx(t, ctx)
+		rows, err := tx.Query(ctx,
+			`SELECT id::text FROM public.domain_events WHERE id = ANY($1::uuid[])`, seeded)
+		require.NoError(t, err)
+		visible, err := pgx.CollectRows(rows, pgx.RowTo[string])
+		require.NoError(t, err)
+		require.Equal(t, []string{eventA.GetId()}, visible,
+			"tenant A must see its own event and never tenant B's")
+		return nil
+	}))
+
+	// A bare request connection carries no tenant context (app.current_org_id is
+	// unset). The policy's USING clause is then undefined, and the fail-closed
+	// contract at 114:77-79 must yield zero rows — never every row.
+	var leaked int
+	require.NoError(t, testStore.Pool().QueryRow(testCtx,
+		`SELECT count(*) FROM public.domain_events WHERE id = ANY($1::uuid[])`, seeded,
+	).Scan(&leaked))
+	require.Zero(t, leaked, "an unset app.current_org_id must fail closed, not expose every tenant's events")
+}

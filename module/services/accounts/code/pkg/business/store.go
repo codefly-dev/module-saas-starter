@@ -336,9 +336,14 @@ type Store interface {
 	//     can only revoke a subscription it owns; the bool reports whether a live
 	//     row was revoked (false = not found or already revoked / not owned).
 	//   - ListEventSubscriptions returns the principal's live (non-revoked) rows.
+	//   - CountLiveEventSubscriptions counts every live (non-revoked) subscription
+	//     across all principals. Startup uses it to assert that a module which has
+	//     accepted subscriptions also has a delivery transport wired, so events are
+	//     never silently dropped on the floor.
 	CreateEventSubscription(ctx context.Context, sub *EventSubscription) (*EventSubscription, bool, error)
 	RevokeEventSubscription(ctx context.Context, subscriptionID, subscriberPrincipalID string) (bool, error)
 	ListEventSubscriptions(ctx context.Context, subscriberPrincipalID string) ([]*EventSubscription, error)
+	CountLiveEventSubscriptions(ctx context.Context) (int, error)
 
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)

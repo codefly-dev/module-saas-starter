@@ -659,6 +659,15 @@ func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, t
 	// envelope: a caller cannot smuggle another tenant's scope past the namespace
 	// gate. The DB gate re-checks it under the app_tenant role regardless.
 	envelope.TenantId = tenant
+	// Ordered delivery partitions on the envelope's partition key; an empty key
+	// makes eventOrdering return nil, so an ordered subscription would silently
+	// lose per-partition ordering. A module caller that omits the key must still
+	// get tenant-ordered delivery, so default it to the tenant — the same
+	// partition first-party producers use — while preserving a finer-grained key
+	// the caller set deliberately (e.g. per-aggregate ordering within a tenant).
+	if envelope.GetPartitionKey() == "" {
+		envelope.PartitionKey = tenant
+	}
 
 	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {
 		return s.eventTransport.Publish(ctx, moduleTx(ctx), envelope)

@@ -188,6 +188,15 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetModuleEventTransport(eventTransport)
 	eventRelayWorker := infra.NewEventRelayWorker(eventTransport, 0)
 
+	// Fail fast if a deployment ever ends up with live subscriptions but no
+	// transport: without one, every publish is a silent no-op and subscribers
+	// receive nothing. The transport is wired unconditionally just above, so this
+	// is a regression guard — but it converts a future mis-wiring from invisible
+	// event loss into a startup error.
+	if err := service.VerifyEventWiring(ctx); err != nil {
+		return nil, err
+	}
+
 	eventRegistry, err := analytics.DefaultRegistry()
 	if err != nil {
 		return nil, err

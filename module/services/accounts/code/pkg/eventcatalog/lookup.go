@@ -29,6 +29,18 @@ func LookupPublished(eventType string) (PublishedEvent, bool) {
 	return e, ok
 }
 
+// IsInternalPublished reports whether the event type is a published type declared
+// with internal visibility — an intra-platform event that must never be delivered
+// to a subscriber principal. A type absent from the catalog is not internal (only
+// an explicit internal declaration suppresses delivery). The relay consults this
+// at fan-out time so an internal event is refused delivery even to a subscription
+// that predates the type's registration, which the subscribe-time gate over
+// InternalPublishedTypes cannot retract.
+func IsInternalPublished(eventType string) bool {
+	e, ok := publishedIndex[eventType]
+	return ok && e.Visibility == "internal"
+}
+
 // InternalPublishedTypes returns the types of every published event declared
 // with internal visibility. The Subscribe authority gate rejects a solution
 // principal whose type pattern would match any of these, so an internal event

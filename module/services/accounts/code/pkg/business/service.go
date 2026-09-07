@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/jobs"
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/codefly-dev/core/wool"
@@ -85,6 +86,35 @@ func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store
 // not need it because they operate on event_subscriptions through the Store.
 func (s *Service) SetModuleEventTransport(transport events.Transport) {
 	s.eventTransport = transport
+}
+
+// VerifyEventWiring fails startup when the module has accepted event
+// subscriptions but has no delivery transport wired. Without a transport,
+// publishLifecycleEvent and ModulePublishEvent are no-ops, so every event a
+// subscriber is waiting on is silently dropped on the floor — a
+// misconfiguration that is invisible at runtime and only surfaces as missing
+// deliveries. Asserting the invariant at boot turns that silent skew into a
+// loud, immediate failure. A wired transport short-circuits before any store
+// call, so the check costs nothing on the healthy path.
+func (s *Service) VerifyEventWiring(ctx context.Context) error {
+	if s.eventTransport != nil {
+		return nil
+	}
+	var live int
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		n, e := s.store.CountLiveEventSubscriptions(ctx)
+		if e != nil {
+			return e
+		}
+		live = n
+		return nil
+	}); err != nil {
+		return fmt.Errorf("verify event wiring: %w", err)
+	}
+	if live > 0 {
+		return fmt.Errorf("verify event wiring: %d live event subscription(s) exist but no event transport is wired; events would be silently dropped — call SetModuleEventTransport before serving", live)
+	}
+	return nil
 }
 
 // CodeExchanger abstracts the OAuth 2.0 code-for-token exchange so the
