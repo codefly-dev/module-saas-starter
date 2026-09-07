@@ -44,7 +44,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 
 	require.Len(t, first.Catalog.GetServices(), 8)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 3)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 4)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
@@ -76,12 +76,17 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 	require.Equal(t, map[string]bool{"accounts": true, "auth-gateway": true}, privateREST)
 	require.True(t, authGatewayTelemetry)
+	accountsConnectExposed := false
 	for _, endpoint := range first.Catalog.GetInterfaceEndpoints() {
+		if endpoint.GetService() == "accounts" && endpoint.GetEndpoint() == "connect" {
+			accountsConnectExposed = true
+		}
 		require.False(t,
-			endpoint.GetService() == "accounts" ||
+			(endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect") ||
 				(endpoint.GetService() == "auth-gateway" && endpoint.GetEndpoint() == "rest"),
 		)
 	}
+	require.True(t, accountsConnectExposed)
 	require.Contains(t, string(first.ServiceManifests["accounts"]), "- observability")
 	authGatewayManifest := string(first.ServiceManifests["auth-gateway"])
 	require.Contains(t, authGatewayManifest, "- observability")

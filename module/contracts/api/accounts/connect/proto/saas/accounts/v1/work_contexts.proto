@@ -1,0 +1,506 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// WorkContextReplayPolicy controls how a consumer may accept a signed Work
+// Context. Single-use still requires a durable replay store at the consumer.
+enum WorkContextReplayPolicy {
+  WORK_CONTEXT_REPLAY_POLICY_UNSPECIFIED = 0;
+  WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT = 1;
+  WORK_CONTEXT_REPLAY_POLICY_SINGLE_USE = 2;
+}
+
+// WorkContextScope is one product-neutral authority slice. Product plugins
+// contribute the resource/action vocabulary through Accounts RBAC; this API
+// does not carry a built-in list of product permissions.
+message WorkContextScope {
+  string resource_kind = 1 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 128
+  ];
+  repeated string actions = 2 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 128
+  ];
+  repeated string resource_ids = 3 [
+    (buf.validate.field).repeated.max_items = 256,
+    (buf.validate.field).repeated.unique = true,
+    (buf.validate.field).repeated.items.string.min_len = 1,
+    (buf.validate.field).repeated.items.string.max_len = 512
+  ];
+}
+
+message StartTaskWorkContextRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string task_id = 2 [(buf.validate.field).string.uuid = true];
+  string session_id = 3 [(buf.validate.field).string.uuid = true];
+  // Empty means a direct human-owned Task. Otherwise this must name an active,
+  // registered agent Principal in org_id.
+  string actor_principal_id = 4;
+  repeated WorkContextScope authority_scopes = 5 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 64
+  ];
+  string audience = 6 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  WorkContextReplayPolicy replay_policy = 7;
+  int32 ttl_seconds = 8 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+  // Optional Codefly execution boundary. When set, consumers bind the
+  // capability to this exact workspace and reject cross-workspace reuse.
+  optional string workspace_id = 9 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  // Optional product/project attribution inside workspace_id.
+  optional string project_id = 10 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+}
+
+// StartInstallationTaskRequest is the headless (no-user-present) mint path. The
+// caller is a trusted internal service (a job consumer leasing an ingest job),
+// not a bearer: owner := the installation's owner of record; actor := the agent
+// principal; authority := the agent's standing scope grants ∩ its ceiling,
+// resolved live. It fails closed when the agent is revoked/disabled, the standing
+// grant is gone, or no owner/co-owner is currently an org admin.
+//
+// On this RPC each authority_scopes.resource_ids entry is a SCOPE NODE id (a data
+// boundary, #473), NOT a product-record id — the mint resolves the boundary from
+// that node's own row and checks the agent holds a standing grant at an
+// ancestor-or-equal of it. This differs from CheckAccess, where resource_id is a
+// placed-record id; do not pass a record id here.
+message StartInstallationTaskRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  string task_id = 3 [(buf.validate.field).string.uuid = true];
+  string session_id = 4 [(buf.validate.field).string.uuid = true];
+  repeated WorkContextScope authority_scopes = 5 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 64
+  ];
+  string audience = 6 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  WorkContextReplayPolicy replay_policy = 7;
+  int32 ttl_seconds = 8 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+  optional string workspace_id = 9 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  optional string project_id = 10 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+}
+
+message StartRootSessionWorkContextRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string parent_work_context_token = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 32768
+  ];
+  string session_id = 3 [(buf.validate.field).string.uuid = true];
+  string audience = 4 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  WorkContextReplayPolicy replay_policy = 5;
+  int32 ttl_seconds = 6 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+}
+
+// ExchangeWorkContextAudienceRequest reissues the same immutable Task,
+// Session, owner, and delegation lineage for another service boundary while
+// attenuating the effective authority to the requested scopes.
+message ExchangeWorkContextAudienceRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string parent_work_context_token = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 32768
+  ];
+  string audience = 3 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  repeated WorkContextScope attenuated_scopes = 4 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 64
+  ];
+  WorkContextReplayPolicy replay_policy = 5;
+  int32 ttl_seconds = 6 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+}
+
+message StartChildSessionWorkContextRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string parent_work_context_token = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 32768
+  ];
+  string session_id = 3 [(buf.validate.field).string.uuid = true];
+  string actor_principal_id = 4 [(buf.validate.field).string.uuid = true];
+  repeated WorkContextScope granted_scopes = 5 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 64
+  ];
+  string audience = 6 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  WorkContextReplayPolicy replay_policy = 7;
+  int32 ttl_seconds = 8 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+}
+
+// RenewWorkContextRequest extends an in-flight delegated capability past the
+// signing TTL cap without the originating user present. The caller is the
+// current (outermost) actor of the parent context, not its owner, so a
+// long-running delegated task can keep itself alive. Renewal preserves the
+// Task, Session, owner, and delegation lineage; it may attenuate but can never
+// widen the current actor's authority.
+message RenewWorkContextRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string parent_work_context_token = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 32768
+  ];
+  // Optional new audience. Empty keeps the parent context's audience, the
+  // common renewal case where only the TTL is refreshed.
+  optional string audience = 3 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  // Optional narrowed scopes. Empty keeps the current actor's effective
+  // authority unchanged; when present they must attenuate it.
+  repeated WorkContextScope attenuated_scopes = 4 [
+    (buf.validate.field).repeated.max_items = 64
+  ];
+  WorkContextReplayPolicy replay_policy = 5;
+  int32 ttl_seconds = 6 [
+    (buf.validate.field).int32.gte = 0,
+    (buf.validate.field).int32.lte = 900
+  ];
+}
+
+// IssuedWorkContext is the opaque signed capability plus safe correlation
+// fields useful to an SDK caller. Consumers must verify the token rather than
+// trusting these duplicated display fields.
+message IssuedWorkContext {
+  string token = 1;
+  string org_id = 2;
+  string owner_principal_id = 3;
+  string task_id = 4;
+  string session_id = 5;
+  optional string parent_session_id = 6;
+  string current_actor_principal_id = 7;
+  uint64 authorization_revision = 8;
+  google.protobuf.Timestamp expires_at = 9;
+  optional string workspace_id = 10;
+  optional string project_id = 11;
+}
+
+// WorkContextRevisionSubject is one owner or delegated actor whose current
+// authority must still match the revision sealed into a signed Work Context.
+message WorkContextRevisionSubject {
+  string principal_id = 1 [(buf.validate.field).string.uuid = true];
+  repeated WorkContextScope scopes = 2 [
+    (buf.validate.field).repeated.max_items = 64
+  ];
+}
+
+// CheckAuthorizationRevisionRequest contains only the immutable authority
+// facts needed by a Work Context consumer. The signed capability itself never
+// crosses this internal boundary.
+message CheckAuthorizationRevisionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string owner_principal_id = 2 [(buf.validate.field).string.uuid = true];
+  uint64 authorization_revision = 3 [(buf.validate.field).uint64.gt = 0];
+  repeated WorkContextRevisionSubject subjects = 4 [
+    (buf.validate.field).repeated.min_items = 1,
+    (buf.validate.field).repeated.max_items = 17
+  ];
+}
+
+// AuthorizeEvidenceReadRequest asks Accounts to authorize one filtered
+// Evidence read using current membership and RBAC state. Empty optional
+// filters describe a tenant-directory read and require unscoped evidence:read.
+message AuthorizeEvidenceReadRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string caller_principal_id = 2 [(buf.validate.field).string.uuid = true];
+  optional string owner_principal_id = 3 [(buf.validate.field).string.uuid = true];
+  optional string task_id = 4 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  optional string session_id = 5 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+}
+
+// ConsumeSingleUseWorkContextRequest claims a SINGLE_USE Work Context exactly
+// once. A consumer calls it after cryptographically verifying the capability;
+// the first call for a context_id wins and every replay fails closed.
+message ConsumeSingleUseWorkContextRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // context_id is the signed capability's own per-token nonce, read from the
+  // verified Work Context. It is the replay-store key: unique per issuance,
+  // stable across the consumer's own retries of the same token.
+  string context_id = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  // expires_at is the capability's sealed expiry. The consumed marker is
+  // retained until then and reclaimed by GC afterwards: once the token itself
+  // is expired the verifier rejects it on time grounds, so the marker is moot.
+  google.protobuf.Timestamp expires_at = 3 [(buf.validate.field).required = true];
+}
+
+// WorkContextService is owned by the permissions plugin. It turns current SaaS
+// identity/RBAC facts into a short-lived Codefly Work Context; it does not own
+// product Task or Session lifecycle storage.
+service WorkContextService {
+  // CheckAuthorizationRevision is the consumer-side revocation seam for a
+  // previously issued Work Context. It succeeds only while every subject's
+  // requested authority still resolves to the exact sealed revision.
+  rpc CheckAuthorizationRevision(CheckAuthorizationRevisionRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // AuthorizeEvidenceRead is deliberately Evidence-specific. It prevents a
+  // consumer from acquiring a generic Accounts permission oracle.
+  rpc AuthorizeEvidenceRead(AuthorizeEvidenceReadRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // ConsumeSingleUse is the durable replay store behind the SINGLE_USE replay
+  // policy. It records a context_id as consumed on first call and rejects every
+  // later call for the same id, so a single-use capability is redeemable exactly
+  // once across all consumers regardless of instance or retry.
+  //
+  // The redemption is deliberately not retry-safe: because the key is the token's
+  // own stable id, a second call after a lost response is indistinguishable from
+  // a replay and returns ALREADY_EXISTS. A caller must treat that as the
+  // capability being spent and fail the operation closed, not retry it.
+  rpc ConsumeSingleUse(ConsumeSingleUseWorkContextRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  rpc StartTask(StartTaskWorkContextRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "work_context.task_started"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/work-contexts:task"
+      body: "*"
+    };
+  }
+
+  // StartInstallationTask is the headless mint. Unlike StartTask it opens with a
+  // service credential rather than a bearer: it resolves the installation's owner
+  // of record as the context owner and the installation's agent principal as the
+  // sole actor, with authority drawn from the agent's standing scope grants
+  // (intersected with its registered ceiling), resolved live. It records the same
+  // durable actor-chain hop as every other mint and fails closed on a revoked or
+  // disabled agent, a missing standing grant, or an installation with no
+  // currently-admin owner or co-owner.
+  rpc StartInstallationTask(StartInstallationTaskRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      // The durable, attributable record of a headless mint is the actor-chain
+      // journal hop (RFC-0003), written on every issuance — not an audit event.
+      // This matches the other internal WorkContext RPCs, which emit none.
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  rpc StartRootSession(StartRootSessionWorkContextRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "work_context.root_session_started"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/work-contexts:root-session"
+      body: "*"
+    };
+  }
+
+  // ExchangeAudience derives a least-privilege, audience-bound capability
+  // without changing the Task, Session, owner, or delegation identity.
+  rpc ExchangeAudience(ExchangeWorkContextAudienceRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "work_context.audience_exchanged"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/work-contexts:exchange-audience"
+      body: "*"
+    };
+  }
+
+  rpc StartChildSession(StartChildSessionWorkContextRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "work_context.child_session_started"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/work-contexts:child-session"
+      body: "*"
+    };
+  }
+
+  // RenewWorkContext is the actor-authorized exchange path. Unlike the
+  // owner-bound RPCs, the caller is the current actor of the parent context,
+  // letting a delegated task extend its own authority past the TTL cap while
+  // the originating user is offline. Renewal re-resolves current authority and
+  // fails closed on a stale revision or a revoked chain hop, and can only
+  // attenuate the actor's scopes.
+  rpc RenewWorkContext(RenewWorkContextRequest) returns (IssuedWorkContext) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "work_context.renewed"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/work-contexts:renew"
+      body: "*"
+    };
+  }
+}

@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package saas.settings.v1;
+
+import "saas/accounts/v1/user_settings.proto";
+
+message CommonSettings {
+  optional saas.accounts.v1.UserAppearanceSettings appearance = 1;
+  optional saas.accounts.v1.UserRegionalSettings regional = 2;
+  optional saas.accounts.v1.UserEmailSettings email = 3;
+  optional saas.accounts.v1.UserNotificationSettings notifications = 4;
+}

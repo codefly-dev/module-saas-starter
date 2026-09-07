@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package saas.billing.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// StripeWebhookJob is the versioned internal payload retained by the generic
+// inbox after Stripe signature verification. raw_body is the exact signed JSON
+// body; workers must parse it instead of reconstructing provider data from the
+// metadata fields.
+message StripeWebhookJob {
+  string event_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[A-Za-z0-9_]+$"
+  }];
+  string event_type = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    pattern: "^[a-z][a-z0-9._]*$"
+  }];
+  bytes raw_body = 3 [(buf.validate.field).bytes = {
+    min_len: 1
+    max_len: 983040
+  }];
+  string api_version = 4 [(buf.validate.field).string.max_len = 128];
+  bool livemode = 5;
+  google.protobuf.Timestamp stripe_created_at = 6;
+}
