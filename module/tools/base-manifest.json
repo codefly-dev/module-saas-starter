@@ -1283,7 +1283,7 @@
     "services/frontend/code/src/components/__tests__/frontend-config-adapters.test.tsx": "42d07721d98f3c92106dbeb3e515407b337329bd6ad33195121b6e84f5643e3d",
     "services/frontend/code/src/components/__tests__/plugin-contribution-boundary.test.tsx": "0c15a2d912156a81832e7f489abf31740359ea79f8e832ecbc247c1575ac472f",
     "services/frontend/code/src/components/__tests__/sidebar-settings.test.tsx": "85daa88142825f58561b20ef2af1a98d23acbb795497b4f1d9ccab7b9c191ee7",
-    "services/frontend/code/src/components/activity-feed.tsx": "67b536fa225037b204b3a3fbf9bec5f3e3c18c1657b95087bc4fbda3244ffcf3",
+    "services/frontend/code/src/components/activity-feed.tsx": "0a52ab24b79cb3c8783d26d1d508d0d31155bb063d138b4d9a1b36cefe791d76",
     "services/frontend/code/src/components/admin-layout.tsx": "45bf11039b2ca3d648cf7cbf4e94b5dd86f7ec74e799b729929d1aeb6276ea7d",
     "services/frontend/code/src/components/admin-route-shell.tsx": "1330a46de6472561ffcbb0a332f2192e6dce6c524299c76ea9717bb755671cbf",
     "services/frontend/code/src/components/auth/role-gate.tsx": "81aa9ca42ddd21fb92bf06a7e005483603abc266239a00b2e855ac35b254dc7d",
