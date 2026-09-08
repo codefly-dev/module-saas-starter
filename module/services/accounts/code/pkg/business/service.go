@@ -39,7 +39,8 @@ type Service struct {
 	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
 	webhookPolicy             *WebhookEndpointPolicy
 	webAuthn                  WebAuthnEngine  // required for passkey registration and assertion
-	jobOperations             jobs.Operations // isolated, payload-free platform operations
+	jobOperations             jobs.Operations   // isolated, payload-free platform operations
+	eventOperations           events.Operations // isolated, payload-free domain-event operations
 	acquisitionMode           gen.AcquisitionMode
 	waitlistEmailVerification bool
 	eventRegistry             *analytics.Registry
@@ -174,6 +175,14 @@ func (s *Service) SetHasher(h KeyHasher) {
 // tenant request traffic cannot inherit cross-tenant job access.
 func (s *Service) SetJobOperations(operations jobs.Operations) {
 	s.jobOperations = operations
+}
+
+// SetEventOperations wires the payload-free domain-event administration boundary
+// backed by the isolated app_job_worker pool. Like SetJobOperations it is kept
+// separate from Store so tenant request traffic cannot inherit cross-tenant
+// access to events or subscriptions.
+func (s *Service) SetEventOperations(operations events.Operations) {
+	s.eventOperations = operations
 }
 
 func (s *Service) SetProductAnalytics(registry *analytics.Registry, emitter analytics.Emitter) {

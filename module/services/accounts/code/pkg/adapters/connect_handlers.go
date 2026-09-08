@@ -17,6 +17,7 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 )
 
@@ -542,6 +543,14 @@ func (h *platformAdminConnectHandler) UpsertFeatureFlag(ctx context.Context, req
 }
 func (h *platformAdminConnectHandler) GetJobOperations(ctx context.Context, req *connect.Request[jobsv1.GetJobOperationsRequest]) (*connect.Response[jobsv1.GetJobOperationsResponse], error) {
 	return unary(ctx, req, h.inner.GetJobOperations)
+}
+
+func (h *platformAdminConnectHandler) GetEventOperations(ctx context.Context, req *connect.Request[eventsv1.GetEventOperationsRequest]) (*connect.Response[eventsv1.GetEventOperationsResponse], error) {
+	return unary(ctx, req, h.inner.GetEventOperations)
+}
+
+func (h *platformAdminConnectHandler) ListEventSubscriptions(ctx context.Context, req *connect.Request[eventsv1.ListEventSubscriptionsRequest]) (*connect.Response[eventsv1.ListEventSubscriptionsResponse], error) {
+	return unary(ctx, req, h.inner.ListEventSubscriptions)
 }
 func (h *platformAdminConnectHandler) ListJobs(ctx context.Context, req *connect.Request[jobsv1.ListJobsRequest]) (*connect.Response[jobsv1.ListJobsResponse], error) {
 	return unary(ctx, req, h.inner.ListJobs)

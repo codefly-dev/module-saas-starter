@@ -96,6 +96,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
     },
     {
+      "path": "/admin/platform/events",
+      "source_path": "src/app/admin/platform/events/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_SUPER_ADMIN"
+    },
+    {
       "path": "/admin/platform/feature-flags",
       "source_path": "src/app/admin/platform/feature-flags/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",

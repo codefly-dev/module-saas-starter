@@ -165,6 +165,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("configure durable job metrics: %w", err)
 	}
 	service.SetJobOperations(jobStore)
+	// Domain-event administration (#494 P3) reads the same isolated worker pool:
+	// per-type counters and relay lag from domain_events, dead-letters from the
+	// inbox, and live subscriptions across every principal — payload-free, and on
+	// app_job_worker so request traffic never gains that cross-tenant reach.
+	service.SetEventOperations(infra.NewPostgresEventOperations(jobWorkerPool))
 	service.SetWebhookJobProducer(store)
 
 	// Module-facing capability surface (issue #463): a request-scoped

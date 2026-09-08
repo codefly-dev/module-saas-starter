@@ -7,6 +7,7 @@
 package accountsv1
 
 import (
+	v11 "accounts/pkg/gen/saas/events/v1"
 	v1 "accounts/pkg/gen/saas/jobs/v1"
 	context "context"
 
@@ -22,23 +23,25 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PlatformAdminService_SearchUsers_FullMethodName         = "/saas.accounts.v1.PlatformAdminService/SearchUsers"
-	PlatformAdminService_SuspendUser_FullMethodName         = "/saas.accounts.v1.PlatformAdminService/SuspendUser"
-	PlatformAdminService_UnsuspendUser_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
-	PlatformAdminService_ImpersonateUser_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"
-	PlatformAdminService_ListActiveSessions_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"
-	PlatformAdminService_RevokeSession_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/RevokeSession"
-	PlatformAdminService_GetOrgEntitlements_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements"
-	PlatformAdminService_OverrideEntitlement_FullMethodName = "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement"
-	PlatformAdminService_GrantPlatformRole_FullMethodName   = "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole"
-	PlatformAdminService_RevokePlatformRole_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole"
-	PlatformAdminService_ListPlatformAdmins_FullMethodName  = "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"
-	PlatformAdminService_ListFeatureFlags_FullMethodName    = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
-	PlatformAdminService_UpsertFeatureFlag_FullMethodName   = "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
-	PlatformAdminService_GetJobOperations_FullMethodName    = "/saas.accounts.v1.PlatformAdminService/GetJobOperations"
-	PlatformAdminService_ListJobs_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/ListJobs"
-	PlatformAdminService_GetJob_FullMethodName              = "/saas.accounts.v1.PlatformAdminService/GetJob"
-	PlatformAdminService_ReplayJob_FullMethodName           = "/saas.accounts.v1.PlatformAdminService/ReplayJob"
+	PlatformAdminService_SearchUsers_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/SearchUsers"
+	PlatformAdminService_SuspendUser_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/SuspendUser"
+	PlatformAdminService_UnsuspendUser_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
+	PlatformAdminService_ImpersonateUser_FullMethodName        = "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"
+	PlatformAdminService_ListActiveSessions_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"
+	PlatformAdminService_RevokeSession_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/RevokeSession"
+	PlatformAdminService_GetOrgEntitlements_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements"
+	PlatformAdminService_OverrideEntitlement_FullMethodName    = "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement"
+	PlatformAdminService_GrantPlatformRole_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole"
+	PlatformAdminService_RevokePlatformRole_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole"
+	PlatformAdminService_ListPlatformAdmins_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"
+	PlatformAdminService_ListFeatureFlags_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"
+	PlatformAdminService_UpsertFeatureFlag_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
+	PlatformAdminService_GetJobOperations_FullMethodName       = "/saas.accounts.v1.PlatformAdminService/GetJobOperations"
+	PlatformAdminService_ListJobs_FullMethodName               = "/saas.accounts.v1.PlatformAdminService/ListJobs"
+	PlatformAdminService_GetJob_FullMethodName                 = "/saas.accounts.v1.PlatformAdminService/GetJob"
+	PlatformAdminService_ReplayJob_FullMethodName              = "/saas.accounts.v1.PlatformAdminService/ReplayJob"
+	PlatformAdminService_GetEventOperations_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/GetEventOperations"
+	PlatformAdminService_ListEventSubscriptions_FullMethodName = "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"
 )
 
 // PlatformAdminServiceClient is the client API for PlatformAdminService service.
@@ -75,6 +78,11 @@ type PlatformAdminServiceClient interface {
 	ListJobs(ctx context.Context, in *v1.ListJobsRequest, opts ...grpc.CallOption) (*v1.ListJobsResponse, error)
 	GetJob(ctx context.Context, in *v1.GetJobRequest, opts ...grpc.CallOption) (*v1.GetJobResponse, error)
 	ReplayJob(ctx context.Context, in *v1.ReplayJobRequest, opts ...grpc.CallOption) (*v1.ReplayJobResponse, error)
+	// Domain-event platform operations (#494 P3). Payload bytes never leave the
+	// durable event boundary through these methods — only counts, timings, and
+	// control-plane subscription metadata do.
+	GetEventOperations(ctx context.Context, in *v11.GetEventOperationsRequest, opts ...grpc.CallOption) (*v11.GetEventOperationsResponse, error)
+	ListEventSubscriptions(ctx context.Context, in *v11.ListEventSubscriptionsRequest, opts ...grpc.CallOption) (*v11.ListEventSubscriptionsResponse, error)
 }
 
 type platformAdminServiceClient struct {
@@ -256,6 +264,26 @@ func (c *platformAdminServiceClient) ReplayJob(ctx context.Context, in *v1.Repla
 	return out, nil
 }
 
+func (c *platformAdminServiceClient) GetEventOperations(ctx context.Context, in *v11.GetEventOperationsRequest, opts ...grpc.CallOption) (*v11.GetEventOperationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(v11.GetEventOperationsResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_GetEventOperations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformAdminServiceClient) ListEventSubscriptions(ctx context.Context, in *v11.ListEventSubscriptionsRequest, opts ...grpc.CallOption) (*v11.ListEventSubscriptionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(v11.ListEventSubscriptionsResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_ListEventSubscriptions_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PlatformAdminServiceServer is the server API for PlatformAdminService service.
 // All implementations must embed UnimplementedPlatformAdminServiceServer
 // for forward compatibility.
@@ -290,6 +318,11 @@ type PlatformAdminServiceServer interface {
 	ListJobs(context.Context, *v1.ListJobsRequest) (*v1.ListJobsResponse, error)
 	GetJob(context.Context, *v1.GetJobRequest) (*v1.GetJobResponse, error)
 	ReplayJob(context.Context, *v1.ReplayJobRequest) (*v1.ReplayJobResponse, error)
+	// Domain-event platform operations (#494 P3). Payload bytes never leave the
+	// durable event boundary through these methods — only counts, timings, and
+	// control-plane subscription metadata do.
+	GetEventOperations(context.Context, *v11.GetEventOperationsRequest) (*v11.GetEventOperationsResponse, error)
+	ListEventSubscriptions(context.Context, *v11.ListEventSubscriptionsRequest) (*v11.ListEventSubscriptionsResponse, error)
 	mustEmbedUnimplementedPlatformAdminServiceServer()
 }
 
@@ -350,6 +383,12 @@ func (UnimplementedPlatformAdminServiceServer) GetJob(context.Context, *v1.GetJo
 }
 func (UnimplementedPlatformAdminServiceServer) ReplayJob(context.Context, *v1.ReplayJobRequest) (*v1.ReplayJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReplayJob not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) GetEventOperations(context.Context, *v11.GetEventOperationsRequest) (*v11.GetEventOperationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEventOperations not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) ListEventSubscriptions(context.Context, *v11.ListEventSubscriptionsRequest) (*v11.ListEventSubscriptionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEventSubscriptions not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) mustEmbedUnimplementedPlatformAdminServiceServer() {}
 func (UnimplementedPlatformAdminServiceServer) testEmbeddedByValue()                              {}
@@ -678,6 +717,42 @@ func _PlatformAdminService_ReplayJob_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlatformAdminService_GetEventOperations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(v11.GetEventOperationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).GetEventOperations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_GetEventOperations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).GetEventOperations(ctx, req.(*v11.GetEventOperationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformAdminService_ListEventSubscriptions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(v11.ListEventSubscriptionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).ListEventSubscriptions(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_ListEventSubscriptions_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).ListEventSubscriptions(ctx, req.(*v11.ListEventSubscriptionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PlatformAdminService_ServiceDesc is the grpc.ServiceDesc for PlatformAdminService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -752,6 +827,14 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReplayJob",
 			Handler:    _PlatformAdminService_ReplayJob_Handler,
+		},
+		{
+			MethodName: "GetEventOperations",
+			Handler:    _PlatformAdminService_GetEventOperations_Handler,
+		},
+		{
+			MethodName: "ListEventSubscriptions",
+			Handler:    _PlatformAdminService_ListEventSubscriptions_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

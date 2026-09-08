@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **187 RPCs** across **29 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **189 RPCs** across **29 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -122,12 +122,14 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PermissionService/RevokeScope` | unary | `DELETE /v1/scope-grants` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: scope.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a hierarchical scope grant. |
 | `/saas.accounts.v1.PermissionService/RevokeShare` | unary | `DELETE /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: record.share_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a per-record share. |
 | `/saas.accounts.v1.PermissionService/ShareRecord` | unary | `POST /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: record.shared | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Share a record with a principal/team. |
+| `/saas.accounts.v1.PlatformAdminService/GetEventOperations` | unary | `GET /v1/platform/events/operations` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Domain-event type counters, outbox relay lag, and dead-letter snapshots. |
 | `/saas.accounts.v1.PlatformAdminService/GetJob` | unary | `GET /v1/platform/jobs/{job_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Payload-free job metadata, attempts, and state history. |
 | `/saas.accounts.v1.PlatformAdminService/GetJobOperations` | unary | `GET /v1/platform/jobs/operations` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Durable queue depth, readiness, and lease-health snapshots. |
 | `/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements` | unary | `GET /v1/platform/organizations/{org_id}/entitlements` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Plan + overrides + usage. |
 | `/saas.accounts.v1.PlatformAdminService/GrantPlatformRole` | unary | `POST /v1/platform/admins` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: platform.role_granted | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Grant a platform role. |
 | `/saas.accounts.v1.PlatformAdminService/ImpersonateUser` | unary | `POST /v1/platform/users/{user_id}:impersonate` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: platform.user_impersonated | FORBIDDEN / SENSITIVE | CONFIDENTIAL → SECRET | Mint an impersonation session. |
 | `/saas.accounts.v1.PlatformAdminService/ListActiveSessions` | unary | `GET /v1/platform/sessions` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Active sessions for a user. |
+| `/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions` | unary | `GET /v1/platform/events/subscriptions` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Live domain-event subscriptions across all principals. |
 | `/saas.accounts.v1.PlatformAdminService/ListFeatureFlags` | unary | `GET /v1/platform/feature-flags` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List the legacy feature-flag migration inventory. |
 | `/saas.accounts.v1.PlatformAdminService/ListJobs` | unary | `GET /v1/platform/jobs` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Seek-paginated payload-free job operations view. |
 | `/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins` | unary | `GET /v1/platform/admins` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | List platform admins. |
@@ -203,5 +205,5 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `mfa`: 3
 - `org_admin`: 40
 - `org_member`: 37
-- `platform_admin`: 22
+- `platform_admin`: 24
 - `public`: 16
