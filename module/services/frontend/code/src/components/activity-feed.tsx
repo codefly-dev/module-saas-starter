@@ -25,18 +25,9 @@ import {
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { AuditEvent } from "@/features/audit/model/types";
 import { useAuditLog } from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
-
-interface RawEvent {
-	id: string;
-	eventType: string;
-	actorId: string;
-	resource: string;
-	resourceId: string;
-	createdAt?: { seconds: bigint };
-	payload?: Record<string, unknown>;
-}
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
 	"user.registered": UserPlus,
@@ -72,7 +63,7 @@ export function ActivityFeed({
 		},
 	);
 
-	const events: RawEvent[] = (data?.events as RawEvent[] | undefined) ?? [];
+	const events: AuditEvent[] = data?.events ?? [];
 
 	if (!isLoading && events.length === 0) return null;
 
@@ -169,13 +160,19 @@ function humanize(action: string): string {
 	return map[action] ?? action.replace(/[._]/g, " ");
 }
 
-function relativeTime(t?: { seconds: bigint }): string {
+// `createdAt` is already normalized to an ISO-8601 string at the query boundary
+// (`toAuditEvent`, which converts the wire google.protobuf.Timestamp via
+// `timestampDate(...).toISOString()`), so this consumer only ever sees a string
+// or `undefined`. Guard `Date.parse` returning NaN so an absent or malformed
+// value renders blank rather than the literal "Invalid Date".
+function relativeTime(t?: string): string {
 	if (!t) return "";
-	const sec = Number(t.seconds);
-	const delta = Date.now() / 1000 - sec;
+	const ms = Date.parse(t);
+	if (Number.isNaN(ms)) return "";
+	const delta = (Date.now() - ms) / 1000;
 	if (delta < 60) return "just now";
 	if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
 	if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
 	if (delta < 604800) return `${Math.floor(delta / 86400)}d ago`;
-	return new Date(sec * 1000).toLocaleDateString();
+	return new Date(ms).toLocaleDateString();
 }
