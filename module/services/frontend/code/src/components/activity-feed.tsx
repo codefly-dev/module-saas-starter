@@ -25,18 +25,9 @@ import {
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { AuditEvent } from "@/features/audit/model/types";
 import { useAuditLog } from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
-
-interface RawEvent {
-	id: string;
-	eventType: string;
-	actorId: string;
-	resource: string;
-	resourceId: string;
-	createdAt?: EventTime;
-	payload?: Record<string, unknown>;
-}
 
 const ACTION_ICONS: Record<string, LucideIcon> = {
 	"user.registered": UserPlus,
@@ -72,7 +63,7 @@ export function ActivityFeed({
 		},
 	);
 
-	const events: RawEvent[] = (data?.events as RawEvent[] | undefined) ?? [];
+	const events: AuditEvent[] = data?.events ?? [];
 
 	if (!isLoading && events.length === 0) return null;
 
@@ -169,31 +160,15 @@ function humanize(action: string): string {
 	return map[action] ?? action.replace(/[._]/g, " ");
 }
 
-// The audit API's `created_at` is a google.protobuf.Timestamp, but depending on
-// the transport/codec it can reach the client as a protobuf-es Timestamp
-// ({ seconds, nanos }), an ISO-8601 string (Connect JSON serializes Timestamp as
-// a string), or a Date. Normalize all three to epoch millis and guard NaN so a
-// missing or unexpected shape renders blank rather than the literal "Invalid Date".
-type EventTime = { seconds?: bigint | number | string } | string | Date;
-
-function toMillis(t?: EventTime | null): number | null {
-	if (t == null) return null;
-	if (typeof t === "string") {
-		const ms = Date.parse(t);
-		return Number.isNaN(ms) ? null : ms;
-	}
-	if (t instanceof Date) {
-		const ms = t.getTime();
-		return Number.isNaN(ms) ? null : ms;
-	}
-	if (t.seconds == null) return null;
-	const sec = Number(t.seconds);
-	return Number.isNaN(sec) ? null : sec * 1000;
-}
-
-function relativeTime(t?: EventTime): string {
-	const ms = toMillis(t);
-	if (ms == null) return "";
+// `createdAt` is already normalized to an ISO-8601 string at the query boundary
+// (`toAuditEvent`, which converts the wire google.protobuf.Timestamp via
+// `timestampDate(...).toISOString()`), so this consumer only ever sees a string
+// or `undefined`. Guard `Date.parse` returning NaN so an absent or malformed
+// value renders blank rather than the literal "Invalid Date".
+function relativeTime(t?: string): string {
+	if (!t) return "";
+	const ms = Date.parse(t);
+	if (Number.isNaN(ms)) return "";
 	const delta = (Date.now() - ms) / 1000;
 	if (delta < 60) return "just now";
 	if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;

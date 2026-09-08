@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2098,
+  "fileCount": 2099,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "6a0a8b5bb42b98dbd6b832f8d4e4cb43a16baef0aee27d4889fb7652c38e4b4a",
@@ -1280,10 +1280,11 @@
     "services/frontend/code/src/app/icon.tsx": "597f82e68514e14e94e2edc254ea2d1124d22613ab8cbb08c8ea0ad3faa08cd6",
     "services/frontend/code/src/app/layout.tsx": "7bc0723e394404ae0d4cd76a5904437434ce8e3e3a1b7cca720bcbde3848fbaf",
     "services/frontend/code/src/app/shadcn.css": "4c93d8122218e9995d7cbc0bb5e7dce001256d9bf5ccc67ffd0fe5d000d4c089",
+    "services/frontend/code/src/components/__tests__/activity-feed.test.tsx": "b96a8c1a24f1ee01e2488101fb757982a4c07d9577c68d3ab3e07908f8f5e370",
     "services/frontend/code/src/components/__tests__/frontend-config-adapters.test.tsx": "42d07721d98f3c92106dbeb3e515407b337329bd6ad33195121b6e84f5643e3d",
     "services/frontend/code/src/components/__tests__/plugin-contribution-boundary.test.tsx": "0c15a2d912156a81832e7f489abf31740359ea79f8e832ecbc247c1575ac472f",
     "services/frontend/code/src/components/__tests__/sidebar-settings.test.tsx": "85daa88142825f58561b20ef2af1a98d23acbb795497b4f1d9ccab7b9c191ee7",
-    "services/frontend/code/src/components/activity-feed.tsx": "0a52ab24b79cb3c8783d26d1d508d0d31155bb063d138b4d9a1b36cefe791d76",
+    "services/frontend/code/src/components/activity-feed.tsx": "610b51665eb08d124b8b74a6499ff93e2c57d5d3dde5ad30502ce49efdc4ca66",
     "services/frontend/code/src/components/admin-layout.tsx": "45bf11039b2ca3d648cf7cbf4e94b5dd86f7ec74e799b729929d1aeb6276ea7d",
     "services/frontend/code/src/components/admin-route-shell.tsx": "1330a46de6472561ffcbb0a332f2192e6dce6c524299c76ea9717bb755671cbf",
     "services/frontend/code/src/components/auth/role-gate.tsx": "81aa9ca42ddd21fb92bf06a7e005483603abc266239a00b2e855ac35b254dc7d",
