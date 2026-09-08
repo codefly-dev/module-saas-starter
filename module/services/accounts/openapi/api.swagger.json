@@ -539,6 +539,10 @@
         "name": {
           "type": "string"
         },
+        "namespace": {
+          "description": "The module namespace that owns the type: the leading segment of `name`.\nDistinct from `owner`, which names the emitting service.",
+          "type": "string"
+        },
         "owner": {
           "type": "string"
         },

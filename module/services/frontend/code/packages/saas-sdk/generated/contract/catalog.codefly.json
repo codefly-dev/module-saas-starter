@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:e6202131a07b3905490af44fa5e5194660c4a6eaaa19c0ec14a110cc3690cb51",
+      "digest": "sha256:6f510524849620f4c419fa2fe817bf941f0a78d72cfb6eb7234b4155748843ed",
       "services": [
         {
           "name": "APIKeyService",

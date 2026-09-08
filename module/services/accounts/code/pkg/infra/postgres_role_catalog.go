@@ -233,7 +233,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 				return w.Wrapf(err, "failed to seed permission for role %q", create.Role.Name)
 			}
 		}
-		if err := s.emitCatalogAudit(ctx, "role.created", roleID, map[string]string{
+		if err := s.emitCatalogAudit(ctx, business.EventRoleCreated, roleID, map[string]string{
 			"name":              create.Role.Name,
 			"permissions_added": strconv.Itoa(len(create.Role.Permissions)),
 		}, provenance); err != nil {
@@ -264,7 +264,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 				return w.Wrapf(err, "failed to add permission to role %q", update.Name)
 			}
 		}
-		if err := s.emitCatalogAudit(ctx, "role.updated", update.RoleID, map[string]string{
+		if err := s.emitCatalogAudit(ctx, business.EventRoleUpdated, update.RoleID, map[string]string{
 			"name":                update.Name,
 			"permissions_added":   strconv.Itoa(len(update.AddPermissions)),
 			"permissions_removed": strconv.Itoa(len(update.RemovePermissions)),
@@ -278,7 +278,7 @@ func (s *PostgresStore) applyRoleCatalogPlan(ctx context.Context, plan *rolecata
 		if _, err := executor.Exec(ctx, `DELETE FROM roles WHERE id = $1`, remove.RoleID); err != nil {
 			return w.Wrapf(err, "failed to remove role %q", remove.Name)
 		}
-		if err := s.emitCatalogAudit(ctx, "role.deleted", remove.RoleID, map[string]string{
+		if err := s.emitCatalogAudit(ctx, business.EventRoleDeleted, remove.RoleID, map[string]string{
 			"name":                remove.Name,
 			"assignments_removed": strconv.Itoa(remove.AssignmentCount),
 		}, provenance); err != nil {
@@ -300,7 +300,7 @@ func insertRolePermission(ctx context.Context, executor QueryExecutor, roleID st
 // catalog reconciles global built-in roles, which belong to no tenant. The
 // enclosing control-plane transaction lets the polymorphic audit_events policy
 // accept the NULL org_id.
-func (s *PostgresStore) emitCatalogAudit(ctx context.Context, action, roleID string, metadata, provenance map[string]string) error {
+func (s *PostgresStore) emitCatalogAudit(ctx context.Context, event business.EventType, roleID string, metadata, provenance map[string]string) error {
 	w := wool.Get(ctx).In("emitCatalogAudit")
 	for k, v := range provenance {
 		metadata[k] = v
@@ -311,12 +311,12 @@ func (s *PostgresStore) emitCatalogAudit(ctx context.Context, action, roleID str
 	}
 	if err := s.InsertAuditEvent(ctx, business.AuditEntry{
 		ActorType:  "system",
-		EventType:  business.EventType(action),
+		EventType:  event,
 		Resource:   "role",
 		ResourceID: roleID,
 		Payload:    payload,
 	}); err != nil {
-		return w.Wrapf(err, "failed to emit audit event %q", action)
+		return w.Wrapf(err, "failed to emit audit event %q", event)
 	}
 	return nil
 }

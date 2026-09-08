@@ -294,7 +294,7 @@ func (s *Service) ReviewWaitlist(
 	if entry == nil {
 		return nil, wool.Get(ctx).NewError("waitlist entry not found")
 	}
-	s.emit(ctx, actorID, "user", EventType("waitlist."+state), "waitlist_entry", entry.ID, "")
+	s.emit(ctx, actorID, "user", EventType(AuditNamespace+".waitlist."+state), "waitlist_entry", entry.ID, "")
 	return waitlistEntryToProto(entry), nil
 }
 

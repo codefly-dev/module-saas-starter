@@ -151,6 +151,9 @@ message AuditEventType {
   string owner = 4;
   bool deprecated = 5;
   string description = 6;
+  // The module namespace that owns the type: the leading segment of `name`.
+  // Distinct from `owner`, which names the emitting service.
+  string namespace = 7;
 }
 
 message ListAuditEventTypesResponse {

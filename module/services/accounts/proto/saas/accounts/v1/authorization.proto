@@ -409,7 +409,7 @@ service PermissionService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.created"
+        events: "saas.role.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -445,7 +445,7 @@ service PermissionService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.deleted"
+        events: "saas.role.deleted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -463,7 +463,7 @@ service PermissionService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.assigned"
+        events: "saas.role.assigned"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -484,7 +484,7 @@ service PermissionService {
       tenant: TENANT_REQUIREMENT_USER
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "role.revoked"
+        events: "saas.role.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -616,7 +616,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "scope.node_registered"
+        events: "saas.scope.node_registered"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -644,7 +644,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "scope.granted"
+        events: "saas.scope.granted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -671,7 +671,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "scope.revoked"
+        events: "saas.scope.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -696,7 +696,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "record.shared"
+        events: "saas.record.shared"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -723,7 +723,7 @@ service PermissionService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "record.share_revoked"
+        events: "saas.record.share_revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -803,7 +803,7 @@ service PrincipalService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.created"
+        events: "saas.principal.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -828,7 +828,7 @@ service PrincipalService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.revoked"
+        events: "saas.principal.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -848,7 +848,7 @@ service PrincipalService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.disabled"
+        events: "saas.principal.disabled"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -864,7 +864,7 @@ service PrincipalService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "principal.enabled"
+        events: "saas.principal.enabled"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

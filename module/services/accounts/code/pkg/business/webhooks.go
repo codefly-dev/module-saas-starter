@@ -24,7 +24,7 @@ type WebhookSubscription struct {
 	PreviousSecretEncrypted string
 	PreviousSecretExpiresAt *time.Time
 	SecretReveal            string   // transient: populated only by create
-	Events                  []string // event types to subscribe to, e.g. "user.registered", "org.created"
+	Events                  []string // event types to subscribe to, e.g. "saas.user.registered", "saas.org.created"
 	Description             string
 	Active                  bool
 	CreatedAt               time.Time

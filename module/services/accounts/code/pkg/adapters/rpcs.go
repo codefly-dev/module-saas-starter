@@ -1275,6 +1275,7 @@ func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAudi
 	for _, d := range defs {
 		out = append(out, &gen.AuditEventType{
 			Name:        string(d.Type),
+			Namespace:   d.Namespace,
 			Version:     int32(d.Version),
 			Category:    string(d.Category),
 			Owner:       d.Owner,

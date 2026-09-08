@@ -956,13 +956,16 @@ func (*ListAuditEventTypesRequest) Descriptor() ([]byte, []int) {
 }
 
 type AuditEventType struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	Category      string                 `protobuf:"bytes,3,opt,name=category,proto3" json:"category,omitempty"`
-	Owner         string                 `protobuf:"bytes,4,opt,name=owner,proto3" json:"owner,omitempty"`
-	Deprecated    bool                   `protobuf:"varint,5,opt,name=deprecated,proto3" json:"deprecated,omitempty"`
-	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version     int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Category    string                 `protobuf:"bytes,3,opt,name=category,proto3" json:"category,omitempty"`
+	Owner       string                 `protobuf:"bytes,4,opt,name=owner,proto3" json:"owner,omitempty"`
+	Deprecated  bool                   `protobuf:"varint,5,opt,name=deprecated,proto3" json:"deprecated,omitempty"`
+	Description string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	// The module namespace that owns the type: the leading segment of `name`.
+	// Distinct from `owner`, which names the emitting service.
+	Namespace     string `protobuf:"bytes,7,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1035,6 +1038,13 @@ func (x *AuditEventType) GetDeprecated() bool {
 func (x *AuditEventType) GetDescription() string {
 	if x != nil {
 		return x.Description
+	}
+	return ""
+}
+
+func (x *AuditEventType) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
 	}
 	return ""
 }
@@ -1185,7 +1195,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"]\n" +
 	"\x19AggregateAuditLogResponse\x12@\n" +
 	"\abuckets\x18\x01 \x03(\v2&.saas.accounts.v1.AuditAggregateBucketR\abuckets\"\x1c\n" +
-	"\x1aListAuditEventTypesRequest\"\xb2\x01\n" +
+	"\x1aListAuditEventTypesRequest\"\xd0\x01\n" +
 	"\x0eAuditEventType\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\x12\x1a\n" +
@@ -1194,7 +1204,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\n" +
 	"deprecated\x18\x05 \x01(\bR\n" +
 	"deprecated\x12 \n" +
-	"\vdescription\x18\x06 \x01(\tR\vdescription\"U\n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x1c\n" +
+	"\tnamespace\x18\a \x01(\tR\tnamespace\"U\n" +
 	"\x1bListAuditEventTypesResponse\x126\n" +
 	"\x05types\x18\x01 \x03(\v2 .saas.accounts.v1.AuditEventTypeR\x05types2\x9d\x06\n" +
 	"\fAuditService\x12\xb5\x01\n" +

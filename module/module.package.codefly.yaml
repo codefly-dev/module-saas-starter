@@ -18,7 +18,7 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:e6202131a07b3905490af44fa5e5194660c4a6eaaa19c0ec14a110cc3690cb51
+        digest: sha256:6f510524849620f4c419fa2fe817bf941f0a78d72cfb6eb7234b4155748843ed
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -71,6 +71,7 @@ migrations:
     breaking: true
 breaking-changes:
   - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
+  - "Audit event types are namespaced under `saas.*` (`auth.login` -> `saas.auth.login`). The wire value of `audit_events.event_type`, the `X-Webhook-Event` header, and webhook routing keys all change; migration 116 rewrites stored history and existing subscriptions in place, so a live subscriber keeps firing, but a consumer that re-creates a subscription from a hardcoded pre-namespace name, or emits one through `ModuleEmitAuditEvent`, is now rejected. No alias layer."
 reserved-namespaces:
   - "@codefly/saas-"
   - saas
