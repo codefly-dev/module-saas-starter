@@ -24,7 +24,7 @@ interface DatasourcesPanelBaseProps {
 /**
  * Either drive the panel with an injected `client` (the portal adapts its own
  * transport, keeping its ambient `QueryClientProvider`), or hand it a `gateway`
- * binding and it self-wires: it builds the `@codefly/saas-sdk` client and a
+ * binding and it self-wires: it builds the `@codefly-dev/saas-sdk` client and a
  * scoped React-Query provider from that binding, so a solution remote drops it
  * in with only `{ apiBase, getAccessToken }` and no query/auth context.
  */

@@ -9,7 +9,7 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 - **Gateway binding** (solution remotes) — pass
   `gateway={{ apiBase, getAccessToken, refreshAccessToken }}` and the panel self-wires:
-  it builds a `@codefly/saas-sdk` client over a scoped transport that stamps the host's
+  it builds a `@codefly-dev/saas-sdk` client over a scoped transport that stamps the host's
   bearer token on every request and, on an `Unauthenticated` response, calls
   `refreshAccessToken` and retries once — so a data call survives the short-lived token
   expiring mid-session. It also mounts its own `@tanstack/react-query` provider. A

@@ -3,7 +3,7 @@
 // resolved* series, so it never fetches, never reaches for host hooks, and can
 // run identically in the host app and in a solution's Module-Federation remote.
 //
-// `@codefly/saas-sdk`'s `runDashboard` produces `DashboardData`/`ResolvedWidget`,
+// `@codefly-dev/saas-sdk`'s `runDashboard` produces `DashboardData`/`ResolvedWidget`,
 // which map onto these shapes one-to-one (see `fromDashboardData`); keeping our
 // own types here is what lets `@codefly-dev/ui` stay a pure component library with no
 // dependency on the SDK's transport stack.
@@ -48,7 +48,7 @@ export interface DashboardView {
 	widgets: DashboardWidgetView[];
 }
 
-// The minimal shape of `@codefly/saas-sdk`'s runDashboard result. Declared
+// The minimal shape of `@codefly-dev/saas-sdk`'s runDashboard result. Declared
 // structurally (not imported) so this package keeps zero runtime deps; any value
 // with these fields — including the SDK's `DashboardData` — satisfies it.
 interface ResolvedWidgetLike {
@@ -64,7 +64,7 @@ interface DashboardDataLike {
 }
 
 /**
- * Adapt a resolved data-graph dashboard (`@codefly/saas-sdk` `runDashboard`)
+ * Adapt a resolved data-graph dashboard (`@codefly-dev/saas-sdk` `runDashboard`)
  * into the renderer's view model. The two shapes already align; this is the
  * one seam a consumer crosses between the data runtime and the component kit.
  */

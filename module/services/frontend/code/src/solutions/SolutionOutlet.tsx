@@ -1,6 +1,6 @@
 "use client";
 
-import * as SaasSdk from "@codefly/saas-sdk";
+import * as SaasSdk from "@codefly-dev/saas-sdk";
 import * as SaasUi from "@codefly/saas-ui";
 import * as CodeflyUi from "@codefly-dev/ui";
 import {
@@ -39,13 +39,20 @@ import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 // The `kit-shared-version` test asserts the singleton flag on this object.
 const SEALED_SHARE_CONFIG = { singleton: true, requiredVersion: false } as const;
 
-// The co-versioned @codefly/* kit ships lockstep with this host, so one version
-// covers all three. It MUST track the packages' real version — a shared module
-// that under-reports its version can lose singleton resolution to a remote that
-// bundles a higher one, splitting the instance the dedup exists to keep single.
-// The `kit-shared-version` test pins this to the packages' actual versions so a
-// bump can't drift it silently.
+// The co-versioned @codefly UI kit (@codefly-dev/ui + @codefly/saas-ui) ships
+// lockstep with this host, so one version covers both. It MUST track the
+// packages' real version — a shared module that under-reports its version can
+// lose singleton resolution to a remote that bundles a higher one, splitting the
+// instance the dedup exists to keep single. The `kit-shared-version` test pins
+// this to the packages' actual versions so a bump can't drift it silently.
 export const CODEFLY_KIT_VERSION = "0.1.0";
+
+// @codefly-dev/saas-sdk tracks the published accounts/connect API contract, not
+// the UI kit's release cadence, so it versions independently of the kit. Its
+// shared version MUST still match the package's real version (same
+// `kit-shared-version` invariant, checked per package rather than against one
+// shared constant).
+export const CODEFLY_SAAS_SDK_VERSION = "0.2.0";
 
 // The co-versioned kit + module-UI packages, sealed into the Module-Federation
 // scope. This is the single source of truth the `kit-shared-version` test
@@ -61,8 +68,8 @@ export const CODEFLY_KIT_SHARED = {
 		lib: () => SaasUi,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
-	"@codefly/saas-sdk": {
-		version: CODEFLY_KIT_VERSION,
+	"@codefly-dev/saas-sdk": {
+		version: CODEFLY_SAAS_SDK_VERSION,
 		lib: () => SaasSdk,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
@@ -110,7 +117,7 @@ export const SEALED_SHARED = {
  * singletons and therefore ships without them.
  *
  * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly/saas-ui`,
- * `@codefly/saas-sdk`) is shared the same way, so a remote imports
+ * `@codefly-dev/saas-sdk`) is shared the same way, so a remote imports
  * `<DatasourcesPanel gateway={…}>` and renders it against the host's one copy —
  * no bundling, and one React instance across the boundary.
  */

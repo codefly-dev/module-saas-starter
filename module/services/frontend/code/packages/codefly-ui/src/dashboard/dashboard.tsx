@@ -5,7 +5,7 @@
 // reads no host context, and imports no app code, so the host app and a
 // solution's Module-Federation remote render identical dashboards from the same
 // package instance. Data resolution (metric → audit query) is the job of
-// `@codefly/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
+// `@codefly-dev/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
 
 import type * as React from "react";
 import { Card, Section } from "../layout/card.js";

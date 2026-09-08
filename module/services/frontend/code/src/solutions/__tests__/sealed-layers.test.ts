@@ -49,7 +49,7 @@ describe("the sealed set covers React, the kit, and each module UI package", () 
 			expect.arrayContaining([
 				"@codefly-dev/ui",
 				"@codefly/saas-ui",
-				"@codefly/saas-sdk",
+				"@codefly-dev/saas-sdk",
 			]),
 		);
 	});

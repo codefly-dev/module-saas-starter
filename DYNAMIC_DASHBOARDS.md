@@ -13,7 +13,7 @@ supports far more than the app DSL exposed. The epic *surfaces* and *persists*
 what was already there — no new server endpoint.
 
 All code lives under
-`module/services/frontend/code/src/features/dashboard/` (plus the `@codefly/saas-sdk`
+`module/services/frontend/code/src/features/dashboard/` (plus the `@codefly-dev/saas-sdk`
 and `@codefly/saas-plugin-manifest` packages for the graph-level widening).
 
 ## Workstreams

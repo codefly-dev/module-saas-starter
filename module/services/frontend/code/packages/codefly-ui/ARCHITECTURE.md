@@ -44,7 +44,7 @@ sits outside this stack.
    `src/solutions/SolutionOutlet.tsx` and the `kit-shared-version` test.)*
 
 3. **Pure, data-in.** Kit components fetch nothing and read no host context;
-   data resolves via `@codefly/saas-sdk` (the `runDashboard` / `fromDashboardData`
+   data resolves via `@codefly-dev/saas-sdk` (the `runDashboard` / `fromDashboardData`
    pattern) so host and remote render identical output from one package
    instance. *(Enforced by the purity guard in
    `src/__tests__/architecture.test.ts` — no host `@/` imports, no network I/O —

@@ -82,9 +82,9 @@ claims:
   - {kind: package, key: "@codefly/saas-plugin-contract", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-manifest", owner: base}
   - {kind: package, key: "@codefly/saas-plugin-react", owner: base}
-  - {kind: package, key: "@codefly/saas-sdk", owner: base}
   - {kind: package, key: "@codefly/saas-settings", owner: base}
   - {kind: package, key: "@codefly/saas-ui", owner: base}
+  - {kind: package, key: "@codefly-dev/saas-sdk", owner: base}
   - {kind: package, key: "@codefly-dev/ui", owner: base}
   - {kind: package, key: "@connectrpc/connect", owner: base}
   - {kind: package, key: "@connectrpc/connect-web", owner: base}
