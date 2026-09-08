@@ -42,7 +42,8 @@ type Gateway struct {
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
-	solutions         *solutionRegistry // runtime-registered solution upstreams
+	solutions         *upstreamRegistry // runtime-registered solution upstreams
+	modules           *upstreamRegistry // runtime-registered composed-module REST upstreams
 	workContext       *workContextVerifier
 }
 
@@ -56,7 +57,8 @@ func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*u
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
-		solutions:         newSolutionRegistry(),
+		solutions:         newUpstreamRegistry(),
+		modules:           newUpstreamRegistry(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -144,10 +146,26 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Composed-module REST self-registration (/modules/_register): a privileged
+	// mutation authenticated on the X-Codefly-Internal-Token header, so it must
+	// run before withTrustedFrontendOrigin consumes and strips that header. It
+	// only stores a prefix→upstream mapping; every proxied module request below
+	// still runs the full auth pipeline.
+	if g.handleModuleRegister(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)
 	if entry == nil {
+		// The generated + explicit catalog is the authority and always wins:
+		// module federation is attempted ONLY once the catalog has no match, so
+		// a registered prefix can never shadow a catalog route. An unregistered
+		// /v1/<module>/* prefix falls through to the 404 below.
+		if g.handleFederatedModule(w, r) {
+			return
+		}
 		log.Printf("WARN: blocked request: method=%s path=%s reason=no_matching_route", r.Method, r.URL.Path)
 		httpError(w, http.StatusNotFound, "endpoint not exposed")
 		return

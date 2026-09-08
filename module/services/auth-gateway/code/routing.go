@@ -76,23 +76,39 @@ func LoadRESTExtensionsFromDir(ctx context.Context, dir string) ([]*RouteEntry, 
 	}
 
 	var entries []*RouteEntry
-	for _, route := range loader.All() {
-		if !route.Extension.Exposed {
-			return nil, fmt.Errorf("routing: extension %s %s must set exposed=true", route.Method, route.Path)
+	for _, group := range loader.Groups() {
+		// A folder extension's upstream is its owning service identity — the
+		// {module, service} the routing/rest/<module>/<service>/ directory
+		// declares — resolved through the same mapping the generated catalog
+		// uses (newRouteArtifactUpstream). This replaces a hardcoded
+		// Service: "accounts" constant so an extension folder added for another
+		// composition-local service routes to THAT service, not silently to
+		// accounts. The accounts folder resolves to the "accounts" upstream key
+		// via that function's accounts special-case, so existing routes are
+		// unchanged.
+		owner := &routeCatalogOwner{Module: group.Module, Service: group.Service}
+		if !validCatalogIdentity(owner.Module) || !validCatalogIdentity(owner.Service) {
+			return nil, fmt.Errorf("routing: extension group %q has an invalid service identity", group.ServiceUnique())
 		}
-		entry := &RouteEntry{
-			Service:   "accounts", // all routes currently go to the api service
-			Method:    string(route.Method),
-			Path:      route.Path,
-			Protected: route.Extension.Protected,
+		service := newRouteArtifactUpstream(owner, "rest", "rest").Key
+		for _, route := range group.Routes {
+			if !route.Extension.Exposed {
+				return nil, fmt.Errorf("routing: extension %s %s must set exposed=true", route.Method, route.Path)
+			}
+			entry := &RouteEntry{
+				Service:   service,
+				Method:    string(route.Method),
+				Path:      route.Path,
+				Protected: route.Extension.Protected,
+			}
+			if err := applyGeneratedAuthorizationMetadata(entry, authz); err != nil {
+				return nil, fmt.Errorf("routing: %s %s: %w", entry.Method, entry.Path, err)
+			}
+			if entry.Procedure != "" {
+				return nil, fmt.Errorf("routing: extension %s %s collides with generated descriptor procedure %s", entry.Method, entry.Path, entry.Procedure)
+			}
+			entries = append(entries, entry)
 		}
-		if err := applyGeneratedAuthorizationMetadata(entry, authz); err != nil {
-			return nil, fmt.Errorf("routing: %s %s: %w", entry.Method, entry.Path, err)
-		}
-		if entry.Procedure != "" {
-			return nil, fmt.Errorf("routing: extension %s %s collides with generated descriptor procedure %s", entry.Method, entry.Path, entry.Procedure)
-		}
-		entries = append(entries, entry)
 	}
 
 	log.Printf("routing: loaded %d explicit REST extensions from %s", len(entries), dir)
@@ -189,6 +205,48 @@ func (m *RouteMatcher) RequiredArtifactUpstreams() []routeArtifactUpstream {
 		result = append(result, byKey[key])
 	}
 	return result
+}
+
+// ReservedV1Prefixes returns the set of `/v1/<prefix>` first segments owned by
+// the loaded catalog (generated + explicit extensions). Runtime module
+// federation must never register one of these prefixes: the catalog is the
+// authority for its own surface, and a colliding registration would be a route
+// the matcher can never reach (catalog wins) — so it is rejected at
+// registration rather than silently ignored.
+func (m *RouteMatcher) ReservedV1Prefixes() map[string]struct{} {
+	reserved := make(map[string]struct{})
+	collect := func(path string) {
+		if prefix, ok := v1Prefix(path); ok {
+			reserved[prefix] = struct{}{}
+		}
+	}
+	for _, routes := range m.restRoutes {
+		for _, route := range routes {
+			collect(route.entry.Path)
+		}
+	}
+	for _, entry := range m.connectRoutes {
+		collect(entry.Path)
+	}
+	return reserved
+}
+
+// v1Prefix extracts the `<prefix>` from a `/v1/<prefix>/...` (or `/v1/<prefix>`)
+// path. It reports false for any path not under /v1/ or with an empty prefix.
+func v1Prefix(path string) (string, bool) {
+	const root = "/v1/"
+	if !strings.HasPrefix(path, root) {
+		return "", false
+	}
+	rest := path[len(root):]
+	prefix := rest
+	if idx := strings.IndexByte(rest, '/'); idx >= 0 {
+		prefix = rest[:idx]
+	}
+	if prefix == "" {
+		return "", false
+	}
+	return prefix, true
 }
 
 // MatchREST looks up a REST route by HTTP method and path.

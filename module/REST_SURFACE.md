@@ -15,10 +15,11 @@ The accounts projection contains 120 descriptor routes across 24 services:
 - 12 public routes and 108 authenticated routes;
 - 100 OpenAPI paths and 120 operations;
 - zero of the seven internal RPCs;
-- five explicit non-protobuf extensions loaded by auth-gateway: magic-link
-  request/verification, the billing webhook, checkout, and portal.
+- seven explicit non-protobuf extensions loaded by auth-gateway: magic-link
+  request/verification, the billing and Resend email webhooks, checkout,
+  free-plan, and portal.
 
-The generated runtime therefore authorizes 125 REST routes in total. Descriptor
+The generated runtime therefore authorizes 127 REST routes in total. Descriptor
 routes and extensions remain separate so an extension can never be mistaken
 for a protobuf procedure or inherit policy by path similarity.
 
@@ -33,7 +34,7 @@ for a protobuf procedure or inherit policy by path similarity.
 | `services/accounts/generated/rest-surface.json` | Typed target-neutral REST catalog. |
 | `services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go` | Accounts registration and exact/template allowlist. |
 | `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-sidecar descriptor REST inventory. |
-| `services/auth-gateway/routing/rest/saas-starter/api/non-protobuf-extensions.rest.codefly.yaml` | Five explicit routes without protobuf ownership. |
+| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Seven explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
 The strict binding file covers every surface service exactly once. Twenty-two
@@ -54,7 +55,7 @@ incomplete legacy raw-gRPC registration set.
 
 Auth-sidecar loads the 120 descriptor routes from generated Go and joins each
 one to generated authorization metadata by canonical procedure. One
-extension-only YAML file owns the five routes without protobuf procedures.
+extension-only YAML file owns the seven routes without protobuf procedures.
 Startup rejects disabled extension entries and any method/path collision with a
 descriptor route, so the file cannot become a shadow descriptor inventory.
 
