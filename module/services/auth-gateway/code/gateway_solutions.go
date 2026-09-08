@@ -42,6 +42,12 @@ func newUpstreamRegistry() *upstreamRegistry {
 	return &upstreamRegistry{upstreams: make(map[string]*url.URL)}
 }
 
+// set unconditionally writes key→upstream, LAST-write-wins: a re-registration
+// with a different upstream overwrites the previous one. This is the OPPOSITE
+// of claim (below), which is first-claim-wins and refuses a takeover. Use set
+// only where a later registration is meant to supersede an earlier one (solution
+// re-registration); use claim wherever a key must not be silently stealable by a
+// later caller sharing the cluster-internal token (module federation).
 func (s *upstreamRegistry) set(id string, upstream *url.URL) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

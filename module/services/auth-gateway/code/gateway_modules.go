@@ -133,10 +133,11 @@ func (g *Gateway) handleFederatedModule(w http.ResponseWriter, r *http.Request) 
 		return false
 	}
 
-	// Same identity discipline as every protected catalog route: drop
-	// caller-supplied identity, run ext_authz, and require a valid credential.
-	// A bearer-less call is denied here, so federation only adds a proxy target
-	// — it never widens the authenticated surface.
+	// Same discipline as every protected catalog route: drop caller-supplied
+	// identity, run ext_authz, require a valid credential, and subject the
+	// forwarded request to the same rate-limit budget (below). A bearer-less
+	// call is denied here, so federation only adds a proxy target — it never
+	// widens the authenticated surface, and it does not open an unmetered one.
 	stripAllIdentityHeaders(r)
 	checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
 	if err != nil {
@@ -163,16 +164,27 @@ func (g *Gateway) handleFederatedModule(w http.ResponseWriter, r *http.Request) 
 	// as solution passthrough does. Service is a "module:" pseudo-name so
 	// isAccountsRoute stays false and no gateway/public-origin credential is
 	// stamped for a federated upstream.
+	//
+	// Route through rateLimitThenProxy, not proxyTo directly: a federated data
+	// endpoint must consume the same per-org/per-IP budget as an equivalent
+	// catalog route (e.g. /v1/users), otherwise /v1/<module>/* would be an
+	// unmetered proxy an authenticated caller could flood past the org budget.
 	entry := &RouteEntry{Service: "module:" + prefix, Protected: true}
-	g.proxyTo(w, r, upstream, entry)
+	g.rateLimitThenProxy(w, r, upstream, entry)
 	return true
 }
 
 // meshHostSuffixes are the DNS suffixes that denote a composition-local
 // (cluster/mesh) upstream. A hostname ending in one of these is treated as
 // mesh-internal and allowed.
+//
+// ".localhost" is deliberately NOT here: a bare "localhost" is already allowed
+// by the single-label rule below, and Go's resolver does not RFC-6761
+// special-case "*.localhost" to loopback — it does a real DNS lookup. Listing
+// the suffix would admit multi-label names like "evil.localhost" that resolve
+// wherever their DNS points, for no legitimate mesh use.
 var meshHostSuffixes = []string{
-	".local", ".internal", ".svc", ".cluster.local", ".localhost",
+	".local", ".internal", ".svc", ".cluster.local",
 }
 
 // isDisallowedModuleUpstreamHost reports whether a module upstream host must be

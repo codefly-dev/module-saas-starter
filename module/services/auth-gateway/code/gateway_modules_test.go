@@ -68,6 +68,38 @@ func TestGateway_Module_Federated_ValidJWT_Proxied(t *testing.T) {
 	require.Empty(t, moduleFake.lastHeaders.Get("x-codefly-internal-token"))
 }
 
+// A federated route consumes the same per-org rate-limit budget as an
+// equivalent catalog route: it must NOT be an unmetered proxy. With a tiny
+// budget, a burst of authenticated requests to /v1/<module>/* eventually 429s,
+// exactly as a catalog route would. (Regression guard: the pre-fix code proxied
+// federated routes directly, bypassing the limiter, so this never 429'd.)
+func TestGateway_Module_Federated_RateLimited(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
+	gw.rateLimiter = NewRateLimiter(1)
+	moduleFake, upstream := newModuleUpstream(t)
+	require.Equal(t, http.StatusOK, registerModule(t, gw, "documents", upstream).Code)
+
+	// Reuse ONE token so every request keys on the same injected x-org-id.
+	token := signValidToken(t, priv)
+	got429 := false
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
+		req.Header.Set("authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		if w.Code == http.StatusTooManyRequests {
+			got429 = true
+			break
+		}
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+	require.True(t, got429, "federated module route must be subject to the rate-limit budget")
+	// The limiter rejects at the gateway; a throttled request never reaches the
+	// module upstream on that pass, but the earlier allowed ones did.
+	require.NotNil(t, moduleFake.lastHeaders)
+}
+
 // Security invariant: registration adds a proxy target, never an auth bypass. A
 // bearer-less call to a registered module prefix is denied at the gateway (401)
 // and the module upstream is never reached.
@@ -265,6 +297,7 @@ func TestIsDisallowedModuleUpstreamHost(t *testing.T) {
 		"169.254.169.254",          // link-local / metadata IP
 		"metadata.google.internal", // metadata hostname
 		"0.0.0.0",                  // unspecified
+		"evil.localhost",           // multi-label *.localhost is NOT loopback: real DNS lookup
 	}
 	for _, h := range disallowed {
 		require.Truef(t, isDisallowedModuleUpstreamHost(h), "%q should be rejected", h)

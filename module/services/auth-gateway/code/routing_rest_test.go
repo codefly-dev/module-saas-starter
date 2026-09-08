@@ -63,6 +63,11 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 	}
 	for _, entry := range extensions {
 		require.Empty(t, entry.Procedure)
+		// The upstream key is derived from the folder's {module, service}
+		// identity (routing/rest/saas-starter/accounts), not a hardcoded
+		// constant. It must resolve to the "accounts" upstream key, or these
+		// routes would proxy to an unconfigured upstream at runtime.
+		require.Equal(t, "accounts", entry.Service, "extension %s %s", entry.Method, entry.Path)
 		protected, exists := wantExtensions[entry.Method+" "+entry.Path]
 		require.True(t, exists, "unexpected extension %s %s", entry.Method, entry.Path)
 		require.Equal(t, protected, entry.Protected)
