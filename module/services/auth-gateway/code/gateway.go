@@ -44,7 +44,12 @@ type Gateway struct {
 	requiredUpstreams []string
 	solutions         *upstreamRegistry // runtime-registered solution upstreams
 	modules           *upstreamRegistry // runtime-registered composed-module REST upstreams
-	workContext       *workContextVerifier
+	// moduleTransport re-validates a federated module upstream's resolved address
+	// at dial time (SSRF / DNS-rebinding defense). Only federated module routes
+	// use it; catalog and solution upstreams are static trusted config and keep
+	// the default transport.
+	moduleTransport http.RoundTripper
+	workContext     *workContextVerifier
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -59,6 +64,7 @@ func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*u
 		requiredUpstreams: matcher.RequiredServices(),
 		solutions:         newUpstreamRegistry(),
 		modules:           newUpstreamRegistry(),
+		moduleTransport:   newModuleUpstreamTransport(net.DefaultResolver),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -334,6 +340,12 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		r.URL.RawPath = ""
 	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	if isFederatedModuleRoute(entry) && g.moduleTransport != nil {
+		// Federated module upstreams are runtime-registered and merely name a mesh
+		// host; re-validate the resolved address at dial time (SSRF / DNS-rebinding
+		// defense). Catalog and solution upstreams keep the default transport.
+		proxy.Transport = g.moduleTransport
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
 	}
