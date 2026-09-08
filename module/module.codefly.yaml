@@ -5,6 +5,9 @@ description: SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC
 service-entry: frontend
 interface:
     endpoints:
+        - service: accounts
+          endpoint: connect
+          visibility: module
         - service: auth-gateway
           endpoint: grpc
           visibility: module

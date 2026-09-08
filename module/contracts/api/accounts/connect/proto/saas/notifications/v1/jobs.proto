@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package saas.notifications.v1;
+
+import "buf/validate/validate.proto";
+
+// EmailDeliveryJob is the exact rendered message retained by the generic
+// outbox. Workers deliver these immutable bytes; they never reload a template
+// or reconstruct a security-sensitive link during a retry.
+message EmailDeliveryJob {
+  string delivery_key = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+  string from = 2 [(buf.validate.field).string = {
+    min_len: 3
+    max_len: 320
+  }];
+  repeated string to = 3 [(buf.validate.field).repeated = {
+    min_items: 1
+    max_items: 50
+    unique: true
+    items: {string: {
+      email: true
+      max_len: 320
+    }}
+  }];
+  string reply_to = 4 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string = {
+      email: true
+      max_len: 320
+    }
+  ];
+  string subject = 5 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 998
+  }];
+  string html_body = 6 [(buf.validate.field).string.max_len = 524288];
+  string text_body = 7 [(buf.validate.field).string.max_len = 524288];
+  map<string, string> tags = 8 [
+    (buf.validate.field).map.max_pairs = 10,
+    (buf.validate.field).map.keys = {string: {
+      min_len: 1
+      max_len: 64
+      pattern: "^[a-z][a-z0-9_-]*$"
+    }},
+    (buf.validate.field).map.values = {string: {
+      min_len: 1
+      max_len: 256
+    }}
+  ];
+}

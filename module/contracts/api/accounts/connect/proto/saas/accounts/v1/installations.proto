@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// Installation identity (issue #474)
+//
+// An installation is the composition that lets a solution act as itself with
+// signed, attributable, revocable authority — the "application permission" half
+// of the model beside delegated ("on behalf of a user") flows. It binds a per-org
+// agent Principal (the actor), a solution scope node (the authority root), the
+// agent's standing scope grant at that node, and an owner of record: a
+// reassignable, accountable human org admin. The headless mint that turns an
+// installation into a short-lived Work Context lives on WorkContextService
+// (StartInstallationTask) beside the other mints.
+// ============================================================================
+
+// InstallationStatus is the lifecycle of an installation row. An uninstall is a
+// soft delete (status=revoked, revoked_at set) so the agent, grants, and audit
+// trail remain resolvable.
+enum InstallationStatus {
+  INSTALLATION_STATUS_UNSPECIFIED = 0;
+  INSTALLATION_STATUS_ACTIVE = 1;
+  INSTALLATION_STATUS_REVOKED = 2;
+}
+
+// InstallationHealth is resolved live from current authority facts, never
+// stored. It is the observable form of the fail-closed mint rule: a
+// StartInstallationTask fails exactly when health is not HEALTHY, and transfer
+// or re-enable restores it. NO_ELIGIBLE_OWNER means neither the owner of record
+// nor any co-owner is currently an org admin (the Zapier-class "connection owner
+// left the org" failure), surfaced rather than silently reassigned.
+enum InstallationHealth {
+  INSTALLATION_HEALTH_UNSPECIFIED = 0;
+  INSTALLATION_HEALTH_HEALTHY = 1;
+  INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER = 2;
+  INSTALLATION_HEALTH_AGENT_REVOKED = 3;
+  INSTALLATION_HEALTH_AGENT_DISABLED = 4;
+  INSTALLATION_HEALTH_STANDING_GRANT_MISSING = 5;
+}
+
+// Installation is one solution's bound identity in an org. Server-assigned ids;
+// the browser cannot attest to tenancy, the agent principal, or the scope node.
+message Installation {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string org_id = 2 [(buf.validate.field).string.uuid = true];
+  string agent_principal_id = 3 [(buf.validate.field).string.uuid = true];
+  string solution_identifier = 4;
+  string owner_principal_id = 5 [(buf.validate.field).string.uuid = true];
+  repeated string co_owner_principal_ids = 6;
+  string root_scope_node_id = 7 [(buf.validate.field).string.uuid = true];
+  InstallationStatus status = 8;
+  google.protobuf.Timestamp created_at = 9;
+  optional google.protobuf.Timestamp revoked_at = 10;
+}
+
+message InstallSolutionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // Canonical "publisher/name:version" of the solution's agent. The agent
+  // Principal is created idempotently per version.
+  string agent_identifier = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  string solution_identifier = 3 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 512
+  ];
+  // Human display name for the agent principal. Empty defaults to the identifier.
+  string display_name = 4 [(buf.validate.field).string.max_len = 512];
+  // The authority-root scope path is derived server-side from the created node id
+  // (a depth-1 ltree label, ADR-0002), never chosen by the caller: a caller-picked
+  // path let two installs collide or nest one under another.
+  reserved 5;
+  reserved "root_scope_path";
+  // Human-readable display label for the solution's authority-root scope node
+  // (kind='solution'). The node's ltree path is derived server-side, not this.
+  string root_scope_label = 6 [(buf.validate.field).string.max_len = 512];
+  // The least-privilege role granted to the agent at the root node. This is
+  // deliberately NOT the full "<namespace>:catalog" role; widening is a separate,
+  // audited admin action.
+  string role_id = 7 [(buf.validate.field).string.uuid = true];
+  // The accountable human of record. Must be a current org admin. Empty defaults
+  // to the calling admin.
+  string owner_principal_id = 8 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
+  // Succession set: any one being a current org admin keeps the installation
+  // healthy. Each must be a human principal.
+  repeated string co_owner_principal_ids = 9 [
+    (buf.validate.field).repeated.max_items = 32,
+    (buf.validate.field).repeated.items.string.uuid = true
+  ];
+  // The agent's delegated-execution ceiling (migration 108): the Work Context
+  // audiences it may be minted for and the resource kinds it may ever touch.
+  // Empty = unrestricted.
+  repeated string allowed_audiences = 10 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.items.string.max_len = 512
+  ];
+  repeated string allowed_scopes = 11 [
+    (buf.validate.field).repeated.max_items = 64,
+    (buf.validate.field).repeated.items.string.max_len = 128
+  ];
+}
+
+message UninstallSolutionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message TransferInstallationOwnershipRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+  // The new owner of record. Must be a current org admin.
+  string new_owner_principal_id = 3 [(buf.validate.field).string.uuid = true];
+  // Replaces the co-owner succession set wholesale.
+  repeated string co_owner_principal_ids = 4 [
+    (buf.validate.field).repeated.max_items = 32,
+    (buf.validate.field).repeated.items.string.uuid = true
+  ];
+}
+
+message GetInstallationRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string installation_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+message GetInstallationResponse {
+  Installation installation = 1;
+  // Resolved live at read time from current authority facts.
+  InstallationHealth health = 2;
+}
+
+// InstallationService composes and administers installations. The headless mint
+// that turns an installation into a short-lived Work Context is
+// WorkContextService.StartInstallationTask.
+service InstallationService {
+  // InstallSolution composes an installation in one transaction: an idempotent
+  // agent Principal with its ceiling, a solution scope node, the agent's standing
+  // least-privilege grant at that node, and the installation row with its owner of
+  // record. Emits installation.created with the grantor and ceiling.
+  rpc InstallSolution(InstallSolutionRequest) returns (Installation) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "installation.created"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/installations"
+      body: "*"
+    };
+  }
+
+  // UninstallSolution reverses an install: it revokes the agent principal, removes
+  // its standing grant, and marks the installation revoked. The solution scope node
+  // is left in place (inert without a grant or a live agent) so a reinstall reuses
+  // it. Idempotent on an already-revoked installation.
+  rpc UninstallSolution(UninstallSolutionRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "installation.revoked"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}:uninstall"
+      body: "*"
+    };
+  }
+
+  // TransferInstallationOwnership reassigns the owner of record and replaces the
+  // co-owner succession set. This is how a "connection owner left the org"
+  // failure is repaired: an admin transfers the installation to a current admin,
+  // restoring its health.
+  rpc TransferInstallationOwnership(TransferInstallationOwnershipRequest) returns (Installation) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "installation.ownership_transferred"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/installations/{installation_id}:transferOwnership"
+      body: "*"
+    };
+  }
+
+  // GetInstallation returns one installation plus its live health, so an admin UI
+  // can see when an installation has gone unhealthy (owner offboarded, agent
+  // disabled, grant expired) before the next headless task fails closed.
+  rpc GetInstallation(GetInstallationRequest) returns (GetInstallationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_MEMBER
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/installations/{installation_id}"};
+  }
+}

@@ -53,6 +53,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 
 	renamedTopology := strings.Replace(string(topologyDocument), "      - name: connect\n", "      - name: connect-api\n", 1)
 	renamedTopology = strings.ReplaceAll(renamedTopology, "          - connect\n", "          - connect-api\n")
+	renamedTopology = strings.ReplaceAll(renamedTopology, "    endpoint: connect\n", "    endpoint: connect-api\n")
 	renamedRoutes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, []byte(renamedTopology))
 	require.NoError(t, err)
 	require.Equal(t, "connect-api", renamedRoutes.GetRoutes()[0].GetUpstreamEndpoint())
