@@ -28,7 +28,6 @@ import {
 	storeUserName,
 } from "./auth-session";
 import {
-	bootstrapRefresh,
 	setToken as setConnectToken,
 	setRefreshHandler,
 } from "./connect/token-store";
@@ -852,11 +851,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		//                 just stop loading. A later mid-session call, or a manual
 		//                 reload once the backend is warm, refreshes cleanly.
 		//
-		// bootstrapRefresh single-flights this across StrictMode's double-invoked
-		// effect and any fast remount, so overlapping bootstraps present the cookie
-		// once, not twice (which would itself trip reuse detection).
+		// exchangeRefreshCookie coalesces this onto a single in-flight rotation
+		// (`inflightExchange`), so StrictMode's double-invoked effect, any fast
+		// remount, and a bootstrap-vs-interceptor race all present the cookie once,
+		// not twice (which would itself trip reuse detection). The `cancelled` flag
+		// only suppresses this effect's state writes after unmount — it does not
+		// cancel the shared exchange, which a still-mounted caller may be awaiting.
 		let cancelled = false;
-		void bootstrapRefresh(exchangeRefreshCookie).then((outcome) => {
+		void exchangeRefreshCookie().then((outcome) => {
 			if (cancelled) return;
 			if (outcome.status === "ok") {
 				setTokens(outcome.accessToken, outcome.refreshToken);
