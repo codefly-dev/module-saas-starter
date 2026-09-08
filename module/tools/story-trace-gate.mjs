@@ -18,6 +18,15 @@
 //
 //   node tools/story-trace-gate.mjs check --page <handbook-page.md>
 //
+// That comparison needs the page, so it belongs wherever the page and this
+// tree sit together — a composed workspace has both, and this tool ships with
+// the module for exactly that. Where only the tree is available, `tests` runs
+// the half that needs no page: that every story test here is present and
+// actually runs. It deliberately does not report on the page comparison, since
+// a check that quietly stands in for one it never made is worse than none.
+//
+//   node tools/story-trace-gate.mjs tests
+//
 // The module root is the parent of tools/, so this works identically in
 // canonical's `module/` and a consumer's `modules/<name>/`.
 
@@ -155,6 +164,33 @@ function collectTests() {
   return stories;
 }
 
+// Errors that need no page: a story test that skips itself proves nothing, and
+// a tree with no story tests at all has lost them rather than earned silence.
+export function storyTestErrors(inTests) {
+  if (inTests.size === 0) {
+    return ["no TestStory_HOST_* acceptance tests found; refusing to pass vacuously"];
+  }
+  return [...inTests.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .filter(([, test]) => test.skipped)
+    .map(([story, test]) => `${test.named} names ${story} but skips itself, so the story is unproven`);
+}
+
+function tests() {
+  const collected = collectTests();
+  const errors = storyTestErrors(collected);
+  if (errors.length > 0) {
+    for (const error of errors) {
+      console.error(`error: ${error}`);
+    }
+    process.exit(1);
+  }
+  console.log(
+    `story tests OK: ${collected.size} stories have a test that runs ` +
+      `(the comparison against the functional page runs where that page is available)`,
+  );
+}
+
 function check(pagePath) {
   const onPage = storiesOnPage(readFileSync(pagePath, "utf8"));
   if (onPage.size === 0) {
@@ -173,9 +209,15 @@ function check(pagePath) {
 
 if (process.argv[1] === SCRIPT_PATH) {
   const [command, flag, pagePath] = process.argv.slice(2);
-  if (command !== "check" || flag !== "--page" || !pagePath) {
-    console.error("usage: node tools/story-trace-gate.mjs check --page <handbook-page.md>");
+  if (command === "tests") {
+    tests();
+  } else if (command === "check" && flag === "--page" && pagePath) {
+    check(pagePath);
+  } else {
+    console.error(
+      "usage: node tools/story-trace-gate.mjs check --page <handbook-page.md>\n" +
+        "       node tools/story-trace-gate.mjs tests",
+    );
     process.exit(2);
   }
-  check(pagePath);
 }

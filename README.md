@@ -13,13 +13,17 @@ The organization handbook carries this module's functional page,
 
 Neither side is free to drift from the other. The handbook renders its
 Interface block from this repository's own generated catalog
-(`module/services/accounts/generated/service-catalog.json`) at the commit a
-release announces, and CI here fails when a story on that page has no
-acceptance test (`TestStory_HOST_…`), when a test names a story the page does
-not carry, or when a story's test skips itself. Reading the page needs the
-`HANDBOOK_REPOSITORY` variable and the `HANDBOOK_READ_TOKEN` secret; without
-them the check fails rather than passing quietly, because a trace that never
-ran is not a trace that passed.
+(`module/services/accounts/generated/service-catalog.json`) at the release a
+workspace has pinned. Each story on the page is named by an acceptance test
+here (`TestStory_HOST_…`), and the comparison in both directions — a story with
+no test, a test naming a story the page dropped — is
+`module/tools/story-trace-gate.mjs`, which ships with the module and runs
+wherever the page and this tree sit together.
+
+CI here runs the half that needs no page: every story test is present and
+actually runs, so a story cannot be quietly retired into a skipped test. It
+does not report on the page comparison, because a check standing in for one it
+never made is worse than none.
 
 ## What it owns
 

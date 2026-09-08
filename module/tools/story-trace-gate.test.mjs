@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { storiesInSource, storiesOnPage, storyTraceErrors } from "./story-trace-gate.mjs";
+import {
+  storiesInSource,
+  storiesOnPage,
+  storyTestErrors,
+  storyTraceErrors,
+} from "./story-trace-gate.mjs";
 
 const page = `# saas-starter — the host
 
@@ -109,4 +114,28 @@ test("a test naming a story the page dropped fails", () => {
   const errors = storyTraceErrors(storiesOnPage(page), tests);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /audit_test\.go:TestStory_HOST_AUD_001 names HOST-AUD-001/);
+});
+
+test("the page-free half rejects a story test that skips itself", () => {
+  const errors = storyTestErrors(
+    new Map([
+      ["HOST-ID-001", { named: "identity_test.go:TestStory_HOST_ID_001", skipped: false }],
+      ["HOST-JOB-001", { named: "jobs_test.go:TestStory_HOST_JOB_001", skipped: true }],
+    ]),
+  );
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /HOST-JOB-001 but skips itself/);
+});
+
+test("the page-free half passes when every story test runs", () => {
+  const errors = storyTestErrors(
+    new Map([["HOST-ID-001", { named: "identity_test.go:TestStory_HOST_ID_001", skipped: false }]]),
+  );
+  assert.deepEqual(errors, []);
+});
+
+test("a tree with no story tests fails rather than passing vacuously", () => {
+  const errors = storyTestErrors(new Map());
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /refusing to pass vacuously/);
 });

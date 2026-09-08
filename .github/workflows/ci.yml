@@ -82,7 +82,7 @@ jobs:
         run: go test -run 'Lockstep|RequiredCapabilities|ScanHandlers|EnforcementAllowlist' ./pkg/adapters/
 
   docs-sync:
-    name: Interface docs and story trace
+    name: Interface docs and story tests
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -96,36 +96,14 @@ jobs:
         run: node --test module/tools/story-trace-gate.test.mjs
       - name: Require a readable summary on every public operation
         run: node module/tools/interface-docs-gate.mjs check
-      - name: Trace every story on the functional page to an acceptance test
-        shell: bash
-        env:
-          # The handbook repository is named by configuration, never in the
-          # tree: this module must carry no build-time or documentation-level
-          # knowledge of who consumes it (AGENTS.md, "Naming and
-          # confidentiality").
-          HANDBOOK_REPOSITORY: ${{ vars.HANDBOOK_REPOSITORY }}
-          HANDBOOK_PAGE: ${{ vars.HANDBOOK_PAGE }}
-          GH_TOKEN: ${{ secrets.HANDBOOK_READ_TOKEN }}
-          # A pull request from a fork is never given secrets, so the trace is
-          # structurally impossible there; the same commit is traced again on
-          # the merge to main. Renders empty on push and tag events.
-          FORK_PULL_REQUEST: ${{ github.event.pull_request.head.repo.fork }}
-        run: |
-          if [[ -z "${HANDBOOK_REPOSITORY}" || -z "${GH_TOKEN}" ]]; then
-            if [[ "${FORK_PULL_REQUEST}" == "true" ]]; then
-              echo "::warning::a fork pull request cannot read the functional page; the story trace runs on the merge to main"
-              exit 0
-            fi
-            # Passing here would report a guarantee nobody checked: the job is
-            # named for the trace, and a green trace that never ran is worse
-            # than a red one that says what is missing.
-            echo "::error::the story trace cannot read the functional page. Set the HANDBOOK_REPOSITORY repository variable (owner/repo) and the HANDBOOK_READ_TOKEN secret (contents:read on that repository); HANDBOOK_PAGE overrides the default page path."
-            exit 1
-          fi
-          page="${HANDBOOK_PAGE:-modules/saas-starter.md}"
-          gh api "repos/${HANDBOOK_REPOSITORY}/contents/${page}?ref=main" \
-            --jq .content | base64 -d > "${RUNNER_TEMP}/functional-page.md"
-          node module/tools/story-trace-gate.mjs check --page "${RUNNER_TEMP}/functional-page.md"
+      - name: Require every story test to be present and to run
+        # The comparison against the functional page needs that page, which
+        # this repository has no credentialed way to read and, by AGENTS.md,
+        # may not name. It runs where the page and this tree sit together — a
+        # composed workspace pins this module by tag and holds both. What runs
+        # here is the half that needs nothing external, and the step claims
+        # only that.
+        run: node module/tools/story-trace-gate.mjs tests
 
   provider-shim:
     name: Provider setup shims

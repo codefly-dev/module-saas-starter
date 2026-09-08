@@ -17,7 +17,7 @@
     "METHOD_POLICY.md": "2096ae13eaffe5f6986881ef564dd1114b688179771b3e92fe9a78dd70093299",
     "PRODUCT_ANALYTICS.md": "5a6d5162a9b2be5e03514ca874486a220a69756a06c90091f9737dc249980039",
     "REST_SURFACE.md": "50a3daae90536acf809181ec9cdc28f849719dba4fb35cbaa2c07760679eeb39",
-    "SERVICE_CATALOG.md": "1e397ed3c2f3f8335b1ca2cf48fe035c542178fcbdb813618653fab2a097531a",
+    "SERVICE_CATALOG.md": "06c0506d704c2da330e99c0678a74510846ddbac11e160dc0aa3a7264a212499",
     "SETTINGS.md": "3943cb4769378fd46225bb9e04707e8f98f893030b90134193c857fb5cd16848",
     "SIGNOZ_PROVISIONING.md": "638b130171e3521d6f5c336ca9211823fa63bd4172429b7faac963bdc1054bf0",
     "TRUST_CAPABILITIES.md": "c5a1ed15f2e0933c4a47c64baff13adb007db53ed4203baf9a02425bb557debb",
@@ -2109,7 +2109,7 @@
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
     "tools/rls-migration-gate.mjs": "fd258aca45acc801b35e3abd1ae70518f8e62f44ef7c03f7ca6e7a9b9422bb03",
     "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f",
-    "tools/story-trace-gate.mjs": "2b9ca719fe6582f4778ca7b8f4793035dc20b6764c6b9546013929477819e461",
-    "tools/story-trace-gate.test.mjs": "195fe78b3345a99dffaf3ba7bf4bbcc6742606327d03f4d6a39d279bc8541d46"
+    "tools/story-trace-gate.mjs": "48fdeb8d7618aca4629185066c665915662aa221f8abb7310673e4ba2b59d565",
+    "tools/story-trace-gate.test.mjs": "533fe446ad510aecd2ac8c0b6aab6ec0c8740752155512bd18e45bad387d9f66"
   }
 }

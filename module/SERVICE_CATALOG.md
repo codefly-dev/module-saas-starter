@@ -196,8 +196,14 @@ and owns the *what*; the user stories on it are traced to acceptance tests here
 by `tools/story-trace-gate.mjs`. The trace is symmetric — a story with no test
 and a test naming an absent story both fail — and a test that declares a story
 and then skips itself counts as unproven, since a declaration is not evidence.
-The trace needs read access to the page, and fails when it does not have it
-rather than reporting an unchecked guarantee as green.
+
+`check --page` makes that comparison and therefore needs the page, so it runs
+where the page and this tree are both available; the tool ships with the module
+and resolves its root as the parent of `tools/`, so a composed workspace runs it
+unchanged. `tests` runs the half that needs no page — every story test present
+and running — and is what this repository's own CI gates on. The split is
+deliberate: a step that silently substitutes the weaker check for the stronger
+one would report a guarantee nobody made.
 
 ## Current editorial exception
 
