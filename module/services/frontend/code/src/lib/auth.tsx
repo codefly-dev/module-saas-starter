@@ -28,6 +28,7 @@ import {
 	storeUserName,
 } from "./auth-session";
 import {
+	bootstrapRefresh,
 	setToken as setConnectToken,
 	setRefreshHandler,
 } from "./connect/token-store";
@@ -752,16 +753,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
-		// cookie the browser sends automatically (credentials: "include"). If the
-		// cookie is absent/expired the request fails and we land unauthenticated.
-		exchangeRefreshCookie().then((outcome) => {
+		// cookie the browser sends automatically (credentials: "include").
+		//
+		// EXACTLY ONE exchange. The refresh token is single-use and rotates on the
+		// server the moment the exchange is accepted, so the cookie must never be
+		// presented twice: `/v1/auth/refresh` is reached through a Next same-origin
+		// rewrite, so a cold-start failure (the gateway proxy is up, the backend is
+		// still warming) comes back as a same-origin 5xx *response* — not a network
+		// throw — carrying the cookie the browser already sent. Retrying on that
+		// re-presents the just-rotated single-use token; to the backend that is
+		// refresh-token reuse, and under the strict OWASP rotation policy it revokes
+		// the entire session family across every device. A warm-up hiccup would then
+		// forcibly log the user out everywhere — far worse than the spurious single
+		// re-login the old retry loop was trying to avoid. So we exchange once and
+		// classify the single outcome:
+		//   ok          → adopt the new tokens.
+		//   expired     → the backend authoritatively rejected the session
+		//                 (401/403); tear down and land unauthenticated.
+		//   unavailable → transient (5xx / network / cold start); the httpOnly
+		//                 cookie is untouched and still valid, so DO NOT clear it —
+		//                 just stop loading. A later mid-session call, or a manual
+		//                 reload once the backend is warm, refreshes cleanly.
+		//
+		// bootstrapRefresh single-flights this across StrictMode's double-invoked
+		// effect and any fast remount, so overlapping bootstraps present the cookie
+		// once, not twice (which would itself trip reuse detection).
+		let cancelled = false;
+		void bootstrapRefresh(exchangeRefreshCookie).then((outcome) => {
+			if (cancelled) return;
 			if (outcome.status === "ok") {
 				setTokens(outcome.accessToken, outcome.refreshToken);
 				return;
 			}
-			clearRefreshToken();
+			if (outcome.status === "expired") {
+				clearRefreshToken();
+			}
+			// expired → cleared above; unavailable → keep the still-valid cookie.
+			// Either way, boot is done: drop the loading state.
 			setState((s) => ({ ...s, isLoading: false }));
 		});
+		return () => {
+			cancelled = true;
+		};
 	}, [setTokens]);
 
 	useEffect(() => {

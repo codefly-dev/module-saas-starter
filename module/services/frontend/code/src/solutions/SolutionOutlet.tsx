@@ -135,6 +135,27 @@ function hostInstance(): ModuleFederation {
 const registeredEntries = new Map<string, string>();
 const remoteComponents = new Map<string, ComponentType<SolutionPageProps>>();
 
+// A cold-start race shows up as a FETCH failure: the manifest / remoteEntry
+// request loses to a still-warming backend and Module Federation throws
+// "Failed to fetch" / "Failed to get manifest ...". Those are worth retrying —
+// the very next fetch usually wins. Everything else is deterministic and will
+// fail identically on every attempt: the remote loaded but exposed no default,
+// or its module threw while evaluating (a real bug in the remote), or the
+// manifest 404s because the URL is wrong. Retrying those just pins the user on
+// the loading spinner for the full backoff budget (~5s of setTimeouts) and
+// hammers registerRemotes, only to surface the same error. Retry ONLY the
+// transient fetch failures; surface deterministic errors immediately.
+function isTransientRemoteLoadError(err: unknown): boolean {
+	const message =
+		err instanceof Error ? err.message : typeof err === "string" ? err : "";
+	// Match the network/manifest-fetch failure signatures MF surfaces on a lost
+	// cold-start race. A remote that responds with a 404/500 for the manifest is
+	// still a fetch-layer failure that a retry can win once the backend is warm.
+	return /failed to fetch|failed to get manifest|failed to get remote|networkerror|load failed|err_|fetch failed/i.test(
+		message,
+	);
+}
+
 /**
  * Resolve the lazy component for a remote. Declared at module scope (not in
  * render) so each remote's component is created once and stays stable across
@@ -159,13 +180,53 @@ function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProp
 	}
 	const moduleKey = `${remote.id}/${remote.exposedModule.replace(/^\.\//, "")}`;
 	const component = lazy(async () => {
-		const mod = await federation.loadRemote<{
-			default: ComponentType<SolutionPageProps>;
-		}>(moduleKey);
-		if (!mod?.default) {
-			throw new Error(`solution remote "${remote.id}" exposed no default`);
+		// The manifest fetch can lose a cold-start race (the remote's backend and
+		// this dev route both warming up), throwing "Failed to get manifest /
+		// Failed to fetch". React.lazy caches the first rejection for the life of
+		// the component, so a single transient miss pins the solution to its error
+		// boundary even though the very next fetch succeeds. Retry ONLY those
+		// transient fetch failures, with backoff, re-registering the entry each
+		// time so Module Federation drops its cached failed snapshot and re-fetches.
+		// A deterministic failure (no default, remote threw, bad URL) breaks out
+		// immediately — see isTransientRemoteLoadError. On final failure the cached
+		// lazy is evicted so a remount can retry rather than being pinned to it.
+		const maxAttempts = 6;
+		let lastErr: unknown;
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
+			try {
+				const mod = await federation.loadRemote<{
+					default: ComponentType<SolutionPageProps>;
+				}>(moduleKey);
+				if (!mod?.default) {
+					throw new Error(`solution remote "${remote.id}" exposed no default`);
+				}
+				return { default: mod.default };
+			} catch (err) {
+				lastErr = err;
+				// A deterministic failure (no default, remote module threw, bad URL)
+				// will repeat on every attempt. Don't burn the retry budget on it —
+				// evict the cached lazy so a later remount re-attempts from scratch,
+				// then surface it now.
+				if (!isTransientRemoteLoadError(err)) {
+					break;
+				}
+				if (attempt === maxAttempts - 1) {
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+				federation.registerRemotes(
+					[{ name: remote.id, entry: remote.manifestUrl }],
+					{ force: true },
+				);
+			}
 		}
-		return { default: mod.default };
+		// React.lazy caches this factory's rejection for the life of the component
+		// instance, so the cached lazy is now permanently failed. Evict it so a
+		// remount (the user navigating back, or the error boundary being reset)
+		// builds a fresh lazy and retries, instead of being pinned to this failure
+		// for the life of the process even after the backend is healthy.
+		remoteComponents.delete(key);
+		throw lastErr;
 	});
 	remoteComponents.set(key, component);
 	return component;
