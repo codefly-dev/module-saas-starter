@@ -14,24 +14,38 @@ package main
 // projection as a protected catalog route, so a bearer-less call is denied at
 // the gateway (401) regardless of what is registered.
 //
-// Trust model: registration is gated on the cluster-internal token — a single
-// SHARED secret (see Sidecar.acceptsInternalToken), the same credential the
-// frontend and solutions present. There is no per-module cryptographic identity,
-// so the gateway cannot prove a caller "owns" the prefix it registers. The
-// enforceable guardrails below are therefore: authenticated (internal token),
-// well-formed single-segment prefix, first-claim-wins (a prefix already held by
-// a different upstream cannot be taken over), never shadowing the catalog, and a
-// composition-local (mesh) upstream only. Stronger per-caller binding would
-// require per-module credentials and is a deliberate follow-up, mirroring the
-// solution registry's documented shared-token limitation.
+// Trust model: registration is gated on a per-module cryptographic identity, not
+// the shared cluster-internal token. The caller presents a signed registration
+// token (X-Codefly-Module-Registration) that binds a module identity (its `sub`)
+// to exactly one prefix; the gateway verifies it with the same alg-locked Ed25519
+// discipline as an access token (audience-locked to module registration, so an
+// access token can never be replayed as a registration credential and vice
+// versa). A module holding a token for "documents" therefore cannot register
+// "billing" — the shared secret gave no such per-caller binding. The enforceable
+// guardrails below are: authenticated AND prefix-bound (signed token), well-formed
+// single-segment prefix, first-claim-wins (a prefix already held by a different
+// upstream cannot be taken over), never shadowing the catalog, and a
+// composition-local (mesh) upstream only.
+//
+// The token binds the prefix (a module's stable identity), not the upstream URL,
+// which is chosen at runtime (loopback in dev, cluster DNS in prod) and would be
+// brittle to pin. The upstream is instead constrained by the mesh-host guard at
+// register time and — because a registrant is no longer trusted to name mesh
+// hosts that later resolve off-mesh — by a resolve-time address check at proxy
+// dial time (isAllowedResolvedModuleIP), which closes the DNS-rebinding window a
+// name-only check leaves open.
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/codes"
 )
 
@@ -49,12 +63,17 @@ func (g *Gateway) handleModuleRegister(w http.ResponseWriter, r *http.Request) b
 		return true
 	}
 
-	// Guardrail 1 — authenticated. Registration decides where authenticated
-	// module traffic (bearer + injected identity) is forwarded, so it requires
-	// the cluster-internal token. acceptsInternalToken fails closed on an
-	// empty/unset credential, so an unauthenticated edge caller can never point
+	// Guardrail 1 — per-module cryptographic identity. Registration decides where
+	// authenticated module traffic (bearer + injected identity) is forwarded, so
+	// the caller must prove — with a signed, per-module registration token rather
+	// than the shared cluster-internal secret — that it owns the prefix it claims.
+	// verifyModuleRegistration fails closed on a missing/unset key, bad signature,
+	// wrong audience, or expiry, so an unauthenticated edge caller can never point
 	// a prefix at an attacker-controlled upstream and harvest forwarded bearers.
-	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+	// The prefix→identity binding itself is enforced below, once the payload prefix
+	// is known.
+	claims, ok := g.sidecar.verifyModuleRegistration(r.Header.Get(moduleRegistrationHeader))
+	if !ok {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -74,6 +93,16 @@ func (g *Gateway) handleModuleRegister(w http.ResponseWriter, r *http.Request) b
 	// module prefix (e.g. "documents"), never a path or a foreign nested route.
 	if !validCatalogIdentity(payload.Prefix) {
 		httpError(w, http.StatusBadRequest, "invalid prefix")
+		return true
+	}
+
+	// Guardrail 1 (binding) — the registration token authorizes exactly one
+	// prefix. Reject a caller trying to register any other prefix, even with an
+	// otherwise-valid token: this is the per-module binding the shared secret
+	// lacked. (Both sides are already validated identity segments, so the prefix
+	// is not secret and a plain compare is fine.)
+	if claims.Prefix != payload.Prefix {
+		httpError(w, http.StatusForbidden, "prefix not authorized for this identity")
 		return true
 	}
 
@@ -169,9 +198,19 @@ func (g *Gateway) handleFederatedModule(w http.ResponseWriter, r *http.Request) 
 	// endpoint must consume the same per-org/per-IP budget as an equivalent
 	// catalog route (e.g. /v1/users), otherwise /v1/<module>/* would be an
 	// unmetered proxy an authenticated caller could flood past the org budget.
-	entry := &RouteEntry{Service: "module:" + prefix, Protected: true}
+	entry := &RouteEntry{Service: moduleServicePrefix + prefix, Protected: true}
 	g.rateLimitThenProxy(w, r, upstream, entry)
 	return true
+}
+
+// moduleServicePrefix marks the RouteEntry.Service of a federated module route.
+const moduleServicePrefix = "module:"
+
+// isFederatedModuleRoute reports whether entry describes a runtime-registered
+// module upstream (as opposed to a static catalog or solution route). Only these
+// get the resolve-time-validating transport in proxyTo.
+func isFederatedModuleRoute(entry *RouteEntry) bool {
+	return entry != nil && strings.HasPrefix(entry.Service, moduleServicePrefix)
 }
 
 // meshHostSuffixes are the DNS suffixes that denote a composition-local
@@ -220,4 +259,131 @@ func isDisallowedModuleUpstreamHost(host string) bool {
 		}
 	}
 	return true
+}
+
+// --- Per-module cryptographic identity ---
+
+// moduleRegistrationHeader carries the signed per-module registration token.
+const moduleRegistrationHeader = "X-Codefly-Module-Registration"
+
+// moduleRegistrationAudience scopes a registration token to this single purpose.
+// Access tokens carry aud "saas-starter"; registration tokens carry this. Even
+// though both may be minted under the same Ed25519 key, the audience check makes
+// the two non-interchangeable — a stolen access token cannot register a prefix,
+// and a registration token cannot authenticate a user.
+const moduleRegistrationAudience = "module-registration"
+
+// moduleRegistrationClaims is the signed assertion a module presents to register
+// its prefix. `sub` is the module identity; Prefix is the single catalog-identity
+// segment that identity is authorized to claim. The token binds the two
+// cryptographically, so a module holding a token for "documents" cannot register
+// "billing".
+type moduleRegistrationClaims struct {
+	jwt.RegisteredClaims
+	Prefix string `json:"prefix"`
+}
+
+// verifyModuleRegistration parses and validates a module registration token with
+// the same alg-locked Ed25519 discipline as an access token (issuer + expiry +
+// this module-registration audience). It returns the verified claims. It fails
+// closed: a nil sidecar, an unset signing key, an empty/bad token, a wrong or
+// absent audience, or an expired token all yield ok=false.
+func (s *Sidecar) verifyModuleRegistration(tokenString string) (*moduleRegistrationClaims, bool) {
+	if s == nil || s.publicKey == nil || tokenString == "" {
+		return nil, false
+	}
+	claims := &moduleRegistrationClaims{}
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"EdDSA"}),
+		jwt.WithIssuer(s.issuer),
+		jwt.WithAudience(moduleRegistrationAudience),
+		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(tokenClockSkewLeeway),
+	)
+	token, err := parser.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
+		if t.Method.Alg() != "EdDSA" {
+			return nil, fmt.Errorf("alg forbidden: %s", t.Method.Alg())
+		}
+		return s.publicKey, nil
+	})
+	if err != nil || !token.Valid {
+		return nil, false
+	}
+	return claims, true
+}
+
+// --- Resolve-time SSRF / DNS-rebinding defense for module upstreams ---
+
+// moduleResolver is the DNS surface the module dial guard needs. *net.Resolver
+// satisfies it; tests inject a stub to exercise rebinding deterministically.
+type moduleResolver interface {
+	LookupIPAddr(ctx context.Context, host string) ([]net.IPAddr, error)
+}
+
+// newModuleUpstreamTransport returns a reverse-proxy transport that re-validates
+// a module upstream's RESOLVED address at dial time. A registrant names only a
+// mesh host string, checked at register time (isDisallowedModuleUpstreamHost);
+// but a name it controls can resolve off-mesh at proxy time (DNS rebinding). This
+// transport resolves the host, rejects the dial unless every resolved address is
+// mesh-local, then connects to a validated IP directly — never re-resolving — so
+// the address dialed is exactly the one just checked.
+func newModuleUpstreamTransport(resolver moduleResolver) *http.Transport {
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	base.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		addrs, err := resolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateResolvedModuleAddrs(addrs); err != nil {
+			return nil, err
+		}
+		// Pin the connection to an address we just validated: dial the resolved
+		// IPs directly rather than re-resolving the hostname, so a DNS answer that
+		// changes between the check and the connect cannot slip an off-mesh
+		// address past the guard.
+		var lastErr error
+		for _, a := range addrs {
+			conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(a.IP.String(), port))
+			if err == nil {
+				return conn, nil
+			}
+			lastErr = err
+		}
+		return nil, lastErr
+	}
+	return base
+}
+
+// validateResolvedModuleAddrs fails closed unless every resolved address is
+// mesh-local. An empty result, or any single off-mesh address in the set,
+// rejects the whole dial: a rebinding answer that mixes a benign and a forbidden
+// IP must not earn a retry to the forbidden one.
+func validateResolvedModuleAddrs(addrs []net.IPAddr) error {
+	if len(addrs) == 0 {
+		return fmt.Errorf("module upstream did not resolve to any address")
+	}
+	for _, a := range addrs {
+		if !isAllowedResolvedModuleIP(a.IP) {
+			return fmt.Errorf("forbidden module upstream address: %s", a.IP)
+		}
+	}
+	return nil
+}
+
+// isAllowedResolvedModuleIP is the resolve-time counterpart to the register-time
+// host-string guard (isDisallowedModuleUpstreamHost): it re-checks the ACTUAL
+// address a module hostname resolved to. Only loopback and private (RFC1918 /
+// ULA) ranges are composition-local; the unspecified, link-local (covering the
+// 169.254.169.254 cloud-metadata IP), and every globally routable address are
+// rejected.
+func isAllowedResolvedModuleIP(ip net.IP) bool {
+	if ip == nil || ip.IsUnspecified() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate()
 }

@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
+	"crypto/ed25519"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,13 +26,33 @@ func newModuleUpstream(t *testing.T) (*fakeUpstream, string) {
 	return fake, srv.URL
 }
 
-// registerModule POSTs /modules/_register with the cluster-internal token and
-// returns the response recorder.
-func registerModule(t *testing.T, gw *Gateway, prefix, upstream string) *httptest.ResponseRecorder {
+// signModuleRegistrationToken mints a per-module registration token binding the
+// module identity to a single prefix, signed with the same Ed25519 key the
+// harness configures as the sidecar's public key.
+func signModuleRegistrationToken(t *testing.T, priv ed25519.PrivateKey, prefix string) string {
+	t.Helper()
+	c := moduleRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "saas-starter",
+			Subject:   "module:" + prefix,
+			Audience:  jwt.ClaimStrings{moduleRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+		},
+		Prefix: prefix,
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c).SignedString(priv)
+	require.NoError(t, err)
+	return signed
+}
+
+// registerModule POSTs /modules/_register with a per-module registration token
+// bound to prefix, and returns the response recorder.
+func registerModule(t *testing.T, gw *Gateway, priv ed25519.PrivateKey, prefix, upstream string) *httptest.ResponseRecorder {
 	t.Helper()
 	body := fmt.Sprintf(`{"prefix":%q,"upstream":%q}`, prefix, upstream)
 	req := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(body))
-	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	req.Header.Set(moduleRegistrationHeader, signModuleRegistrationToken(t, priv, prefix))
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	return w
@@ -45,7 +70,7 @@ func TestGateway_Module_Federated_ValidJWT_Proxied(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	moduleFake, upstream := newModuleUpstream(t)
 
-	regResp := registerModule(t, gw, "documents", upstream)
+	regResp := registerModule(t, gw, priv, "documents", upstream)
 	require.Equal(t, http.StatusOK, regResp.Code)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
@@ -78,7 +103,7 @@ func TestGateway_Module_Federated_RateLimited(t *testing.T) {
 	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
 	gw.rateLimiter = NewRateLimiter(1)
 	moduleFake, upstream := newModuleUpstream(t)
-	require.Equal(t, http.StatusOK, registerModule(t, gw, "documents", upstream).Code)
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", upstream).Code)
 
 	// Reuse ONE token so every request keys on the same injected x-org-id.
 	token := signValidToken(t, priv)
@@ -104,9 +129,9 @@ func TestGateway_Module_Federated_RateLimited(t *testing.T) {
 // bearer-less call to a registered module prefix is denied at the gateway (401)
 // and the module upstream is never reached.
 func TestGateway_Module_Federated_NoToken_Denied(t *testing.T) {
-	gw, _, _, _ := newGatewayHarness(t)
+	gw, _, _, priv := newGatewayHarness(t)
 	moduleFake, upstream := newModuleUpstream(t)
-	require.Equal(t, http.StatusOK, registerModule(t, gw, "documents", upstream).Code)
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", upstream).Code)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
 	w := httptest.NewRecorder()
@@ -131,26 +156,45 @@ func TestGateway_Module_Unregistered_NotFound(t *testing.T) {
 }
 
 // ============================================================================
-// Guardrail 1 — authenticated: registration requires the cluster-internal token.
+// Guardrail 1 — per-module cryptographic identity: registration requires a
+// valid signed registration token, and that token binds the caller to exactly
+// one prefix.
 // ============================================================================
 
-func TestGateway_ModuleRegister_RequiresInternalToken(t *testing.T) {
+// Registration is gated on the signed per-module token, NOT the shared
+// cluster-internal secret: a missing token, a malformed token, and a token
+// signed for the wrong purpose (a user access token) are all rejected, and
+// nothing is registered.
+func TestGateway_ModuleRegister_RequiresRegistrationToken(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 	moduleFake, upstream := newModuleUpstream(t)
 	body := fmt.Sprintf(`{"prefix":"documents","upstream":%q}`, upstream)
 
-	// No token.
-	noTok := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(body))
-	w := httptest.NewRecorder()
-	gw.ServeHTTP(w, noTok)
-	require.Equal(t, http.StatusUnauthorized, w.Code)
+	post := func(setHeader func(*http.Request)) int {
+		req := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(body))
+		if setHeader != nil {
+			setHeader(req)
+		}
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		return w.Code
+	}
 
-	// Wrong token.
-	badTok := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(body))
-	badTok.Header.Set("X-Codefly-Internal-Token", "not-the-token")
-	w = httptest.NewRecorder()
-	gw.ServeHTTP(w, badTok)
-	require.Equal(t, http.StatusUnauthorized, w.Code)
+	// No token.
+	require.Equal(t, http.StatusUnauthorized, post(nil))
+	// Garbage token.
+	require.Equal(t, http.StatusUnauthorized, post(func(r *http.Request) {
+		r.Header.Set(moduleRegistrationHeader, "not-a-jwt")
+	}))
+	// The old shared cluster-internal token is no longer accepted here.
+	require.Equal(t, http.StatusUnauthorized, post(func(r *http.Request) {
+		r.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	}))
+	// A valid USER access token (wrong audience) cannot double as a registration
+	// credential — audience-locking keeps the two token types non-interchangeable.
+	require.Equal(t, http.StatusUnauthorized, post(func(r *http.Request) {
+		r.Header.Set(moduleRegistrationHeader, signValidToken(t, priv))
+	}))
 
 	// Nothing was registered: the prefix stays unrouted (404 even with a valid
 	// bearer), and the (would-be) upstream is never reached.
@@ -159,19 +203,80 @@ func TestGateway_ModuleRegister_RequiresInternalToken(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	require.Equal(t, http.StatusNotFound, w.Code)
 	require.Nil(t, moduleFake.lastHeaders, "unregistered upstream must never be reached")
 }
 
+// A token signed by the wrong key is rejected: verification is a real signature
+// check, not merely a well-formedness check.
+func TestGateway_ModuleRegister_RejectsForeignKey(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	_, upstream := newModuleUpstream(t)
+
+	_, foreignPriv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	w := registerModule(t, gw, foreignPriv, "documents", upstream)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	_, ok := gw.modules.get("documents")
+	require.False(t, ok)
+}
+
+// An expired registration token is rejected (fail closed on expiry).
+func TestGateway_ModuleRegister_RejectsExpiredToken(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	_, upstream := newModuleUpstream(t)
+
+	c := moduleRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "saas-starter",
+			Subject:   "module:documents",
+			Audience:  jwt.ClaimStrings{moduleRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(time.Now().Add(-2 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(-time.Hour)),
+		},
+		Prefix: "documents",
+	}
+	expired, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c).SignedString(priv)
+	require.NoError(t, err)
+
+	body := `{"prefix":"documents","upstream":"` + upstream + `"}`
+	req := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(body))
+	req.Header.Set(moduleRegistrationHeader, expired)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// The token binds ONE prefix to the module identity: a caller holding a valid
+// token for "documents" cannot register any other prefix, even a well-formed,
+// non-catalog one. This is the per-caller binding the shared secret lacked.
+func TestGateway_ModuleRegister_EnforcesPrefixBinding(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	_, upstream := newModuleUpstream(t)
+
+	// Token authorizes "documents"; payload tries to claim "reports".
+	body := fmt.Sprintf(`{"prefix":"reports","upstream":%q}`, upstream)
+	req := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(body))
+	req.Header.Set(moduleRegistrationHeader, signModuleRegistrationToken(t, priv, "documents"))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+	_, ok := gw.modules.get("reports")
+	require.False(t, ok, "a prefix the token does not authorize must not be registered")
+
+	// The identity's own prefix still registers fine.
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", upstream).Code)
+}
+
 // ============================================================================
-// Guardrail 2 — identity-bound (best-effort under a shared token):
-// well-formed single-segment prefix + first-claim-wins.
+// Guardrail 2 — well-formed single-segment prefix + first-claim-wins.
 // ============================================================================
 
 func TestGateway_ModuleRegister_RejectsMalformedPrefix(t *testing.T) {
-	gw, _, _, _ := newGatewayHarness(t)
+	gw, _, _, priv := newGatewayHarness(t)
 	_, upstream := newModuleUpstream(t)
 
 	for _, prefix := range []string{
@@ -182,9 +287,12 @@ func TestGateway_ModuleRegister_RejectsMalformedPrefix(t *testing.T) {
 		"docs_underscore",       // underscore not in identity charset
 		strings.Repeat("a", 64), // longer than 63
 	} {
+		// A valid token (bound to some prefix) gets past Guardrail 1; the malformed
+		// PAYLOAD prefix is rejected by the well-formedness check that runs before
+		// the binding compare.
 		body := fmt.Sprintf(`{"prefix":%q,"upstream":%q}`, prefix, upstream)
 		req := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(body))
-		req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+		req.Header.Set(moduleRegistrationHeader, signModuleRegistrationToken(t, priv, "placeholder"))
 		w := httptest.NewRecorder()
 		gw.ServeHTTP(w, req)
 		require.Equalf(t, http.StatusBadRequest, w.Code, "prefix %q must be rejected", prefix)
@@ -194,14 +302,14 @@ func TestGateway_ModuleRegister_RejectsMalformedPrefix(t *testing.T) {
 // A prefix already held by a different upstream cannot be taken over; the same
 // upstream re-registering is idempotent.
 func TestGateway_ModuleRegister_FirstClaimWins(t *testing.T) {
-	gw, _, _, _ := newGatewayHarness(t)
+	gw, _, _, priv := newGatewayHarness(t)
 	_, upstreamA := newModuleUpstream(t)
 	_, upstreamB := newModuleUpstream(t)
 
-	require.Equal(t, http.StatusOK, registerModule(t, gw, "documents", upstreamA).Code)
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", upstreamA).Code)
 
 	// A different upstream trying to claim the same prefix is rejected.
-	conflict := registerModule(t, gw, "documents", upstreamB)
+	conflict := registerModule(t, gw, priv, "documents", upstreamB)
 	require.Equal(t, http.StatusConflict, conflict.Code)
 
 	// The original registration still stands.
@@ -210,21 +318,23 @@ func TestGateway_ModuleRegister_FirstClaimWins(t *testing.T) {
 	require.Equal(t, mustHost(t, upstreamA), stored.Host)
 
 	// Idempotent re-registration of the same upstream succeeds.
-	require.Equal(t, http.StatusOK, registerModule(t, gw, "documents", upstreamA).Code)
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", upstreamA).Code)
 }
 
 // ============================================================================
 // Guardrail 3 — catalog-protected: a registration can never shadow the catalog.
 // ============================================================================
 
-// Registering a prefix the catalog already owns is rejected loudly.
+// Registering a prefix the catalog already owns is rejected loudly. (The token
+// is minted per-prefix directly in the test, bypassing the real minting
+// authority, so the catalog guard is exercised in isolation.)
 func TestGateway_ModuleRegister_RejectsCatalogPrefix(t *testing.T) {
-	gw, _, _, _ := newGatewayHarness(t)
+	gw, _, _, priv := newGatewayHarness(t)
 	_, upstream := newModuleUpstream(t)
 
 	// The test catalog owns /v1/users, /v1/auth, /v1/mfa, /v1/billing, ...
 	for _, prefix := range []string{"users", "auth", "billing", "mfa"} {
-		w := registerModule(t, gw, prefix, upstream)
+		w := registerModule(t, gw, priv, prefix, upstream)
 		require.Equalf(t, http.StatusConflict, w.Code, "catalog prefix %q must be reserved", prefix)
 	}
 }
@@ -258,7 +368,7 @@ func TestGateway_Module_CatalogAlwaysWins(t *testing.T) {
 // ============================================================================
 
 func TestGateway_ModuleRegister_RejectsNonMeshUpstream(t *testing.T) {
-	gw, _, _, _ := newGatewayHarness(t)
+	gw, _, _, priv := newGatewayHarness(t)
 
 	for _, upstream := range []string{
 		"http://8.8.8.8",                  // public IP
@@ -269,7 +379,7 @@ func TestGateway_ModuleRegister_RejectsNonMeshUpstream(t *testing.T) {
 		"ftp://internal",                  // wrong scheme
 		"http://",                         // no host
 	} {
-		w := registerModule(t, gw, "documents", upstream)
+		w := registerModule(t, gw, priv, "documents", upstream)
 		require.GreaterOrEqualf(t, w.Code, 400, "upstream %q must be rejected", upstream)
 		require.Lessf(t, w.Code, 500, "upstream %q rejection is a client error", upstream)
 	}
@@ -305,22 +415,123 @@ func TestIsDisallowedModuleUpstreamHost(t *testing.T) {
 }
 
 // ============================================================================
+// Resolve-time SSRF / DNS-rebinding defense.
+// ============================================================================
+
+// isAllowedResolvedModuleIP is the resolve-time counterpart to the host-string
+// guard: only loopback and private (RFC1918/ULA) addresses are mesh-local.
+func TestIsAllowedResolvedModuleIP(t *testing.T) {
+	allowed := []string{
+		"127.0.0.1", "127.0.0.53", "::1", // loopback
+		"10.1.2.3", "172.16.0.5", "192.168.1.1", "fd00::1", // private / ULA
+	}
+	for _, s := range allowed {
+		require.Truef(t, isAllowedResolvedModuleIP(net.ParseIP(s)), "%q should be mesh-local", s)
+	}
+	disallowed := []string{
+		"8.8.8.8", "93.184.216.34", "1.1.1.1", // public
+		"169.254.169.254", "fe80::1", // link-local (metadata)
+		"0.0.0.0", "::", // unspecified
+	}
+	for _, s := range disallowed {
+		require.Falsef(t, isAllowedResolvedModuleIP(net.ParseIP(s)), "%q should be rejected", s)
+	}
+	require.False(t, isAllowedResolvedModuleIP(nil))
+}
+
+// validateResolvedModuleAddrs fails closed on an empty result and rejects the
+// WHOLE set if any single address is off-mesh (no retry to a rebinding-mixed
+// forbidden IP).
+func TestValidateResolvedModuleAddrs(t *testing.T) {
+	require.Error(t, validateResolvedModuleAddrs(nil))
+	require.NoError(t, validateResolvedModuleAddrs([]net.IPAddr{
+		{IP: net.ParseIP("127.0.0.1")}, {IP: net.ParseIP("10.0.0.1")},
+	}))
+	// A benign address mixed with a forbidden one rejects the entire dial.
+	require.Error(t, validateResolvedModuleAddrs([]net.IPAddr{
+		{IP: net.ParseIP("127.0.0.1")}, {IP: net.ParseIP("8.8.8.8")},
+	}))
+}
+
+// stubResolver maps a host to a fixed set of addresses, standing in for DNS so a
+// rebinding scenario is deterministic in a unit test.
+type stubResolver map[string][]net.IP
+
+func (s stubResolver) LookupIPAddr(_ context.Context, host string) ([]net.IPAddr, error) {
+	ips, ok := s[host]
+	if !ok {
+		return nil, fmt.Errorf("no stub for %s", host)
+	}
+	addrs := make([]net.IPAddr, len(ips))
+	for i, ip := range ips {
+		addrs[i] = net.IPAddr{IP: ip}
+	}
+	return addrs, nil
+}
+
+func mustPort(t *testing.T, rawURL string) string {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	require.NoError(t, err)
+	return u.Port()
+}
+
+// A mesh hostname that passes the register-time string guard but, at PROXY time,
+// resolves to a public IP (DNS rebinding) must have its dial refused: the caller
+// gets a 502 and the address is never connected to. The same name resolving to
+// loopback still proxies, so a legitimate mesh upstream is unaffected.
+func TestGateway_Module_ResolveTimeRebindingBlocked(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	moduleFake, realURL := newModuleUpstream(t) // http://127.0.0.1:PORT
+	port := mustPort(t, realURL)
+
+	// Register a mesh-looking host (documents.svc passes isDisallowedModuleUpstreamHost).
+	meshUpstream := "http://documents.svc:" + port
+	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", meshUpstream).Code)
+
+	proxy := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/v1/documents/x", nil)
+		req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		return w
+	}
+
+	// Rebinding: the mesh name resolves to a public IP at dial time -> refused.
+	gw.moduleTransport = newModuleUpstreamTransport(stubResolver{
+		"documents.svc": {net.ParseIP("8.8.8.8")},
+	})
+	w := proxy()
+	require.Equal(t, http.StatusBadGateway, w.Code)
+	require.Contains(t, w.Body.String(), "forbidden module upstream address")
+	require.Nil(t, moduleFake.lastHeaders, "a rebound public address must never be dialed")
+
+	// The same name resolving to loopback still proxies (mesh dev / tests).
+	gw.moduleTransport = newModuleUpstreamTransport(stubResolver{
+		"documents.svc": {net.ParseIP("127.0.0.1")},
+	})
+	w = proxy()
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "module-response", w.Body.String())
+	require.NotNil(t, moduleFake.lastHeaders, "a loopback-resolved mesh upstream must be reached")
+}
+
+// ============================================================================
 // Register endpoint hygiene.
 // ============================================================================
 
 func TestGateway_ModuleRegister_MethodAndBody(t *testing.T) {
-	gw, _, _, _ := newGatewayHarness(t)
+	gw, _, _, priv := newGatewayHarness(t)
 
-	// GET is not allowed.
+	// GET is not allowed (method is checked before auth).
 	getReq := httptest.NewRequest(http.MethodGet, moduleRegisterPath, nil)
-	getReq.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, getReq)
 	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
 
-	// Invalid JSON.
+	// Invalid JSON, with a valid token so it reaches the decode step.
 	badJSON := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(`{not json`))
-	badJSON.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	badJSON.Header.Set(moduleRegistrationHeader, signModuleRegistrationToken(t, priv, "documents"))
 	w = httptest.NewRecorder()
 	gw.ServeHTTP(w, badJSON)
 	require.Equal(t, http.StatusBadRequest, w.Code)
