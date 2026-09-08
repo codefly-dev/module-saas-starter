@@ -89,7 +89,9 @@ func orgAuditEntry() AuditEntry {
 		OrgID:     teeOrgID,
 		ActorID:   NewIDString(),
 		ActorType: "user",
-		EventType: EventType("test.event.performed"),
+		// A registered type: the export handler refuses an unregistered one at the
+		// egress boundary, because without a schema its payload cannot be redacted.
+		EventType: EventSessionRevoked,
 	}
 }
 
@@ -171,6 +173,42 @@ func TestExportToleratesUnserializablePayloadWithoutAbortingWrite(t *testing.T) 
 	}
 }
 
+// An export job carrying a type the registry does not know must not reach the
+// sink. RedactPayload fails closed and strips the payload whole, so delivering it
+// would put an entry in the customer's compliance store whose empty payload is
+// indistinguishable from an event that never had one. This is the shape a job
+// enqueued under the pre-#520 vocabulary takes once the rename lands.
+func TestExportHandlerRefusesUnregisteredEventType(t *testing.T) {
+	store := &teeStore{}
+	entry := orgAuditEntry()
+	entry.EventType = EventType("auth.login") // the pre-namespace name
+	entry.Payload = map[string]any{"method": "password"}
+	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
+		t.Fatalf("enqueueAuditExport: %v", err)
+	}
+	envelope := envelopeFromRequest(t, store.jobs[0])
+
+	sink := &flakySink{}
+	handler, err := NewAuditExportJobHandler(sink)
+	if err != nil {
+		t.Fatalf("NewAuditExportJobHandler: %v", err)
+	}
+	err = handler(t.Context(), envelope)
+	if err == nil {
+		t.Fatal("handler accepted an unregistered event type; it must refuse rather than ship a hollow entry")
+	}
+	var processing *jobs.ProcessingError
+	if !errors.As(err, &processing) {
+		t.Fatalf("handler error = %T (%v), want *jobs.ProcessingError", err, err)
+	}
+	if processing.Retryable {
+		t.Fatal("an unregistered event type is not fixed by retrying; the job must dead-letter")
+	}
+	if sink.attempts != 0 {
+		t.Fatalf("sink attempts = %d, want 0 (nothing may leave the audit store)", sink.attempts)
+	}
+}
+
 func TestExportEnqueueFailureRollsBackAuditRow(t *testing.T) {
 	store := &teeStore{failExportEnqueue: true}
 	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee())
@@ -249,6 +287,9 @@ func TestExportHandlerAtLeastOnceDrain(t *testing.T) {
 func TestExportRedactsPayload(t *testing.T) {
 	store := &teeStore{}
 	entry := orgAuditEntry()
+	// Name the unregistered type explicitly rather than leaning on the shared
+	// fixture's default: fail-closed redaction is exactly what this test asserts.
+	entry.EventType = EventType("auth.login")
 	entry.Payload = map[string]any{"secret": "value"}
 	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
 		t.Fatalf("enqueueAuditExport: %v", err)
@@ -257,8 +298,9 @@ func TestExportRedactsPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode export envelope: %v", err)
 	}
-	// An unregistered event type is redacted whole (fail closed), so nothing
-	// leaves the audit store even when the schema is unknown.
+	// An unregistered event type is redacted whole (fail closed) at enqueue, so
+	// the audit row still commits while nothing sensitive rides the tee. The
+	// export handler then refuses the job outright at the egress boundary.
 	if len(decoded.Payload) != 0 {
 		t.Fatalf("teed payload = %v, want redacted empty", decoded.Payload)
 	}

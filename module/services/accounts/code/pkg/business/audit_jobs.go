@@ -196,6 +196,23 @@ func NewAuditExportJobHandler(sink ExternalAuditSink) (jobs.Handler, error) {
 		if err != nil {
 			return jobs.NewProcessingError("audit.invalid_job", "invalid audit export job", false)
 		}
+		// An unregistered type has no schema, so RedactPayload fails closed and
+		// strips the payload whole. Shipping that is worse than not shipping it:
+		// the sink is a compliance store, and an entry whose payload was silently
+		// emptied is indistinguishable there from an event that never carried one.
+		// Refuse it instead, so the job dead-letters visibly and can be replayed
+		// once the registry knows the type. This is the path a job enqueued under
+		// an older vocabulary takes after a rename (issue #520).
+		if _, registered := LookupAuditEvent(entry.EventType); !registered {
+			wool.Get(ctx).In("AuditExportJobHandler").Error(
+				"audit export refused: event type is not in the registry, so its payload cannot be redacted",
+				wool.Field("event_id", entry.ID),
+				wool.Field("event_type", string(entry.EventType)),
+			)
+			return jobs.NewProcessingError(
+				"audit.unregistered_event_type",
+				"audit export event type is not in the registry", false)
+		}
 		// Redact again at the egress boundary. The feed already redacts before
 		// enqueue, but the sink is the point where data leaves the audit store,
 		// so it must not depend on an upstream invariant to keep PII out.
