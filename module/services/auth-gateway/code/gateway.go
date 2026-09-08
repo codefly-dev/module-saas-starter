@@ -161,6 +161,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The credential exchange that precedes it (/modules/_registration-token):
+	// same listener, same reason to run before the header is stripped, and it
+	// brokers to accounts rather than deciding anything itself.
+	if g.handleModuleRegistrationToken(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)

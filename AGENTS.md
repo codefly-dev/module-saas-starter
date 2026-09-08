@@ -99,6 +99,30 @@ names a specific solution; the seam is generic.
   to the registered upstream, running the same ext_authz Check and
   identity-header discipline as catalog routes; only the public `/assets` and
   `/.well-known` sub-paths are served unauthenticated (GET/HEAD).
+- **Composed-module REST federation** — a composed module that serves its own
+  `/v1/<module>/*` surface registers it with `POST /modules/_register`
+  (`gateway_modules.go`), and the gateway proxies that prefix once the generated
+  catalog has no match. Unlike solution registration this is **not** gated on
+  the shared internal token: the caller must present a signed, prefix-bound
+  registration token in `X-Codefly-Module-Registration`, so a module holding the
+  credential for `documents` cannot claim `billing`. The handshake is three
+  calls:
+  1. `POST /modules/_registration-token` on the auth-gateway, with the
+     cluster-internal token in `X-Codefly-Internal-Token` **and** the module's
+     own registration secret in `X-Codefly-Module-Secret`, body `{prefix}`.
+  2. The gateway brokers to accounts
+     (`/internal/module-registration/token`, private REST listener, absent from
+     the route catalog so the edge cannot reach it). accounts compares the secret
+     against the digest declared for that prefix in the `security` configuration
+     group's `MODULE_REGISTRATION_SECRETS` and, on a match, mints a 5-minute
+     Ed25519 token (`aud=module-registration`, `sub=module:<prefix>`) with the
+     key the gateway already trusts through JWKS. Unset means no module may
+     federate.
+  3. `POST /modules/_register` with that token and `{prefix, upstream}`.
+
+  Composition provisions the pair: the SHA-256 digest into this host's `security`
+  group, the plaintext into the module. Registration only adds a proxy target —
+  every proxied `/v1/<module>/*` request still runs the full ext_authz check.
 - **Host page** — `/s/[solutionId]`
   (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the remote via
   `SolutionOutlet` from the registered `manifestUrl` + `exposedModule`. The

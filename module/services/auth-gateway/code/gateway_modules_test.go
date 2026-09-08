@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -558,4 +559,213 @@ func mustHost(t *testing.T, rawURL string) string {
 	u, err := url.Parse(rawURL)
 	require.NoError(t, err)
 	return u.Host
+}
+
+// ============================================================================
+// Registration-credential exchange (/modules/_registration-token)
+// ============================================================================
+
+// fakeAccountsMint stands in for accounts' credential exchange: it records what
+// the gateway forwarded and signs a registration token with the same key the
+// harness publishes as the sidecar's public key, exactly as accounts does.
+type fakeAccountsMint struct {
+	priv         ed25519.PrivateKey
+	status       int
+	lastPath     string
+	lastInternal string
+	lastPrefix   string
+	lastSecret   string
+	requestCount int
+}
+
+func (f *fakeAccountsMint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.requestCount++
+	f.lastPath = r.URL.Path
+	f.lastInternal = r.Header.Get("X-Codefly-Internal-Token")
+	var payload struct {
+		Prefix string `json:"prefix"`
+		Secret string `json:"secret"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&payload)
+	f.lastPrefix = payload.Prefix
+	f.lastSecret = payload.Secret
+
+	if f.status != 0 && f.status != http.StatusOK {
+		w.WriteHeader(f.status)
+		return
+	}
+	claims := moduleRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "saas-starter",
+			Subject:   "module:" + payload.Prefix,
+			Audience:  jwt.ClaimStrings{moduleRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+		},
+		Prefix: payload.Prefix,
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(f.priv)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("content-type", "application/json")
+	_, _ = w.Write([]byte(fmt.Sprintf(`{"token":%q,"expiresAt":"2030-01-01T00:00:00Z"}`, signed)))
+}
+
+// newExchangeHarness points the gateway's accounts upstream at a fake mint.
+func newExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsMint, ed25519.PrivateKey) {
+	t.Helper()
+	gw, _, _, priv := newGatewayHarness(t)
+	mint := &fakeAccountsMint{priv: priv}
+	srv := httptest.NewServer(mint)
+	t.Cleanup(srv.Close)
+	accountsURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	gw.upstreams["accounts"] = accountsURL
+	return gw, mint, priv
+}
+
+func exchangeTokenRequest(prefix, secret, internal string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, moduleRegistrationTokenPath,
+		strings.NewReader(fmt.Sprintf(`{"prefix":%q}`, prefix)))
+	if secret != "" {
+		req.Header.Set(moduleSecretHeader, secret)
+	}
+	if internal != "" {
+		req.Header.Set("X-Codefly-Internal-Token", internal)
+	}
+	return req
+}
+
+func TestGateway_ModuleRegistrationToken_BrokersToAccounts(t *testing.T) {
+	gw, mint, _ := newExchangeHarness(t)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "documents-secret", "test-internal-token"))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "no-store", w.Header().Get("cache-control"))
+	// The gateway presents its OWN cluster credential on the internal leg and
+	// forwards the module's secret for accounts to judge.
+	require.Equal(t, accountsModuleRegistrationPath, mint.lastPath)
+	require.Equal(t, "test-internal-token", mint.lastInternal)
+	require.Equal(t, "documents", mint.lastPrefix)
+	require.Equal(t, "documents-secret", mint.lastSecret)
+
+	var payload struct {
+		Token string `json:"token"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.NotEmpty(t, payload.Token)
+}
+
+// The exchange feeds the endpoint it exists for: a module that runs the full
+// handshake ends up with a routed, still-authenticated federated prefix.
+func TestGateway_ModuleRegistrationToken_CompletesHandshake(t *testing.T) {
+	gw, _, priv := newExchangeHarness(t)
+	moduleFake, upstream := newModuleUpstream(t)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "documents-secret", "test-internal-token"))
+	require.Equal(t, http.StatusOK, w.Code)
+	var issued struct {
+		Token string `json:"token"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &issued))
+
+	regBody := fmt.Sprintf(`{"prefix":"documents","upstream":%q}`, upstream)
+	regReq := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(regBody))
+	regReq.Header.Set(moduleRegistrationHeader, issued.Token)
+	regResp := httptest.NewRecorder()
+	gw.ServeHTTP(regResp, regReq)
+	require.Equal(t, http.StatusOK, regResp.Code)
+
+	proxied := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
+	proxied.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	proxiedResp := httptest.NewRecorder()
+	gw.ServeHTTP(proxiedResp, proxied)
+	require.Equal(t, http.StatusOK, proxiedResp.Code)
+	require.Equal(t, "/v1/documents/collection", moduleFake.lastPath)
+
+	// Registration added a target, not an auth bypass.
+	unauth := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
+	unauthResp := httptest.NewRecorder()
+	gw.ServeHTTP(unauthResp, unauth)
+	require.Equal(t, http.StatusUnauthorized, unauthResp.Code)
+}
+
+func TestGateway_ModuleRegistrationToken_FailsClosed(t *testing.T) {
+	tests := map[string]struct {
+		prefix   string
+		secret   string
+		internal string
+		want     int
+	}{
+		"no internal token":  {"documents", "documents-secret", "", http.StatusUnauthorized},
+		"bad internal token": {"documents", "documents-secret", "wrong", http.StatusUnauthorized},
+		"no module secret":   {"documents", "", "test-internal-token", http.StatusUnauthorized},
+		"path prefix":        {"documents/nested", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"wildcard prefix":    {"*", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"empty prefix":       {"", "documents-secret", "test-internal-token", http.StatusBadRequest},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			gw, mint, _ := newExchangeHarness(t)
+
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, exchangeTokenRequest(test.prefix, test.secret, test.internal))
+
+			require.Equal(t, test.want, w.Code)
+			// Nothing reached accounts: the perimeter rejected it first.
+			require.Zero(t, mint.requestCount)
+		})
+	}
+}
+
+// accounts owns the authorization decision, so its refusal is the gateway's.
+func TestGateway_ModuleRegistrationToken_RelaysAccountsRefusal(t *testing.T) {
+	gw, mint, _ := newExchangeHarness(t)
+	mint.status = http.StatusUnauthorized
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "wrong-secret", "test-internal-token"))
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Equal(t, 1, mint.requestCount)
+}
+
+func TestGateway_ModuleRegistrationToken_UnavailableAuthority(t *testing.T) {
+	gw, mint, _ := newExchangeHarness(t)
+	mint.status = http.StatusServiceUnavailable
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "documents-secret", "test-internal-token"))
+
+	require.Equal(t, http.StatusBadGateway, w.Code)
+}
+
+func TestGateway_ModuleRegistrationToken_MethodNotAllowed(t *testing.T) {
+	gw, _, _ := newExchangeHarness(t)
+
+	req := httptest.NewRequest(http.MethodGet, moduleRegistrationTokenPath, nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// accounts' own exchange path is off the route catalog, so the gateway must not
+// route to it: the exchange is reachable only through the brokered endpoint.
+func TestGateway_AccountsMintPathNotRoutable(t *testing.T) {
+	gw, mint, _ := newExchangeHarness(t)
+
+	req := httptest.NewRequest(http.MethodPost, accountsModuleRegistrationPath, strings.NewReader(`{}`))
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Zero(t, mint.requestCount)
 }
