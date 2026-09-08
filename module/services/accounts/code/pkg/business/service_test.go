@@ -170,6 +170,17 @@ func runBusinessTests(m *testing.M) int {
 	entitlementChecker := business.NewDefaultEntitlementChecker(store)
 	service.SetEntitlementChecker(entitlementChecker)
 
+	// The audit_events.event_type foreign key (migration 116) resolves against
+	// audit_event_types, which the control plane reconciles from the code catalog
+	// at startup. Do the same here so an audit write in a test hits the same
+	// preconditions it hits in production.
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "SyncAuditEventTypes: %v\n", err)
+		return 1
+	}
+
 	testStore = store
 	testService = service
 	testCtx = ctx

@@ -2,6 +2,7 @@ package business_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,8 +36,40 @@ func TestAuditEventTypes_Parity(t *testing.T) {
 		require.Truef(t, ok, "catalog type %q missing from audit_event_types", d.Type)
 		require.Equal(t, d.Version, row.Version, "version mismatch for %q", d.Type)
 		require.Equal(t, string(d.Category), row.Category, "category mismatch for %q", d.Type)
+		require.Equal(t, d.Namespace, row.Namespace, "namespace mismatch for %q", d.Type)
 		require.Falsef(t, row.Deprecated, "catalog type %q must not be deprecated", d.Type)
 	}
+}
+
+// The namespace column is the collision key a composed workspace relies on, and
+// migration 116 constrains every name to sit under it. After a startup sync the
+// projection must carry it for every registered type, with nothing left over
+// from the pre-cutover vocabulary.
+func TestSyncAuditEventTypesProjectsNamespace(t *testing.T) {
+	ctx := testCtx
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		return testStore.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}))
+
+	var rows []business.AuditEventTypeRow
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		rows, err = testStore.ListAuditEventTypes(ctx)
+		return err
+	}))
+
+	active := 0
+	for _, r := range rows {
+		require.Equal(t, business.AuditNamespace, r.Namespace,
+			"projected type %q carries no namespace", r.Name)
+		require.Truef(t, strings.HasPrefix(r.Name, r.Namespace+"."),
+			"projected type %q does not sit under its namespace", r.Name)
+		if !r.Deprecated {
+			active++
+		}
+	}
+	require.Equal(t, len(business.AuditEventCatalog()), active,
+		"every catalog type must be projected as active")
 }
 
 // TestAuditRetention_DropsOldPartitions proves retention actually removes data

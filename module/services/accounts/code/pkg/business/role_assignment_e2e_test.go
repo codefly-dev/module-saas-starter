@@ -165,10 +165,10 @@ func TestE2E_RoleAssignmentFlow(t *testing.T) {
 
 	// Required actions on this orgs scope:
 	for _, want := range []string{
-		"role.created",
-		"role.assigned",
-		"role.revoked",
-		"org.member_added",
+		"saas.role.created",
+		"saas.role.assigned",
+		"saas.role.revoked",
+		"saas.org.member_added",
 	} {
 		require.Greater(t, gotActions[want], 0,
 			"audit log should contain %q event for org %s; got actions=%v",

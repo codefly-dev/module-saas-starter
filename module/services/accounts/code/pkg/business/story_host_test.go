@@ -176,14 +176,14 @@ func TestStory_HOST_AUD_001(t *testing.T) {
 	}
 	for _, event := range emitted {
 		require.NoError(t, modules.ModuleEmitAuditEvent(
-			ctx, caller, tenantA, "document.ingested", actorID, event.solution, event.entry, nil,
+			ctx, caller, tenantA, "saas.document.ingested", actorID, event.solution, event.entry, nil,
 		))
 	}
 
 	// When I query the audit log by tenant.
 	tenantView, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
 		OrgID:     tenantA,
-		EventType: "document.ingested",
+		EventType: "saas.document.ingested",
 		PageSize:  50,
 	})
 	require.NoError(t, err)
@@ -192,7 +192,7 @@ func TestStory_HOST_AUD_001(t *testing.T) {
 	// Or by solution scope.
 	solutionView, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
 		OrgID:           tenantA,
-		EventType:       "document.ingested",
+		EventType:       "saas.document.ingested",
 		PayloadContains: map[string]any{"solution": "alpha"},
 		PageSize:        50,
 	})

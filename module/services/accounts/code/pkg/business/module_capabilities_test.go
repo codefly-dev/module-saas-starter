@@ -273,10 +273,19 @@ func TestModuleEnqueueJob_OrgScopedHappyPath(t *testing.T) {
 func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", nil)
+		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", nil)
 	if err != nil {
 		t.Fatalf("registered audit event should be accepted: %v", err)
 	}
+}
+
+// The module path is where registry validation actually enforces, so it is where
+// a consuming solution still carrying the pre-#520 vocabulary is told.
+func TestModuleEmitAuditEvent_LegacyTypeRejected(t *testing.T) {
+	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
+		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", nil)
+	requireCode(t, err, codes.InvalidArgument)
 }
 
 // TestModuleEmitAuditEvent_WriteFailureSurfaces pins the fix for silent audit
@@ -286,7 +295,7 @@ func TestModuleEmitAuditEvent_WriteFailureSurfaces(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	svc.SetAuditEmitter(&fakeAuditEmitter{emitTxErr: errors.New("audit spine unavailable")})
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", nil)
+		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", nil)
 	requireCode(t, err, codes.Internal)
 }
 
