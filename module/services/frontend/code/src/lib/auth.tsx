@@ -28,7 +28,6 @@ import {
 	storeUserName,
 } from "./auth-session";
 import {
-	bootstrapRefresh,
 	setToken as setConnectToken,
 	setRefreshHandler,
 } from "./connect/token-store";
@@ -63,12 +62,89 @@ export function classifyRefreshStatus(
 	return "ok";
 }
 
+// Coalesces every concurrent refresh-cookie exchange onto one in-flight request.
+// The refresh token rotates on each successful exchange and the backend runs
+// OWASP reuse detection: presenting an already-rotated token revokes the entire
+// session family. So two exchanges of the SAME cookie in flight at once are
+// self-defeating — the second replays a token the first just consumed and trips
+// reuse detection, killing the session that was just minted. This is exactly the
+// dev-only mid-session bounce (#506): under `codefly run solution` the frontend
+// runs `next dev` with React StrictMode, which double-invokes the bootstrap
+// effect and fires two concurrent exchanges of the same cookie; the winner mints
+// a session, the loser revokes it, and the page bounces to /auth/login the
+// moment the short-lived access token first needs refreshing. token-store's
+// single-flight only guards the mid-session handler, not the bootstrap (or a
+// bootstrap-vs-interceptor race), so the coalescing must live at the exchange
+// itself. Cleared on settle, so sequential refreshes (each new access-token
+// expiry) still rotate normally.
+let inflightExchange: Promise<RefreshOutcome> | null = null;
+
 // Exchanges the httpOnly refresh cookie for a fresh token pair. The body
 // carries no token — the backend reads it from the cookie. Never rejects: a
 // network failure and a malformed success both resolve to `unavailable` so the
 // caller keeps the (still-valid) session rather than treating a hiccup as a
-// logout.
-async function exchangeRefreshCookie(): Promise<RefreshOutcome> {
+// logout. Concurrent callers share one rotation and observe the same outcome.
+// Exported for tests.
+//
+// Three coordination layers stack on a refresh and none is redundant:
+//   1. `inflightExchange` (below) coalesces callers *within this tab* onto one
+//      rotation — this is what stops the StrictMode-doubled bootstrap (#506)
+//      from firing two exchanges of the same cookie.
+//   2. `withRefreshLock` serializes exchanges *across tabs*. Every tab of the
+//      origin shares the one httpOnly refresh cookie but not this module's
+//      in-memory state, so two tabs whose access tokens lapse together would
+//      each rotate the same cookie concurrently — the loser replays a consumed
+//      token and trips the identical reuse detection, revoking both tabs. The
+//      Web Locks API is the only primitive that serializes across the separate
+//      runtimes that share the cookie.
+//   3. token-store's `inflightRefresh` coalesces the mid-session handler's
+//      teardown/redirect side-effects so two concurrent 401s don't fire two
+//      logouts; see connect/token-store.ts. Deleting any one layer reopens a
+//      distinct failure, so they must not be "simplified" into each other.
+//
+// The trailing `.catch` makes the documented "never rejects" contract
+// structural rather than a convention the two call sites (bootstrap `.then`,
+// handler `await`) silently lean on with no error handling: any future throw —
+// synchronous or async — anywhere in the exchange resolves to `unavailable`
+// instead of escaping as an unhandled rejection or a thrown `await`.
+export function exchangeRefreshCookie(): Promise<RefreshOutcome> {
+	if (!inflightExchange) {
+		inflightExchange = Promise.resolve()
+			.then(() => withRefreshLock(performRefreshExchange))
+			.catch((): RefreshOutcome => ({ status: "unavailable" }))
+			.finally(() => {
+				inflightExchange = null;
+			});
+	}
+	return inflightExchange;
+}
+
+// Test seam: drops any in-flight exchange so module-level state cannot bleed
+// between test cases (a test that starts an exchange without awaiting it would
+// otherwise hand a still-pending promise to the next one). A no-op in normal
+// operation, where the `.finally` above already clears the slot on settle.
+export function resetRefreshExchangeForTests(): void {
+	inflightExchange = null;
+}
+
+// Serializes the refresh exchange across every tab sharing the origin's httpOnly
+// refresh cookie, via the Web Locks API. The lock is held only for one exchange
+// and the platform auto-releases it if the holding tab goes away, so a stuck tab
+// delays the others by at most one exchange rather than deadlocking them. When
+// the API is unavailable (older runtimes, the test env) the exchange runs
+// unguarded: cross-tab coordination is lost, but the in-tab single-flight and
+// the backend's reuse detection still stand.
+async function withRefreshLock(
+	run: () => Promise<RefreshOutcome>,
+): Promise<RefreshOutcome> {
+	const locks = globalThis.navigator?.locks;
+	if (!locks?.request) return run();
+	// `request` resolves to whatever the callback returns; the `await` flattens
+	// the extra promise layer `run` introduces so the outcome is unwrapped once.
+	return await locks.request("codefly_auth_refresh", run);
+}
+
+async function performRefreshExchange(): Promise<RefreshOutcome> {
 	const res = await fetch("/v1/auth/refresh", {
 		method: "POST",
 		credentials: "include",
@@ -775,11 +851,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		//                 just stop loading. A later mid-session call, or a manual
 		//                 reload once the backend is warm, refreshes cleanly.
 		//
-		// bootstrapRefresh single-flights this across StrictMode's double-invoked
-		// effect and any fast remount, so overlapping bootstraps present the cookie
-		// once, not twice (which would itself trip reuse detection).
+		// exchangeRefreshCookie coalesces this onto a single in-flight rotation
+		// (`inflightExchange`), so StrictMode's double-invoked effect, any fast
+		// remount, and a bootstrap-vs-interceptor race all present the cookie once,
+		// not twice (which would itself trip reuse detection). The `cancelled` flag
+		// only suppresses this effect's state writes after unmount — it does not
+		// cancel the shared exchange, which a still-mounted caller may be awaiting.
 		let cancelled = false;
-		void bootstrapRefresh(exchangeRefreshCookie).then((outcome) => {
+		void exchangeRefreshCookie().then((outcome) => {
 			if (cancelled) return;
 			if (outcome.status === "ok") {
 				setTokens(outcome.accessToken, outcome.refreshToken);
