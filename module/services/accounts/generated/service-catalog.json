@@ -241,12 +241,14 @@
       "name": "PlatformAdminService",
       "full_name": "saas.accounts.v1.PlatformAdminService",
       "procedures": [
+        "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
         "/saas.accounts.v1.PlatformAdminService/GetJob",
         "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
         "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
         "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
         "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
         "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+        "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
         "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
         "/saas.accounts.v1.PlatformAdminService/ListJobs",
         "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
@@ -6358,6 +6360,56 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "GetEventOperations",
+      "input_type": "saas.events.v1.GetEventOperationsRequest",
+      "output_type": "saas.events.v1.GetEventOperationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/events/operations",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "platform_admin",
+      "description": "Domain-event type counters, outbox relay lag, and dead-letter snapshots.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.PlatformAdminService/GetJob",
       "service": "PlatformAdminService",
       "full_service": "saas.accounts.v1.PlatformAdminService",
@@ -6662,6 +6714,56 @@
       },
       "policy_tier": "platform_admin",
       "description": "Active sessions for a user.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "ListEventSubscriptions",
+      "input_type": "saas.events.v1.ListEventSubscriptionsRequest",
+      "output_type": "saas.events.v1.ListEventSubscriptionsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/platform/events/subscriptions",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "platform_admin",
+      "description": "Live domain-event subscriptions across all principals.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

@@ -4,6 +4,7 @@ import {
 	Flag,
 	ListChecks,
 	ShieldCheck,
+	Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/shared/ui";
@@ -38,6 +39,13 @@ const sections = [
 		description: "Inspect durable queues, lifecycle history, and dead letters.",
 		href: "/admin/platform/jobs",
 		icon: ListChecks,
+	},
+	{
+		title: "Event Operations",
+		description:
+			"Inspect the domain-event catalog, subscribers, relay lag, and dead letters.",
+		href: "/admin/platform/events",
+		icon: Workflow,
 	},
 ];
 

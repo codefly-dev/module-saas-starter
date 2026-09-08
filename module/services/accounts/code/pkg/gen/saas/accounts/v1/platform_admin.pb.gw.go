@@ -9,6 +9,7 @@ It translates gRPC into RESTful JSON APIs.
 package accountsv1
 
 import (
+	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"context"
 	"errors"
@@ -685,6 +686,48 @@ func local_request_PlatformAdminService_ReplayJob_0(ctx context.Context, marshal
 	return msg, metadata, err
 }
 
+func request_PlatformAdminService_GetEventOperations_0(ctx context.Context, marshaler runtime.Marshaler, client PlatformAdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq eventsv1.GetEventOperationsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.GetEventOperations(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_PlatformAdminService_GetEventOperations_0(ctx context.Context, marshaler runtime.Marshaler, server PlatformAdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq eventsv1.GetEventOperationsRequest
+		metadata runtime.ServerMetadata
+	)
+	msg, err := server.GetEventOperations(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_PlatformAdminService_ListEventSubscriptions_0(ctx context.Context, marshaler runtime.Marshaler, client PlatformAdminServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq eventsv1.ListEventSubscriptionsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.ListEventSubscriptions(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_PlatformAdminService_ListEventSubscriptions_0(ctx context.Context, marshaler runtime.Marshaler, server PlatformAdminServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq eventsv1.ListEventSubscriptionsRequest
+		metadata runtime.ServerMetadata
+	)
+	msg, err := server.ListEventSubscriptions(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 // RegisterPlatformAdminServiceHandlerServer registers the http handlers for service PlatformAdminService to "mux".
 // UnaryRPC     :call PlatformAdminServiceServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -1031,6 +1074,46 @@ func RegisterPlatformAdminServiceHandlerServer(ctx context.Context, mux *runtime
 		}
 		forward_PlatformAdminService_ReplayJob_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_PlatformAdminService_GetEventOperations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.PlatformAdminService/GetEventOperations", runtime.WithHTTPPathPattern("/v1/platform/events/operations"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_PlatformAdminService_GetEventOperations_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_PlatformAdminService_GetEventOperations_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_PlatformAdminService_ListEventSubscriptions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions", runtime.WithHTTPPathPattern("/v1/platform/events/subscriptions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_PlatformAdminService_ListEventSubscriptions_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_PlatformAdminService_ListEventSubscriptions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 
 	return nil
 }
@@ -1360,45 +1443,83 @@ func RegisterPlatformAdminServiceHandlerClient(ctx context.Context, mux *runtime
 		}
 		forward_PlatformAdminService_ReplayJob_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_PlatformAdminService_GetEventOperations_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.PlatformAdminService/GetEventOperations", runtime.WithHTTPPathPattern("/v1/platform/events/operations"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_PlatformAdminService_GetEventOperations_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_PlatformAdminService_GetEventOperations_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_PlatformAdminService_ListEventSubscriptions_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions", runtime.WithHTTPPathPattern("/v1/platform/events/subscriptions"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_PlatformAdminService_ListEventSubscriptions_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_PlatformAdminService_ListEventSubscriptions_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
 var (
-	pattern_PlatformAdminService_SearchUsers_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "users"}, ""))
-	pattern_PlatformAdminService_SuspendUser_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "users", "user_id"}, "suspend"))
-	pattern_PlatformAdminService_UnsuspendUser_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "users", "user_id"}, "unsuspend"))
-	pattern_PlatformAdminService_ImpersonateUser_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "users", "user_id"}, "impersonate"))
-	pattern_PlatformAdminService_ListActiveSessions_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "sessions"}, ""))
-	pattern_PlatformAdminService_RevokeSession_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "sessions", "session_id"}, ""))
-	pattern_PlatformAdminService_GetOrgEntitlements_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "platform", "organizations", "org_id", "entitlements"}, ""))
-	pattern_PlatformAdminService_OverrideEntitlement_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "platform", "organizations", "org_id", "entitlements"}, ""))
-	pattern_PlatformAdminService_GrantPlatformRole_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "admins"}, ""))
-	pattern_PlatformAdminService_RevokePlatformRole_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "admins", "user_id"}, ""))
-	pattern_PlatformAdminService_ListPlatformAdmins_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "admins"}, ""))
-	pattern_PlatformAdminService_ListFeatureFlags_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "feature-flags"}, ""))
-	pattern_PlatformAdminService_UpsertFeatureFlag_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "feature-flags", "name"}, ""))
-	pattern_PlatformAdminService_GetJobOperations_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "platform", "jobs", "operations"}, ""))
-	pattern_PlatformAdminService_ListJobs_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "jobs"}, ""))
-	pattern_PlatformAdminService_GetJob_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "jobs", "job_id"}, ""))
-	pattern_PlatformAdminService_ReplayJob_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "jobs", "source_job_id"}, "replay"))
+	pattern_PlatformAdminService_SearchUsers_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "users"}, ""))
+	pattern_PlatformAdminService_SuspendUser_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "users", "user_id"}, "suspend"))
+	pattern_PlatformAdminService_UnsuspendUser_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "users", "user_id"}, "unsuspend"))
+	pattern_PlatformAdminService_ImpersonateUser_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "users", "user_id"}, "impersonate"))
+	pattern_PlatformAdminService_ListActiveSessions_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "sessions"}, ""))
+	pattern_PlatformAdminService_RevokeSession_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "sessions", "session_id"}, ""))
+	pattern_PlatformAdminService_GetOrgEntitlements_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "platform", "organizations", "org_id", "entitlements"}, ""))
+	pattern_PlatformAdminService_OverrideEntitlement_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3, 2, 4}, []string{"v1", "platform", "organizations", "org_id", "entitlements"}, ""))
+	pattern_PlatformAdminService_GrantPlatformRole_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "admins"}, ""))
+	pattern_PlatformAdminService_RevokePlatformRole_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "admins", "user_id"}, ""))
+	pattern_PlatformAdminService_ListPlatformAdmins_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "admins"}, ""))
+	pattern_PlatformAdminService_ListFeatureFlags_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "feature-flags"}, ""))
+	pattern_PlatformAdminService_UpsertFeatureFlag_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "feature-flags", "name"}, ""))
+	pattern_PlatformAdminService_GetJobOperations_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "platform", "jobs", "operations"}, ""))
+	pattern_PlatformAdminService_ListJobs_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "platform", "jobs"}, ""))
+	pattern_PlatformAdminService_GetJob_0                 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "jobs", "job_id"}, ""))
+	pattern_PlatformAdminService_ReplayJob_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 1, 0, 4, 1, 5, 3}, []string{"v1", "platform", "jobs", "source_job_id"}, "replay"))
+	pattern_PlatformAdminService_GetEventOperations_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "platform", "events", "operations"}, ""))
+	pattern_PlatformAdminService_ListEventSubscriptions_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "platform", "events", "subscriptions"}, ""))
 )
 
 var (
-	forward_PlatformAdminService_SearchUsers_0         = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_SuspendUser_0         = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_UnsuspendUser_0       = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_ImpersonateUser_0     = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_ListActiveSessions_0  = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_RevokeSession_0       = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_GetOrgEntitlements_0  = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_OverrideEntitlement_0 = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_GrantPlatformRole_0   = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_RevokePlatformRole_0  = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_ListPlatformAdmins_0  = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_ListFeatureFlags_0    = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_UpsertFeatureFlag_0   = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_GetJobOperations_0    = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_ListJobs_0            = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_GetJob_0              = runtime.ForwardResponseMessage
-	forward_PlatformAdminService_ReplayJob_0           = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_SearchUsers_0            = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_SuspendUser_0            = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_UnsuspendUser_0          = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_ImpersonateUser_0        = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_ListActiveSessions_0     = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_RevokeSession_0          = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_GetOrgEntitlements_0     = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_OverrideEntitlement_0    = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_GrantPlatformRole_0      = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_RevokePlatformRole_0     = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_ListPlatformAdmins_0     = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_ListFeatureFlags_0       = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_UpsertFeatureFlag_0      = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_GetJobOperations_0       = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_ListJobs_0               = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_GetJob_0                 = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_ReplayJob_0              = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_GetEventOperations_0     = runtime.ForwardResponseMessage
+	forward_PlatformAdminService_ListEventSubscriptions_0 = runtime.ForwardResponseMessage
 )

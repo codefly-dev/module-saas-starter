@@ -49,6 +49,8 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/organizations/{organization_id}/usage/{meter}", Procedure: "/saas.accounts.v1.UsageService/GetUsage"},
 		{Service: "accounts", Method: "GET", Path: "/v1/organizations/{organization_id}/usage/{meter}/history", Procedure: "/saas.accounts.v1.UsageService/GetUsageHistory"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/admins", Procedure: "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins"},
+		{Service: "accounts", Method: "GET", Path: "/v1/platform/events/operations", Procedure: "/saas.accounts.v1.PlatformAdminService/GetEventOperations"},
+		{Service: "accounts", Method: "GET", Path: "/v1/platform/events/subscriptions", Procedure: "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/feature-flags", Procedure: "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs", Procedure: "/saas.accounts.v1.PlatformAdminService/ListJobs"},
 		{Service: "accounts", Method: "GET", Path: "/v1/platform/jobs/operations", Procedure: "/saas.accounts.v1.PlatformAdminService/GetJobOperations"},

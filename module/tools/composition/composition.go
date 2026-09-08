@@ -37,6 +37,8 @@ const (
 	PermissionGoOutput       = "services/accounts/code/pkg/permissioncatalog/catalog_gen.go"
 	EventCatalogOutput       = "deployment/generated/event-catalog.json"
 	EventGoOutput            = "services/accounts/code/pkg/eventcatalog/catalog_gen.go"
+	AsyncAPIOutput           = "deployment/generated/asyncapi.json"
+	CommunicationOutput      = "deployment/generated/communication.md"
 	CompositionCatalogOut    = corecomposition.CompositionCatalogName
 )
 

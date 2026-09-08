@@ -185,6 +185,8 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/GetOrgEntitlements":           "Plan + overrides + usage.",
 	"PlatformAdminService/GetJob":                       "Payload-free job metadata, attempts, and state history.",
 	"PlatformAdminService/GetJobOperations":             "Durable queue depth, readiness, and lease-health snapshots.",
+	"PlatformAdminService/GetEventOperations":           "Domain-event type counters, outbox relay lag, and dead-letter snapshots.",
+	"PlatformAdminService/ListEventSubscriptions":       "Live domain-event subscriptions across all principals.",
 	"PlatformAdminService/GrantPlatformRole":            "Grant a platform role.",
 	"PlatformAdminService/ImpersonateUser":              "Mint an impersonation session.",
 	"PlatformAdminService/ListActiveSessions":           "Active sessions for a user.",

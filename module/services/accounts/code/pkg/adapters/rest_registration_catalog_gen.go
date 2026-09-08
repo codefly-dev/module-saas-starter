@@ -118,6 +118,8 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/notifications/unread-count":       {},
 	"GET /v1/organizations":                    {},
 	"GET /v1/platform/admins":                  {},
+	"GET /v1/platform/events/operations":       {},
+	"GET /v1/platform/events/subscriptions":    {},
 	"GET /v1/platform/feature-flags":           {},
 	"GET /v1/platform/jobs":                    {},
 	"GET /v1/platform/jobs/operations":         {},

@@ -1,0 +1,217 @@
+{
+  "asyncapi": "3.0.0",
+  "info": {
+    "title": "SaaS Starter Domain Events",
+    "version": "1.0.0",
+    "description": "Generated from event-catalog.json by module-compose. DO NOT EDIT."
+  },
+  "channels": {
+    "installation.created": {
+      "address": "installation.created",
+      "title": "installation.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/installation.created"
+        }
+      },
+      "x-visibility": "internal",
+      "x-partition": "{tenant_id}",
+      "x-retention": "30d"
+    },
+    "installation.revoked": {
+      "address": "installation.revoked",
+      "title": "installation.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/installation.revoked"
+        }
+      },
+      "x-visibility": "internal",
+      "x-partition": "{tenant_id}",
+      "x-retention": "30d"
+    },
+    "reference.console.viewed": {
+      "address": "reference.console.viewed",
+      "title": "reference.console.viewed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/reference.console.viewed"
+        }
+      },
+      "x-visibility": "tenant",
+      "x-partition": "{tenant_id}",
+      "x-retention": "30d"
+    },
+    "scope.granted": {
+      "address": "scope.granted",
+      "title": "scope.granted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/scope.granted"
+        }
+      },
+      "x-visibility": "tenant",
+      "x-partition": "{tenant_id}",
+      "x-retention": "30d"
+    },
+    "scope.revoked": {
+      "address": "scope.revoked",
+      "title": "scope.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/scope.revoked"
+        }
+      },
+      "x-visibility": "tenant",
+      "x-partition": "{tenant_id}",
+      "x-retention": "30d"
+    }
+  },
+  "operations": {
+    "receive:reference.console.viewed:reference:reference.ingest": {
+      "action": "receive",
+      "channel": {
+        "$ref": "#/channels/reference.console.viewed"
+      },
+      "title": "reference consumes reference.console.viewed",
+      "summary": "queue reference.ingest, delivery unordered"
+    },
+    "send:installation.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/installation.created"
+      },
+      "title": "installation publishes installation.created"
+    },
+    "send:installation.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/installation.revoked"
+      },
+      "title": "installation publishes installation.revoked"
+    },
+    "send:reference.console.viewed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/reference.console.viewed"
+      },
+      "title": "reference publishes reference.console.viewed"
+    },
+    "send:scope.granted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/scope.granted"
+      },
+      "title": "scope publishes scope.granted"
+    },
+    "send:scope.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/scope.revoked"
+      },
+      "title": "scope publishes scope.revoked"
+    }
+  },
+  "components": {
+    "messages": {
+      "installation.created": {
+        "name": "installation.created",
+        "title": "installation.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "installation.revoked": {
+        "name": "installation.revoked",
+        "title": "installation.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "reference.console.viewed": {
+        "name": "reference.console.viewed",
+        "title": "reference.console.viewed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "scope.granted": {
+        "name": "scope.granted",
+        "title": "scope.granted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "scope.revoked": {
+        "name": "scope.revoked",
+        "title": "scope.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      }
+    },
+    "schemas": {
+      "saas_events_v1_events.proto_EventEnvelope": {
+        "type": "object",
+        "properties": {
+          "actor_principal_id": {
+            "type": "string"
+          },
+          "boundary_id": {
+            "type": "string"
+          },
+          "causation_id": {
+            "type": "string"
+          },
+          "correlation_id": {
+            "type": "string"
+          },
+          "data": {
+            "type": "string",
+            "format": "byte"
+          },
+          "datacontenttype": {
+            "type": "string"
+          },
+          "dataschema": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "owner_principal_id": {
+            "type": "string"
+          },
+          "partition_key": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string"
+          },
+          "specversion": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "traceparent": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

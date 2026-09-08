@@ -15,6 +15,7 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	eventsv1 "accounts/pkg/gen/saas/events/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
@@ -68,6 +69,17 @@ func jobOperationStatusError(err error) error {
 		return status.Error(codes.Unavailable, err.Error())
 	default:
 		return status.Error(codes.Internal, "job operation failed")
+	}
+}
+
+func eventOperationStatusError(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, business.ErrEventOperationsUnavailable):
+		return status.Error(codes.Unavailable, err.Error())
+	default:
+		return status.Error(codes.Internal, "event operation failed")
 	}
 }
 
@@ -1724,4 +1736,34 @@ func (s *PlatformAdminServer) ReplayJob(ctx context.Context, req *jobsv1.ReplayJ
 	}
 	response, err := service.ReplayJob(ctx, actorID, req)
 	return response, jobOperationStatusError(err)
+}
+
+func (s *PlatformAdminServer) GetEventOperations(ctx context.Context, req *eventsv1.GetEventOperationsRequest) (*eventsv1.GetEventOperationsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	response, err := service.GetEventOperations(ctx, actorID, req)
+	return response, eventOperationStatusError(err)
+}
+
+func (s *PlatformAdminServer) ListEventSubscriptions(ctx context.Context, req *eventsv1.ListEventSubscriptionsRequest) (*eventsv1.ListEventSubscriptionsResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requirePlatformRole(ctx, actorID, "super_admin"); err != nil {
+		return nil, err
+	}
+	response, err := service.ListEventSubscriptions(ctx, actorID, req)
+	return response, eventOperationStatusError(err)
 }
