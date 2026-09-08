@@ -69,7 +69,7 @@ rpc RotateSecret(RotateWebhookSecretRequest)
     }
     mfa: MFA_REQUIREMENT_RECENT_STEP_UP
     audit: {
-      events: "webhook.secret_rotated"
+      events: "saas.webhook.secret_rotated"
       emission: AUDIT_EMISSION_SUCCESS_AND_FAILURE
     }
     idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED

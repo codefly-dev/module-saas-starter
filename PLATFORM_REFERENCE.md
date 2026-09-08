@@ -143,7 +143,7 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   support must be authority-stripped server-side, not cosmetic.
   `pkg/business/platform_admin.go` (`ImpersonateUser`),
   [PRODUCTION_READY.md](./PRODUCTION_READY.md) decisions 7–8.
-- **Audited, ✅:** emits `platform.user_impersonated`; `RevokeSession` /
+- **Audited, ✅:** emits `saas.platform.user_impersonated`; `RevokeSession` /
   `ListActiveSessions` are support+.
 - **Per-request re-validation, ✅:** the impersonation token is a normal
   L1/L2/L3-checked runtime identity each request; it is a signed 15-minute

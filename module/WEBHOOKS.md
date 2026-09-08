@@ -41,10 +41,20 @@ Subscription event names are canonical routing identifiers: 1–128 bytes,
 starting with a lowercase letter and containing only lowercase letters, digits,
 dots, underscores, or hyphens. This keeps `X-Webhook-Event` safe and portable.
 
+Fan-out routes on the audit event type, which is namespaced
+(`<namespace>.<aggregate>.<event>`, this module minting only `saas.*` — issue
+#520), so a subscription only ever fires for a namespaced name. The routing rule
+above stays deliberately looser than the audit registry's: subscription names are
+customer-facing identifiers with their own compatibility story, so a name that
+matches no event is accepted and simply never fires. Migration 116 rewrote stored
+subscriptions that named a registered event, so an existing subscriber kept
+firing across the cutover; a subscriber that re-creates a subscription from a
+hardcoded pre-#520 name will not.
+
 ```text
 Content-Type: application/json
 User-Agent: Codefly-Webhook/1.0
-X-Webhook-Event: user.created
+X-Webhook-Event: saas.user.created
 X-Webhook-Event-ID: <stable event UUID>
 X-Webhook-Delivery-ID: <attempt-history UUID>
 X-Webhook-Signature: t=<unix-seconds>,v1=<hex-hmac>[,v1=<old-key-hex-hmac>]

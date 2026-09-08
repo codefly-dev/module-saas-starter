@@ -384,7 +384,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Feature                | Status | Notes                                                              |
 |------------------------|--------|--------------------------------------------------------------------|
 | Durable event emit     | ✅    | Audit row + delivery history + generated webhook jobs commit atomically; no lossy process queue |
-| Event types            | ✅    | auth.login, user.registered, org.created, role.assigned, etc.      |
+| Event types            | ✅    | Namespaced `saas.*`: saas.auth.login, saas.user.registered, saas.org.created, saas.role.assigned, etc. |
 | Multi-field filter     | ✅    | By org, actor, action, resource, time range                        |
 | Cursor pagination      | ✅    | Stable across writes                                               |
 | Retention purge job    | 🟡    | Configurable database purge policies exist; provider data, backups, holds, receipts, and production execution evidence do not |
