@@ -66,7 +66,7 @@ Registering an agent principal is a first-class RPC, not a hand-provisioned row:
   `POST /v1/principals:agent`. Its `method_policy` declares
   `EXPOSURE_AUTHENTICATED`, `TENANT_REQUIREMENT_ORG_ADMIN`, a `resource_binding`
   on `org_id → RESOURCE_TARGET_ORGANIZATION`, and audit event
-  `saas.principal.created` — so only an admin of the target org can register an agent
+  `principal.created` — so only an admin of the target org can register an agent
   in it, and every registration is audited.
 - **Handler:** `PrincipalServer.CreateAgentPrincipal`
   (`pkg/adapters/principal_rpcs.go:62`) — `requireAuth` + `requireOrgAdmin`,

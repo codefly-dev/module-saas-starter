@@ -31,7 +31,7 @@ func TestMethodPolicyExtensionRoundTrip(t *testing.T) {
 		Scopes:      []string{"webhooks:write"},
 		Mfa:         policyv1.MFARequirement_MFA_REQUIREMENT_RECENT_STEP_UP,
 		Audit: &policyv1.AuditPolicy{
-			Events:   []string{"saas.webhook.secret_rotated"},
+			Events:   []string{"webhook.secret_rotated"},
 			Emission: policyv1.AuditEmission_AUDIT_EMISSION_SUCCESS,
 		},
 		Idempotency:         policyv1.IdempotencyRequirement_IDEMPOTENCY_REQUIREMENT_REQUIRED,

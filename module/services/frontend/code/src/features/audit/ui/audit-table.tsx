@@ -11,7 +11,7 @@ import { useMemo } from "react";
 import { formatDate, truncateUUID } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
-import { auditEventNamespace, formatAuditAction } from "../model/transforms";
+import { formatAuditAction } from "../model/transforms";
 import type { AuditEvent } from "../model/types";
 
 const col = createColumnHelper<AuditEvent>();
@@ -37,17 +37,16 @@ export function AuditTable({
 				header: "Event Type",
 				cell: (info) => {
 					const event = info.row.original;
-					// The namespace names the module that minted the type, not the
-					// action, so it rides alongside the label rather than inside it.
-					const namespace = auditEventNamespace(info.getValue());
 					return (
 						<div className="flex flex-col gap-1">
 							<Badge variant="outline">
 								{formatAuditAction(info.getValue())}
 							</Badge>
-							<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-								{[namespace, event.category].filter(Boolean).join(" · ")}
-							</span>
+							{event.category ? (
+								<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+									{event.category}
+								</span>
+							) : null}
 						</div>
 					);
 				},

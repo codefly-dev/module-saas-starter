@@ -68,7 +68,7 @@ build on (all paths verified against the tree; migrations live under
 
 GDPR request→completion is the flow most like what we want: an MFA-gated
 request RPC (`connect_handlers.go:951-954`), a background worker that finishes
-the action and emits `saas.gdpr.deletion_completed` (`business/gdpr.go:238`). But
+the action and emits `gdpr.deletion_completed` (`business/gdpr.go:238`). But
 its resume is a **fire-and-forget goroutine** — `go s.processDeletion(...)`
 (`business/gdpr.go:167`), not a durable job. A crash between the insert and
 completion strands a `pending`/`processing` row with nothing to resume it.
@@ -254,7 +254,7 @@ type Engine interface {
    (`postgres_job_producer.go:53`), so the resume is committed with the state
    change or not at all.
 3. Commit. The jobs worker later runs the resume handler, which performs the
-   gated mutation and emits `saas.approval.approved` + the domain event.
+   gated mutation and emits `approval.approved` + the domain event.
 
 **Timeout / escalation sweeper = a delayed job, not a new cron.** On `Create`,
 enqueue a job with `available_at = min(escalate_at, expires_at)`. When it runs,
@@ -396,7 +396,7 @@ option (saas.policy.v1.method_policy) = {
   scopes: "approvals:decide"
   resource_bindings: { request_field: "org_id" target: RESOURCE_TARGET_ORGANIZATION lookup: RESOURCE_LOOKUP_DIRECT_ID }
   mfa: MFA_REQUIREMENT_RECENT                 // high-risk tier → requireRecentMFA
-  audit: { events: "saas.approval.approved" emission: AUDIT_EMISSION_SUCCESS }
+  audit: { events: "approval.approved" emission: AUDIT_EMISSION_SUCCESS }
 };
 ```
 
@@ -428,11 +428,11 @@ supports `resource:action` scoping.
 Add to the typed registry (`pkg/business/audit_registry.go` — one `EventType`
 const near `:93`, one `def(...)` row near `:186` each):
 
-- `saas.approval.asked` (category: the relevant domain; STI-tagged)
-- `saas.approval.approved`
-- `saas.approval.denied`
-- `saas.approval.timeout` (emitted on `expired`)
-- `saas.approval.escalated`
+- `approval.asked` (category: the relevant domain; STI-tagged)
+- `approval.approved`
+- `approval.denied`
+- `approval.timeout` (emitted on `expired`)
+- `approval.escalated`
 
 Each decision links to the actor chain via `delegation_grant_id`, so "who
 approved on whose behalf" is immutable and revocable through the existing
@@ -443,9 +443,9 @@ authorization-revision bump (`99_...`).
 The issue flags three; the tree shows two still open and one now moot:
 
 - **`Service.CreateAgentPrincipal`** (`pkg/business/principals.go:246`) — emits
-  no audit event. **Fix:** emit `saas.principal.created`.
+  no audit event. **Fix:** emit `principal.created`.
 - **`Service.RevokePrincipal`** (`pkg/business/principals.go:318`) — emits no
-  audit event. **Fix:** emit `saas.principal.revoked`.
+  audit event. **Fix:** emit `principal.revoked`.
 - **`UpsertFeatureFlag`** — *no longer a gap.* It is now a deprecated read-only
   stub that returns `FailedPrecondition "legacy feature-flag inventory is
   read-only"` (`pkg/adapters/rpcs.go:1564-1579`); it mutates nothing, so there

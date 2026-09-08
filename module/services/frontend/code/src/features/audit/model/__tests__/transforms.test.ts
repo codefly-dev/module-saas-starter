@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { AuditEventSchema } from "@/gen/saas/accounts/v1/audit_pb";
 import {
 	auditEventAction,
-	auditEventNamespace,
 	formatAuditAction,
 	groupByDate,
 	toAuditEvent,
@@ -41,14 +40,12 @@ describe("formatAuditAction", () => {
 	});
 });
 
-describe("audit event namespace", () => {
-	it("splits a namespaced type into namespace and action", () => {
-		expect(auditEventNamespace("saas.auth.login")).toBe("saas");
+describe("auditEventAction", () => {
+	it("strips the namespace segment", () => {
 		expect(auditEventAction("saas.auth.login")).toBe("auth.login");
 	});
 
-	it("reports no namespace for a bare value", () => {
-		expect(auditEventNamespace("login")).toBe("");
+	it("passes a bare value through", () => {
 		expect(auditEventAction("login")).toBe("login");
 	});
 });
