@@ -329,6 +329,16 @@ type moduleResolver interface {
 // the address dialed is exactly the one just checked.
 func newModuleUpstreamTransport(resolver moduleResolver) *http.Transport {
 	base := http.DefaultTransport.(*http.Transport).Clone()
+	// The resolve-and-pin DialContext below is the ONLY sanctioned path to a
+	// module upstream. The cloned DefaultTransport inherits Proxy:
+	// ProxyFromEnvironment, which would defeat that: with HTTP(S)_PROXY set the
+	// transport dials the PROXY, so DialContext would validate the proxy's
+	// address instead of the upstream's, and in-mesh module traffic would be
+	// tunnelled through an arbitrary egress host — the exact off-mesh reach this
+	// guard exists to prevent. A federated module upstream is always mesh-local
+	// and must never be proxied, so disable proxying and keep the validated
+	// direct dial authoritative.
+	base.Proxy = nil
 	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	base.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		host, port, err := net.SplitHostPort(addr)

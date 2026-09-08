@@ -453,6 +453,22 @@ func TestValidateResolvedModuleAddrs(t *testing.T) {
 	}))
 }
 
+// The module transport MUST NOT honor an environment proxy. It is built by
+// cloning http.DefaultTransport, which carries Proxy: ProxyFromEnvironment; left
+// intact, a configured HTTP(S)_PROXY would make the transport dial the proxy, so
+// the resolve-and-pin DialContext would validate the proxy's address instead of
+// the upstream's and tunnel in-mesh traffic off-mesh. Proxy must be disabled so
+// the validated direct dial is the only path to the upstream.
+func TestModuleUpstreamTransport_DisablesProxy(t *testing.T) {
+	// Baseline: the clone source really does carry a proxy, so a nil Proxy on the
+	// module transport is a deliberate override, not a coincidental default.
+	require.NotNil(t, http.DefaultTransport.(*http.Transport).Clone().Proxy,
+		"precondition: DefaultTransport clone carries ProxyFromEnvironment")
+
+	tr := newModuleUpstreamTransport(stubResolver{})
+	require.Nil(t, tr.Proxy, "module transport must not route module upstreams through an env proxy")
+}
+
 // stubResolver maps a host to a fixed set of addresses, standing in for DNS so a
 // rebinding scenario is deterministic in a unit test.
 type stubResolver map[string][]net.IP
