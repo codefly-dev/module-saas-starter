@@ -15,11 +15,36 @@
 -- Order matters: rewrite every stored value first, then constrain, so no
 -- constraint is added against a table that still holds legacy values.
 --
+-- Deploy order is NOT assumed. An accounts instance running the new code
+-- reconciles the registry at startup (SyncAuditEventTypes, work.go), so it can
+-- insert `saas.*` rows before this migration runs. The registry rewrite below
+-- therefore drops a legacy row that a namespaced row already supersedes rather
+-- than colliding with it on the primary key — a collision here aborts the
+-- migration, which fails the store's runtime-init and takes the whole service
+-- graph down with it.
+--
+-- Cost: this rewrites every audit_events row and then validates two constraints
+-- and a foreign key across every partition, each taking ACCESS EXCLUSIVE for the
+-- duration. It is O(total audit history) in a single transaction; on a database
+-- with real history, run it in a maintenance window.
+--
 -- Classification (DATABASE_AUTHORITY.md): no new relation and no change to any
--- tenant boundary. audit_event_types stays global control-plane reference data;
--- audit_events stays a tenant relation under its existing RLS policy and grants.
+-- tenant boundary. audit_event_types stays global control-plane reference data
+-- (no RLS); audit_events and webhook_subscriptions stay tenant relations under
+-- their existing policies and grants, forced again before this migration ends.
 
 ALTER TABLE audit_event_types ADD COLUMN namespace TEXT NOT NULL DEFAULT 'saas';
+
+-- audit_events and webhook_subscriptions FORCE row-level security, so their
+-- policies apply to the table owner too, and this migration sets neither
+-- app.current_org_id nor app.bypass. Without suspending FORCE, every rewrite
+-- below matches ZERO rows and reports success — the exact silent-no-op failure
+-- rls-migration-gate.mjs exists to catch. Suspending FORCE (owner-only, and
+-- restored below) needs table ownership, the same privilege DISABLE TRIGGER
+-- needs; it does not need the superuser/BYPASSRLS attribute that a managed
+-- Postgres withholds from the migration role.
+ALTER TABLE audit_events NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE webhook_subscriptions NO FORCE ROW LEVEL SECURITY;
 
 -- SyncAuditEventTypes deprecates rather than deletes a type the code catalog
 -- dropped, so the projection can hold legacy names no producer can emit any
@@ -29,6 +54,14 @@ DELETE FROM audit_event_types t
  WHERE t.deprecated
    AND t.name NOT LIKE 'saas.%'
    AND NOT EXISTS (SELECT 1 FROM audit_events e WHERE e.event_type = t.name);
+
+-- A legacy row whose namespaced counterpart already exists is superseded: the
+-- namespaced row carries the authoritative definition, and the history still
+-- pointing at the legacy name is rewritten onto it a few statements down. Drop
+-- it rather than letting the rewrite collide on audit_event_types_pkey.
+DELETE FROM audit_event_types t
+ WHERE t.name NOT LIKE 'saas.%'
+   AND EXISTS (SELECT 1 FROM audit_event_types n WHERE n.name = 'saas.' || t.name);
 
 UPDATE audit_event_types
    SET name = 'saas.' || name, updated_at = NOW()
@@ -62,6 +95,9 @@ SELECT DISTINCT e.event_type, split_part(e.event_type, '.', 1), 1, 'system', 'un
 -- alone — it never matched an event and still doesn't. (canonicalWebhookEventType
 -- stays deliberately looser than the audit rule; subscription names are
 -- customer-facing routing identifiers with their own compatibility story.)
+-- updated_at is deliberately not touched: this is a platform rewrite, not a
+-- customer edit, and it must not masquerade as one in the subscription's
+-- last-modified timestamp.
 UPDATE webhook_subscriptions
    SET events = ARRAY(
            SELECT CASE
@@ -70,13 +106,15 @@ UPDATE webhook_subscriptions
                       ELSE e
                   END
              FROM unnest(events) AS e
-       ),
-       updated_at = NOW()
+       )
  WHERE EXISTS (
            SELECT 1
              FROM unnest(events) AS e
              JOIN audit_event_types t ON t.name = 'saas.' || e
        );
+
+ALTER TABLE audit_events FORCE ROW LEVEL SECURITY;
+ALTER TABLE webhook_subscriptions FORCE ROW LEVEL SECURITY;
 
 -- Constrain, now that no legacy value survives.
 ALTER TABLE audit_event_types

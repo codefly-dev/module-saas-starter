@@ -192,6 +192,72 @@ func TestMigration116RewritesHistoryAndSubscriptions(t *testing.T) {
 	})
 }
 
+// A new-code accounts instance reconciles the registry at startup, so it can
+// insert `saas.*` rows before the migration runs. When it does, the legacy row is
+// still pinned by history (the deprecated-and-unreferenced sweep spares it) and
+// the naive rewrite collides on audit_event_types_pkey — which aborts the
+// migration, fails the store's runtime-init, and takes the service graph down.
+func TestMigration116SurvivesAPreSyncedRegistry(t *testing.T) {
+	eventID := uuid.NewString()
+
+	replayMigration116(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		// History pinning the legacy name so it cannot simply be swept away. The
+		// down-migration has already restored the bare 'auth.login' registry row.
+		mustExec(t, ctx, conn,
+			`INSERT INTO audit_events (id, event_type, actor_type, resource, created_at)
+			 VALUES ($1, 'auth.login', 'system', 'session', NOW())`, eventID)
+		// What a newly-deployed instance's SyncAuditEventTypes would have written.
+		mustExec(t, ctx, conn,
+			`INSERT INTO audit_event_types (name, version, category, owner, deprecated)
+			 VALUES ('saas.auth.login', 1, 'security', 'accounts', FALSE)`)
+	})
+
+	t.Cleanup(func() {
+		asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+			mustExec(t, ctx, conn, `ALTER TABLE audit_events DISABLE TRIGGER audit_events_no_delete`)
+			mustExec(t, ctx, conn, `DELETE FROM audit_events WHERE id = $1`, eventID)
+			mustExec(t, ctx, conn, `ALTER TABLE audit_events ENABLE TRIGGER audit_events_no_delete`)
+		})
+	})
+
+	controlPlaneTx(t, func(ctx context.Context, tx pgx.Tx) error {
+		var eventType string
+		if err := tx.QueryRow(ctx,
+			`SELECT event_type FROM audit_events WHERE id = $1`, eventID).Scan(&eventType); err != nil {
+			return err
+		}
+		require.Equal(t, "saas.auth.login", eventType,
+			"history pinned to the legacy name must land on the pre-synced namespaced row")
+
+		var legacy int
+		if err := tx.QueryRow(ctx,
+			`SELECT count(*) FROM audit_event_types WHERE name = 'auth.login'`).Scan(&legacy); err != nil {
+			return err
+		}
+		require.Zero(t, legacy, "the superseded legacy registry row must be gone, not duplicated")
+		return nil
+	})
+}
+
+// Both rewritten tables FORCE row-level security, so their policies apply to the
+// table owner and the migration's rewrites would match zero rows — silently —
+// unless FORCE is suspended. Suspending it is only safe if it is restored:
+// leaving either table un-FORCEd is a tenant-isolation hole strictly worse than
+// the bug it was suspended for.
+func TestMigration116RestoresForcedRowLevelSecurity(t *testing.T) {
+	controlPlaneTx(t, func(ctx context.Context, tx pgx.Tx) error {
+		for _, table := range []string{"audit_events", "webhook_subscriptions"} {
+			var forced bool
+			if err := tx.QueryRow(ctx,
+				`SELECT relforcerowsecurity FROM pg_class WHERE relname = $1`, table).Scan(&forced); err != nil {
+				return err
+			}
+			require.Truef(t, forced, "%s must still FORCE row-level security after migration 116", table)
+		}
+		return nil
+	})
+}
+
 // The migration disables the append-only triggers to rewrite history. Re-enabling
 // them is the step a rushed migration forgets, and nothing else would notice.
 func TestMigration116RestoresImmutability(t *testing.T) {
