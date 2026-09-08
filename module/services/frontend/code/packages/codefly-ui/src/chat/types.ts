@@ -4,7 +4,7 @@
 // hooks, and can run identically in the host app and in a solution's
 // Module-Federation remote.
 //
-// `@codefly/saas-sdk`'s `useChatStream` produces exactly these shapes — it owns
+// `@codefly-dev/saas-sdk`'s `useChatStream` produces exactly these shapes — it owns
 // the SSE/WS transport and hands `messages`/`onSend` down — so this view stays a
 // pure component with no dependency on the SDK's transport stack.
 

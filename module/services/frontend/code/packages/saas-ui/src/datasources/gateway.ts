@@ -1,10 +1,10 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import {
+	accounts,
 	type Datasource,
-	datasource,
 	DatasourceProvider,
 	DatasourceStatus,
-} from "@codefly/saas-sdk";
+} from "@codefly-dev/saas-sdk";
 import {
 	Code,
 	ConnectError,
@@ -37,7 +37,7 @@ export interface GatewayBinding {
 
 /**
  * Wraps a Connect `Transport` in the transport-free `DatasourceClient` the
- * components drive: the `@codefly/saas-sdk` client plus the protobuf→view
+ * components drive: the `@codefly-dev/saas-sdk` client plus the protobuf→view
  * mapping at the boundary. Callers that already own an authenticated transport
  * (the portal) pass it straight in; `createDatasourceClient` builds one from a
  * gateway binding.
@@ -45,7 +45,7 @@ export interface GatewayBinding {
 export function datasourceClientOverTransport(
 	transport: Transport,
 ): DatasourceClient {
-	const client = datasource.New(transport);
+	const client = accounts.New(transport).datasource();
 	return {
 		async listSources(orgId) {
 			const response = await client.listSources({ orgId });

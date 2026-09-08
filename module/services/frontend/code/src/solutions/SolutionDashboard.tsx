@@ -5,7 +5,7 @@ import {
 	createSaasClient,
 	type ResolvedWidget,
 	runDashboard,
-} from "@codefly/saas-sdk";
+} from "@codefly-dev/saas-sdk";
 // Charts come from the shared kit, not host-internal components: the same
 // primitives a solution's own remote would render with, so host-rendered and
 // solution-rendered dashboards look identical and there is one charting

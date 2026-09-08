@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fromDashboardData } from "../types.js";
 
-// The one seam a consumer crosses between @codefly/saas-sdk's data runtime and
+// The one seam a consumer crosses between @codefly-dev/saas-sdk's data runtime and
 // this component kit: runDashboard's result → the renderer's view model.
 describe("fromDashboardData", () => {
 	it("maps a resolved data-graph dashboard to the view model", () => {

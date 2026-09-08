@@ -36,7 +36,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
   `DropdownMenu`); `dashboard` is `<Dashboard>`, charts, `fromDashboardData`; `chat`
   is `<Chat>`. React only: no plugin runtime, no host context.
   This is the surface a solution fe-remote consumes. `<Chat>` is fed by
-  `@codefly/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
+  `@codefly-dev/saas-sdk`'s `useChatStream` — the hook owns the SSE/WS transport, the
   component stays pure, the same split as `runDashboard` → `<Dashboard>`.
 
 ## Entry points
