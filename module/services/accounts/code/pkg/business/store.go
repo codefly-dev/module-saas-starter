@@ -124,6 +124,17 @@ type Store interface {
 	// reconcile interval without touching the cursor, so a reconcile that finds
 	// nothing to do still reschedules. Control-plane.
 	BumpDatasourceReconcile(ctx context.Context, sourceID string) error
+	// MarkDatasourceSourceDegraded parks a source the compiler cannot make
+	// progress on (an oversized snapshot manifest), recording the reason and
+	// clearing next_reconcile_at so the reconcile sweep stops re-selecting it
+	// until an operator resets it to active. Control-plane.
+	MarkDatasourceSourceDegraded(ctx context.Context, sourceID, reason string) error
+	// ClearDatasourceSourceDegraded returns a degraded source to active once a
+	// snapshot has succeeded again: it clears status_reason and restores
+	// next_reconcile_at from the source's reconcile interval so the reconcile
+	// sweep resumes selecting it. Scoped to status='degraded' so it cannot
+	// resurrect a source an operator has since paused. Control-plane.
+	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error

@@ -14,7 +14,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -158,63 +157,43 @@ func (c *Client) ListFiles(ctx context.Context, repo, ref string, prefixes []str
 	return files, nil
 }
 
-// Compare returns the changed files between base and head. GitHub caps the file
-// list at 300; when that cap is reached the result is marked Truncated so the
-// caller reconciles with a full snapshot instead of trusting a partial op list.
-// A 404 (base commit no longer reachable, e.g. after a force push) surfaces as
-// ErrNotFound, which the caller also handles by snapshotting.
+// Compare returns the changed files between base and head in a single request.
+// GitHub paginates the compare's commits, not its files: the files array is
+// capped at 300 for the whole comparison and is never paginated, so a loop over
+// ?page would only re-serve the same files. When that cap is reached the result
+// is marked Truncated so the caller reconciles with a full snapshot instead of
+// trusting a partial op list. A 404 (base commit no longer reachable, e.g. after
+// a force push) surfaces as ErrNotFound, which the caller also handles by
+// snapshotting.
 func (c *Client) Compare(ctx context.Context, repo, base, head string) (*Comparison, error) {
-	result := &Comparison{}
-	seen := map[string]bool{}
-	for page := 1; ; page++ {
-		var out struct {
-			Status string `json:"status"`
-			Files  []struct {
-				Filename         string `json:"filename"`
-				PreviousFilename string `json:"previous_filename"`
-				Status           string `json:"status"`
-				SHA              string `json:"sha"`
-			} `json:"files"`
-		}
-		target := "/repos/" + repo + "/compare/" +
-			url.PathEscape(base) + "..." + url.PathEscape(head) +
-			"?per_page=100&page=" + strconv.Itoa(page)
-		if err := c.getJSON(ctx, target, &out); err != nil {
-			return nil, err
-		}
-		if page == 1 {
-			result.Status = out.Status
-		}
-		// Dedup by filename: a diff never lists a path twice, so a repeat means an
-		// endpoint that ignored ?page and re-served an earlier page. Counting only
-		// newly-seen files both drops those duplicates and lets the progress check
-		// below terminate instead of looping to a false 300-file truncation.
-		added := 0
-		for _, f := range out.Files {
-			if seen[f.Filename] {
-				continue
-			}
-			seen[f.Filename] = true
-			added++
-			result.Files = append(result.Files, ChangedFile{
-				Filename:         f.Filename,
-				PreviousFilename: f.PreviousFilename,
-				Status:           f.Status,
-				SHA:              f.SHA,
-			})
-		}
-		if len(result.Files) >= compareFileCap {
-			result.Truncated = true
-			result.Files = result.Files[:compareFileCap]
-			return result, nil
-		}
-		// Fewer than a full page of new files means no more progress is possible:
-		// either a genuine last page (< per_page returned) or a non-paginating
-		// endpoint that only repeated files already seen.
-		if added < 100 {
-			return result, nil
-		}
+	var out struct {
+		Status string `json:"status"`
+		Files  []struct {
+			Filename         string `json:"filename"`
+			PreviousFilename string `json:"previous_filename"`
+			Status           string `json:"status"`
+			SHA              string `json:"sha"`
+		} `json:"files"`
 	}
+	target := "/repos/" + repo + "/compare/" +
+		url.PathEscape(base) + "..." + url.PathEscape(head)
+	if err := c.getJSON(ctx, target, &out); err != nil {
+		return nil, err
+	}
+	result := &Comparison{Status: out.Status}
+	for _, f := range out.Files {
+		result.Files = append(result.Files, ChangedFile{
+			Filename:         f.Filename,
+			PreviousFilename: f.PreviousFilename,
+			Status:           f.Status,
+			SHA:              f.SHA,
+		})
+	}
+	if len(result.Files) >= compareFileCap {
+		result.Truncated = true
+		result.Files = result.Files[:compareFileCap]
+	}
+	return result, nil
 }
 
 // GetBlob returns the decoded bytes of a git blob by its sha, up to max bytes. It

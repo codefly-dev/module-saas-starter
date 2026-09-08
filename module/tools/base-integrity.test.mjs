@@ -149,6 +149,13 @@ test("excludes runtime-owned secret configuration from the canonical base", () =
     isExcludedFile("services/store/configurations/local/postgres.env"),
     false,
   );
+  // Workspace-config-group secrets ship at the module root too; exclude them on
+  // the same runtime-owned grounds, while non-secret group defaults stay canonical.
+  assert.equal(
+    isExcludedFile("configurations/local/internal-auth.secret.env"),
+    true,
+  );
+  assert.equal(isExcludedFile("configurations/local/legal.env"), false);
 });
 
 test("excludes consumer-generated module and GitOps manifests", () => {
