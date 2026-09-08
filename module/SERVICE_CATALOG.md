@@ -160,6 +160,51 @@ P1-NET-001 removes that transitional split. Missing/extra services, unknown
 YAML fields, unsupported kinds, and non-identifier names fail generation;
 arbitrary Go expressions are not accepted.
 
+## External documentation contract
+
+The catalog is not only a generator input: it is the artifact an external
+documentation renderer reads to describe this module's interface to a
+non-engineer, at a pinned release. Two properties make that safe, and both are
+enforced by `tools/interface-docs-gate.mjs` in CI:
+
+- **Every public operation carries a readable one-sentence summary.** The
+  compiler already rejects a missing description; the gate additionally rejects
+  a description whose first sentence does not stand on its own — too short to
+  name what the operation acts on, punctuated as a signature rather than a
+  sentence, opening with an audience marker, or reused verbatim by another
+  operation. Internal operations are never rendered externally and only have to
+  be documented.
+- **Every operation belongs to exactly one bounded context.** Protobuf services
+  are an authoring unit; the rendered page groups by what a reader is trying to
+  do. Most services map whole to one context, but `ModuleCapabilitiesService`
+  is placed method by method (jobs, approvals, audit, notifications,
+  datasource) and `PlatformAdminService` splits its job and entitlement
+  operations out of platform administration. The assignment lives in the gate
+  and is exhaustive, so a new service or module-facing capability cannot ship
+  unplaced; `node tools/interface-docs-gate.mjs contexts` prints it as JSON for
+  a renderer that groups by context, so the grouping is published from the same
+  place that enforces it.
+
+Everything else a reader needs — who may call an operation, its limits, its
+rate class, whether it emits audit — is not prose: it is the typed
+`saas.policy.v1.MethodPolicy` the compiler refuses to omit and the
+`buf.validate` constraints on the request. Restating those in a description
+would be a second source of truth that drifts.
+
+The functional page itself lives in the handbook (`modules/saas-starter.md`)
+and owns the *what*; the user stories on it are traced to acceptance tests here
+by `tools/story-trace-gate.mjs`. The trace is symmetric — a story with no test
+and a test naming an absent story both fail — and a test that declares a story
+and then skips itself counts as unproven, since a declaration is not evidence.
+
+`check --page` makes that comparison and therefore needs the page, so it runs
+where the page and this tree are both available; the tool ships with the module
+and resolves its root as the parent of `tools/`, so a composed workspace runs it
+unchanged. `tests` runs the half that needs no page — every story test present
+and running — and is what this repository's own CI gates on. The split is
+deliberate: a step that silently substitutes the weaker check for the stronger
+one would report a guarantee nobody made.
+
 ## Current editorial exception
 
 Transport and enforcement fields come only from descriptors. Human-facing

@@ -81,6 +81,30 @@ jobs:
         working-directory: module/services/accounts/code
         run: go test -run 'Lockstep|RequiredCapabilities|ScanHandlers|EnforcementAllowlist' ./pkg/adapters/
 
+  docs-sync:
+    name: Interface docs and story tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test the interface-docs gate
+        run: node --test module/tools/interface-docs-gate.test.mjs
+      - name: Test the story-trace gate
+        run: node --test module/tools/story-trace-gate.test.mjs
+      - name: Require a readable summary on every public operation
+        run: node module/tools/interface-docs-gate.mjs check
+      - name: Require every story test to be present and to run
+        # The comparison against the functional page needs that page, which
+        # this repository has no credentialed way to read and, by AGENTS.md,
+        # may not name. It runs where the page and this tree sit together — a
+        # composed workspace pins this module by tag and holds both. What runs
+        # here is the half that needs nothing external, and the step claims
+        # only that.
+        run: node module/tools/story-trace-gate.mjs tests
+
   provider-shim:
     name: Provider setup shims
     runs-on: ubuntu-latest
@@ -709,3 +733,40 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ steps.publish.outputs.tarballs }}
+
+  handbook-surface-bump:
+    name: Announce the release to the functional page
+    # The v0.0.x deploy counter is the track a consumer — and the handbook —
+    # pins, so it is the tag that makes a new interface current.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - base-integrity
+      - docs-sync
+      - module-package
+      - codefly-quality
+      - codefly-supply-chain
+      - codefly-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch surface-bump
+        shell: bash
+        env:
+          HANDBOOK_REPOSITORY: ${{ vars.HANDBOOK_REPOSITORY }}
+          GH_TOKEN: ${{ secrets.HANDBOOK_DISPATCH_TOKEN }}
+        run: |
+          if [[ -z "${HANDBOOK_REPOSITORY}" || -z "${GH_TOKEN}" ]]; then
+            echo "::error::the release was not announced. Set the HANDBOOK_REPOSITORY repository variable (owner/repo) and the HANDBOOK_DISPATCH_TOKEN secret."
+            exit 1
+          fi
+          # The payload names the exact commit, and the consumer must render
+          # from it. Resolving "the latest release" instead would read a stale
+          # interface: this track publishes tags, and a tag does not create a
+          # GitHub Release, so the newest release object here can be many
+          # releases behind the tag being announced.
+          gh api "repos/${HANDBOOK_REPOSITORY}/dispatches" \
+            -f event_type=surface-bump \
+            -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
+            -f "client_payload[release]=${GITHUB_REF_NAME}" \
+            -f "client_payload[commit]=${GITHUB_SHA}" \
+            -f "client_payload[artifact]=module/services/accounts/generated/service-catalog.json"

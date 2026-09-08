@@ -8,6 +8,9 @@ A codefly **module** is a collection of **services**; each service owns its own 
 
 ## Quick links
 
+- Functional contract (the *what*, with the `HOST-*` user stories): the
+  handbook's `modules/saas-starter.md`; this file stays the engineering
+  reference (the *how*), and [README.md](./README.md) links the two.
 - Composing this module into a downstream workspace: [Composing this module into a workspace](#composing-this-module-into-a-workspace)
 - Runnable local product with real identity: [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md)
 - External-provider bootstrap scripts: [scripts/setup/README.md](./scripts/setup/README.md)
