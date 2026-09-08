@@ -20,6 +20,13 @@ export function getToken(): string | null {
  * access token (and updates auth state). Concurrent callers share one
  * in-flight refresh — the refresh token rotates on use, so a second
  * concurrent exchange would burn the freshly issued token.
+ *
+ * This single-flight is NOT redundant with the exchange-level coalescing in
+ * auth.tsx (`inflightExchange`): this one also collapses the handler's
+ * teardown/redirect side-effects, so two concurrent 401s recover into one
+ * logout+redirect instead of two. See the layered note in auth.tsx's
+ * `exchangeRefreshCookie` — deleting either single-flight reopens a distinct
+ * bug (double redirect here, self-inflicted reuse revocation there).
  */
 let refreshHandler: (() => Promise<string | null>) | null = null;
 let inflightRefresh: Promise<string | null> | null = null;
