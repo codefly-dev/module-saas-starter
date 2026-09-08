@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:92fadde69c6b9d8d4ce8fb5239a5741b1c261dbcc37447c76b369acaa67d870c",
+      "digest": "sha256:e6202131a07b3905490af44fa5e5194660c4a6eaaa19c0ec14a110cc3690cb51",
       "services": [
         {
           "name": "APIKeyService",
@@ -169,6 +169,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
             "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
