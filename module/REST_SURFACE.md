@@ -33,7 +33,7 @@ for a protobuf procedure or inherit policy by path similarity.
 | `services/accounts/generated/rest-surface.json` | Typed target-neutral REST catalog. |
 | `services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go` | Accounts registration and exact/template allowlist. |
 | `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-sidecar descriptor REST inventory. |
-| `services/auth-gateway/routing/rest/saas-starter/api/non-protobuf-extensions.rest.codefly.yaml` | Five explicit routes without protobuf ownership. |
+| `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Five explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
 The strict binding file covers every surface service exactly once. Twenty-two

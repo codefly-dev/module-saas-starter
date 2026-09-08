@@ -138,6 +138,10 @@ func fileImports(t *testing.T, path string) []string {
 var httpAllowedPerimeterFiles = map[string]bool{
 	"gateway.go":           true,
 	"gateway_solutions.go": true,
+	// gateway_modules.go proxies runtime-registered composed-module REST
+	// upstreams. It runs the same ext_authz Check as any protected route and
+	// reaches no external IdP — the sidecar remains the token authority.
+	"gateway_modules.go":   true,
 	"main.go":              true,
 	"ratelimit.go":         true,
 	"telemetry_metrics.go": true,

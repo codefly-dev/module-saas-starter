@@ -12,47 +12,65 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
-// solutionRegistry holds runtime-registered solution upstreams.
+// upstreamRegistry is a process-local map of a routing key → upstream URL,
+// populated at runtime by self-registration rather than at build time.
 //
-// A "solution" is an independently deployed module the saas has no build-time
-// knowledge of. Solutions self-register their upstream on startup; the gateway
-// then proxies `/solutions/{id}/{path}` to them. This is a deliberate, contained
+// It backs two distinct self-registration surfaces that share the same
+// discipline (see gateway_solutions.go for solutions and gateway_modules.go for
+// composed-module REST federation): an independently deployed component the saas
+// has no build-time knowledge of POSTs its upstream on startup, and the gateway
+// then proxies matching requests to it. This is a deliberate, contained
 // relaxation of the otherwise static-catalog-only rule (every request must match
-// an explicit catalog entry): a solution's data endpoints are auth-required, the
+// an explicit catalog entry): proxied data endpoints stay auth-required, the
 // same ext_authz Check runs, and identity headers are stripped and re-stamped
-// exactly as for catalog routes. Only the solution's public static surface
-// (/assets and /.well-known, served open by the origin) is exempt from auth for
-// reads — see solutionPublicUpstreamPath. The gateway performs authentication and
-// identity projection; the solution's own downstream calls (e.g. accounts
-// QueryAuditLog, which still enforces audit:read) remain the authorization
-// authority.
+// exactly as for catalog routes. The gateway performs authentication and
+// identity projection; the registered upstream's own downstream calls remain the
+// authorization authority.
 //
 // The store is process-local, exactly like the frontend's solution registry.
 // For a single dev/runtime instance that is sufficient; with more than one
 // sidecar replica a registration lands on one replica only, so proxy requests
-// load-balanced to the others 502 until the solution re-registers there. A
+// load-balanced to the others 502 until the component re-registers there. A
 // shared store (Postgres/redis), coordinated with the frontend registry, is the
 // multi-replica fix and is tracked as the same follow-up.
-type solutionRegistry struct {
+type upstreamRegistry struct {
 	mu        sync.RWMutex
 	upstreams map[string]*url.URL
 }
 
-func newSolutionRegistry() *solutionRegistry {
-	return &solutionRegistry{upstreams: make(map[string]*url.URL)}
+func newUpstreamRegistry() *upstreamRegistry {
+	return &upstreamRegistry{upstreams: make(map[string]*url.URL)}
 }
 
-func (s *solutionRegistry) set(id string, upstream *url.URL) {
+func (s *upstreamRegistry) set(id string, upstream *url.URL) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.upstreams[id] = upstream
 }
 
-func (s *solutionRegistry) get(id string) (*url.URL, bool) {
+func (s *upstreamRegistry) get(id string) (*url.URL, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	upstream, ok := s.upstreams[id]
 	return upstream, ok
+}
+
+// claim registers key→upstream when the key is free, or when it already points
+// at the same upstream (idempotent re-registration on restart). It returns
+// (existing, false) without mutating when the key is already held by a DIFFERENT
+// upstream: first-claim-wins, so a later caller sharing the cluster-internal
+// token cannot silently take over a key another component already registered.
+func (s *upstreamRegistry) claim(id string, upstream *url.URL) (*url.URL, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.upstreams[id]; ok {
+		if existing.String() != upstream.String() {
+			return existing, false
+		}
+		return existing, true
+	}
+	s.upstreams[id] = upstream
+	return upstream, true
 }
 
 const solutionPrefix = "/solutions/"
