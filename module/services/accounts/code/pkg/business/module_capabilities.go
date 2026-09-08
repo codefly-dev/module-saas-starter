@@ -534,7 +534,7 @@ func (s *Service) enqueueApprovalResume(ctx context.Context, req *ApprovalReques
 // spine. The event type must be registered in the code-owned catalog;
 // unregistered types are rejected, not stored free-form. An empty tenant emits a
 // system-scoped event and requires the cross-tenant grant.
-func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID string, fields *structpb.Struct) error {
+func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller, tenant, eventType, actor, solution, entryID, idempotencyKey string, fields *structpb.Struct) error {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
 		return err
@@ -564,7 +564,9 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 	// surface as an error — not the fire-and-forget emit(), which swallows the
 	// error and would report success while the event was silently lost.
 	emit := func(ctx context.Context) error {
-		return s.emitTx(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+		entry := s.buildAuditEntry(ctx, actor, "agent", EventType(eventType), solution, entryID, tenant, payload)
+		entry.IdempotencyKey = idempotencyKey
+		return s.emitEntryTx(ctx, entry)
 	}
 	if tenant == "" {
 		if err := s.store.WithControlPlane(ctx, emit); err != nil {
@@ -642,5 +644,11 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 		}
 		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "fetch blob").Error())
 	}
+	// Record the data access on the source's own tenant spine. Each fetch is a
+	// distinct access event (no idempotency key), and a transient audit-write
+	// failure must not fail the read the module needs, so this is the
+	// fire-and-forget emit rather than a transactional one.
+	s.emit(ctx, caller.PrincipalID, "agent", EventDatasourceBlobFetched, "datasource", source.ID, source.OrgID,
+		map[string]any{"repo": source.Repo, "blob_sha": blobSHA, "bytes": len(content)})
 	return content, http.DetectContentType(content), nil
 }

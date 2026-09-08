@@ -30,6 +30,12 @@ type AuditEntry struct {
 	ImpersonatedBy string // admin user ID if this action was performed during impersonation
 	IsImpersonated bool
 	CreatedAt      time.Time
+	// IdempotencyKey, when set, deduplicates retried emits: the emitter reserves
+	// (OrgID, EventType, IdempotencyKey) in a guard table inside the same
+	// transaction as the audit write, and a duplicate emit is a no-op success (no
+	// second row, no second webhook fan-out). Empty disables dedup. See
+	// audit_event_idempotency (migration 118).
+	IdempotencyKey string
 }
 
 // AuditEmitter writes audit events. Production uses DurableAuditEmitter so the
@@ -97,6 +103,21 @@ func (e *DurableAuditEmitter) normalize(ctx context.Context, entry *AuditEntry) 
 // write inserts the audit row and fans out the webhook outbox using whatever
 // transaction is already on ctx (getQueryExecutor / EnqueueJob both pick it up).
 func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error {
+	if entry.IdempotencyKey != "" {
+		reserved, err := e.store.ReserveAuditIdempotency(ctx, entry.OrgID, string(entry.EventType), entry.IdempotencyKey)
+		if err != nil {
+			return err
+		}
+		if !reserved {
+			// A prior emit of this (org, event_type, idempotency_key) already wrote
+			// the event in a committed transaction. Skip the insert and the webhook
+			// fan-out and report success: the intended effect (exactly one audit row
+			// and one set of deliveries) is already in place. Reserving inside the
+			// caller's tx keeps the guard row and the audit row atomic, so a rolled
+			// back audit write also frees the key for a genuine retry.
+			return nil
+		}
+	}
 	if err := e.store.InsertAuditEvent(ctx, entry); err != nil {
 		return err
 	}
@@ -391,7 +412,16 @@ func (s *Service) emitTx(ctx context.Context, actorID, actorType string, eventTy
 	if s.audit == nil {
 		return nil
 	}
-	entry := s.buildAuditEntry(ctx, actorID, actorType, eventType, resource, resourceID, orgID, payload...)
+	return s.emitEntryTx(ctx, s.buildAuditEntry(ctx, actorID, actorType, eventType, resource, resourceID, orgID, payload...))
+}
+
+// emitEntryTx writes a pre-built AuditEntry on the caller's ambient transaction,
+// the same fail-closed contract as emitTx. It is the seam for callers that set
+// fields buildAuditEntry does not take positionally (e.g. IdempotencyKey).
+func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
+	if s.audit == nil {
+		return nil
+	}
 	if txEmitter, ok := s.audit.(interface {
 		EmitTx(context.Context, AuditEntry) error
 	}); ok {

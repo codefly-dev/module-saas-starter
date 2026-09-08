@@ -273,7 +273,7 @@ func TestModuleEnqueueJob_OrgScopedHappyPath(t *testing.T) {
 func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", nil)
+		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
 	if err != nil {
 		t.Fatalf("registered audit event should be accepted: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestModuleEmitAuditEvent_RegisteredTypeAccepted(t *testing.T) {
 func TestModuleEmitAuditEvent_LegacyTypeRejected(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", nil)
+		moduleTenantA, "document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.InvalidArgument)
 }
 
@@ -295,7 +295,7 @@ func TestModuleEmitAuditEvent_WriteFailureSurfaces(t *testing.T) {
 	svc := newModuleServiceWithStore(t, fakeTxStore{}, &fakeJobBackend{}, false)
 	svc.SetAuditEmitter(&fakeAuditEmitter{emitTxErr: errors.New("audit spine unavailable")})
 	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(),
-		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", nil)
+		moduleTenantA, "saas.document.ingested", "actor-1", "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.Internal)
 }
 
@@ -376,7 +376,7 @@ func TestModuleNackJob_RetryableRetries(t *testing.T) {
 
 func TestModuleEmitAuditEvent_UnregisteredTypeRejected(t *testing.T) {
 	svc := newModuleService(t, &fakeJobBackend{})
-	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", "actor-1", "example-solution", "entry-1", nil)
+	err := svc.ModuleEmitAuditEvent(context.Background(), moduleCaller(), moduleTenantA, "document.made_up", "actor-1", "example-solution", "entry-1", "", nil)
 	requireCode(t, err, codes.InvalidArgument)
 }
 

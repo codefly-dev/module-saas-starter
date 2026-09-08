@@ -115,6 +115,26 @@ func (s *PostgresStore) AdvanceDatasourceCursor(ctx context.Context, sourceID, c
 	return err
 }
 
+// AllocateDatasourceOrdinal atomically hands out the next per-source delivery
+// ordinal and advances the counter in one UPDATE, so ordinals are strictly
+// increasing per source even under concurrent compilers. Returns the allocated
+// ordinal (the value before the bump); the first allocation for a source returns
+// 1. Runs under the caller's WithControlPlane (the leased compiler has no tenant
+// context). The allocation commits with that transaction, independently of the
+// job enqueue that follows, so a delivery that fails after allocating leaves a
+// harmless gap — the sequence stays strictly increasing, never repeated or
+// backward.
+func (s *PostgresStore) AllocateDatasourceOrdinal(ctx context.Context, sourceID string) (int64, error) {
+	var ordinal int64
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		UPDATE datasource_sources
+		   SET next_ordinal = next_ordinal + 1,
+		       updated_at    = NOW()
+		 WHERE id = $1
+		 RETURNING next_ordinal - 1`, sourceID).Scan(&ordinal)
+	return ordinal, err
+}
+
 // BumpDatasourceReconcile reschedules the periodic reconcile without touching the
 // cursor. Runs under the caller's WithControlPlane.
 func (s *PostgresStore) BumpDatasourceReconcile(ctx context.Context, sourceID string) error {

@@ -330,3 +330,90 @@ func executionLease(job *jobsv1.JobEnvelope) *jobsv1.JobLeaseReference {
 func completeExecutionRequest(job *jobsv1.JobEnvelope) *jobsv1.CompleteJobRequest {
 	return &jobsv1.CompleteJobRequest{Lease: executionLease(job)}
 }
+
+// TestPostgresJobStoreNonRetryableNackDeadLettersWithoutConsumingBudget pins the
+// issue #511 non-retryable-nack contract at the real state machine. A permanent
+// failure (the path ModuleNackJob takes when retryable=false) moves the job
+// straight to dead_letter even though the retry budget is far from exhausted, it
+// leaves attempt_count at the single delivery the job actually had — the budget
+// is never "spent" to reach the terminal state — it preserves the failure code
+// and message for the operator, and it records that lone delivery as attempt
+// number 1. The database triggers make attempt_count-only-changes-on-processing
+// an invariant; this test asserts the observable consequence over GetJob.
+func TestPostgresJobStoreNonRetryableNackDeadLettersWithoutConsumingBudget(t *testing.T) {
+	pool, store := newJobExecutionHarness(t)
+	queue := executionQueue("permanent")
+	// A generous budget so this dead-letter cannot be confused with a
+	// budget-exhaustion dead-letter (max_attempts reached).
+	id := insertExecutionJob(t, pool, executionJob{queue: queue, maxAttempts: 4})
+
+	claimed := claimExecutionJobs(t, store, queue, "worker-permanent", 1).GetJobs()
+	require.Len(t, claimed, 1)
+	require.EqualValues(t, 1, claimed[0].GetAttemptCount())
+
+	require.NoError(t, store.DeadLetter(testCtx, &jobsv1.DeadLetterJobRequest{
+		Lease:   executionLease(claimed[0]),
+		Failure: &jobsv1.JobFailure{Code: "test.permanent", Message: "unrecoverable input"},
+	}))
+
+	detail, err := store.GetJob(testCtx, &jobsv1.GetJobRequest{JobId: id.String()})
+	require.NoError(t, err)
+	require.Equal(t, jobsv1.JobState_JOB_STATE_DEAD_LETTER, detail.GetJob().GetState())
+	require.EqualValues(t, 1, detail.GetJob().GetAttemptCount(),
+		"a permanent failure must not consume the remaining retry budget")
+	require.NotNil(t, detail.GetJob().GetDeadLetteredAt())
+	require.Equal(t, "test.permanent", detail.GetJob().GetLastFailure().GetCode())
+	require.Equal(t, "unrecoverable input", detail.GetJob().GetLastFailure().GetMessage())
+
+	require.Len(t, detail.GetAttempts(), 1)
+	require.EqualValues(t, 1, detail.GetAttempts()[0].GetNumber(),
+		"the first delivery attempt is numbered 1")
+	require.Equal(t, "test.permanent", detail.GetAttempts()[0].GetFailure().GetCode())
+
+	// A dead-lettered job is terminal: it is never re-delivered on its own.
+	require.Empty(t, claimExecutionJobs(t, store, queue, "worker-after-dead", 1).GetJobs())
+}
+
+// TestPostgresJobStoreReplayResetsDeadLetteredJobToAFreshAttempt pins that
+// ReplayJob (issue #511) revives dead-lettered work as a brand-new pending job
+// with its retry budget reset: the replay inherits none of the source's failure,
+// starts at attempt_count 0, becomes claimable again, and its first delivery is
+// once more numbered 1.
+func TestPostgresJobStoreReplayResetsDeadLetteredJobToAFreshAttempt(t *testing.T) {
+	pool, store := newJobExecutionHarness(t)
+	queue := executionQueue("replay")
+	source := insertExecutionJob(t, pool, executionJob{queue: queue, maxAttempts: 4})
+
+	claimed := claimExecutionJobs(t, store, queue, "worker-replay-src", 1).GetJobs()
+	require.Len(t, claimed, 1)
+	require.NoError(t, store.DeadLetter(testCtx, &jobsv1.DeadLetterJobRequest{
+		Lease:   executionLease(claimed[0]),
+		Failure: &jobsv1.JobFailure{Code: "test.permanent", Message: "unrecoverable input"},
+	}))
+
+	replayed, err := store.ReplayJob(testCtx, &jobsv1.ReplayJobRequest{
+		SourceJobId:    source.String(),
+		IdempotencyKey: "operator-replay-" + uuid.NewString(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, jobsv1.JobEnqueueDisposition_JOB_ENQUEUE_DISPOSITION_INSERTED, replayed.GetDisposition())
+	require.NotEqual(t, source.String(), replayed.GetJobId())
+
+	fresh, err := store.GetJob(testCtx, &jobsv1.GetJobRequest{JobId: replayed.GetJobId()})
+	require.NoError(t, err)
+	require.Equal(t, jobsv1.JobState_JOB_STATE_PENDING, fresh.GetJob().GetState())
+	require.EqualValues(t, 0, fresh.GetJob().GetAttemptCount())
+	require.Nil(t, fresh.GetJob().GetLastFailure(), "a replay must not inherit the source's failure")
+	require.Empty(t, fresh.GetAttempts())
+
+	// The replay is a live job again; its first delivery is attempt 1.
+	claimedReplay := claimExecutionJobs(t, store, queue, "worker-replay-run", 1).GetJobs()
+	require.Len(t, claimedReplay, 1)
+	require.Equal(t, replayed.GetJobId(), claimedReplay[0].GetId())
+	require.EqualValues(t, 1, claimedReplay[0].GetAttemptCount())
+
+	detail, err := store.GetJob(testCtx, &jobsv1.GetJobRequest{JobId: replayed.GetJobId()})
+	require.NoError(t, err)
+	require.Len(t, detail.GetAttempts(), 1)
+	require.EqualValues(t, 1, detail.GetAttempts()[0].GetNumber())
+}

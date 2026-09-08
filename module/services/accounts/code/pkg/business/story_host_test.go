@@ -176,7 +176,7 @@ func TestStory_HOST_AUD_001(t *testing.T) {
 	}
 	for _, event := range emitted {
 		require.NoError(t, modules.ModuleEmitAuditEvent(
-			ctx, caller, tenantA, "saas.document.ingested", actorID, event.solution, event.entry, nil,
+			ctx, caller, tenantA, "saas.document.ingested", actorID, event.solution, event.entry, "", nil,
 		))
 	}
 

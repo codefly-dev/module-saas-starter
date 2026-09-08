@@ -1153,15 +1153,21 @@ func (x *ModuleCancelApprovalRequest) GetReason() string {
 // emitting solution scope. An empty tenant emits a system-scoped event and
 // requires the caller's cross-tenant grant.
 type ModuleEmitAuditEventRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tenant        string                 `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	EventType     string                 `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
-	Actor         string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
-	Solution      string                 `protobuf:"bytes,4,opt,name=solution,proto3" json:"solution,omitempty"`
-	EntryId       string                 `protobuf:"bytes,5,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
-	Fields        *structpb.Struct       `protobuf:"bytes,6,opt,name=fields,proto3" json:"fields,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Tenant    string                 `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	EventType string                 `protobuf:"bytes,2,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	Actor     string                 `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
+	Solution  string                 `protobuf:"bytes,4,opt,name=solution,proto3" json:"solution,omitempty"`
+	EntryId   string                 `protobuf:"bytes,5,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
+	Fields    *structpb.Struct       `protobuf:"bytes,6,opt,name=fields,proto3" json:"fields,omitempty"`
+	// idempotency_key deduplicates retried emits: two emits with the same
+	// (tenant, event_type, idempotency_key) collapse to a single audit row, and
+	// the duplicate returns success without writing again. Empty disables
+	// deduplication (every emit is a distinct event). Scoped by tenant so one
+	// tenant's keys can never suppress another's events.
+	IdempotencyKey string `protobuf:"bytes,7,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ModuleEmitAuditEventRequest) Reset() {
@@ -1234,6 +1240,13 @@ func (x *ModuleEmitAuditEventRequest) GetFields() *structpb.Struct {
 		return x.Fields
 	}
 	return nil
+}
+
+func (x *ModuleEmitAuditEventRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
 }
 
 // FetchDatasourceBlobRequest asks accounts to re-fetch one file blob from the
@@ -1459,7 +1472,7 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x06tenant\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06tenant\x12)\n" +
 	"\vapproval_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\n" +
 	"approvalId\x12 \n" +
-	"\x06reason\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\x06reason\"\x80\x02\n" +
+	"\x06reason\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\x06reason\"\xb3\x02\n" +
 	"\x1bModuleEmitAuditEventRequest\x12\x16\n" +
 	"\x06tenant\x18\x01 \x01(\tR\x06tenant\x12)\n" +
 	"\n" +
@@ -1470,7 +1483,8 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\bsolution\x18\x04 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x01R\bsolution\x12#\n" +
 	"\bentry_id\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\aentryId\x12/\n" +
-	"\x06fields\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06fields\"j\n" +
+	"\x06fields\x18\x06 \x01(\v2\x17.google.protobuf.StructR\x06fields\x121\n" +
+	"\x0fidempotency_key\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\x0eidempotencyKey\"j\n" +
 	"\x1aFetchDatasourceBlobRequest\x12%\n" +
 	"\tsource_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\bsourceId\x12%\n" +
 	"\bblob_sha\x18\x02 \x01(\tB\n" +

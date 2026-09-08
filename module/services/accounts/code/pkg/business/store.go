@@ -117,6 +117,16 @@ type Store interface {
 	// ancestor check, which drops a delivery whose head is an ancestor of the
 	// cursor before this is reached.
 	AdvanceDatasourceCursor(ctx context.Context, sourceID, commit, deliveryID string) error
+	// AllocateDatasourceOrdinal atomically hands out the next strictly-increasing
+	// per-source delivery ordinal (UPDATE … next_ordinal = next_ordinal + 1
+	// RETURNING the prior value; the first allocation returns 1). The compiler
+	// stamps it on every emitted sync/snapshot payload so a consumer can order and
+	// gap-detect deliveries per source. Runs control-plane. The allocation commits
+	// on its own — the job enqueue that follows is a separate transaction owned by
+	// the jobs platform — so a delivery that fails after allocating leaves a
+	// harmless gap, never a repeated or backward ordinal. Strictly increasing is
+	// the guarantee, not density.
+	AllocateDatasourceOrdinal(ctx context.Context, sourceID string) (int64, error)
 	// ListDatasourceSourcesDueForReconcile returns active sources whose
 	// next_reconcile_at has elapsed, for the periodic reconcile sweep. Control-plane.
 	ListDatasourceSourcesDueForReconcile(ctx context.Context, now time.Time, limit int) ([]*DatasourceSource, error)
@@ -259,6 +269,14 @@ type Store interface {
 
 	// Audit
 	InsertAuditEvent(ctx context.Context, entry AuditEntry) error
+	// ReserveAuditIdempotency records a (org_id, event_type, idempotency_key)
+	// guard row so a retried emit collapses to one event. It returns true when the
+	// row was newly inserted (write the event) and false when it already existed (a
+	// duplicate; skip the write). It MUST run in the emitter's ambient transaction
+	// so the guard row and the audit row commit or roll back together. An empty
+	// orgID (system-scoped emit) maps to a sentinel org so system events still
+	// dedup. See audit_event_idempotency (migration 118).
+	ReserveAuditIdempotency(ctx context.Context, orgID, eventType, idempotencyKey string) (bool, error)
 	QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error)
 	AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error)
 	SyncAuditEventTypes(ctx context.Context, defs []AuditEventDefinition) error

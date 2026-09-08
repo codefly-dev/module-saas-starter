@@ -122,6 +122,11 @@ type changeSetFile struct {
 	ChangeType    string  `json:"change_type"`
 	Content       *[]byte `json:"content,omitempty"`
 	ContentTicket string  `json:"content_ticket,omitempty"`
+	// Ordinal is the strictly-increasing per-source delivery ordinal (issue #511),
+	// allocated in the compiler's delivery transaction and stamped on every emitted
+	// payload so a consumer can order deliveries per source and detect gaps or stale
+	// replays without trusting wall-clock timestamps or commit topology.
+	Ordinal int64 `json:"ordinal"`
 }
 
 // snapshotManifest is the full-tree manifest a snapshot job carries: enough for
@@ -130,6 +135,10 @@ type snapshotManifest struct {
 	Repo   string         `json:"repo"`
 	Commit string         `json:"commit"`
 	Files  []snapshotFile `json:"files"`
+	// Ordinal is the strictly-increasing per-source delivery ordinal (issue #511),
+	// carried on the snapshot payload for the same per-source ordering the change-set
+	// payload gets. See changeSetFile.Ordinal.
+	Ordinal int64 `json:"ordinal"`
 }
 
 type snapshotFile struct {
@@ -384,6 +393,11 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	for _, f := range files {
 		manifest.Files = append(manifest.Files, snapshotFile{Path: f.Path, BlobSHA: f.SHA, Size: f.Size})
 	}
+	ordinal, err := s.allocateOrdinal(ctx, source.ID)
+	if err != nil {
+		return "", w.Wrapf(err, "allocate ordinal")
+	}
+	manifest.Ordinal = ordinal
 	payload, err := json.Marshal(manifest)
 	if err != nil {
 		return "", w.Wrapf(err, "encode snapshot manifest")
@@ -546,6 +560,11 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 			file.Content = &content
 		}
 	}
+	ordinal, err := s.allocateOrdinal(ctx, source.ID)
+	if err != nil {
+		return w.Wrapf(err, "allocate ordinal")
+	}
+	file.Ordinal = ordinal
 	payload, err := json.Marshal(file)
 	if err != nil {
 		return w.Wrapf(err, "encode change-set file")
@@ -594,6 +613,24 @@ func (s *Service) advanceCursor(ctx context.Context, sourceID, commit, deliveryI
 	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.store.AdvanceDatasourceCursor(ctx, sourceID, commit, deliveryID)
 	})
+}
+
+// allocateOrdinal hands out the next strictly-increasing per-source ordinal for
+// one emitted payload, in its own control-plane transaction. Each payload draws a
+// distinct ordinal so a consumer can order the payload stream per source and
+// detect a dropped payload. Strictly increasing is the guarantee, not density: a
+// crash between allocation and enqueue, or an idempotent re-enqueue on
+// redelivery (the enqueue is keyed by (source, commit, path/snapshot), so a
+// retry keeps the already-delivered payload and its original ordinal), only
+// leaves a harmless gap in the sequence — never a repeated or backward ordinal.
+func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, error) {
+	var ordinal int64
+	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		ordinal, err = s.store.AllocateDatasourceOrdinal(ctx, sourceID)
+		return err
+	})
+	return ordinal, err
 }
 
 // RunDatasourceReconcile is the periodic sweep: it enqueues a reconcile job for

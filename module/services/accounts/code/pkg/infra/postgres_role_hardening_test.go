@@ -46,6 +46,7 @@ var relationsByScope = map[relationScope][]string{
 		"api_keys",
 		"approval_decisions",
 		"approval_requests",
+		"audit_event_idempotency",
 		"audit_events",
 		"connector_credentials",
 		"dashboards",
@@ -138,6 +139,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"api_keys":                             {selectRows: true, insertRows: true, updateRows: true},
 	"approval_decisions":                   {selectRows: true, insertRows: true}, // append-only, like actor_chain_journal
 	"approval_requests":                    {selectRows: true, insertRows: true, updateRows: true},
+	"audit_event_idempotency":              {selectRows: true, insertRows: true}, // append-only guard, like audit_events
 	"audit_events":                         {selectRows: true, insertRows: true},
 	"connector_credentials":                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"dashboards":                           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -360,6 +362,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// Retention drops whole partitions via a SECURITY DEFINER function,
 			// not a row DELETE, so no DELETE grant is needed.
 			if relation == "audit_events" {
+				want = relationPrivileges{selectRows: true, insertRows: true}
+			}
+			// audit_event_idempotency is an append-only guard like audit_events:
+			// the control plane reads and inserts reservations (system NULL-org
+			// emits land on the sentinel org) but never updates or deletes them.
+			if relation == "audit_event_idempotency" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
 			// actor_chain_journal / actor_chain_revocations are append-only
