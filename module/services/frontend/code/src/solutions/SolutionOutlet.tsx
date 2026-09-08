@@ -159,13 +159,37 @@ function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProp
 	}
 	const moduleKey = `${remote.id}/${remote.exposedModule.replace(/^\.\//, "")}`;
 	const component = lazy(async () => {
-		const mod = await federation.loadRemote<{
-			default: ComponentType<SolutionPageProps>;
-		}>(moduleKey);
-		if (!mod?.default) {
-			throw new Error(`solution remote "${remote.id}" exposed no default`);
+		// The manifest fetch can lose a cold-start race (the remote's backend and
+		// this dev route both warming up), throwing "Failed to get manifest /
+		// Failed to fetch". React.lazy caches the first rejection for the life of
+		// the component, so a single transient miss pins the solution to its error
+		// boundary even though the very next fetch succeeds. Retry with backoff,
+		// re-registering the entry each time so Module Federation drops its cached
+		// failed snapshot and re-fetches, before finally surfacing the error.
+		const maxAttempts = 6;
+		let lastErr: unknown;
+		for (let attempt = 0; attempt < maxAttempts; attempt++) {
+			try {
+				const mod = await federation.loadRemote<{
+					default: ComponentType<SolutionPageProps>;
+				}>(moduleKey);
+				if (!mod?.default) {
+					throw new Error(`solution remote "${remote.id}" exposed no default`);
+				}
+				return { default: mod.default };
+			} catch (err) {
+				lastErr = err;
+				if (attempt === maxAttempts - 1) {
+					break;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+				federation.registerRemotes(
+					[{ name: remote.id, entry: remote.manifestUrl }],
+					{ force: true },
+				);
+			}
 		}
-		return { default: mod.default };
+		throw lastErr;
 	});
 	remoteComponents.set(key, component);
 	return component;

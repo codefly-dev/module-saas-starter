@@ -752,16 +752,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
-		// cookie the browser sends automatically (credentials: "include"). If the
-		// cookie is absent/expired the request fails and we land unauthenticated.
-		exchangeRefreshCookie().then((outcome) => {
-			if (outcome.status === "ok") {
-				setTokens(outcome.accessToken, outcome.refreshToken);
-				return;
+		// cookie the browser sends automatically (credentials: "include").
+		//
+		// A single "unavailable" here (gateway 5xx / network / cold-start race —
+		// common right after `codefly run solution` brings the graph up) must NOT
+		// be treated as an authoritative logout: the httpOnly refresh cookie is
+		// untouched, so the session is almost certainly still valid. Retry with
+		// backoff before giving up, mirroring the mid-session handler below —
+		// otherwise a warm-up hiccup falsely bounces the user to /auth/login. Only
+		// an authoritative "expired" (401/403), or exhausted retries, lands
+		// unauthenticated.
+		let cancelled = false;
+		void (async () => {
+			for (let attempt = 0; attempt < 5; attempt++) {
+				const outcome = await exchangeRefreshCookie();
+				if (cancelled) return;
+				if (outcome.status === "ok") {
+					setTokens(outcome.accessToken, outcome.refreshToken);
+					return;
+				}
+				if (outcome.status === "expired") break;
+				await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
 			}
+			if (cancelled) return;
 			clearRefreshToken();
 			setState((s) => ({ ...s, isLoading: false }));
-		});
+		})();
+		return () => {
+			cancelled = true;
+		};
 	}, [setTokens]);
 
 	useEffect(() => {
