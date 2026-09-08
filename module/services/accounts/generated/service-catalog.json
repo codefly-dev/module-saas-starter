@@ -1181,7 +1181,7 @@
         "conditions": []
       },
       "policy_tier": "public",
-      "description": "Revoke session.",
+      "description": "Revoke the caller's session and its refresh-token family.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1231,7 +1231,7 @@
         "conditions": []
       },
       "policy_tier": "public",
-      "description": "Refresh access token.",
+      "description": "Exchange a refresh token for a new access token, rotating the refresh token.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1343,7 +1343,7 @@
         "conditions": []
       },
       "policy_tier": "org_admin",
-      "description": "Past Stripe invoices.",
+      "description": "List the organization's past billing invoices.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -3719,7 +3719,7 @@
         "conditions": []
       },
       "policy_tier": "auth",
-      "description": "Begin TOTP enrollment.",
+      "description": "Begin TOTP enrollment for the caller and return the shared secret.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4283,7 +4283,7 @@
         "conditions": []
       },
       "policy_tier": "auth",
-      "description": "Delete one.",
+      "description": "Delete one of the caller's notifications.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4333,7 +4333,7 @@
         "conditions": []
       },
       "policy_tier": "auth",
-      "description": "Count of unread.",
+      "description": "Count the caller's unread notifications.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4433,7 +4433,7 @@
         "conditions": []
       },
       "policy_tier": "auth",
-      "description": "Mark all read.",
+      "description": "Mark every one of the caller's notifications as read.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4483,7 +4483,7 @@
         "conditions": []
       },
       "policy_tier": "auth",
-      "description": "Mark one read.",
+      "description": "Mark one of the caller's notifications as read.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4821,7 +4821,7 @@
         "conditions": []
       },
       "policy_tier": "org_member",
-      "description": "Read branding.",
+      "description": "Read the organization's branding settings.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -4877,7 +4877,7 @@
         "conditions": []
       },
       "policy_tier": "org_member",
-      "description": "Read an org.",
+      "description": "Read one organization the caller belongs to.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6551,7 +6551,7 @@
         "conditions": []
       },
       "policy_tier": "platform_admin",
-      "description": "List platform admins.",
+      "description": "List the platform administrators and their granted roles.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -6603,7 +6603,7 @@
         "conditions": []
       },
       "policy_tier": "platform_admin",
-      "description": "Per-org limit override.",
+      "description": "Override one entitlement limit for a single organization.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7655,7 +7655,7 @@
         "conditions": []
       },
       "policy_tier": "org_admin",
-      "description": "Delete a team.",
+      "description": "Delete a team and its memberships.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -7711,7 +7711,7 @@
         "conditions": []
       },
       "policy_tier": "org_member",
-      "description": "List team members.",
+      "description": "List the members of one team.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8261,7 +8261,7 @@
         "conditions": []
       },
       "policy_tier": "platform_admin",
-      "description": "Platform-admin identity lookup.",
+      "description": "Look up a user by external identity, for platform administrators.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8677,7 +8677,7 @@
         "conditions": []
       },
       "policy_tier": "auth",
-      "description": "JSONB user prefs.",
+      "description": "Read the caller's stored user preferences.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -8729,7 +8729,7 @@
         "conditions": []
       },
       "policy_tier": "auth",
-      "description": "Patch user prefs.",
+      "description": "Patch the caller's stored user preferences.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9157,7 +9157,7 @@
         "conditions": []
       },
       "policy_tier": "org_admin",
-      "description": "Delete a subscription.",
+      "description": "Delete a webhook subscription in the organization.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9217,7 +9217,7 @@
         "conditions": []
       },
       "policy_tier": "org_member",
-      "description": "Read one delivery.",
+      "description": "Read one webhook delivery attempt and its response.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9277,7 +9277,7 @@
         "conditions": []
       },
       "policy_tier": "org_member",
-      "description": "Past delivery attempts.",
+      "description": "List past delivery attempts for a webhook subscription.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -9337,7 +9337,7 @@
         "conditions": []
       },
       "policy_tier": "org_member",
-      "description": "List webhook subscriptions.",
+      "description": "List the organization's webhook subscriptions.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

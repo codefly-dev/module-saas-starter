@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2103,
+  "fileCount": 2109,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "6a0a8b5bb42b98dbd6b832f8d4e4cb43a16baef0aee27d4889fb7652c38e4b4a",
@@ -17,7 +17,7 @@
     "METHOD_POLICY.md": "2096ae13eaffe5f6986881ef564dd1114b688179771b3e92fe9a78dd70093299",
     "PRODUCT_ANALYTICS.md": "5a6d5162a9b2be5e03514ca874486a220a69756a06c90091f9737dc249980039",
     "REST_SURFACE.md": "50a3daae90536acf809181ec9cdc28f849719dba4fb35cbaa2c07760679eeb39",
-    "SERVICE_CATALOG.md": "5fe77e1fe550b8c7fc72208bdb8b1917aca148382a46320a395cbd1ec9bf102a",
+    "SERVICE_CATALOG.md": "8bac400d04ac352ef80018b160e8f4194b1187f6e4fc9470d0c56372d6bdeec6",
     "SETTINGS.md": "3943cb4769378fd46225bb9e04707e8f98f893030b90134193c857fb5cd16848",
     "SIGNOZ_PROVISIONING.md": "638b130171e3521d6f5c336ca9211823fa63bd4172429b7faac963bdc1054bf0",
     "TRUST_CAPABILITIES.md": "c5a1ed15f2e0933c4a47c64baff13adb007db53ed4203baf9a02425bb557debb",
@@ -149,7 +149,7 @@
     "public/site.config.json": "4a6e76802a6ac46298b0f8ce7fbbb687ca670f1259474f4a8b32c335937916f1",
     "services/README.md": "34d7ac4be959ce756ae67946f3b8b6479ac472b6cbbf8ebd33015eb0ff9ca244",
     "services/accounts/AUTHZ.md": "b5fc48f8b096c9d946cc76c94b0850fa50c889267b46d5bc6f1eedb7264a6cbb",
-    "services/accounts/AUTHZ_MATRIX.md": "b500a00538950a8eecfb3f3b54fd76b465ed691a1a35427ae90f3002905d091c",
+    "services/accounts/AUTHZ_MATRIX.md": "d4470e3d3e83b94ae9a5fa7cbbc0f2487812e3830447270489bc9bc9c78e365d",
     "services/accounts/AUTHZ_SUBSTITUTION_MATRIX.md": "e7ae3b719a39fd4be7cd7241728409f52d885858d3e9d42a79ce3b0d7738b22b",
     "services/accounts/GETTING_STARTED.md": "643bde7b68eb6bbe72988fde4c25a17512601f720f234043a51a7a521b5949c9",
     "services/accounts/README.md": "e9677ce854f88f0b8ca6652737ad18b7a10e6348ee9e53cdd5317d230c0af209",
@@ -408,7 +408,7 @@
     "services/accounts/code/pkg/business/ids_test.go": "33a1656d7bb42d508521644800c677d9918e7d0aaab2e83eca484339ef3d65de",
     "services/accounts/code/pkg/business/installations.go": "682561d66831c156e01d8a776fe9bb346176d141e02b3856b51c7a27ff705263",
     "services/accounts/code/pkg/business/installations_integration_test.go": "5a7db7dd39fccd1364b1940f9cb3e3c8b9e0378d8056e44a32df6f3021e9263c",
-    "services/accounts/code/pkg/business/introspection.go": "2dfe037ef0b7b560e6fe03406c62fe646996f1a9e6f43bc72c4328fdef7a2efe",
+    "services/accounts/code/pkg/business/introspection.go": "d8552fc25203285c0cba7b5b73e59cecc074f0658ba22b18d3e3c3dbd2b276be",
     "services/accounts/code/pkg/business/introspection_test.go": "cd6719fd0f42275d1a839435073b5ca52fe31636d23886085b1bde51f5bd0e28",
     "services/accounts/code/pkg/business/invitation_email_verified_test.go": "4b3f874392937177beac640c2de30f97dd8df71fe14006427cd025a1eb0a4534",
     "services/accounts/code/pkg/business/invitation_lifecycle_test.go": "36501decb89e952f48d1313de5603cc5f110ad56fa3210154cd43817aa625cba",
@@ -480,6 +480,7 @@
     "services/accounts/code/pkg/business/sso_admin.go": "f4eb46c0761a5c6f226d08c2b3ead05a8301243aee30ce48534cde79416a5d4a",
     "services/accounts/code/pkg/business/sso_admin_test.go": "7862802529d61c381c5a7eddb36c9d3e0d0bbbb54a238125460a89a63f4f6934",
     "services/accounts/code/pkg/business/store.go": "08e5adc565f68f25de8d10083faa39a4b92c9724208c9cbb466cb0a68e7d6327",
+    "services/accounts/code/pkg/business/story_host_test.go": "12270f4457c9c0709c2bbc55a9fb650c5502b2edaa43c53aa505d489f5646b48",
     "services/accounts/code/pkg/business/teams.go": "8755172429bbf1b100348ff6c40afcbe43c4ad83ce6dc34badd32827332ebe88",
     "services/accounts/code/pkg/business/teams_cache_test.go": "a4984dc1b31a8bf9dbc005c25443752c16073b8365e30abad6e2e3436f9d57f5",
     "services/accounts/code/pkg/business/teams_test.go": "0694ca8d4b4c249e859d7cafcab15aca246cb06266e173b3968a9d789de58d27",
@@ -787,6 +788,7 @@
     "services/accounts/code/pkg/infra/postgres_worker_pool.go": "d066165eac841f993b9e195af7b5e986a7f5b66d795953fa64b90496b3a90f0b",
     "services/accounts/code/pkg/infra/redis.go": "8e6f653a862afcc42656b6ac3255131fe38b395037ddbe4eac2f3c2e26bf448e",
     "services/accounts/code/pkg/infra/scoped.go": "b814757e8a96bb2eef1174f39057eee1dde9e0ab9dd5f67f82015e44563760cb",
+    "services/accounts/code/pkg/infra/story_jobs_test.go": "94deee08d24041767ba5339a01456cf6b30a7d79d7b3bd2353230fbe3a5bccde",
     "services/accounts/code/pkg/infra/tenant_tx.go": "1ed2f8beb2351bcf2e44710d208dbfd6e8dfaa9cd3327aba01e5070df42a410b",
     "services/accounts/code/pkg/infra/tenant_tx_pooling_test.go": "82dfe385f7f79136968861615571d775590885bb66fcf94da02d2ccb72405e8d",
     "services/accounts/code/pkg/infra/tenant_tx_test.go": "ed4fb25aaa459d40fc793a1f4b1bc480715356d4f2fa3a622930d1d5e4d00352",
@@ -874,7 +876,7 @@
     "services/accounts/generated/gateway-routes.json": "26821acec4eabe6c4bd87b2ca3e19a0410d0a3df8356ac779555321c75b15da8",
     "services/accounts/generated/openapi-raw/api.swagger.json": "d512d9d376459961e1beb1361d772559cdf349b3fec97c3835f2f4a8dc531a49",
     "services/accounts/generated/rest-surface.json": "4e0cea8984d6ebd9d622a8f5e8673efe76082a1e3bc72ecea636721255569663",
-    "services/accounts/generated/service-catalog.json": "384f0a71cec5ad369cbe74ce67fee2204b8864b56a37d0a1dd51dddbb2bfa250",
+    "services/accounts/generated/service-catalog.json": "420b360ef0728efebcfe328514550b6d5c5f38d77ab23d982795433f6886e5da",
     "services/accounts/kreya/customers.krproj": "712a153d7e7051a9d3685c1e4856351af1c174e697911e48bbca16d3d7a138d5",
     "services/accounts/kreya/customers/BackendService/CreateOrganization-request.json": "8d27b1aa4b83861a4e58a9af78178daf429539dbd5060f227746c25467458a8f",
     "services/accounts/kreya/customers/BackendService/CreateOrganization.krop": "7a13f766ad467c2eb36c4dc23bace031dabecee89b15c4a2133893f00f028756",
@@ -2095,6 +2097,8 @@
     "tools/generatedgo/format_test.go": "48e7f1e1f7c1fb3d0a9320d32de21c95b809d52071692faf6383bf77a9e1a245",
     "tools/go.mod": "50754d869b4c7f2f82cca813121f23a2e958a9a39c012f14efbb36542cdb6a7f",
     "tools/go.sum": "0e0b9541f4201a7598bb9b2dcb3b3e2a828e3abd28304aceedd3f573b147427a",
+    "tools/interface-docs-gate.mjs": "699c5d9ad58b9ef72ba9725e9200e3657a6b194e7d04b6d4c83c2cda530b465d",
+    "tools/interface-docs-gate.test.mjs": "d2d2d20d0e88ef06ddd46d5c6eaa2a4d1f2c4a9eb6be724bbb010d12ea0bc9e6",
     "tools/marketing-extraction.mjs": "20a7e8abd1fd04cc84aaed7333405c0813149220dd8122a70771c4917c4e0e93",
     "tools/migration-pairing-gate.mjs": "c6216c7882e38d194cc008e11418651181c85eccaf7a133a28a01588b18dd64a",
     "tools/migration-pairing-gate.test.mjs": "c675ccfc6e5b39edd56d3a498754f18b81fb566054e15efbb02c3e24b58b95eb",
@@ -2104,6 +2108,8 @@
     "tools/modulepackage/modulepackage_test.go": "a6703c60f7aa251a7839fde65a74bb1adbd055517e9519647f0a112343048731",
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
     "tools/rls-migration-gate.mjs": "fd258aca45acc801b35e3abd1ae70518f8e62f44ef7c03f7ca6e7a9b9422bb03",
-    "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f"
+    "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f",
+    "tools/story-trace-gate.mjs": "1a13a094273b3b7801f7a9b86ebf8209df24bfad13b6170275fc60e1678b33f7",
+    "tools/story-trace-gate.test.mjs": "d1c592b9ae0fa952254721bd2186ef86bfe2dee60d23eef357d30e63feddd2a7"
   }
 }
