@@ -120,12 +120,13 @@ type Store interface {
 	// AllocateDatasourceOrdinal atomically hands out the next strictly-increasing
 	// per-source delivery ordinal (UPDATE … next_ordinal = next_ordinal + 1
 	// RETURNING the prior value; the first allocation returns 1). The compiler
-	// stamps it on every emitted sync/snapshot payload so a consumer can order and
-	// gap-detect deliveries per source. Runs control-plane. The allocation commits
-	// on its own — the job enqueue that follows is a separate transaction owned by
-	// the jobs platform — so a delivery that fails after allocating leaves a
-	// harmless gap, never a repeated or backward ordinal. Strictly increasing is
-	// the guarantee, not density.
+	// stamps it on every emitted sync/snapshot payload so a consumer can order
+	// deliveries per source and reject a stale or out-of-order replay. Runs
+	// control-plane. The allocation commits on its own — the job enqueue that
+	// follows is a separate transaction owned by the jobs platform — so a delivery
+	// that fails after allocating leaves a gap, never a repeated or backward
+	// ordinal. Strictly increasing is the guarantee, not density: a gap is expected
+	// and is not a dropped payload.
 	AllocateDatasourceOrdinal(ctx context.Context, sourceID string) (int64, error)
 	// ListDatasourceSourcesDueForReconcile returns active sources whose
 	// next_reconcile_at has elapsed, for the periodic reconcile sweep. Control-plane.

@@ -124,8 +124,11 @@ type changeSetFile struct {
 	ContentTicket string  `json:"content_ticket,omitempty"`
 	// Ordinal is the strictly-increasing per-source delivery ordinal (issue #511),
 	// allocated in the compiler's delivery transaction and stamped on every emitted
-	// payload so a consumer can order deliveries per source and detect gaps or stale
-	// replays without trusting wall-clock timestamps or commit topology.
+	// payload so a consumer can order deliveries per source and reject a stale or
+	// out-of-order replay, without trusting wall-clock timestamps or commit
+	// topology. Ordinals are strictly increasing but not contiguous — a redelivery
+	// or a crashed enqueue leaves a gap — so a gap is expected, not a dropped
+	// payload; only a repeated or backward ordinal signals a fault.
 	Ordinal int64 `json:"ordinal"`
 }
 
@@ -618,11 +621,20 @@ func (s *Service) advanceCursor(ctx context.Context, sourceID, commit, deliveryI
 // allocateOrdinal hands out the next strictly-increasing per-source ordinal for
 // one emitted payload, in its own control-plane transaction. Each payload draws a
 // distinct ordinal so a consumer can order the payload stream per source and
-// detect a dropped payload. Strictly increasing is the guarantee, not density: a
-// crash between allocation and enqueue, or an idempotent re-enqueue on
-// redelivery (the enqueue is keyed by (source, commit, path/snapshot), so a
-// retry keeps the already-delivered payload and its original ordinal), only
-// leaves a harmless gap in the sequence — never a repeated or backward ordinal.
+// reject a stale or out-of-order replay. Strictly increasing is the guarantee,
+// not density: a crash between allocation and enqueue, or an idempotent
+// re-enqueue on redelivery (the enqueue is keyed by (source, commit,
+// path/snapshot), so a retry keeps the already-delivered payload and its original
+// ordinal), only leaves a gap in the sequence — never a repeated or backward
+// ordinal. A gap is therefore expected and is not a dropped payload.
+//
+// The ordinal ordering matches enqueue ordering only because a single source's
+// deliveries are compiled one at a time: the row-lock the allocating UPDATE takes
+// keeps values unique and increasing under concurrency, but if two compilers ever
+// raced on the same source, the one that allocated the lower ordinal could enqueue
+// after the higher — decoupling ordinal order from enqueue order. The per-source
+// ordering contract therefore rests on serial per-source delivery processing, not
+// on the ordinal allocation alone.
 func (s *Service) allocateOrdinal(ctx context.Context, sourceID string) (int64, error) {
 	var ordinal int64
 	err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {

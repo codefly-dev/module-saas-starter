@@ -56,8 +56,9 @@ func allocateOrdinal(t *testing.T, sourceID string) int64 {
 // TestPostgresAllocateDatasourceOrdinalIsPerSourceStrictlyIncreasing pins the
 // issue #511 ordinal contract at the real column and UPDATE: a source's ordinals
 // start at 1 and strictly increase by one per allocation, and each source has its
-// own independent sequence, so a consumer can order and gap-detect one source's
-// payload stream without another source's traffic perturbing it.
+// own independent sequence, so a consumer can order one source's payload stream
+// and reject a stale or out-of-order replay without another source's traffic
+// perturbing it.
 func TestPostgresAllocateDatasourceOrdinalIsPerSourceStrictlyIncreasing(t *testing.T) {
 	owner := seedUser(t)
 	org := seedOrg(t, owner)
