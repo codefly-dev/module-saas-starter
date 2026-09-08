@@ -63,12 +63,39 @@ export function classifyRefreshStatus(
 	return "ok";
 }
 
+// Coalesces every concurrent refresh-cookie exchange onto one in-flight request.
+// The refresh token rotates on each successful exchange and the backend runs
+// OWASP reuse detection: presenting an already-rotated token revokes the entire
+// session family. So two exchanges of the SAME cookie in flight at once are
+// self-defeating — the second replays a token the first just consumed and trips
+// reuse detection, killing the session that was just minted. This is exactly the
+// dev-only mid-session bounce (#506): under `codefly run solution` the frontend
+// runs `next dev` with React StrictMode, which double-invokes the bootstrap
+// effect and fires two concurrent exchanges of the same cookie; the winner mints
+// a session, the loser revokes it, and the page bounces to /auth/login the
+// moment the short-lived access token first needs refreshing. token-store's
+// single-flight only guards the mid-session handler, not the bootstrap (or a
+// bootstrap-vs-interceptor race), so the coalescing must live at the exchange
+// itself. Cleared on settle, so sequential refreshes (each new access-token
+// expiry) still rotate normally.
+let inflightExchange: Promise<RefreshOutcome> | null = null;
+
 // Exchanges the httpOnly refresh cookie for a fresh token pair. The body
 // carries no token — the backend reads it from the cookie. Never rejects: a
 // network failure and a malformed success both resolve to `unavailable` so the
 // caller keeps the (still-valid) session rather than treating a hiccup as a
-// logout.
-async function exchangeRefreshCookie(): Promise<RefreshOutcome> {
+// logout. Concurrent callers share one rotation and observe the same outcome.
+// Exported for tests.
+export function exchangeRefreshCookie(): Promise<RefreshOutcome> {
+	if (!inflightExchange) {
+		inflightExchange = performRefreshExchange().finally(() => {
+			inflightExchange = null;
+		});
+	}
+	return inflightExchange;
+}
+
+async function performRefreshExchange(): Promise<RefreshOutcome> {
 	const res = await fetch("/v1/auth/refresh", {
 		method: "POST",
 		credentials: "include",
