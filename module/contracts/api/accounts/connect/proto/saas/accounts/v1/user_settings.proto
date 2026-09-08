@@ -1,0 +1,125 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/field_mask.proto";
+import "saas/composed/settings/v1/settings.proto";
+import "saas/policy/v1/options.proto";
+
+// ============================================================================
+// User Settings — per-user preferences blob, JSONB-backed
+// ============================================================================
+
+enum ThemePreference {
+  THEME_PREFERENCE_UNSPECIFIED = 0;
+  THEME_PREFERENCE_SYSTEM = 1;
+  THEME_PREFERENCE_LIGHT = 2;
+  THEME_PREFERENCE_DARK = 3;
+}
+
+// UserAppearanceSettings — presentation preferences shared by every Starter
+// frontend. The setting describes user intent, not a specific web client, so
+// native and future clients consume the same value.
+message UserAppearanceSettings {
+  optional ThemePreference theme = 1 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+}
+
+// UserRegionalSettings — locale and formatting preferences shared by all
+// clients and backend-rendered content.
+message UserRegionalSettings {
+  // IETF tag: "en", "fr", "es-419", etc.
+  optional string locale = 1;
+  // IANA tz: "America/New_York", "UTC".
+  optional string timezone = 2;
+  // "iso" | "us" | "eu"
+  optional string date_format = 3;
+  // "12h" | "24h"
+  optional string time_format = 4;
+}
+
+// UserEmailSettings — top-level transactional email opt-ins.
+// `security` is forced-on server-side but exposed here so the
+// unsubscribe page can reflect that to the user.
+message UserEmailSettings {
+  optional bool product = 1;
+  optional bool marketing = 2;
+  optional bool security = 3;
+  optional bool weekly_digest = 4;
+}
+
+message UserNotificationSettings {
+  optional bool in_app = 1;
+  optional bool push = 2;
+  optional bool sound = 3;
+}
+
+// UserSettings — common per-user preferences included in every SaaS Starter.
+// All scalar fields below the section messages are optional so an explicit
+// false/empty value remains distinct from an unset value that resolves to its
+// catalog default. The API recursively merges typed protobuf patches.
+message UserSettings {
+  optional UserAppearanceSettings appearance = 1;
+  optional UserRegionalSettings regional = 2;
+  optional UserEmailSettings email = 3;
+  optional UserNotificationSettings notifications = 4;
+  // Product-contributed settings are generated into this typed container.
+  // ProtoJSON storage and API patching preserve the same schema end to end.
+  saas.composed.settings.v1.Settings composed = 1000;
+}
+
+message GetUserSettingsRequest {}
+
+message UpdateUserSettingsRequest {
+  // Partial — only explicitly present fields change. Missing parent messages
+  // are materialized by the typed settings SDK, and nested siblings survive.
+  UserSettings patch = 1;
+  // Paths whose explicit overrides should be removed before applying patch.
+  // A cleared field resolves to its catalog default on the returned document.
+  google.protobuf.FieldMask clear_mask = 2;
+}
+
+// UserSettingsService — per-caller (no org scoping). The auth
+// interceptor's user id determines whose settings are read/written;
+// no admin override surface (admins use PlatformAdminService for
+// other-user impersonation flows).
+service UserSettingsService {
+  rpc Get(GetUserSettingsRequest) returns (UserSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/user/settings"};
+  }
+  rpc Update(UpdateUserSettingsRequest) returns (UserSettings) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "settings.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/user/settings"
+      body: "*"
+    };
+  }
+}

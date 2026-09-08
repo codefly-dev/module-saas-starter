@@ -1,0 +1,106 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "saas/policy/v1/options.proto";
+
+enum ConsentPurpose {
+  CONSENT_PURPOSE_UNSPECIFIED = 0;
+  CONSENT_PURPOSE_NECESSARY = 1;
+  CONSENT_PURPOSE_ANALYTICS = 2;
+  CONSENT_PURPOSE_MARKETING = 3;
+}
+
+message PurposeConsent {
+  ConsentPurpose purpose = 1 [(buf.validate.field).enum.defined_only = true];
+  bool granted = 2;
+  google.protobuf.Timestamp updated_at = 3;
+  google.protobuf.Timestamp withdrawn_at = 4;
+}
+
+message ConsentStatus {
+  string terms_accepted_version = 1;
+  google.protobuf.Timestamp terms_accepted_at = 2;
+  string current_terms_version = 3;
+  string policy_version = 4;
+  repeated PurposeConsent purposes = 5;
+  bool preferences_recorded = 6;
+  string preferences_policy_version = 7;
+}
+
+message GetConsentStatusRequest {}
+
+message AcceptTermsRequest {
+  string version = 1 [(buf.validate.field).string.min_len = 1];
+  string context = 2 [(buf.validate.field).string.max_len = 100];
+}
+
+message UpdateConsentPreferencesRequest {
+  string policy_version = 1 [(buf.validate.field).string.min_len = 1];
+  bool analytics = 2;
+  bool marketing = 3;
+  string region = 4 [(buf.validate.field).string.max_len = 32];
+  string context = 5 [(buf.validate.field).string.max_len = 100];
+}
+
+service ConsentService {
+  rpc GetStatus(GetConsentStatusRequest) returns (ConsentStatus) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/consent/status"};
+  }
+
+  rpc AcceptTerms(AcceptTermsRequest) returns (ConsentStatus) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "consent.terms_accepted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/consent/terms"
+      body: "*"
+    };
+  }
+
+  rpc UpdatePreferences(UpdateConsentPreferencesRequest) returns (ConsentStatus) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "consent.preferences_updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      put: "/v1/consent/preferences"
+      body: "*"
+    };
+  }
+}

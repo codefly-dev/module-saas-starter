@@ -32,6 +32,7 @@ workspace-configuration-dependencies:
     - security
 endpoints:
     - name: connect
+      visibility: module
     - name: grpc
     - name: rest
 spec:

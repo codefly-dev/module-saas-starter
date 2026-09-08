@@ -3,7 +3,6 @@ kind: module-package
 id: codefly/saas-starter
 version: 0.1.0
 minimum-codefly-version: ">=0.3.0 <1.0.0"
-
 artifact-roots:
   - contracts
   - deployment
@@ -11,12 +10,23 @@ artifact-roots:
   - fixtures
   - services
   - tools
-
 services:
   - name: accounts
     endpoints: [connect, grpc, rest]
+    api-contracts:
+      - endpoint: connect
+        kind: protobuf
+        package: saas.accounts.v1
+        path: contracts/api/accounts/connect/contract.binpb
+        digest: sha256:e6202131a07b3905490af44fa5e5194660c4a6eaaa19c0ec14a110cc3690cb51
   - name: auth-gateway
     endpoints: [grpc, rest]
+    api-contracts:
+      - endpoint: grpc
+        kind: protobuf
+        package: saas.gateway.auth.v1
+        path: contracts/api/auth-gateway/grpc/contract.binpb
+        digest: sha256:b1ff9b4b5d4521fc6c3f495f4a7cd7dc21004da5e2241128eeccb2cecea33868
   - name: cache
     endpoints: [read, write]
   - name: frontend
@@ -29,14 +39,12 @@ services:
     endpoints: [grpc]
   - name: vault
     endpoints: [http]
-
 contracts:
   composition: ">=2.0.0 <3.0.0"
   frontendPlugin: ">=1.0.0 <2.0.0"
   settings: ">=1.0.0 <2.0.0"
   permissions: ">=1.0.0 <2.0.0"
   fixtures: ">=1.0.0 <2.0.0"
-
 generators:
   - name: composition
     working-directory: tools
@@ -50,7 +58,6 @@ generators:
   - name: composed-python-protobuf
     working-directory: services/accounts
     command: [buf, generate, proto, --path, proto/saas/composed/settings/v1/settings.proto, --path, proto/contributed, --template, buf.gen.composition.python.yaml]
-
 conformance:
   - name: composition-contracts
     working-directory: tools
@@ -58,19 +65,15 @@ conformance:
   - name: settings-python-runtime
     working-directory: services/accounts/code/python
     command: [python3, -m, pytest, -q]
-
 migrations:
   - id: composition-v2
     from: ">=0.0.32 <0.1.0"
     breaking: true
-
 breaking-changes:
   - Consumers resolve the immutable package into a disposable projection instead of editing Starter-owned files.
-
 reserved-namespaces:
   - "@codefly/saas-"
   - saas
-
 claims:
   - {kind: package, key: "@base-ui/react", owner: base}
   - {kind: package, key: "@biomejs/biome", owner: base}

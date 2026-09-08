@@ -5,6 +5,9 @@ module:
   service_entry: frontend
   description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
 interface:
+  - service: accounts
+    endpoint: connect
+    visibility: module
   - service: auth-gateway
     endpoint: grpc
     visibility: module
@@ -35,7 +38,7 @@ services:
     endpoints:
       - name: connect
         api: connect
-        visibility: private
+        visibility: module
         port: 8080
       - name: grpc
         api: grpc

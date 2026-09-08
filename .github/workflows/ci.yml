@@ -114,7 +114,7 @@ jobs:
   sdk-boundary:
     name: Codefly SDK boundary
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -135,6 +135,12 @@ jobs:
         env:
           GOWORK: "off"
         run: go test -run TestMergedProtocolGeneratorsUseOneInvocation .
+      - name: Install Codefly
+        env:
+          GOPRIVATE: github.com/codefly-dev/*
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
+      - name: Check exported API contracts are in sync with the proto
+        run: codefly generate contracts saas-starter --check
 
   module-package:
     name: Immutable module package
@@ -241,7 +247,7 @@ jobs:
           # sum.golang.org 500s/404s on fresh or private codefly-dev tags.
           # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.141
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Resolve affected services
         id: plan
         shell: bash
@@ -301,7 +307,7 @@ jobs:
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.141
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Reclaim runner disk space
         shell: bash
         run: |
@@ -381,7 +387,7 @@ jobs:
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.141
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       # Temporal's amd64 image expands beyond Core's managed 512 MiB Syft
       # scratch volume. A host binary lets Codefly use the runner's disk.
       - name: Install Syft
@@ -452,7 +458,7 @@ jobs:
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.141
+        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Reclaim runner disk space
         shell: bash
         run: |
