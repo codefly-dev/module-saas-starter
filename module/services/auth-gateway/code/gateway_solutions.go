@@ -118,6 +118,15 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// with caller identity still stripped; every other path (the solution's data
 	// endpoints, e.g. /lastlogin) stays auth-required below. The upstream is sent
 	// the same cleaned path the exemption was decided on, so the two can't diverge.
+	//
+	// Rate-limit budget: this public GET surface is deliberately left exempt (it
+	// proxies via proxyTo, not rateLimitThenProxy). It is identity-stripped and
+	// carries no user data, so there is no per-org budget to attach it to, and
+	// the org/IP key rateLimitThenProxy would use is meaningless here. Metering it
+	// on an IP key risks blocking legitimate same-origin asset/manifest loads for
+	// the browser module loader — a fail-open static surface should stay loadable.
+	// The authenticated data path below is where the budget is enforced (#513),
+	// mirroring the federated-module fix (#512), which metered only its data route.
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
 		stripAllIdentityHeaders(r)
 		entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: publicPath}
@@ -149,8 +158,14 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 
 	// Proxy to the solution. The caller's bearer is preserved so the solution
 	// can call accounts through the gateway on the user's behalf.
+	//
+	// Route through rateLimitThenProxy, not proxyTo directly: an authenticated
+	// solution data endpoint must consume the same per-org/per-IP budget as an
+	// equivalent catalog route (e.g. /v1/users), otherwise /solutions/<id>/* would
+	// be an unmetered proxy an authenticated caller could flood past the org
+	// budget. Same fix as the federated-module half (#512).
 	entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: "/" + path, Protected: true}
-	g.proxyTo(w, r, upstream, entry)
+	g.rateLimitThenProxy(w, r, upstream, entry)
 	return true
 }
 

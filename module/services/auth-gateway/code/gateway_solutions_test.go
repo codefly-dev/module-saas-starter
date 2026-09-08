@@ -316,3 +316,34 @@ func TestGateway_Solution_Register_RejectsSSRFHosts(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, w.Code, "upstream %q must be rejected", upstream)
 	}
 }
+
+// The authenticated solution data path consumes the same per-org/per-IP budget
+// as an equivalent catalog route: it must route through rateLimitThenProxy, not
+// proxy directly. Without that, /solutions/<id>/* would be an unmetered proxy an
+// authenticated caller could flood past the org budget. Regression for #513,
+// mirroring TestGateway_Module_Federated_RateLimited (#512).
+func TestGateway_Solution_RateLimited(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / org / min.
+	gw.rateLimiter = NewRateLimiter(1)
+	fake := registerSolutionUpstream(t, gw, "audit")
+
+	// Reuse ONE token so every request keys on the same injected x-org-id.
+	token := signValidToken(t, priv)
+	got429 := false
+	for i := 0; i < 5; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+		req.Header.Set("authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		if w.Code == http.StatusTooManyRequests {
+			got429 = true
+			break
+		}
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+	require.True(t, got429, "authenticated solution data route must be subject to the rate-limit budget")
+	// The earlier allowed requests still reached the solution upstream.
+	require.NotNil(t, fake.lastHeaders)
+	require.Equal(t, "/v1/audit/logs", fake.lastPath)
+}
