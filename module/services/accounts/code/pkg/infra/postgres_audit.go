@@ -87,6 +87,9 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 	if q.Category != "" {
 		add("event_type IN (SELECT name FROM audit_event_types WHERE category = $%d)", q.Category)
 	}
+	if q.Namespace != "" {
+		add("event_type IN (SELECT name FROM audit_event_types WHERE namespace = $%d)", q.Namespace)
+	}
 	if q.Resource != "" {
 		add("resource = $%d", q.Resource)
 	}

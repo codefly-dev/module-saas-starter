@@ -19,6 +19,7 @@ export interface AuditLogFilters {
 	orgId?: string;
 	eventType?: string;
 	category?: string;
+	namespace?: string;
 	actorId?: string;
 	pageSize?: number;
 }

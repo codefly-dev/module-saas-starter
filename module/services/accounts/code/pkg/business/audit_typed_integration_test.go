@@ -72,6 +72,48 @@ func TestSyncAuditEventTypesProjectsNamespace(t *testing.T) {
 		"every catalog type must be projected as active")
 }
 
+// The namespace facet has to narrow the result set, not just the event-type
+// dropdown: a filter control that changes nothing the user can observe reads as
+// broken. It resolves through audit_event_types.namespace, so it survives a
+// second module composing in without the UI learning that module's vocabulary.
+func TestQueryAuditLog_FiltersByNamespace(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		return testStore.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}))
+	_, org := mustUserAndOrg(t, ctx, "ns@audit-test.com", "ns-audit", "Namespace Co")
+
+	require.NoError(t, testStore.WithOrgTx(ctx, org, func(ctx context.Context) error {
+		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
+			ActorType: "user", EventType: business.EventUserUpdated, Resource: "user", OrgID: org,
+		})
+	}))
+
+	past := time.Now().Add(-time.Hour)
+	future := time.Now().Add(time.Hour)
+
+	matching, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
+		OrgID: org, Namespace: business.AuditNamespace, From: &past, To: &future, PageSize: 100,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, matching, "the module's own namespace must match its events")
+
+	other, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
+		OrgID: org, Namespace: "someothermodule", From: &past, To: &future, PageSize: 100,
+	})
+	require.NoError(t, err)
+	require.Empty(t, other, "another module's namespace must match none of this module's events")
+
+	// The same predicate backs the aggregate path, so the widgets narrow with the
+	// table rather than silently ignoring the facet.
+	buckets, err := testService.AggregateAuditLog(ctx,
+		business.AuditQuery{OrgID: org, Namespace: "someothermodule"},
+		business.AuditAggregationSpec{GroupBy: []string{"event_type"}})
+	require.NoError(t, err)
+	require.Empty(t, buckets)
+}
+
 // TestAuditRetention_DropsOldPartitions proves retention actually removes data
 // now: it drops whole partitions whose range is entirely older than the cutoff
 // (which the append-only trigger would have blocked as a row DELETE), while

@@ -1145,6 +1145,7 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		ActorID:    req.ActorId,
 		EventType:  req.EventType,
 		Category:   req.Category,
+		Namespace:  req.Namespace,
 		Resource:   req.Resource,
 		ResourceID: req.ResourceId,
 		PageSize:   req.PageSize,
@@ -1211,6 +1212,7 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 		ActorID:   req.ActorId,
 		EventType: req.EventType,
 		Category:  req.Category,
+		Namespace: req.Namespace,
 		Resource:  req.Resource,
 	}
 	if req.From != nil {

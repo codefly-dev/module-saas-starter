@@ -429,6 +429,13 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "namespace",
+            "description": "namespace scopes the search to the module that minted the event types, e.g.\n\"saas\". A composed workspace carries one namespace per emitting module.",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -522,6 +529,13 @@
               "type": "string"
             },
             "collectionFormat": "multi"
+          },
+          {
+            "name": "namespace",
+            "description": "namespace scopes the aggregation to one module's event types, matching\nQueryAuditLogRequest.namespace.",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [

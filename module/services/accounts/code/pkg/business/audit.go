@@ -167,6 +167,7 @@ type AuditQuery struct {
 	ActorID         string
 	EventType       string
 	Category        string
+	Namespace       string
 	Resource        string
 	ResourceID      string
 	PayloadContains map[string]any

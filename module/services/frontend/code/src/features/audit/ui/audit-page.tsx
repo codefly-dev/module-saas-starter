@@ -31,16 +31,27 @@ export function AuditPage() {
 
 	const eventType = eventTypeFilter === "all" ? undefined : eventTypeFilter;
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
+	const namespace = namespaceFilter === "all" ? undefined : namespaceFilter;
 
 	const { data: eventTypes } = useAuditEventTypes();
-	const { data, isLoading } = useAuditLog({ eventType, category, pageSize: 100 });
+	const { data, isLoading } = useAuditLog({
+		eventType,
+		category,
+		namespace,
+		pageSize: 100,
+	});
 	const exportMutation = useExportAuditLog();
 
 	const {
 		data: byType,
 		isLoading: byTypeLoading,
 		error: byTypeError,
-	} = useAuditAggregate({ eventType, category, groupBy: "event_type" });
+	} = useAuditAggregate({
+		eventType,
+		category,
+		namespace,
+		groupBy: "event_type",
+	});
 	const {
 		data: byDay,
 		isLoading: byDayLoading,
@@ -48,6 +59,7 @@ export function AuditPage() {
 	} = useAuditAggregate({
 		eventType,
 		category,
+		namespace,
 		groupBy: "time",
 		bucket: "day",
 	});
@@ -70,11 +82,9 @@ export function AuditPage() {
 	const visibleEventTypes = useMemo(() => {
 		let list = eventTypes ?? [];
 		if (category) list = list.filter((t) => t.category === category);
-		if (namespaceFilter !== "all") {
-			list = list.filter((t) => t.namespace === namespaceFilter);
-		}
+		if (namespace) list = list.filter((t) => t.namespace === namespace);
 		return list.slice().sort((a, b) => a.name.localeCompare(b.name));
-	}, [eventTypes, category, namespaceFilter]);
+	}, [eventTypes, category, namespace]);
 
 	const topTypes = useMemo(
 		() => (byType ?? []).slice(0, 6),

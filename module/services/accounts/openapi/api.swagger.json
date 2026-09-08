@@ -4859,6 +4859,13 @@
             "name": "payloadContains",
             "required": false,
             "type": "string"
+          },
+          {
+            "description": "namespace scopes the search to the module that minted the event types, e.g.\n\"saas\". A composed workspace carries one namespace per emitting module.",
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "type": "string"
           }
         ],
         "responses": {
@@ -4952,6 +4959,13 @@
             "name": "groupBys",
             "required": false,
             "type": "array"
+          },
+          {
+            "description": "namespace scopes the aggregation to one module's event types, matching\nQueryAuditLogRequest.namespace.",
+            "in": "query",
+            "name": "namespace",
+            "required": false,
+            "type": "string"
           }
         ],
         "responses": {
