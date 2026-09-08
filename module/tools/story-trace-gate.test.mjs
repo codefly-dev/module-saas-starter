@@ -25,9 +25,57 @@ test("a story id mentioned in prose is not itself a story", () => {
 
 test("Go test functions and TypeScript suites both name their story", () => {
   const go = "func TestStory_HOST_ID_001(t *testing.T) {}";
-  assert.deepEqual([...storiesInSource(go)], [["HOST-ID-001", "TestStory_HOST_ID_001"]]);
+  assert.deepEqual(
+    [...storiesInSource(go)],
+    [["HOST-ID-001", { named: "TestStory_HOST_ID_001", skipped: false }]],
+  );
   const ts = 'describe("HOST-JOB-001 · Work is never lost", () => {});';
-  assert.deepEqual([...storiesInSource(ts)], [["HOST-JOB-001", 'describe("HOST-JOB-001")']]);
+  assert.deepEqual(
+    [...storiesInSource(ts)],
+    [["HOST-JOB-001", { named: 'describe("HOST-JOB-001")', skipped: false }]],
+  );
+});
+
+test("a test that skips itself is recorded as unproven", () => {
+  const go = `
+func TestStory_HOST_ID_001(t *testing.T) {
+	if testing.Short() {
+		t.Skip("needs a database")
+	}
+	require.True(t, true)
+}
+`;
+  assert.deepEqual(
+    [...storiesInSource(go)],
+    [["HOST-ID-001", { named: "TestStory_HOST_ID_001", skipped: true }]],
+  );
+  assert.deepEqual(
+    [...storiesInSource('describe.skip("HOST-JOB-001 · pending", () => {});')],
+    [["HOST-JOB-001", { named: 'describe("HOST-JOB-001")', skipped: true }]],
+  );
+});
+
+test("a skip in a neighbouring function does not taint the story test", () => {
+  const go = `
+func TestStory_HOST_ID_001(t *testing.T) {
+	require.True(t, true)
+}
+
+func TestSomethingElse(t *testing.T) {
+	t.Skip("unrelated")
+}
+`;
+  assert.equal(storiesInSource(go).get("HOST-ID-001").skipped, false);
+});
+
+test("a skipped story fails the trace", () => {
+  const tests = new Map([
+    ["HOST-ID-001", { named: "identity_test.go:TestStory_HOST_ID_001", skipped: false }],
+    ["HOST-JOB-001", { named: "jobs_test.go:TestStory_HOST_JOB_001", skipped: true }],
+  ]);
+  const errors = storyTraceErrors(storiesOnPage(page), tests);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /skips itself, so the story is unproven/);
 });
 
 test("an ordinary test name is not read as a story", () => {
@@ -36,14 +84,16 @@ test("an ordinary test name is not read as a story", () => {
 
 test("a fully traced page passes", () => {
   const tests = new Map([
-    ["HOST-ID-001", "identity_test.go:TestStory_HOST_ID_001"],
-    ["HOST-JOB-001", "jobs_test.go:TestStory_HOST_JOB_001"],
+    ["HOST-ID-001", { named: "identity_test.go:TestStory_HOST_ID_001", skipped: false }],
+    ["HOST-JOB-001", { named: "jobs_test.go:TestStory_HOST_JOB_001", skipped: false }],
   ]);
   assert.deepEqual(storyTraceErrors(storiesOnPage(page), tests), []);
 });
 
 test("a story with no test fails", () => {
-  const tests = new Map([["HOST-ID-001", "identity_test.go:TestStory_HOST_ID_001"]]);
+  const tests = new Map([
+    ["HOST-ID-001", { named: "identity_test.go:TestStory_HOST_ID_001", skipped: false }],
+  ]);
   const errors = storyTraceErrors(storiesOnPage(page), tests);
   assert.equal(errors.length, 1);
   assert.match(errors[0], /HOST-JOB-001 is on the page but no test proves it/);
@@ -52,9 +102,9 @@ test("a story with no test fails", () => {
 
 test("a test naming a story the page dropped fails", () => {
   const tests = new Map([
-    ["HOST-ID-001", "identity_test.go:TestStory_HOST_ID_001"],
-    ["HOST-JOB-001", "jobs_test.go:TestStory_HOST_JOB_001"],
-    ["HOST-AUD-001", "audit_test.go:TestStory_HOST_AUD_001"],
+    ["HOST-ID-001", { named: "identity_test.go:TestStory_HOST_ID_001", skipped: false }],
+    ["HOST-JOB-001", { named: "jobs_test.go:TestStory_HOST_JOB_001", skipped: false }],
+    ["HOST-AUD-001", { named: "audit_test.go:TestStory_HOST_AUD_001", skipped: false }],
   ]);
   const errors = storyTraceErrors(storiesOnPage(page), tests);
   assert.equal(errors.length, 1);

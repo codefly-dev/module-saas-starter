@@ -106,10 +106,21 @@ jobs:
           HANDBOOK_REPOSITORY: ${{ vars.HANDBOOK_REPOSITORY }}
           HANDBOOK_PAGE: ${{ vars.HANDBOOK_PAGE }}
           GH_TOKEN: ${{ secrets.HANDBOOK_READ_TOKEN }}
+          # A pull request from a fork is never given secrets, so the trace is
+          # structurally impossible there; the same commit is traced again on
+          # the merge to main. Renders empty on push and tag events.
+          FORK_PULL_REQUEST: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           if [[ -z "${HANDBOOK_REPOSITORY}" || -z "${GH_TOKEN}" ]]; then
-            echo "::warning::HANDBOOK_REPOSITORY or HANDBOOK_READ_TOKEN is unset; the story trace cannot read the functional page"
-            exit 0
+            if [[ "${FORK_PULL_REQUEST}" == "true" ]]; then
+              echo "::warning::a fork pull request cannot read the functional page; the story trace runs on the merge to main"
+              exit 0
+            fi
+            # Passing here would report a guarantee nobody checked: the job is
+            # named for the trace, and a green trace that never ran is worse
+            # than a red one that says what is missing.
+            echo "::error::the story trace cannot read the functional page. Set the HANDBOOK_REPOSITORY repository variable (owner/repo) and the HANDBOOK_READ_TOKEN secret (contents:read on that repository); HANDBOOK_PAGE overrides the default page path."
+            exit 1
           fi
           page="${HANDBOOK_PAGE:-modules/saas-starter.md}"
           gh api "repos/${HANDBOOK_REPOSITORY}/contents/${page}?ref=main" \
@@ -767,10 +778,17 @@ jobs:
           GH_TOKEN: ${{ secrets.HANDBOOK_DISPATCH_TOKEN }}
         run: |
           if [[ -z "${HANDBOOK_REPOSITORY}" || -z "${GH_TOKEN}" ]]; then
-            echo "::warning::HANDBOOK_REPOSITORY or HANDBOOK_DISPATCH_TOKEN is unset; the release was not announced"
-            exit 0
+            echo "::error::the release was not announced. Set the HANDBOOK_REPOSITORY repository variable (owner/repo) and the HANDBOOK_DISPATCH_TOKEN secret."
+            exit 1
           fi
+          # The payload names the exact commit, and the consumer must render
+          # from it. Resolving "the latest release" instead would read a stale
+          # interface: this track publishes tags, and a tag does not create a
+          # GitHub Release, so the newest release object here can be many
+          # releases behind the tag being announced.
           gh api "repos/${HANDBOOK_REPOSITORY}/dispatches" \
             -f event_type=surface-bump \
             -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
-            -f "client_payload[release]=${GITHUB_REF_NAME}"
+            -f "client_payload[release]=${GITHUB_REF_NAME}" \
+            -f "client_payload[commit]=${GITHUB_SHA}" \
+            -f "client_payload[artifact]=module/services/accounts/generated/service-catalog.json"

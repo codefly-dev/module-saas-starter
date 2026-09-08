@@ -181,7 +181,9 @@ enforced by `tools/interface-docs-gate.mjs` in CI:
   datasource) and `PlatformAdminService` splits its job and entitlement
   operations out of platform administration. The assignment lives in the gate
   and is exhaustive, so a new service or module-facing capability cannot ship
-  unplaced.
+  unplaced; `node tools/interface-docs-gate.mjs contexts` prints it as JSON for
+  a renderer that groups by context, so the grouping is published from the same
+  place that enforces it.
 
 Everything else a reader needs — who may call an operation, its limits, its
 rate class, whether it emits audit — is not prose: it is the typed
@@ -191,7 +193,11 @@ would be a second source of truth that drifts.
 
 The functional page itself lives in the handbook (`modules/saas-starter.md`)
 and owns the *what*; the user stories on it are traced to acceptance tests here
-by `tools/story-trace-gate.mjs`.
+by `tools/story-trace-gate.mjs`. The trace is symmetric — a story with no test
+and a test naming an absent story both fail — and a test that declares a story
+and then skips itself counts as unproven, since a declaration is not evidence.
+The trace needs read access to the page, and fails when it does not have it
+rather than reporting an unchecked guarantee as green.
 
 ## Current editorial exception
 

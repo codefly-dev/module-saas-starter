@@ -107,10 +107,18 @@ const METHOD_CONTEXTS = {
 export const boundedContextOf = (method) =>
   METHOD_CONTEXTS[`${method.service}/${method.method}`] ?? SERVICE_CONTEXTS[method.service];
 
-// A summary shorter than this names an action without naming what it acts on.
-// "Delete one." and "Read branding." are the real failures this threshold was
-// sized against; both stop being ambiguous at four words.
-const MIN_SUMMARY_WORDS = 4;
+// A summary this short is a verb with nothing attached: "Read branding." never
+// says whose branding. Three words is where an operation can name an action and
+// its object, so it is a floor on shape, not a target length — "Delete a team."
+// is complete and passes, and no summary is improved by padding it out.
+const MIN_SUMMARY_WORDS = 3;
+
+// The other way to reach three words without naming anything: let a pronoun be
+// the whole object. "Delete one." and "Mark all read." are the real failures
+// here. The trailing-word allowance is what keeps this off "Delete one of the
+// caller's notifications.", where the pronoun is a determiner and a real object
+// follows it.
+const PLACEHOLDER_OBJECT = /^\S+\s+(?:one|all|it|them|this|that|these|those)\b(?:\s+\w+)?[.]$/i;
 
 // Long enough to say who and what, short enough that a renderer can put it in a
 // table cell.
@@ -123,8 +131,12 @@ const ENGINEERING_SHORTHAND = /→|->|\bTODO\b|\bFIXME\b|\bXXX\b/;
 // reader: the catalog already carries exposure and policy machine-readably.
 const AUDIENCE_PREFIX = /^(internal|deprecated|note)\b\s*:/i;
 
+// The first sentence ends at the first period that starts a new sentence: one
+// followed by whitespace and a capital, or by the end of the text. Requiring
+// the capital is what keeps "e.g.", "i.e." and "cf." from truncating a
+// description mid-clause and reporting the remainder as too short.
 const summaryOf = (description) => {
-  const match = description.match(/^.*?[.](?:\s|$)/s);
+  const match = description.match(/^[\s\S]*?[.](?=\s+[A-Z]|\s*$)/);
   return (match ? match[0] : description).trim();
 };
 
@@ -152,9 +164,9 @@ function operationErrors(method) {
   }
 
   const summary = summaryOf(description);
-  if (summary.split(/\s+/).length < MIN_SUMMARY_WORDS) {
+  if (summary.split(/\s+/).length < MIN_SUMMARY_WORDS || PLACEHOLDER_OBJECT.test(summary)) {
     errors.push(
-      `${procedure} summary is under ${MIN_SUMMARY_WORDS} words and does not name what it acts on: ${JSON.stringify(summary)}`,
+      `${procedure} summary does not name what it acts on: ${JSON.stringify(summary)}`,
     );
   }
   if (summary.length > MAX_SUMMARY_CHARACTERS) {
@@ -224,11 +236,31 @@ function check() {
   console.log(`interface docs OK: ${rendered} public operations carry a readable summary`);
 }
 
+// The bounded contexts are enforced here, so this is where they are published:
+// an external renderer that groups the interface by context reads them from
+// this command rather than re-deriving a grouping the gate would not defend.
+function contexts() {
+  const catalog = JSON.parse(readFileSync(CATALOG_PATH, "utf8"));
+  const grouped = {};
+  for (const method of catalog.methods ?? []) {
+    const context = boundedContextOf(method);
+    (grouped[context] ??= []).push(method.procedure);
+  }
+  const ordered = {};
+  for (const context of Object.keys(grouped).sort()) {
+    ordered[context] = grouped[context].sort();
+  }
+  console.log(JSON.stringify(ordered, null, 2));
+}
+
 if (process.argv[1] === SCRIPT_PATH) {
   const command = process.argv[2];
-  if (command !== "check") {
-    console.error("usage: node tools/interface-docs-gate.mjs check");
+  if (command === "check") {
+    check();
+  } else if (command === "contexts") {
+    contexts();
+  } else {
+    console.error("usage: node tools/interface-docs-gate.mjs <check|contexts>");
     process.exit(2);
   }
-  check();
 }

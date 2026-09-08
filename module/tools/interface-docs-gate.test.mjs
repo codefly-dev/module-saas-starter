@@ -25,9 +25,29 @@ test("an operation with no description fails", () => {
 });
 
 test("a summary that names an action but not its object fails", () => {
-  const errors = interfaceDocsErrors(catalog(method({ description: "Delete one." })));
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /does not name what it acts on/);
+  for (const description of ["Delete one.", "Read branding.", "Mark all read."]) {
+    const errors = interfaceDocsErrors(catalog(method({ description })));
+    assert.equal(errors.length, 1, description);
+    assert.match(errors[0], /does not name what it acts on/);
+  }
+});
+
+test("a short summary that does name its object passes", () => {
+  for (const description of ["Delete a team.", "List webhook subscriptions."]) {
+    assert.deepEqual(interfaceDocsErrors(catalog(method({ description }))), [], description);
+  }
+});
+
+test("a pronoun used as a determiner is not a missing object", () => {
+  const description = "Delete one of the caller's notifications.";
+  assert.deepEqual(interfaceDocsErrors(catalog(method({ description }))), []);
+});
+
+test("an abbreviation does not end the summary", () => {
+  // Splitting at the first period would leave "Read prefs, e.g." and report a
+  // complete sentence as though it named nothing.
+  const description = "Read prefs, e.g. theme and locale, for the caller.";
+  assert.deepEqual(interfaceDocsErrors(catalog(method({ description }))), []);
 });
 
 test("an unpunctuated or lowercase description fails", () => {

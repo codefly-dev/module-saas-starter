@@ -38,11 +38,27 @@ const STORY_ID = /\bHOST-[A-Z]+-\d{3}\b/g;
 const STORY_HEADING = /^#{2,4}\s+.*$/gm;
 
 // Go names the story in the test function; TypeScript names it in the suite.
-const GO_STORY_TEST = /func\s+(TestStory_HOST_[A-Z]+_\d{3})\s*\(/g;
-const TS_STORY_TEST = /describe\(\s*["'`](HOST-[A-Z]+-\d{3})\b/g;
+const GO_STORY_TEST = /func\s+(TestStory_HOST_[A-Z]+_\d{3})\s*\([^)]*\)\s*\{/g;
+const TS_STORY_TEST = /describe(?:\.skip)?\(\s*["'`](HOST-[A-Z]+-\d{3})\b/g;
 
-const SKIP_DIRECTORIES = new Set(["node_modules", ".next", ".git", "gen", "generated", "vendor"]);
-const TEST_FILE = /(_test\.go|\.test\.[jt]sx?|\.spec\.[jt]sx?)$/;
+// A test that declares a story and then skips itself proves nothing, so the
+// declaration alone is not the signal — the body has to actually run.
+const GO_SKIP = /\bt\.Skip(?:f|Now)?\s*\(/;
+const TS_SKIPPED_SUITE = /describe\.skip\(\s*["'`]$/;
+
+// tools/ holds the gates themselves. Their fixtures contain literal story
+// declarations as test data, and counting a fixture as proof would let this
+// gate satisfy itself; acceptance tests live under services/.
+const SKIP_DIRECTORIES = new Set([
+  "node_modules",
+  ".next",
+  ".git",
+  "gen",
+  "generated",
+  "vendor",
+  "tools",
+]);
+const TEST_FILE = /(_test\.go|\.(?:test|spec)\.[cm]?[jt]sx?)$/;
 
 const testNameToStory = (name) => name.replace(/^TestStory_/, "").replaceAll("_", "-");
 
@@ -56,13 +72,38 @@ export function storiesOnPage(markdown) {
   return stories;
 }
 
+// The body of the Go function that starts at `open` (the index of its opening
+// brace), found by brace matching.
+function functionBody(source, open) {
+  let depth = 0;
+  for (let i = open; i < source.length; i++) {
+    if (source[i] === "{") {
+      depth++;
+      continue;
+    }
+    if (source[i] === "}") {
+      depth--;
+      if (depth === 0) {
+        return source.slice(open, i + 1);
+      }
+    }
+  }
+  return source.slice(open);
+}
+
 export function storiesInSource(source) {
   const stories = new Map();
-  for (const [, name] of source.matchAll(GO_STORY_TEST)) {
-    stories.set(testNameToStory(name), name);
+  for (const match of source.matchAll(GO_STORY_TEST)) {
+    const name = match[1];
+    const body = functionBody(source, source.indexOf("{", match.index + match[0].length - 1));
+    stories.set(testNameToStory(name), { named: name, skipped: GO_SKIP.test(body) });
   }
-  for (const [, id] of source.matchAll(TS_STORY_TEST)) {
-    stories.set(id, `describe("${id}")`);
+  for (const match of source.matchAll(TS_STORY_TEST)) {
+    const id = match[1];
+    stories.set(id, {
+      named: `describe("${id}")`,
+      skipped: TS_SKIPPED_SUITE.test(source.slice(0, match.index + match[0].length - id.length)),
+    });
   }
   return stories;
 }
@@ -70,15 +111,21 @@ export function storiesInSource(source) {
 export function storyTraceErrors(onPage, inTests) {
   const errors = [];
   for (const story of [...onPage].sort()) {
-    if (!inTests.has(story)) {
+    const test = inTests.get(story);
+    if (!test) {
       errors.push(
-        `${story} is on the page but no test proves it; add func TestStory_${story.replaceAll("-", "_")}`,
+        `${story} is on the page but no test proves it; add func TestStory_${story.replaceAll("-", "_")}` +
+          ` or describe("${story} …")`,
       );
+      continue;
+    }
+    if (test.skipped) {
+      errors.push(`${test.named} names ${story} but skips itself, so the story is unproven`);
     }
   }
-  for (const [story, named] of [...inTests.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [story, test] of [...inTests.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     if (!onPage.has(story)) {
-      errors.push(`${named} names ${story}, which is not a story on the page`);
+      errors.push(`${test.named} names ${story}, which is not a story on the page`);
     }
   }
   return errors;
@@ -101,8 +148,8 @@ function* testFiles(directory) {
 function collectTests() {
   const stories = new Map();
   for (const file of testFiles(MODULE_ROOT)) {
-    for (const [story, named] of storiesInSource(readFileSync(file, "utf8"))) {
-      stories.set(story, `${relative(MODULE_ROOT, file)}:${named}`);
+    for (const [story, test] of storiesInSource(readFileSync(file, "utf8"))) {
+      stories.set(story, { ...test, named: `${relative(MODULE_ROOT, file)}:${test.named}` });
     }
   }
   return stories;

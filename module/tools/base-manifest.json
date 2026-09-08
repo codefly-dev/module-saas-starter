@@ -17,7 +17,7 @@
     "METHOD_POLICY.md": "2096ae13eaffe5f6986881ef564dd1114b688179771b3e92fe9a78dd70093299",
     "PRODUCT_ANALYTICS.md": "5a6d5162a9b2be5e03514ca874486a220a69756a06c90091f9737dc249980039",
     "REST_SURFACE.md": "50a3daae90536acf809181ec9cdc28f849719dba4fb35cbaa2c07760679eeb39",
-    "SERVICE_CATALOG.md": "8bac400d04ac352ef80018b160e8f4194b1187f6e4fc9470d0c56372d6bdeec6",
+    "SERVICE_CATALOG.md": "1e397ed3c2f3f8335b1ca2cf48fe035c542178fcbdb813618653fab2a097531a",
     "SETTINGS.md": "3943cb4769378fd46225bb9e04707e8f98f893030b90134193c857fb5cd16848",
     "SIGNOZ_PROVISIONING.md": "638b130171e3521d6f5c336ca9211823fa63bd4172429b7faac963bdc1054bf0",
     "TRUST_CAPABILITIES.md": "c5a1ed15f2e0933c4a47c64baff13adb007db53ed4203baf9a02425bb557debb",
@@ -480,7 +480,7 @@
     "services/accounts/code/pkg/business/sso_admin.go": "f4eb46c0761a5c6f226d08c2b3ead05a8301243aee30ce48534cde79416a5d4a",
     "services/accounts/code/pkg/business/sso_admin_test.go": "7862802529d61c381c5a7eddb36c9d3e0d0bbbb54a238125460a89a63f4f6934",
     "services/accounts/code/pkg/business/store.go": "08e5adc565f68f25de8d10083faa39a4b92c9724208c9cbb466cb0a68e7d6327",
-    "services/accounts/code/pkg/business/story_host_test.go": "12270f4457c9c0709c2bbc55a9fb650c5502b2edaa43c53aa505d489f5646b48",
+    "services/accounts/code/pkg/business/story_host_test.go": "db84b08052f1e0d2be6b05cb8e66749e2e14f7c4f7a912d600e82632e88920d4",
     "services/accounts/code/pkg/business/teams.go": "8755172429bbf1b100348ff6c40afcbe43c4ad83ce6dc34badd32827332ebe88",
     "services/accounts/code/pkg/business/teams_cache_test.go": "a4984dc1b31a8bf9dbc005c25443752c16073b8365e30abad6e2e3436f9d57f5",
     "services/accounts/code/pkg/business/teams_test.go": "0694ca8d4b4c249e859d7cafcab15aca246cb06266e173b3968a9d789de58d27",
@@ -788,7 +788,7 @@
     "services/accounts/code/pkg/infra/postgres_worker_pool.go": "d066165eac841f993b9e195af7b5e986a7f5b66d795953fa64b90496b3a90f0b",
     "services/accounts/code/pkg/infra/redis.go": "8e6f653a862afcc42656b6ac3255131fe38b395037ddbe4eac2f3c2e26bf448e",
     "services/accounts/code/pkg/infra/scoped.go": "b814757e8a96bb2eef1174f39057eee1dde9e0ab9dd5f67f82015e44563760cb",
-    "services/accounts/code/pkg/infra/story_jobs_test.go": "94deee08d24041767ba5339a01456cf6b30a7d79d7b3bd2353230fbe3a5bccde",
+    "services/accounts/code/pkg/infra/story_jobs_test.go": "d4ec689d9c9d58d6f188d18c0e1458d6fde62d55914bc5f3129189704b966665",
     "services/accounts/code/pkg/infra/tenant_tx.go": "1ed2f8beb2351bcf2e44710d208dbfd6e8dfaa9cd3327aba01e5070df42a410b",
     "services/accounts/code/pkg/infra/tenant_tx_pooling_test.go": "82dfe385f7f79136968861615571d775590885bb66fcf94da02d2ccb72405e8d",
     "services/accounts/code/pkg/infra/tenant_tx_test.go": "ed4fb25aaa459d40fc793a1f4b1bc480715356d4f2fa3a622930d1d5e4d00352",
@@ -2097,8 +2097,8 @@
     "tools/generatedgo/format_test.go": "48e7f1e1f7c1fb3d0a9320d32de21c95b809d52071692faf6383bf77a9e1a245",
     "tools/go.mod": "50754d869b4c7f2f82cca813121f23a2e958a9a39c012f14efbb36542cdb6a7f",
     "tools/go.sum": "0e0b9541f4201a7598bb9b2dcb3b3e2a828e3abd28304aceedd3f573b147427a",
-    "tools/interface-docs-gate.mjs": "699c5d9ad58b9ef72ba9725e9200e3657a6b194e7d04b6d4c83c2cda530b465d",
-    "tools/interface-docs-gate.test.mjs": "d2d2d20d0e88ef06ddd46d5c6eaa2a4d1f2c4a9eb6be724bbb010d12ea0bc9e6",
+    "tools/interface-docs-gate.mjs": "ad4f30494518dbeed3c4692be79e57639bab2c4aae90210cdf526dc359bea84d",
+    "tools/interface-docs-gate.test.mjs": "69298fdaa2c3d2a39ab9f32e3e02b532ec789509d481ee5d98135597fa7c972e",
     "tools/marketing-extraction.mjs": "20a7e8abd1fd04cc84aaed7333405c0813149220dd8122a70771c4917c4e0e93",
     "tools/migration-pairing-gate.mjs": "c6216c7882e38d194cc008e11418651181c85eccaf7a133a28a01588b18dd64a",
     "tools/migration-pairing-gate.test.mjs": "c675ccfc6e5b39edd56d3a498754f18b81fb566054e15efbb02c3e24b58b95eb",
@@ -2109,7 +2109,7 @@
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
     "tools/rls-migration-gate.mjs": "fd258aca45acc801b35e3abd1ae70518f8e62f44ef7c03f7ca6e7a9b9422bb03",
     "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f",
-    "tools/story-trace-gate.mjs": "1a13a094273b3b7801f7a9b86ebf8209df24bfad13b6170275fc60e1678b33f7",
-    "tools/story-trace-gate.test.mjs": "d1c592b9ae0fa952254721bd2186ef86bfe2dee60d23eef357d30e63feddd2a7"
+    "tools/story-trace-gate.mjs": "2b9ca719fe6582f4778ca7b8f4793035dc20b6764c6b9546013929477819e461",
+    "tools/story-trace-gate.test.mjs": "195fe78b3345a99dffaf3ba7bf4bbcc6742606327d03f4d6a39d279bc8541d46"
   }
 }
