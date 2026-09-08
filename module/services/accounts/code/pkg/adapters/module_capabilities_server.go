@@ -8,6 +8,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -211,6 +212,69 @@ func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
+}
+
+// FetchDatasourceBlob streams one datasource blob to the module. The blob is
+// buffered whole in the business layer (it is already capped there), so this
+// handler's only job is to slice it into bounded wire frames.
+func (s *ModuleCapabilitiesServer) FetchDatasourceBlob(req *gen.FetchDatasourceBlobRequest, stream grpc.ServerStreamingServer[gen.FetchDatasourceBlobChunk]) error {
+	return streamDatasourceBlob(stream.Context(), req, stream)
+}
+
+// datasourceBlobChunkBytes bounds each streamed frame. It sits well under the
+// gRPC 4 MiB default message limit so a max-size blob streams in bounded frames
+// rather than one oversized message the receiver would reject.
+const datasourceBlobChunkBytes = 256 * 1024
+
+// datasourceBlobSender is the send half both the gRPC and Connect server streams
+// satisfy, so one implementation frames the blob for both transports.
+type datasourceBlobSender interface {
+	Send(*gen.FetchDatasourceBlobChunk) error
+}
+
+// streamDatasourceBlob resolves one datasource blob and writes it to stream in
+// bounded frames. Every frame repeats the total size and content type so the
+// receiver can size its buffer and label the content from the first frame; an
+// empty blob still yields exactly one frame so that metadata always arrives.
+func streamDatasourceBlob(ctx context.Context, req *gen.FetchDatasourceBlobRequest, stream datasourceBlobSender) error {
+	if err := Validate(req); err != nil {
+		return err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return err
+	}
+	content, contentType, err := service.ModuleFetchDatasourceBlob(ctx, caller, req.GetSourceId(), req.GetBlobSha())
+	if err != nil {
+		return err
+	}
+	return writeDatasourceBlobFrames(content, contentType, stream)
+}
+
+// writeDatasourceBlobFrames slices content into bounded wire frames, each
+// repeating the total size and content type so the receiver can size its buffer
+// and label the content from the first frame. An empty blob still yields exactly
+// one frame so that metadata always arrives, and content whose length is an
+// exact multiple of the frame size yields no trailing empty frame.
+func writeDatasourceBlobFrames(content []byte, contentType string, stream datasourceBlobSender) error {
+	total := int64(len(content))
+	for {
+		frame := content
+		if len(frame) > datasourceBlobChunkBytes {
+			frame = frame[:datasourceBlobChunkBytes]
+		}
+		if err := stream.Send(&gen.FetchDatasourceBlobChunk{
+			Data:        frame,
+			TotalSize:   total,
+			ContentType: contentType,
+		}); err != nil {
+			return err
+		}
+		content = content[len(frame):]
+		if len(content) == 0 {
+			return nil
+		}
+	}
 }
 
 // ---------------------------------------------------------------------------

@@ -208,6 +208,8 @@ const (
 	EventDatasourceChangeSetCompiled   EventType = "datasource.change_set_compiled"
 	EventDatasourceForcePushReconciled EventType = "datasource.force_push_reconciled"
 	EventDatasourceBranchDeleted       EventType = "datasource.branch_deleted"
+	EventDatasourceSnapshotTooLarge    EventType = "datasource.snapshot_too_large"
+	EventDatasourceSourceRecovered     EventType = "datasource.source.recovered"
 	EventFeatureFlagUpdated            EventType = "feature_flag.updated"
 
 	EventDashboardCreated EventType = "dashboard.created"
@@ -354,6 +356,10 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("head"), str("delivery_id")),
 	def(EventDatasourceBranchDeleted, CategorySystem, "A GitHub branch-deletion delivery was acknowledged without removing documents.",
 		str("ref"), str("delivery_id")),
+	def(EventDatasourceSnapshotTooLarge, CategorySystem, "A datasource snapshot manifest exceeded the ingest payload limit; the source was degraded pending operator reset.",
+		str("head"), PayloadField{Name: "bytes", Kind: FieldInt}, PayloadField{Name: "limit", Kind: FieldInt}, str("delivery_id")),
+	def(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
+		str("head"), str("delivery_id")),
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),

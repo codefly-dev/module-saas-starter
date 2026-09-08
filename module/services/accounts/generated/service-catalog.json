@@ -164,6 +164,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
         "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
+        "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
         "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
         "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
@@ -3981,6 +3982,48 @@
       },
       "policy_tier": "internal",
       "description": "Enqueue durable work for a tenant- or subject-scoped queue.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "FetchDatasourceBlob",
+      "input_type": "saas.accounts.v1.FetchDatasourceBlobRequest",
+      "output_type": "saas.accounts.v1.FetchDatasourceBlobChunk",
+      "client_streaming": false,
+      "server_streaming": true,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Stream a datasource file blob referenced by a change set.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

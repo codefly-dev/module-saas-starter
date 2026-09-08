@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,6 +76,15 @@ func storedCursor(t *testing.T, store *datasourceFakeStore, id string) string {
 	return source.LastIngestedCommit
 }
 
+func storedSource(t *testing.T, store *datasourceFakeStore, id string) *business.DatasourceSource {
+	t.Helper()
+	source, err := store.GetDatasourceSourceByID(context.Background(), id)
+	if err != nil || source == nil {
+		t.Fatalf("load stored source: %v", err)
+	}
+	return source
+}
+
 func setNextReconcile(t *testing.T, store *datasourceFakeStore, id string, at time.Time) {
 	t.Helper()
 	store.mu.Lock()
@@ -91,12 +102,17 @@ func setNextReconcile(t *testing.T, store *datasourceFakeStore, id string, at ti
 }
 
 func auditHas(audit *recordingAudit, event business.EventType) bool {
+	return auditCount(audit, event) > 0
+}
+
+func auditCount(audit *recordingAudit, event business.EventType) int {
+	n := 0
 	for _, e := range audit.types() {
 		if e == event {
-			return true
+			n++
 		}
 	}
-	return false
+	return n
 }
 
 func TestCompileDelivery_BranchFilterDrops(t *testing.T) {
@@ -523,6 +539,73 @@ func TestDeliveryHandler_DropsNonGitHubSourceTerminally(t *testing.T) {
 	}
 }
 
+// oversizedTree returns a file set whose snapshot manifest JSON is larger than
+// the ingest payload cap, so a snapshot of it cannot be delivered. Long paths
+// keep the file count (and marshal cost) low while clearing the ~960 KiB cap.
+func oversizedTree() []github.File {
+	const (
+		longPath = "docs/" + // one ~500-byte path per file
+			"a-very-deeply-nested-directory-segment/that-repeats-to-inflate-the-manifest/"
+		targetLen = 1_100_000
+	)
+	files := make([]github.File, 0, 2200)
+	total := 0
+	for i := 0; total < targetLen; i++ {
+		p := longPath + strings.Repeat("x", 400) + "/" + strconv.Itoa(i) + ".md"
+		files = append(files, github.File{Path: p, SHA: "sha" + strconv.Itoa(i), Size: 1})
+		total += len(p) + 40
+	}
+	return files
+}
+
+func TestCompileDelivery_OversizedSnapshotDegradesSource(t *testing.T) {
+	// A snapshot manifest past the ingest payload cap cannot be delivered until the
+	// object-storage manifest seam lands. It must not dead-letter the reconcile
+	// every interval forever: the source is parked degraded (schedule cleared, out
+	// of the reconcile sweep) with an audit trail, and the job is acknowledged.
+	producer := &recordingProducer{}
+	gh := &fakeGitHub{files: oversizedTree()}
+	store := newDatasourceFakeStore()
+	svc, audit := newDatasourceService(store, producer, gh)
+	source := githubSource(t, svc, "main", nil, "")
+
+	disp, err := svc.CompileGitHubDelivery(context.Background(), source,
+		pushDelivery("refs/heads/main", "0000000000000000000000000000000000000000", "C", true, false), "d")
+	if err != nil {
+		t.Fatalf("oversized snapshot must be acknowledged, got error: %v", err)
+	}
+	if disp != business.DispositionDegraded {
+		t.Fatalf("disposition = %q, want degraded", disp)
+	}
+	if len(producer.jobs) != 0 {
+		t.Fatalf("want no ingest job for an undeliverable snapshot, got %d", len(producer.jobs))
+	}
+	if got := storedCursor(t, store, source.ID); got != "" {
+		t.Fatalf("cursor = %q, want it left unadvanced", got)
+	}
+	if !auditHas(audit, business.EventDatasourceSnapshotTooLarge) {
+		t.Fatalf("audit = %v, want snapshot_too_large", audit.types())
+	}
+	stored := storedSource(t, store, source.ID)
+	if stored.Status != business.DatasourceStatusDegraded || stored.StatusReason == "" {
+		t.Fatalf("source status = %q reason = %q, want degraded with a reason", stored.Status, stored.StatusReason)
+	}
+	if stored.NextReconcileAt != nil {
+		t.Fatalf("degraded source must have no reconcile scheduled, got %v", stored.NextReconcileAt)
+	}
+
+	// The reconcile sweep must no longer pick the source up, so it stops
+	// re-enqueueing and dead-lettering every interval.
+	setNextReconcile(t, store, source.ID, time.Now().Add(-time.Minute))
+	due, err := store.ListDatasourceSourcesDueForReconcile(context.Background(), time.Now(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 0 {
+		t.Fatalf("degraded source still appears in the reconcile sweep: %d due", len(due))
+	}
+}
+
 func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 	producer := &recordingProducer{}
 	gh := &fakeGitHub{commit: "HEAD", files: []github.File{{Path: "docs/a.md", SHA: "sa"}}}
@@ -572,5 +655,96 @@ func TestRunDatasourceReconcile_SchedulesDueSourcesOnly(t *testing.T) {
 	}
 	if job.GetAttributes()["datasource.source_id"] != due.ID {
 		t.Fatalf("reconcile enqueued for %q, want the due source %q", job.GetAttributes()["datasource.source_id"], due.ID)
+	}
+}
+
+func TestReconcile_RecoversDegradedSourceWhenManifestFitsAgain(t *testing.T) {
+	// A source parked degraded by an earlier oversized snapshot must return to
+	// active the moment a full-tree snapshot fits the ingest cap again: the flag
+	// clears, its reconcile schedule is restored, and it rejoins the sweep. Without
+	// the recovery write a once-degraded source would stay degraded forever even
+	// after the offending files were deleted, silently frozen out of ingestion.
+	producer := &recordingProducer{}
+	gh := &fakeGitHub{commit: "HEAD", files: []github.File{{Path: "docs/a.md", SHA: "sa"}}}
+	store := newDatasourceFakeStore()
+	svc, audit := newDatasourceService(store, producer, gh)
+	source := githubSource(t, svc, "main", []string{"docs"}, "OLD")
+
+	// Park it degraded in both the in-memory source the handler carries and the
+	// stored copy the recovery write revives.
+	source.Status = business.DatasourceStatusDegraded
+	if err := store.MarkDatasourceSourceDegraded(context.Background(), source.ID, "manifest was over the ingest limit"); err != nil {
+		t.Fatal(err)
+	}
+
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enqueued || len(producer.jobs) != 1 || producer.jobs[0].GetTopic() != "datasource.github.snapshot" {
+		t.Fatalf("recovery must enqueue one snapshot, got %d jobs", len(producer.jobs))
+	}
+	if !auditHas(audit, business.EventDatasourceSourceRecovered) {
+		t.Fatalf("audit = %v, want source_recovered", audit.types())
+	}
+
+	stored := storedSource(t, store, source.ID)
+	if stored.Status != business.DatasourceStatusActive || stored.StatusReason != "" {
+		t.Fatalf("source status = %q reason = %q, want active with no reason", stored.Status, stored.StatusReason)
+	}
+	if stored.NextReconcileAt == nil {
+		t.Fatalf("recovered source must have its reconcile schedule restored")
+	}
+
+	// It must rejoin the reconcile sweep it was dropped from while degraded.
+	setNextReconcile(t, store, source.ID, time.Now().Add(-time.Minute))
+	due, err := store.ListDatasourceSourcesDueForReconcile(context.Background(), time.Now(), 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 1 || due[0].ID != source.ID {
+		t.Fatalf("recovered source did not rejoin the reconcile sweep: %d due", len(due))
+	}
+}
+
+func TestReconcile_DegradeIsAStateTransitionEmittedOnce(t *testing.T) {
+	// Degrading is a one-time transition. A source stuck oversized is retried by
+	// "Sync now" (which ignores status) and each retry re-enters the oversize
+	// branch; the guard must keep it from rewriting the row and re-emitting
+	// snapshot_too_large on every retry, which would bury the real transition under
+	// audit spam. Each reconcile still reports enqueued=false so "Sync now" never
+	// claims a snapshot was dispatched when the source was in fact parked.
+	producer := &recordingProducer{}
+	gh := &fakeGitHub{commit: "HEAD", files: oversizedTree()}
+	store := newDatasourceFakeStore()
+	svc, audit := newDatasourceService(store, producer, gh)
+	source := githubSource(t, svc, "main", nil, "OLD")
+
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true)
+	if err != nil {
+		t.Fatalf("oversized snapshot must be acknowledged, got error: %v", err)
+	}
+	if enqueued || len(producer.jobs) != 0 {
+		t.Fatalf("an undeliverable snapshot must not report enqueued: %d jobs", len(producer.jobs))
+	}
+	if n := auditCount(audit, business.EventDatasourceSnapshotTooLarge); n != 1 {
+		t.Fatalf("snapshot_too_large emitted %d times on the first degrade, want 1", n)
+	}
+
+	// Reload the now-degraded source (the handler's in-memory copy did not see the
+	// store write) and retry, as "Sync now" would.
+	degraded := storedSource(t, store, source.ID)
+	if degraded.Status != business.DatasourceStatusDegraded {
+		t.Fatalf("source status = %q, want degraded after the first reconcile", degraded.Status)
+	}
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), degraded, true)
+	if err != nil {
+		t.Fatalf("retry of an oversized snapshot must be acknowledged, got error: %v", err)
+	}
+	if enqueued || len(producer.jobs) != 0 {
+		t.Fatalf("retry of a parked source must not report enqueued: %d jobs", len(producer.jobs))
+	}
+	if n := auditCount(audit, business.EventDatasourceSnapshotTooLarge); n != 1 {
+		t.Fatalf("snapshot_too_large re-emitted on retry (count %d), want the single transition", n)
 	}
 }
