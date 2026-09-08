@@ -34,7 +34,7 @@ interface RawEvent {
 	actorId: string;
 	resource: string;
 	resourceId: string;
-	createdAt?: { seconds: bigint };
+	createdAt?: EventTime;
 	payload?: Record<string, unknown>;
 }
 
@@ -169,13 +169,35 @@ function humanize(action: string): string {
 	return map[action] ?? action.replace(/[._]/g, " ");
 }
 
-function relativeTime(t?: { seconds: bigint }): string {
-	if (!t) return "";
+// The audit API's `created_at` is a google.protobuf.Timestamp, but depending on
+// the transport/codec it can reach the client as a protobuf-es Timestamp
+// ({ seconds, nanos }), an ISO-8601 string (Connect JSON serializes Timestamp as
+// a string), or a Date. Normalize all three to epoch millis and guard NaN so a
+// missing or unexpected shape renders blank rather than the literal "Invalid Date".
+type EventTime = { seconds?: bigint | number | string } | string | Date;
+
+function toMillis(t?: EventTime | null): number | null {
+	if (t == null) return null;
+	if (typeof t === "string") {
+		const ms = Date.parse(t);
+		return Number.isNaN(ms) ? null : ms;
+	}
+	if (t instanceof Date) {
+		const ms = t.getTime();
+		return Number.isNaN(ms) ? null : ms;
+	}
+	if (t.seconds == null) return null;
 	const sec = Number(t.seconds);
-	const delta = Date.now() / 1000 - sec;
+	return Number.isNaN(sec) ? null : sec * 1000;
+}
+
+function relativeTime(t?: EventTime): string {
+	const ms = toMillis(t);
+	if (ms == null) return "";
+	const delta = (Date.now() - ms) / 1000;
 	if (delta < 60) return "just now";
 	if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
 	if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
 	if (delta < 604800) return `${Math.floor(delta / 86400)}d ago`;
-	return new Date(sec * 1000).toLocaleDateString();
+	return new Date(ms).toLocaleDateString();
 }
