@@ -347,3 +347,75 @@ func TestGateway_Solution_RateLimited(t *testing.T) {
 	require.NotNil(t, fake.lastHeaders)
 	require.Equal(t, "/v1/audit/logs", fake.lastPath)
 }
+
+// The public static surface is metered too — IP-keyed, exactly like every public
+// catalog route — so it is not an unmetered unauthenticated proxy. Guards against
+// a regression to bare proxyTo on the public branch (#513).
+func TestGateway_Solution_PublicSurface_RateLimited(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	// effective budget = limit(1) + burst(max(1/5,1)=1) = 2 requests / key / min.
+	gw.rateLimiter = NewRateLimiter(1)
+	fake := registerSolutionUpstream(t, gw, "audit")
+
+	got429 := false
+	for i := 0; i < 5; i++ {
+		// No bearer: identity is stripped, so the limiter keys on the client IP,
+		// which httptest holds constant across these requests.
+		req := httptest.NewRequest(http.MethodGet, "/solutions/audit/assets/remoteEntry.js", nil)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		if w.Code == http.StatusTooManyRequests {
+			got429 = true
+			break
+		}
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+	require.True(t, got429, "public solution asset surface must carry an IP-keyed budget, not be an unmetered proxy")
+	require.Equal(t, "/assets/remoteEntry.js", fake.lastPath)
+}
+
+// failingLimiter builds a rate limiter whose backend always errors, to exercise
+// the limiter-backend-outage (e.g. Redis down) failure path. Mirrors the
+// construction in ratelimit_failure_test.go.
+func failingLimiter() *RateLimiter {
+	return &RateLimiter{
+		backend: failingRateLimitBackend{},
+		limit:   1000,
+		burst:   200,
+		stop:    make(chan struct{}),
+		proxies: newProxyTrust(""),
+	}
+}
+
+// When the limiter backend is unavailable, the authenticated data path fails
+// OPEN and still proxies — it does NOT 503. This pins the deliberate class-policy
+// choice (only authentication/MFA budgets fail closed); flipping this route to
+// fail closed, or to a fail-closed class, would break this test.
+func TestGateway_Solution_DataPath_FailsOpenOnLimiterOutage(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	gw.rateLimiter = failingLimiter()
+	fake := registerSolutionUpstream(t, gw, "audit")
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/v1/audit/logs", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "authenticated solution data route must fail open on limiter-backend outage")
+	require.Equal(t, "/v1/audit/logs", fake.lastPath, "the request must still reach the upstream when failing open")
+}
+
+// The public static surface also fails OPEN on a limiter-backend outage, so a
+// Redis blip never blocks module-loader asset/manifest fetches.
+func TestGateway_Solution_PublicSurface_FailsOpenOnLimiterOutage(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	gw.rateLimiter = failingLimiter()
+	fake := registerSolutionUpstream(t, gw, "audit")
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/audit/assets/remoteEntry.js", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "public solution asset surface must fail open on limiter-backend outage")
+	require.Equal(t, "/assets/remoteEntry.js", fake.lastPath, "the request must still reach the upstream when failing open")
+}

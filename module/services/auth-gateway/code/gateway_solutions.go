@@ -119,18 +119,25 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// endpoints, e.g. /lastlogin) stays auth-required below. The upstream is sent
 	// the same cleaned path the exemption was decided on, so the two can't diverge.
 	//
-	// Rate-limit budget: this public GET surface is deliberately left exempt (it
-	// proxies via proxyTo, not rateLimitThenProxy). It is identity-stripped and
-	// carries no user data, so there is no per-org budget to attach it to, and
-	// the org/IP key rateLimitThenProxy would use is meaningless here. Metering it
-	// on an IP key risks blocking legitimate same-origin asset/manifest loads for
-	// the browser module loader — a fail-open static surface should stay loadable.
-	// The authenticated data path below is where the budget is enforced (#513),
-	// mirroring the federated-module fix (#512), which metered only its data route.
+	// Rate-limit budget: this public GET surface carries an IP-keyed, fail-open
+	// budget, exactly like every public catalog route — all of which run through
+	// rateLimitThenProxy (see the "public" case in Gateway.ServeHTTP). Because the
+	// caller identity was just stripped there is no X-Org-Id, so the limiter keys
+	// on the client IP; Public is not one of the classes that fail closed (only
+	// the authentication/MFA budgets do — see routing_authz_artifact.go), so a
+	// limiter-backend outage still lets assets load. At the production budget
+	// (1000/min/key) a module loader's handful of chunk fetches is nowhere near
+	// the cap, so legitimate same-origin loads are unaffected while an
+	// unauthenticated flood of this proxy is still capped. Leaving it on bare
+	// proxyTo would make it the one unmetered public proxy in the gateway (#513).
 	if publicPath, ok := solutionPublicUpstreamPath(r.Method, path); ok {
 		stripAllIdentityHeaders(r)
-		entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: publicPath}
-		g.proxyTo(w, r, upstream, entry)
+		entry := &RouteEntry{
+			Service:        "solution:" + id,
+			UpstreamPath:   publicPath,
+			RateLimitClass: edgeRateLimitClassPublic,
+		}
+		g.rateLimitThenProxy(w, r, upstream, entry)
 		return true
 	}
 
@@ -160,11 +167,30 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// can call accounts through the gateway on the user's behalf.
 	//
 	// Route through rateLimitThenProxy, not proxyTo directly: an authenticated
-	// solution data endpoint must consume the same per-org/per-IP budget as an
-	// equivalent catalog route (e.g. /v1/users), otherwise /solutions/<id>/* would
-	// be an unmetered proxy an authenticated caller could flood past the org
-	// budget. Same fix as the federated-module half (#512).
-	entry := &RouteEntry{Service: "solution:" + id, UpstreamPath: "/" + path, Protected: true}
+	// solution data endpoint must consume the same per-org budget as an equivalent
+	// catalog route (e.g. /v1/users), otherwise /solutions/<id>/* would be an
+	// unmetered proxy an authenticated caller could flood past the org budget.
+	//
+	// Budget class and failure mode are chosen to match that equivalent catalog
+	// data route, not left to the zero value. A solution data endpoint is the
+	// StandardRead/StandardWrite tier (read vs write by method, as the catalog
+	// classes its own routes), keyed on the injected X-Org-Id. It deliberately
+	// fails OPEN on a limiter-backend outage: the gateway's class policy fails
+	// closed only for the authentication and MFA budgets (see the class-derived
+	// rateLimitBackendFailClosed in routing_authz_artifact.go), so a data route
+	// that failed closed here would 503 authenticated traffic on every Redis blip
+	// — stricter than any /v1/* catalog data route and inconsistent with policy.
+	// Same fix as the federated-module half (#512).
+	class := edgeRateLimitClassStandardRead
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		class = edgeRateLimitClassStandardWrite
+	}
+	entry := &RouteEntry{
+		Service:        "solution:" + id,
+		UpstreamPath:   "/" + path,
+		Protected:      true,
+		RateLimitClass: class,
+	}
 	g.rateLimitThenProxy(w, r, upstream, entry)
 	return true
 }
