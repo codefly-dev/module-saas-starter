@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2148,
+  "fileCount": 2149,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "6a0a8b5bb42b98dbd6b832f8d4e4cb43a16baef0aee27d4889fb7652c38e4b4a",
@@ -1122,7 +1122,7 @@
     "services/frontend/code/packages/saas-plugin-react/test/ui.test.tsx": "e2eeb7ebe7f77b843c2a93d6c6cac56b59a306ba8ddcd4b0bcf40bc0c2d30c3a",
     "services/frontend/code/packages/saas-plugin-react/tsconfig.json": "70424332460f50070ccc0abea555f3784b7f085fa7c14c83d5274c604e5368b3",
     "services/frontend/code/packages/saas-plugin-react/vitest.config.ts": "d7e617597af80e8e7f8c986c4cf229842d5dd88b1f65d7af052f9330e4232b89",
-    "services/frontend/code/packages/saas-sdk/README.md": "597e135b0ead82be6fc491d6560113a2c140a15664d221bbafbeb15ff4313264",
+    "services/frontend/code/packages/saas-sdk/README.md": "52afe5d0f4d9bb8134663f9e8994c92fbbb1378ce27f3077a4e34372b0e3b4c8",
     "services/frontend/code/packages/saas-sdk/generated/contract/catalog.codefly.json": "3c4928d1636be115a16bee23709fe589f80fdaa6b8f34d363caa4d1357752d91",
     "services/frontend/code/packages/saas-sdk/generated/contract/contract.binpb": "e6202131a07b3905490af44fa5e5194660c4a6eaaa19c0ec14a110cc3690cb51",
     "services/frontend/code/packages/saas-sdk/generated/library.codefly.yaml": "fa56f056845a1f316bc3ed57a99c2f4248c857d541ca76dc7e27397534135860",
@@ -1192,9 +1192,10 @@
     "services/frontend/code/packages/saas-sdk/test/dashboard.test.ts": "e3e8dbc44196f51fb92a709f3950813335ca5f33560628764ba9016d9fae9b3f",
     "services/frontend/code/packages/saas-sdk/test/facade.test.ts": "52cebef9a48a24740252ac2738a1f23acb0a256378e62c453e3bf779f88234c3",
     "services/frontend/code/packages/saas-sdk/test/package-contract.test.ts": "89d89c46dc2796fe21f598ff8e1556a4cc8dfff7d939d49a3d94ccd098a50f62",
+    "services/frontend/code/packages/saas-sdk/test/published-surface.test.ts": "20ea129ab160cc33811b8c3fd1b2ae2f43727a5a20048f10a5a639e3e1a48a89",
     "services/frontend/code/packages/saas-sdk/test/run.test.ts": "43edf936417373a26c4bf2409cb071a6a12fe28ad36c4e259ed3a3c3b14c5015",
     "services/frontend/code/packages/saas-sdk/test/support.ts": "d6f5455dbd67f5692780910d1587dd83ccf100387e3f53eb0cbd68a3ef7fd511",
-    "services/frontend/code/packages/saas-sdk/tsconfig.json": "742d3918848fd95ea57c9b30db1b802e25ca13ab9d02a92df1f982e5b065eeea",
+    "services/frontend/code/packages/saas-sdk/tsconfig.json": "34c212f3752b5dab847ee2a2c009e93374f71c234de2f86a29b62ada64ae9ae9",
     "services/frontend/code/packages/saas-sdk/vitest.config.ts": "3dcadc921171a8bab4ddc41bd2a1f9ee34944df4d00d433b001ad343b9349dd1",
     "services/frontend/code/packages/saas-settings/README.md": "a4160f097568b2021bd1feee52d0815ee7b0d5fb3709c68b2b2c56b8b571ebb3",
     "services/frontend/code/packages/saas-settings/package.json": "2426bf76465deb0b317a1b9c3959f99671bf1287515369e415187ddc9984cdbc",

@@ -13,5 +13,14 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "generated/typescript/src/**/*.ts"]
+  // Only `src` is a compilation root. tsc still pulls in every generated file
+  // these sources actually import — the `accounts` facade plus the reachable
+  // `_pb` closure of the three public services — and emits it under `dist/`.
+  // But the *unreachable* generated modules (the rest of the saas.accounts.v1
+  // message graph and adjacent packages, including internal admin/authz/mfa/sso
+  // surfaces) never enter the program, so they never reach the published tarball
+  // (`files: ["dist"]`). Do NOT add `generated/**` here: the generator emits the
+  // full package descriptor regardless of `--services`, so a wildcard include
+  // force-emits that entire graph into `dist`. The `published-surface` test guards this.
+  "include": ["src/**/*.ts"]
 }

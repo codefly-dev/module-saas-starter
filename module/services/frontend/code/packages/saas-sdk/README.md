@@ -138,8 +138,7 @@ lands.
 
 The Connect client and facade under `generated/typescript` are generated from
 the published accounts/connect API contract via codefly — the same contract
-exported into the module package (`module/contracts/api`), restricted to the
-three public services:
+exported into the module package (`module/contracts/api`):
 
 ```bash
 npm run generate   # codefly generate client, reproducible from the API contract
@@ -150,6 +149,17 @@ This runs `codefly generate client --from contracts:… --endpoint accounts/conn
 (`generated/typescript/src/gen`), the `accounts` facade
 (`generated/typescript/src/accounts_facade.ts`), and the resolved
 `library.codefly.yaml` recording the contract digest.
+
+The `--services` flag scopes only the generated **facade** to the three public
+services. The accounts/connect contract is the full `saas.accounts.v1` package
+descriptor, so the generator emits `_pb` bindings for the *entire* message graph
+under `generated/typescript/src/gen` — well beyond those three services. The
+published tarball must not carry that whole graph (it includes internal
+admin/authz/mfa/sso message shapes), so the build restricts what ships: `build`
+compiles from `src` only (see `tsconfig.json`), and tsc emits just the generated
+files the facade and its three services actually reach. The `published-surface`
+test asserts the shipped `dist` gen tree equals that reachable closure and never
+contains an internal surface.
 
 ## Building and testing
 
