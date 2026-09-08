@@ -313,9 +313,15 @@ func renderEventCatalog(catalog eventCatalog) (map[string][]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("format Go event catalog: %w", err)
 	}
+	asyncapiBody, err := renderAsyncAPI(catalog)
+	if err != nil {
+		return nil, err
+	}
 	return map[string][]byte{
-		EventCatalogOutput: catalogBody,
-		EventGoOutput:      goBody,
+		EventCatalogOutput:  catalogBody,
+		EventGoOutput:       goBody,
+		AsyncAPIOutput:      asyncapiBody,
+		CommunicationOutput: renderEventDocs(catalog),
 	}, nil
 }
 
@@ -336,4 +342,217 @@ func renderEventCatalogGo(catalog eventCatalog) string {
 	}
 	body.WriteString("}\n\nfunc Published() []PublishedEvent {\n\treturn append([]PublishedEvent(nil), published[:]...)\n}\n\nfunc Consumed() []ConsumedEvent {\n\treturn append([]ConsumedEvent(nil), consumed[:]...)\n}\n")
 	return body.String()
+}
+
+// asyncAPIVersion pins the generated document's info.version. It is a constant
+// on purpose: the AsyncAPI projection is a deterministic view of the catalog,
+// so it must not couple to a release number that would churn the artifact (and
+// the base-integrity manifest) on every unrelated version bump.
+const asyncAPIVersion = "1.0.0"
+
+var componentKeyUnsafe = regexp.MustCompile(`[^A-Za-z0-9._-]`)
+
+type asyncAPIDoc struct {
+	AsyncAPI   string                       `json:"asyncapi"`
+	Info       asyncAPIInfo                 `json:"info"`
+	Channels   map[string]asyncAPIChannel   `json:"channels"`
+	Operations map[string]asyncAPIOperation `json:"operations"`
+	Components asyncAPIComponents           `json:"components"`
+}
+
+type asyncAPIInfo struct {
+	Title       string `json:"title"`
+	Version     string `json:"version"`
+	Description string `json:"description"`
+}
+
+type asyncAPIChannel struct {
+	Address    string                 `json:"address"`
+	Title      string                 `json:"title"`
+	Messages   map[string]asyncAPIRef `json:"messages"`
+	Visibility string                 `json:"x-visibility"`
+	Partition  string                 `json:"x-partition,omitempty"`
+	Retention  string                 `json:"x-retention,omitempty"`
+}
+
+type asyncAPIRef struct {
+	Ref string `json:"$ref"`
+}
+
+type asyncAPIOperation struct {
+	Action  string      `json:"action"`
+	Channel asyncAPIRef `json:"channel"`
+	Title   string      `json:"title"`
+	Summary string      `json:"summary,omitempty"`
+}
+
+type asyncAPIComponents struct {
+	Messages map[string]asyncAPIMessage `json:"messages"`
+	Schemas  map[string]asyncAPISchema  `json:"schemas"`
+}
+
+type asyncAPIMessage struct {
+	Name    string      `json:"name"`
+	Title   string      `json:"title"`
+	Payload asyncAPIRef `json:"payload"`
+}
+
+type asyncAPISchema struct {
+	Type       string                  `json:"type"`
+	Properties map[string]asyncAPIProp `json:"properties"`
+}
+
+type asyncAPIProp struct {
+	Type        string        `json:"type"`
+	Format      string        `json:"format,omitempty"`
+	Items       *asyncAPIProp `json:"items,omitempty"`
+	Description string        `json:"description,omitempty"`
+}
+
+// renderAsyncAPI projects the event catalog into an AsyncAPI 3.0.0 document:
+// one channel per published type, a `send` operation for its publisher, and a
+// `receive` operation for every consumer. All map keys and the sorted catalog
+// slices make the output deterministic, so it passes the base-integrity gate.
+func renderAsyncAPI(catalog eventCatalog) ([]byte, error) {
+	doc := asyncAPIDoc{
+		AsyncAPI: "3.0.0",
+		Info: asyncAPIInfo{
+			Title:       "SaaS Starter Domain Events",
+			Version:     asyncAPIVersion,
+			Description: "Generated from event-catalog.json by module-compose. DO NOT EDIT.",
+		},
+		Channels:   map[string]asyncAPIChannel{},
+		Operations: map[string]asyncAPIOperation{},
+		Components: asyncAPIComponents{
+			Messages: map[string]asyncAPIMessage{},
+			Schemas:  map[string]asyncAPISchema{},
+		},
+	}
+
+	for _, published := range catalog.Publishes {
+		schemaKey := sanitizeComponentKey(published.Schema)
+		if _, exists := doc.Components.Schemas[schemaKey]; !exists {
+			doc.Components.Schemas[schemaKey] = eventEnvelopeSchema(published.Fields)
+		}
+		messageKey := sanitizeComponentKey(published.Type)
+		doc.Components.Messages[messageKey] = asyncAPIMessage{
+			Name:    published.Type,
+			Title:   published.Type,
+			Payload: asyncAPIRef{Ref: "#/components/schemas/" + schemaKey},
+		}
+		doc.Channels[published.Type] = asyncAPIChannel{
+			Address:    published.Type,
+			Title:      published.Type,
+			Messages:   map[string]asyncAPIRef{"envelope": {Ref: "#/components/messages/" + messageKey}},
+			Visibility: published.Visibility,
+			Partition:  published.Partition,
+			Retention:  published.Retention,
+		}
+		doc.Operations["send:"+published.Type] = asyncAPIOperation{
+			Action:  "send",
+			Channel: asyncAPIRef{Ref: "#/channels/" + published.Type},
+			Title:   published.Namespace + " publishes " + published.Type,
+		}
+	}
+
+	for _, consumed := range catalog.Consumes {
+		key := strings.Join([]string{"receive", consumed.Type, consumed.Subscriber, consumed.Queue}, ":")
+		doc.Operations[key] = asyncAPIOperation{
+			Action:  "receive",
+			Channel: asyncAPIRef{Ref: "#/channels/" + consumed.Type},
+			Title:   consumed.Subscriber + " consumes " + consumed.Type,
+			Summary: "queue " + consumed.Queue + ", delivery " + consumed.Delivery,
+		}
+	}
+
+	return marshalJSON(doc)
+}
+
+// eventEnvelopeSchema turns the catalog's resolved proto fields into a JSON
+// Schema object. Field order is irrelevant (properties is a keyed object), so
+// the map keeps the output deterministic.
+func eventEnvelopeSchema(fields []eventField) asyncAPISchema {
+	schema := asyncAPISchema{Type: "object", Properties: map[string]asyncAPIProp{}}
+	for _, field := range fields {
+		schema.Properties[field.Name] = protoTypeToJSONSchema(field.Type)
+	}
+	return schema
+}
+
+func protoTypeToJSONSchema(protoType string) asyncAPIProp {
+	if inner, ok := strings.CutPrefix(protoType, "repeated "); ok {
+		item := protoTypeToJSONSchema(inner)
+		return asyncAPIProp{Type: "array", Items: &item}
+	}
+	switch protoType {
+	case "string":
+		return asyncAPIProp{Type: "string"}
+	case "bytes":
+		return asyncAPIProp{Type: "string", Format: "byte"}
+	case "bool":
+		return asyncAPIProp{Type: "boolean"}
+	case "double", "float":
+		return asyncAPIProp{Type: "number"}
+	case "int32", "int64", "uint32", "uint64", "sint32", "sint64",
+		"fixed32", "fixed64", "sfixed32", "sfixed64":
+		return asyncAPIProp{Type: "integer"}
+	case "google.protobuf.Timestamp":
+		return asyncAPIProp{Type: "string", Format: "date-time"}
+	default:
+		// A nested message or map<…> field: keep the proto type as a hint.
+		return asyncAPIProp{Type: "object", Description: protoType}
+	}
+}
+
+// sanitizeComponentKey maps a catalog identifier (an event type or a
+// "<path>#<Message>" schema ref) to a valid AsyncAPI component key
+// (^[A-Za-z0-9._-]+$). Distinct inputs cannot collide because every unsafe run
+// collapses to a single "_" and the catalog already rejects duplicate types.
+func sanitizeComponentKey(id string) string {
+	return componentKeyUnsafe.ReplaceAllString(id, "_")
+}
+
+// renderEventDocs emits the human-facing communication page: every published
+// type with its publisher, schema, and the list of consumers. The catalog
+// slices are pre-sorted, so the Markdown is deterministic.
+func renderEventDocs(catalog eventCatalog) []byte {
+	consumersByType := map[string][]eventCatalogConsume{}
+	for _, consumed := range catalog.Consumes {
+		consumersByType[consumed.Type] = append(consumersByType[consumed.Type], consumed)
+	}
+
+	var body strings.Builder
+	body.WriteString("# Event communication\n\n")
+	body.WriteString("_Generated from `event-catalog.json` by module-compose. DO NOT EDIT._\n\n")
+	body.WriteString("Every domain event type, who publishes it, and who consumes it. ")
+	body.WriteString("The machine-readable projection is [`asyncapi.json`](./asyncapi.json).\n")
+
+	if len(catalog.Publishes) == 0 {
+		body.WriteString("\n_No event types are registered._\n")
+		return []byte(body.String())
+	}
+
+	for _, published := range catalog.Publishes {
+		fmt.Fprintf(&body, "\n## %s\n\n", published.Type)
+		fmt.Fprintf(&body, "- **Publisher:** %s\n", published.Namespace)
+		fmt.Fprintf(&body, "- **Visibility:** %s\n", published.Visibility)
+		fmt.Fprintf(&body, "- **Schema:** `%s` (major v%d)\n", published.Schema, published.Major)
+		if published.Partition != "" {
+			fmt.Fprintf(&body, "- **Partition:** `%s`\n", published.Partition)
+		}
+		if published.Retention != "" {
+			fmt.Fprintf(&body, "- **Retention:** %s\n", published.Retention)
+		}
+		consumers := consumersByType[published.Type]
+		if len(consumers) == 0 {
+			body.WriteString("- **Consumers:** _none_\n")
+			continue
+		}
+		body.WriteString("- **Consumers:**\n")
+		for _, consumed := range consumers {
+			fmt.Fprintf(&body, "  - %s (queue `%s`, delivery %s)\n", consumed.Subscriber, consumed.Queue, consumed.Delivery)
+		}
+	}
+
+	return []byte(body.String())
 }

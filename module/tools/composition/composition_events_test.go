@@ -211,3 +211,72 @@ func TestRenderEventCatalogEmitsEmptyArrays(t *testing.T) {
 		t.Fatalf("empty catalog must emit an empty publishes array:\n%s", files[EventCatalogOutput])
 	}
 }
+
+func TestRenderEventCatalogEmitsAsyncAPIAndDocs(t *testing.T) {
+	catalog, err := buildEventCatalog([]EventsContribution{documentsContribution()}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err != nil {
+		t.Fatalf("buildEventCatalog: %v", err)
+	}
+	files, err := renderEventCatalog(catalog)
+	if err != nil {
+		t.Fatalf("renderEventCatalog: %v", err)
+	}
+
+	async := string(files[AsyncAPIOutput])
+	for _, want := range []string{
+		`"asyncapi": "3.0.0"`,
+		`"version": "1.0.0"`,
+		`"send:documents.entry.ingested"`,
+		`"receive:documents.entry.ingested:documents:documents.ingest"`,
+		`"action": "send"`,
+		`"action": "receive"`,
+		`"x-visibility": "tenant"`,
+		`"#/channels/documents.entry.ingested"`,
+	} {
+		if !strings.Contains(async, want) {
+			t.Fatalf("asyncapi.json missing %q:\n%s", want, async)
+		}
+	}
+
+	docs := string(files[CommunicationOutput])
+	for _, want := range []string{
+		"## documents.entry.ingested",
+		"- **Publisher:** documents",
+		"- **Consumers:**",
+		"documents (queue `documents.ingest`, delivery ordered)",
+	} {
+		if !strings.Contains(docs, want) {
+			t.Fatalf("communication.md missing %q:\n%s", want, docs)
+		}
+	}
+}
+
+func TestRenderAsyncAPIIsDeterministic(t *testing.T) {
+	catalog, err := buildEventCatalog([]EventsContribution{documentsContribution()}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err != nil {
+		t.Fatalf("buildEventCatalog: %v", err)
+	}
+	first, err := renderAsyncAPI(catalog)
+	if err != nil {
+		t.Fatalf("renderAsyncAPI: %v", err)
+	}
+	second, err := renderAsyncAPI(catalog)
+	if err != nil {
+		t.Fatalf("renderAsyncAPI: %v", err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("asyncapi.json is not byte-deterministic")
+	}
+}
+
+func TestRenderEventDocsHandlesNoConsumers(t *testing.T) {
+	docs := string(renderEventDocs(eventCatalog{
+		Schema: eventsCatalogSchema,
+		Publishes: []eventCatalogPublish{{
+			Type: "documents.entry.ingested", Namespace: "documents", Schema: "documents/events/v1/entry.proto#EntryIngested", Major: 1, Visibility: "tenant",
+		}},
+	}))
+	if !strings.Contains(docs, "- **Consumers:** _none_") {
+		t.Fatalf("a type with no consumers must render _none_:\n%s", docs)
+	}
+}
