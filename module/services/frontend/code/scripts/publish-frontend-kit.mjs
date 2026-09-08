@@ -9,10 +9,14 @@ const CODE_ROOT = join(dirname(SCRIPT_PATH), "..");
 
 // The solution-facing kit packages published to GitHub Packages on release.
 // Kept to what a solution fe-remote genuinely consumes: `@codefly-dev/ui` carries
-// the peer-free `/layout` + `/dashboard` surface. Its plugin peers are optional
-// (see the package manifest), so a solution installs those subpaths without the
-// host-internal plugin packages — no need to publish them here.
-export const PACKAGES = ["@codefly-dev/ui"];
+// the peer-free `/layout` + `/dashboard` surface, and `@codefly-dev/saas-sdk`
+// carries the generated accounts/connect Connect client + data-graph tooling a
+// remote binds to the gateway. Both are Module-Federation singletons the host
+// shares, so a remote resolves the host's instance from the registry version.
+// Their plugin peers are optional (see each manifest), so a solution installs
+// those subpaths without the host-internal plugin packages — no need to publish
+// them here.
+export const PACKAGES = ["@codefly-dev/ui", "@codefly-dev/saas-sdk"];
 
 export function workspacesByName(codeRoot = CODE_ROOT) {
 	const packagesRoot = join(codeRoot, "packages");

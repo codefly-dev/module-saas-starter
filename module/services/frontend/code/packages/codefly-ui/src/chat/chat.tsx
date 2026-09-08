@@ -4,7 +4,7 @@
 // paints a themed conversation with a composer — it opens no socket, reads no
 // host context, and imports no app code, so the host app and a solution's
 // Module-Federation remote render identical chat from one package instance.
-// Streaming and state are the job of `@codefly/saas-sdk`'s `useChatStream`, which
+// Streaming and state are the job of `@codefly-dev/saas-sdk`'s `useChatStream`, which
 // owns the SSE/WS transport and feeds `messages`/`onSend` in.
 
 import {
@@ -152,7 +152,7 @@ export interface ChatProps {
 
 /**
  * Render a conversation with a composer. Pass `messages` (from your own state or
- * from `@codefly/saas-sdk`'s `useChatStream`) and an `onSend` handler. The
+ * from `@codefly-dev/saas-sdk`'s `useChatStream`) and an `onSend` handler. The
  * component is pure presentation — wrap it, restyle it via tokens, or swap the
  * `composer` freely.
  */

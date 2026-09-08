@@ -1,26 +1,28 @@
-# @codefly/saas-sdk
+# @codefly-dev/saas-sdk
 
 The TypeScript SDK a saas-starter consumer imports to reach the saas public API
 — the TS twin of the Go `saas-sdk`. Two layers:
 
 1. **Generated Connect client** — `connect-es` clients generated from the public
-   accounts proto (`AuditService`, `DatasourceService`, `WebhookService`).
-2. **Gateway-bound facade** — a thin `svc.New(gw)` per service that binds the
-   generated client to a transport (the gateway seam), mirroring the Go facade's
-   `svc.New(gw).method(...)`.
+   accounts/connect API contract (`AuditService`, `DatasourceService`,
+   `WebhookService`).
+2. **Generated gateway-bound facade** — `accounts.New(gw)` binds the generated
+   clients to a transport (the gateway seam) and exposes one accessor per
+   service, mirroring the Go facade's `accounts.New(gw).datasource().method(...)`.
 
 ```ts
-import { datasource } from "@codefly/saas-sdk";
+import { accounts } from "@codefly-dev/saas-sdk";
 
 // gw is a connect-es Transport pointed at the running gateway.
-const { datasource: source } = await datasource.New(gw).addGitHubSource({
+const { datasource: source } = await accounts.New(gw).datasource().addGitHubSource({
   orgId,
   repo: "acme/widgets",
 });
 ```
 
-`audit`, `datasource`, and `webhooks` each export `New(gw)`. The generated
-service descriptors (`AuditService`, `DatasourceService`, `WebhookService`) are
+`accounts.New(gw)` exposes `.audit()`, `.datasource()`, and `.webhook()`, each
+returning the bound Connect client for that service. The generated service
+descriptors (`AuditService`, `DatasourceService`, `WebhookService`) are
 re-exported for consumers that build their own clients.
 
 ## The data graph
@@ -46,7 +48,7 @@ import {
   createSaasClient,
   defineDataGraph,
   runDashboard,
-} from "@codefly/saas-sdk";
+} from "@codefly-dev/saas-sdk";
 
 const sdk = createSaasClient(transport);
 
@@ -93,8 +95,8 @@ use.
 
 ## Chat streaming
 
-The `@codefly/saas-sdk/chat` subpath ships `useChatStream`, the streaming twin of
-`runDashboard`: it owns the SSE/WS transport and produces the `messages`/`onSend`
+The `@codefly-dev/saas-sdk/chat` subpath ships `useChatStream`, the streaming twin
+of `runDashboard`: it owns the SSE/WS transport and produces the `messages`/`onSend`
 that `@codefly-dev/ui/chat`'s pure `<Chat>` renders. The subpath is split out so
 the SDK's main entry stays React-free; `react` is an optional peer.
 
@@ -104,7 +106,7 @@ WebSocket client both satisfy it structurally, exactly as `runDashboard` takes
 any `AuditAggregateClient`:
 
 ```tsx
-import { useChatStream } from "@codefly/saas-sdk/chat";
+import { useChatStream } from "@codefly-dev/saas-sdk/chat";
 import { Chat } from "@codefly-dev/ui/chat";
 
 const source = {
@@ -134,12 +136,30 @@ lands.
 
 ## Regenerating the client
 
-The Connect client under `src/gen` is generated from the public accounts proto —
-`audit`, `datasource`, and `webhooks`, plus their transitive imports:
+The Connect client and facade under `generated/typescript` are generated from
+the published accounts/connect API contract via codefly — the same contract
+exported into the module package (`module/contracts/api`):
 
 ```bash
-npm run generate   # buf generate, reproducible from the accounts proto
+npm run generate   # codefly generate client, reproducible from the API contract
 ```
+
+This runs `codefly generate client --from contracts:… --endpoint accounts/connect
+--services AuditService,DatasourceService,WebhookService`, writing the bindings
+(`generated/typescript/src/gen`), the `accounts` facade
+(`generated/typescript/src/accounts_facade.ts`), and the resolved
+`library.codefly.yaml` recording the contract digest.
+
+The `--services` flag scopes only the generated **facade** to the three public
+services. The accounts/connect contract is the full `saas.accounts.v1` package
+descriptor, so the generator emits `_pb` bindings for the *entire* message graph
+under `generated/typescript/src/gen` — well beyond those three services. The
+published tarball must not carry that whole graph (it includes internal
+admin/authz/mfa/sso message shapes), so the build restricts what ships: `build`
+compiles from `src` only (see `tsconfig.json`), and tsc emits just the generated
+files the facade and its three services actually reach. The `published-surface`
+test asserts the shipped `dist` gen tree equals that reachable closure and never
+contains an internal surface.
 
 ## Building and testing
 
@@ -152,16 +172,17 @@ npm test
 
 The package is versioned (`version` in `package.json`) and consumed today as an
 **npm workspace** package — the frontend app and any in-repo solution import
-`@codefly/saas-sdk` directly. It is npm-ready (`publishConfig.access: public`,
-`files: ["dist"]`); publishing to a public registry is gated on registry
-credentials and is not wired here. Until that lands, treat this workspace package
-as the codefly-internal library.
+`@codefly-dev/saas-sdk` directly. It is published to GitHub Packages on release
+alongside `@codefly-dev/ui` (see `scripts/publish-frontend-kit.mjs`); as a
+Module-Federation singleton, the bytes a solution installs from the registry are
+the bytes the host serves.
 
 The frontend app pins this package at an **exact** version
-(`"@codefly/saas-sdk": "0.1.0"` in `module/services/frontend/code/package.json`),
+(`"@codefly-dev/saas-sdk": "0.2.0"` in `module/services/frontend/code/package.json`),
 and `npm ci` refuses to install if the workspace version no longer satisfies that
 pin. So a `version` bump is not self-contained: bump it only together with the
-matching pin bump in the app's `package.json` and a regenerated `package-lock.json`,
-in the same change — otherwise `npm ci` (and the workspace-install-graph CI gate)
+matching pin bump in the app's `package.json`, the `@codefly-dev/saas-sdk` peer/dev
+pins in `packages/saas-ui/package.json`, and a regenerated `package-lock.json`, in
+the same change — otherwise `npm ci` (and the workspace-install-graph CI gate)
 fails. Additive, backward-compatible surface changes therefore stay on the current
 version until a release actually needs to move it.

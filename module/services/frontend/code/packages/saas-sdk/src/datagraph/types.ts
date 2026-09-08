@@ -3,7 +3,7 @@ import type { CallOptions } from "@connectrpc/connect";
 import type {
 	AggregateAuditLogRequestSchema,
 	AggregateAuditLogResponse,
-} from "../gen/saas/accounts/v1/audit_pb.js";
+} from "../../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 import type { MetricBucket, MetricGroupBy } from "../schema.js";
 
 /** One grouped value in a resolved metric. */

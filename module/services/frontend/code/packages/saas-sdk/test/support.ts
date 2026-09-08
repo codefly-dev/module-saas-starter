@@ -3,7 +3,7 @@ import type {
 	AuditAggregateClient,
 	AuditAggregateQuery,
 } from "../src/datagraph/types.js";
-import { AggregateAuditLogResponseSchema } from "../src/gen/saas/accounts/v1/audit_pb.js";
+import { AggregateAuditLogResponseSchema } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 
 export interface FakeBucket {
 	key: string;

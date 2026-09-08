@@ -1,6 +1,6 @@
 {
-	"name": "@codefly/saas-sdk",
-	"version": "0.1.0",
+	"name": "@codefly-dev/saas-sdk",
+	"version": "0.2.0",
 	"description": "Typed Connect client, gateway-bound facades, and audit data-graph tooling for the saas-starter public API.",
 	"type": "module",
 	"sideEffects": false,
@@ -10,19 +10,19 @@
 	],
 	"exports": {
 		".": {
-			"types": "./dist/index.d.ts",
-			"import": "./dist/index.js",
-			"default": "./dist/index.js"
+			"types": "./dist/src/index.d.ts",
+			"import": "./dist/src/index.js",
+			"default": "./dist/src/index.js"
 		},
 		"./chat": {
-			"types": "./dist/chat/index.d.ts",
-			"import": "./dist/chat/index.js",
-			"default": "./dist/chat/index.js"
+			"types": "./dist/src/chat/index.d.ts",
+			"import": "./dist/src/chat/index.js",
+			"default": "./dist/src/chat/index.js"
 		}
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
-		"generate": "cd ../../../../accounts/proto && buf generate --template ../../frontend/code/packages/saas-sdk/buf.gen.yaml --path saas/accounts/v1/audit.proto --path saas/accounts/v1/datasource.proto --path saas/accounts/v1/webhooks.proto -o ../../frontend/code/packages/saas-sdk",
+		"generate": "codefly generate client --from contracts:../../../../../contracts/api --endpoint accounts/connect --language typescript --services AuditService,DatasourceService,WebhookService --name saas-sdk --npm-scope @codefly-dev/saas-sdk --module-name accounts --output ./generated",
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"dependencies": {

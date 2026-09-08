@@ -1,6 +1,6 @@
 /**
  * The datasource contract the components drive. A consumer adapts its generated
- * `DatasourceService` Connect client — or, once it ships, `@codefly/saas-sdk` — to
+ * `DatasourceService` Connect client — or, once it ships, `@codefly-dev/saas-sdk` — to
  * this shape, so the package carries no transport and no generated protobuf.
  */
 
