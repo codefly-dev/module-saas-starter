@@ -11,7 +11,7 @@ const base: MetricDef = {
 	groupBy: "time",
 	bucket: "day",
 	chart: "line",
-	event: { type: "auth.login" },
+	event: { type: "saas.auth.login" },
 };
 
 describe("metricIdentity", () => {

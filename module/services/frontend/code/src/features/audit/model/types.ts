@@ -28,6 +28,7 @@ export interface AuditLogFilters {
 // a hand-maintained list.
 export interface AuditEventTypeInfo {
 	name: string;
+	namespace: string;
 	version: number;
 	category: string;
 	owner: string;

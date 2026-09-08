@@ -10,7 +10,7 @@ import {
 	validateMetric,
 } from "../validate";
 
-const login = event("auth.login");
+const login = event("saas.auth.login");
 const validSpec = dashboard({
 	title: "Activity",
 	description: "Live from the audit trail.",
@@ -227,7 +227,7 @@ describe("assertDashboardSpec", () => {
 				metrics: [
 					{
 						title: "x",
-						event: { type: "auth.login" },
+						event: { type: "saas.auth.login" },
 						category: "security",
 						groupBy: "time",
 						bucket: "day",
@@ -441,13 +441,13 @@ describe("parseDashboardSpec", () => {
 });
 
 const vocab: AuditVocabulary = {
-	eventTypes: ["auth.login", "org.created"],
+	eventTypes: ["saas.auth.login", "saas.org.created"],
 	categories: ["authentication", "organization"],
 };
 
 const loginMetric: MetricDef = {
 	title: "Logins over time",
-	event: event("auth.login"),
+	event: event("saas.auth.login"),
 	groupBy: "time",
 	bucket: "day",
 	chart: "line",

@@ -27,6 +27,7 @@ import { AuditTable } from "./audit-table";
 export function AuditPage() {
 	const [eventTypeFilter, setEventTypeFilter] = useState("all");
 	const [categoryFilter, setCategoryFilter] = useState("all");
+	const [namespaceFilter, setNamespaceFilter] = useState("all");
 
 	const eventType = eventTypeFilter === "all" ? undefined : eventTypeFilter;
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
@@ -57,12 +58,23 @@ export function AuditPage() {
 		return Array.from(set).sort();
 	}, [eventTypes]);
 
+	// Namespaces are the modules that mint events into this tenant's audit spine.
+	// One today; a composed workspace adds one per module that emits.
+	const namespaces = useMemo(() => {
+		const set = new Set(
+			(eventTypes ?? []).map((t) => t.namespace).filter(Boolean),
+		);
+		return Array.from(set).sort();
+	}, [eventTypes]);
+
 	const visibleEventTypes = useMemo(() => {
-		const list = eventTypes ?? [];
-		return (category ? list.filter((t) => t.category === category) : list)
-			.slice()
-			.sort((a, b) => a.name.localeCompare(b.name));
-	}, [eventTypes, category]);
+		let list = eventTypes ?? [];
+		if (category) list = list.filter((t) => t.category === category);
+		if (namespaceFilter !== "all") {
+			list = list.filter((t) => t.namespace === namespaceFilter);
+		}
+		return list.slice().sort((a, b) => a.name.localeCompare(b.name));
+	}, [eventTypes, category, namespaceFilter]);
 
 	const topTypes = useMemo(
 		() => (byType ?? []).slice(0, 6),
@@ -122,6 +134,27 @@ export function AuditPage() {
 					{categories.map((c) => (
 						<SelectItem key={c} value={c}>
 							{c}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<Select
+				value={namespaceFilter}
+				onValueChange={(v) => {
+					if (v) {
+						setNamespaceFilter(v);
+						setEventTypeFilter("all");
+					}
+				}}
+			>
+				<SelectTrigger className="w-[160px]">
+					<SelectValue placeholder="Namespace" />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="all">All namespaces</SelectItem>
+					{namespaces.map((n) => (
+						<SelectItem key={n} value={n}>
+							{n}
 						</SelectItem>
 					))}
 				</SelectContent>

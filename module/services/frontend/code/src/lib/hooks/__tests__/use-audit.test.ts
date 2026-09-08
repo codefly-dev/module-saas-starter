@@ -30,7 +30,7 @@ describe("useAuditLog", () => {
 			() =>
 				useAuditLog({
 					orgId: "org-1",
-					action: "user.registered",
+					action: "saas.user.registered",
 					actorId: "actor-1",
 					pageSize: 10,
 				}),

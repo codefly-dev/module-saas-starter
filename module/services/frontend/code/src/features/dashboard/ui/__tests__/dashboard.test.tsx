@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-const login = event("auth.login");
+const login = event("saas.auth.login");
 const insights = dashboard({
 	metrics: [
 		metric({
@@ -68,8 +68,8 @@ describe("Dashboard", () => {
 					{ key: "2026-08-02", count: "5" },
 				],
 				[
-					{ key: "auth.login", count: "42" },
-					{ key: "org.created", count: "10" },
+					{ key: "saas.auth.login", count: "42" },
+					{ key: "saas.org.created", count: "10" },
 				],
 			),
 		);
@@ -87,7 +87,7 @@ describe("Dashboard", () => {
 		server.use(
 			aggregateHandler(
 				[{ key: "2026-08-01", count: "4" }],
-				[{ key: "auth.login", count: "4" }],
+				[{ key: "saas.auth.login", count: "4" }],
 			),
 		);
 
@@ -167,7 +167,7 @@ describe("Dashboard", () => {
 	});
 
 	it("applies the spec's accent as a primary override the charts inherit", async () => {
-		server.use(aggregateHandler([], [{ key: "auth.login", count: "5" }]));
+		server.use(aggregateHandler([], [{ key: "saas.auth.login", count: "5" }]));
 
 		const spec = dashboard({
 			theme: { accent: "oklch(0.6 0.2 20)" },

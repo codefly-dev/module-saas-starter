@@ -18,7 +18,7 @@ const edited = dashboard({
 	metrics: [
 		metric({
 			title: "Logins over time",
-			event: event("auth.login"),
+			event: event("saas.auth.login"),
 			groupBy: "time",
 			bucket: "day",
 			chart: "line",

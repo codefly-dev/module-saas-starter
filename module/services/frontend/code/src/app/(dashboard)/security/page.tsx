@@ -28,7 +28,7 @@ const security = dashboard({
 		}),
 		metric({
 			title: "TOTP verifications",
-			event: event("mfa.totp_verified"),
+			event: event("saas.mfa.totp_verified"),
 			groupBy: "time",
 			bucket: "day",
 			chart: "stat",

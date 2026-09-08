@@ -29,8 +29,27 @@ export function toAuditEvent(e: ProtoAuditEvent): AuditEvent {
 	};
 }
 
+// Event types are `<namespace>.<aggregate>.<event>`. The namespace identifies the
+// module that minted the type, not the action, so humanizing the whole string
+// would render "Saas Auth Login"; strip it and render the action alone. Use
+// auditEventNamespace when the owning module is what the surface wants to show.
 export function formatAuditAction(action: string): string {
-	return action.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+	return auditEventAction(action)
+		.replace(/[._]/g, " ")
+		.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// auditEventNamespace returns the leading namespace segment, or "" for a value
+// that carries none.
+export function auditEventNamespace(eventType: string): string {
+	const dot = eventType.indexOf(".");
+	return dot === -1 ? "" : eventType.slice(0, dot);
+}
+
+// auditEventAction returns the event type without its namespace segment.
+export function auditEventAction(eventType: string): string {
+	const dot = eventType.indexOf(".");
+	return dot === -1 ? eventType : eventType.slice(dot + 1);
 }
 
 export interface AuditGroup {

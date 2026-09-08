@@ -49,6 +49,7 @@ export const auditEventTypesQuery = (
 		const data = await svc.listAuditEventTypes({});
 		return data.types.map((t) => ({
 			name: t.name,
+			namespace: t.namespace,
 			version: t.version,
 			category: t.category,
 			owner: t.owner,
