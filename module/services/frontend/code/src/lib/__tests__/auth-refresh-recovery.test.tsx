@@ -10,8 +10,12 @@ function jwt(claims: Record<string, unknown>): string {
 }
 
 function Probe() {
-	const { isAuthenticated } = useAuth();
-	return <span data-testid="authed">{isAuthenticated ? "yes" : "no"}</span>;
+	const { isAuthenticated, isLoading } = useAuth();
+	return (
+		<span data-testid="authed">
+			{isLoading ? "loading" : isAuthenticated ? "yes" : "no"}
+		</span>
+	);
 }
 
 // Queued responses for POST /v1/auth/refresh: the first is consumed by the
@@ -53,6 +57,87 @@ afterEach(() => {
 	setToken(null);
 	localStorage.clear();
 	vi.restoreAllMocks();
+});
+
+describe("on-load bootstrap refresh", () => {
+	it("issues exactly ONE refresh exchange on a transient 5xx and lands unauthenticated without retrying", async () => {
+		// /v1/auth/refresh is reached through a Next same-origin rewrite, so a
+		// cold-start failure is a 5xx *response* that still carried the single-use
+		// refresh cookie the browser sent. Re-presenting it (the old on-load retry
+		// loop) is refresh-token reuse and, under strict OWASP rotation, revokes
+		// the entire session family across every device. The bootstrap must present
+		// the cookie AT MOST ONCE.
+		let calls = 0;
+		server.use(
+			http.post("/v1/auth/refresh", () => {
+				calls += 1;
+				return new HttpResponse(null, { status: 503 });
+			}),
+		);
+
+		render(
+			<AuthProvider>
+				<Probe />
+			</AuthProvider>,
+		);
+
+		// Boot resolves to unauthenticated (loading cleared). The old loop would
+		// still be mid-backoff here; the single-shot bootstrap is already settled.
+		await waitFor(() =>
+			expect(screen.getByTestId("authed").textContent).toBe("no"),
+		);
+		expect(calls).toBe(1);
+
+		// And it stays 1 — no delayed retry fires after settling. The old loop
+		// issued up to 5 POSTs at 300ms/600ms/... spacing; wait past that window.
+		await new Promise((resolve) => setTimeout(resolve, 400));
+		expect(calls).toBe(1);
+	});
+
+	it("does not clear a still-valid refresh cookie on a transient bootstrap failure", async () => {
+		// "unavailable" must NOT tear down the httpOnly session: a later reload once
+		// the backend is warm should refresh cleanly. clearRefreshToken() would
+		// discard the local mirror of a cookie that is still valid server-side.
+		const clearSpy = vi.spyOn(Storage.prototype, "removeItem");
+		server.use(
+			http.post(
+				"/v1/auth/refresh",
+				() => new HttpResponse(null, { status: 503 }),
+			),
+		);
+
+		render(
+			<AuthProvider>
+				<Probe />
+			</AuthProvider>,
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("authed").textContent).toBe("no"),
+		);
+
+		expect(clearSpy).not.toHaveBeenCalledWith("codefly_refresh_token");
+	});
+
+	it("tears down and lands unauthenticated on an authoritative expired (401)", async () => {
+		let calls = 0;
+		server.use(
+			http.post("/v1/auth/refresh", () => {
+				calls += 1;
+				return new HttpResponse(null, { status: 401 });
+			}),
+		);
+
+		render(
+			<AuthProvider>
+				<Probe />
+			</AuthProvider>,
+		);
+		await waitFor(() =>
+			expect(screen.getByTestId("authed").textContent).toBe("no"),
+		);
+		// An authoritative rejection is also a single exchange — never retried.
+		expect(calls).toBe(1);
+	});
 });
 
 describe("mid-session refresh handler recovery", () => {
