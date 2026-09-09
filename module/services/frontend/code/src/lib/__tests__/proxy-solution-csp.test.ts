@@ -123,7 +123,11 @@ describe("proxy solution-page CSP", () => {
 		).toBe("connect-src 'self' http://localhost:8091");
 	});
 
-	it("locks the CSP to self for an unregistered solution id", async () => {
+	it("admits only registered origins — an unknown solution id adds nothing", async () => {
+		// The requested id no longer selects the origin: every authenticated
+		// document carries the full registered set (see the non-solution-page
+		// cases below). What must hold is that nothing beyond the registered
+		// origins is ever admitted, whatever id the path names.
 		stubListing([AUDIT]);
 
 		const response = await proxy(
@@ -134,22 +138,22 @@ describe("proxy solution-page CSP", () => {
 		expect(scriptSrc).not.toContain("'unsafe-inline'");
 		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
 		expect(scriptSrc).toContain("'strict-dynamic'");
-		expect(scriptSrc).not.toContain("localhost");
-		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
 	});
 
-	it("does not query the listing or throw on a malformed id segment", async () => {
-		const fetchMock = stubListing([AUDIT]);
+	it("does not throw on a malformed path segment", async () => {
+		// The path is no longer parsed for an id, so a segment that is not valid
+		// percent-encoding must neither throw nor narrow the policy.
+		stubListing([AUDIT]);
 
 		const response = await proxy(authedRequest("https://app.example/s/%ZZ"));
 		const csp = response.headers.get("content-security-policy") ?? "";
-		const scriptSrc = directive(csp, "script-src");
-		expect(scriptSrc).not.toContain("'unsafe-inline'");
-		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
-		expect(scriptSrc).toContain("'strict-dynamic'");
-		expect(scriptSrc).not.toContain("localhost");
-		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
-		expect(fetchMock).not.toHaveBeenCalled();
+		expect(directive(csp, "script-src")).toMatch(/'nonce-[^']+'/);
+		expect(directive(csp, "connect-src")).toBe(
+			"connect-src 'self' http://localhost:8091",
+		);
 	});
 
 	it("logs and stays self-only when the listing is unreachable", async () => {
@@ -220,19 +224,73 @@ describe("proxy solution-page CSP", () => {
 		).rejects.toThrow(/SOLUTION_CSP_INPUTS/);
 	});
 
-	it("sets a per-request nonce'd self CSP on non-solution pages", async () => {
+	it("admits every registered origin on non-solution pages too (#545)", async () => {
+		// A CSP is document-scoped. The sidebar reaches /s/:id through client-side
+		// navigation, which keeps the policy of the document the user started in
+		// — the dashboard — so that document must already permit the remote, or
+		// the manifest fetch is blocked (Module Federation RUNTIME-003) until a
+		// hard reload. Widening only /s/:id was exactly that bug. "/" matters
+		// most: it is a PUBLIC path yet the signed-in home the login flow lands
+		// on, so the policy must follow the session cookie, not the route.
 		const fetchMock = stubListing([AUDIT]);
 
-		// The proxy now owns the CSP on every route (next.config emits only the
-		// constant hardening headers), so a non-solution page gets a nonce'd
-		// self policy — not the old null (which relied on next.config's static CSP).
-		const response = await proxy(authedRequest("https://app.example/settings"));
+		for (const page of ["https://app.example/", "https://app.example/settings"]) {
+			const response = await proxy(authedRequest(page));
+			const csp = response.headers.get("content-security-policy") ?? "";
+			const scriptSrc = directive(csp, "script-src");
+			// The proxy owns the CSP on every route (next.config emits only the
+			// constant hardening headers): nonce'd, no unsafe-inline, plus the
+			// registered remote so the runtime-loaded remoteEntry is allowed.
+			expect(scriptSrc).not.toContain("'unsafe-inline'");
+			expect(scriptSrc).toMatch(/'nonce-[^']+'/);
+			expect(scriptSrc).toContain("'strict-dynamic'");
+			expect(scriptSrc).toContain("http://localhost:8091");
+			expect(directive(csp, "connect-src")).toBe(
+				"connect-src 'self' http://localhost:8091",
+			);
+		}
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("admits every registered solution, deduplicated by origin", async () => {
+		const wiki = {
+			...AUDIT,
+			id: "wiki",
+			nav: { title: "Wiki", path: "/s/wiki" },
+			frontend: {
+				...AUDIT.frontend,
+				manifestUrl: "http://localhost:34041/assets/mf-manifest.json",
+			},
+		};
+		// Same origin as AUDIT under a different path: one source expression.
+		const auditTwin = {
+			...AUDIT,
+			id: "audit-twin",
+			frontend: {
+				...AUDIT.frontend,
+				manifestUrl: "http://localhost:8091/twin/mf-manifest.json",
+			},
+		};
+		stubListing([AUDIT, wiki, auditTwin]);
+
+		const response = await proxy(authedRequest("https://app.example/"));
+		expect(
+			directive(
+				response.headers.get("content-security-policy") ?? "",
+				"connect-src",
+			),
+		).toBe("connect-src 'self' http://localhost:8091 http://localhost:34041");
+	});
+
+	it("keeps cookieless documents self-only and never queries the listing", async () => {
+		// Without a session nothing can navigate into a solution, so there is
+		// nothing to widen — and no listing round-trip on anonymous traffic.
+		const fetchMock = stubListing([AUDIT]);
+
+		const response = await proxy(new NextRequest("https://app.example/legal/terms"));
 		const csp = response.headers.get("content-security-policy") ?? "";
-		const scriptSrc = directive(csp, "script-src");
-		expect(scriptSrc).not.toContain("'unsafe-inline'");
-		expect(scriptSrc).toMatch(/'nonce-[^']+'/);
-		expect(scriptSrc).toContain("'strict-dynamic'");
-		// A non-solution page never queries the listing.
+		expect(directive(csp, "script-src")).toMatch(/'nonce-[^']+'/);
+		expect(directive(csp, "connect-src")).toBe("connect-src 'self'");
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 

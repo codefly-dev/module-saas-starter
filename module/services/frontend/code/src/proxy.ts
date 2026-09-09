@@ -83,8 +83,6 @@ const PUBLIC_PATHS = [
 	"/favicon.ico",
 ];
 
-const SOLUTION_PAGE = /^\/s\/([^/]+)/;
-
 // Build-time snapshot of the env-derived CSP inputs, inlined by next.config's
 // `env` block. Reading this constant — not re-resolving process.env per request
 // — keeps a solution page's CSP in lockstep with the build-time policy on every
@@ -106,26 +104,30 @@ function baselineCspInputs(): {
 	return JSON.parse(snapshot);
 }
 
-function safeDecode(segment: string): string | null {
-	try {
-		return decodeURIComponent(segment);
-	} catch {
-		return null;
-	}
-}
-
 // A solution's Module Federation remote registers at RUNTIME (see
-// src/solutions/registry.ts), so the build-time CSP in next.config — which
-// excludes /s/:id precisely for this reason — cannot know its origin. Next runs
-// this proxy in a context whose module singletons and globals are NOT shared
-// with route handlers or pages (see the Next "proxy" docs: "you should not
-// attempt relying on shared modules or globals"), so it cannot read the
-// in-process registry the register endpoint and solution page share. Instead it
-// asks the host over the local solutions listing — which does run in that
-// shared context — and derives the requested remote's origin from the
-// registration, letting a freshly registered cross-origin remote load with no
-// rebuild and no FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages skip the
-// lookup and keep their self-only build-time CSP.
+// src/solutions/registry.ts), so the build-time CSP in next.config cannot know
+// its origin. Next runs this proxy in a context whose module singletons and
+// globals are NOT shared with route handlers or pages (see the Next "proxy"
+// docs: "you should not attempt relying on shared modules or globals"), so it
+// cannot read the in-process registry the register endpoint and solution page
+// share. Instead it asks the host over the local solutions listing — which does
+// run in that shared context — and admits every registered remote's origin,
+// letting a freshly registered cross-origin remote load with no rebuild and no
+// FRONTEND_SOLUTION_ORIGINS entry.
+//
+// Every authenticated document gets the full registered set, not only /s/:id.
+// A CSP is document-scoped, and the sidebar reaches a solution through
+// client-side navigation (next/link), which swaps the RSC payload but keeps the
+// policy of the document the user started in — typically the dashboard.
+// Widening only /s/:id therefore left the manifest fetch blocked by that
+// starting document's self-only connect-src (Module Federation RUNTIME-003)
+// until a hard reload landed a fresh document on /s/:id. Any authenticated page
+// can navigate into any solution, so every authenticated document must already
+// permit every registered remote (#545). "Authenticated" is decided by the
+// session cookie, not the route: "/" is a public path and also the signed-in
+// home the login flow lands on (a full document load), so keying on the path
+// would leave that very document self-only. Documents served without a session
+// stay self-only and skip the lookup — nothing unauthenticated hosts a remote.
 //
 // The listing is fetched over loopback at the port THIS server binds — read
 // from PORT with the same fallback Next's standalone server uses, so it always
@@ -138,14 +140,6 @@ function safeDecode(segment: string): string | null {
 // logged rather than swallowed, since a silent fallback is indistinguishable
 // from the very bug this fixes.
 async function registeredSolutionOrigins(pathname: string): Promise<string[]> {
-	const match = SOLUTION_PAGE.exec(pathname);
-	if (!match) {
-		return [];
-	}
-	const id = safeDecode(match[1]);
-	if (id === null) {
-		return [];
-	}
 	// Mirror Next's standalone server: parseInt(PORT, 10) || 3000, so an unset,
 	// empty, or non-numeric PORT resolves to the same port the server bound.
 	const port = Number.parseInt(process.env.PORT ?? "", 10) || 3000;
@@ -173,10 +167,16 @@ async function registeredSolutionOrigins(pathname: string): Promise<string[]> {
 		);
 		return [];
 	}
-	const manifestUrl = solutions?.find((s) => s.id === id)?.frontend
-		?.manifestUrl;
-	// manifestUrl is validated as an absolute http(s) URL at registration.
-	return manifestUrl ? [new URL(manifestUrl).origin] : [];
+	// manifestUrl is validated as an absolute http(s) URL at registration. Two
+	// solutions served from one origin collapse to a single source expression.
+	const origins = new Set<string>();
+	for (const solution of solutions ?? []) {
+		const manifestUrl = solution.frontend?.manifestUrl;
+		if (manifestUrl) {
+			origins.add(new URL(manifestUrl).origin);
+		}
+	}
+	return [...origins];
 }
 
 // Per-request CSP nonce. Built from Web Crypto so it works on either runtime.
@@ -260,8 +260,21 @@ export async function proxy(req: NextRequest) {
 		return response;
 	}
 
+	// The session cookie set by AuthProvider on login. Its contents are not
+	// validated here — if present we trust it and let the backend gateway do the
+	// real validation. An invalid cookie will just cause every backend call to
+	// 401, which is fine. It also decides the CSP: a document served to a signed-in
+	// visitor can client-navigate into a solution, whatever its path — "/" is a
+	// public path AND the signed-in home — so the policy follows the session, not
+	// the route (see registeredSolutionOrigins).
+	const session = req.cookies.get("codefly_session");
+
 	if (isPublic(pathname)) {
-		const csp = contentSecurityPolicyFromInputs(baselineCspInputs(), [], nonce);
+		const csp = contentSecurityPolicyFromInputs(
+			baselineCspInputs(),
+			session ? await registeredSolutionOrigins(pathname) : [],
+			nonce,
+		);
 		const response = withNoncedCSP(req, gatewayHeaders, nonce, csp);
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
 			response.headers.set("Referrer-Policy", "no-referrer");
@@ -269,11 +282,6 @@ export async function proxy(req: NextRequest) {
 		return response;
 	}
 
-	// Check the session cookie set by AuthProvider on login. The
-	// cookie contents are not validated here — if present we trust it
-	// and let the backend gateway do the real validation. An invalid
-	// cookie will just cause every backend call to 401, which is fine.
-	const session = req.cookies.get("codefly_session");
 	if (!session) {
 		const loginURL = req.nextUrl.clone();
 		loginURL.pathname = "/auth/login";
