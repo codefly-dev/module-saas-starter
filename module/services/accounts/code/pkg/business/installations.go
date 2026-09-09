@@ -82,6 +82,10 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 			ErrTypeValidation,
 		)
 	}
+	// Resolved before the transaction: the lookup runs as System, and calling it
+	// inside a tenant transaction would reuse that transaction instead, quietly
+	// downgrading an agent actor to "user".
+	actorType := s.actorTypeForCreator(ctx, actorID)
 	var installation *gen.Installation
 	if err := s.store.WithOrgTx(ctx, params.OrgID, func(ctx context.Context) error {
 		var e error
@@ -91,23 +95,25 @@ func (s *Service) InstallSolution(ctx context.Context, actorID string, params *I
 		}
 		// Publish installation.created in the same transaction (outbox). The
 		// boundary is the solution scope node the install just composed.
-		return s.publishLifecycleEvent(ctx, EventInstallationCreated, params.OrgID,
+		if e := s.publishLifecycleEvent(ctx, EventInstallationCreated, params.OrgID,
 			installation.GetRootScopeNodeId(), actorID, map[string]any{
 				"installation_id":     installation.GetId(),
 				"agent_principal_id":  installation.GetAgentPrincipalId(),
 				"solution_identifier": params.SolutionIdentifier,
+			}); e != nil {
+			return e
+		}
+		return s.emitTx(ctx, actorID, actorType, EventInstallationCreated,
+			"installation", installation.Id, params.OrgID, map[string]any{
+				"agent_principal_id":  installation.AgentPrincipalId,
+				"solution_identifier": params.SolutionIdentifier,
+				"role_id":             params.RoleID,
+				"allowed_audiences":   params.AllowedAudiences,
+				"allowed_scopes":      params.AllowedScopes,
 			})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot install solution")
 	}
-	s.emit(ctx, actorID, s.actorTypeForCreator(ctx, actorID), EventInstallationCreated,
-		"installation", installation.Id, params.OrgID, map[string]any{
-			"agent_principal_id":  installation.AgentPrincipalId,
-			"solution_identifier": params.SolutionIdentifier,
-			"role_id":             params.RoleID,
-			"allowed_audiences":   params.AllowedAudiences,
-			"allowed_scopes":      params.AllowedScopes,
-		})
 	// Materialize the installed solution's declared consumes into durable
 	// subscriptions for its fresh agent principal (EVENTS.md §Subscriptions). This
 	// is a control-plane write, so it runs after the tenant install transaction
@@ -141,18 +147,21 @@ func (s *Service) GetInstallation(ctx context.Context, orgID, installationID str
 // fails closed otherwise.
 func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, orgID, installationID, newOwnerPrincipalID string, coOwnerPrincipalIDs []string) (*gen.Installation, error) {
 	w := wool.Get(ctx).In("TransferInstallationOwnership", wool.Field("installation_id", installationID))
+	actorType := s.actorTypeForCreator(ctx, actorID)
 	var installation *gen.Installation
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		var e error
 		installation, e = s.installationStore().TransferInstallationOwnership(ctx, orgID, installationID, newOwnerPrincipalID, coOwnerPrincipalIDs)
-		return e
+		if e != nil {
+			return e
+		}
+		return s.emitTx(ctx, actorID, actorType, EventInstallationOwnershipTransferred,
+			"installation", installationID, orgID, map[string]any{
+				"owner_principal_id": newOwnerPrincipalID,
+			})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot transfer installation ownership")
 	}
-	s.emit(ctx, actorID, s.actorTypeForCreator(ctx, actorID), EventInstallationOwnershipTransferred,
-		"installation", installationID, orgID, map[string]any{
-			"owner_principal_id": newOwnerPrincipalID,
-		})
 	return installation, nil
 }
 
@@ -162,6 +171,7 @@ func (s *Service) TransferInstallationOwnership(ctx context.Context, actorID, or
 // it. Idempotent on an already-revoked installation (no second audit event).
 func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, installationID string) error {
 	w := wool.Get(ctx).In("UninstallSolution", wool.Field("installation_id", installationID))
+	actorType := s.actorTypeForCreator(ctx, actorID)
 	var installation *gen.Installation
 	var transitioned bool
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
@@ -176,19 +186,19 @@ func (s *Service) UninstallSolution(ctx context.Context, actorID, orgID, install
 		if !transitioned {
 			return nil
 		}
-		return s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
+		if e := s.publishLifecycleEvent(ctx, EventInstallationRevoked, orgID,
 			installation.GetRootScopeNodeId(), actorID, map[string]any{
 				"installation_id":     installationID,
 				"solution_identifier": installation.GetSolutionIdentifier(),
-			})
-	}); err != nil {
-		return w.Wrapf(err, "cannot uninstall solution")
-	}
-	if transitioned {
-		s.emit(ctx, actorID, s.actorTypeForCreator(ctx, actorID), EventInstallationRevoked,
+			}); e != nil {
+			return e
+		}
+		return s.emitTx(ctx, actorID, actorType, EventInstallationRevoked,
 			"installation", installationID, orgID, map[string]any{
 				"solution_identifier": installation.SolutionIdentifier,
 			})
+	}); err != nil {
+		return w.Wrapf(err, "cannot uninstall solution")
 	}
 	return nil
 }

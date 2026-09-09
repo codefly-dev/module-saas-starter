@@ -89,7 +89,7 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 		if o, err := s.store.GetOrganization(ctx, req.OrgId); err == nil && o != nil {
 			orgName = o.Name
 		}
-		return nil
+		return s.emitTx(ctx, actorID, "user", EventOrgMemberAdded, "organization", req.OrgId, req.OrgId)
 	}); err != nil {
 		return w.Wrapf(err, "cannot add member")
 	}
@@ -98,8 +98,6 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 	// the first request from the newly-added user would spend 30s hitting
 	// the cache with the wrong negative answer. No-op when caching is off.
 	s.invalidateMembership(ctx, req.OrgId, req.UserId)
-
-	s.emit(ctx, actorID, "user", EventOrgMemberAdded, "organization", req.OrgId, req.OrgId)
 
 	if orgName == "" {
 		orgName = req.OrgId
@@ -162,7 +160,10 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 		if targetIsAdmin && adminCount <= 1 {
 			return w.NewError("cannot remove the last admin/owner from the organization")
 		}
-		return s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId)
+		if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
 	}); err != nil {
 		return w.Wrapf(err, "cannot remove member")
 	}
@@ -187,7 +188,6 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 		return nil
 	})
 
-	s.emit(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
 	return nil
 }
 

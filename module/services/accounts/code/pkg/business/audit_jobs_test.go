@@ -96,7 +96,7 @@ func orgAuditEntry() AuditEntry {
 }
 
 func TestSelectorPostgresDoesNotTee(t *testing.T) {
-	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002"}}}
+	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002", OrgID: teeOrgID}}}
 	emitter, err := NewDurableAuditEmitter(store, store)
 	if err != nil {
 		t.Fatalf("NewDurableAuditEmitter: %v", err)
@@ -115,7 +115,7 @@ func TestSelectorPostgresDoesNotTee(t *testing.T) {
 }
 
 func TestSelectorBothTeesAndCommitsAtomically(t *testing.T) {
-	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002"}}}
+	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002", OrgID: teeOrgID}}}
 	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee())
 	if err != nil {
 		t.Fatalf("NewDurableAuditEmitter: %v", err)

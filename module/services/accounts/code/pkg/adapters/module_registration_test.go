@@ -18,6 +18,13 @@ import (
 
 type moduleRegistrationStore struct{ business.Store }
 
+// The mint records its credential issuance transactionally, so the fake has to
+// carry a transaction boundary; no audit emitter is wired, so the emit is a
+// no-op inside it.
+func (*moduleRegistrationStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
+	return fn(ctx)
+}
+
 type recordingRegistrationMinter struct {
 	prefix string
 	err    error

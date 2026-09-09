@@ -77,12 +77,14 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 	}
 
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.UpdateUserStatus(ctx, req.UserId, "suspended")
+		if err := s.store.UpdateUserStatus(ctx, req.UserId, "suspended"); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot suspend user")
 	}
 
-	s.emit(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
 	s.notifySlack(ctx, fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason))
 	return nil
 }
@@ -96,12 +98,13 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 	}
 
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.UpdateUserStatus(ctx, req.UserId, "active")
+		if err := s.store.UpdateUserStatus(ctx, req.UserId, "active"); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserUnsuspended, "user", req.UserId, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot unsuspend user")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserUnsuspended, "user", req.UserId, "")
 	return nil
 }
 
@@ -191,7 +194,14 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "mint impersonation token")
 	}
 
-	s.emit(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "")
+	// Impersonation changes no row, so there is no mutation for the record to be
+	// atomic with — but the token must not reach the caller unless the record is
+	// committed, so the write is what gates the response.
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.emitTx(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "")
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot record impersonation")
+	}
 
 	return &gen.ImpersonateUserResponse{
 		AccessToken: pair.AccessToken,
@@ -253,7 +263,10 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		revokedSessionIDs, err = s.store.RevokeSession(ctx, req.SessionId, reason)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventSessionRevoked, "session", req.SessionId, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke session")
 	}
@@ -271,7 +284,6 @@ func (s *Service) RevokeSession(ctx context.Context, actorID string, req *gen.Re
 		}
 	}
 
-	s.emit(ctx, actorID, "user", EventSessionRevoked, "session", req.SessionId, "")
 	return nil
 }
 
@@ -283,11 +295,14 @@ func (s *Service) GrantPlatformRole(ctx context.Context, actorID string, req *ge
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.store.GrantPlatformRole(ctx, req.UserId, req.PlatformRole, actorID); err != nil {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		if err := s.store.GrantPlatformRole(ctx, req.UserId, req.PlatformRole, actorID); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventPlatformRoleGranted, "user", req.UserId, "")
+	}); err != nil {
 		return w.Wrapf(err, "cannot grant platform role")
 	}
-
-	s.emit(ctx, actorID, "user", EventPlatformRoleGranted, "user", req.UserId, "")
 
 	// Notify the user about their new platform role
 	_ = s.NotifyUser(
@@ -310,11 +325,14 @@ func (s *Service) RevokePlatformRole(ctx context.Context, actorID string, req *g
 		return w.Wrapf(err, "permission denied")
 	}
 
-	if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		if err := s.store.RevokePlatformRole(ctx, req.UserId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
+	}); err != nil {
 		return w.Wrapf(err, "cannot revoke platform role")
 	}
-
-	s.emit(ctx, actorID, "user", EventPlatformRoleRevoked, "user", req.UserId, "")
 	return nil
 }
 

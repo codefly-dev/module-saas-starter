@@ -348,6 +348,14 @@ func (a *recordingAudit) Emit(_ context.Context, entry business.AuditEntry) {
 	a.entries = append(a.entries, entry)
 }
 
+// EmitTx satisfies business.TxAuditEmitter: a double that only implemented the
+// fire-and-forget half would make every security write it is wired behind fail
+// closed instead of exercising the path under test.
+func (a *recordingAudit) EmitTx(ctx context.Context, entry business.AuditEntry) error {
+	a.Emit(ctx, entry)
+	return nil
+}
+
 func (a *recordingAudit) types() []business.EventType {
 	a.mu.Lock()
 	defer a.mu.Unlock()

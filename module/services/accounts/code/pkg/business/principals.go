@@ -230,6 +230,28 @@ func (s *Service) actorTypeForCreator(ctx context.Context, principalID string) s
 	}
 }
 
+// principalOrgID resolves a principal's owning org from its id alone. The
+// lookup spans tenants by necessity — the caller has no org yet — and reads
+// nothing else, so it is the narrowest System step that lets the mutation that
+// follows run in the principal's own tenant scope.
+func (s *Service) principalOrgID(ctx context.Context, id string) (string, error) {
+	var orgID string
+	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+		p, err := s.principalStore().GetPrincipal(ctx, id)
+		if err != nil {
+			return err
+		}
+		orgID = p.OrgID
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	if orgID == "" {
+		return "", NewStoreError(fmt.Errorf("principal %s has no organization", id), ErrTypeNotFound)
+	}
+	return orgID, nil
+}
+
 // GetPrincipal returns a principal by ID. Returns ErrTypeNotFound
 // (wrapped) when the ID doesn't exist or has been revoked.
 //
@@ -370,13 +392,19 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 	if err := p.Validate(); err != nil {
 		return nil, w.Wrapf(err, "invalid principal")
 	}
+	// Resolved before the transaction: the lookup runs as System, and calling it
+	// inside a tenant transaction would reuse that transaction instead, quietly
+	// downgrading an agent actor to "user".
+	actorType := s.actorTypeForCreator(ctx, req.CreatedBy)
 	if err := s.store.As(Identity{OrgID: req.OrgID}).Within(ctx, func(ctx context.Context) error {
-		return s.principalStore().CreateAgentPrincipal(ctx, p)
+		if err := s.principalStore().CreateAgentPrincipal(ctx, p); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, req.CreatedBy, actorType, EventPrincipalCreated, "principal", p.ID, p.OrgID,
+			map[string]any{"agent_identifier": p.AgentIdentifier})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create agent principal")
 	}
-	s.emit(ctx, req.CreatedBy, s.actorTypeForCreator(ctx, req.CreatedBy), EventPrincipalCreated, "principal", p.ID, p.OrgID,
-		map[string]any{"agent_identifier": p.AgentIdentifier})
 	w.Info("agent principal created",
 		wool.Field("principal_id", p.ID),
 		wool.Field("agent_id", p.AgentIdentifier))
@@ -388,12 +416,9 @@ func (s *Service) CreateAgentPrincipal(ctx context.Context, req CreateAgentReque
 // and reason are preserved). Returns ErrTypeNotFound if the principal
 // doesn't exist.
 //
-// Revoking a HUMAN principal cascades: the matching `users` row's
-// status is also set to 'inactive' for consistency. We don't
-// reverse-cascade (revoking a user doesn't currently revoke their
-// principal) — that's a deliberate gap, kept for backwards compat
-// with code that reads users directly. A future migration unifies
-// the lifecycle.
+// Revoking a principal does not touch the matching `users` row: the two
+// lifecycles are still separate, which is a deliberate gap kept for code that
+// reads users directly.
 func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error {
 	w := wool.Get(ctx).In("RevokePrincipal",
 		wool.Field("principal_id", id))
@@ -405,27 +430,34 @@ func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error 
 		// readable reason being recorded.
 		return w.NewError("reason required (no silent revocations)")
 	}
-	// Privileged admin op by id (cascades to users for humans); RPC authz gates
-	// it, and the cascade needs cross-table reach → System. Load the principal in
-	// the same System tx to recover its org (this method takes only id+reason) and
-	// to detect whether the call actually changed state, so idempotent repeats
-	// don't emit a duplicate audit event.
-	var orgID string
-	var alreadyRevoked bool
-	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+	// This method takes only an id, so the owning org is resolved first under
+	// System; the write and its audit event then run in that org's own
+	// transaction. Tenant scope is both the least privilege the write needs and
+	// the only scope that can carry the event's webhook fan-out — the job
+	// platform admits tenant outbox work from tenant traffic alone.
+	orgID, err := s.principalOrgID(ctx, id)
+	if err != nil {
+		return w.Wrapf(err, "cannot revoke principal")
+	}
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		// Re-read inside the tenant transaction so "did this call change
+		// anything" and the write itself are one read-modify-write, and an
+		// idempotent repeat emits no duplicate audit event.
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
 			return e
 		}
-		orgID = p.OrgID
-		alreadyRevoked = p.IsRevoked()
-		return s.principalStore().RevokePrincipal(ctx, id, reason)
+		alreadyRevoked := p.IsRevoked()
+		if err := s.principalStore().RevokePrincipal(ctx, id, reason); err != nil {
+			return err
+		}
+		if alreadyRevoked {
+			return nil
+		}
+		return s.emitTx(ctx, "system", "system", EventPrincipalRevoked, "principal", id, orgID,
+			map[string]any{"reason": reason})
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke principal")
-	}
-	if !alreadyRevoked {
-		s.emit(ctx, "system", "system", EventPrincipalRevoked, "principal", id, orgID,
-			map[string]any{"reason": reason})
 	}
 	w.Info("principal revoked", wool.Field("reason", reason))
 	return nil
@@ -444,9 +476,16 @@ func (s *Service) DisableAgentPrincipal(ctx context.Context, id, reason string) 
 	if reason == "" {
 		return w.NewError("reason required (no silent disables)")
 	}
-	var orgID string
-	var transitioned bool
-	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+	// This method takes only an id, so the owning org is resolved first under
+	// System; the write and its audit event then run in that org's own
+	// transaction. Tenant scope is both the least privilege the write needs and
+	// the only scope that can carry the event's webhook fan-out — the job
+	// platform admits tenant outbox work from tenant traffic alone.
+	orgID, err := s.principalOrgID(ctx, id)
+	if err != nil {
+		return w.Wrapf(err, "cannot disable agent principal")
+	}
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
 			return e
@@ -457,20 +496,19 @@ func (s *Service) DisableAgentPrincipal(ctx context.Context, id, reason string) 
 		if p.IsRevoked() {
 			return NewStoreError(errors.New("a revoked principal cannot be disabled"), ErrTypeConflict)
 		}
-		orgID = p.OrgID
 		// Gate the audit event on whether the UPDATE actually flipped the row,
 		// not on this pre-UPDATE read: two concurrent first-time disables both
 		// read IsDisabled()==false, but only the txn that wins the row-lock race
 		// transitions the row. Emitting on the racy read double-audits; emitting
 		// on the store's reported transition emits exactly once.
-		transitioned, e = s.principalStore().DisableAgentPrincipal(ctx, id, reason)
-		return e
+		transitioned, e := s.principalStore().DisableAgentPrincipal(ctx, id, reason)
+		if e != nil || !transitioned {
+			return e
+		}
+		return s.emitTx(ctx, "system", "system", EventPrincipalDisabled, "principal", id, orgID,
+			map[string]any{"reason": reason})
 	}); err != nil {
 		return w.Wrapf(err, "cannot disable agent principal")
-	}
-	if transitioned {
-		s.emit(ctx, "system", "system", EventPrincipalDisabled, "principal", id, orgID,
-			map[string]any{"reason": reason})
 	}
 	w.Info("agent principal disabled", wool.Field("reason", reason))
 	return nil
@@ -484,9 +522,16 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 	if id == "" {
 		return w.NewError("principal id required")
 	}
-	var orgID string
-	var transitioned bool
-	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
+	// This method takes only an id, so the owning org is resolved first under
+	// System; the write and its audit event then run in that org's own
+	// transaction. Tenant scope is both the least privilege the write needs and
+	// the only scope that can carry the event's webhook fan-out — the job
+	// platform admits tenant outbox work from tenant traffic alone.
+	orgID, err := s.principalOrgID(ctx, id)
+	if err != nil {
+		return w.Wrapf(err, "cannot enable agent principal")
+	}
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
 			return e
@@ -497,16 +542,15 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 		if p.IsRevoked() {
 			return NewStoreError(errors.New("a revoked principal cannot be re-enabled"), ErrTypeConflict)
 		}
-		orgID = p.OrgID
 		// Emit on the store's reported transition, not this pre-UPDATE read, so
 		// concurrent enables audit the lift exactly once (see DisableAgentPrincipal).
-		transitioned, e = s.principalStore().EnableAgentPrincipal(ctx, id)
-		return e
+		transitioned, e := s.principalStore().EnableAgentPrincipal(ctx, id)
+		if e != nil || !transitioned {
+			return e
+		}
+		return s.emitTx(ctx, "system", "system", EventPrincipalEnabled, "principal", id, orgID, nil)
 	}); err != nil {
 		return w.Wrapf(err, "cannot enable agent principal")
-	}
-	if transitioned {
-		s.emit(ctx, "system", "system", EventPrincipalEnabled, "principal", id, orgID, nil)
 	}
 	w.Info("agent principal enabled")
 	return nil

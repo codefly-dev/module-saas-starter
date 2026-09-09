@@ -144,12 +144,13 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, 
 	// RLS: write goes through WithOrgTx so the policy WITH CHECK
 	// passes (org_id matches the current_org_id setting).
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.CreateWebhookSubscription(ctx, sub)
+		if err := s.store.CreateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, orgID, "system", EventWebhookCreated, "webhook_subscription", sub.ID, orgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create webhook subscription")
 	}
-
-	s.emit(ctx, orgID, "system", EventWebhookCreated, "webhook_subscription", sub.ID, orgID)
 
 	return sub, nil
 }
@@ -176,12 +177,10 @@ func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) erro
 		if err := s.store.DeleteWebhookSubscription(ctx, id); err != nil {
 			return w.Wrapf(err, "cannot delete webhook subscription")
 		}
-		return nil
+		return s.emitTx(ctx, orgID, "system", EventWebhookDeleted, "webhook_subscription", id, orgID)
 	}); err != nil {
 		return err
 	}
-
-	s.emit(ctx, orgID, "system", EventWebhookDeleted, "webhook_subscription", id, orgID)
 
 	return nil
 }
@@ -329,14 +328,15 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID s
 		}
 		replay.EventType = o.EventType
 		replay.Payload = o.Payload
-		return createOutboundWebhookDelivery(
+		if err := createOutboundWebhookDelivery(
 			ctx, s.store, s.webhookJobs, orgID, replay, []byte(o.Payload),
-		)
+		); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, sub.OrgID, "system", EventWebhookReplayed, "webhook_delivery", replay.ID, sub.OrgID)
 	}); err != nil {
 		return nil, err
 	}
-
-	s.emit(ctx, sub.OrgID, "system", EventWebhookReplayed, "webhook_delivery", replay.ID, sub.OrgID)
 	return replay, nil
 }
 
@@ -380,12 +380,13 @@ func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID
 			sub.PreviousSecretExpiresAt = nil
 		}
 		sub.SecretEncrypted = encryptedSecret
-		return s.store.UpdateWebhookSubscription(ctx, sub)
+		if err := s.store.UpdateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, orgID, "system", EventWebhookSecretRotated, "webhook_subscription", subscriptionID, orgID)
 	}); err != nil {
 		return "", nil, err
 	}
-
-	s.emit(ctx, orgID, "system", EventWebhookSecretRotated, "webhook_subscription", subscriptionID, orgID)
 	return newSecret, oldSecretExpiresAt, nil
 }
 

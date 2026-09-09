@@ -460,3 +460,37 @@ superuser `session_replication_role` this ADR originally sketched. Stored
 `webhook_subscriptions.events` entries that named a registered event are
 rewritten with it, so existing subscribers keep firing; a subscriber that
 re-creates a subscription from a hardcoded legacy name is the documented break.
+
+## Amendment — 2026-09-09: per-event durability (issue #531)
+
+`AuditEventDefinition` now carries a third axis alongside `Category` and
+`Namespace`: **`Durability`**, declaring how the record must reach the log.
+
+- `DurabilityTransactional` — the event records a privileged write. Its audit row
+  and webhook fan-out are written on a transaction the caller's success depends
+  on (`Service.emitTx` / `emitEntryTx`), so the record and the change commit
+  together, and a failed audit write fails the operation.
+- `DurabilityObservational` — the event records something no domain transaction
+  owns (an authentication outcome, a read, an external provider's outcome). It is
+  written on the emitter's own transaction (`Service.emit`) precisely so it
+  survives a rolled-back domain write.
+
+Before this, `DurableAuditEmitter.Emit` opened its own transaction and logged any
+error without returning it, and most business methods committed the mutation
+first and emitted afterwards. The audit row and its fan-out were atomic with each
+other but not with the change they described, so a crash, a cancelled context, or
+a database error between the two commits could leave an effective security change
+with no durable record and no webhook.
+
+The registry deliberately offers no durability-less constructor (`mutation(...)`
+and `observation(...)` are the only two), and `auditEventIndex` panics on a
+definition without one, so a new event type cannot be added without the decision
+being made. `TestAuditDurability_EmitSitesMatchTheirClassification` reads this
+package's own AST and fails the build when either rule is broken in either
+direction; sites a classification cannot reach are listed with a reason in
+`auditEmitExemptions` rather than exempted wholesale.
+
+Two things this does **not** claim. A method policy's `emits_audit` descriptor
+remains a declaration of intent, not evidence of durable commitment — the
+durability classification and the gate carry that. And nothing is backfilled:
+the guarantee begins where it is enforced, not retroactively over history.

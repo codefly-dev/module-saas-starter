@@ -174,7 +174,7 @@ func (s *Service) CreateInvitation(
 				return err
 			}
 		}
-		return s.captureProductEvent(
+		if err := s.captureProductEvent(
 			ctx,
 			"invite_created",
 			inv.ID,
@@ -182,12 +182,13 @@ func (s *Service) CreateInvitation(
 			req.OrgId,
 			inv.CreatedAt,
 			map[string]any{"role": inv.Role},
-		)
+		); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, inviterID, "user", EventInvitationCreated, "invitation", inv.ID, req.OrgId)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create invitation")
 	}
-
-	s.emit(ctx, inviterID, "user", EventInvitationCreated, "invitation", inv.ID, req.OrgId)
 
 	return &gen.CreateInvitationResponse{Invitation: invitationToProto(inv)}, nil
 }
@@ -373,14 +374,19 @@ func (s *Service) AcceptInvitation(
 		}
 		var getErr error
 		org, getErr = s.store.GetOrganization(ctx, inv.OrgID)
-		return getErr
+		if getErr != nil {
+			return getErr
+		}
+		if alreadyAccepted {
+			return nil
+		}
+		return s.emitTx(ctx, userID, "user", EventInvitationAccepted, "invitation", inv.ID, inv.OrgID)
 	}); txErr != nil {
 		return nil, txErr
 	}
 
 	s.invalidateMembership(ctx, inv.OrgID, userID)
 	if !alreadyAccepted {
-		s.emit(ctx, userID, "user", EventInvitationAccepted, "invitation", inv.ID, inv.OrgID)
 		_, _ = s.CreateNotification(ctx, CreateNotificationInput{
 			UserID:    inv.InviterID,
 			OrgID:     inv.OrgID,
@@ -457,7 +463,6 @@ func (s *Service) ResendInvitation(
 	}
 	now := time.Now()
 	var orgName string
-	replayed := false
 	if err := s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
 		fresh, err := s.store.GetInvitationByID(ctx, inv.ID)
 		if err != nil || fresh == nil {
@@ -468,7 +473,6 @@ func (s *Service) ResendInvitation(
 		}
 		if fresh.LastResendKeyHash == keyHash {
 			inv = fresh
-			replayed = true
 			return nil
 		}
 		if fresh.LastSentAt != nil && time.Since(*fresh.LastSentAt) < invitationResendCooldown {
@@ -487,14 +491,14 @@ func (s *Service) ResendInvitation(
 		if org, getErr := s.store.GetOrganization(ctx, inv.OrgID); getErr == nil && org != nil {
 			orgName = org.Name
 		}
-		return s.enqueueInvitationEmail(
+		if err := s.enqueueInvitationEmail(
 			ctx, inv, plaintext, orgName, fmt.Sprintf("%s:%d", inv.ID, inv.SendCount),
-		)
+		); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventInvitationResent, "invitation", inv.ID, inv.OrgID)
 	}); err != nil {
 		return nil, err
-	}
-	if !replayed {
-		s.emit(ctx, actorID, "user", EventInvitationResent, "invitation", inv.ID, inv.OrgID)
 	}
 	return invitationToProto(inv), nil
 }
@@ -505,7 +509,6 @@ func (s *Service) RevokeInvitation(
 	req *gen.RevokeInvitationRequest,
 ) error {
 	var inv *Invitation
-	revoked := false
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error
 		inv, err = s.store.GetInvitationByID(ctx, req.Id)
@@ -530,12 +533,11 @@ func (s *Service) RevokeInvitation(
 	}
 	revokedAt := time.Now().UTC()
 	if err := s.store.WithOrgTx(ctx, inv.OrgID, func(ctx context.Context) error {
-		var err error
-		revoked, err = s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
+		revoked, err := s.store.UpdateInvitationStatus(ctx, req.Id, "revoked", "")
 		if err != nil || !revoked {
 			return err
 		}
-		return s.captureProductEvent(
+		if err := s.captureProductEvent(
 			ctx,
 			"invite_revoked",
 			req.Id,
@@ -543,12 +545,12 @@ func (s *Service) RevokeInvitation(
 			inv.OrgID,
 			revokedAt,
 			nil,
-		)
+		); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, inviterID, "user", EventInvitationRevoked, "invitation", req.Id, inv.OrgID)
 	}); err != nil {
 		return wool.Get(ctx).Wrapf(err, "cannot revoke invitation")
-	}
-	if revoked {
-		s.emit(ctx, inviterID, "user", EventInvitationRevoked, "invitation", req.Id, inv.OrgID)
 	}
 	return nil
 }

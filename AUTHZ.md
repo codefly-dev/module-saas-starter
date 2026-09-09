@@ -151,7 +151,7 @@ A request to `webhookConnectHandler.DeleteSubscription(orgID, subID)`:
 | L1 Policy gates | (`requireMFA` for rotate-secret only) |
 | L2 Permissions | `CheckPermission(actor, "webhooks", "write", orgID)` *if RBAC is more granular than the org-admin check* |
 | L3 RLS | `WithOrgTx(ctx, orgID, …)` → DELETE WHERE id = subID. RLS lets it through only if the row's org_id matches. |
-| Audit emit | `saas.webhook.deleted` written to audit_events |
+| Audit emit | `saas.webhook.deleted` written to audit_events **in the delete's own transaction** — a failed audit write aborts the delete |
 
 If any single layer is wrong, the others still hold:
 
@@ -165,6 +165,40 @@ If any single layer is wrong, the others still hold:
 | SQL injection that drops `WHERE org_id` | L3 |
 | New Store method developer forgets `WHERE org_id` | L3 |
 | Cross-tenant lookup via swapped variable | L3 |
+
+## Audit durability: what a recorded event does and does not prove
+
+Every registered audit event declares a **durability** alongside its category
+(`module/services/accounts/code/pkg/business/audit_registry.go`):
+
+- **transactional** — the event records a privileged write (a membership, role,
+  scope or share change; an API key, MFA factor, principal, installation,
+  webhook configuration or credential mint; a platform-admin action). Its audit
+  row and its webhook fan-out are written on the transaction the caller's
+  success depends on, so the record and the change commit together and a failed
+  audit write fails the operation.
+- **observational** — the event records something no domain transaction owns: an
+  authentication outcome, a read, or an outcome produced by an external provider.
+  It is written on the emitter's own transaction precisely so it survives a
+  rolled-back domain write.
+
+Two consequences are worth stating plainly, because they are easy to assume the
+other way round:
+
+- A method policy's `emits_audit` descriptor (and the "Audit" column of the RPC
+  matrix) is a **declaration of intent** from the policy, not evidence that the
+  event was committed durably with the mutation. The durability classification
+  and the gate below are what carry that.
+- A tenant-scoped transaction is the only scope that can enqueue tenant outbox
+  work (migration 72/75), so a security mutation whose fan-out must reach an
+  org's endpoints runs in that org's transaction rather than under the control
+  plane.
+
+`TestAuditDurability_EmitSitesMatchTheirClassification` reads this package's own
+source and fails the build when a transactional event is emitted through the
+fire-and-forget path, or an observational one through the transactional path.
+Sites a classification cannot reach are listed, with a reason, in
+`auditEmitExemptions` — a named hole, not a waiver.
 
 The worker paths (audit-exporter goroutine, webhook dispatcher,
 billing reconciler, migration runner, platform-admin endpoints) bypass
@@ -278,7 +312,7 @@ answer is unacceptable.
 | `org_settings`, `invitations`, `organization_members`, `subscriptions`, `entitlement_overrides`, `usage_records` | direct org_id | 29 |
 | `teams` | direct org_id | 30 |
 | `team_members` | JOIN via teams | 30 |
-| `audit_events` | polymorphic (nullable org_id; NULL only via bypass) | 31 |
+| `audit_events` | polymorphic (nullable org_id; NULL-org rows readable only under the control plane, and writable by it or by the user-scoped transaction whose own `actor_id` they carry) | 31, 122 |
 | `roles`, `role_assignments` | polymorphic (built-ins NULL globally readable) | 32 |
 | `organizations` | self-referential (id matches setting) | 33 |
 | `org_identity_providers` | direct org_id (pre-auth discovery via control-plane) | 92 |

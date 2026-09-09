@@ -35,12 +35,13 @@ func (s *Service) AddTeamMember(ctx context.Context, actorID string, req *gen.Ad
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.AddTeamMember(ctx, req.TeamId, req.UserId, teamRoleToString(req.Role))
+		if err := s.store.AddTeamMember(ctx, req.TeamId, req.UserId, teamRoleToString(req.Role)); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamMemberAdded, "team", req.TeamId, orgID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot add team member")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamMemberAdded, "team", req.TeamId, orgID)
 	return nil
 }
 
@@ -68,12 +69,13 @@ func (s *Service) RemoveTeamMember(ctx context.Context, actorID string, req *gen
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.RemoveTeamMember(ctx, req.TeamId, req.UserId)
+		if err := s.store.RemoveTeamMember(ctx, req.TeamId, req.UserId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamMemberRemoved, "team", req.TeamId, orgID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot remove team member")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamMemberRemoved, "team", req.TeamId, orgID)
 	return nil
 }
 
@@ -89,13 +91,14 @@ func (s *Service) UpdateTeam(ctx context.Context, actorID string, req *gen.Updat
 	var team *gen.Team
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		t, err := s.store.UpdateTeam(ctx, req.TeamId, req.Name, req.Description)
+		if err != nil {
+			return err
+		}
 		team = t
-		return err
+		return s.emitTx(ctx, actorID, "user", EventTeamUpdated, "team", req.TeamId, orgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot update team")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamUpdated, "team", req.TeamId, orgID)
 	return &gen.UpdateTeamResponse{Team: team}, nil
 }
 
@@ -109,12 +112,13 @@ func (s *Service) DeleteTeam(ctx context.Context, actorID string, req *gen.Delet
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.DeleteTeam(ctx, req.TeamId)
+		if err := s.store.DeleteTeam(ctx, req.TeamId); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamDeleted, "team", req.TeamId, orgID)
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete team")
 	}
-
-	s.emit(ctx, actorID, "user", EventTeamDeleted, "team", req.TeamId, orgID)
 	return nil
 }
 

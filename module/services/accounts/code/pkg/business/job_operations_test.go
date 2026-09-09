@@ -76,6 +76,11 @@ func (emitter *recordingAuditEmitter) Emit(_ context.Context, entry business.Aud
 	emitter.entries = append(emitter.entries, entry)
 }
 
+func (emitter *recordingAuditEmitter) EmitTx(ctx context.Context, entry business.AuditEntry) error {
+	emitter.Emit(ctx, entry)
+	return nil
+}
+
 func newJobOperationsService(t *testing.T, roles map[string]string, operations *recordingJobOperations) *business.Service {
 	t.Helper()
 	service, err := business.NewService(&jobOperationsBusinessStore{roles: roles})

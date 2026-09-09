@@ -48,12 +48,13 @@ func (s *Service) UpdateOrgSettings(ctx context.Context, actorID string, setting
 			return err
 		}
 		f, err := s.store.GetOrgSettings(ctx, settings.OrgID)
+		if err != nil {
+			return err
+		}
 		fresh = f
-		return err
+		return s.emitTx(ctx, actorID, "user", EventOrgSettingsUpdated, "organization", settings.OrgID, settings.OrgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot update org settings")
 	}
-
-	s.emit(ctx, actorID, "user", EventOrgSettingsUpdated, "organization", settings.OrgID, settings.OrgID)
 	return fresh, nil
 }
