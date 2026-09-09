@@ -85,7 +85,7 @@ func (g *Gateway) handleModuleRegister(w http.ResponseWriter, r *http.Request) b
 	// a prefix at an attacker-controlled upstream and harvest forwarded bearers.
 	// The prefix→identity binding itself is enforced below, once the payload prefix
 	// is known.
-	claims, ok := g.sidecar.verifyModuleRegistration(r.Header.Get(moduleRegistrationHeader))
+	claims, ok := g.sidecar.verifyModuleRegistration(r.Context(), r.Header.Get(moduleRegistrationHeader))
 	if !ok {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
@@ -297,12 +297,13 @@ type moduleRegistrationClaims struct {
 }
 
 // verifyModuleRegistration parses and validates a module registration token with
-// the same alg-locked Ed25519 discipline as an access token (issuer + expiry +
-// this module-registration audience). It returns the verified claims. It fails
-// closed: a nil sidecar, an unset signing key, an empty/bad token, a wrong or
-// absent audience, or an expired token all yield ok=false.
-func (s *Sidecar) verifyModuleRegistration(tokenString string) (*moduleRegistrationClaims, bool) {
-	if s == nil || s.publicKey == nil || tokenString == "" {
+// the same alg-locked Ed25519 discipline as an access token — same published key
+// set selected by the token's kid, plus issuer, expiry, and this
+// module-registration audience. It returns the verified claims. It fails closed:
+// a nil sidecar, an unreachable or unrecognised key, an empty/bad token, a wrong
+// or absent audience, or an expired token all yield ok=false.
+func (s *Sidecar) verifyModuleRegistration(ctx context.Context, tokenString string) (*moduleRegistrationClaims, bool) {
+	if s == nil || s.keys == nil || tokenString == "" {
 		return nil, false
 	}
 	claims := &moduleRegistrationClaims{}
@@ -317,7 +318,8 @@ func (s *Sidecar) verifyModuleRegistration(tokenString string) (*moduleRegistrat
 		if t.Method.Alg() != "EdDSA" {
 			return nil, fmt.Errorf("alg forbidden: %s", t.Method.Alg())
 		}
-		return s.publicKey, nil
+		keyID, _ := t.Header["kid"].(string)
+		return s.keys.keyFor(ctx, keyID)
 	})
 	if err != nil || !token.Valid {
 		return nil, false

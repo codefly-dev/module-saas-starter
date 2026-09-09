@@ -5,8 +5,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -78,9 +76,6 @@ func runSidecarIntegrationTests(m *testing.M) int {
 	}
 	defer apiConn.Close()
 
-	// Fetch public key from backend's JWKS endpoint
-	publicKey := fetchTestPublicKey(ctx, apiConn)
-
 	internalNet := codefly.For(ctx).Service("accounts").API("rest").NetworkInstance()
 	if internalNet == nil {
 		fmt.Fprintf(os.Stderr, "backend internal gRPC endpoint not available\n")
@@ -92,7 +87,24 @@ func runSidecarIntegrationTests(m *testing.M) int {
 		return 1
 	}
 	defer internalConn.Close()
-	testSidecar = NewSidecar(internalConn, publicKey)
+
+	// Same wiring as main: verification keys are read by kid from the JWKS
+	// accounts publishes, so this exercises the real fetch/cache path rather
+	// than a single key pinned at boot. accounts may still be starting, so warm
+	// with a bounded retry.
+	accessKeySet := newAccessJWKS(fmt.Sprintf("http://%s:%d", internalNet.Hostname, internalNet.Port))
+	// Same lifetime as main: the warm loop runs for the whole process, so the
+	// suite exercises a gateway whose key set is kept current rather than one
+	// warmed once and then left to age.
+	go keepAccessKeysWarm(ctx, accessKeySet)
+	for i := 0; i < 60 && !accessKeySet.loaded(); i++ {
+		time.Sleep(500 * time.Millisecond)
+	}
+	if !accessKeySet.loaded() {
+		fmt.Fprintf(os.Stderr, "access-token JWKS never became available\n")
+		return 1
+	}
+	testSidecar = NewSidecar(internalConn, accessKeySet)
 
 	// Same wiring as main: the revoker reads the Redis revocation set accounts
 	// writes on logout. The cache service is a declared dependency, so a
@@ -116,43 +128,6 @@ func runSidecarIntegrationTests(m *testing.M) int {
 	testCtx = ctx
 
 	return m.Run()
-}
-
-func fetchTestPublicKey(ctx context.Context, conn *grpc.ClientConn) ed25519.PublicKey {
-	client := apigen.NewAuthServiceClient(conn)
-
-	// Retry — backend may still be starting
-	var resp *apigen.JWKSResponse
-	var err error
-	for i := 0; i < 30; i++ {
-		resp, err = client.GetJWKS(ctx, &emptypb.Empty{})
-		if err == nil {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: cannot fetch JWKS after retries: %v\n", err)
-		return nil
-	}
-
-	var jwks struct {
-		Keys []struct {
-			Kty string `json:"kty"`
-			Crv string `json:"crv"`
-			X   string `json:"x"`
-		} `json:"keys"`
-	}
-	if err := json.Unmarshal([]byte(resp.KeysJson), &jwks); err != nil {
-		return nil
-	}
-	for _, key := range jwks.Keys {
-		if key.Kty == "OKP" && key.Crv == "Ed25519" {
-			pub, _ := base64.RawURLEncoding.DecodeString(key.X)
-			return ed25519.PublicKey(pub)
-		}
-	}
-	return nil
 }
 
 func makeCheckRequest(headers map[string]string) *authv3.CheckRequest {

@@ -76,7 +76,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 	require.NoError(t, err)
 
 	sidecar := &Sidecar{
-		publicKey:     pub,
+		keys:          staticAccessKeys(pub),
 		issuer:        "saas-starter",
 		audience:      "saas-starter",
 		internalToken: "test-internal-token",
@@ -134,6 +134,10 @@ func signValidToken(t *testing.T, priv ed25519.PrivateKey) string {
 		SessionID:    uuid.Must(uuid.NewV7()).String(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c)
+	// accounts stamps kid on every access token it mints; so must the tokens
+	// the gateway suite runs against, or these tests only ever cover the
+	// single-key compatibility branch.
+	token.Header["kid"] = accessKeyID(priv.Public().(ed25519.PublicKey))
 	signed, err := token.SignedString(priv)
 	require.NoError(t, err)
 	return signed
@@ -473,14 +477,18 @@ func TestGateway_ReadinessRequiresEveryRoutedUpstream(t *testing.T) {
 	require.NoError(t, err)
 	unavailable.Close()
 
-	gateway := NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": unavailableURL}, nil)
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	ready := &Sidecar{keys: staticAccessKeys(pub)}
+
+	gateway := NewGateway(ready, matcher, map[string]*url.URL{"accounts": unavailableURL}, nil)
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	w := httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "accounts")
 
-	gateway = NewGateway(&Sidecar{}, matcher, map[string]*url.URL{"accounts": availableURL}, nil)
+	gateway = NewGateway(ready, matcher, map[string]*url.URL{"accounts": availableURL}, nil)
 	w = httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -563,10 +571,10 @@ func TestGateway_InvalidToken_Denied_NoUpstreamCall(t *testing.T) {
 func TestGateway_NoRoute_404(t *testing.T) {
 	pub, _, _ := ed25519.GenerateKey(rand.Reader)
 	sidecar := &Sidecar{
-		publicKey: pub,
-		issuer:    "saas-starter",
-		audience:  "saas-starter",
-		revoker:   noopRevoker{},
+		keys:     staticAccessKeys(pub),
+		issuer:   "saas-starter",
+		audience: "saas-starter",
+		revoker:  noopRevoker{},
 	}
 
 	// Empty route config — nothing is whitelisted.
@@ -622,7 +630,7 @@ func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	sidecar := &Sidecar{
-		publicKey:    pub,
+		keys:         staticAccessKeys(pub),
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
@@ -660,7 +668,7 @@ func TestGateway_LegacyConnectProcedureRewritesToV1(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	sidecar := &Sidecar{
-		publicKey:    pub,
+		keys:         staticAccessKeys(pub),
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",

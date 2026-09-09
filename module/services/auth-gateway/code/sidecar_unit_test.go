@@ -28,7 +28,7 @@ func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	return &Sidecar{
-		publicKey:    pub,
+		keys:         staticAccessKeys(pub),
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
@@ -36,10 +36,14 @@ func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
 	}, priv
 }
 
-// signClaims produces an EdDSA-signed JWT with the given claims.
+// signClaims produces an EdDSA-signed JWT with the given claims, stamped with
+// the same kid accounts derives from the signing key. Every token accounts
+// mints carries one, so the default token shape under test must too — a
+// kid-less token exercises only the single-key compatibility branch.
 func signClaims(t *testing.T, priv ed25519.PrivateKey, c accessClaims) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c)
+	token.Header["kid"] = accessKeyID(priv.Public().(ed25519.PublicKey))
 	signed, err := token.SignedString(priv)
 	require.NoError(t, err)
 	return signed
@@ -416,12 +420,16 @@ func TestUnit_MalformedJWT_Denied(t *testing.T) {
 }
 
 func TestUnit_NoKey_Denied(t *testing.T) {
-	// Simulates a sidecar that failed to fetch the JWKS.
-	s := &Sidecar{publicKey: nil, issuer: "saas-starter", audience: "saas-starter"}
+	// Simulates a sidecar that has not managed to fetch the JWKS. An otherwise
+	// valid token must read as an availability failure (503), not as a bad
+	// credential (401) — the caller should retry, not re-authenticate.
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	s := &Sidecar{keys: unavailableAccessKeys{}, issuer: "saas-starter", audience: "saas-starter"}
 	ctx := context.Background()
 
 	resp, err := s.Check(ctx, checkReq("/v1/users", map[string]string{
-		"authorization": "Bearer anything",
+		"authorization": "Bearer " + signClaims(t, priv, validClaims(time.Now())),
 	}))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetDeniedResponse())

@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"strconv"
@@ -71,8 +71,12 @@ type Sidecar struct {
 	apiKey apigen.APIKeyServiceClient
 	// backendConn is the internal-listener connection used for accounts RPCs
 	// that have no vendored client stub, invoked by full method name.
-	backendConn   *grpc.ClientConn
-	publicKey     ed25519.PublicKey
+	backendConn *grpc.ClientConn
+	// keys resolves the Ed25519 verification key for a presented token by its
+	// `kid`, so tokens signed by either half of an overlapping key pair verify
+	// without restarting the gateway. Nil means verification is unconfigured
+	// and every JWT is refused 503.
+	keys          accessKeys
 	issuer        string
 	audience      string
 	internalToken string
@@ -108,14 +112,14 @@ func constantTimeMatch(candidate, expected string) bool {
 	return subtle.ConstantTimeCompare([]byte(candidate), []byte(expected)) == 1
 }
 
-// NewSidecar constructs a Sidecar. publicKey is the Ed25519 key the backend
-// minter uses to sign access tokens; issuer/audience must match the backend
-// minter config.
-func NewSidecar(backendConn *grpc.ClientConn, publicKey ed25519.PublicKey) *Sidecar {
+// NewSidecar constructs a Sidecar. keys resolves the Ed25519 public keys the
+// backend minter signs access tokens with; issuer/audience must match the
+// backend minter config.
+func NewSidecar(backendConn *grpc.ClientConn, keys accessKeys) *Sidecar {
 	return &Sidecar{
 		apiKey:                apigen.NewAPIKeyServiceClient(backendConn),
 		backendConn:           backendConn,
-		publicKey:             publicKey,
+		keys:                  keys,
 		issuer:                "saas-starter",
 		audience:              "saas-starter",
 		internalToken:         workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"),
@@ -183,7 +187,8 @@ const tokenClockSkewLeeway = 60 * time.Second
 // checkJWT runs full alg-locked Ed25519 validation plus iss/aud/exp, consults
 // the revocation list, then projects the claims onto forwarded headers.
 func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*authv3.CheckResponse, error) {
-	if s.publicKey == nil {
+	if s.keys == nil {
+		recordJWTRejection(ctx, jwtRejectionKeysUnavailable)
 		return deny(503, "JWT validation not configured"), nil
 	}
 
@@ -195,13 +200,35 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*auth
 		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(tokenClockSkewLeeway),
 	)
+	// keyErr is captured rather than read back off the parse error: an
+	// unreachable key set is an availability failure that must answer 503,
+	// while everything else the parser rejects is a bad credential and must
+	// answer 401. Only this closure can tell the two apart.
+	var keyErr error
 	token, err := parser.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
 		if t.Method.Alg() != "EdDSA" {
 			return nil, fmt.Errorf("alg forbidden: %s", t.Method.Alg())
 		}
-		return s.publicKey, nil
+		keyID, _ := t.Header["kid"].(string)
+		key, err := s.keys.keyFor(ctx, keyID)
+		if err != nil {
+			keyErr = err
+			return nil, err
+		}
+		return key, nil
 	})
-	if err != nil || !token.Valid {
+	switch {
+	case errors.Is(keyErr, errNoVerificationKeys):
+		recordJWTRejection(ctx, jwtRejectionKeysUnavailable)
+		return deny(503, "JWT validation not configured"), nil
+	case errors.Is(keyErr, errUnknownKeyID):
+		recordJWTRejection(ctx, jwtRejectionUnknownKeyID)
+		return deny(401, "invalid or expired token"), nil
+	case errors.Is(keyErr, errAmbiguousKeyID):
+		recordJWTRejection(ctx, jwtRejectionAmbiguousKeyID)
+		return deny(401, "invalid or expired token"), nil
+	case err != nil || !token.Valid:
+		recordJWTRejection(ctx, jwtRejectionInvalidToken)
 		return deny(401, "invalid or expired token"), nil
 	}
 
@@ -218,10 +245,12 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*auth
 			// from the local cache, so this only bites on cache misses during
 			// a Redis outage.
 			log.Printf("revocation check failed, denying (fail-closed): %v", err)
+			recordJWTRejection(ctx, jwtRejectionRevocationUnavailable)
 			return deny(503, "revocation check unavailable"), nil
 		case err != nil:
 			log.Printf("revocation check failed, admitting (fail-open): %v", err)
 		case revoked:
+			recordJWTRejection(ctx, jwtRejectionRevoked)
 			return deny(401, "token revoked"), nil
 		}
 		// Forget AFTER the check: the check above may have (re)cached
@@ -241,10 +270,12 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*auth
 		switch {
 		case err != nil && !s.revocationFailOpen:
 			log.Printf("session revocation check failed, denying (fail-closed): %v", err)
+			recordJWTRejection(ctx, jwtRejectionRevocationUnavailable)
 			return deny(503, "revocation check unavailable"), nil
 		case err != nil:
 			log.Printf("session revocation check failed, admitting (fail-open): %v", err)
 		case revoked:
+			recordJWTRejection(ctx, jwtRejectionSessionRevoked)
 			return deny(401, "session revoked"), nil
 		}
 	}
@@ -384,4 +415,18 @@ func hdr(key, value string) *corev3.HeaderValueOption {
 	return &corev3.HeaderValueOption{
 		Header: &corev3.HeaderValue{Key: key, Value: value},
 	}
+}
+
+// hasLoadedAccessTokenKeys reports whether the sidecar has ever acquired an
+// access-token key set. The readiness probe reads it; it never fetches, so a
+// probe cannot become a way to drive JWKS traffic.
+//
+// It deliberately does not report staleness. A gateway holding a stale set
+// still verifies from it for the grace window, and past that it refuses JWTs
+// with 503 per request — but it keeps serving the routes that never carried a
+// token (the billing and email webhooks, /assets, /.well-known). Withdrawing
+// the whole listener because the key set aged would take those down too, which
+// is a larger outage than the one it reports.
+func (s *Sidecar) hasLoadedAccessTokenKeys() bool {
+	return s != nil && s.keys != nil && s.keys.loaded()
 }

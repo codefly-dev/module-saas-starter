@@ -227,18 +227,77 @@ func TestWorkContextVerifier_RefreshFailsClosedWhenUnreachable(t *testing.T) {
 	require.ErrorIs(t, verifier.Refresh(context.Background()), codefly.ErrWorkContextInvalid)
 }
 
-func TestParseWorkContextJWKS_RejectsEmptyKeySet(t *testing.T) {
-	_, err := parseWorkContextJWKS([]byte(`{"keys":[]}`))
-	require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+func TestParseJWKS_RejectsEmptyKeySet(t *testing.T) {
+	_, err := parseJWKS([]byte(`{"keys":[]}`))
+	require.Error(t, err)
 }
 
-func TestParseWorkContextJWKS_SkipsNonEd25519Keys(t *testing.T) {
+// TestWorkContextVerifier_MalformedJWKSFailsClosedAsInvalid keeps the property
+// the parse-level test used to assert directly: parseJWKS is shared with the
+// access-token path and so returns a bare error, and it is this path that must
+// still fold a publisher serving an unusable key set into the single invalid
+// sentinel rather than leaking a distinct error class.
+func TestWorkContextVerifier_MalformedJWKSFailsClosedAsInvalid(t *testing.T) {
+	_, priv := mustEd25519(t)
+	for name, document := range map[string]string{
+		"empty key set":  `{"keys":[]}`,
+		"not json":       `{"keys":`,
+		"missing key id": `{"keys":[{"kty":"OKP","crv":"Ed25519","alg":"EdDSA","x":"AAAA"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			server := jwksServer(t, document, nil)
+			verifier := newWorkContextVerifier(server.URL)
+			err := verifier.Verify(context.Background(), mintWorkContext(t, "key-1", priv, nil))
+			require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+		})
+	}
+}
+
+// TestWorkContextVerifier_UnknownKeyIDDoesNotBlockARotatedKey is the Work
+// Context half of the probe-budget regression. It matters more here than on the
+// access-token path: warmWorkContextKeys runs once at boot and never refreshes,
+// so nothing but the probe or a TTL expiry would have reopened a window that
+// one unrecognised key id had exhausted.
+func TestWorkContextVerifier_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
+	current, currentPriv := mustEd25519(t)
+	next, nextPriv := mustEd25519(t)
+
+	var document atomic.Pointer[string]
+	only := jwksDocument(map[string]ed25519.PublicKey{"key-1": current})
+	document.Store(&only)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(*document.Load()))
+	}))
+	t.Cleanup(server.Close)
+
+	verifier := newWorkContextVerifier(server.URL)
+	offset := time.Duration(0)
+	verifier.cache.now = func() time.Time { return time.Now().Add(offset) }
+	ctx := context.Background()
+	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-1", currentPriv, nil)))
+
+	// One presented capability names a key id nobody publishes.
+	_, attacker := mustEd25519(t)
+	require.ErrorIs(t, verifier.Verify(ctx, mintWorkContext(t, "rotated-away", attacker, nil)),
+		codefly.ErrWorkContextInvalid)
+
+	// The rotation lands while the cache is still fresh.
+	rotated := jwksDocument(map[string]ed25519.PublicKey{"key-1": current, "key-2": next})
+	document.Store(&rotated)
+
+	offset += jwksProbeInterval
+	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-2", nextPriv, nil)),
+		"an unrecognised key id must not deny the probe to a genuinely rotated-in key")
+}
+
+func TestParseJWKS_SkipsNonEd25519Keys(t *testing.T) {
 	pub, _ := mustEd25519(t)
 	document := fmt.Sprintf(
 		`{"keys":[{"kty":"RSA","kid":"rsa-1"},{"kty":"OKP","crv":"Ed25519","use":"sig","kid":"ed-1","x":%q}]}`,
 		base64.RawURLEncoding.EncodeToString(pub),
 	)
-	keys, err := parseWorkContextJWKS([]byte(document))
+	keys, err := parseJWKS([]byte(document))
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	require.Contains(t, keys, "ed-1")
