@@ -40,7 +40,7 @@ own implementation issues to these IDs but do not redefine their acceptance.
 
 - [ ] **FP-005 / P0 — Extract the first consumer package.** Move only one overview
   route, one dashboard widget, and their repository/controller. Current proving
-  consumer: Warden. Acceptance: independent package build plus host render tests
+  consumer: the first consuming solution. Acceptance: independent package build plus host render tests
   through public imports.
 - [x] **FP-006 / P0 — Define logical service requirements.** Alias, implemented
   protocol, safe route prefix, and backend contract compatibility are serializable,
@@ -77,7 +77,7 @@ own implementation issues to these IDs but do not redefine their acceptance.
 
 - [ ] **FP-011 / P0 — Define package ownership.** CODEOWNERS/maintainers for each
   public package and first-party consumer. Starter packages are protected and
-  Warden ownership is defined; the Warden repository CODEOWNERS entry remains
+  consumer ownership is defined; the consumer repository CODEOWNERS entry remains
   consumer-side acceptance under FP-005/FP-010.
 - [x] **FP-012 / P0 — Split serializable metadata from React contributions.**
   Contract v2 is React-free and JSON-safe; the React package binds every

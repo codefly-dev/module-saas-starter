@@ -6,12 +6,12 @@ package — downstream workspaces **compose** it, they never fork it.
 
 ## Functional contract
 
-The organization handbook carries this module's functional page,
+The organization's umbrella docs repository carries this module's functional page,
 `modules/saas-starter.md`: the capabilities in user-facing terms, and the
-`HOST-*` user stories that define what "working" means. **The handbook owns the
+`HOST-*` user stories that define what "working" means. **That repository owns the
 *what*; this README owns the *how*.**
 
-Neither side is free to drift from the other. The handbook renders its
+Neither side is free to drift from the other. It renders its
 Interface block from this repository's own generated catalog
 (`module/services/accounts/generated/service-catalog.json`) at the release a
 workspace has pinned. Each story on the page is named by an acceptance test

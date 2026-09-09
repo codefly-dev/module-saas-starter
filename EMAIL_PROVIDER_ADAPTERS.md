@@ -10,7 +10,7 @@
 ## The question
 
 Production email is **Gmail-based** (domain-wide delegation, as in
-`obin-platform`). The saas-starter ships **Resend only**. We want a clean seam
+a consuming platform). The saas-starter ships **Resend only**. We want a clean seam
 so the transport is swappable — Gmail API, Resend, SMTP — without touching
 triggers, templates, dedup, or authz, and we want each adapter to *declare what
 it supports* rather than forcing a lowest-common-denominator interface.
@@ -160,7 +160,7 @@ genuine (small) duplicate-email risk confined to the crash-after-send window.
 **Options, in order of preference:**
 
 - **(A) Accept it, document it.** Transactional email double-send on a rare crash
-  window is low-harm and is exactly the semantics obin-platform already lives
+  window is low-harm and is exactly the semantics a consuming platform already lives
   with in production. Record `IdempotencyKeys: false` in the capabilities so the
   behaviour is explicit and discoverable rather than a silent surprise. This is
   the recommended default.
@@ -225,7 +225,7 @@ the invariant the design must preserve, and the wrapper/registry approach does.
 
 ### 8. Gmail (DWD) adapter sketch
 
-Mirrors obin-platform's impersonation auth: a service account with domain-wide
+Mirrors a consuming platform's impersonation auth: a service account with domain-wide
 delegation mints a short-lived token for `subject=<mailbox>`, scope
 `https://www.googleapis.com/auth/gmail.send`, and calls `users().messages().send`
 with an RFC 2822 MIME message built from the same `*Message`.
@@ -277,7 +277,7 @@ the `Message` is silently ignored — declared truthfully by
 - **Gmail**: the sender **service-account JSON** (Vault, like the Ed25519
   signing key at `work.go:1246`) + the **impersonated mailbox** (`GMAIL_SUBJECT`
   or config) + the workspace-side DWD grant (Terraform, mirroring
-  obin-platform's `iam.tf`; infra, not code in this repo).
+  the consuming platform's `iam.tf`; infra, not code in this repo).
 
 Each factory validates its own secrets and fails closed — no partial-config
 silent downgrade, matching the existing `configuredEmailSender` posture.

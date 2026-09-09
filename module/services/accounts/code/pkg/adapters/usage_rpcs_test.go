@@ -20,7 +20,7 @@ func TestConsumeUsageRequestValidationBoundsMeterMetadata(t *testing.T) {
 		Meter:          "api_calls_monthly",
 		Quantity:       1,
 		IdempotencyKey: "request-1",
-		Dimensions:     map[string]string{"source.service": "warden"},
+		Dimensions:     map[string]string{"source.service": "acme"},
 	}
 	require.NoError(t, Validate(valid))
 

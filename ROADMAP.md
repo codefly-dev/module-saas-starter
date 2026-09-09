@@ -12,8 +12,8 @@ the design, sequencing, implementation rules, and acceptance criteria.
 
 ## Outcome
 
-Build a secure, reusable SaaS kernel that Codefly can compose into Warden,
-Codefly itself, Mind, and future products. The completed starter must provide:
+Build a secure, reusable SaaS kernel that Codefly can compose into its own
+products, consuming solutions, and future products. The completed starter must provide:
 
 - Secure identity, sessions, MFA, users, organizations, teams, and permissions.
 - Notifications, email, API keys, audit, billing, subscriptions, and entitlements.
@@ -22,7 +22,7 @@ Codefly itself, Mind, and future products. The completed starter must provide:
 - An Envoy/Istio gateway that authenticates, rate-limits, routes, and sanitizes
   headers from a generated route and policy catalog.
 - A modular frontend with a typed compile-time plugin path and a controlled
-  runtime plugin path for Warden.
+  runtime plugin path for a consuming solution.
 - Codefly-generated clients, servers, policies, routes, networking, plugin
   registration, documentation, and contract tests.
 - Durable inbox/outbox workers for every external or asynchronous side effect.
@@ -109,7 +109,7 @@ reference documentation
 P0 safety
   -> P1 contract compiler and protocol convergence
       -> P2 identity, data, and worker durability
-          -> P3 plugin platform and Mind capabilities
+          -> P3 plugin platform and consuming-host capabilities
               -> P4 product depth and operational maturity
 ```
 
@@ -628,13 +628,14 @@ Acceptance criteria:
   Task owner or tenant.
 - Revoked membership, revoked Actor, changed role/scope, stale revision, foreign
   tenant, wrong audience, expiry, and replay-policy violations fail closed.
-- A real product consumes the capability through released Codefly/Warden SDKs
+- A real product consumes the capability through released Codefly SDKs
   without importing Accounts internals or scanning Codefly carriers.
 
-## Phase 3: plugin platform and Mind delegation
+## Phase 3: plugin platform and consuming-host delegation
 
-Exit gate: compile-time plugins are the default extension mechanism, Warden can
-load trusted runtime plugins through signed manifests, and Mind uses durable,
+Exit gate: compile-time plugins are the default extension mechanism, a consuming
+solution can load trusted runtime plugins through signed manifests, and a
+consuming host uses durable,
 audience-bound capabilities rather than broad user tokens.
 
 ### P3.1 One plugin contract
@@ -660,7 +661,7 @@ Codefly endpoints/networking, configuration UIs, compatibility checks, and docs.
   generation time.
 - Wire the active admin shell exclusively from the generated registry.
 
-### P3.3 Warden runtime plugins
+### P3.3 Consuming-solution runtime plugins
 
 - Load only from a controlled same-origin registry.
 - Verify signed manifests and pinned artifact hashes before activation.
@@ -672,7 +673,7 @@ Codefly endpoints/networking, configuration UIs, compatibility checks, and docs.
 
 Reference: <https://nextjs.org/docs/app/guides/lazy-loading>.
 
-### P3.4 Mind workload identity and capabilities
+### P3.4 Consuming-host workload identity and capabilities
 
 - Authenticate workloads with SPIFFE/SPIRE or an equivalent short-lived workload
   identity, not a shared cluster token.

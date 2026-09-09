@@ -10,10 +10,9 @@ It spans the whole plugin — backend and frontend — so a registry
 gate, and verify. Contract v2 (`P3-PLUGIN-001`) modeled only the frontend; this
 manifest is the superset that contains it.
 
-## Why one manifest, aligned with lodestar
+## Why one manifest, aligned with the consuming platform
 
-obin's v2 platform models the same facts as `SolutionSpec` (lodestar
-`docs/design/solution-anatomy.md`, obin-ai/lodestar#13, #15): identity,
+A consuming v2 platform models the same facts as its `SolutionSpec`: identity,
 `services`, `api` exposes/consumes, `events`, `ui` extensions, `needs`,
 `permissions`, `lifecycle`. Two manifests describing the same plugin would drift
 the moment either side adds a field. Rather than fork, the starter manifest is a
@@ -77,7 +76,7 @@ separate concern (`P3-PLUGIN-005`) and is not performed here.
 | `egress` | `extensions['x-codefly'].egress` |
 | `integrity` | `extensions['x-codefly'].integrity` |
 
-The six starter-only sections are the deliberate convergence points: obin can
+The six starter-only sections are the deliberate convergence points: a consumer can
 adopt any of them into `SolutionSpec` proper, at which point the projection
 moves that section from `extensions` to a first-class field with no change to
 `plugin.codefly.yaml` authors.

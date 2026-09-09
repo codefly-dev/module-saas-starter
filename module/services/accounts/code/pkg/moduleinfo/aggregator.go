@@ -4,7 +4,7 @@
 // In codefly's architecture: a module is a collection of services;
 // each service owns its own proto and exposes its own introspection.
 // To answer "what can the saas-starter module do?", a consumer
-// (CLI / gateway / Mind) walks every service in module.codefly.yaml
+// (CLI / gateway / an aggregating host) walks every service in module.codefly.yaml
 // and merges each service's GetServiceInfo response.
 //
 // This package is the glue: takes a list of service-info URLs,
@@ -96,7 +96,7 @@ type ModuleView struct {
 	Services []ServiceCapabilities `json:"services"`
 	// Aggregate is the cross-service flattened view: every RPC,
 	// permission, RLS table, scope across the module. Useful for
-	// "show me everything" tools (Mind, security audits).
+	// "show me everything" tools (aggregating hosts, security audits).
 	Aggregate ServiceCapabilities `json:"aggregate"`
 }
 

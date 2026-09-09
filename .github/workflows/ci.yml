@@ -35,6 +35,8 @@ jobs:
         run: node --test module/tools/migration-pairing-gate.test.mjs
       - name: Test the generated-pins gate
         run: node --test module/tools/generated-pins-gate.test.mjs
+      - name: Test the naming gate
+        run: node --test module/tools/naming-gate.test.mjs
       - name: Verify the shipped manifest matches the canonical tree
         run: node module/tools/base-integrity.mjs verify
       - name: Enforce tenant RLS coverage in store migrations
@@ -46,6 +48,12 @@ jobs:
       # opaque byte diff that blocks the gate on every open PR.
       - name: Enforce pinned plugin versions and shape on checked-in generated Go
         run: node module/tools/generated-pins-gate.mjs check
+      # This repository is public and sits BELOW its consumers in the dependency graph, so a
+      # real consumer, customer or product name in the tree is a leak and an inverted
+      # dependency at once. AGENTS.md has forbidden it since day one; nothing enforced it,
+      # and ~380 violating lines accumulated across 68 files before this gate existed.
+      - name: Enforce generic placeholder names across the tree
+        run: node module/tools/naming-gate.mjs check
 
   authz-coverage:
     name: Authorization coverage
@@ -310,7 +318,7 @@ jobs:
         env:
           # First-party modules never verify against the public checksum DB —
           # sum.golang.org 500s/404s on fresh or private codefly-dev tags.
-          # Same setting Mind's CI uses (scripts/ci-fetch-codefly.sh).
+          # Same setting a consuming product's CI uses (scripts/ci-fetch-codefly.sh).
           GOPRIVATE: github.com/codefly-dev/*
         run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
       - name: Resolve affected services
@@ -783,7 +791,7 @@ jobs:
       attestations: write
     env:
       # Token that may publish `@codefly-dev`-scoped packages to the codefly-dev org
-      # registry, provisioned by infra-base#604. Exported to every npm step: the
+      # registry, provisioned by the platform infrastructure repository. Exported to every npm step: the
       # scope→GitHub-Packages mapping is job-wide, so any `@codefly/*` the install
       # resolves from the registry (not just the publish) authenticates with it.
       NODE_AUTH_TOKEN: ${{ secrets.CODEFLY_PACKAGES_TOKEN }}
@@ -791,7 +799,7 @@ jobs:
       - name: Require the publish token
         run: |
           if [[ -z "${NODE_AUTH_TOKEN}" ]]; then
-            echo "CODEFLY_PACKAGES_TOKEN is required to publish the kit (infra-base#604)" >&2
+            echo "CODEFLY_PACKAGES_TOKEN is required to publish the kit" >&2
             exit 1
           fi
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

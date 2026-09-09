@@ -28,8 +28,8 @@ func TestLoadKeyFromVault_RejectsCleartextNonLoopback(t *testing.T) {
 		"http://10.0.0.5:8200",
 		"http://vault.example.com",
 		"http://vault.svc.example.com:8200",
-		"http://vault.lodestar.svc:8200",
-		"http://vault.lodestar.svc.cluster.local:8200",
+		"http://vault.example.svc:8200",
+		"http://vault.example.svc.cluster.local:8200",
 	} {
 		_, err := ed25519minter.LoadKeyFromVault(context.Background(), ed25519minter.VaultKeyLoaderConfig{
 			Address: addr,
@@ -54,8 +54,8 @@ func (errRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 // ".svc" name, because the opt-in — not the address — is what grants it.
 func TestLoadKeyFromVault_AllowsInsecureHTTPWhenOptedIn(t *testing.T) {
 	for _, addr := range []string{
-		"http://vault.lodestar.svc:8200",
-		"http://vault.lodestar.svc.cluster.local:8200",
+		"http://vault.example.svc:8200",
+		"http://vault.example.svc.cluster.local:8200",
 		"http://vault.internal:8200",
 	} {
 		_, err := ed25519minter.LoadKeyFromVault(context.Background(), ed25519minter.VaultKeyLoaderConfig{

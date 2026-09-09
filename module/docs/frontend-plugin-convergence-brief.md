@@ -4,7 +4,7 @@ Date: 2026-07-15
 Authority: canonical SaaS starter frontend-plugin direction
 
 This repository is the source of truth for the generic host and public SDK.
-Product repositories such as Warden, Mind, or Codefly-owned applications are
+Product repositories — consuming solutions and Codefly-owned applications — are
 consumers and proving grounds; they do not define private exceptions to this
 contract.
 

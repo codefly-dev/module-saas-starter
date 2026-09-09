@@ -4,8 +4,8 @@ Verified findings from the deep security review of this module, tracked by the
 hardening epic (#215). Each finding lists its **location** (file + symbol),
 **exploit** (how it is reached and what it yields), **fix** (the remediation),
 and **status**. The reconciliation plan, delivery model (app-layer vs. Istio
-mesh), and layered test strategy live in
-[`SECURITY_HARDENING_PLAN.md`](./SECURITY_HARDENING_PLAN.md).
+mesh), and layered test strategy are maintained by the consuming platform,
+alongside its own hardening roadmap, and are not tracked in this module.
 
 > **Locations cite the file and the symbol** (function/var), which are stable,
 > with the line number as of the review pass in parentheses. Prefer the symbol
@@ -76,7 +76,7 @@ mesh), and layered test strategy live in
 - **Proof:** login → protected RPC (200) → logout → immediately reuse the old
   access token → **must 401** (fails today). See also the `IsRevoked`
   fail-open note under LOW.
-- **Status:** Open — #202. Test layer: [Plan Part C Layer 4](./SECURITY_HARDENING_PLAN.md).
+- **Status:** Open — #202. Test layer: Plan Part C Layer 4 of the consuming platform's hardening plan.
 
 ### H2 — Internal authority gRPC is co-hosted on the public HTTP port
 
@@ -144,7 +144,7 @@ mesh), and layered test strategy live in
   fails (no ephemeral fallback); restrict the ephemeral path to an explicit
   dev/fixture mode; prefer KMS / Vault Transit so the private key never sits in
   process memory.
-- **Status:** Open — #205. See [Plan Part A](./SECURITY_HARDENING_PLAN.md).
+- **Status:** Open — #205. See Plan Part A of the consuming platform's hardening plan.
 
 ### M2 — Bootstrap `super_admin` grant does not require a verified email
 
@@ -192,7 +192,7 @@ mesh), and layered test strategy live in
 - **Fix:** collapse credential/identity-resolution failures at the
   `Authenticate` boundary to a single generic error + code (`Unauthenticated`,
   "invalid credentials"); keep the detailed sentinel only in logs/audit.
-- **Status:** Open — #208. Test layer: [Plan Part C Layer 1](./SECURITY_HARDENING_PLAN.md).
+- **Status:** Open — #208. Test layer: Plan Part C Layer 1 of the consuming platform's hardening plan.
 
 ### M5 — Sidecar↔accounts control channel not mTLS — **closed**
 
@@ -231,7 +231,7 @@ Tracked historically as #209 (closed).
   marketing (`X-Frame-Options: DENY` / CSP `frame-ancestors 'none'`,
   `Referrer-Policy`, `nosniff`, COOP) with a CSP whose `script-src` / `connect-src`
   allowlist the registered solution-manifest origins.
-- **Status:** Open — #210. Test layer: [Plan Part C Layer 4](./SECURITY_HARDENING_PLAN.md).
+- **Status:** Open — #210. Test layer: Plan Part C Layer 4 of the consuming platform's hardening plan.
 
 ### M8 — Anonymous endpoints have no app-layer rate limit; abuse is opt-in
 
@@ -255,7 +255,7 @@ Tracked historically as #209 (closed).
   default-on or emit a loud boot warning; add `abuseVerifier.Verify` to
   `SendMagicLink`; switch the limiter to atomic `INCR`+`EXPIRE`. The
   ingress-side per-IP budget is delivered as Istio ingress rate-limiting (#211).
-- **Status:** Open — #211. Test layer: [Plan Part C Layer 6](./SECURITY_HARDENING_PLAN.md).
+- **Status:** Open — #211. Test layer: Plan Part C Layer 6 of the consuming platform's hardening plan.
 
 ### M9 — Platform-admin handlers gate only in the business layer
 
@@ -275,7 +275,7 @@ Tracked historically as #209 (closed).
 - **Fix:** add an explicit `requirePlatformRole` in each of the 14 handlers
   (defense-in-depth); reorder `ImpersonateUser` so the role check precedes
   `requireMFA`. This is the first customer of the RBAC-coverage CI gate (#204).
-- **Status:** Open — #212. Test layer: [Plan Part C Layer 2 / Layer 5](./SECURITY_HARDENING_PLAN.md).
+- **Status:** Open — #212. Test layer: Plan Part C Layer 2 / Layer 5 of the consuming platform's hardening plan.
 
 ---
 
@@ -323,6 +323,6 @@ defense-in-depth rather than replacing them:
 - **Header-lockstep invariant** — the untrusted-strip set is a proven superset
   of the stamped set (M6 test), so nothing the sidecar stamps can be spoofed in.
 
-See [`SECURITY_HARDENING_PLAN.md`](./SECURITY_HARDENING_PLAN.md) for how these
-combine with the adopted platform strengths (short-TTL + `jti`, coverage-as-CI,
-reach/identity separation).
+How these combine with the adopted platform strengths (short-TTL + `jti`,
+coverage-as-CI, reach/identity separation) is recorded in the consuming
+platform's hardening plan, not here.

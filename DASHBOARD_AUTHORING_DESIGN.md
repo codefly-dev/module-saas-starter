@@ -361,10 +361,11 @@ is the **execution half** of the object-authz in #367.
 ### 4.3 The chat is not here — convergence, not construction
 
 The "author by conversation" goal is a **composition** concern, not a host one.
-The NL→spec chat already exists as a **self-contained prototype** in
-`obin-ai/module-robin` (epic #16, complete — its own spec + an in-memory
-`memdashboard` store). The host does **not** host chat/AG-UI/NL; it exposes an
+The NL→spec chat already exists as a **self-contained prototype** in a
+separate agent-runtime module owned by a consuming organization (its own spec +
+an in-memory `memdashboard` store). The host does **not** host chat/AG-UI/NL; it exposes an
 **external-driver channel** (#368) that a composing module drives. The end-to-end
-roadmap — converging robin's chat onto *this* host capability and retiring its
-private store — lives in **lodestar** (obin-ai), not this repo. This module names
-nothing about chat or robin; dependency direction stays obin→codefly.
+roadmap — converging that agent's chat onto *this* host capability and retiring
+its private store — lives in the consumer's own design repository, not this repo.
+This module names nothing about chat or that agent runtime; dependency direction
+stays consumer→codefly.

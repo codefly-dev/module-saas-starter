@@ -133,8 +133,8 @@ func TestValidateFixtureRejectsUnsafeOrganizationSlugs(t *testing.T) {
 			{Name: "!!!", Owner: "owner@example.com"},
 		},
 		"collision": {
-			{Name: "Mind AI", Owner: "owner@example.com"},
-			{Name: "mind-ai", Owner: "owner@example.com"},
+			{Name: "Example AI", Owner: "owner@example.com"},
+			{Name: "example-ai", Owner: "owner@example.com"},
 		},
 	}
 	for name, organizations := range tests {

@@ -6,7 +6,7 @@ is validated through the plugin contract's `resolveFrontendAppearance` (the
 single injection gate) and a branding asset allowlist before it renders.
 
 These files are exactly the payloads that a deployment mounts as a ConfigMap
-(one per environment/tenant) in `obin-fleet`. Here they live as fixtures so the
+(one per environment/tenant) in the consumer's fleet control plane. Here they live as fixtures so the
 capability is visible and testable in-repo.
 
 | | **Helios** | **Nocturne** |

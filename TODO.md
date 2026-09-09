@@ -559,7 +559,7 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   before this closes: reconciliation jobs/metrics and customer billing-provider
   reporting.
 
-## P3 — plugin platform and Mind
+## P3 — plugin platform and delegated capabilities
 
 ### Unified plugin contract
 
@@ -573,9 +573,9 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
   services, api exposes/consumes, events, ui, needs, permissions, entitlements,
   config, migrations, egress, lifecycle, integrity — as a canonical JSON Schema
   plus a pure JSON-safe validator that reuses the frontend contract for the `ui`
-  block. `toSolutionSpec` projects the shared facts onto obin's lodestar
-  `SolutionSpec` and carries starter-only sections through `extensions`, so the
-  two manifests converge instead of forking. See
+  block. `toSolutionSpec` projects the shared facts onto the consuming
+  platform's `SolutionSpec` and carries starter-only sections through
+  `extensions`, so the two manifests converge instead of forking. See
   `module/docs/plugin-manifest-schema.md`.
 - [ ] `P3-PLUGIN-003` Include API compatibility, routes, nav, permissions, entitlements, config, migrations, events, and egress.
 - [ ] `P3-PLUGIN-004` Generate frontend/backend/gateway/networking registration.
@@ -586,32 +586,32 @@ Keep IDs stable so commits, PRs, tests, and release notes can reference them.
 
 - [ ] `P3-PLUGIN-007` Complete typed compile-time lazy routes and error boundaries.
 - [ ] `P3-PLUGIN-008` Add plugin-scoped settings, query keys, flags, and entitlements.
-- [ ] `P3-RUNTIME-001` Build the controlled same-origin Warden plugin registry.
+- [ ] `P3-RUNTIME-001` Build the controlled same-origin plugin registry for consuming solutions.
 - [ ] `P3-RUNTIME-002` Verify signed manifests and pinned artifact hashes.
 - [ ] `P3-RUNTIME-003` Add host/plugin API and backend/frontend compatibility handshake.
 - [ ] `P3-RUNTIME-004` Enforce capability ceilings, CSP/egress, rollout, rollback, and kill switch.
 - [ ] `P3-RUNTIME-005` Provide iframe/worker/remote-app isolation for untrusted extensions.
 
-### Mind capabilities and approvals
+### Delegated capabilities and approvals
 
-- [ ] `P3-MIND-001` Add short-lived workload identity for agents and services.
-- [x] `P3-MIND-002` Model agent principals separately from users/API keys.
+- [ ] `P3-CAP-001` Add short-lived workload identity for agents and services.
+- [x] `P3-CAP-002` Model agent principals separately from users/API keys.
   The unified Principal directory has explicit HUMAN/SERVICE/AGENT kinds, and
   direct RBAC assignments now target Principals rather than a user-only
   subject. The Codefly fixture proves a Claude Code Agent with independent
   `evidence:append` authority.
-- [-] `P3-MIND-003` Issue audience/subject/org/action/resource-bound capabilities.
+- [-] `P3-CAP-003` Issue audience/subject/org/action/resource-bound capabilities.
   Work Context issuance binds audience, owner, current Actor, organization,
   Task, Session, action/resource scopes, attribution, expiry, replay policy, and
   authorization revision. Automatic workload authentication and propagation
   across all agent/tool boundaries remain.
-- [-] `P3-MIND-004` Make capabilities short-lived, one-use, revocable, and replica-safe.
+- [-] `P3-CAP-004` Make capabilities short-lived, one-use, revocable, and replica-safe.
   TTL, monotonic attenuation, current authorization revisions, idempotent versus
   single-use policy, and durable consumer replay semantics exist. The generic
   single-use replay store and workload revocation distribution remain.
-- [ ] `P3-MIND-005` Persist risk inputs, policy version/hash, approvals, and redemption.
-- [ ] `P3-MIND-006` Require approver roles and recent MFA for high-risk actions.
-- [ ] `P3-MIND-007` Add immutable audit, notification, timeout, cancel, and replay safety.
+- [ ] `P3-CAP-005` Persist risk inputs, policy version/hash, approvals, and redemption.
+- [ ] `P3-CAP-006` Require approver roles and recent MFA for high-risk actions.
+- [ ] `P3-CAP-007` Add immutable audit, notification, timeout, cancel, and replay safety.
 
 ## P4 — reusable SaaS product depth
 

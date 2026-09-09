@@ -196,6 +196,11 @@ SDK. See the solution repo for its own instructions.
   [RELEASE_GATES.md § Repository-specific
   gates](./RELEASE_GATES.md#repository-specific-gates), which
   `release-gates.test.mjs` holds to the enforced set.
+- Inside the `base-integrity` job, four more checks run as steps rather than as
+  gates of their own: tenant RLS coverage, migration up/down pairing, pinned
+  plugin versions on generated Go, and generic placeholder names. Run the last
+  locally with `node module/tools/naming-gate.mjs check`; it enforces
+  §"Naming and confidentiality" above across every file's contents and path.
 - Go checks: this repository holds **six independent Go modules** — the root
   module, `module/tools`, and one per Go service (`accounts`, `auth-gateway`,
   `store`, `telemetry`) — and there is no `go.work`, so `go test ./...` covers
@@ -287,8 +292,7 @@ frontend ([FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md),
 [module/GATEWAY_ROUTES.md](./module/GATEWAY_ROUTES.md)), email
 ([EMAIL_PROVIDER_ADAPTERS.md](./EMAIL_PROVIDER_ADAPTERS.md)), supply chain
 ([SUPPLY_CHAIN_SECURITY.md](./SUPPLY_CHAIN_SECURITY.md)), security review and
-hardening ([SECURITY_REVIEW.md](./SECURITY_REVIEW.md),
-[SECURITY_HARDENING_PLAN.md](./SECURITY_HARDENING_PLAN.md)), and production
+hardening ([SECURITY_REVIEW.md](./SECURITY_REVIEW.md)), and production
 readiness ([PRODUCTION_READY.md](./PRODUCTION_READY.md)), and a cross-domain
 platform-functionality reference mapping an external multi-tenant-platform audit
 to what this starter ships, partially ships, or lacks

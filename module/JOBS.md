@@ -6,7 +6,7 @@ and the Stripe, outbound-webhook, and email workload migrations ready.
 are tracked as `P2-JOB-008` and `P2-JOB-009` in the root
 [TODO](../TODO.md).
 
-This contract is product-neutral. Warden, Codefly, Mind, and application
+This contract is product-neutral. Consuming solutions, Codefly, and application
 plugins use the same envelope and lifecycle; they identify their own queue,
 topic, source, payload schema, and handler without changing the platform state
 machine.
@@ -183,7 +183,7 @@ inbox enqueue, and rollback with the surrounding business transaction.
 
 `P2-JOB-002` is implemented behind the product-neutral `jobs.Store` interface.
 Its inputs are the Codefly-generated `saas.jobs.v1` commands; it does not add an
-Accounts RPC, HTTP route, product handler, or Warden-specific dependency.
+Accounts RPC, HTTP route, product handler, or consumer-specific dependency.
 
 - A claim is scoped to one queue and one bounded batch. PostgreSQL selects ready
   work with `FOR UPDATE SKIP LOCKED`, transitions each row to `processing`,

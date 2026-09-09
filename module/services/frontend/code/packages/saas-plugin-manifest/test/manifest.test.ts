@@ -12,10 +12,10 @@ function validManifest(): PluginManifest {
 		apiVersion: "plugin.codefly.dev/v1",
 		kind: "Plugin",
 		metadata: {
-			name: "warden-guardrails",
+			name: "acme-guardrails",
 			version: "1.4.0",
-			displayName: "Warden Guardrails",
-			description: "Policy guardrails for Warden.",
+			displayName: "Acme Guardrails",
+			description: "Policy guardrails for Acme.",
 			publisher: "codefly.dev",
 		},
 		services: [{ name: "guardrails", endpoints: ["connect", "rest"] }],
@@ -95,7 +95,7 @@ describe("plugin manifest validation", () => {
 
 	it("preserves literal values through definePluginManifest", () => {
 		const manifest = definePluginManifest(validManifest());
-		expect(manifest.metadata.name).toBe("warden-guardrails");
+		expect(manifest.metadata.name).toBe("acme-guardrails");
 		expect(manifest.permissions?.[0]?.id).toBe("guardrail:read");
 	});
 
@@ -122,7 +122,7 @@ describe("plugin manifest validation", () => {
 
 	it("rejects an invalid identity", () => {
 		expectRejected((manifest) => {
-			manifest.metadata.name = "Warden Guardrails";
+			manifest.metadata.name = "Acme Guardrails";
 		});
 		expectRejected((manifest) => {
 			manifest.metadata.version = "1.4";

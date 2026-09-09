@@ -91,9 +91,9 @@ describe("frontend convergence boundaries", () => {
 		const violations = sourceFiles(join(codeDir, "src")).flatMap((path) => {
 			const source = readFileSync(path, "utf8");
 			return [
-				"Warden",
-				"NEXT_PUBLIC_WARDEN",
-				"/admin/warden",
+				"Acme",
+				"NEXT_PUBLIC_ACME",
+				"/admin/acme",
 				"/api/v1/plugins/console",
 			]
 				.filter((term) => source.includes(term))
@@ -422,7 +422,7 @@ process.stdout.write(JSON.stringify({
 		const nextConfig = readFileSync(join(codeDir, "next.config.mjs"), "utf8");
 		expect(nextConfig).toContain("workspacePackageNames");
 		expect(nextConfig).toContain('new URL("./packages"');
-		expect(nextConfig).not.toContain("@warden/");
+		expect(nextConfig).not.toContain("@acme/");
 
 		const dockerfile = readFileSync(
 			join(codeDir, "../builder/Dockerfile"),

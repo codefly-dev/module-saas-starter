@@ -153,8 +153,8 @@ postgres_migration_sources:
     name: eventlog
     path: ../../../platform/services/eventlog/migrations
   - service: store
-    name: warden
-    path: ../../../platform/services/warden/migrations
+    name: acme
+    path: ../../../platform/services/acme/migrations
 `)
 
 	artifacts, err := cataloggen.BuildDeploymentArtifactsWithApplicationBindings(
@@ -168,7 +168,7 @@ postgres_migration_sources:
 	store := string(artifacts.ServiceManifests["store"])
 	require.Contains(t, store, "migration-sources:")
 	require.Contains(t, store, "name: eventlog")
-	require.Contains(t, store, "name: warden")
+	require.Contains(t, store, "name: acme")
 	require.Contains(t, store, "../../../platform/services/eventlog/migrations")
 	require.NotContains(t, string(artifacts.ServiceManifests["accounts"]), "migration-sources:")
 

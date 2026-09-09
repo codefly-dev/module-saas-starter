@@ -191,7 +191,7 @@ rate class, whether it emits audit — is not prose: it is the typed
 `buf.validate` constraints on the request. Restating those in a description
 would be a second source of truth that drifts.
 
-The functional page itself lives in the handbook (`modules/saas-starter.md`)
+The functional page itself lives in the umbrella docs repository (`modules/saas-starter.md`)
 and owns the *what*; the user stories on it are traced to acceptance tests here
 by `tools/story-trace-gate.mjs`. The trace is symmetric — a story with no test
 and a test naming an absent story both fail — and a test that declares a story
