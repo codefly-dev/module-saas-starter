@@ -274,6 +274,17 @@ Three notions of "event" now have one stated relationship:
   `causation_id`/`correlation_id`, but the audit spine is never used as a
   delivery channel.
 
+The two systems now share one naming law. Audit event types are
+`<namespace>.<aggregate>.<event>` exactly as the `type` attribute above is, and
+this module mints only `saas.*` — `saas.auth.login`, `saas.user.created` (issue
+#520, amending [ADR 0003](./docs/adr/0003-typed-audit-event-registry.md)). The
+constraint is enforced in the database, not just by convention:
+`audit_events.event_type` is a foreign key into the `audit_event_types` registry,
+and a CHECK requires at least three segments, so a bare `<aggregate>.<event>`
+cannot be written. Namespace ownership means the same thing on both sides — a
+module publishes only under its own namespace, so two modules composed into one
+workspace can never mint the same identifier.
+
 ## Migration
 
 No big bang. The existing string topics are reclassified, not rewritten:

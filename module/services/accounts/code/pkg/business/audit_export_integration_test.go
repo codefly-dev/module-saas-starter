@@ -30,13 +30,13 @@ func TestExternalTeeCommitsExportJobInAuditTx(t *testing.T) {
 
 	id := business.NewIDString()
 	emitter.Emit(ctx, business.AuditEntry{
-		ID: id, ActorType: "user", EventType: "session.revoked", Resource: "test", OrgID: orgA,
+		ID: id, ActorType: "user", EventType: "saas.session.revoked", Resource: "test", OrgID: orgA,
 	})
 
 	now := time.Now().Add(time.Hour)
 	past := time.Now().Add(-time.Hour)
 	events, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
-		OrgID: orgA, EventType: "session.revoked", From: &past, To: &now, PageSize: 100,
+		OrgID: orgA, EventType: "saas.session.revoked", From: &past, To: &now, PageSize: 100,
 	})
 	require.NoError(t, err)
 	require.Len(t, events, 1, "audit row must commit")

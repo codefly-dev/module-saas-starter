@@ -26,40 +26,40 @@ func TestRLS_AuditEvents_CrossTenantBlocked(t *testing.T) {
 	// policy from fan-out behavior.
 	require.NoError(t, testStore.WithOrgTx(ctx, orgA, func(ctx context.Context) error {
 		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
-			ActorType: "user", EventType: "test.event", Resource: "test", OrgID: orgA,
+			ActorType: "user", EventType: business.EventUserUpdated, Resource: "test", OrgID: orgA,
 		})
 	}))
 	require.NoError(t, testStore.WithOrgTx(ctx, orgB, func(ctx context.Context) error {
 		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
-			ActorType: "user", EventType: "test.event", Resource: "test", OrgID: orgB,
+			ActorType: "user", EventType: business.EventUserUpdated, Resource: "test", OrgID: orgB,
 		})
 	}))
 	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
 		return testStore.InsertAuditEvent(ctx, business.AuditEntry{
-			ActorType: "system", EventType: "system.event", Resource: "system",
+			ActorType: "system", EventType: business.EventJobReplayed, Resource: "system",
 			// OrgID intentionally empty — NULL in DB
 		})
 	}))
 
-	// As A: query filtered to test.event so the org.created emitted
+	// As A: query filtered to the seeded type so the org-created event emitted
 	// by CreateOrganization (in mustUserAndOrg) doesn't show up. The
 	// filter narrows to A's seeded row.
 	now := time.Now().Add(1 * time.Hour)
 	past := time.Now().Add(-1 * time.Hour)
-	asA, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgA, EventType: "test.event", From: &past, To: &now, PageSize: 100})
+	asA, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgA, EventType: string(business.EventUserUpdated), From: &past, To: &now, PageSize: 100})
 	require.NoError(t, err)
 	require.Len(t, asA, 1)
 	require.Equal(t, orgA, asA[0].OrgID)
 
 	// As B: filter same way.
-	asB, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgB, EventType: "test.event", From: &past, To: &now, PageSize: 100})
+	asB, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgB, EventType: string(business.EventUserUpdated), From: &past, To: &now, PageSize: 100})
 	require.NoError(t, err)
 	require.Len(t, asB, 1)
 	require.Equal(t, orgB, asB[0].OrgID)
 
 	// Probe: from A's tx, query B's events via the Store directly.
 	require.NoError(t, testStore.WithOrgTx(ctx, orgA, func(ctx context.Context) error {
-		stolen, _, _, err := testStore.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgB, EventType: "test.event", From: &past, To: &now, PageSize: 100})
+		stolen, _, _, err := testStore.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgB, EventType: string(business.EventUserUpdated), From: &past, To: &now, PageSize: 100})
 		require.NoError(t, err)
 		require.Len(t, stolen, 0, "RLS must hide B's audit_events from A's tx")
 		return nil
@@ -74,7 +74,7 @@ func TestRLS_AuditEvents_CrossTenantBlocked(t *testing.T) {
 		"platform-admin scope (orgID='') must see all events including NULL-org rows")
 
 	// Un-wrapped: zero rows.
-	noWrap, _, _, err := testStore.QueryAuditLog(context.Background(), business.AuditQuery{OrgID: orgA, EventType: "test.event", From: &past, To: &now, PageSize: 100})
+	noWrap, _, _, err := testStore.QueryAuditLog(context.Background(), business.AuditQuery{OrgID: orgA, EventType: string(business.EventUserUpdated), From: &past, To: &now, PageSize: 100})
 	require.NoError(t, err)
 	require.Len(t, noWrap, 0,
 		"un-wrapped QueryAuditLog must return ZERO rows (RLS fail-closed)")
@@ -92,10 +92,10 @@ func TestRLS_AuditEvents_DurableEmitterPicksWrapper(t *testing.T) {
 	require.NoError(t, err)
 
 	emitter.Emit(ctx, business.AuditEntry{
-		ActorType: "user", EventType: "tenant.event", Resource: "test", OrgID: orgA,
+		ActorType: "user", EventType: business.EventUserUpdated, Resource: "test", OrgID: orgA,
 	})
 	emitter.Emit(ctx, business.AuditEntry{
-		ActorType: "system", EventType: "system.event", Resource: "test",
+		ActorType: "system", EventType: business.EventJobReplayed, Resource: "test",
 		// OrgID empty → NULL-org write under WithControlPlane
 	})
 
@@ -104,12 +104,12 @@ func TestRLS_AuditEvents_DurableEmitterPicksWrapper(t *testing.T) {
 	// Tenant event visible to org A.
 	now := time.Now().Add(1 * time.Hour)
 	past := time.Now().Add(-1 * time.Hour)
-	asA, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgA, EventType: "tenant.event", From: &past, To: &now, PageSize: 100})
+	asA, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{OrgID: orgA, EventType: string(business.EventUserUpdated), From: &past, To: &now, PageSize: 100})
 	require.NoError(t, err)
 	require.Len(t, asA, 1, "tenant event written via durable emitter must be visible to its org")
 
 	// System event visible only via bypass (platform-admin scope).
-	all, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{EventType: "system.event", From: &past, To: &now, PageSize: 100})
+	all, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{EventType: string(business.EventJobReplayed), From: &past, To: &now, PageSize: 100})
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(all), 1, "system event with NULL org_id must be visible under bypass")
 }

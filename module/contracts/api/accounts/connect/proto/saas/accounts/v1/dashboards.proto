@@ -116,7 +116,7 @@ service DashboardService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "dashboard.created"
+        events: "saas.dashboard.created"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -179,7 +179,7 @@ service DashboardService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "dashboard.updated"
+        events: "saas.dashboard.updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -202,7 +202,7 @@ service DashboardService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "dashboard.deleted"
+        events: "saas.dashboard.deleted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -225,7 +225,7 @@ service DashboardService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "dashboard.shared"
+        events: "saas.dashboard.shared"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

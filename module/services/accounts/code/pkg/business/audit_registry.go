@@ -58,15 +58,26 @@ type PayloadField struct {
 // back by the parity test and the query/UI facet.
 type AuditEventTypeRow struct {
 	Name       string
+	Namespace  string
 	Version    int
 	Category   string
 	Owner      string
 	Deprecated bool
 }
 
-// AuditEventDefinition is one registered event type.
+// AuditNamespace is this module's event namespace: the first segment of every
+// event type it mints. A composed workspace hosts several modules against one
+// audit spine, so the namespace — not the owning service — is what keeps two
+// modules from minting the same event_type. It matches the saas.* protobuf
+// package family and the domain-event naming law in EVENTS.md.
+const AuditNamespace = "saas"
+
+// AuditEventDefinition is one registered event type. Namespace is the collision
+// key (always the leading segment of Type); Owner names the service that emits
+// it, which is a different axis entirely.
 type AuditEventDefinition struct {
 	Type        EventType
+	Namespace   string
 	Version     int
 	Category    AuditCategory
 	Owner       string
@@ -78,7 +89,10 @@ type AuditEventDefinition struct {
 // accounts. Almost every event today carries no structured payload; the fields
 // declared here are the contract producers fill in as payloads are enriched.
 func def(t EventType, cat AuditCategory, desc string, fields ...PayloadField) AuditEventDefinition {
-	return AuditEventDefinition{Type: t, Version: 1, Category: cat, Owner: "accounts", Description: desc, Fields: fields}
+	return AuditEventDefinition{
+		Type: t, Namespace: AuditNamespace, Version: 1, Category: cat,
+		Owner: "accounts", Description: desc, Fields: fields,
+	}
 }
 
 func str(name string) PayloadField { return PayloadField{Name: name, Kind: FieldString} }
@@ -91,145 +105,145 @@ func pii(f PayloadField) PayloadField { f.PII = true; return f }
 // Registered event types. The constants are the typed vocabulary producers use;
 // grouping mirrors the categories.
 const (
-	EventUserRegistered  EventType = "user.registered"
-	EventUserCreated     EventType = "user.created"
-	EventUserUpdated     EventType = "user.updated"
-	EventUserDeleted     EventType = "user.deleted"
-	EventUserSuspended   EventType = "user.suspended"
-	EventUserUnsuspended EventType = "user.unsuspended"
-	EventUserIdentityAdd EventType = "user.identity_added"
-	EventSettingsUpdated EventType = "settings.updated"
-	EventConsentTerms    EventType = "consent.terms_accepted"
-	EventConsentPrefs    EventType = "consent.preferences_updated"
+	EventUserRegistered  EventType = "saas.user.registered"
+	EventUserCreated     EventType = "saas.user.created"
+	EventUserUpdated     EventType = "saas.user.updated"
+	EventUserDeleted     EventType = "saas.user.deleted"
+	EventUserSuspended   EventType = "saas.user.suspended"
+	EventUserUnsuspended EventType = "saas.user.unsuspended"
+	EventUserIdentityAdd EventType = "saas.user.identity_added"
+	EventSettingsUpdated EventType = "saas.settings.updated"
+	EventConsentTerms    EventType = "saas.consent.terms_accepted"
+	EventConsentPrefs    EventType = "saas.consent.preferences_updated"
 
-	EventAPIKeyCreated          EventType = "api_key.created"
-	EventAPIKeyRevoked          EventType = "api_key.revoked"
-	EventRoleCreated            EventType = "role.created"
-	EventRoleUpdated            EventType = "role.updated"
-	EventRoleDeleted            EventType = "role.deleted"
-	EventRoleAssigned           EventType = "role.assigned"
-	EventRoleRevoked            EventType = "role.revoked"
-	EventSessionRevoked         EventType = "session.revoked"
-	EventInvitationCreated      EventType = "invitation.created"
-	EventInvitationAccepted     EventType = "invitation.accepted"
-	EventInvitationRevoked      EventType = "invitation.revoked"
-	EventInvitationResent       EventType = "invitation.resent"
-	EventDelegationRequested    EventType = "delegation.requested"
-	EventDelegationApproved     EventType = "delegation.approved"
-	EventDelegationDenied       EventType = "delegation.denied"
-	EventDelegationAutoApproved EventType = "delegation.auto_approved"
-	EventApprovalAsked          EventType = "approval.asked"
-	EventApprovalApproved       EventType = "approval.approved"
-	EventApprovalDenied         EventType = "approval.denied"
-	EventApprovalTimeout        EventType = "approval.timeout"
-	EventApprovalEscalated      EventType = "approval.escalated"
-	EventApprovalCancelled      EventType = "approval.cancelled"
-	EventPrincipalCreated       EventType = "principal.created"
-	EventPrincipalRevoked       EventType = "principal.revoked"
-	EventPrincipalDisabled      EventType = "principal.disabled"
-	EventPrincipalEnabled       EventType = "principal.enabled"
+	EventAPIKeyCreated          EventType = "saas.api_key.created"
+	EventAPIKeyRevoked          EventType = "saas.api_key.revoked"
+	EventRoleCreated            EventType = "saas.role.created"
+	EventRoleUpdated            EventType = "saas.role.updated"
+	EventRoleDeleted            EventType = "saas.role.deleted"
+	EventRoleAssigned           EventType = "saas.role.assigned"
+	EventRoleRevoked            EventType = "saas.role.revoked"
+	EventSessionRevoked         EventType = "saas.session.revoked"
+	EventInvitationCreated      EventType = "saas.invitation.created"
+	EventInvitationAccepted     EventType = "saas.invitation.accepted"
+	EventInvitationRevoked      EventType = "saas.invitation.revoked"
+	EventInvitationResent       EventType = "saas.invitation.resent"
+	EventDelegationRequested    EventType = "saas.delegation.requested"
+	EventDelegationApproved     EventType = "saas.delegation.approved"
+	EventDelegationDenied       EventType = "saas.delegation.denied"
+	EventDelegationAutoApproved EventType = "saas.delegation.auto_approved"
+	EventApprovalAsked          EventType = "saas.approval.asked"
+	EventApprovalApproved       EventType = "saas.approval.approved"
+	EventApprovalDenied         EventType = "saas.approval.denied"
+	EventApprovalTimeout        EventType = "saas.approval.timeout"
+	EventApprovalEscalated      EventType = "saas.approval.escalated"
+	EventApprovalCancelled      EventType = "saas.approval.cancelled"
+	EventPrincipalCreated       EventType = "saas.principal.created"
+	EventPrincipalRevoked       EventType = "saas.principal.revoked"
+	EventPrincipalDisabled      EventType = "saas.principal.disabled"
+	EventPrincipalEnabled       EventType = "saas.principal.enabled"
 
-	EventScopeNodeRegistered EventType = "scope.node_registered"
-	EventScopeGranted        EventType = "scope.granted"
-	EventScopeRevoked        EventType = "scope.revoked"
-	EventRecordShared        EventType = "record.shared"
-	EventRecordShareRevoked  EventType = "record.share_revoked"
+	EventScopeNodeRegistered EventType = "saas.scope.node_registered"
+	EventScopeGranted        EventType = "saas.scope.granted"
+	EventScopeRevoked        EventType = "saas.scope.revoked"
+	EventRecordShared        EventType = "saas.record.shared"
+	EventRecordShareRevoked  EventType = "saas.record.share_revoked"
 
-	EventInstallationCreated              EventType = "installation.created"
-	EventInstallationRevoked              EventType = "installation.revoked"
-	EventInstallationOwnershipTransferred EventType = "installation.ownership_transferred"
+	EventInstallationCreated              EventType = "saas.installation.created"
+	EventInstallationRevoked              EventType = "saas.installation.revoked"
+	EventInstallationOwnershipTransferred EventType = "saas.installation.ownership_transferred"
 
-	EventWorkContextTaskStarted  EventType = "work_context.task_started"
-	EventWorkContextRootSession  EventType = "work_context.root_session_started"
-	EventWorkContextChildSession EventType = "work_context.child_session_started"
-	EventWorkContextAudienceExch EventType = "work_context.audience_exchanged"
-	EventWorkContextRenewed      EventType = "work_context.renewed"
+	EventWorkContextTaskStarted  EventType = "saas.work_context.task_started"
+	EventWorkContextRootSession  EventType = "saas.work_context.root_session_started"
+	EventWorkContextChildSession EventType = "saas.work_context.child_session_started"
+	EventWorkContextAudienceExch EventType = "saas.work_context.audience_exchanged"
+	EventWorkContextRenewed      EventType = "saas.work_context.renewed"
 
-	EventAuthLogin             EventType = "auth.login"
-	EventAuthMagicLinkLogin    EventType = "auth.magic_link_login"
-	EventAuthSSOJitProvisioned EventType = "auth.sso_jit_provisioned"
-	EventAuthOrgSwitched       EventType = "auth.organization_switched"
-	EventAuthMFAChallengeStart EventType = "auth.mfa_challenge_started"
-	EventAuthMFAChallengeDone  EventType = "auth.mfa_challenge_completed"
-	EventMFATOTPSetupStarted   EventType = "mfa.totp_setup_started"
-	EventMFATOTPVerified       EventType = "mfa.totp_verified"
-	EventMFAWebAuthnRegStarted EventType = "mfa.webauthn_registration_started"
-	EventMFAWebAuthnRegistered EventType = "mfa.webauthn_registered"
-	EventMFAWebAuthnUsed       EventType = "mfa.webauthn_used"
-	EventMFABackupGenerated    EventType = "mfa.backup_codes_generated"
-	EventMFABackupUsed         EventType = "mfa.backup_code_used"
-	EventMFADeviceRevoked      EventType = "mfa.device_revoked"
-	EventPlatformRoleGranted   EventType = "platform.role_granted"
-	EventPlatformRoleRevoked   EventType = "platform.role_revoked"
-	EventPlatformImpersonated  EventType = "platform.user_impersonated"
+	EventAuthLogin             EventType = "saas.auth.login"
+	EventAuthMagicLinkLogin    EventType = "saas.auth.magic_link_login"
+	EventAuthSSOJitProvisioned EventType = "saas.auth.sso_jit_provisioned"
+	EventAuthOrgSwitched       EventType = "saas.auth.organization_switched"
+	EventAuthMFAChallengeStart EventType = "saas.auth.mfa_challenge_started"
+	EventAuthMFAChallengeDone  EventType = "saas.auth.mfa_challenge_completed"
+	EventMFATOTPSetupStarted   EventType = "saas.mfa.totp_setup_started"
+	EventMFATOTPVerified       EventType = "saas.mfa.totp_verified"
+	EventMFAWebAuthnRegStarted EventType = "saas.mfa.webauthn_registration_started"
+	EventMFAWebAuthnRegistered EventType = "saas.mfa.webauthn_registered"
+	EventMFAWebAuthnUsed       EventType = "saas.mfa.webauthn_used"
+	EventMFABackupGenerated    EventType = "saas.mfa.backup_codes_generated"
+	EventMFABackupUsed         EventType = "saas.mfa.backup_code_used"
+	EventMFADeviceRevoked      EventType = "saas.mfa.device_revoked"
+	EventPlatformRoleGranted   EventType = "saas.platform.role_granted"
+	EventPlatformRoleRevoked   EventType = "saas.platform.role_revoked"
+	EventPlatformImpersonated  EventType = "saas.platform.user_impersonated"
 
-	EventBillingCheckoutStarted EventType = "billing.checkout_started"
-	EventBillingPortalOpened    EventType = "billing.portal_opened"
-	EventBillingFreePlan        EventType = "billing.free_plan_selected"
-	EventEntitlementOverride    EventType = "entitlement.override"
+	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
+	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
+	EventBillingFreePlan        EventType = "saas.billing.free_plan_selected"
+	EventEntitlementOverride    EventType = "saas.entitlement.override"
 
-	EventOrgCreated                EventType = "org.created"
-	EventOrgMemberAdded            EventType = "org.member_added"
-	EventOrgMemberRemoved          EventType = "org.member_removed"
-	EventOrgSettingsUpdated        EventType = "org.settings_updated"
-	EventOrgGenericSettingsUpdated EventType = "org.generic_settings_updated"
-	EventTeamCreated               EventType = "team.created"
-	EventTeamUpdated               EventType = "team.updated"
-	EventTeamDeleted               EventType = "team.deleted"
-	EventTeamMemberAdded           EventType = "team.member_added"
-	EventTeamMemberRemoved         EventType = "team.member_removed"
-	EventSSOSetupStarted           EventType = "sso.setup.started"
-	EventSSODisabled               EventType = "sso.disabled"
-	EventOnboardingStepDone        EventType = "onboarding.step_completed"
-	EventOnboardingStepSkip        EventType = "onboarding.step_skipped"
-	EventActivationAchieved        EventType = "activation.achieved"
+	EventOrgCreated                EventType = "saas.org.created"
+	EventOrgMemberAdded            EventType = "saas.org.member_added"
+	EventOrgMemberRemoved          EventType = "saas.org.member_removed"
+	EventOrgSettingsUpdated        EventType = "saas.org.settings_updated"
+	EventOrgGenericSettingsUpdated EventType = "saas.org.generic_settings_updated"
+	EventTeamCreated               EventType = "saas.team.created"
+	EventTeamUpdated               EventType = "saas.team.updated"
+	EventTeamDeleted               EventType = "saas.team.deleted"
+	EventTeamMemberAdded           EventType = "saas.team.member_added"
+	EventTeamMemberRemoved         EventType = "saas.team.member_removed"
+	EventSSOSetupStarted           EventType = "saas.sso.setup.started"
+	EventSSODisabled               EventType = "saas.sso.disabled"
+	EventOnboardingStepDone        EventType = "saas.onboarding.step_completed"
+	EventOnboardingStepSkip        EventType = "saas.onboarding.step_skipped"
+	EventActivationAchieved        EventType = "saas.activation.achieved"
 
-	EventWaitlistJoined    EventType = "waitlist.joined"
-	EventWaitlistPending   EventType = "waitlist.pending"
-	EventWaitlistVerified  EventType = "waitlist.verified"
-	EventWaitlistReviewed  EventType = "waitlist.reviewed"
-	EventWaitlistApproved  EventType = "waitlist.approved"
-	EventWaitlistInvited   EventType = "waitlist.invited"
-	EventWaitlistConverted EventType = "waitlist.converted"
-	EventWaitlistRejected  EventType = "waitlist.rejected"
-	EventGDPRExportReq     EventType = "gdpr.export_requested"
-	EventGDPRDeletionReq   EventType = "gdpr.deletion_requested"
-	EventGDPRDeletionDone  EventType = "gdpr.deletion_completed"
+	EventWaitlistJoined    EventType = "saas.waitlist.joined"
+	EventWaitlistPending   EventType = "saas.waitlist.pending"
+	EventWaitlistVerified  EventType = "saas.waitlist.verified"
+	EventWaitlistReviewed  EventType = "saas.waitlist.reviewed"
+	EventWaitlistApproved  EventType = "saas.waitlist.approved"
+	EventWaitlistInvited   EventType = "saas.waitlist.invited"
+	EventWaitlistConverted EventType = "saas.waitlist.converted"
+	EventWaitlistRejected  EventType = "saas.waitlist.rejected"
+	EventGDPRExportReq     EventType = "saas.gdpr.export_requested"
+	EventGDPRDeletionReq   EventType = "saas.gdpr.deletion_requested"
+	EventGDPRDeletionDone  EventType = "saas.gdpr.deletion_completed"
 
-	EventWebhookCreated       EventType = "webhook.created"
-	EventWebhookDeleted       EventType = "webhook.deleted"
-	EventWebhookReplayed      EventType = "webhook.replayed"
-	EventWebhookSecretRotated EventType = "webhook.secret_rotated"
-	EventJobReplayed          EventType = "job.replayed"
+	EventWebhookCreated       EventType = "saas.webhook.created"
+	EventWebhookDeleted       EventType = "saas.webhook.deleted"
+	EventWebhookReplayed      EventType = "saas.webhook.replayed"
+	EventWebhookSecretRotated EventType = "saas.webhook.secret_rotated"
+	EventJobReplayed          EventType = "saas.job.replayed"
 
-	EventDatasourceSourceAdded         EventType = "datasource.source.added"
-	EventDatasourceSourceSynced        EventType = "datasource.source.synced"
-	EventDatasourceSourceRemoved       EventType = "datasource.source.removed"
-	EventDatasourceChangeSetCompiled   EventType = "datasource.change_set_compiled"
-	EventDatasourceForcePushReconciled EventType = "datasource.force_push_reconciled"
-	EventDatasourceBranchDeleted       EventType = "datasource.branch_deleted"
-	EventDatasourceSnapshotTooLarge    EventType = "datasource.snapshot_too_large"
-	EventDatasourceSourceRecovered     EventType = "datasource.source.recovered"
-	EventFeatureFlagUpdated            EventType = "feature_flag.updated"
+	EventDatasourceSourceAdded         EventType = "saas.datasource.source.added"
+	EventDatasourceSourceSynced        EventType = "saas.datasource.source.synced"
+	EventDatasourceSourceRemoved       EventType = "saas.datasource.source.removed"
+	EventDatasourceChangeSetCompiled   EventType = "saas.datasource.change_set_compiled"
+	EventDatasourceForcePushReconciled EventType = "saas.datasource.force_push_reconciled"
+	EventDatasourceBranchDeleted       EventType = "saas.datasource.branch_deleted"
+	EventDatasourceSnapshotTooLarge    EventType = "saas.datasource.snapshot_too_large"
+	EventDatasourceSourceRecovered     EventType = "saas.datasource.source.recovered"
+	EventFeatureFlagUpdated            EventType = "saas.feature_flag.updated"
 
-	EventDashboardCreated EventType = "dashboard.created"
-	EventDashboardUpdated EventType = "dashboard.updated"
-	EventDashboardDeleted EventType = "dashboard.deleted"
-	EventDashboardShared  EventType = "dashboard.shared"
+	EventDashboardCreated EventType = "saas.dashboard.created"
+	EventDashboardUpdated EventType = "saas.dashboard.updated"
+	EventDashboardDeleted EventType = "saas.dashboard.deleted"
+	EventDashboardShared  EventType = "saas.dashboard.shared"
 
 	// Document lifecycle vocabulary emitted by a consuming solution through the
 	// module-facing EmitAuditEvent (issue #463). Every event carries the tenant
 	// (org_id), actor (actor_id), and entry (resource_id) columns plus a solution
 	// scope and the entry version in its payload, so a solution keeps one audit
 	// spine per tenant instead of a second trail.
-	EventDocumentIngested           EventType = "document.ingested"
-	EventDocumentVersionMinted      EventType = "document.version_minted"
-	EventDocumentRenamed            EventType = "document.renamed"
-	EventDocumentDeleted            EventType = "document.deleted"
-	EventDocumentQuarantined        EventType = "document.quarantined"
-	EventDocumentQuarantineReleased EventType = "document.quarantine_released"
-	EventDocumentSubscribed         EventType = "document.subscribed"
-	EventDocumentUnsubscribed       EventType = "document.unsubscribed"
+	EventDocumentIngested           EventType = "saas.document.ingested"
+	EventDocumentVersionMinted      EventType = "saas.document.version_minted"
+	EventDocumentRenamed            EventType = "saas.document.renamed"
+	EventDocumentDeleted            EventType = "saas.document.deleted"
+	EventDocumentQuarantined        EventType = "saas.document.quarantined"
+	EventDocumentQuarantineReleased EventType = "saas.document.quarantine_released"
+	EventDocumentSubscribed         EventType = "saas.document.subscribed"
+	EventDocumentUnsubscribed       EventType = "saas.document.unsubscribed"
 )
 
 var auditEventCatalog = []AuditEventDefinition{

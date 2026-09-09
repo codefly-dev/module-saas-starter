@@ -199,8 +199,11 @@ type QueryAuditLogRequest struct {
 	// payload_contains is a JSONB containment filter: every key/value must match
 	// the event's payload.
 	PayloadContains map[string]string `protobuf:"bytes,12,rep,name=payload_contains,json=payloadContains,proto3" json:"payload_contains,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// namespace scopes the search to the module that minted the event types, e.g.
+	// "saas". A composed workspace carries one namespace per emitting module.
+	Namespace     string `protobuf:"bytes,13,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *QueryAuditLogRequest) Reset() {
@@ -316,6 +319,13 @@ func (x *QueryAuditLogRequest) GetPayloadContains() map[string]string {
 		return x.PayloadContains
 	}
 	return nil
+}
+
+func (x *QueryAuditLogRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
 }
 
 type QueryAuditLogResponse struct {
@@ -681,7 +691,10 @@ type AggregateAuditLogRequest struct {
 	// COUNT(*) is returned.
 	Metrics []*AuditMetric `protobuf:"bytes,11,rep,name=metrics,proto3" json:"metrics,omitempty"`
 	// derived computes ratios of the metrics above, per group.
-	Derived       []*AuditDerivedMetric `protobuf:"bytes,12,rep,name=derived,proto3" json:"derived,omitempty"`
+	Derived []*AuditDerivedMetric `protobuf:"bytes,12,rep,name=derived,proto3" json:"derived,omitempty"`
+	// namespace scopes the aggregation to one module's event types, matching
+	// QueryAuditLogRequest.namespace.
+	Namespace     string `protobuf:"bytes,13,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -798,6 +811,13 @@ func (x *AggregateAuditLogRequest) GetDerived() []*AuditDerivedMetric {
 		return x.Derived
 	}
 	return nil
+}
+
+func (x *AggregateAuditLogRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
 }
 
 type AuditAggregateBucket struct {
@@ -956,13 +976,16 @@ func (*ListAuditEventTypesRequest) Descriptor() ([]byte, []int) {
 }
 
 type AuditEventType struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Version       int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
-	Category      string                 `protobuf:"bytes,3,opt,name=category,proto3" json:"category,omitempty"`
-	Owner         string                 `protobuf:"bytes,4,opt,name=owner,proto3" json:"owner,omitempty"`
-	Deprecated    bool                   `protobuf:"varint,5,opt,name=deprecated,proto3" json:"deprecated,omitempty"`
-	Description   string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Name        string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Version     int32                  `protobuf:"varint,2,opt,name=version,proto3" json:"version,omitempty"`
+	Category    string                 `protobuf:"bytes,3,opt,name=category,proto3" json:"category,omitempty"`
+	Owner       string                 `protobuf:"bytes,4,opt,name=owner,proto3" json:"owner,omitempty"`
+	Deprecated  bool                   `protobuf:"varint,5,opt,name=deprecated,proto3" json:"deprecated,omitempty"`
+	Description string                 `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
+	// The module namespace that owns the type: the leading segment of `name`.
+	// Distinct from `owner`, which names the emitting service.
+	Namespace     string `protobuf:"bytes,7,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1035,6 +1058,13 @@ func (x *AuditEventType) GetDeprecated() bool {
 func (x *AuditEventType) GetDescription() string {
 	if x != nil {
 		return x.Description
+	}
+	return ""
+}
+
+func (x *AuditEventType) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
 	}
 	return ""
 }
@@ -1112,7 +1142,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\bcategory\x18\x0e \x01(\tR\bcategory\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xab\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc9\x04\n" +
 	"\x14QueryAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1a\n" +
@@ -1129,7 +1159,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"event_type\x18\n" +
 	" \x01(\tR\teventType\x12\x1a\n" +
 	"\bcategory\x18\v \x01(\tR\bcategory\x12f\n" +
-	"\x10payload_contains\x18\f \x03(\v2;.saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntryR\x0fpayloadContains\x1aB\n" +
+	"\x10payload_contains\x18\f \x03(\v2;.saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntryR\x0fpayloadContains\x12\x1c\n" +
+	"\tnamespace\x18\r \x01(\tR\tnamespace\x1aB\n" +
 	"\x14PayloadContainsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x96\x01\n" +
@@ -1159,7 +1190,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x12AuditDerivedMetric\x12\x14\n" +
 	"\x05alias\x18\x01 \x01(\tR\x05alias\x12\x1c\n" +
 	"\tnumerator\x18\x02 \x01(\tR\tnumerator\x12 \n" +
-	"\vdenominator\x18\x03 \x01(\tR\vdenominator\"\xc8\x03\n" +
+	"\vdenominator\x18\x03 \x01(\tR\vdenominator\"\xe6\x03\n" +
 	"\x18AggregateAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1d\n" +
@@ -1174,7 +1205,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\tgroup_bys\x18\n" +
 	" \x03(\tR\bgroupBys\x127\n" +
 	"\ametrics\x18\v \x03(\v2\x1d.saas.accounts.v1.AuditMetricR\ametrics\x12>\n" +
-	"\aderived\x18\f \x03(\v2$.saas.accounts.v1.AuditDerivedMetricR\aderived\"\xdd\x01\n" +
+	"\aderived\x18\f \x03(\v2$.saas.accounts.v1.AuditDerivedMetricR\aderived\x12\x1c\n" +
+	"\tnamespace\x18\r \x01(\tR\tnamespace\"\xdd\x01\n" +
 	"\x14AuditAggregateBucket\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x03R\x05count\x12\x12\n" +
@@ -1185,7 +1217,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\"]\n" +
 	"\x19AggregateAuditLogResponse\x12@\n" +
 	"\abuckets\x18\x01 \x03(\v2&.saas.accounts.v1.AuditAggregateBucketR\abuckets\"\x1c\n" +
-	"\x1aListAuditEventTypesRequest\"\xb2\x01\n" +
+	"\x1aListAuditEventTypesRequest\"\xd0\x01\n" +
 	"\x0eAuditEventType\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\x05R\aversion\x12\x1a\n" +
@@ -1194,7 +1226,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\n" +
 	"deprecated\x18\x05 \x01(\bR\n" +
 	"deprecated\x12 \n" +
-	"\vdescription\x18\x06 \x01(\tR\vdescription\"U\n" +
+	"\vdescription\x18\x06 \x01(\tR\vdescription\x12\x1c\n" +
+	"\tnamespace\x18\a \x01(\tR\tnamespace\"U\n" +
 	"\x1bListAuditEventTypesResponse\x126\n" +
 	"\x05types\x18\x01 \x03(\v2 .saas.accounts.v1.AuditEventTypeR\x05types2\x9d\x06\n" +
 	"\fAuditService\x12\xb5\x01\n" +

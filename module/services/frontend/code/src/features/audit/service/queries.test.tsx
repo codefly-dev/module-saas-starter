@@ -22,7 +22,7 @@ describe("auditEventTypesQuery", () => {
 				types: [
 					{
 						$typeName: "saas.accounts.v1.AuditEventType",
-						name: "auth.login",
+						name: "saas.auth.login",
 						version: 1,
 						category: "authentication",
 						owner: "accounts",
@@ -39,7 +39,7 @@ describe("auditEventTypesQuery", () => {
 		expect(query.queryKey).toEqual(["audit-event-types"]);
 		expect(result).toEqual([
 			{
-				name: "auth.login",
+				name: "saas.auth.login",
 				version: 1,
 				category: "authentication",
 				owner: "accounts",

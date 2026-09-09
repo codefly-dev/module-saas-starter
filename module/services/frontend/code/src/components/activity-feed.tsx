@@ -25,23 +25,26 @@ import {
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { auditEventAction } from "@/features/audit/model/transforms";
 import type { AuditEvent } from "@/features/audit/model/types";
 import { useAuditLog } from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
 
-const ACTION_ICONS: Record<string, LucideIcon> = {
-	"user.registered": UserPlus,
-	"user.suspended": UserPlus,
-	"org.created": Building2,
-	"org.member_added": UserPlus,
-	"api_key.created": Key,
-	"api_key.revoked": Key,
-	"webhook.created": Webhook,
-	"webhook.replayed": Webhook,
-	"webhook.secret_rotated": Webhook,
-	"auth.login": ShieldCheck,
-	"billing.subscription_created": CreditCard,
-	"billing.subscription_updated": CreditCard,
+// Keys are registered audit event types (pkg/business/audit_registry.go), so a
+// name that is not in the catalog is a dead entry that can never render.
+export const ACTION_ICONS: Record<string, LucideIcon> = {
+	"saas.user.registered": UserPlus,
+	"saas.user.suspended": UserPlus,
+	"saas.org.created": Building2,
+	"saas.org.member_added": UserPlus,
+	"saas.api_key.created": Key,
+	"saas.api_key.revoked": Key,
+	"saas.webhook.created": Webhook,
+	"saas.webhook.replayed": Webhook,
+	"saas.webhook.secret_rotated": Webhook,
+	"saas.auth.login": ShieldCheck,
+	"saas.billing.checkout_started": CreditCard,
+	"saas.billing.portal_opened": CreditCard,
 };
 
 export function ActivityFeed({
@@ -130,34 +133,39 @@ export function ActivityFeed({
 	);
 }
 
-// humanize transforms an action key (`user.registered`) into a readable
-// verb phrase (`registered an account`). Handles the common cases; falls
-// back to the raw key when unmapped — better than "did unknown".
+// The verb phrase each registered event type renders as. Exported alongside
+// ACTION_ICONS so both maps are gated against the registry's naming law.
+export const ACTION_PHRASES: Record<string, string> = {
+	"saas.user.registered": "registered an account",
+	"saas.user.suspended": "was suspended",
+	"saas.user.unsuspended": "was unsuspended",
+	"saas.user.deleted": "deleted their account",
+	"saas.org.created": "created an organization",
+	"saas.org.member_added": "joined the organization",
+	"saas.org.member_removed": "left the organization",
+	"saas.team.created": "created a team",
+	"saas.team.member_added": "joined a team",
+	"saas.api_key.created": "created an API key",
+	"saas.api_key.revoked": "revoked an API key",
+	"saas.webhook.created": "subscribed to a webhook",
+	"saas.webhook.deleted": "removed a webhook",
+	"saas.webhook.replayed": "replayed a webhook delivery",
+	"saas.webhook.secret_rotated": "rotated a webhook secret",
+	"saas.auth.login": "signed in",
+	"saas.billing.checkout_started": "started a checkout",
+	"saas.billing.portal_opened": "opened the billing portal",
+	"saas.billing.free_plan_selected": "selected the free plan",
+	"saas.role.assigned": "received a role",
+	"saas.role.revoked": "had a role revoked",
+};
+
+// humanize transforms a registered event type (`saas.user.registered`) into a
+// readable verb phrase (`registered an account`). Falls back to the
+// namespace-stripped key when unmapped — better than "did unknown".
 function humanize(action: string): string {
-	const map: Record<string, string> = {
-		"user.registered": "registered an account",
-		"user.suspended": "was suspended",
-		"user.unsuspended": "was unsuspended",
-		"user.deleted": "deleted their account",
-		"org.created": "created an organization",
-		"org.member_added": "joined the organization",
-		"org.member_removed": "left the organization",
-		"team.created": "created a team",
-		"team.member_added": "joined a team",
-		"api_key.created": "created an API key",
-		"api_key.revoked": "revoked an API key",
-		"webhook.created": "subscribed to a webhook",
-		"webhook.deleted": "removed a webhook",
-		"webhook.replayed": "replayed a webhook delivery",
-		"webhook.secret_rotated": "rotated a webhook secret",
-		"auth.login": "signed in",
-		"billing.subscription_created": "started a subscription",
-		"billing.subscription_updated": "updated their subscription",
-		"billing.subscription_canceled": "canceled their subscription",
-		"role.granted": "received a role",
-		"role.revoked": "had a role revoked",
-	};
-	return map[action] ?? action.replace(/[._]/g, " ");
+	return (
+		ACTION_PHRASES[action] ?? auditEventAction(action).replace(/[._]/g, " ")
+	);
 }
 
 // `createdAt` is already normalized to an ISO-8601 string at the query boundary

@@ -27,19 +27,31 @@ import { AuditTable } from "./audit-table";
 export function AuditPage() {
 	const [eventTypeFilter, setEventTypeFilter] = useState("all");
 	const [categoryFilter, setCategoryFilter] = useState("all");
+	const [namespaceFilter, setNamespaceFilter] = useState("all");
 
 	const eventType = eventTypeFilter === "all" ? undefined : eventTypeFilter;
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
+	const namespace = namespaceFilter === "all" ? undefined : namespaceFilter;
 
 	const { data: eventTypes } = useAuditEventTypes();
-	const { data, isLoading } = useAuditLog({ eventType, category, pageSize: 100 });
+	const { data, isLoading } = useAuditLog({
+		eventType,
+		category,
+		namespace,
+		pageSize: 100,
+	});
 	const exportMutation = useExportAuditLog();
 
 	const {
 		data: byType,
 		isLoading: byTypeLoading,
 		error: byTypeError,
-	} = useAuditAggregate({ eventType, category, groupBy: "event_type" });
+	} = useAuditAggregate({
+		eventType,
+		category,
+		namespace,
+		groupBy: "event_type",
+	});
 	const {
 		data: byDay,
 		isLoading: byDayLoading,
@@ -47,6 +59,7 @@ export function AuditPage() {
 	} = useAuditAggregate({
 		eventType,
 		category,
+		namespace,
 		groupBy: "time",
 		bucket: "day",
 	});
@@ -57,12 +70,21 @@ export function AuditPage() {
 		return Array.from(set).sort();
 	}, [eventTypes]);
 
+	// Namespaces are the modules that mint events into this tenant's audit spine.
+	// One today; a composed workspace adds one per module that emits.
+	const namespaces = useMemo(() => {
+		const set = new Set(
+			(eventTypes ?? []).map((t) => t.namespace).filter(Boolean),
+		);
+		return Array.from(set).sort();
+	}, [eventTypes]);
+
 	const visibleEventTypes = useMemo(() => {
-		const list = eventTypes ?? [];
-		return (category ? list.filter((t) => t.category === category) : list)
-			.slice()
-			.sort((a, b) => a.name.localeCompare(b.name));
-	}, [eventTypes, category]);
+		let list = eventTypes ?? [];
+		if (category) list = list.filter((t) => t.category === category);
+		if (namespace) list = list.filter((t) => t.namespace === namespace);
+		return list.slice().sort((a, b) => a.name.localeCompare(b.name));
+	}, [eventTypes, category, namespace]);
 
 	const topTypes = useMemo(
 		() => (byType ?? []).slice(0, 6),
@@ -122,6 +144,27 @@ export function AuditPage() {
 					{categories.map((c) => (
 						<SelectItem key={c} value={c}>
 							{c}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<Select
+				value={namespaceFilter}
+				onValueChange={(v) => {
+					if (v) {
+						setNamespaceFilter(v);
+						setEventTypeFilter("all");
+					}
+				}}
+			>
+				<SelectTrigger className="w-[160px]">
+					<SelectValue placeholder="Namespace" />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="all">All namespaces</SelectItem>
+					{namespaces.map((n) => (
+						<SelectItem key={n} value={n}>
+							{n}
 						</SelectItem>
 					))}
 				</SelectContent>

@@ -161,7 +161,7 @@ func TestRPCPolicyDescriptorFixesFormerManualDrift(t *testing.T) {
 
 	authenticate := byMethod["/saas.accounts.v1.AuthService/Authenticate"]
 	require.True(t, authenticate.EmitsAudit)
-	require.ElementsMatch(t, []string{"auth.login", "auth.mfa_challenge_started"}, authenticate.MethodPolicy.GetAudit().GetEvents())
+	require.ElementsMatch(t, []string{"saas.auth.login", "saas.auth.mfa_challenge_started"}, authenticate.MethodPolicy.GetAudit().GetEvents())
 
 	listUsers := byMethod["/saas.accounts.v1.UserService/ListUsers"]
 	require.Equal(t, []string{"users:read"}, listUsers.Scopes)

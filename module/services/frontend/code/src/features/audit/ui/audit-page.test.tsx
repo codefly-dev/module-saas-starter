@@ -17,7 +17,7 @@ describe("AuditPage admin container", () => {
 							id: "evt-1",
 							actorId: "actor-1",
 							actorType: "user",
-							eventType: "user.login",
+							eventType: "saas.auth.login",
 							category: "auth",
 							resource: "session",
 							resourceId: "sess-1",
@@ -32,5 +32,8 @@ describe("AuditPage admin container", () => {
 		);
 		renderInApp(<AuditPage />);
 		expect(await screen.findByText("203.0.113.7")).toBeTruthy();
+		// The table humanizes the event type without its namespace segment.
+		expect(screen.getByText("Auth Login")).toBeTruthy();
+		expect(screen.queryByText("Saas Auth Login")).toBeNull();
 	});
 });

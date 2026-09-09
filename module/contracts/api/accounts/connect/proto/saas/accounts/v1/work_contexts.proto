@@ -352,7 +352,7 @@ service WorkContextService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "work_context.task_started"
+        events: "saas.work_context.task_started"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -403,7 +403,7 @@ service WorkContextService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "work_context.root_session_started"
+        events: "saas.work_context.root_session_started"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -431,7 +431,7 @@ service WorkContextService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "work_context.audience_exchanged"
+        events: "saas.work_context.audience_exchanged"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -457,7 +457,7 @@ service WorkContextService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "work_context.child_session_started"
+        events: "saas.work_context.child_session_started"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -489,7 +489,7 @@ service WorkContextService {
       }
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "work_context.renewed"
+        events: "saas.work_context.renewed"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

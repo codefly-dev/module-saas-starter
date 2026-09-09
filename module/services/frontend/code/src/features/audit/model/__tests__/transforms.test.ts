@@ -2,28 +2,51 @@ import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { describe, expect, it } from "vitest";
 import { AuditEventSchema } from "@/gen/saas/accounts/v1/audit_pb";
-import { formatAuditAction, groupByDate, toAuditEvent } from "../transforms";
+import {
+	auditEventAction,
+	formatAuditAction,
+	groupByDate,
+	toAuditEvent,
+} from "../transforms";
 import type { AuditEvent } from "../types";
 
 describe("formatAuditAction", () => {
+	// The namespace names the module that minted the type, not what happened, so
+	// it must not reach the label — "Saas Auth Login" reads as a typo.
+	it("strips the namespace and title-cases the action", () => {
+		expect(formatAuditAction("saas.auth.login")).toBe("Auth Login");
+	});
+
 	it("converts dot-separated action to title case", () => {
-		expect(formatAuditAction("user.registered")).toBe("User Registered");
+		expect(formatAuditAction("saas.user.registered")).toBe("User Registered");
 	});
 
 	it("converts underscore-separated action to title case", () => {
-		expect(formatAuditAction("api_key.created")).toBe("Api Key Created");
+		expect(formatAuditAction("saas.api_key.created")).toBe("Api Key Created");
+	});
+
+	it("keeps a deeper aggregate intact", () => {
+		expect(formatAuditAction("saas.datasource.source.added")).toBe(
+			"Datasource Source Added",
+		);
 	});
 
 	it("handles single word", () => {
 		expect(formatAuditAction("login")).toBe("Login");
 	});
 
-	it("handles mixed separators", () => {
-		expect(formatAuditAction("org.member_added")).toBe("Org Member Added");
-	});
-
 	it("handles already formatted string", () => {
 		expect(formatAuditAction("Hello World")).toBe("Hello World");
+	});
+});
+
+describe("auditEventAction", () => {
+	it("strips the namespace segment", () => {
+		expect(auditEventAction("saas.auth.login")).toBe("auth.login");
+	});
+
+	it("passes a bare value through", () => {
+		expect(auditEventAction("login")).toBe("login");
 	});
 });
 
@@ -32,7 +55,7 @@ function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 		id: "evt-1",
 		actorId: "user-1",
 		actorType: "user",
-		eventType: "user.registered",
+		eventType: "saas.user.registered",
 		schemaVersion: 1,
 		category: "auth",
 		resource: "user",
@@ -92,7 +115,7 @@ describe("toAuditEvent", () => {
 			id: "evt-1",
 			actorId: "user-1",
 			actorType: "user",
-			eventType: "auth.login",
+			eventType: "saas.auth.login",
 			schemaVersion: 1,
 			category: "security",
 			resource: "session",
@@ -108,7 +131,7 @@ describe("toAuditEvent", () => {
 		expect(model.createdAt).toBe("2026-08-24T20:58:52.000Z");
 		// The rest of the fields pass through unchanged.
 		expect(model.id).toBe("evt-1");
-		expect(model.eventType).toBe("auth.login");
+		expect(model.eventType).toBe("saas.auth.login");
 	});
 
 	it("leaves created_at undefined when the Timestamp is absent", () => {

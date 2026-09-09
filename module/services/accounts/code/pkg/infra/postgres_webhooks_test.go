@@ -98,6 +98,17 @@ func runPostgresInfraTests(m *testing.M) int {
 	}
 	defer store.Close()
 
+	// The audit_events.event_type foreign key (migration 116) resolves against
+	// audit_event_types, which the control plane reconciles from the code catalog
+	// at startup. Do the same here so an audit write in a test hits the same
+	// preconditions it hits in production.
+	if err := store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog())
+	}); err != nil {
+		fmt.Fprintf(os.Stderr, "SyncAuditEventTypes: %v\n", err)
+		return 1
+	}
+
 	testStore = store
 	testPool = store.Pool()
 	testCtx = ctx
@@ -363,7 +374,10 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
 	eventID := business.NewIDString()
-	eventType := "test.webhook.outbox." + eventID
+	// A registered type: audit_events.event_type is a foreign key into the
+	// registry from migration 116 on. The subscription is still isolated — the
+	// org is freshly seeded and the fan-out lookup runs under its RLS scope.
+	eventType := string(business.EventUserUpdated)
 	sub := &business.WebhookSubscription{
 		ID: business.NewIDString(), OrgID: orgID,
 		URL: endpoint.URL, SecretEncrypted: "test-signing-secret",

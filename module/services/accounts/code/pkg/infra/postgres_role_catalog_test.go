@@ -166,7 +166,7 @@ func TestImportRoleCatalogOnePermissionChangeIsOneRowOneAudit(t *testing.T) {
 	require.True(t, found)
 	require.Len(t, role.permissions, 1)
 
-	updatesBefore := countCatalogAudits(t, "role.updated")
+	updatesBefore := countCatalogAudits(t, "saas.role.updated")
 
 	// Add exactly one permission.
 	changed := parseCatalog(t, `{"version":1,"roles":[
@@ -184,7 +184,7 @@ func TestImportRoleCatalogOnePermissionChangeIsOneRowOneAudit(t *testing.T) {
 	require.Equal(t, []string{"reports:read", "reports:write"}, after.permissions)
 	require.Equal(t, role.id, after.id, "role identity is stable across permission edits")
 
-	require.Equal(t, updatesBefore+1, countCatalogAudits(t, "role.updated"), "exactly one update audit event")
+	require.Equal(t, updatesBefore+1, countCatalogAudits(t, "saas.role.updated"), "exactly one update audit event")
 
 	// Removing a single permission is likewise one row change and one event.
 	reverted, err := testStore.ImportRoleCatalog(testCtx, base, infra.ImportOptions{})
@@ -198,7 +198,7 @@ func TestImportRoleCatalogOnePermissionChangeIsOneRowOneAudit(t *testing.T) {
 	final, found := readBuiltinRole(t, "catalog-test:reader")
 	require.True(t, found)
 	require.Equal(t, []string{"reports:read"}, final.permissions)
-	require.Equal(t, updatesBefore+2, countCatalogAudits(t, "role.updated"))
+	require.Equal(t, updatesBefore+2, countCatalogAudits(t, "saas.role.updated"))
 }
 
 func TestImportRoleCatalogLeavesCustomRolesAndAssignmentsUntouched(t *testing.T) {
@@ -337,7 +337,7 @@ func TestImportRoleCatalogStampsProvenanceOnAudit(t *testing.T) {
 	role, found := readBuiltinRole(t, "catalog-test:provenance")
 	require.True(t, found)
 
-	metadata := readLatestAuditMetadata(t, "role.created", role.id)
+	metadata := readLatestAuditMetadata(t, "saas.role.created", role.id)
 	require.Equal(t, catalog.Fingerprint(), metadata["catalog_sha256"])
 	require.Equal(t, "roles.json", metadata["catalog_source"])
 	require.Equal(t, "catalog-test:provenance", metadata["name"])

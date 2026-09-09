@@ -23,6 +23,7 @@ export function useAuditLog(
 				orgId: params.orgId ?? "",
 				eventType: params.eventType ?? "",
 				category: params.category ?? "",
+				namespace: params.namespace ?? "",
 				actorId: params.actorId ?? "",
 				pageSize: params.pageSize ?? 50,
 			}),
@@ -49,6 +50,7 @@ export const auditEventTypesQuery = (
 		const data = await svc.listAuditEventTypes({});
 		return data.types.map((t) => ({
 			name: t.name,
+			namespace: t.namespace,
 			version: t.version,
 			category: t.category,
 			owner: t.owner,
@@ -104,6 +106,7 @@ export interface AuditAggregateParams {
 	orgId?: string;
 	eventType?: string;
 	category?: string;
+	namespace?: string;
 	// groupBy is the sole dimension; groupBys supersedes it for multi-dim
 	// grouping. One of the two should be set.
 	groupBy?: AuditGroupDimension;
@@ -137,6 +140,7 @@ export function toAggregateRequest(
 		orgId: params.orgId ?? "",
 		eventType: params.eventType ?? "",
 		category: params.category ?? "",
+		namespace: params.namespace ?? "",
 		groupBy: params.groupBy ?? "",
 		groupBys: params.groupBys ?? [],
 		bucket: params.bucket ?? "",

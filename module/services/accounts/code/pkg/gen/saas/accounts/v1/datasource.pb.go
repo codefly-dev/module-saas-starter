@@ -1943,26 +1943,26 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x19API_CREDENTIAL_KIND_BASIC\x10\x02\x12\x1e\n" +
 	"\x1aAPI_CREDENTIAL_KIND_HEADER\x10\x03\x12\x1d\n" +
 	"\x19API_CREDENTIAL_KIND_QUERY\x10\x04\x12\x1e\n" +
-	"\x1aAPI_CREDENTIAL_KIND_OAUTH2\x10\x052\xa9\b\n" +
-	"\x11DatasourceService\x12\xa7\x01\n" +
-	"\x0fAddGitHubSource\x12(.saas.accounts.v1.AddGitHubSourceRequest\x1a).saas.accounts.v1.AddGitHubSourceResponse\"?\xc2\xf3\x18;\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x1b\n" +
-	"\x17datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\x95\x01\n" +
-	"\tAddSource\x12\".saas.accounts.v1.AddSourceRequest\x1a#.saas.accounts.v1.AddSourceResponse\"?\xc2\xf3\x18;\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x1b\n" +
-	"\x17datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\x8f\x01\n" +
+	"\x1aAPI_CREDENTIAL_KIND_OAUTH2\x10\x052\xbd\b\n" +
+	"\x11DatasourceService\x12\xac\x01\n" +
+	"\x0fAddGitHubSource\x12(.saas.accounts.v1.AddGitHubSourceRequest\x1a).saas.accounts.v1.AddGitHubSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01: \n" +
+	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\x9a\x01\n" +
+	"\tAddSource\x12\".saas.accounts.v1.AddSourceRequest\x1a#.saas.accounts.v1.AddSourceResponse\"D\xc2\xf3\x18@\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01: \n" +
+	"\x1csaas.datasource.source.added\x10\x02@\x01H\x04P\x04X\x03`\x01\x12\x8f\x01\n" +
 	"\x14GetDatasourceCatalog\x12-.saas.accounts.v1.GetDatasourceCatalogRequest\x1a..saas.accounts.v1.GetDatasourceCatalogResponse\"\x18\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x02`\x01\x12\x82\x01\n" +
 	"\vListSources\x12$.saas.accounts.v1.ListSourcesRequest\x1a%.saas.accounts.v1.ListSourcesResponse\"&\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12|\n" +
 	"\tGetSource\x12\".saas.accounts.v1.GetSourceRequest\x1a#.saas.accounts.v1.GetSourceResponse\"&\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\x99\x01\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x02X\x03`\x01\x12\x9e\x01\n" +
 	"\n" +
-	"SyncSource\x12#.saas.accounts.v1.SyncSourceRequest\x1a$.saas.accounts.v1.SyncSourceResponse\"@\xc2\xf3\x18<\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x1c\n" +
-	"\x18datasource.source.synced\x10\x02@\x01H\x04P\x02X\x02`\x01\x12\xa0\x01\n" +
-	"\fDeleteSource\x12%.saas.accounts.v1.DeleteSourceRequest\x1a&.saas.accounts.v1.DeleteSourceResponse\"A\xc2\xf3\x18=\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
-	"\x19datasource.source.removed\x10\x02@\x01H\x04P\x02X\x02`\x01B\xb7\x01\n" +
+	"SyncSource\x12#.saas.accounts.v1.SyncSourceRequest\x1a$.saas.accounts.v1.SyncSourceResponse\"E\xc2\xf3\x18A\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:!\n" +
+	"\x1dsaas.datasource.source.synced\x10\x02@\x01H\x04P\x02X\x02`\x01\x12\xa5\x01\n" +
+	"\fDeleteSource\x12%.saas.accounts.v1.DeleteSourceRequest\x1a&.saas.accounts.v1.DeleteSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
+	"\x1esaas.datasource.source.removed\x10\x02@\x01H\x04P\x02X\x02`\x01B\xb7\x01\n" +
 	"\x14com.saas.accounts.v1B\x0fDatasourceProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

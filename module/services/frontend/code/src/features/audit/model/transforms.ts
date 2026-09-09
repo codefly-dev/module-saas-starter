@@ -29,8 +29,20 @@ export function toAuditEvent(e: ProtoAuditEvent): AuditEvent {
 	};
 }
 
+// Event types are `<namespace>.<aggregate>.<event>`. The namespace identifies the
+// module that minted the type, not the action, so humanizing the whole string
+// would render "Saas Auth Login"; strip it and render the action alone. The
+// owning module is surfaced as its own filter facet, not folded into the label.
 export function formatAuditAction(action: string): string {
-	return action.replace(/[._]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+	return auditEventAction(action)
+		.replace(/[._]/g, " ")
+		.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// auditEventAction returns the event type without its namespace segment.
+export function auditEventAction(eventType: string): string {
+	const dot = eventType.indexOf(".");
+	return dot === -1 ? eventType : eventType.slice(dot + 1);
 }
 
 export interface AuditGroup {

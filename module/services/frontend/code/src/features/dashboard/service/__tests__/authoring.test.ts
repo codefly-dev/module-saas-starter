@@ -10,12 +10,13 @@ import {
 	type DashboardAuthoringDeps,
 } from "../authoring";
 
-// The registry projection an injected reader resolves to: auth.login under
-// "authentication", org.created under "organization".
+// The registry projection an injected reader resolves to: saas.auth.login under
+// "authentication", saas.org.created under "organization".
 function fakeEventTypes(): AuditEventTypeInfo[] {
 	return [
 		{
-			name: "auth.login",
+			name: "saas.auth.login",
+			namespace: "saas",
 			version: 1,
 			category: "authentication",
 			owner: "accounts",
@@ -23,7 +24,8 @@ function fakeEventTypes(): AuditEventTypeInfo[] {
 			description: "A user logged in.",
 		},
 		{
-			name: "org.created",
+			name: "saas.org.created",
+			namespace: "saas",
 			version: 1,
 			category: "organization",
 			owner: "accounts",
@@ -42,16 +44,16 @@ function fakeAudit(): DashboardAuthoringDeps["audit"] {
 			buckets: [
 				{
 					$typeName: "saas.accounts.v1.AuditAggregateBucket",
-					key: "org.created",
+					key: "saas.org.created",
 					count: BigInt(3),
-					keys: ["org.created"],
+					keys: ["saas.org.created"],
 					metrics: {},
 				},
 				{
 					$typeName: "saas.accounts.v1.AuditAggregateBucket",
-					key: "auth.login",
+					key: "saas.auth.login",
 					count: BigInt(9),
-					keys: ["auth.login"],
+					keys: ["saas.auth.login"],
 					metrics: {},
 				},
 			],
@@ -81,7 +83,7 @@ function spec(
 
 const loginMetric: MetricDef = {
 	title: "Logins over time",
-	event: { type: "auth.login" },
+	event: { type: "saas.auth.login" },
 	groupBy: "time",
 	bucket: "day",
 	chart: "line",
@@ -92,8 +94,8 @@ describe("dashboard authoring API", () => {
 		const { api } = authoring();
 		const vocab = await api.listEventTypes();
 		expect(vocab.events.map((e) => e.name)).toEqual([
-			"auth.login",
-			"org.created",
+			"saas.auth.login",
+			"saas.org.created",
 		]);
 		expect(vocab.categories).toEqual(["authentication", "organization"]);
 	});
@@ -109,7 +111,7 @@ describe("dashboard authoring API", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		// Ranked by value, capped at the top-N limit.
-		expect(result.preview.points).toEqual([{ key: "auth.login", value: 9 }]);
+		expect(result.preview.points).toEqual([{ key: "saas.auth.login", value: 9 }]);
 		expect(result.preview.total).toBe(9);
 	});
 
@@ -145,7 +147,7 @@ describe("dashboard authoring API", () => {
 
 		const result = await api.previewMetric({
 			title: "p95 latency",
-			event: { type: "auth.login" },
+			event: { type: "saas.auth.login" },
 			groupBy: "time",
 			bucket: "day",
 			chart: "line",

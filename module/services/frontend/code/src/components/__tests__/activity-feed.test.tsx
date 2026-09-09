@@ -18,12 +18,16 @@ vi.mock("@/features/audit/service/queries", () => ({
 	useAuditLog: (...args: unknown[]) => useAuditLogMock(...args),
 }));
 
-import { ActivityFeed } from "@/components/activity-feed";
+import {
+	ACTION_ICONS,
+	ACTION_PHRASES,
+	ActivityFeed,
+} from "@/components/activity-feed";
 
 function event(createdAt: string | undefined) {
 	return {
 		id: "e1",
-		eventType: "auth.login",
+		eventType: "saas.auth.login",
 		actorId: "user-1",
 		resource: "session",
 		resourceId: "s1",
@@ -34,6 +38,22 @@ function event(createdAt: string | undefined) {
 afterEach(() => {
 	cleanup();
 	useAuditLogMock.mockReset();
+});
+
+// The icon and phrase maps are keyed on registered audit event types. Before
+// the namespace cutover they carried four names no producer could ever emit
+// (billing.subscription_*, role.granted), so those rows silently fell through to
+// the raw-key fallback. Pin the shape so that class of dead key cannot come back.
+describe("ActivityFeed action maps", () => {
+	it("keys every icon and phrase on a namespaced event type", () => {
+		const namespaced = /^saas\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
+		for (const key of [
+			...Object.keys(ACTION_ICONS),
+			...Object.keys(ACTION_PHRASES),
+		]) {
+			expect(key).toMatch(namespaced);
+		}
+	});
 });
 
 describe("ActivityFeed timestamps", () => {

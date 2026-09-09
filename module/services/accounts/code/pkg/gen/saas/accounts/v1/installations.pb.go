@@ -677,17 +677,17 @@ const file_saas_accounts_v1_installations_proto_rawDesc = "" +
 	"%INSTALLATION_HEALTH_NO_ELIGIBLE_OWNER\x10\x02\x12%\n" +
 	"!INSTALLATION_HEALTH_AGENT_REVOKED\x10\x03\x12&\n" +
 	"\"INSTALLATION_HEALTH_AGENT_DISABLED\x10\x04\x12.\n" +
-	"*INSTALLATION_HEALTH_STANDING_GRANT_MISSING\x10\x052\xe0\x06\n" +
-	"\x13InstallationService\x12\xb5\x01\n" +
-	"\x0fInstallSolution\x12(.saas.accounts.v1.InstallSolutionRequest\x1a\x1e.saas.accounts.v1.Installation\"X\xc2\xf3\x188\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
-	"\x14installation.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/installations\x12\xcd\x01\n" +
-	"\x11UninstallSolution\x12*.saas.accounts.v1.UninstallSolutionRequest\x1a\x16.google.protobuf.Empty\"t\xc2\xf3\x188\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
-	"\x14installation.revoked\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x022:\x01*\"-/v1/installations/{installation_id}:uninstall\x12\x84\x02\n" +
-	"\x1dTransferInstallationOwnership\x126.saas.accounts.v1.TransferInstallationOwnershipRequest\x1a\x1e.saas.accounts.v1.Installation\"\x8a\x01\xc2\xf3\x18F\b\x02\x10\x04*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:&\n" +
-	"\"installation.ownership_transferred\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02::\x01*\"5/v1/installations/{installation_id}:transferOwnership\x12\xb9\x01\n" +
+	"*INSTALLATION_HEALTH_STANDING_GRANT_MISSING\x10\x052\xef\x06\n" +
+	"\x13InstallationService\x12\xba\x01\n" +
+	"\x0fInstallSolution\x12(.saas.accounts.v1.InstallSolutionRequest\x1a\x1e.saas.accounts.v1.Installation\"]\xc2\xf3\x18=\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
+	"\x19saas.installation.created\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/installations\x12\xd2\x01\n" +
+	"\x11UninstallSolution\x12*.saas.accounts.v1.UninstallSolutionRequest\x1a\x16.google.protobuf.Empty\"y\xc2\xf3\x18=\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:\x1d\n" +
+	"\x19saas.installation.revoked\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x022:\x01*\"-/v1/installations/{installation_id}:uninstall\x12\x89\x02\n" +
+	"\x1dTransferInstallationOwnership\x126.saas.accounts.v1.TransferInstallationOwnershipRequest\x1a\x1e.saas.accounts.v1.Installation\"\x8f\x01\xc2\xf3\x18K\b\x02\x10\x04*\f\n" +
+	"\x06org_id\x10\x02\x18\x010\x01:+\n" +
+	"'saas.installation.ownership_transferred\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02::\x01*\"5/v1/installations/{installation_id}:transferOwnership\x12\xb9\x01\n" +
 	"\x0fGetInstallation\x12(.saas.accounts.v1.GetInstallationRequest\x1a).saas.accounts.v1.GetInstallationResponse\"Q\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02%\x12#/v1/installations/{installation_id}B\xba\x01\n" +
 	"\x14com.saas.accounts.v1B\x12InstallationsProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"

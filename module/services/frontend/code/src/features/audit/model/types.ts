@@ -19,6 +19,7 @@ export interface AuditLogFilters {
 	orgId?: string;
 	eventType?: string;
 	category?: string;
+	namespace?: string;
 	actorId?: string;
 	pageSize?: number;
 }
@@ -28,6 +29,7 @@ export interface AuditLogFilters {
 // a hand-maintained list.
 export interface AuditEventTypeInfo {
 	name: string;
+	namespace: string;
 	version: number;
 	category: string;
 	owner: string;

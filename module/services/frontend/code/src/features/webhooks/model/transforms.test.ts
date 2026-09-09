@@ -16,7 +16,7 @@ describe("webhook transforms", () => {
 			orgId: "org-1",
 			url: "https://example.com/hooks",
 			description: "Production events",
-			events: ["user.created"],
+			events: ["saas.user.created"],
 			active: true,
 			createdAt: timestampFromDate(createdAt),
 		});
@@ -26,7 +26,7 @@ describe("webhook transforms", () => {
 			orgId: "org-1",
 			url: "https://example.com/hooks",
 			description: "Production events",
-			events: ["user.created"],
+			events: ["saas.user.created"],
 			active: true,
 			createdAt: createdAt.toISOString(),
 			updatedAt: undefined,

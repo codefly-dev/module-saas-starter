@@ -73,7 +73,7 @@ export function mockAuditEvent(
 		id: nextId(),
 		actorId: nextId(),
 		actorType: "user",
-		action: "user.registered",
+		action: "saas.user.registered",
 		resource: "user",
 		resourceId: nextId(),
 		createdAt: "2025-01-01T00:00:00Z",

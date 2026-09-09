@@ -101,8 +101,8 @@ describe("SolutionDashboards", () => {
 					{ key: "2026-08-02", count: "5" },
 				],
 				[
-					{ key: "auth.login", count: "42" },
-					{ key: "org.created", count: "10" },
+					{ key: "saas.auth.login", count: "42" },
+					{ key: "saas.org.created", count: "10" },
 				],
 			),
 		);
@@ -110,7 +110,7 @@ describe("SolutionDashboards", () => {
 		renderInApp(<SolutionDashboards graph={graph} solutionId="lastlogin" />);
 
 		// Bar widget: each event_type bucket becomes a labelled bar.
-		expect(await screen.findByText("auth.login")).toBeTruthy();
+		expect(await screen.findByText("saas.auth.login")).toBeTruthy();
 		expect(screen.getByText("42")).toBeTruthy();
 		// Number widget: the total-logins stat sums the time buckets (3 + 5).
 		expect(screen.getByText("8")).toBeTruthy();

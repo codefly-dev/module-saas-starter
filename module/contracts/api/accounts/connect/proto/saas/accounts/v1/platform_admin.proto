@@ -196,7 +196,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.suspended"
+        events: "saas.user.suspended"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -216,7 +216,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "user.unsuspended"
+        events: "saas.user.unsuspended"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -236,7 +236,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
       audit: {
-        events: "platform.user_impersonated"
+        events: "saas.platform.user_impersonated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -273,7 +273,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "session.revoked"
+        events: "saas.session.revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -311,7 +311,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "entitlement.override"
+        events: "saas.entitlement.override"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -333,7 +333,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
       audit: {
-        events: "platform.role_granted"
+        events: "saas.platform.role_granted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -353,7 +353,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP
       audit: {
-        events: "platform.role_revoked"
+        events: "saas.platform.role_revoked"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -403,7 +403,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_NONE
       audit: {
-        events: "feature_flag.updated"
+        events: "saas.feature_flag.updated"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
@@ -467,7 +467,7 @@ service PlatformAdminService {
       tenant: TENANT_REQUIREMENT_NONE
       mfa: MFA_REQUIREMENT_RECENT_STEP_UP
       audit: {
-        events: "job.replayed"
+        events: "saas.job.replayed"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_REQUIRED

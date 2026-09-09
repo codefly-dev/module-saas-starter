@@ -151,7 +151,7 @@ A request to `webhookConnectHandler.DeleteSubscription(orgID, subID)`:
 | L1 Policy gates | (`requireMFA` for rotate-secret only) |
 | L2 Permissions | `CheckPermission(actor, "webhooks", "write", orgID)` *if RBAC is more granular than the org-admin check* |
 | L3 RLS | `WithOrgTx(ctx, orgID, …)` → DELETE WHERE id = subID. RLS lets it through only if the row's org_id matches. |
-| Audit emit | `webhook.deleted` written to audit_events |
+| Audit emit | `saas.webhook.deleted` written to audit_events |
 
 If any single layer is wrong, the others still hold:
 
@@ -380,8 +380,8 @@ into the L2 tables without forking migrations, using the catalog importer.
 - **Provenance bounds deletion.** Only `roles.catalog_managed = true` rows are
   removal candidates; a catalog that doesn't mention `admin`/`editor`/`viewer`
   leaves them alone. Org-defined custom roles (`org_id` set) are never touched.
-- **One `system`-actor audit event per applied change** (`role.created` /
-  `role.updated` / `role.deleted`, `org_id` NULL), stamped with the catalog's
+- **One `system`-actor audit event per applied change** (`saas.role.created` /
+  `saas.role.updated` / `saas.role.deleted`, `org_id` NULL), stamped with the catalog's
   SHA-256 (`catalog_sha256`) and source label (`catalog_source`) so a change is
   traceable to the exact catalog version that produced it.
 

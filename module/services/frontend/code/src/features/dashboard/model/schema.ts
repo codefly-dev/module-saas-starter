@@ -55,7 +55,7 @@ export interface MetricRatio {
 	denominator: MetricValue;
 }
 
-// An event names an audit event type the dashboard reads (e.g. "auth.login").
+// An event names an audit event type the dashboard reads (e.g. "saas.auth.login").
 export interface EventDef {
 	type: string;
 }

@@ -50,6 +50,9 @@ message QueryAuditLogRequest {
   // payload_contains is a JSONB containment filter: every key/value must match
   // the event's payload.
   map<string, string> payload_contains = 12;
+  // namespace scopes the search to the module that minted the event types, e.g.
+  // "saas". A composed workspace carries one namespace per emitting module.
+  string namespace = 13;
 }
 
 message QueryAuditLogResponse {
@@ -122,6 +125,9 @@ message AggregateAuditLogRequest {
   repeated AuditMetric metrics = 11;
   // derived computes ratios of the metrics above, per group.
   repeated AuditDerivedMetric derived = 12;
+  // namespace scopes the aggregation to one module's event types, matching
+  // QueryAuditLogRequest.namespace.
+  string namespace = 13;
 }
 
 message AuditAggregateBucket {
@@ -151,6 +157,9 @@ message AuditEventType {
   string owner = 4;
   bool deprecated = 5;
   string description = 6;
+  // The module namespace that owns the type: the leading segment of `name`.
+  // Distinct from `owner`, which names the emitting service.
+  string namespace = 7;
 }
 
 message ListAuditEventTypesResponse {

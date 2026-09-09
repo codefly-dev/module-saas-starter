@@ -409,7 +409,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.created"
+            "saas.api_key.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -531,7 +531,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "api_key.revoked"
+            "saas.api_key.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -859,8 +859,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_started"
+            "saas.auth.login",
+            "saas.auth.mfa_challenge_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1012,9 +1012,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.backup_code_used"
+            "saas.auth.login",
+            "saas.auth.mfa_challenge_completed",
+            "saas.mfa.backup_code_used"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1066,9 +1066,9 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.login",
-            "auth.mfa_challenge_completed",
-            "mfa.webauthn_used"
+            "saas.auth.login",
+            "saas.auth.mfa_challenge_completed",
+            "saas.mfa.webauthn_used"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1270,7 +1270,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "auth.organization_switched"
+            "saas.auth.organization_switched"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1442,7 +1442,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "billing.portal_opened"
+            "saas.billing.portal_opened"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1494,7 +1494,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.terms_accepted"
+            "saas.consent.terms_accepted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1596,7 +1596,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "consent.preferences_updated"
+            "saas.consent.preferences_updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1648,7 +1648,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.created"
+            "saas.dashboard.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1700,7 +1700,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.deleted"
+            "saas.dashboard.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1852,7 +1852,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.shared"
+            "saas.dashboard.shared"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1904,7 +1904,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "dashboard.updated"
+            "saas.dashboard.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -1954,7 +1954,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.added"
+            "saas.datasource.source.added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2004,7 +2004,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.added"
+            "saas.datasource.source.added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2054,7 +2054,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.removed"
+            "saas.datasource.source.removed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2242,7 +2242,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "datasource.source.synced"
+            "saas.datasource.source.synced"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2300,8 +2300,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.approved",
-            "delegation.denied"
+            "saas.delegation.approved",
+            "saas.delegation.denied"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2415,8 +2415,8 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "delegation.requested",
-            "delegation.auto_approved"
+            "saas.delegation.requested",
+            "saas.delegation.auto_approved"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2624,7 +2624,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "gdpr.deletion_requested"
+            "saas.gdpr.deletion_requested"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2676,7 +2676,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "gdpr.export_requested"
+            "saas.gdpr.export_requested"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2832,7 +2832,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "installation.created"
+            "saas.installation.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2890,7 +2890,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "installation.ownership_transferred"
+            "saas.installation.ownership_transferred"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -2948,7 +2948,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "installation.revoked"
+            "saas.installation.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3050,7 +3050,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.accepted"
+            "saas.invitation.accepted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3112,7 +3112,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.created"
+            "saas.invitation.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3334,7 +3334,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.resent"
+            "saas.invitation.resent"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3396,7 +3396,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "invitation.revoked"
+            "saas.invitation.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3448,7 +3448,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registration_started"
+            "saas.mfa.webauthn_registration_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3500,7 +3500,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.webauthn_registered"
+            "saas.mfa.webauthn_registered"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3552,7 +3552,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.backup_codes_generated"
+            "saas.mfa.backup_codes_generated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3654,7 +3654,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.device_revoked"
+            "saas.mfa.device_revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3706,7 +3706,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_setup_started"
+            "saas.mfa.totp_setup_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -3758,7 +3758,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "mfa.totp_verified"
+            "saas.mfa.totp_verified"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4528,7 +4528,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_completed"
+            "saas.onboarding.step_completed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4642,7 +4642,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "onboarding.step_skipped"
+            "saas.onboarding.step_skipped"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4700,7 +4700,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_added"
+            "saas.org.member_added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -4752,7 +4752,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.created"
+            "saas.org.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5084,7 +5084,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.member_removed"
+            "saas.org.member_removed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5142,7 +5142,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.settings_updated"
+            "saas.org.settings_updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5200,7 +5200,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "org.generic_settings_updated"
+            "saas.org.generic_settings_updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5252,7 +5252,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.assigned"
+            "saas.role.assigned"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5388,7 +5388,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.created"
+            "saas.role.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5482,7 +5482,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.deleted"
+            "saas.role.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5540,7 +5540,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.granted"
+            "saas.scope.granted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5852,7 +5852,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.node_registered"
+            "saas.scope.node_registered"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5904,7 +5904,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "role.revoked"
+            "saas.role.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -5962,7 +5962,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "scope.revoked"
+            "saas.scope.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6020,7 +6020,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.share_revoked"
+            "saas.record.share_revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6078,7 +6078,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "record.shared"
+            "saas.record.shared"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6286,7 +6286,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_granted"
+            "saas.platform.role_granted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6338,7 +6338,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.user_impersonated"
+            "saas.platform.user_impersonated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6590,7 +6590,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "entitlement.override"
+            "saas.entitlement.override"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6642,7 +6642,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "job.replayed"
+            "saas.job.replayed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6694,7 +6694,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "platform.role_revoked"
+            "saas.platform.role_revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6746,7 +6746,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "session.revoked"
+            "saas.session.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6848,7 +6848,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.suspended"
+            "saas.user.suspended"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6900,7 +6900,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.unsuspended"
+            "saas.user.unsuspended"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -6952,7 +6952,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "feature_flag.updated"
+            "saas.feature_flag.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7010,7 +7010,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.created"
+            "saas.principal.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7054,7 +7054,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.disabled"
+            "saas.principal.disabled"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7098,7 +7098,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.enabled"
+            "saas.principal.enabled"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7296,7 +7296,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "principal.revoked"
+            "saas.principal.revoked"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7354,7 +7354,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.disabled"
+            "saas.sso.disabled"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7468,7 +7468,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "sso.setup.started"
+            "saas.sso.setup.started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7526,7 +7526,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_added"
+            "saas.team.member_added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7584,7 +7584,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.created"
+            "saas.team.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7642,7 +7642,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.deleted"
+            "saas.team.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7812,7 +7812,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.member_removed"
+            "saas.team.member_removed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -7870,7 +7870,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "team.updated"
+            "saas.team.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8144,7 +8144,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.identity_added"
+            "saas.user.identity_added"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8198,7 +8198,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.deleted"
+            "saas.user.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8510,7 +8510,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.registered"
+            "saas.user.registered"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8564,7 +8564,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "user.updated"
+            "saas.user.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8716,7 +8716,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "settings.updated"
+            "saas.settings.updated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8818,7 +8818,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.invited"
+            "saas.waitlist.invited"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -8970,7 +8970,7 @@
         "mfa": "MFA_REQUIREMENT_IF_ENROLLED_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "waitlist.reviewed"
+            "saas.waitlist.reviewed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9082,7 +9082,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.created"
+            "saas.webhook.created"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9144,7 +9144,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.deleted"
+            "saas.webhook.deleted"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9386,7 +9386,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "webhook.replayed"
+            "saas.webhook.replayed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9448,7 +9448,7 @@
         "mfa": "MFA_REQUIREMENT_RECENT_STEP_UP",
         "audit": {
           "events": [
-            "webhook.secret_rotated"
+            "saas.webhook.secret_rotated"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9692,7 +9692,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.audience_exchanged"
+            "saas.work_context.audience_exchanged"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9750,7 +9750,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.renewed"
+            "saas.work_context.renewed"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9808,7 +9808,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.child_session_started"
+            "saas.work_context.child_session_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9908,7 +9908,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.root_session_started"
+            "saas.work_context.root_session_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
@@ -9966,7 +9966,7 @@
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
           "events": [
-            "work_context.task_started"
+            "saas.work_context.task_started"
           ],
           "emission": "AUDIT_EMISSION_SUCCESS"
         },
