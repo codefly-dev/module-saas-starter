@@ -24,6 +24,7 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventAuthSSOJitProvisioned,
 	EventBillingCheckoutStarted,
 	EventBillingFreePlan,
+	EventDatasourceBlobFetched,
 	EventDatasourceBranchDeleted,
 	EventDatasourceChangeSetCompiled,
 	EventDatasourceForcePushReconciled,

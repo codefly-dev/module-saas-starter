@@ -9,7 +9,45 @@ import (
 	"time"
 
 	"accounts/pkg/business"
+
+	"github.com/jackc/pgx/v5"
 )
+
+// auditIdempotencySystemOrg is the sentinel org id for system-scoped audit emits
+// (empty tenant) in the audit_event_idempotency guard. The guard's primary key is
+// NOT NULL and a UNIQUE index treats NULLs as distinct, so a system emit needs a
+// concrete, non-colliding org id to dedup against; the all-zero UUID is never a
+// generated organization id. See migration 118.
+const auditIdempotencySystemOrg = "00000000-0000-0000-0000-000000000000"
+
+// ReserveAuditIdempotency records a (org_id, event_type, idempotency_key) guard
+// row so a retried audit emit collapses to a single event. It returns true when
+// the row was newly inserted — the caller should write the event — and false when
+// the row already existed (a duplicate emit; the caller must skip the write). The
+// INSERT runs in the caller's ambient transaction, so the guard row and the audit
+// row commit or roll back together. An empty orgID (system-scoped emit) maps to
+// the all-zero sentinel org so system events still dedup under the NOT NULL key.
+func (s *PostgresStore) ReserveAuditIdempotency(ctx context.Context, orgID, eventType, idempotencyKey string) (bool, error) {
+	org := orgID
+	if org == "" {
+		org = auditIdempotencySystemOrg
+	}
+	var reserved bool
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		INSERT INTO audit_event_idempotency (org_id, event_type, idempotency_key)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (org_id, event_type, idempotency_key) DO NOTHING
+		RETURNING true`, org, eventType, idempotencyKey).Scan(&reserved)
+	if err == pgx.ErrNoRows {
+		// ON CONFLICT DO NOTHING inserted no row: the guard already exists, so an
+		// earlier emit of this key already wrote the event. Report the duplicate.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return reserved, nil
+}
 
 func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.AuditEntry) error {
 	q := s.getQueryExecutor(ctx)

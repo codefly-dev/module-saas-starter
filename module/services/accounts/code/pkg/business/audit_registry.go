@@ -225,6 +225,7 @@ const (
 	EventDatasourceBranchDeleted       EventType = "saas.datasource.branch_deleted"
 	EventDatasourceSnapshotTooLarge    EventType = "saas.datasource.snapshot_too_large"
 	EventDatasourceSourceRecovered     EventType = "saas.datasource.source.recovered"
+	EventDatasourceBlobFetched         EventType = "saas.datasource.blob_fetched"
 	EventFeatureFlagUpdated            EventType = "saas.feature_flag.updated"
 
 	EventDashboardCreated EventType = "saas.dashboard.created"
@@ -376,6 +377,8 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("head"), PayloadField{Name: "bytes", Kind: FieldInt}, PayloadField{Name: "limit", Kind: FieldInt}, str("delivery_id")),
 	def(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
 		str("head"), str("delivery_id")),
+	def(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
+		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),

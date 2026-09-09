@@ -27,6 +27,7 @@ type datasourceFakeStore struct {
 	sources     map[string]*business.DatasourceSource
 	nodes       map[string]bool
 	collections map[string]string // label -> node id
+	ordinals    map[string]int64  // source id -> next ordinal to hand out
 }
 
 func newDatasourceFakeStore() *datasourceFakeStore {
@@ -34,6 +35,7 @@ func newDatasourceFakeStore() *datasourceFakeStore {
 		sources:     map[string]*business.DatasourceSource{},
 		nodes:       map[string]bool{},
 		collections: map[string]string{},
+		ordinals:    map[string]int64{},
 	}
 }
 
@@ -165,6 +167,20 @@ func (f *datasourceFakeStore) AdvanceDatasourceCursor(_ context.Context, sourceI
 		s.NextReconcileAt = nil
 	}
 	return nil
+}
+
+func (f *datasourceFakeStore) AllocateDatasourceOrdinal(_ context.Context, sourceID string) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.sources[sourceID]; !ok {
+		return 0, errors.New("not found")
+	}
+	next := f.ordinals[sourceID]
+	if next == 0 {
+		next = 1 // matches the column DEFAULT 1
+	}
+	f.ordinals[sourceID] = next + 1
+	return next, nil
 }
 
 func (f *datasourceFakeStore) BumpDatasourceReconcile(_ context.Context, sourceID string) error {

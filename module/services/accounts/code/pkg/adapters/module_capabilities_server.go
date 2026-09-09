@@ -234,7 +234,7 @@ func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.
 		return nil, err
 	}
 	if err := service.ModuleEmitAuditEvent(ctx, caller,
-		req.GetTenant(), req.GetEventType(), req.GetActor(), req.GetSolution(), req.GetEntryId(), req.GetFields()); err != nil {
+		req.GetTenant(), req.GetEventType(), req.GetActor(), req.GetSolution(), req.GetEntryId(), req.GetIdempotencyKey(), req.GetFields()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil

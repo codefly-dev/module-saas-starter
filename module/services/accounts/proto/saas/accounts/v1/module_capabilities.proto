@@ -262,6 +262,12 @@ message ModuleEmitAuditEventRequest {
   }];
   string entry_id = 5 [(buf.validate.field).string.max_len = 255];
   google.protobuf.Struct fields = 6;
+  // idempotency_key deduplicates retried emits: two emits with the same
+  // (tenant, event_type, idempotency_key) collapse to a single audit row, and
+  // the duplicate returns success without writing again. Empty disables
+  // deduplication (every emit is a distinct event). Scoped by tenant so one
+  // tenant's keys can never suppress another's events.
+  string idempotency_key = 7 [(buf.validate.field).string.max_len = 255];
 }
 
 // ---------------------------------------------------------------------------
