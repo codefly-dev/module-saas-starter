@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2229,
+  "fileCount": 2232,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "eb96fbb6a2735805be55bb17fccb5dd08c2fb460413876437a8321c2f4119d5a",
@@ -84,12 +84,13 @@
     "contracts/api/accounts/connect/proto/saas/policy/v1/options.proto": "d5650f2c114ef82ad888d8467570c013244217fb0c365a0a0049f4b1e8ad22bb",
     "contracts/api/accounts/connect/proto/saas/settings/v1/common_settings.proto": "87d5f05bd613a5204d4c8e50760533805e97d46e1940ab82784454c870fe2e18",
     "contracts/api/accounts/connect/proto/saas/webhooks/v1/jobs.proto": "7f0ec2d019daa2563fcb73df045c254c8a83fa773eb61423586a1815f511a15a",
-    "contracts/api/auth-gateway/grpc/contract.binpb": "b1ff9b4b5d4521fc6c3f495f4a7cd7dc21004da5e2241128eeccb2cecea33868",
+    "contracts/api/auth-gateway/grpc/contract.binpb": "01838891b087320a7b63242ec7087ddcd4219cb3fef6c87f51c9e9dc7e77d803",
     "contracts/api/auth-gateway/grpc/proto/buf.gen.yaml": "a1ea06d6690bd6f7382a5a0814a4dfafb95e5d73007913bed41053ab33ba0e9a",
     "contracts/api/auth-gateway/grpc/proto/buf.lock": "4e0de72bae562b3e13b8260fbb6a37dc584451b51279a624d6286fb3292cdfc8",
     "contracts/api/auth-gateway/grpc/proto/buf.yaml": "a0f1847cd9a6452febf02d3afce95b0d852da743667f20f517a6e3e5977f4602",
+    "contracts/api/auth-gateway/grpc/proto/saas/accounts/v1/module_registration.proto": "bd57aeaf133ed6cdd7b7c2ffe87c4a509145f648286b1020244d23d5c481034b",
     "contracts/api/auth-gateway/grpc/proto/saas/gateway/auth/v1/sidecar.proto": "08afae99e80bdd881fae61f0c643cf7745e9fef9e3e90f3b1dce80d2f87fbebb",
-    "contracts/api/catalog.codefly.json": "1c871afd1fd32936466a51a6993aa6b0409abc87bbc246b40cc1da68e8a16197",
+    "contracts/api/catalog.codefly.json": "8a3b76633dbf6060dfc6a156d6f402c24ff9a3e4ef676dba9cecae6bdd269c93",
     "contracts/events/v1/events-contribution.schema.json": "727f6818b3ae9f90adc525ed6bb4857d0ec4322572327be316e2560fa4db0175",
     "contracts/fixtures/v1/fixtures-contribution.schema.json": "da08840aa339512c8e0830087b2fd07b4440c9184475cb7333697850b25d1ad9",
     "contracts/frontend/v2/frontend-contribution.schema.json": "65edd76e7fbc8f0fa7b11a5b93c0cc647f79af528d648248fc4e668828a806dd",
@@ -155,7 +156,7 @@
     "generated/reference-composition/services/accounts/proto/saas/composed/settings/v1/settings.proto": "9629c2f0a1ec6ed638784b23a99978bf7c71bbaa1c8ee29e2decaab273e933af",
     "generated/reference-composition/services/frontend/code/src/gen/saas/settings/v1/field_catalog.ts": "83ad42f05c7c2a4359fc18a1fd8f7e56961bbdd65f50ad98810608d88c6ae30f",
     "generated/reference-composition/services/frontend/code/src/generated/frontend-contributions.ts": "057360f7883f3d02d9a313432297bfeb76182ffc1f9b9f4932a9e9254428995e",
-    "module.package.codefly.yaml": "e4d5fd0781417765478e0fbf23f4ad479f89ebccab8637a44bf8c9e14ddacc6f",
+    "module.package.codefly.yaml": "77147962327607b8ca5dbe7a563115342416d806451858121e7fb2d8f0c01c14",
     "policies/method_permissions/data.json": "b7dcfa74a0d3614a59054c2f63a52406f9a44aba5f5a9c04844ddc209384946b",
     "public/site.config.json": "4a6e76802a6ac46298b0f8ce7fbbb687ca670f1259474f4a8b32c335937916f1",
     "services/README.md": "34d7ac4be959ce756ae67946f3b8b6479ac472b6cbbf8ebd33015eb0ff9ca244",
@@ -1038,6 +1039,7 @@
     "services/auth-gateway/proto/buf.gen.yaml": "a1ea06d6690bd6f7382a5a0814a4dfafb95e5d73007913bed41053ab33ba0e9a",
     "services/auth-gateway/proto/buf.lock": "4e0de72bae562b3e13b8260fbb6a37dc584451b51279a624d6286fb3292cdfc8",
     "services/auth-gateway/proto/buf.yaml": "a0f1847cd9a6452febf02d3afce95b0d852da743667f20f517a6e3e5977f4602",
+    "services/auth-gateway/proto/saas/accounts/v1/module_registration.proto": "bd57aeaf133ed6cdd7b7c2ffe87c4a509145f648286b1020244d23d5c481034b",
     "services/auth-gateway/proto/saas/gateway/auth/v1/sidecar.proto": "08afae99e80bdd881fae61f0c643cf7745e9fef9e3e90f3b1dce80d2f87fbebb",
     "services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml": "0c51aae3e8576f91712167f3285b68e92d486fbd5b7cf8e9a9881ed2773deb2f",
     "services/cache/README.md": "9ebd83f74b81616ede663f2e73bba53d85b736136749a8d9427a12b2a3c7fd98",
@@ -2229,6 +2231,7 @@
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
     "tools/rls-migration-gate.mjs": "fd258aca45acc801b35e3abd1ae70518f8e62f44ef7c03f7ca6e7a9b9422bb03",
     "tools/rls-migration-gate.test.mjs": "0466eb37910c6a780d31df07a2d2df1d2339adc453271a1584e7dec02547b92f",
+    "tools/shared_proto_copies_test.go": "1d92644586d9931dc468e1ac69fd4f87f7b8895277616e7f669ba0d466bf4e72",
     "tools/story-trace-gate.mjs": "48fdeb8d7618aca4629185066c665915662aa221f8abb7310673e4ba2b59d565",
     "tools/story-trace-gate.test.mjs": "533fe446ad510aecd2ac8c0b6aab6ec0c8740752155512bd18e45bad387d9f66"
   }
