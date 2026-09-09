@@ -1,0 +1,20 @@
+schema: codefly/saas/events-contribution/v1
+namespace: installation
+queues: []
+publishes:
+  # Installation lifecycle facts are platform-internal: a solution principal must
+  # never learn that other solutions were installed or revoked in the org, so both
+  # types are internal (never subscribable by a tenant-scoped subscriber). The
+  # document store and other trusted platform consumers subscribe under the worker
+  # role. Partitioned per tenant so an ordered subscriber sees one org's installs
+  # in sequence.
+  - type: installation.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: internal
+    partition: "{tenant_id}"
+    retention: 30d
+  - type: installation.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: internal
+    partition: "{tenant_id}"
+    retention: 30d

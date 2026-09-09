@@ -382,10 +382,10 @@ const claimJobsSQL = `
 		          WHERE prior.queue = message.queue
 		            AND prior.ordering_key = message.ordering_key
 		            AND prior.state IN ('pending', 'processing', 'retrying')
-		            AND (prior.created_at, prior.id) < (message.created_at, message.id)
+		            AND (prior.created_at, prior.enqueue_seq) < (message.created_at, message.enqueue_seq)
 		      )
 		  )
-		ORDER BY message.priority DESC, message.available_at, message.created_at, message.id
+		ORDER BY message.priority DESC, message.available_at, message.created_at, message.enqueue_seq
 		FOR UPDATE OF message SKIP LOCKED
 		LIMIT $2
 	), claimed AS (
@@ -427,7 +427,7 @@ const claimJobsSQL = `
 		claimed.state_version, COALESCE(claimed.replay_of::text, '')
 	FROM claimed
 	JOIN opened_attempts ON opened_attempts.job_id = claimed.id
-	ORDER BY claimed.priority DESC, claimed.available_at, claimed.created_at, claimed.id`
+	ORDER BY claimed.priority DESC, claimed.available_at, claimed.created_at, claimed.enqueue_seq`
 
 type jobEnvelopeScanner interface {
 	Scan(...any) error

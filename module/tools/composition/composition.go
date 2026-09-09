@@ -35,6 +35,10 @@ const (
 	FixturesOutput           = "deployment/generated/contributed-fixtures.json"
 	TopologyBindingsOutput   = "deployment/generated/contributed-topology.json"
 	PermissionGoOutput       = "services/accounts/code/pkg/permissioncatalog/catalog_gen.go"
+	EventCatalogOutput       = "deployment/generated/event-catalog.json"
+	EventGoOutput            = "services/accounts/code/pkg/eventcatalog/catalog_gen.go"
+	AsyncAPIOutput           = "deployment/generated/asyncapi.json"
+	CommunicationOutput      = "deployment/generated/communication.md"
 	CompositionCatalogOut    = corecomposition.CompositionCatalogName
 )
 
@@ -57,6 +61,7 @@ type Options struct {
 	Permissions []string
 	Fixtures    []string
 	Topology    []string
+	Events      []string
 }
 
 type FrontendContribution struct {
@@ -235,6 +240,9 @@ func Generate(options Options) error {
 	if err != nil {
 		return err
 	}
+	if err := composeEvents(options, manifest, options.ModuleRoot, options.OutputRoot, files); err != nil {
+		return err
+	}
 	for path, body := range files {
 		absolute := filepath.Join(options.OutputRoot, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
@@ -311,6 +319,9 @@ func generateCoreComposition(options Options) error {
 	if err != nil {
 		return err
 	}
+	if err := composeEvents(options, manifest, moduleRoot, input.Projection, files); err != nil {
+		return err
+	}
 	catalog := corecomposition.Catalog{
 		Schema:       "codefly/composition-catalog/v2",
 		Inputs:       catalogInputs,
@@ -323,6 +334,52 @@ func generateCoreComposition(options Options) error {
 	}
 	files[CompositionCatalogOut] = catalogBody
 	return writeOutputs(input.Projection, files)
+}
+
+// composeEvents merges the events contributions named on the command line into
+// the generated event catalog and adds its four projections to files.
+//
+// Both composition entry points call it, and that is the point. The events
+// wiring used to live only in the flags branch of Generate, but flags and Core
+// input are not two products — they are two ways of invoking the same
+// composition, and codefly always takes the Core path (module-compose defaults
+// -input to CODEFLY_COMPOSITION_INPUT). The generator command in
+// module.package.codefly.yaml passes --events on every invocation, so on the
+// path that actually runs in a codefly build those arguments were read into
+// options and then never used: the catalog, its Go projection, asyncapi.json and
+// communication.md were simply not regenerated, and drift between the
+// contributions and the committed artifacts could not be detected there.
+//
+// With no --events arguments there is nothing to compose and the existing
+// artifacts are left untouched. That matters: composing zero contributions is
+// not the same as declaring that no events exist, and writing an empty catalog
+// over the committed one would silently retract every declared type — including
+// the visibility flags the relay reads to decide what may never reach a
+// subscriber.
+func composeEvents(options Options, manifest modulepackage.Manifest, moduleRoot, outputRoot string, files map[string][]byte) error {
+	if len(options.Events) == 0 {
+		return nil
+	}
+	contributions, err := readDocuments[EventsContribution](options.Events)
+	if err != nil {
+		return err
+	}
+	prior, err := readEventCatalog(outputRoot)
+	if err != nil {
+		return err
+	}
+	catalog, err := buildEventCatalog(contributions, manifest, filepath.Join(moduleRoot, "services/accounts/proto"), prior)
+	if err != nil {
+		return err
+	}
+	eventFiles, err := renderEventCatalog(catalog)
+	if err != nil {
+		return err
+	}
+	for path, body := range eventFiles {
+		files[path] = body
+	}
+	return nil
 }
 
 func requireJSONEOF(decoder *json.Decoder) error {

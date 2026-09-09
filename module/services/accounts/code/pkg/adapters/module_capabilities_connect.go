@@ -63,3 +63,23 @@ func (h *moduleCapabilitiesConnectHandler) EmitAuditEvent(ctx context.Context, r
 func (h *moduleCapabilitiesConnectHandler) FetchDatasourceBlob(ctx context.Context, req *connect.Request[gen.FetchDatasourceBlobRequest], stream *connect.ServerStream[gen.FetchDatasourceBlobChunk]) error {
 	return streamDatasourceBlob(ctx, req.Msg, stream)
 }
+
+func (h *moduleCapabilitiesConnectHandler) PublishEvent(ctx context.Context, req *connect.Request[gen.ModulePublishEventRequest]) (*connect.Response[gen.ModulePublishEventResponse], error) {
+	return unary(ctx, req, h.inner.PublishEvent)
+}
+
+func (h *moduleCapabilitiesConnectHandler) Subscribe(ctx context.Context, req *connect.Request[gen.ModuleSubscribeRequest]) (*connect.Response[gen.ModuleSubscribeResponse], error) {
+	return unary(ctx, req, h.inner.Subscribe)
+}
+
+func (h *moduleCapabilitiesConnectHandler) Unsubscribe(ctx context.Context, req *connect.Request[gen.ModuleUnsubscribeRequest]) (*connect.Response[emptypb.Empty], error) {
+	return unary(ctx, req, h.inner.Unsubscribe)
+}
+
+func (h *moduleCapabilitiesConnectHandler) ListSubscriptions(ctx context.Context, req *connect.Request[gen.ModuleListSubscriptionsRequest]) (*connect.Response[gen.ModuleListSubscriptionsResponse], error) {
+	return unary(ctx, req, h.inner.ListSubscriptions)
+}
+
+func (h *moduleCapabilitiesConnectHandler) ReplayEvents(ctx context.Context, req *connect.Request[gen.ModuleReplayEventsRequest]) (*connect.Response[gen.ModuleReplayEventsResponse], error) {
+	return unary(ctx, req, h.inner.ReplayEvents)
+}

@@ -18,7 +18,7 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:2e4f2a80744374a0478733b2996c9e1bac4f6d91153f19d09ed86428720004d9
+        digest: sha256:f123a22b1c0e4d20278bfb597a5d729db38eb21296e4a3415e15ffbbc050482d
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -26,7 +26,7 @@ services:
         kind: protobuf
         package: saas.gateway.auth.v1
         path: contracts/api/auth-gateway/grpc/contract.binpb
-        digest: sha256:b1ff9b4b5d4521fc6c3f495f4a7cd7dc21004da5e2241128eeccb2cecea33868
+        digest: sha256:01838891b087320a7b63242ec7087ddcd4219cb3fef6c87f51c9e9dc7e77d803
   - name: cache
     endpoints: [read, write]
   - name: frontend
@@ -48,7 +48,7 @@ contracts:
 generators:
   - name: composition
     working-directory: tools
-    command: [go, run, ./cmd/module-compose]
+    command: [go, run, ./cmd/module-compose, --events, ../contracts/accounts/installation.events.codefly.yaml, --events, ../contracts/accounts/scope.events.codefly.yaml, --events, ../contracts/reference/events.codefly.yaml]
   - name: composed-protobuf
     working-directory: services/accounts
     command: [buf, generate, proto, --path, proto/saas/composed/settings/v1/settings.proto, --path, proto/saas/composed/org_settings/v1/settings.proto, --path, proto/contributed, --template, buf.gen.composition.yaml]

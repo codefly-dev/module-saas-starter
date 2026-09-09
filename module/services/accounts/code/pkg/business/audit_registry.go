@@ -228,6 +228,14 @@ const (
 	EventDatasourceBlobFetched         EventType = "saas.datasource.blob_fetched"
 	EventFeatureFlagUpdated            EventType = "saas.feature_flag.updated"
 
+	// Domain-event pub/sub (issue #493). A subscription is a standing grant of
+	// delivery, so its create and revoke are audited on the tenant spine; a
+	// replay is an operator action that re-delivers history. Per-publish is not
+	// audited — the domain_events relation is itself the record of every publish.
+	EventEventSubscriptionCreated EventType = "saas.event.subscription_created"
+	EventEventSubscriptionRevoked EventType = "saas.event.subscription_revoked"
+	EventEventReplayed            EventType = "saas.event.replayed"
+
 	EventDashboardCreated EventType = "saas.dashboard.created"
 	EventDashboardUpdated EventType = "saas.dashboard.updated"
 	EventDashboardDeleted EventType = "saas.dashboard.deleted"
@@ -382,6 +390,11 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
 	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
+	def(EventEventSubscriptionCreated, CategorySystem, "A domain-event subscription was created.",
+		uid("subscription_id"), uid("subscriber_principal_id"), str("type_pattern"), str("queue")),
+	def(EventEventSubscriptionRevoked, CategorySystem, "A domain-event subscription was revoked.", uid("subscription_id")),
+	def(EventEventReplayed, CategorySystem, "Domain events were replayed to a subscriber.",
+		str("type"), PayloadField{Name: "redelivered", Kind: FieldInt}),
 	def(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", documentFields...),
 	def(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
 	def(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),

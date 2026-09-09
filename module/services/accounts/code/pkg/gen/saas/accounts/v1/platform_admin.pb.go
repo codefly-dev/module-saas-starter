@@ -7,6 +7,7 @@
 package accountsv1
 
 import (
+	v11 "accounts/pkg/gen/saas/events/v1"
 	v1 "accounts/pkg/gen/saas/jobs/v1"
 	_ "accounts/pkg/gen/saas/policy/v1"
 	reflect "reflect"
@@ -1414,7 +1415,7 @@ var File_saas_accounts_v1_platform_admin_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\n" +
-	"%saas/accounts/v1/platform_admin.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"q\n" +
+	"%saas/accounts/v1/platform_admin.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1fsaas/events/v1/operations.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"q\n" +
 	"\x12SearchUsersRequest\x12\x14\n" +
 	"\x05query\x18\x01 \x01(\tR\x05query\x12&\n" +
 	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d \x00R\bpageSize\x12\x1d\n" +
@@ -1513,7 +1514,7 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x0frollout_percent\x18\x04 \x01(\x05R\x0erolloutPercent\x12$\n" +
 	"\x0etarget_org_ids\x18\x05 \x03(\tR\ftargetOrgIds:\x02\x18\x01\"3\n" +
 	"\x19UpsertFeatureFlagResponse\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name:\x02\x18\x012\xc1\x17\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name:\x02\x18\x012\xac\x1a\n" +
 	"\x14PlatformAdminService\x12\x8e\x01\n" +
 	"\vSearchUsers\x12$.saas.accounts.v1.SearchUsersRequest\x1a%.saas.accounts.v1.SearchUsersResponse\"2\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x03\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/platform/users\x12\xa9\x01\n" +
 	"\vSuspendUser\x12$.saas.accounts.v1.SuspendUserRequest\x1a\x16.google.protobuf.Empty\"\\\xc2\xf3\x18)\b\x02\x10\x010\x01:\x17\n" +
@@ -1541,7 +1542,9 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\bListJobs\x12\x1d.saas.jobs.v1.ListJobsRequest\x1a\x1e.saas.jobs.v1.ListJobsResponse\"1\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/platform/jobs\x12\x7f\n" +
 	"\x06GetJob\x12\x1b.saas.jobs.v1.GetJobRequest\x1a\x1c.saas.jobs.v1.GetJobResponse\":\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/platform/jobs/{job_id}\x12\xac\x01\n" +
 	"\tReplayJob\x12\x1e.saas.jobs.v1.ReplayJobRequest\x1a\x1f.saas.jobs.v1.ReplayJobResponse\"^\xc2\xf3\x18'\b\x02\x10\x010\x03:\x15\n" +
-	"\x11saas.job.replayed\x10\x02@\x03H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/platform/jobs/{source_job_id}:replayB\xba\x01\n" +
+	"\x11saas.job.replayed\x10\x02@\x03H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/platform/jobs/{source_job_id}:replay\x12\xab\x01\n" +
+	"\x12GetEventOperations\x12).saas.events.v1.GetEventOperationsRequest\x1a*.saas.events.v1.GetEventOperationsResponse\">\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02 \x12\x1e/v1/platform/events/operations\x12\xba\x01\n" +
+	"\x16ListEventSubscriptions\x12-.saas.events.v1.ListEventSubscriptionsRequest\x1a..saas.events.v1.ListEventSubscriptionsResponse\"A\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02#\x12!/v1/platform/events/subscriptionsB\xba\x01\n" +
 	"\x14com.saas.accounts.v1B\x12PlatformAdminProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (
@@ -1558,43 +1561,47 @@ func file_saas_accounts_v1_platform_admin_proto_rawDescGZIP() []byte {
 
 var file_saas_accounts_v1_platform_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
 var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
-	(*SearchUsersRequest)(nil),          // 0: saas.accounts.v1.SearchUsersRequest
-	(*SearchUsersResponse)(nil),         // 1: saas.accounts.v1.SearchUsersResponse
-	(*SuspendUserRequest)(nil),          // 2: saas.accounts.v1.SuspendUserRequest
-	(*UnsuspendUserRequest)(nil),        // 3: saas.accounts.v1.UnsuspendUserRequest
-	(*ImpersonateUserRequest)(nil),      // 4: saas.accounts.v1.ImpersonateUserRequest
-	(*ImpersonateUserResponse)(nil),     // 5: saas.accounts.v1.ImpersonateUserResponse
-	(*ListActiveSessionsRequest)(nil),   // 6: saas.accounts.v1.ListActiveSessionsRequest
-	(*SessionInfo)(nil),                 // 7: saas.accounts.v1.SessionInfo
-	(*ListActiveSessionsResponse)(nil),  // 8: saas.accounts.v1.ListActiveSessionsResponse
-	(*RevokeSessionRequest)(nil),        // 9: saas.accounts.v1.RevokeSessionRequest
-	(*GetOrgEntitlementsRequest)(nil),   // 10: saas.accounts.v1.GetOrgEntitlementsRequest
-	(*GetOrgEntitlementsResponse)(nil),  // 11: saas.accounts.v1.GetOrgEntitlementsResponse
-	(*EntitlementInfo)(nil),             // 12: saas.accounts.v1.EntitlementInfo
-	(*OverrideEntitlementRequest)(nil),  // 13: saas.accounts.v1.OverrideEntitlementRequest
-	(*OverrideEntitlementResponse)(nil), // 14: saas.accounts.v1.OverrideEntitlementResponse
-	(*GrantPlatformRoleRequest)(nil),    // 15: saas.accounts.v1.GrantPlatformRoleRequest
-	(*RevokePlatformRoleRequest)(nil),   // 16: saas.accounts.v1.RevokePlatformRoleRequest
-	(*ListPlatformAdminsRequest)(nil),   // 17: saas.accounts.v1.ListPlatformAdminsRequest
-	(*PlatformAdminEntry)(nil),          // 18: saas.accounts.v1.PlatformAdminEntry
-	(*ListPlatformAdminsResponse)(nil),  // 19: saas.accounts.v1.ListPlatformAdminsResponse
-	(*ListFeatureFlagsRequest)(nil),     // 20: saas.accounts.v1.ListFeatureFlagsRequest
-	(*FeatureFlagEntry)(nil),            // 21: saas.accounts.v1.FeatureFlagEntry
-	(*ListFeatureFlagsResponse)(nil),    // 22: saas.accounts.v1.ListFeatureFlagsResponse
-	(*UpsertFeatureFlagRequest)(nil),    // 23: saas.accounts.v1.UpsertFeatureFlagRequest
-	(*UpsertFeatureFlagResponse)(nil),   // 24: saas.accounts.v1.UpsertFeatureFlagResponse
-	nil,                                 // 25: saas.accounts.v1.SessionInfo.DeviceInfoEntry
-	(*User)(nil),                        // 26: saas.accounts.v1.User
-	(*timestamppb.Timestamp)(nil),       // 27: google.protobuf.Timestamp
-	(*v1.GetJobOperationsRequest)(nil),  // 28: saas.jobs.v1.GetJobOperationsRequest
-	(*v1.ListJobsRequest)(nil),          // 29: saas.jobs.v1.ListJobsRequest
-	(*v1.GetJobRequest)(nil),            // 30: saas.jobs.v1.GetJobRequest
-	(*v1.ReplayJobRequest)(nil),         // 31: saas.jobs.v1.ReplayJobRequest
-	(*emptypb.Empty)(nil),               // 32: google.protobuf.Empty
-	(*v1.GetJobOperationsResponse)(nil), // 33: saas.jobs.v1.GetJobOperationsResponse
-	(*v1.ListJobsResponse)(nil),         // 34: saas.jobs.v1.ListJobsResponse
-	(*v1.GetJobResponse)(nil),           // 35: saas.jobs.v1.GetJobResponse
-	(*v1.ReplayJobResponse)(nil),        // 36: saas.jobs.v1.ReplayJobResponse
+	(*SearchUsersRequest)(nil),                 // 0: saas.accounts.v1.SearchUsersRequest
+	(*SearchUsersResponse)(nil),                // 1: saas.accounts.v1.SearchUsersResponse
+	(*SuspendUserRequest)(nil),                 // 2: saas.accounts.v1.SuspendUserRequest
+	(*UnsuspendUserRequest)(nil),               // 3: saas.accounts.v1.UnsuspendUserRequest
+	(*ImpersonateUserRequest)(nil),             // 4: saas.accounts.v1.ImpersonateUserRequest
+	(*ImpersonateUserResponse)(nil),            // 5: saas.accounts.v1.ImpersonateUserResponse
+	(*ListActiveSessionsRequest)(nil),          // 6: saas.accounts.v1.ListActiveSessionsRequest
+	(*SessionInfo)(nil),                        // 7: saas.accounts.v1.SessionInfo
+	(*ListActiveSessionsResponse)(nil),         // 8: saas.accounts.v1.ListActiveSessionsResponse
+	(*RevokeSessionRequest)(nil),               // 9: saas.accounts.v1.RevokeSessionRequest
+	(*GetOrgEntitlementsRequest)(nil),          // 10: saas.accounts.v1.GetOrgEntitlementsRequest
+	(*GetOrgEntitlementsResponse)(nil),         // 11: saas.accounts.v1.GetOrgEntitlementsResponse
+	(*EntitlementInfo)(nil),                    // 12: saas.accounts.v1.EntitlementInfo
+	(*OverrideEntitlementRequest)(nil),         // 13: saas.accounts.v1.OverrideEntitlementRequest
+	(*OverrideEntitlementResponse)(nil),        // 14: saas.accounts.v1.OverrideEntitlementResponse
+	(*GrantPlatformRoleRequest)(nil),           // 15: saas.accounts.v1.GrantPlatformRoleRequest
+	(*RevokePlatformRoleRequest)(nil),          // 16: saas.accounts.v1.RevokePlatformRoleRequest
+	(*ListPlatformAdminsRequest)(nil),          // 17: saas.accounts.v1.ListPlatformAdminsRequest
+	(*PlatformAdminEntry)(nil),                 // 18: saas.accounts.v1.PlatformAdminEntry
+	(*ListPlatformAdminsResponse)(nil),         // 19: saas.accounts.v1.ListPlatformAdminsResponse
+	(*ListFeatureFlagsRequest)(nil),            // 20: saas.accounts.v1.ListFeatureFlagsRequest
+	(*FeatureFlagEntry)(nil),                   // 21: saas.accounts.v1.FeatureFlagEntry
+	(*ListFeatureFlagsResponse)(nil),           // 22: saas.accounts.v1.ListFeatureFlagsResponse
+	(*UpsertFeatureFlagRequest)(nil),           // 23: saas.accounts.v1.UpsertFeatureFlagRequest
+	(*UpsertFeatureFlagResponse)(nil),          // 24: saas.accounts.v1.UpsertFeatureFlagResponse
+	nil,                                        // 25: saas.accounts.v1.SessionInfo.DeviceInfoEntry
+	(*User)(nil),                               // 26: saas.accounts.v1.User
+	(*timestamppb.Timestamp)(nil),              // 27: google.protobuf.Timestamp
+	(*v1.GetJobOperationsRequest)(nil),         // 28: saas.jobs.v1.GetJobOperationsRequest
+	(*v1.ListJobsRequest)(nil),                 // 29: saas.jobs.v1.ListJobsRequest
+	(*v1.GetJobRequest)(nil),                   // 30: saas.jobs.v1.GetJobRequest
+	(*v1.ReplayJobRequest)(nil),                // 31: saas.jobs.v1.ReplayJobRequest
+	(*v11.GetEventOperationsRequest)(nil),      // 32: saas.events.v1.GetEventOperationsRequest
+	(*v11.ListEventSubscriptionsRequest)(nil),  // 33: saas.events.v1.ListEventSubscriptionsRequest
+	(*emptypb.Empty)(nil),                      // 34: google.protobuf.Empty
+	(*v1.GetJobOperationsResponse)(nil),        // 35: saas.jobs.v1.GetJobOperationsResponse
+	(*v1.ListJobsResponse)(nil),                // 36: saas.jobs.v1.ListJobsResponse
+	(*v1.GetJobResponse)(nil),                  // 37: saas.jobs.v1.GetJobResponse
+	(*v1.ReplayJobResponse)(nil),               // 38: saas.jobs.v1.ReplayJobResponse
+	(*v11.GetEventOperationsResponse)(nil),     // 39: saas.events.v1.GetEventOperationsResponse
+	(*v11.ListEventSubscriptionsResponse)(nil), // 40: saas.events.v1.ListEventSubscriptionsResponse
 }
 var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
 	26, // 0: saas.accounts.v1.SearchUsersResponse.users:type_name -> saas.accounts.v1.User
@@ -1625,25 +1632,29 @@ var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
 	29, // 25: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
 	30, // 26: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
 	31, // 27: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
-	1,  // 28: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
-	32, // 29: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
-	32, // 30: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
-	5,  // 31: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
-	8,  // 32: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
-	32, // 33: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
-	11, // 34: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
-	14, // 35: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
-	32, // 36: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
-	32, // 37: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
-	19, // 38: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
-	22, // 39: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
-	24, // 40: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
-	33, // 41: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
-	34, // 42: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
-	35, // 43: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
-	36, // 44: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
-	28, // [28:45] is the sub-list for method output_type
-	11, // [11:28] is the sub-list for method input_type
+	32, // 28: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
+	33, // 29: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
+	1,  // 30: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
+	34, // 31: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
+	34, // 32: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
+	5,  // 33: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
+	8,  // 34: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
+	34, // 35: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
+	11, // 36: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
+	14, // 37: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
+	34, // 38: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
+	34, // 39: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
+	19, // 40: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
+	22, // 41: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
+	24, // 42: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
+	35, // 43: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
+	36, // 44: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
+	37, // 45: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
+	38, // 46: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
+	39, // 47: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
+	40, // 48: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
+	30, // [30:49] is the sub-list for method output_type
+	11, // [11:30] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name

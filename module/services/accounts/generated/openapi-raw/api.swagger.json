@@ -2798,6 +2798,51 @@
         ]
       }
     },
+    "/v1/platform/events/operations": {
+      "get": {
+        "summary": "Domain-event platform operations (#494 P3). Payload bytes never leave the\ndurable event boundary through these methods — only counts, timings, and\ncontrol-plane subscription metadata do.",
+        "operationId": "PlatformAdminService_GetEventOperations",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetEventOperationsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/events/subscriptions": {
+      "get": {
+        "operationId": "PlatformAdminService_ListEventSubscriptions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListEventSubscriptionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
     "/v1/platform/feature-flags": {
       "get": {
         "summary": "Legacy feature-flag migration inventory (platform-only, read-only)",
@@ -6423,6 +6468,109 @@
         }
       }
     },
+    "v1EventRelayHealth": {
+      "type": "object",
+      "properties": {
+        "totalEvents": {
+          "type": "string",
+          "format": "uint64",
+          "description": "total_events is every domain_events row."
+        },
+        "publishedEvents": {
+          "type": "string",
+          "format": "uint64",
+          "description": "published_events is the number the relay has fanned out (published_at set)."
+        },
+        "backlog": {
+          "type": "string",
+          "format": "uint64",
+          "description": "backlog is the number still awaiting fan-out (published_at IS NULL)."
+        },
+        "oldestUnpublishedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "oldest_unpublished_at is the created_at of the oldest unpublished event —\nthe head-of-line relay lag. Unset when the backlog is empty."
+        }
+      },
+      "description": "EventRelayHealth is the outbox-drain view across every type: how far the relay\nis behind, expressed as a backlog count and a head-of-line age."
+    },
+    "v1EventSubscriptionSummary": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "subscriberPrincipalId": {
+          "type": "string",
+          "description": "subscriber_principal_id is the principal that receives the delivery."
+        },
+        "typePattern": {
+          "type": "string",
+          "description": "type_pattern is an exact type or a single trailing \".*\" wildcard."
+        },
+        "queue": {
+          "type": "string",
+          "description": "queue is the inbox queue the relay enqueues deliveries onto."
+        },
+        "delivery": {
+          "type": "string",
+          "description": "delivery is \"ordered\" or \"unordered\"."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "queueDeadLetter": {
+          "type": "string",
+          "format": "uint64",
+          "description": "queue_dead_letter is the number of dead-lettered deliveries currently on\nthis subscription's queue (shared across subscriptions on the same queue)."
+        }
+      },
+      "description": "EventSubscriptionSummary is one live (non-revoked) control-plane subscription\nresolved by the relay for fan-out."
+    },
+    "v1EventTypeSnapshot": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "type is the fully-qualified event type, e.g. \"reference.console.viewed\"."
+        },
+        "visibility": {
+          "type": "string",
+          "description": "visibility is the declared catalog visibility: internal | tenant | external.\nInternal types are intra-platform and never delivered to a subscriber."
+        },
+        "publisher": {
+          "type": "string",
+          "description": "publisher is the owning namespace (the leading dotted segment of type)."
+        },
+        "major": {
+          "type": "integer",
+          "format": "int64",
+          "description": "major is the schema major version from the catalog."
+        },
+        "totalEvents": {
+          "type": "string",
+          "format": "uint64",
+          "description": "total_events is the number of domain_events rows of this type."
+        },
+        "unpublished": {
+          "type": "string",
+          "format": "uint64",
+          "description": "unpublished is the number not yet fanned out (published_at IS NULL)."
+        },
+        "lastEventAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "last_event_at is the newest created_at across rows of this type, if any."
+        },
+        "subscribers": {
+          "type": "string",
+          "format": "uint64",
+          "description": "subscribers is the count of live subscriptions whose pattern matches type."
+        }
+      },
+      "description": "EventTypeSnapshot is one published event type: its declared catalog contract\njoined with live counters drawn from domain_events. A catalog type with no\nrows yet still appears, with zero counters."
+    },
     "v1ExchangeWorkContextAudienceRequest": {
       "type": "object",
       "properties": {
@@ -6607,6 +6755,36 @@
           "items": {
             "type": "string"
           }
+        }
+      }
+    },
+    "v1GetEventOperationsResponse": {
+      "type": "object",
+      "properties": {
+        "eventTypes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EventTypeSnapshot"
+          },
+          "description": "event_types is every published catalog type with its live counters,\nordered by type."
+        },
+        "relay": {
+          "$ref": "#/definitions/v1EventRelayHealth",
+          "description": "relay is the platform-wide outbox drain health."
+        },
+        "deadLetters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1QueueDeadLetters"
+          },
+          "description": "dead_letters is the per-queue dead-letter count over live subscriber queues,\nordered by queue. Empty when no event delivery is dead-lettered."
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "observed_at is the database clock at which the snapshot was taken."
         }
       }
     },
@@ -7589,6 +7767,19 @@
         }
       }
     },
+    "v1ListEventSubscriptionsResponse": {
+      "type": "object",
+      "properties": {
+        "subscriptions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1EventSubscriptionSummary"
+          },
+          "description": "subscriptions is every live subscription across all principals, ordered by\ncreated_at."
+        }
+      }
+    },
     "v1ListFeatureFlagsResponse": {
       "type": "object",
       "properties": {
@@ -8492,6 +8683,19 @@
           "format": "int32"
         }
       }
+    },
+    "v1QueueDeadLetters": {
+      "type": "object",
+      "properties": {
+        "queue": {
+          "type": "string"
+        },
+        "deadLetter": {
+          "type": "string",
+          "format": "uint64"
+        }
+      },
+      "description": "QueueDeadLetters counts exhausted event deliveries currently sitting in the\ndead-letter state on one subscriber queue."
     },
     "v1RLSPolicyInfo": {
       "type": "object",

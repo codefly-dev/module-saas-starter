@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:2e4f2a80744374a0478733b2996c9e1bac4f6d91153f19d09ed86428720004d9",
+      "digest": "sha256:f123a22b1c0e4d20278bfb597a5d729db38eb21296e4a3415e15ffbbc050482d",
       "services": [
         {
           "name": "APIKeyService",
@@ -172,10 +172,15 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
-            "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+            "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
+            "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
+            "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
           ]
         },
         {
@@ -241,12 +246,14 @@
           "name": "PlatformAdminService",
           "fullName": "saas.accounts.v1.PlatformAdminService",
           "procedures": [
+            "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
             "/saas.accounts.v1.PlatformAdminService/GetJob",
             "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
             "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
             "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
             "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
             "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+            "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
             "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
@@ -379,7 +386,7 @@
       "kind": "protobuf",
       "package": "saas.gateway.auth.v1",
       "path": "contracts/api/auth-gateway/grpc/contract.binpb",
-      "digest": "sha256:b1ff9b4b5d4521fc6c3f495f4a7cd7dc21004da5e2241128eeccb2cecea33868",
+      "digest": "sha256:01838891b087320a7b63242ec7087ddcd4219cb3fef6c87f51c9e9dc7e77d803",
       "services": [
         {
           "name": "AuthGatewayService",

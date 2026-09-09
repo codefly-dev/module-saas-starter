@@ -115,7 +115,19 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 		ExpiresAt:   req.ExpiresAt,
 	}
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		return s.store.GrantScope(ctx, grant)
+		if e := s.store.GrantScope(ctx, grant); e != nil {
+			return e
+		}
+		// scope.granted is tenant-visible so a solution can track the boundaries
+		// it holds; published in the grant's transaction (outbox). The boundary
+		// is the scope node path the grant targets.
+		return s.publishLifecycleEvent(ctx, EventScopeGranted, req.OrgId,
+			req.ScopePath, actorID, map[string]any{
+				"scope_grant_id": grant.Id,
+				"role_id":        req.RoleId,
+				"subject_id":     req.SubjectId,
+				"scope_path":     req.ScopePath,
+			})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot grant scope")
 	}
@@ -128,7 +140,18 @@ func (s *Service) GrantScope(ctx context.Context, actorID string, req *gen.Grant
 func (s *Service) RevokeScope(ctx context.Context, actorID string, req *gen.RevokeScopeRequest) error {
 	w := wool.Get(ctx).In("RevokeScope")
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		return s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId)
+		if e := s.store.RevokeScope(ctx, req.OrgId, req.SubjectId, req.SubjectKind, req.ScopePath, req.RoleId); e != nil {
+			return e
+		}
+		// scope.revoked is tenant-visible: a solution learns a boundary it held
+		// went away (RFC-0004 open question 4). Published in the revoke's
+		// transaction (outbox); boundary is the scope node path.
+		return s.publishLifecycleEvent(ctx, EventScopeRevoked, req.OrgId,
+			req.ScopePath, actorID, map[string]any{
+				"role_id":    req.RoleId,
+				"subject_id": req.SubjectId,
+				"scope_path": req.ScopePath,
+			})
 	}); err != nil {
 		return w.Wrapf(err, "cannot revoke scope")
 	}

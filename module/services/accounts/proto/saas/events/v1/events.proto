@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package saas.events.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// EventEnvelope is the product-neutral wire vocabulary for one domain event.
+// Its attributes are the CloudEvents 1.0 core plus a fixed set of extension
+// attributes; every extension maps 1:1 to a CloudEvents extension name so the
+// standard JSON binding round-trips byte-for-byte. It is message-only: the
+// durable representation and fan-out live in the jobs platform and the
+// domain_events relation, never in an Accounts RPC. See EVENTS.md.
+message EventEnvelope {
+  // id is a UUIDv7 and the idempotency key at every hop.
+  string id = 1;
+  // type is "<namespace>.<aggregate>.<event>", immutable once published.
+  string type = 2;
+  // source is "urn:codefly:<module>/<service>".
+  string source = 3;
+  // subject is the aggregate id the fact is about.
+  string subject = 4;
+  google.protobuf.Timestamp time = 5;
+  // specversion is the CloudEvents spec version, "1.0".
+  string specversion = 6;
+  // datacontenttype is application/protobuf or application/json.
+  string datacontenttype = 7;
+  // dataschema is the catalog ref "codefly/events/<type>@<major>".
+  string dataschema = 8;
+  // data is the event payload, capped at 960 KiB; larger payloads use a
+  // claim-check reference.
+  bytes data = 9;
+
+  // Extension attributes (CloudEvents extensions; all string-valued on the wire).
+
+  // tenant_id is required except for platform-scope events.
+  string tenant_id = 20;
+  // boundary_id is the scope node id when the fact belongs to a boundary.
+  string boundary_id = 21;
+  // partition_key is the ordering domain; it maps to JobOrderingKey.
+  string partition_key = 22;
+  // correlation_id is the causal chain root.
+  string correlation_id = 23;
+  // causation_id is the event or command id that caused this one.
+  string causation_id = 24;
+  // actor_principal_id is the effective actor (agent or human).
+  string actor_principal_id = 25;
+  // owner_principal_id is the on-behalf-of principal when delegated.
+  string owner_principal_id = 26;
+  // traceparent is the W3C trace context.
+  string traceparent = 27;
+  // schema_version is the minor within the dataschema major.
+  uint32 schema_version = 28;
+}

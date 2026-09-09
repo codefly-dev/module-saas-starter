@@ -370,6 +370,27 @@ type Store interface {
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)
 
+	// Domain event subscriptions (pub/sub control plane — issue #493).
+	// event_subscriptions is a control-plane-owned platform relation (no RLS),
+	// so all three run under WithControlPlane; request traffic never writes it.
+	//
+	//   - CreateEventSubscription is idempotent on the active-unique index
+	//     (subscriber_principal_id, type_pattern, queue) WHERE revoked_at IS NULL:
+	//     re-subscribing the same shape returns the existing live row instead of a
+	//     second row. The returned bool reports whether a new row was inserted.
+	//   - RevokeEventSubscription is scoped by subscriber_principal_id so a caller
+	//     can only revoke a subscription it owns; the bool reports whether a live
+	//     row was revoked (false = not found or already revoked / not owned).
+	//   - ListEventSubscriptions returns the principal's live (non-revoked) rows.
+	//   - CountLiveEventSubscriptions counts every live (non-revoked) subscription
+	//     across all principals. Startup uses it to assert that a module which has
+	//     accepted subscriptions also has a delivery transport wired, so events are
+	//     never silently dropped on the floor.
+	CreateEventSubscription(ctx context.Context, sub *EventSubscription) (*EventSubscription, bool, error)
+	RevokeEventSubscription(ctx context.Context, subscriptionID, subscriberPrincipalID string) (bool, error)
+	ListEventSubscriptions(ctx context.Context, subscriberPrincipalID string) ([]*EventSubscription, error)
+	CountLiveEventSubscriptions(ctx context.Context) (int, error)
+
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)
 	UpsertOrgSettings(ctx context.Context, settings *OrgSettings) error
