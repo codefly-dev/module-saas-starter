@@ -28,7 +28,7 @@ func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	return &Sidecar{
-		publicKey:    pub,
+		keys:         staticAccessKeys(pub),
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
 		gatewayToken: "test-gateway-token",
@@ -416,12 +416,16 @@ func TestUnit_MalformedJWT_Denied(t *testing.T) {
 }
 
 func TestUnit_NoKey_Denied(t *testing.T) {
-	// Simulates a sidecar that failed to fetch the JWKS.
-	s := &Sidecar{publicKey: nil, issuer: "saas-starter", audience: "saas-starter"}
+	// Simulates a sidecar that has not managed to fetch the JWKS. An otherwise
+	// valid token must read as an availability failure (503), not as a bad
+	// credential (401) — the caller should retry, not re-authenticate.
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	s := &Sidecar{keys: unavailableAccessKeys{}, issuer: "saas-starter", audience: "saas-starter"}
 	ctx := context.Background()
 
 	resp, err := s.Check(ctx, checkReq("/v1/users", map[string]string{
-		"authorization": "Bearer anything",
+		"authorization": "Bearer " + signClaims(t, priv, validClaims(time.Now())),
 	}))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetDeniedResponse())

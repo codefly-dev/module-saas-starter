@@ -37,6 +37,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Platform-functionality reference (external audit mapped to shipped/partial/gap): `PLATFORM_REFERENCE.md`
 - Generated gateway inventory: `module/services/accounts/generated/gateway-routes.json`
 - Gateway route contract and rollout boundary: `module/GATEWAY_ROUTES.md`
+- Access-token signing-key rotation runbook: `module/KEY_ROTATION.md`
 - Generated REST inventory: `module/services/accounts/generated/rest-surface.json`
 - REST/OpenAPI contract and extension boundary: `module/REST_SURFACE.md`
 

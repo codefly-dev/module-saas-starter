@@ -89,7 +89,7 @@ func TestPerimeter_VerifierIsLocalOwnTokenOnly(t *testing.T) {
 	s, priv := newTestSidecar(t)
 	// A sidecar constructed via the real constructor is anchored on our own
 	// issuer/audience — not a provider's.
-	real := NewSidecar(nil, s.publicKey)
+	real := NewSidecar(nil, s.keys)
 	require.Equal(t, "saas-starter", real.issuer)
 	require.Equal(t, "saas-starter", real.audience)
 
@@ -145,10 +145,13 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	"main.go":              true,
 	"ratelimit.go":         true,
 	"telemetry_metrics.go": true,
-	// work_context.go fetches the cluster's own published Work Context JWKS
-	// (the access-token key set on the internal accounts route), never an
-	// external IdP — the same key material the sidecar already loads at boot.
+	// work_context.go and access_keys.go verify against the cluster's own
+	// published key set, never an external IdP: both read the same accounts
+	// JWKS the sidecar has always loaded, through jwks_cache.go, whose origin
+	// comes from Codefly service discovery and never from a presented token.
 	"work_context.go": true,
+	"access_keys.go":  true,
+	"jwks_cache.go":   true,
 }
 
 // TestPerimeter_NoExternalIdPImports guards ask #2 of issue #313 structurally.

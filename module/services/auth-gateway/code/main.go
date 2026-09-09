@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -25,9 +22,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
-	"google.golang.org/protobuf/types/known/emptypb"
-
-	apigen "auth-gateway/external/saas-starter/accounts"
 )
 
 func main() {
@@ -88,11 +82,6 @@ func main() {
 		}
 	}()
 
-	apiNet := codefly.For(ctx).Service("accounts").Endpoint("grpc").API("grpc").NetworkInstance()
-	if apiNet == nil {
-		panic("api gRPC endpoint not available")
-	}
-	apiAddr := fmt.Sprintf("%s:%d", apiNet.Hostname, apiNet.Port)
 	// Upstream HTTP URLs used by the gateway listener.
 	apiRestNet := codefly.For(ctx).Service("accounts").API("rest").NetworkInstance()
 	apiHTTPURL := ""
@@ -109,20 +98,21 @@ func main() {
 	if apiConnectNet != nil {
 		apiConnectURL = fmt.Sprintf("http://%s:%d", apiConnectNet.Hostname, apiConnectNet.Port)
 	}
-	apiConn, err := grpc.NewClient(apiAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		panic(fmt.Sprintf("cannot connect to api at %s: %v", apiAddr, err))
-	}
-	defer func() { _ = apiConn.Close() }()
 	internalAPIConn, err := grpc.NewClient(internalAPIAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		panic(fmt.Sprintf("cannot connect to internal api at %s: %v", internalAPIAddr, err))
 	}
 	defer func() { _ = internalAPIConn.Close() }()
 
-	publicKey := fetchPublicKey(ctx, apiConn)
+	// Access-token verification keys come from the JWKS accounts publishes on
+	// the endpoint Codefly discovery resolved above, re-read by kid so an
+	// overlapping key pair verifies without a restart. Acquisition is lazy and
+	// retried: accounts being unreachable now leaves the gateway not-ready, not
+	// permanently unable to authenticate.
+	accessKeySet := newAccessJWKS(apiHTTPURL)
+	go keepAccessKeysWarm(ctx, accessKeySet)
 
-	sidecar := NewSidecar(internalAPIConn, publicKey)
+	sidecar := NewSidecar(internalAPIConn, accessKeySet)
 
 	redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
 	if redisErr != nil || redisURL == "" {
@@ -160,8 +150,8 @@ func main() {
 		panic(fmt.Sprintf("failed to listen on grpc port: %v", err))
 	}
 
-	fmt.Printf("auth-gateway gRPC (ext_authz) listening on :%d (api: %s, jwt: %v)\n",
-		grpcPort, apiAddr, publicKey != nil)
+	fmt.Printf("auth-gateway gRPC (ext_authz) listening on :%d (api: %s, jwks: %s)\n",
+		grpcPort, internalAPIAddr, apiHTTPURL+accountsJWKSPath)
 
 	// Load generated descriptor REST routes plus explicit YAML extensions.
 	routingDir := DefaultRoutingDir()
@@ -381,52 +371,4 @@ func warmWorkContextKeys(ctx context.Context, verifier *workContextVerifier) {
 		}
 	}
 	log.Printf("WARNING: could not warm Work Context keys: %v (presented Work Contexts fail closed until keys load)", err)
-}
-
-// fetchPublicKey calls api's GetJWKS to get the Ed25519 public key.
-func fetchPublicKey(ctx context.Context, conn *grpc.ClientConn) ed25519.PublicKey {
-	client := apigen.NewAuthServiceClient(conn)
-
-	// Retry — api may still be starting
-	var resp *apigen.JWKSResponse
-	var err error
-	for i := 0; i < 30; i++ {
-		resp, err = client.GetJWKS(ctx, &emptypb.Empty{})
-		if err == nil {
-			break
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-	if err != nil {
-		log.Printf("WARNING: cannot fetch JWKS from backend: %v (JWT validation disabled)", err)
-		return nil
-	}
-
-	var jwks struct {
-		Keys []struct {
-			Kty string `json:"kty"`
-			Crv string `json:"crv"`
-			X   string `json:"x"`
-			Alg string `json:"alg"`
-		} `json:"keys"`
-	}
-	if err := json.Unmarshal([]byte(resp.KeysJson), &jwks); err != nil {
-		log.Printf("WARNING: cannot parse JWKS: %v (JWT validation disabled)", err)
-		return nil
-	}
-
-	for _, key := range jwks.Keys {
-		if key.Kty == "OKP" && key.Crv == "Ed25519" && key.Alg == "EdDSA" {
-			pubBytes, err := base64.RawURLEncoding.DecodeString(key.X)
-			if err != nil {
-				log.Printf("WARNING: cannot decode public key: %v", err)
-				return nil
-			}
-			log.Printf("JWT public key loaded from backend JWKS")
-			return ed25519.PublicKey(pubBytes)
-		}
-	}
-
-	log.Printf("WARNING: no Ed25519 key found in JWKS (JWT validation disabled)")
-	return nil
 }

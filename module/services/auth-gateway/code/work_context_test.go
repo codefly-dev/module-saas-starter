@@ -227,18 +227,18 @@ func TestWorkContextVerifier_RefreshFailsClosedWhenUnreachable(t *testing.T) {
 	require.ErrorIs(t, verifier.Refresh(context.Background()), codefly.ErrWorkContextInvalid)
 }
 
-func TestParseWorkContextJWKS_RejectsEmptyKeySet(t *testing.T) {
-	_, err := parseWorkContextJWKS([]byte(`{"keys":[]}`))
-	require.ErrorIs(t, err, codefly.ErrWorkContextInvalid)
+func TestParseJWKS_RejectsEmptyKeySet(t *testing.T) {
+	_, err := parseJWKS([]byte(`{"keys":[]}`))
+	require.Error(t, err)
 }
 
-func TestParseWorkContextJWKS_SkipsNonEd25519Keys(t *testing.T) {
+func TestParseJWKS_SkipsNonEd25519Keys(t *testing.T) {
 	pub, _ := mustEd25519(t)
 	document := fmt.Sprintf(
 		`{"keys":[{"kty":"RSA","kid":"rsa-1"},{"kty":"OKP","crv":"Ed25519","use":"sig","kid":"ed-1","x":%q}]}`,
 		base64.RawURLEncoding.EncodeToString(pub),
 	)
-	keys, err := parseWorkContextJWKS([]byte(document))
+	keys, err := parseJWKS([]byte(document))
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	require.Contains(t, keys, "ed-1")

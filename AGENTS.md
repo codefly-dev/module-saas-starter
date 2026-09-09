@@ -216,6 +216,7 @@ non-human Principal registration decision for delegated Work Context flows
 authoring API design decisions
 ([DASHBOARD_AUTHORING_DESIGN.md](./DASHBOARD_AUTHORING_DESIGN.md)), deployment
 topology ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)),
+signing-key rotation ([module/KEY_ROTATION.md](./module/KEY_ROTATION.md)),
 frontend ([FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md),
 [module/FRONTEND_PLUGINS.md](./module/FRONTEND_PLUGINS.md)), dynamic dashboards
 ([DYNAMIC_DASHBOARDS.md](./DYNAMIC_DASHBOARDS.md),
