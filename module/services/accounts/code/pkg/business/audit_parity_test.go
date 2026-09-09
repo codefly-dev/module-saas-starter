@@ -38,6 +38,15 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDocumentSubscribed,
 	EventDocumentUnsubscribed,
 	EventDocumentVersionMinted,
+	// Domain-event pub/sub (issue #493). These are emitted inside the producer's
+	// transaction through emitTx rather than by the declarative RPC emission, so
+	// the audit record commits or rolls back with the subscription change itself;
+	// the RPCs correspondingly declare AUDIT_EMISSION_NONE. Subscription creation
+	// also happens with no RPC in the picture at all, when install materializes a
+	// catalog `consumes` entry (events_materialize.go).
+	EventEventReplayed,
+	EventEventSubscriptionCreated,
+	EventEventSubscriptionRevoked,
 	EventGDPRDeletionDone,
 	EventRoleUpdated,
 	EventUserCreated,
