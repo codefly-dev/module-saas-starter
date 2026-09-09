@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   AFFECTED_SCOPED_GATES,
   AGGREGATE_JOB,
+  exemptedGates,
   REQUIRED_GATES,
   isReleaseTag,
   needsClosure,
@@ -27,9 +28,13 @@ const BRANCH = "refs/heads/main";
 function allSucceeded(overrides = {}) {
   const results = {};
   for (const gate of REQUIRED_GATES) results[gate] = { result: "success", outputs: {} };
-  results["codefly-plan"].outputs = { has_work: "true" };
+  results["codefly-plan"].outputs = { has_work: "true", all: "true" };
   return { ...results, ...overrides };
 }
+
+// The plan job as it reports a run with no affected service: an explicit
+// has_work=false, and (off a release tag) a delta-scoped selection.
+const scopedOutPlan = { result: "success", outputs: { has_work: "false", all: "false" } };
 
 // ---------------------------------------------------------------------------
 // decide — the aggregate job's runtime verdict
@@ -69,14 +74,14 @@ test("a gate dropped from the aggregate's needs blocks publication", () => {
 });
 
 test("a no-affected-service plan may skip the affected-scoped gates off a release tag", () => {
-  const results = allSucceeded({ "codefly-plan": { result: "success", outputs: { has_work: "false" } } });
+  const results = allSucceeded({ "codefly-plan": scopedOutPlan });
   for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
   assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }), []);
   assert.deepEqual(publicationVerdictErrors({ results, ref: "refs/pull/7/merge" }), []);
 });
 
 test("that exemption does not apply on a release tag", () => {
-  const results = allSucceeded({ "codefly-plan": { result: "success", outputs: { has_work: "false" } } });
+  const results = allSucceeded({ "codefly-plan": { ...scopedOutPlan, outputs: { has_work: "false", all: "true" } } });
   for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
   for (const ref of [MODULE_TAG, DEPLOY_TAG]) {
     assert.deepEqual(
@@ -93,7 +98,7 @@ test("that exemption does not apply when the plan did find work", () => {
 });
 
 test("that exemption does not cover a gate outside the affected-scoped set", () => {
-  const results = allSucceeded({ "codefly-plan": { result: "success", outputs: { has_work: "false" } } });
+  const results = allSucceeded({ "codefly-plan": scopedOutPlan });
   results["marketing"] = { result: "skipped", outputs: {} };
   assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }), ["marketing: skipped"]);
 });
@@ -107,6 +112,51 @@ test("a skipped plan job cannot exempt the gates it scopes", () => {
     "codefly-quality: skipped",
     "codefly-supply-chain: skipped",
   ]);
+});
+
+test("an absent or unrecognized has_work exempts nothing", () => {
+  // A renamed output or a lost GITHUB_OUTPUT write leaves has_work undefined.
+  // The three affected-scoped jobs then skip on every branch push, and the
+  // exemption must not quietly excuse them.
+  for (const outputs of [{}, { has_work: "" }, { has_work: "unknown" }]) {
+    const results = allSucceeded({ "codefly-plan": { result: "success", outputs } });
+    for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
+    assert.deepEqual(exemptedGates({ results, ref: BRANCH }), []);
+    assert.deepEqual(
+      publicationVerdictErrors({ results, ref: BRANCH }).sort(),
+      AFFECTED_SCOPED_GATES.map((gate) => `${gate}: skipped`).sort(),
+      `has_work=${JSON.stringify(outputs.has_work)} must not exempt anything`,
+    );
+  }
+});
+
+test("a scoped plan on a release ref blocks publication even with every gate green", () => {
+  // Force-moving an existing tag carries a non-zero `before`, which used to
+  // scope the mandatory gates to a delta: they pass without rebuilding or
+  // re-auditing the services outside it.
+  for (const ref of [MODULE_TAG, DEPLOY_TAG]) {
+    const results = allSucceeded({
+      "codefly-plan": { result: "success", outputs: { has_work: "true", all: "false" } },
+    });
+    assert.deepEqual(publicationVerdictErrors({ results, ref }), [
+      "codefly-plan: resolved a scoped plan (all=false) on a release ref; the mandatory gates must verify the full topology",
+    ]);
+  }
+});
+
+test("a release ref with no plan scope reported at all blocks publication", () => {
+  const results = allSucceeded({
+    "codefly-plan": { result: "success", outputs: { has_work: "true" } },
+  });
+  assert.deepEqual(publicationVerdictErrors({ results, ref: DEPLOY_TAG }), [
+    "codefly-plan: resolved a scoped plan (all=absent) on a release ref; the mandatory gates must verify the full topology",
+  ]);
+});
+
+test("a delta-scoped plan is normal off a release ref", () => {
+  const results = allSucceeded({ "codefly-plan": scopedOutPlan });
+  for (const gate of AFFECTED_SCOPED_GATES) results[gate] = { result: "skipped", outputs: {} };
+  assert.deepEqual(publicationVerdictErrors({ results, ref: BRANCH }), []);
 });
 
 test("both tag tracks are recognized as release refs", () => {
@@ -225,14 +275,22 @@ test("deleting the authz-coverage job entirely is rejected", () => {
   ]);
 });
 
-test("an aggregate that does not run with always() is rejected", () => {
+test("an aggregate guarded by !cancelled() is accepted", () => {
+  const text = workflow({
+    aggregateIf: "${{ !cancelled() }}",
+    extra: publisher("publish", { body: RELEASE_STEP }),
+  });
+  assert.deepEqual(releaseGateContractErrors("w.yml", text), []);
+});
+
+test("an aggregate that would skip past a failed gate is rejected", () => {
   const text = workflow({
     aggregateIf: "${{ github.event_name == 'push' }}",
     extra: publisher("publish", { body: RELEASE_STEP }),
   });
   const errors = releaseGateContractErrors("w.yml", text);
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /must run with always\(\)/);
+  assert.match(errors[0], /must run with always\(\) or !cancelled\(\)/);
 });
 
 test("an aggregate that never evaluates its dependencies' outcomes is rejected", () => {
@@ -308,6 +366,15 @@ test("each artifact-writing signal marks a job as a publisher", () => {
     { permissions: { packages: "write" }, steps: [] },
     { permissions: { "id-token": "write" }, steps: [] },
     { permissions: { attestations: "write" }, steps: [] },
+    // GitHub's scalar permissions form grants every scope above at once.
+    { permissions: "write-all", steps: [] },
+    // Actions that publish authenticate with a secret in `with:`, so they trip
+    // neither the permission check nor the `run:` patterns.
+    { steps: [{ uses: "example-org/repository-dispatch@v3" }] },
+    { steps: [{ uses: "example-org/npm-publish@v3" }] },
+    { steps: [{ uses: "example-org/action-gh-release@v2" }] },
+    { steps: [{ uses: "example-org/create-release@v1" }] },
+    { steps: [{ uses: "example-org/upload-release-asset@v1" }] },
   ];
   for (const job of signals) {
     assert.ok(publicationReasons(job, { contents: "read" }).length > 0, JSON.stringify(job));
@@ -321,8 +388,27 @@ test("ordinary checks and a branch-pushing job are not publishers", () => {
     { steps: [{ run: "gh pr create --base main" }] },
     { permissions: { contents: "write", "pull-requests": "write" }, steps: [{ run: "git push origin HEAD" }] },
     { steps: [{ uses: "anchore/sbom-action/download-syft@v0.24.0" }] },
+    { permissions: "read-all", steps: [{ run: "npm test" }] },
   ];
   for (const job of jobs) assert.deepEqual(publicationReasons(job, { contents: "read" }), []);
+});
+
+test("no action already pinned in this repository is misread as a publisher", () => {
+  // Guards the `uses:` patterns above against over-matching the real toolchain.
+  const document = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  const uses = Object.values(document.jobs)
+    .flatMap((job) => job.steps ?? [])
+    .map((step) => step.uses)
+    .filter(Boolean);
+  const nonPublishing = uses.filter((ref) => !ref.startsWith("actions/attest-build-provenance"));
+  assert.ok(nonPublishing.length > 5, "expected the pinned toolchain actions to be present");
+  for (const ref of new Set(nonPublishing)) {
+    assert.deepEqual(
+      publicationReasons({ steps: [{ uses: ref }] }, { contents: "read" }),
+      [],
+      `${ref} must not be classified as a publisher`,
+    );
+  }
 });
 
 test("a job inherits the workflow's publication permissions", () => {
@@ -388,4 +474,51 @@ test("unsupported YAML throws instead of parsing to a guess", () => {
   assert.throws(() => parseWorkflowYaml("a: &anchor\n"), /anchors and aliases are not supported/);
   assert.throws(() => parseWorkflowYaml("a:\n  b: 1\n   c: 2\n"), /unexpected indentation/);
   assert.throws(() => parseWorkflowYaml("a: [1, [2]]\n"), /nested flow collections/);
+});
+
+// An independent oracle over the raw text. The contract is only as good as the
+// reader beneath it, and the dangerous direction is under-detection: a job the
+// parser silently drops is a publisher the graph check never sees. This scan
+// shares no code with the parser, so the two must agree on the job set.
+function scanJobIds(text) {
+  const lines = text.split("\n");
+  const start = lines.findIndex((line) => /^jobs:\s*$/.test(line));
+  assert.ok(start >= 0, "the workflow must declare a top-level jobs: block");
+  const ids = [];
+  for (const line of lines.slice(start + 1)) {
+    if (/^\S/.test(line)) break;
+    const match = /^ {2}([A-Za-z_][\w-]*):\s*$/.exec(line);
+    if (match) ids.push(match[1]);
+  }
+  return ids;
+}
+
+test("the reader and an independent text scan agree on every workflow's job set", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  const files = readdirSync(workflows).filter((file) => /\.ya?ml$/.test(file));
+  assert.ok(files.length >= 2, "expected both shipped workflows");
+  for (const file of files) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    assert.deepEqual(
+      Object.keys(parseWorkflowYaml(text).jobs).sort(),
+      scanJobIds(text).sort(),
+      `${file}: the reader and the raw scan disagree on the job set`,
+    );
+  }
+});
+
+test("every job in the shipped workflows reads back with usable steps", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  for (const file of readdirSync(workflows).filter((f) => /\.ya?ml$/.test(f))) {
+    const document = parseWorkflowYaml(readFileSync(join(workflows, file), "utf8"));
+    for (const [name, job] of Object.entries(document.jobs)) {
+      assert.ok(Array.isArray(job.steps) && job.steps.length > 0, `${file}: ${name} lost its steps`);
+      for (const step of job.steps) {
+        assert.ok(
+          typeof step.run === "string" || typeof step.uses === "string",
+          `${file}: ${name} has a step with neither run nor uses`,
+        );
+      }
+    }
+  }
 });

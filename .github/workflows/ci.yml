@@ -299,16 +299,29 @@ jobs:
         env:
           CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          # Pushes to main and tags verify the full topology; PRs scope to the
-          # delta against their base. A missing/zero base (first push) also
-          # falls back to the full topology. This is the ONLY place the
+          # Pushes to main and release tags verify the full topology; PRs scope
+          # to the delta against their base. A missing/zero base (first push)
+          # also falls back to the full topology. This is the ONLY place the
           # full-vs-delta decision (and the zero-sha normalization) is made;
           # the fan-out jobs consume the `all`/`base` outputs verbatim so the
           # contract cannot drift across the four jobs.
+          #
+          # A release tag is forced to the full topology from the ref, never
+          # from the push payload: `before` is the zero sha only for a NEW tag,
+          # so force-moving an existing tag carries the old commit and would
+          # otherwise scope the mandatory release gates to a delta — publishing
+          # services that were never rebuilt or re-audited for that release.
+          release_tag=false
+          case "${GITHUB_REF}" in
+            refs/tags/v*|refs/tags/module-package/v*) release_tag=true ;;
+          esac
+
           base=""
           all=true
           selection_args=(--head "${GITHUB_SHA}")
-          if [[ -n "${CODEFLY_BASE}" && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
+          if [[ "${release_tag}" != "true" \
+            && -n "${CODEFLY_BASE}" \
+            && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
             base="${CODEFLY_BASE}"
             all=false
             selection_args+=(--base "${base}")
@@ -564,15 +577,19 @@ jobs:
             sync
           done
 
-  # The one aggregate every artifact-writing job below depends on. It runs with
-  # always() so it can read its dependencies' own outcomes: a plain `needs:`
-  # cannot tell a check that passed from one that never ran, and a gate that
-  # never ran is not consent to publish. `decide` owns that rule, including the
-  # single deliberate exemption — the affected-scoped Codefly jobs, which a
+  # The one aggregate every artifact-writing job below depends on. It runs past
+  # a failed dependency so it can read its dependencies' own outcomes: a plain
+  # `needs:` cannot tell a check that passed from one that never ran, and a gate
+  # that never ran is not consent to publish. `decide` owns that rule, including
+  # the single deliberate exemption — the affected-scoped Codefly jobs, which a
   # no-affected-service plan legitimately skips off a release tag.
+  #
+  # `!cancelled()` rather than `always()`: both reach this job when a gate
+  # failed, but a run superseded by `cancel-in-progress` skips it instead of
+  # recording a failure nobody should read.
   release-gates:
     name: Release gates
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     needs:
       - authz-coverage
       - base-integrity

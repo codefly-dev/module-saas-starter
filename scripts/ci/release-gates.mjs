@@ -8,9 +8,10 @@
 // on pull requests does not create a tag-time dependency (audit finding A08).
 //
 // The fix is one aggregate job, `release-gates`, that every artifact-writing
-// job depends on. It runs with `always()` so it can inspect its dependencies'
-// outcomes itself: a bare `needs:` cannot distinguish a check that passed from
-// one that never ran, and "skipped" must not read as consent to publish.
+// job depends on. It runs past a failed dependency (`!cancelled()`) so it can
+// inspect its dependencies' outcomes itself: a bare `needs:` cannot distinguish
+// a check that passed from one that never ran, and "skipped" must not read as
+// consent to publish.
 //
 //   node scripts/ci/release-gates.mjs decide   # the aggregate job's verdict
 //   node scripts/ci/release-gates.mjs check    # the static workflow contract
@@ -77,11 +78,14 @@ export const isReleaseTag = (ref) =>
 // ---------------------------------------------------------------------------
 
 // The gates this run may legitimately skip: none on a release tag, and none
-// unless the plan job itself succeeded and reported no affected service.
+// unless the plan job succeeded and said *explicitly* that it found no affected
+// service. An absent or unrecognized `has_work` is not a scoping decision — a
+// renamed output or a lost `GITHUB_OUTPUT` write would otherwise excuse the
+// three heaviest gates on every branch push while this job stayed green.
 export function exemptedGates({ results, ref }) {
   if (isReleaseTag(ref)) return [];
   const plan = results[PLAN_JOB];
-  if (plan?.result !== "success" || plan?.outputs?.has_work === "true") return [];
+  if (plan?.result !== "success" || plan?.outputs?.has_work !== "false") return [];
   return AFFECTED_SCOPED_GATES;
 }
 
@@ -99,6 +103,19 @@ export function publicationVerdictErrors({ results, ref }) {
     if (result === "success") continue;
     if (result === "skipped" && exempt.includes(gate)) continue;
     errors.push(`${gate}: ${result}`);
+  }
+  // A green gate that only inspected part of the topology does not authorize a
+  // release. `codefly-plan` forces `--all` from the ref, so anything else here
+  // means the affected-scoped gates ran against a delta and cannot speak for
+  // the services they skipped.
+  if (isReleaseTag(ref) && results[PLAN_JOB]?.result === "success") {
+    const all = results[PLAN_JOB]?.outputs?.all;
+    if (all !== "true") {
+      errors.push(
+        `${PLAN_JOB}: resolved a scoped plan (all=${all ?? "absent"}) on a release ref; the ` +
+          "mandatory gates must verify the full topology",
+      );
+    }
   }
   return errors;
 }
@@ -159,6 +176,15 @@ const PUBLICATION_STEP_PATTERNS = [
   { on: "run", pattern: /\bdocker\s+push\b/, why: "pushes a container image" },
   { on: "run", pattern: /\bgh\s+api\b[\s\S]*?\/dispatches\b/, why: "dispatches a release event downstream" },
   { on: "uses", pattern: /^actions\/attest-build-provenance/, why: "attests artifact provenance" },
+  // Actions that publish authenticate with a secret in `with:`, not with the
+  // job's `permissions`, so neither check above sees them.
+  { on: "uses", pattern: /repository-dispatch/i, why: "dispatches a release event downstream" },
+  { on: "uses", pattern: /(?:^|\/)[^/@]*publish[^/@]*(?:@|$)/i, why: "runs a publishing action" },
+  {
+    on: "uses",
+    pattern: /(?:^|\/)[^/@]*(?:gh-release|create-release|release-action|upload-release)[^/@]*(?:@|$)/i,
+    why: "runs a release action",
+  },
 ];
 const PUBLICATION_PERMISSIONS = new Map([
   ["packages", "may write to the package registry"],
@@ -175,8 +201,13 @@ const jobNeeds = (job) => {
 // Why this job writes artifacts, or an empty list if it does not.
 export function publicationReasons(job, workflowPermissions) {
   const reasons = [];
+  // A job's `permissions:` replaces the workflow default outright, and either
+  // may use GitHub's scalar form — `write-all` grants every scope below, so it
+  // must not fall through the object branch untested.
   const permissions = job?.permissions ?? workflowPermissions;
-  if (permissions && typeof permissions === "object") {
+  if (permissions === "write-all") {
+    reasons.push("it holds every write permission (permissions: write-all)");
+  } else if (permissions && typeof permissions === "object") {
     for (const [scope, why] of PUBLICATION_PERMISSIONS) {
       if (permissions[scope] === "write") reasons.push(`it ${why} (permissions.${scope})`);
     }
@@ -245,11 +276,14 @@ export function releaseGateContractErrors(path, text) {
     return errors;
   }
 
+  // `always()` and `!cancelled()` both reach the job when a dependency failed,
+  // which is the property that matters. `!cancelled()` additionally skips a
+  // superseded run instead of reddening it, so the contract accepts either.
   const aggregateIf = String(aggregate.if ?? "");
-  if (!/\balways\s*\(\s*\)/.test(aggregateIf)) {
+  if (!/\balways\s*\(\s*\)/.test(aggregateIf) && !/!\s*cancelled\s*\(\s*\)/.test(aggregateIf)) {
     errors.push(
-      `${path}: job ${AGGREGATE_JOB} must run with always(), or a failed gate would skip it ` +
-        "instead of failing it",
+      `${path}: job ${AGGREGATE_JOB} must run with always() or !cancelled(), or a failed gate ` +
+        "would skip it instead of failing it",
     );
   }
   const runsDecision = (aggregate.steps ?? []).some((step) =>
@@ -257,8 +291,8 @@ export function releaseGateContractErrors(path, text) {
   );
   if (!runsDecision) {
     errors.push(
-      `${path}: job ${AGGREGATE_JOB} must run \`release-gates.mjs decide\`; with always() the ` +
-        "job would otherwise succeed no matter how its dependencies ended",
+      `${path}: job ${AGGREGATE_JOB} must run \`release-gates.mjs decide\`; running past a ` +
+        "failed dependency, the job would otherwise succeed no matter how it ended",
     );
   }
 

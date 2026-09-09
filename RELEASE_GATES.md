@@ -35,7 +35,7 @@ release-contract ─────┤
 docs-sync ────────────┤
 provider-shim ────────┤                     ┌─▶ publish-module-package  (module-package/v*)
 marketing ────────────┼─▶ release-gates ────┼─▶ publish-frontend-kit    (v*)
-sdk-boundary ─────────┤    (always +        └─▶ handbook-surface-bump   (v*)
+sdk-boundary ─────────┤   (!cancelled() +   └─▶ handbook-surface-bump   (v*)
 module-package ───────┤     decide)
 codefly-plan ─────────┤
 codefly-quality ──────┤
@@ -49,13 +49,23 @@ publish while the authorization gate was red, and a red overall workflow does no
 retract an artifact that is already public. Branch protection on pull requests
 narrows the opportunity but creates no tag-time dependency.
 
-`release-gates` runs with `always()`, so a failed dependency does not skip it —
-it reaches its own step, which calls `scripts/ci/release-gates.mjs decide` with
+`release-gates` runs with `!cancelled()`, so a failed dependency does not skip it
+— it reaches its own step, which calls `scripts/ci/release-gates.mjs decide` with
 `toJSON(needs)`. A bare `needs:` list cannot tell a check that passed from one
 that never ran; `decide` fails the aggregate unless every mandatory gate reports
 `success`, so `failure`, `cancelled`, and an unexpected `skipped` all block
 publication identically. The publishers carry no `always()` of their own, so a
-failed aggregate skips them.
+failed aggregate skips them. (`always()` would work too, and the contract accepts
+either; `!cancelled()` additionally lets a run superseded by `cancel-in-progress`
+skip the aggregate rather than record a failure nobody should read.)
+
+`decide` also refuses a release ref whose plan was **delta-scoped**. `codefly-plan`
+forces `--all` from the ref, not from the push payload: `github.event.before` is
+the zero sha only for a *new* tag, so force-moving an existing tag would otherwise
+scope the mandatory gates to a delta and publish services that were never rebuilt
+or re-audited for that release. The aggregate re-checks `codefly-plan`'s `all`
+output on every release ref, so a scoped release fails even with all twelve gates
+green.
 
 ### Mandatory gates per tag track
 
@@ -78,12 +88,15 @@ no per-track exemption.
 | `codefly-build` | required | required | affected-scoped (see below) |
 
 The three affected-scoped Codefly jobs carry the **one** deliberate exemption:
-off a release tag, a plan with no affected service (`has_work=false`) legitimately
-skips them, and `decide` accepts that skip so a docs-only pull request is a
-near-instant no-op. On either release tag the exemption does not apply — those
-jobs force themselves to run there via their own `if:`, so a skip is a defect,
-not a scoping decision. The exemption also requires `codefly-plan` itself to have
-succeeded; a skipped or failed plan job exempts nothing.
+off a release tag, a plan that explicitly reports no affected service
+(`has_work=false`) legitimately skips them, and `decide` accepts that skip so a
+docs-only pull request is a near-instant no-op. On either release tag the
+exemption does not apply — those jobs force themselves to run there via their own
+`if:`, so a skip is a defect, not a scoping decision. The exemption also requires
+`codefly-plan` itself to have succeeded **and** to have said `false` in so many
+words: an absent or unrecognized `has_work` (a renamed output, a lost
+`GITHUB_OUTPUT` write) exempts nothing, so a broken plan job cannot silently
+retire the three heaviest gates while this one stays green.
 
 `handbook-surface-bump` counts as a publisher alongside the two package jobs: it
 dispatches the release to a downstream repository, an outward-facing write with
@@ -94,17 +107,32 @@ the same "cannot be retracted" property.
 `release-contract` runs `scripts/ci/release-gates.mjs check`, which parses every
 file in `.github/workflows` and rejects any artifact-writing job whose transitive
 `needs` closure does not contain `release-gates`. A job counts as artifact-writing
-when it holds `packages`, `id-token`, or `attestations` write permission, or when
-a step mutates a GitHub release, publishes an npm package, pushes an image, sends
-a `repository_dispatch`, or attests provenance. (`contents: write` alone does not
-count — `dep-audit.yml` holds it only to push a remediation branch.)
+when it holds `packages`, `id-token`, or `attestations` write permission (or the
+scalar `permissions: write-all`, which grants all three), when a step mutates a
+GitHub release, publishes an npm package, pushes an image, sends a
+`repository_dispatch`, or attests provenance, or when it `uses:` a publishing,
+release, or repository-dispatch action — those authenticate with a secret in
+`with:` rather than through `permissions`, so nothing else would see them.
+(`contents: write` alone does not count: `dep-audit.yml` holds it only to push a
+remediation branch.)
 
 The same check fails if `authz-coverage` — or any other gate in `REQUIRED_GATES`
 — is dropped from the aggregate's `needs` or removed from the workflow, if the
-aggregate loses `always()`, if it stops calling `decide`, or if a workflow becomes
-unparsable. `node --test scripts/ci/release-gates.test.mjs` covers both halves
-against fixtures, including a synthetic future publisher wired to the wrong
-dependency.
+aggregate would skip past a failed gate, if it stops calling `decide`, or if a
+workflow becomes unparsable. `node --test scripts/ci/release-gates.test.mjs`
+covers both halves against fixtures, including a synthetic future publisher wired
+to the wrong dependency, and cross-checks the bundled workflow reader against an
+independent scan of the raw text so a job the reader silently drops fails the
+suite rather than vanishing from the graph.
+
+Two limits are worth stating plainly. The contract **cannot protect its own job**:
+delete `release-contract` from the workflow and both the check and its tests stop
+running, with nothing in-repo left to notice — branch protection is the only
+backstop for that, and it is why `release-contract` belongs in the repository's
+required-checks list alongside `release-gates`. And artifact-writing detection is
+a pattern list, not a proof: a publisher that writes by some means outside the
+signals above would not be classified. Extend `PUBLICATION_STEP_PATTERNS` and
+`PUBLICATION_PERMISSIONS` when a new publication mechanism arrives.
 
 ## What Codefly owns
 
