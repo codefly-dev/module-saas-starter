@@ -32,7 +32,10 @@ func (s *burstOutboxStore) InsertAuditEvent(_ context.Context, entry AuditEntry)
 	return nil
 }
 
-func (s *burstOutboxStore) GetActiveWebhookSubscriptions(_ context.Context, _ string) ([]*WebhookSubscription, error) {
+func (s *burstOutboxStore) GetActiveWebhookSubscriptions(_ context.Context, orgID, _ string) ([]*WebhookSubscription, error) {
+	if s.sub.OrgID != orgID {
+		return nil, nil
+	}
 	return []*WebhookSubscription{s.sub}, nil
 }
 

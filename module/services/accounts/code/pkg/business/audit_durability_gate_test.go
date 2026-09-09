@@ -36,6 +36,13 @@ import (
 // pre-built entry whose type is often caller-supplied (the module-facing
 // EmitAuditEvent surface) — but they are already on the transactional path, so
 // what the gate cannot see there cannot be the failure it exists to catch.
+//
+// Its remaining limit is worth naming rather than implying away: it inspects
+// emit sites, so it catches an event routed down the wrong path, not a mutation
+// that records nothing at all. Detecting the latter needs an inventory of
+// privileged writes, which does not exist. What it can and does close is the
+// bypass — writing an audit row without going through a classified emit path at
+// all (see TestAuditDurability_NoBypassOfTheClassifiedEmitPath).
 
 // auditEmitExemptions are emit sites that a transactional classification cannot
 // reach, keyed by "<file>:<function>". Each is a known, named hole in
@@ -163,8 +170,10 @@ func collectAuditEmitSites(t *testing.T) []auditEmitSite {
 			if !ok {
 				return true
 			}
-			receiver, ok := sel.X.(*ast.Ident)
-			if !ok || receiver.Name != "s" {
+			// Any receiver, not just one named "s": keying on the conventional
+			// name would let a method that names its receiver anything else emit
+			// unchecked.
+			if _, ok := sel.X.(*ast.Ident); !ok {
 				return true
 			}
 			if sel.Sel.Name != "emit" && sel.Sel.Name != "emitTx" {
@@ -282,4 +291,45 @@ func auditEventConstants(files []*ast.File) map[string]EventType {
 		}
 	}
 	return out
+}
+
+// TestAuditDurability_NoBypassOfTheClassifiedEmitPath closes the hole the
+// durability rules would otherwise have: a caller can write an audit row without
+// any emit site by reaching for the store directly, and every classification the
+// gate above enforces would be silently irrelevant to it. InsertAuditEvent is the
+// emitter's own call; nothing else in this package may make it.
+func TestAuditDurability_NoBypassOfTheClassifiedEmitPath(t *testing.T) {
+	fset := token.NewFileSet()
+	entries, err := os.ReadDir(".")
+	require.NoError(t, err)
+
+	var callers []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		parsed, err := parser.ParseFile(fset, filepath.Join(".", name), nil, 0)
+		require.NoError(t, err, "parse %s", name)
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "InsertAuditEvent" {
+				return true
+			}
+			if name == "audit.go" {
+				return true
+			}
+			callers = append(callers, fmt.Sprintf("%s:%d", name, fset.Position(call.Pos()).Line))
+			return true
+		})
+	}
+
+	sort.Strings(callers)
+	require.Empty(t, callers,
+		"audit rows must be written through Service.emit / emitTx so their durability is classified and enforced; "+
+			"direct InsertAuditEvent calls bypass that entirely:\n%s", strings.Join(callers, "\n"))
 }

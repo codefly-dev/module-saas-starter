@@ -102,14 +102,18 @@ func (s *PostgresStore) ListWebhookSubscriptions(ctx context.Context, orgID stri
 	return subs, nil
 }
 
-func (s *PostgresStore) GetActiveWebhookSubscriptions(ctx context.Context, eventType string) ([]*business.WebhookSubscription, error) {
+func (s *PostgresStore) GetActiveWebhookSubscriptions(ctx context.Context, orgID, eventType string) ([]*business.WebhookSubscription, error) {
 	q := s.getQueryExecutor(ctx)
+	// org_id is filtered here, not left to RLS: the caller may be inside a
+	// control-plane transaction (platform-admin and other privileged writes read
+	// with the policy bypassed), and it also lets idx_webhook_subs_org carry the
+	// lookup instead of scanning every tenant's active subscriptions.
 	rows, err := q.Query(ctx, `
 		SELECT id, org_id, url, secret_encrypted,
 		       COALESCE(previous_secret_encrypted, ''), previous_secret_expires_at,
 		       events, description, active, created_at, updated_at
 		FROM webhook_subscriptions
-		WHERE active = true AND $1 = ANY(events)`, eventType)
+		WHERE org_id = $1 AND active = true AND $2 = ANY(events)`, orgID, eventType)
 	if err != nil {
 		return nil, err
 	}

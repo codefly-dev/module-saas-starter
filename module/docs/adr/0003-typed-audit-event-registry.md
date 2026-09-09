@@ -487,8 +487,12 @@ and `observation(...)` are the only two), and `auditEventIndex` panics on a
 definition without one, so a new event type cannot be added without the decision
 being made. `TestAuditDurability_EmitSitesMatchTheirClassification` reads this
 package's own AST and fails the build when either rule is broken in either
-direction; sites a classification cannot reach are listed with a reason in
-`auditEmitExemptions` rather than exempted wholesale.
+direction, and `TestAuditDurability_NoBypassOfTheClassifiedEmitPath` fails it
+when an audit row is written straight to the store, skipping classification
+altogether; sites a classification cannot reach are listed with a reason in
+`auditEmitExemptions` rather than exempted wholesale. Neither detects a
+privileged write that records nothing — that needs an inventory of privileged
+writes, which this amendment does not create.
 
 Two things this does **not** claim. A method policy's `emits_audit` descriptor
 remains a declaration of intent, not evidence of durable commitment — the

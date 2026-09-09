@@ -313,12 +313,23 @@ func TestGetActiveWebhookSubscriptions(t *testing.T) {
 		return nil
 	}))
 
-	// Use the control-plane scope here to exercise event/active filtering across
-	// all fixtures. Production audit fan-out calls the same query inside one
-	// organization transaction and RLS restricts it to that organization.
+	otherOwner := seedUser(t)
+	otherOrgID := seedOrg(t, otherOwner)
+	foreignSub := &business.WebhookSubscription{
+		ID: business.NewIDString(), OrgID: otherOrgID,
+		URL: "https://example.com/foreign", SecretEncrypted: "encrypted:sec",
+		Events: []string{"user.registered"}, Active: true,
+	}
+	require.NoError(t, testStore.WithOrgTx(testCtx, otherOrgID, func(ctx context.Context) error {
+		return testStore.CreateWebhookSubscription(ctx, foreignSub)
+	}))
+
+	// Read under the control plane deliberately: that is the scope audit fan-out
+	// runs in for platform-admin and other privileged writes, and there RLS
+	// scopes nothing. The org argument is what must exclude the other tenant.
 	var subs []*business.WebhookSubscription
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		s, err := testStore.GetActiveWebhookSubscriptions(ctx, "user.registered")
+		s, err := testStore.GetActiveWebhookSubscriptions(ctx, orgID, "user.registered")
 		subs = s
 		return err
 	}))
@@ -330,6 +341,7 @@ func TestGetActiveWebhookSubscriptions(t *testing.T) {
 	require.True(t, ids[activeSub.ID], "active sub with matching event should be returned")
 	require.False(t, ids[inactiveSub.ID], "inactive sub should not be returned")
 	require.False(t, ids[otherEventSub.ID], "sub with different event should not be returned")
+	require.False(t, ids[foreignSub.ID], "another tenant's sub must be excluded with RLS bypassed")
 }
 
 func TestCreateAndListWebhookDeliveries(t *testing.T) {

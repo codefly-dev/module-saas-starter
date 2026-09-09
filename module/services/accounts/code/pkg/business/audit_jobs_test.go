@@ -49,8 +49,14 @@ func (s *teeStore) InsertAuditEvent(_ context.Context, entry AuditEntry) error {
 	return nil
 }
 
-func (s *teeStore) GetActiveWebhookSubscriptions(_ context.Context, _ string) ([]*WebhookSubscription, error) {
-	return s.subs, nil
+func (s *teeStore) GetActiveWebhookSubscriptions(_ context.Context, orgID, _ string) ([]*WebhookSubscription, error) {
+	var out []*WebhookSubscription
+	for _, sub := range s.subs {
+		if sub.OrgID == orgID {
+			out = append(out, sub)
+		}
+	}
+	return out, nil
 }
 
 func (s *teeStore) CreateWebhookDelivery(_ context.Context, _ *WebhookDelivery) error { return nil }

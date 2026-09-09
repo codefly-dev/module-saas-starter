@@ -278,3 +278,127 @@ func TestControlScopeAuditRowIsPinnedToTheActingUser(t *testing.T) {
 	}))
 	require.Zero(t, visible, "NULL-org rows must stay invisible to tenant reads")
 }
+
+// TestSecurityMutation_HumanPrincipalRevokeRecordsInControlScope covers the
+// other half of the principal estate. principals_org_scope (migration 36) makes
+// org_id NULL for humans and NOT NULL for agents, so the two lifecycles need
+// different transaction scopes: an agent's event carries an org and its fan-out
+// must be enqueued from tenant traffic, while a human's carries none. Revoking a
+// human is the revocation an incident reaches for first, and an org-only scope
+// rule turns it into a NotFound that reads as "already handled".
+func TestSecurityMutation_HumanPrincipalRevokeRecordsInControlScope(t *testing.T) {
+	userID := seedUser(t)
+
+	var kind string
+	var org *string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx,
+			`SELECT kind, org_id FROM principals WHERE id = $1`, userID).Scan(&kind, &org)
+	}))
+	require.Equal(t, "human", kind, "seeding a user must give it a human principal")
+	require.Nil(t, org, "a human principal is org-less by schema CHECK")
+
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	require.NoError(t, err)
+	service := auditedService(t, emitter)
+
+	require.NoError(t, service.RevokePrincipal(testCtx, userID, "credential compromise"),
+		"an org-less human principal must still be revocable")
+
+	require.Equal(t, 1, countRows(t,
+		`SELECT count(*) FROM principals WHERE id = $1 AND revoked_at IS NOT NULL`, userID))
+	require.Equal(t, 1, countRows(t,
+		`SELECT count(*) FROM audit_events WHERE event_type = $1 AND resource_id = $2 AND org_id IS NULL`,
+		string(business.EventPrincipalRevoked), userID),
+		"the revocation must be recorded on the control-scope spine")
+
+	// A repeat is a no-op and records nothing further, on this scope too.
+	require.NoError(t, service.RevokePrincipal(testCtx, userID, "credential compromise"))
+	require.Equal(t, 1, countAuditEvents(t, string(business.EventPrincipalRevoked), userID))
+}
+
+// TestSecurityMutation_DisableRejectsHumanPrincipalAsConflict pins the error the
+// disable path reports for a non-agent. Resolving scope before the kind guard
+// made this a NotFound, which the RPC layer maps to codes.NotFound rather than
+// codes.AlreadyExists (see mapPrincipalError) — a silent contract change for
+// any client branching on it.
+func TestSecurityMutation_DisableRejectsHumanPrincipalAsConflict(t *testing.T) {
+	userID := seedUser(t)
+	service := auditedService(t, &recordingEmitter{})
+
+	err := service.DisableAgentPrincipal(testCtx, userID, "not an agent")
+	require.Error(t, err)
+	require.Equal(t, business.ErrTypeConflict, storeErrTypeInfra(t, err),
+		"a human principal must be rejected as a conflict, not reported missing")
+}
+
+// TestSecurityMutation_RegistrationRecordDoesNotHingeOnTheRoleCatalog pins where
+// the registration record lives. Attaching it to the admin-role assignment made
+// the record — and therefore registration itself — conditional on the built-in
+// role catalog already being imported, so a fresh environment would fail every
+// signup. The record belongs to the org bootstrap, which always runs.
+func TestSecurityMutation_RegistrationRecordDoesNotHingeOnTheRoleCatalog(t *testing.T) {
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	require.NoError(t, err)
+	service := auditedService(t, emitter)
+
+	var provider string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx, `SELECT provider_id FROM identity_providers LIMIT 1`).Scan(&provider)
+	}))
+
+	email := "registrant-" + business.NewIDString() + "@example.com"
+	response, err := service.RegisterUser(testCtx, &gen.RegisterUserRequest{
+		PrimaryEmail: email,
+		Identity: &gen.UserIdentity{
+			Provider:      provider,
+			ProviderId:    business.NewIDString(),
+			ProviderEmail: email,
+			EmailVerified: true,
+		},
+	})
+	require.NoError(t, err)
+	userID := response.GetUser().GetUuid()
+
+	require.Equal(t, 1, countAuditEvents(t, string(business.EventUserRegistered), userID),
+		"registration must be recorded by the transaction that always runs")
+}
+
+// TestSecurityMutation_MemberRemovalCascadeCommitsWithItsRecord pins the team
+// cascade to the removal it belongs to. While the cascade ran in a transaction
+// of its own after the removal committed, the org.member_removed record could be
+// durable while the removed user still held team access through orphaned rows —
+// a record describing a removal that had not fully happened.
+func TestSecurityMutation_MemberRemovalCascadeCommitsWithItsRecord(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	seedOrgMember(t, orgID, owner)
+	member := seedUser(t)
+	seedOrgMember(t, orgID, member)
+
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	require.NoError(t, err)
+	service := auditedService(t, emitter)
+
+	team, err := service.CreateTeam(testCtx, owner, &gen.CreateTeamRequest{
+		OrgId: orgID, Name: "Platform " + business.NewIDString()[:8],
+	})
+	require.NoError(t, err)
+	teamID := team.GetTeam().GetId()
+	require.NoError(t, service.AddTeamMember(testCtx, owner,
+		&gen.AddTeamMemberRequest{TeamId: teamID, UserId: member}))
+	require.Equal(t, 1, countRows(t,
+		`SELECT count(*) FROM team_members WHERE team_id = $1 AND user_id = $2`, teamID, member))
+
+	require.NoError(t, service.RemoveOrgMember(testCtx, owner,
+		&gen.RemoveOrgMemberRequest{OrgId: orgID, UserId: member}))
+
+	require.Zero(t, countRows(t,
+		`SELECT count(*) FROM organization_members WHERE org_id = $1 AND user_id = $2`, orgID, member))
+	require.Zero(t, countRows(t,
+		`SELECT count(*) FROM team_members WHERE team_id = $1 AND user_id = $2`, teamID, member),
+		"team access must be gone by the time the removal is recorded")
+	require.Equal(t, 1, countAuditEvents(t, string(business.EventOrgMemberRemoved), orgID))
+}

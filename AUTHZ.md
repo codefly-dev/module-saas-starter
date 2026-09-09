@@ -197,8 +197,14 @@ other way round:
 `TestAuditDurability_EmitSitesMatchTheirClassification` reads this package's own
 source and fails the build when a transactional event is emitted through the
 fire-and-forget path, or an observational one through the transactional path.
-Sites a classification cannot reach are listed, with a reason, in
-`auditEmitExemptions` — a named hole, not a waiver.
+`TestAuditDurability_NoBypassOfTheClassifiedEmitPath` fails it when an audit row
+is written without going through either, by calling the store directly. Sites a
+classification cannot reach are listed, with a reason, in `auditEmitExemptions`
+— a named hole, not a waiver.
+
+What the pair does **not** do is detect a privileged write that records nothing
+at all; that needs an inventory of privileged writes, which does not exist. They
+catch an event on the wrong path, and a write that skips the paths entirely.
 
 The worker paths (audit-exporter goroutine, webhook dispatcher,
 billing reconciler, migration runner, platform-admin endpoints) bypass

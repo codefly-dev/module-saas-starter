@@ -455,8 +455,19 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	}
 	// Personal-org bootstrap: see CreateOrganization comment — at
 	// this moment the org doesn't exist; WithControlPlane is correct.
+	//
+	// The registration is recorded here rather than alongside the role
+	// assignment below: this transaction always runs, so the record does not
+	// hinge on a built-in admin role existing. Its fan-out is empty by
+	// construction — the org is being created in this transaction, so nothing
+	// can yet be subscribed to it — which is what lets an org-scoped event be
+	// recorded from control-plane scope (the job platform admits tenant outbox
+	// work from tenant traffic only).
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.CreateOrganization(ctx, org)
+		if err := s.store.CreateOrganization(ctx, org); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventUserRegistered, "user", userID, orgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create default organization")
 	}
@@ -473,7 +484,6 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot list roles")
 	}
-	registered := false
 	for _, role := range roles {
 		if role.Name == "admin" && role.BuiltIn {
 			assignment := &gen.RoleAssignment{
@@ -484,19 +494,12 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 				OrgId:       orgID,
 			}
 			if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-				if err := s.store.AssignRole(ctx, assignment); err != nil {
-					return err
-				}
-				return s.emitTx(ctx, userID, "user", EventUserRegistered, "user", userID, orgID)
+				return s.store.AssignRole(ctx, assignment)
 			}); err != nil {
 				return nil, w.Wrapf(err, "cannot assign admin role")
 			}
-			registered = true
 			break
 		}
-	}
-	if !registered {
-		return nil, w.NewError("no built-in admin role to bootstrap the personal organization")
 	}
 
 	return &gen.RegisterUserResponse{User: user, Identity: identity}, nil

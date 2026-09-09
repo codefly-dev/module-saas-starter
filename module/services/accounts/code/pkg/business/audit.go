@@ -137,19 +137,15 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 	if entry.OrgID == "" {
 		return nil
 	}
-	subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, string(entry.EventType))
+	// The tenant predicate is the event's own org, passed explicitly: the audit
+	// write runs inside its mutation's transaction, and that transaction is the
+	// control plane for platform-admin and other privileged writes, where RLS
+	// would not scope this read at all.
+	subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, entry.OrgID, string(entry.EventType))
 	if err != nil {
 		return err
 	}
 	for _, subscription := range subscriptions {
-		// GetActiveWebhookSubscriptions carries no org predicate — it leans on
-		// RLS. That holds inside a tenant transaction, but a security mutation
-		// whose ambient transaction is the control plane (platform-admin and
-		// principal lifecycle writes) reads it with RLS bypassed, which would
-		// otherwise fan one tenant's event out to every tenant's endpoints.
-		if subscription.OrgID != entry.OrgID {
-			continue
-		}
 		delivery, payload, err := newWebhookDelivery(entry, subscription.ID)
 		if err != nil {
 			return err

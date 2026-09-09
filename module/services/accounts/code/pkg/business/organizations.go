@@ -137,10 +137,10 @@ func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgM
 func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.RemoveOrgMemberRequest) error {
 	w := wool.Get(ctx).In("RemoveOrgMember")
 
-	// Last-admin guard + delete run inside the org's WithOrgTx so
-	// org_members RLS + organizations RLS both let the queries
-	// through. Cascade unwind of team_members runs in a separate
-	// WithOrgTx below (also tenant-scoped).
+	// Last-admin guard, delete, team-membership cascade, and the audit event all
+	// run inside one org-scoped WithOrgTx: org_members RLS + organizations RLS
+	// both let the queries through, and the record cannot commit describing a
+	// removal whose cascade has not been applied.
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
 		members, err := s.store.ListOrgMembers(ctx, req.OrgId)
 		if err != nil {
@@ -163,6 +163,14 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 		if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
 			return err
 		}
+		// Cascade: unwind team memberships in this org for the removed user,
+		// otherwise a removed user still holds team access via orphaned rows.
+		// Store may or may not expose a bulk delete; iterate teams best-effort.
+		if teams, tErr := s.store.ListTeams(ctx, req.OrgId); tErr == nil {
+			for _, t := range teams {
+				_ = s.store.RemoveTeamMember(ctx, t.Id, req.UserId)
+			}
+		}
 		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
 	}); err != nil {
 		return w.Wrapf(err, "cannot remove member")
@@ -172,21 +180,6 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// keeps passing authorization checks for up to 30s while their
 	// cached entry is still "admin" or "member".
 	s.invalidateMembership(ctx, req.OrgId, req.UserId)
-
-	// Cascade: unwind team memberships in this org for the removed user.
-	// Store may or may not expose a bulk delete; iterate teams best-effort.
-	// Both ListTeams + RemoveTeamMember are RLS-protected (Phase 2C),
-	// so the cascade runs inside the org's tx.
-	_ = s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		teams, tErr := s.store.ListTeams(ctx, req.OrgId)
-		if tErr != nil {
-			return nil // best-effort
-		}
-		for _, t := range teams {
-			_ = s.store.RemoveTeamMember(ctx, t.Id, req.UserId)
-		}
-		return nil
-	})
 
 	return nil
 }

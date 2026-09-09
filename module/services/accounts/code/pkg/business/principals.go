@@ -230,11 +230,21 @@ func (s *Service) actorTypeForCreator(ctx context.Context, principalID string) s
 	}
 }
 
-// principalOrgID resolves a principal's owning org from its id alone. The
-// lookup spans tenants by necessity — the caller has no org yet — and reads
-// nothing else, so it is the narrowest System step that lets the mutation that
-// follows run in the principal's own tenant scope.
-func (s *Service) principalOrgID(ctx context.Context, id string) (string, error) {
+// withPrincipalScope runs a principal lifecycle write, and the audit event that
+// records it, in the transaction scope that principal's own row belongs to.
+//
+// The two scopes are not interchangeable, and which one applies is fixed by the
+// schema: principals_org_scope (migration 36) makes org_id NULL for humans and
+// NOT NULL for services and agents. An org-scoped principal's event carries that
+// org, so it needs a tenant transaction — the job platform admits tenant outbox
+// work from tenant traffic only, and its webhook fan-out has to be enqueued
+// somewhere. A human principal is a cross-org identity: its event carries no org,
+// so it has no fan-out to enqueue, and its NULL-org audit row is writable only
+// under the control plane.
+//
+// The id-only lookup that decides between them spans tenants by necessity — the
+// caller has no org yet — and reads nothing else.
+func (s *Service) withPrincipalScope(ctx context.Context, id string, fn func(ctx context.Context, orgID string) error) error {
 	var orgID string
 	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
 		p, err := s.principalStore().GetPrincipal(ctx, id)
@@ -244,12 +254,12 @@ func (s *Service) principalOrgID(ctx context.Context, id string) (string, error)
 		orgID = p.OrgID
 		return nil
 	}); err != nil {
-		return "", err
+		return err
 	}
 	if orgID == "" {
-		return "", NewStoreError(fmt.Errorf("principal %s has no organization", id), ErrTypeNotFound)
+		return s.store.As(System()).Within(ctx, func(ctx context.Context) error { return fn(ctx, "") })
 	}
-	return orgID, nil
+	return s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error { return fn(ctx, orgID) })
 }
 
 // GetPrincipal returns a principal by ID. Returns ErrTypeNotFound
@@ -430,19 +440,12 @@ func (s *Service) RevokePrincipal(ctx context.Context, id, reason string) error 
 		// readable reason being recorded.
 		return w.NewError("reason required (no silent revocations)")
 	}
-	// This method takes only an id, so the owning org is resolved first under
-	// System; the write and its audit event then run in that org's own
-	// transaction. Tenant scope is both the least privilege the write needs and
-	// the only scope that can carry the event's webhook fan-out — the job
-	// platform admits tenant outbox work from tenant traffic alone.
-	orgID, err := s.principalOrgID(ctx, id)
-	if err != nil {
-		return w.Wrapf(err, "cannot revoke principal")
-	}
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		// Re-read inside the tenant transaction so "did this call change
-		// anything" and the write itself are one read-modify-write, and an
-		// idempotent repeat emits no duplicate audit event.
+	// The write and its audit event share one transaction, in the scope this
+	// principal's row belongs to (see withPrincipalScope).
+	if err := s.withPrincipalScope(ctx, id, func(ctx context.Context, orgID string) error {
+		// Re-read inside that transaction so "did this call change anything" and
+		// the write itself are one read-modify-write, and an idempotent repeat
+		// emits no duplicate audit event.
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
 			return e
@@ -476,16 +479,9 @@ func (s *Service) DisableAgentPrincipal(ctx context.Context, id, reason string) 
 	if reason == "" {
 		return w.NewError("reason required (no silent disables)")
 	}
-	// This method takes only an id, so the owning org is resolved first under
-	// System; the write and its audit event then run in that org's own
-	// transaction. Tenant scope is both the least privilege the write needs and
-	// the only scope that can carry the event's webhook fan-out — the job
-	// platform admits tenant outbox work from tenant traffic alone.
-	orgID, err := s.principalOrgID(ctx, id)
-	if err != nil {
-		return w.Wrapf(err, "cannot disable agent principal")
-	}
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+	// The write and its audit event share one transaction, in the scope this
+	// principal's row belongs to (see withPrincipalScope).
+	if err := s.withPrincipalScope(ctx, id, func(ctx context.Context, orgID string) error {
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
 			return e
@@ -522,16 +518,9 @@ func (s *Service) EnableAgentPrincipal(ctx context.Context, id string) error {
 	if id == "" {
 		return w.NewError("principal id required")
 	}
-	// This method takes only an id, so the owning org is resolved first under
-	// System; the write and its audit event then run in that org's own
-	// transaction. Tenant scope is both the least privilege the write needs and
-	// the only scope that can carry the event's webhook fan-out — the job
-	// platform admits tenant outbox work from tenant traffic alone.
-	orgID, err := s.principalOrgID(ctx, id)
-	if err != nil {
-		return w.Wrapf(err, "cannot enable agent principal")
-	}
-	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+	// The write and its audit event share one transaction, in the scope this
+	// principal's row belongs to (see withPrincipalScope).
+	if err := s.withPrincipalScope(ctx, id, func(ctx context.Context, orgID string) error {
 		p, e := s.principalStore().GetPrincipal(ctx, id)
 		if e != nil {
 			return e
