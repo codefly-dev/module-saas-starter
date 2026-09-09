@@ -39,7 +39,7 @@ type Service struct {
 	mfaCipher                 SecretCipher  // required for TOTP enrollment and verification
 	webhookCipher             SecretCipher  // required for outbound-webhook signing keys
 	webhookPolicy             *WebhookEndpointPolicy
-	webAuthn                  WebAuthnEngine  // required for passkey registration and assertion
+	webAuthn                  WebAuthnEngine    // required for passkey registration and assertion
 	jobOperations             jobs.Operations   // isolated, payload-free platform operations
 	eventOperations           events.Operations // isolated, payload-free domain-event operations
 	acquisitionMode           gen.AcquisitionMode
