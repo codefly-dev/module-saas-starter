@@ -246,6 +246,65 @@ func (m *Minter) JWKS() (string, error) {
 	return string(buf), nil
 }
 
+// ModuleRegistrationAudience scopes a module-registration token to that single
+// purpose. Access tokens carry Config.Audience; registration tokens carry this,
+// so even though both are signed with the same key neither can stand in for the
+// other: a stolen access token cannot register a route prefix, and a
+// registration token cannot authenticate a user.
+const ModuleRegistrationAudience = "module-registration"
+
+// moduleRegistrationTTL keeps a registration credential alive just long enough
+// for a module to finish its startup handshake. It is presented once, to one
+// endpoint, immediately after it is issued.
+const moduleRegistrationTTL = 5 * time.Minute
+
+// moduleRegistrationClaims binds a module identity (`sub`) to the single
+// catalog-identity segment it may claim at the gateway. The verifier reads
+// Prefix, not `sub`, when enforcing the binding; `sub` names the same module in
+// the conventional subject position.
+type moduleRegistrationClaims struct {
+	jwt.RegisteredClaims
+	Prefix string `json:"prefix"`
+}
+
+// MintModuleRegistration issues the short-lived credential a composed module
+// presents to federate its REST prefix with the gateway. The caller has already
+// authenticated the module; this signs the authorization decision so the
+// gateway can verify it without sharing a secret with every registrant.
+//
+// The token is signed with the access-token key, which the gateway already
+// holds through JWKS, and separated from access tokens by audience alone.
+func (m *Minter) MintModuleRegistration(prefix string) (string, time.Time, error) {
+	if prefix == "" {
+		return "", time.Time{}, fmt.Errorf("ed25519minter: module registration prefix required")
+	}
+	now := m.now()
+	expiresAt := now.Add(moduleRegistrationTTL)
+	jti, err := randHex(16)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	claims := moduleRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.cfg.Issuer,
+			Subject:   "module:" + prefix,
+			Audience:  jwt.ClaimStrings{ModuleRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        jti,
+		},
+		Prefix: prefix,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["kid"] = m.keyID
+	signed, err := token.SignedString(m.privateKey)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, expiresAt, nil
+}
+
 // Mint implements auth.JWTMinter.Mint. It issues a fresh access token and
 // refresh token, persisting the session row with a new family_id.
 //

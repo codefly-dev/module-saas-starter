@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"accounts/pkg/business"
@@ -9,6 +10,8 @@ import (
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -36,6 +39,29 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 		return business.ModuleCaller{}, err
 	}
 	return business.ModuleCaller{PrincipalID: id, BoundOrg: callerOrg(ctx)}, nil
+}
+
+// MintModuleRegistration issues the credential a composed module presents to the
+// gateway to federate its REST prefix. Unlike every other method here it takes
+// no Work Context: a module registers at startup, before any user request
+// exists, so the caller is authorized by its own registration secret rather than
+// by a forwarded principal. The internal-credential gate on this listener still
+// applies.
+func (s *ModuleCapabilitiesServer) MintModuleRegistration(ctx context.Context, req *gen.ModuleMintRegistrationRequest) (*gen.ModuleMintRegistrationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	token, expiresAt, err := service.ModuleMintRegistration(ctx, req.GetPrefix(), req.GetSecret())
+	if err != nil {
+		if errors.Is(err, business.ErrModuleRegistrationDenied) {
+			return nil, status.Error(codes.PermissionDenied, "module registration denied")
+		}
+		return nil, err
+	}
+	return &gen.ModuleMintRegistrationResponse{
+		Token:     token,
+		ExpiresAt: timestamppb.New(expiresAt),
+	}, nil
 }
 
 func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.ModuleEnqueueJobRequest) (*gen.ModuleEnqueueJobResponse, error) {

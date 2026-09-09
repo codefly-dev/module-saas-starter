@@ -117,6 +117,7 @@ const (
 	EventConsentPrefs    EventType = "saas.consent.preferences_updated"
 
 	EventAPIKeyCreated          EventType = "saas.api_key.created"
+	EventModuleRegistrationMint EventType = "saas.module.registration_minted"
 	EventAPIKeyRevoked          EventType = "saas.api_key.revoked"
 	EventRoleCreated            EventType = "saas.role.created"
 	EventRoleUpdated            EventType = "saas.role.updated"
@@ -260,6 +261,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	def(EventConsentPrefs, CategoryIdentity, "A user updated their consent preferences."),
 
 	def(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
+	def(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
 	def(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
 	def(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
 	def(EventRoleUpdated, CategoryAccess, "A role was updated."),

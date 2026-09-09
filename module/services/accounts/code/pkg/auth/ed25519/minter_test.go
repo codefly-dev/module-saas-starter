@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
@@ -1241,3 +1242,74 @@ var _ auth.SessionStore = (*memoryStore)(nil)
 
 // Compile-time use of ed25519 package to prevent accidental removal.
 var _ = ed25519.Sign
+
+// ---------------------------------------------------------------------------
+// Module-registration credentials
+// ---------------------------------------------------------------------------
+
+// parseModuleRegistration verifies a registration token exactly as the gateway
+// does: alg-locked EdDSA, this issuer, the module-registration audience, and a
+// required expiry.
+func parseModuleRegistration(t *testing.T, pub ed25519.PublicKey, token string) jwt.MapClaims {
+	t.Helper()
+	claims := jwt.MapClaims{}
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"EdDSA"}),
+		jwt.WithIssuer("saas-starter"),
+		jwt.WithAudience(ed25519minter.ModuleRegistrationAudience),
+		jwt.WithExpirationRequired(),
+	)
+	parsed, err := parser.ParseWithClaims(token, claims, func(*jwt.Token) (any, error) { return pub, nil })
+	require.NoError(t, err)
+	require.True(t, parsed.Valid)
+	return claims
+}
+
+func TestMintModuleRegistrationBindsPrefix(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{Issuer: "saas-starter", Audience: "saas-starter"}, priv, &memoryStore{})
+
+	token, expiresAt, err := m.MintModuleRegistration("documents")
+	require.NoError(t, err)
+	require.WithinDuration(t, time.Now().Add(5*time.Minute), expiresAt, time.Minute)
+
+	claims := parseModuleRegistration(t, pub, token)
+	require.Equal(t, "documents", claims["prefix"])
+	require.Equal(t, "module:documents", claims["sub"])
+	require.NotEmpty(t, claims["jti"])
+}
+
+// The audience is what keeps one signing key from producing two interchangeable
+// credentials: a registration token must not authenticate a user, and an access
+// token must not register a prefix.
+func TestMintModuleRegistrationIsNotAnAccessToken(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{Issuer: "saas-starter", Audience: "saas-starter"}, priv, &memoryStore{})
+
+	registration, _, err := m.MintModuleRegistration("documents")
+	require.NoError(t, err)
+	_, err = m.VerifyAccess(registration)
+	require.Error(t, err)
+
+	pair, err := m.Mint(context.Background(), &auth.Identity{UserID: uuid.New()})
+	require.NoError(t, err)
+	parser := jwt.NewParser(
+		jwt.WithValidMethods([]string{"EdDSA"}),
+		jwt.WithIssuer("saas-starter"),
+		jwt.WithAudience(ed25519minter.ModuleRegistrationAudience),
+		jwt.WithExpirationRequired(),
+	)
+	_, err = parser.ParseWithClaims(pair.AccessToken, jwt.MapClaims{}, func(*jwt.Token) (any, error) { return pub, nil })
+	require.Error(t, err)
+}
+
+func TestMintModuleRegistrationRequiresPrefix(t *testing.T) {
+	_, priv, err := ed25519.GenerateKey(nil)
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{Issuer: "saas-starter", Audience: "saas-starter"}, priv, &memoryStore{})
+
+	_, _, err = m.MintModuleRegistration("")
+	require.Error(t, err)
+}

@@ -69,6 +69,9 @@ const (
 	// ModuleCapabilitiesServiceFetchDatasourceBlobProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's FetchDatasourceBlob RPC.
 	ModuleCapabilitiesServiceFetchDatasourceBlobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	// ModuleCapabilitiesServiceMintModuleRegistrationProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's MintModuleRegistration RPC.
+	ModuleCapabilitiesServiceMintModuleRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
 )
 
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
@@ -99,6 +102,10 @@ type ModuleCapabilitiesServiceClient interface {
 	// Authorized by the caller principal's datasource-queue grant and the source
 	// row's own org/boundary, not the request tenant.
 	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error)
+	// MintModuleRegistration issues the signed, prefix-bound credential a composed
+	// module presents to the gateway to federate its REST surface. Authorized by
+	// the module's own registration secret, not the shared cluster token.
+	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
 }
 
 // NewModuleCapabilitiesServiceClient constructs a client for the
@@ -178,22 +185,29 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
 			connect.WithClientOptions(opts...),
 		),
+		mintModuleRegistration: connect.NewClient[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
-	enqueueJob          *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
-	claimJobs           *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
-	heartbeatJob        *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
-	ackJob              *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
-	nackJob             *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
-	notifyUser          *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
-	requestApproval     *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
-	getApproval         *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
-	cancelApproval      *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
-	emitAuditEvent      *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
-	fetchDatasourceBlob *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
+	enqueueJob             *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
+	claimJobs              *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
+	heartbeatJob           *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
+	ackJob                 *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
+	nackJob                *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
+	notifyUser             *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
+	requestApproval        *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
+	getApproval            *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
+	cancelApproval         *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
+	emitAuditEvent         *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	fetchDatasourceBlob    *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
+	mintModuleRegistration *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
 }
 
 // EnqueueJob calls saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob.
@@ -251,6 +265,11 @@ func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Contex
 	return c.fetchDatasourceBlob.CallServerStream(ctx, req)
 }
 
+// MintModuleRegistration calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration.
+func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Context, req *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
+	return c.mintModuleRegistration.CallUnary(ctx, req)
+}
+
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
@@ -279,6 +298,10 @@ type ModuleCapabilitiesServiceHandler interface {
 	// Authorized by the caller principal's datasource-queue grant and the source
 	// row's own org/boundary, not the request tenant.
 	FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error
+	// MintModuleRegistration issues the signed, prefix-bound credential a composed
+	// module presents to the gateway to federate its REST surface. Authorized by
+	// the module's own registration secret, not the shared cluster token.
+	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
 }
 
 // NewModuleCapabilitiesServiceHandler builds an HTTP handler from the service implementation. It
@@ -354,6 +377,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("FetchDatasourceBlob")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceMintModuleRegistrationHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceMintModuleRegistrationProcedure,
+		svc.MintModuleRegistration,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case ModuleCapabilitiesServiceEnqueueJobProcedure:
@@ -378,6 +407,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceEmitAuditEventHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceFetchDatasourceBlobProcedure:
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
+			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -429,4 +460,8 @@ func (UnimplementedModuleCapabilitiesServiceHandler) EmitAuditEvent(context.Cont
 
 func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration is not implemented"))
 }

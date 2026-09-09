@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,8 +13,16 @@ import (
 	"testing"
 	"time"
 
+	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // newModuleUpstream starts a fake upstream and returns it with its (loopback)
@@ -558,4 +567,238 @@ func mustHost(t *testing.T, rawURL string) string {
 	u, err := url.Parse(rawURL)
 	require.NoError(t, err)
 	return u.Host
+}
+
+// ============================================================================
+// Registration-credential exchange (/modules/_registration-token)
+// ============================================================================
+
+// fakeAccountsMint stands in for accounts' MintModuleRegistration RPC. It is
+// registered under the real service name and method, so the test exercises the
+// exact procedure string the generated mesh policy admits, and it signs with the
+// key the harness publishes as the sidecar's public key, as accounts does.
+type fakeAccountsMint struct {
+	priv         ed25519.PrivateKey
+	code         codes.Code
+	lastInternal string
+	lastPrefix   string
+	lastSecret   string
+	requestCount int
+}
+
+func (f *fakeAccountsMint) handle(ctx context.Context, dec func(any) error) (any, error) {
+	req := &accountsv1.ModuleMintRegistrationRequest{}
+	if err := dec(req); err != nil {
+		return nil, err
+	}
+	f.requestCount++
+	f.lastPrefix = req.GetPrefix()
+	f.lastSecret = req.GetSecret()
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
+			f.lastInternal = values[0]
+		}
+	}
+	if f.code != codes.OK {
+		return nil, status.Error(f.code, "denied")
+	}
+	claims := moduleRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "saas-starter",
+			Subject:   "module:" + req.GetPrefix(),
+			Audience:  jwt.ClaimStrings{moduleRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+		},
+		Prefix: req.GetPrefix(),
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims).SignedString(f.priv)
+	if err != nil {
+		return nil, err
+	}
+	return &accountsv1.ModuleMintRegistrationResponse{
+		Token:     signed,
+		ExpiresAt: timestamppb.New(time.Now().Add(5 * time.Minute)),
+	}, nil
+}
+
+// newExchangeHarness starts a gRPC server serving the mint procedure and points
+// the sidecar's accounts connection at it.
+func newExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsMint, ed25519.PrivateKey) {
+	t.Helper()
+	gw, _, _, priv := newGatewayHarness(t)
+	mint := &fakeAccountsMint{priv: priv}
+
+	server := grpc.NewServer()
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
+		HandlerType: (*any)(nil),
+		Methods: []grpc.MethodDesc{{
+			MethodName: "MintModuleRegistration",
+			Handler: func(_ any, ctx context.Context, dec func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
+				return mint.handle(ctx, dec)
+			},
+		}},
+		Metadata: "saas/accounts/v1/module_registration.proto",
+	}, mint)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	gw.sidecar.backendConn = conn
+	return gw, mint, priv
+}
+
+func exchangeTokenRequest(prefix, secret, internal string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, moduleRegistrationTokenPath,
+		strings.NewReader(fmt.Sprintf(`{"prefix":%q}`, prefix)))
+	if secret != "" {
+		req.Header.Set(moduleSecretHeader, secret)
+	}
+	if internal != "" {
+		req.Header.Set("X-Codefly-Internal-Token", internal)
+	}
+	return req
+}
+
+func TestGateway_ModuleRegistrationToken_BrokersToAccounts(t *testing.T) {
+	gw, mint, _ := newExchangeHarness(t)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "documents-secret", "test-internal-token"))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "no-store", w.Header().Get("cache-control"))
+	// The gateway presents its OWN cluster credential on the internal leg and
+	// forwards the module's secret for accounts to judge.
+	require.Equal(t, "test-internal-token", mint.lastInternal)
+	require.Equal(t, "documents", mint.lastPrefix)
+	require.Equal(t, "documents-secret", mint.lastSecret)
+
+	var payload struct {
+		Token string `json:"token"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.NotEmpty(t, payload.Token)
+}
+
+// The exchange feeds the endpoint it exists for: a module that runs the full
+// handshake ends up with a routed, still-authenticated federated prefix.
+func TestGateway_ModuleRegistrationToken_CompletesHandshake(t *testing.T) {
+	gw, _, priv := newExchangeHarness(t)
+	moduleFake, upstream := newModuleUpstream(t)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "documents-secret", "test-internal-token"))
+	require.Equal(t, http.StatusOK, w.Code)
+	var issued struct {
+		Token string `json:"token"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &issued))
+
+	regBody := fmt.Sprintf(`{"prefix":"documents","upstream":%q}`, upstream)
+	regReq := httptest.NewRequest(http.MethodPost, moduleRegisterPath, strings.NewReader(regBody))
+	regReq.Header.Set(moduleRegistrationHeader, issued.Token)
+	regResp := httptest.NewRecorder()
+	gw.ServeHTTP(regResp, regReq)
+	require.Equal(t, http.StatusOK, regResp.Code)
+
+	proxied := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
+	proxied.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	proxiedResp := httptest.NewRecorder()
+	gw.ServeHTTP(proxiedResp, proxied)
+	require.Equal(t, http.StatusOK, proxiedResp.Code)
+	require.Equal(t, "/v1/documents/collection", moduleFake.lastPath)
+
+	// Registration added a target, not an auth bypass.
+	unauth := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
+	unauthResp := httptest.NewRecorder()
+	gw.ServeHTTP(unauthResp, unauth)
+	require.Equal(t, http.StatusUnauthorized, unauthResp.Code)
+}
+
+func TestGateway_ModuleRegistrationToken_FailsClosed(t *testing.T) {
+	tests := map[string]struct {
+		prefix   string
+		secret   string
+		internal string
+		want     int
+	}{
+		"no internal token":  {"documents", "documents-secret", "", http.StatusUnauthorized},
+		"bad internal token": {"documents", "documents-secret", "wrong", http.StatusUnauthorized},
+		"no module secret":   {"documents", "", "test-internal-token", http.StatusUnauthorized},
+		"path prefix":        {"documents/nested", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"wildcard prefix":    {"*", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"empty prefix":       {"", "documents-secret", "test-internal-token", http.StatusBadRequest},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			gw, mint, _ := newExchangeHarness(t)
+
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, exchangeTokenRequest(test.prefix, test.secret, test.internal))
+
+			require.Equal(t, test.want, w.Code)
+			// Nothing reached accounts: the perimeter rejected it first.
+			require.Zero(t, mint.requestCount)
+		})
+	}
+}
+
+// accounts owns the authorization decision, so its refusal is the gateway's.
+func TestGateway_ModuleRegistrationToken_RelaysAccountsRefusal(t *testing.T) {
+	gw, mint, _ := newExchangeHarness(t)
+	mint.code = codes.PermissionDenied
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "wrong-secret", "test-internal-token"))
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	require.Equal(t, 1, mint.requestCount)
+}
+
+// A signing outage is not a refusal — a module must be able to tell them apart.
+func TestGateway_ModuleRegistrationToken_UnavailableAuthority(t *testing.T) {
+	gw, mint, _ := newExchangeHarness(t)
+	mint.code = codes.Internal
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, exchangeTokenRequest("documents", "documents-secret", "test-internal-token"))
+
+	require.Equal(t, http.StatusBadGateway, w.Code)
+}
+
+func TestGateway_ModuleRegistrationToken_MethodNotAllowed(t *testing.T) {
+	gw, _, _ := newExchangeHarness(t)
+
+	req := httptest.NewRequest(http.MethodGet, moduleRegistrationTokenPath, nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// The module secret is a credential the gateway consumes; like every other
+// codefly credential header it must never continue to an upstream.
+func TestGateway_ModuleSecretHeaderStrippedFromProxiedRequests(t *testing.T) {
+	gw, _, priv := newExchangeHarness(t)
+	moduleFake, upstream := newModuleUpstream(t)
+
+	regResp := registerModule(t, gw, priv, "documents", upstream)
+	require.Equal(t, http.StatusOK, regResp.Code)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/documents/collection", nil)
+	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
+	req.Header.Set(moduleSecretHeader, "documents-secret")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, moduleFake.lastHeaders.Get(moduleSecretHeader))
 }

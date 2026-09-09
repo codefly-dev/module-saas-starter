@@ -16,6 +16,10 @@ type moduleCapabilitiesConnectHandler struct {
 	inner *ModuleCapabilitiesServer
 }
 
+func (h *moduleCapabilitiesConnectHandler) MintModuleRegistration(ctx context.Context, req *connect.Request[gen.ModuleMintRegistrationRequest]) (*connect.Response[gen.ModuleMintRegistrationResponse], error) {
+	return unary(ctx, req, h.inner.MintModuleRegistration)
+}
+
 func (h *moduleCapabilitiesConnectHandler) EnqueueJob(ctx context.Context, req *connect.Request[gen.ModuleEnqueueJobRequest]) (*connect.Response[gen.ModuleEnqueueJobResponse], error) {
 	return unary(ctx, req, h.inner.EnqueueJob)
 }

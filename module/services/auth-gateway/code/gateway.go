@@ -161,6 +161,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The credential exchange that precedes it (/modules/_registration-token):
+	// same listener, same reason to run before the header is stripped, and it
+	// brokers to accounts rather than deciding anything itself.
+	if g.handleModuleRegistrationToken(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)
@@ -466,6 +473,7 @@ var untrustedAuthHeaders = []string{
 	"x-acting-as-user-id", "x-act", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
+	"x-codefly-module-secret",
 }
 
 // httpError writes a plain-text error response. Bodies are short,
