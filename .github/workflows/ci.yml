@@ -33,12 +33,19 @@ jobs:
         run: node --test module/tools/rls-migration-gate.test.mjs
       - name: Test the migration pairing gate
         run: node --test module/tools/migration-pairing-gate.test.mjs
+      - name: Test the generated-pins gate
+        run: node --test module/tools/generated-pins-gate.test.mjs
       - name: Verify the shipped manifest matches the canonical tree
         run: node module/tools/base-integrity.mjs verify
       - name: Enforce tenant RLS coverage in store migrations
         run: node module/tools/rls-migration-gate.mjs check
       - name: Enforce up+down pairing across all migrations
         run: node module/tools/migration-pairing-gate.mjs check
+      # Fails fast and by name on generated Go that no pinned run reproduces,
+      # instead of letting Codefly's sync-drift phase report it late as an
+      # opaque byte diff that blocks the gate on every open PR.
+      - name: Enforce pinned plugin versions and shape on checked-in generated Go
+        run: node module/tools/generated-pins-gate.mjs check
 
   authz-coverage:
     name: Authorization coverage
