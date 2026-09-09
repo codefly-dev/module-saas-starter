@@ -141,6 +141,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/CancelApproval":          "Withdraw a still-open approval request.",
 	"ModuleCapabilitiesService/EmitAuditEvent":          "Emit a registered audit event on the tenant's spine.",
 	"ModuleCapabilitiesService/FetchDatasourceBlob":     "Stream a datasource file blob referenced by a change set.",
+	"ModuleCapabilitiesService/MintModuleRegistration":  "Issue a composed module the signed credential it registers its gateway REST prefix with.",
 	"NotificationService/DeleteNotification":            "Delete one of the caller's notifications.",
 	"NotificationService/GetUnreadCount":                "Count the caller's unread notifications.",
 	"NotificationService/ListNotifications":             "List the caller's notifications.",

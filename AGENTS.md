@@ -110,18 +110,21 @@ names a specific solution; the seam is generic.
   1. `POST /modules/_registration-token` on the auth-gateway, with the
      cluster-internal token in `X-Codefly-Internal-Token` **and** the module's
      own registration secret in `X-Codefly-Module-Secret`, body `{prefix}`.
-  2. The gateway brokers to accounts
-     (`/internal/module-registration/token`, private REST listener, absent from
-     the route catalog so the edge cannot reach it). accounts compares the secret
-     against the digest declared for that prefix in the `security` configuration
-     group's `MODULE_REGISTRATION_SECRETS` and, on a match, mints a 5-minute
-     Ed25519 token (`aud=module-registration`, `sub=module:<prefix>`) with the
-     key the gateway already trusts through JWKS. Unset means no module may
+  2. The gateway brokers to accounts over the internal listener
+     (`ModuleCapabilitiesService/MintModuleRegistration`, EXPOSURE_INTERNAL, so
+     the generated mesh policy admits the gateway's service account and denies
+     everyone else). accounts compares the secret against the digest declared for
+     that prefix in the `federation` configuration group's
+     `MODULE_REGISTRATION_SECRETS` and, on a match, mints a 5-minute Ed25519
+     token (`aud=module-registration`, `sub=module:<prefix>`) with the key the
+     gateway already trusts through JWKS, emitting a
+     `module.registration_minted` audit event. Unset means no module may
      federate.
   3. `POST /modules/_register` with that token and `{prefix, upstream}`.
 
-  Composition provisions the pair: the SHA-256 digest into this host's `security`
-  group, the plaintext into the module. Registration only adds a proxy target —
+  Composition provisions the pair: the SHA-256 digest into this host's
+  `federation` group, the plaintext into the module. The token is short-lived and
+  fetched per registration attempt, not cached across a gateway restart. Registration only adds a proxy target —
   every proxied `/v1/<module>/*` request still runs the full ext_authz check.
 - **Host page** — `/s/[solutionId]`
   (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the remote via

@@ -473,6 +473,7 @@ var untrustedAuthHeaders = []string{
 	"x-acting-as-user-id", "x-act", "x-scopes", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
+	"x-codefly-module-secret",
 }
 
 // httpError writes a plain-text error response. Bodies are short,

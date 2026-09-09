@@ -68,7 +68,10 @@ type actorClaim struct {
 // Provider-specific values (WorkOS sub, WorkOS org id, tokens) NEVER leave
 // the sidecar — downstream services see only canonical UUIDs.
 type Sidecar struct {
-	apiKey        apigen.APIKeyServiceClient
+	apiKey apigen.APIKeyServiceClient
+	// backendConn is the internal-listener connection used for accounts RPCs
+	// that have no vendored client stub, invoked by full method name.
+	backendConn   *grpc.ClientConn
 	publicKey     ed25519.PublicKey
 	issuer        string
 	audience      string
@@ -111,6 +114,7 @@ func constantTimeMatch(candidate, expected string) bool {
 func NewSidecar(backendConn *grpc.ClientConn, publicKey ed25519.PublicKey) *Sidecar {
 	return &Sidecar{
 		apiKey:                apigen.NewAPIKeyServiceClient(backendConn),
+		backendConn:           backendConn,
 		publicKey:             publicKey,
 		issuer:                "saas-starter",
 		audience:              "saas-starter",

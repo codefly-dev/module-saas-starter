@@ -7,6 +7,7 @@ import "google/protobuf/empty.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/accounts/v1/module_registration.proto";
 import "saas/jobs/v1/jobs.proto";
 import "saas/policy/v1/options.proto";
 
@@ -297,8 +298,10 @@ message FetchDatasourceBlobChunk {
 // Service
 // ---------------------------------------------------------------------------
 
-// ModuleCapabilitiesService is the module-facing platform surface. Every RPC
-// is internal-tier and identifies its caller from the forwarded Work Context.
+// ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
+// internal-tier and identifies its caller from the forwarded Work Context —
+// except MintModuleRegistration, which a module calls at startup, before any
+// user request exists, and which authorizes on its own registration secret.
 service ModuleCapabilitiesService {
   // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
   rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
@@ -454,6 +457,25 @@ service ModuleCapabilitiesService {
       rate_limit: RATE_LIMIT_CLASS_INTERNAL
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // MintModuleRegistration issues the signed, prefix-bound credential a composed
+  // module presents to the gateway to federate its REST surface. Authorized by
+  // the module's own registration secret, not the shared cluster token.
+  rpc MintModuleRegistration(ModuleMintRegistrationRequest) returns (ModuleMintRegistrationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.module.registration_minted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }

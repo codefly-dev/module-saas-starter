@@ -30,6 +30,7 @@ services:
       - application
       - billing
       - email
+      - federation
       - identity
       - internal-auth
       - observability

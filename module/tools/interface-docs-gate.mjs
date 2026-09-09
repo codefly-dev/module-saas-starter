@@ -93,6 +93,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/FetchDatasourceBlob": "datasource",
   "ModuleCapabilitiesService/GetApproval": "approvals",
   "ModuleCapabilitiesService/HeartbeatJob": "jobs",
+  "ModuleCapabilitiesService/MintModuleRegistration": "authorization",
   "ModuleCapabilitiesService/NackJob": "jobs",
   "ModuleCapabilitiesService/NotifyUser": "notifications",
   "ModuleCapabilitiesService/RequestApproval": "approvals",

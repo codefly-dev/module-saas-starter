@@ -30,10 +30,11 @@ package main
 // That token comes from accounts, the authority whose key the gateway already
 // trusts through JWKS, and a module obtains one by exchanging the registration
 // secret its composition provisioned (POST /modules/_registration-token below).
-// The gateway cannot mint — it holds only the public half — and deliberately
-// does not decide: accounts owns the prefix→module binding, so the two halves
-// of federation (who may claim a prefix, and where that prefix is proxied) are
-// answered by different services.
+// The gateway cannot mint — it holds only the public half. What that buys is
+// narrower than "separation of authority": a gateway compromise routes traffic
+// anywhere regardless of who signs. It buys that the prefix→module binding is
+// declared once, in configuration accounts reads, so no code path on the request
+// side — here or in a module — can widen who may claim a prefix.
 //
 // The token binds the prefix (a module's stable identity), not the upstream URL,
 // which is chosen at runtime (loopback in dev, cluster DNS in prod) and would be
@@ -44,19 +45,21 @@ package main
 // name-only check leaves open.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
+
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 const moduleRegisterPath = "/modules/_register"
@@ -335,10 +338,13 @@ const moduleRegistrationTokenPath = "/modules/_registration-token"
 // holds the digest to compare it against.
 const moduleSecretHeader = "X-Codefly-Module-Secret"
 
-// accountsModuleRegistrationPath is accounts' credential-exchange endpoint
-// (adapters.ModuleRegistrationPath). It is absent from the route catalog, so it
-// is reachable only over this internal call and never from the edge.
-const accountsModuleRegistrationPath = "/internal/module-registration/token"
+// mintModuleRegistrationMethod is accounts' credential-exchange RPC. It is
+// EXPOSURE_INTERNAL, so the generated mesh policy admits this gateway's service
+// account to exactly this path and denies every other principal; calling it by
+// full method name over the internal listener keeps that guarantee, which a
+// plain HTTP route on accounts would not have (the policy allowlist is built
+// from internal proto methods).
+const mintModuleRegistrationMethod = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
 
 // moduleRegistrationExchangeTimeout bounds the internal leg. A module blocks on
 // this during startup, so a stalled accounts must surface as a failed
@@ -349,11 +355,10 @@ const moduleRegistrationExchangeTimeout = 10 * time.Second
 // returns true when it has handled the request.
 //
 // The gateway brokers rather than mints: it holds only the public half of the
-// signing key, and accounts — the authority that already answers every
-// authorization question for this cluster — is where the decision "may this
-// caller own that prefix" belongs. So this handler authenticates the perimeter
-// and forwards; it makes no trust decision about the module itself, and it
-// never learns whether a prefix is declared.
+// signing key, and a composed module cannot reach accounts' internal listener
+// itself — the mesh policy admits only this gateway's service account. So this
+// handler authenticates the perimeter and forwards; accounts decides whether the
+// caller owns the prefix, and this handler never learns which prefixes exist.
 func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != moduleRegistrationTokenPath {
 		return false
@@ -390,22 +395,13 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 		return true
 	}
 
-	upstream, ok := g.upstreams["accounts"]
-	if !ok {
-		httpError(w, http.StatusBadGateway, "upstream not configured for service")
-		return true
-	}
-
-	token, status, err := g.mintModuleRegistration(r.Context(), upstream, payload.Prefix, secret)
+	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
+	defer cancel()
+	issued, err := g.sidecar.mintModuleRegistration(ctx, payload.Prefix, secret)
 	if err != nil {
-		httpError(w, http.StatusBadGateway, "registration token unavailable")
-		return true
-	}
-	if status != http.StatusOK {
-		// A refusal stays a refusal so a module can tell "wrong secret" from
-		// "accounts is unhealthy". accounts already answers unknown-prefix and
-		// wrong-secret identically, so nothing here reveals what it declared.
-		if status == http.StatusUnauthorized {
+		// accounts answers unknown-prefix and wrong-secret identically, so
+		// relaying its refusal reveals nothing about what a composition declared.
+		if status.Code(err) == codes.PermissionDenied {
 			httpError(w, http.StatusUnauthorized, "unauthorized")
 			return true
 		}
@@ -413,47 +409,38 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 		return true
 	}
 
+	body, err := json.Marshal(map[string]string{
+		"token":     issued.GetToken(),
+		"expiresAt": issued.GetExpiresAt().AsTime().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		httpError(w, http.StatusBadGateway, "registration token unavailable")
+		return true
+	}
 	w.Header().Set("content-type", "application/json")
 	w.Header().Set("cache-control", "no-store")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(token)
+	_, _ = w.Write(body)
 	return true
 }
 
-// mintModuleRegistration runs the internal leg: it asks accounts to authorize
-// the module and sign a registration token, presenting the gateway's own
-// cluster-internal credential. It returns the raw response body and status.
-func (g *Gateway) mintModuleRegistration(
-	ctx context.Context, upstream *url.URL, prefix, secret string,
-) ([]byte, int, error) {
-	body, err := json.Marshal(map[string]string{"prefix": prefix, "secret": secret})
-	if err != nil {
-		return nil, 0, err
+// mintModuleRegistration runs the internal leg over the existing accounts
+// connection, presenting the gateway's own cluster-internal credential. There is
+// no vendored client stub for ModuleCapabilitiesService, so the method is
+// invoked by name against generated message types shared with accounts.
+func (s *Sidecar) mintModuleRegistration(
+	ctx context.Context, prefix, secret string,
+) (*accountsv1.ModuleMintRegistrationResponse, error) {
+	if s.backendConn == nil {
+		return nil, fmt.Errorf("accounts connection not configured")
 	}
-	ctx, cancel := context.WithTimeout(ctx, moduleRegistrationExchangeTimeout)
-	defer cancel()
-
-	endpoint := *upstream
-	endpoint.Path = accountsModuleRegistrationPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
-	if err != nil {
-		return nil, 0, err
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	response := &accountsv1.ModuleMintRegistrationResponse{}
+	request := &accountsv1.ModuleMintRegistrationRequest{Prefix: prefix, Secret: secret}
+	if err := s.backendConn.Invoke(ctx, mintModuleRegistrationMethod, request, response); err != nil {
+		return nil, err
 	}
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("X-Codefly-Internal-Token", g.sidecar.internalToken)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, 0, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	// The response is a small JSON credential; a bounded read keeps a
-	// misbehaving upstream from making the gateway buffer without limit.
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, 8192))
-	if err != nil {
-		return nil, 0, err
-	}
-	return payload, resp.StatusCode, nil
+	return response, nil
 }
 
 // --- Resolve-time SSRF / DNS-rebinding defense for module upstreams ---

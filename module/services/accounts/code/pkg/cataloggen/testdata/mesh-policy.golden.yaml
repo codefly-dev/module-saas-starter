@@ -37,6 +37,7 @@ spec:
               - /saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob
               - /saas.accounts.v1.ModuleCapabilitiesService/GetApproval
               - /saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob
+              - /saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration
               - /saas.accounts.v1.ModuleCapabilitiesService/NackJob
               - /saas.accounts.v1.ModuleCapabilitiesService/NotifyUser
               - /saas.accounts.v1.ModuleCapabilitiesService/RequestApproval
