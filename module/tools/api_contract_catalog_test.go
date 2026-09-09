@@ -68,15 +68,27 @@ func TestServiceCatalogProceduresAppearInAPIContractCatalog(t *testing.T) {
 	}
 }
 
-// findModuleDir returns the directory holding module.codefly.yaml. The tools
-// module lives at module/tools, so the module root is the repository root's
-// module/ subtree (or the repository root itself in a flat layout).
+// findModuleDir returns the nearest ancestor of the working directory that
+// holds module.codefly.yaml. It walks up rather than deriving the module from
+// the repository root, because these tests also run wherever a consumer base-
+// syncs this module to: module/ here, the root in a flat layout, and
+// modules/<name>/ in an aggregator such as lodestar. Resolving "repository root
+// + module/" broke the aggregator case by falling back to the workspace root,
+// which holds no contracts/ or services/ tree (lodestar#214).
 func findModuleDir(t *testing.T) string {
 	t.Helper()
-	root := findRepositoryRoot(t)
-	candidate := filepath.Join(root, "module")
-	if _, err := os.Stat(filepath.Join(candidate, "module.codefly.yaml")); err == nil {
-		return candidate
+	directory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
 	}
-	return root
+	for {
+		if _, statErr := os.Stat(filepath.Join(directory, "module.codefly.yaml")); statErr == nil {
+			return directory
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			t.Fatal("module.codefly.yaml not found above the working directory")
+		}
+		directory = parent
+	}
 }
