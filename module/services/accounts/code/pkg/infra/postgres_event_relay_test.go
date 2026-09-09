@@ -302,6 +302,13 @@ func deliveryExists(t *testing.T, pool *pgxpool.Pool, key string) bool {
 // back and left unpublished while a healthy event in another partition is still
 // delivered. Isolation must not break per-partition ordering, so a later event in
 // the poison's own partition is held back rather than published ahead of it.
+//
+// The subscription is ORDERED, which is what makes holding the partition back
+// the correct behaviour to assert. It used to be unordered, and the relay held
+// the partition anyway — blocking events for a subscription that was never
+// promised an order. The sibling
+// TestPostgresRelayUnorderedFailureDoesNotBlockItsPartition covers that case and
+// asserts the opposite outcome.
 func TestPostgresRelayIsolatesPoisonEventPreservingOrdering(t *testing.T) {
 	pool, err := infra.NewJobWorkerPool(testCtx)
 	require.NoError(t, err)
@@ -310,7 +317,7 @@ func TestPostgresRelayIsolatesPoisonEventPreservingOrdering(t *testing.T) {
 	transport := infra.NewPostgresEventTransport(store, pool, "relay-poison-"+uuid.NewString(), time.Second)
 
 	eventType := "relay.poison." + relayToken()
-	sub := seedSubscriptionRow(t, eventType, "relay.poison.q."+relayToken(), events.DeliveryUnordered)
+	sub := seedSubscriptionRow(t, eventType, "relay.poison.q."+relayToken(), events.DeliveryOrdered)
 
 	const source = "urn:codefly:test/relay"
 	poisonTenant := uuid.NewString()

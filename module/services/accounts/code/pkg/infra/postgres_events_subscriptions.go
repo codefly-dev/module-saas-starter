@@ -3,10 +3,29 @@ package infra
 import (
 	"context"
 
+	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
 
 	"accounts/pkg/business"
 )
+
+// maxEventSubscriptionsRead bounds how many event_subscriptions rows a single
+// read materializes. Nothing else bounds these queries: a subscription row is
+// created by an ordinary Subscribe call, so the row count grows with caller
+// behaviour rather than with any fixed platform dimension, and an unbounded
+// SELECT turns that growth into unbounded server memory. The cap is far above
+// any legitimate working set — a principal reaching it, or a deployment whose
+// live subscriptions exceed it, is a signal in its own right, so the reads log
+// when they truncate rather than failing the caller or silently lying.
+//
+// This deliberately does not apply to the relay's own subscription load
+// (liveSubscriptions in postgres_events.go): the relay must consider every live
+// subscription or it silently drops deliveries, so capping it would trade a
+// memory bound for lost events.
+//
+// It is a var only so a test can shrink it and exercise the truncation path
+// without inserting a cap's worth of rows into the shared table.
+var maxEventSubscriptionsRead = 1000
 
 // event_subscriptions is a control-plane-owned platform relation (no RLS): only
 // app_control_plane may write it and only app_job_worker/app_control_plane may
@@ -83,15 +102,18 @@ func (s *PostgresStore) RevokeEventSubscription(ctx context.Context, subscriptio
 }
 
 // ListEventSubscriptions returns the principal's live (non-revoked) rows,
-// oldest first.
+// oldest first, bounded by maxEventSubscriptionsRead. The tiebreak on id makes
+// the order total, so the bound always cuts the same suffix rather than an
+// arbitrary one.
 func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, subscriberPrincipalID string) ([]*business.EventSubscription, error) {
 	q := s.getQueryExecutor(ctx)
 	rows, err := q.Query(ctx, `
 		SELECT `+eventSubscriptionColumns+`
 		FROM public.event_subscriptions
 		WHERE subscriber_principal_id = $1 AND revoked_at IS NULL
-		ORDER BY created_at`,
-		subscriberPrincipalID,
+		ORDER BY created_at, id
+		LIMIT $2`,
+		subscriberPrincipalID, maxEventSubscriptionsRead+1,
 	)
 	if err != nil {
 		return nil, err
@@ -106,7 +128,16 @@ func (s *PostgresStore) ListEventSubscriptions(ctx context.Context, subscriberPr
 		}
 		out = append(out, sub)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(out) > maxEventSubscriptionsRead {
+		out = out[:maxEventSubscriptionsRead]
+		wool.Get(ctx).In("events.subscriptions").Warn("event subscription list truncated at the read cap",
+			wool.Field("subscriber_principal_id", subscriberPrincipalID),
+			wool.Field("cap", maxEventSubscriptionsRead))
+	}
+	return out, nil
 }
 
 // CountLiveEventSubscriptions counts every live (non-revoked) subscription across

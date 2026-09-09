@@ -247,12 +247,18 @@ func (s *PostgresEventOperations) relayHealth(ctx context.Context) (*eventsv1.Ev
 	}, nil
 }
 
+// listLiveSubscriptions materializes the live subscriptions the admin surface
+// reports on, bounded by maxEventSubscriptionsRead. The row count grows with how
+// many subscriptions callers create, so without a bound one admin request loads
+// an unbounded result set into memory; the cap is far above any legitimate
+// working set, and reaching it is logged rather than hidden.
 func (s *PostgresEventOperations) listLiveSubscriptions(ctx context.Context) ([]liveEventSubscription, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id, subscriber_principal_id, type_pattern, queue, delivery, created_at
 		FROM public.event_subscriptions
 		WHERE revoked_at IS NULL
-		ORDER BY created_at, id`)
+		ORDER BY created_at, id
+		LIMIT $1`, maxEventSubscriptionsRead+1)
 	if err != nil {
 		return nil, fmt.Errorf("list live event subscriptions: %w", err)
 	}
@@ -270,6 +276,11 @@ func (s *PostgresEventOperations) listLiveSubscriptions(ctx context.Context) ([]
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list live event subscriptions: %w", err)
+	}
+	if len(subscriptions) > maxEventSubscriptionsRead {
+		subscriptions = subscriptions[:maxEventSubscriptionsRead]
+		wool.Get(ctx).In("events.operations").Warn("live event subscription list truncated at the read cap",
+			wool.Field("cap", maxEventSubscriptionsRead))
 	}
 	return subscriptions, nil
 }

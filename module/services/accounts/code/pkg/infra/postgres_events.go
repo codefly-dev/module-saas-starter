@@ -17,6 +17,7 @@ import (
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
+	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,14 +44,44 @@ const maxClaimBatch = 100
 // never opens an unbounded transaction.
 const relayBatchSize = 100
 
+// relayMaxBatchesPerDrain bounds one RelayOnce call. Without it a single drain
+// runs until the whole system-wide outbox is empty, so one tenant's large
+// backlog holds the shared relay worker (and, on the inline publish path, the
+// caller's request) for as long as it takes to clear. Capping the drain hands
+// control back after a bounded amount of work; the worker's next tick — 250ms
+// later — resumes where this one stopped, and because the scan is in global seq
+// order no partition can monopolize the batches it does get.
+const relayMaxBatchesPerDrain = 20
+
+// eventRelayMaxAttempts is the relay's fan-out retry budget for one event, and
+// is deliberately distinct from eventDeliveryMaxAttempts (which bounds the
+// *delivered job's* own retries once fan-out has succeeded). A fan-out that
+// fails is retried on later ticks, at most once per drain; on the attempt that
+// reaches this cap the event is parked in dead_lettered_at, which unblocks its
+// partition. Without a cap a deterministically-failing event is re-selected
+// first on every tick forever and, because a failed ordered event holds its
+// partition back, silently stalls that tenant's whole stream.
+const eventRelayMaxAttempts = 5
+
+// replayPageSize bounds one Replay page. Replay is an operator-triggered
+// re-fan-out over durable history, so its result set is as large as the
+// retained history matching the selector — unbounded for a wide selector such as
+// a platform-scope replay of every tenant. Paging by seq keeps both the
+// materialized slice and each transaction bounded, the same discipline the relay
+// path already applies. It is a var only so a test can shrink it and exercise
+// the multi-page walk without materializing a page's worth of history.
+var replayPageSize = 500
+
 // PostgresEventTransport is the reference events.Transport: it maps the
 // CloudEvents envelope onto the durable jobs platform with no schema change.
 // Publishing inserts one row into the durable domain_events relation — the
 // event-of-record — inside the producer's transaction. Fan-out is separate: the
-// relay reads unpublished events in (partition_key, seq) order, resolves matching
-// non-revoked event_subscriptions, and enqueues one ordinary inbox job per
-// subscription, so claiming, acking, nacking, and heartbeating are the unchanged
-// jobs lease lifecycle and replay re-fans-out from domain_events.
+// relay reads unpublished events in seq order, resolves matching non-revoked
+// event_subscriptions, and enqueues one ordinary inbox job per subscription, so
+// claiming, acking, nacking, and heartbeating are the unchanged jobs lease
+// lifecycle and replay re-fans-out from domain_events. seq is global publish
+// order, so the scan is FIFO across partitions (no partition can starve another)
+// while still yielding each partition's own events in order.
 type PostgresEventTransport struct {
 	store         *PostgresJobStore
 	pool          *pgxpool.Pool
@@ -160,54 +191,113 @@ func (p *PostgresEventTransport) insertDomainEvent(ctx context.Context, tx pgx.T
 	return nil
 }
 
-// RelayOnce drains every unpublished event, one bounded batch per transaction,
-// and returns how many events it relayed. The asynchronous relay worker calls it
-// on a tick; Publish calls it inline for the no-transaction path.
+// RelayOnce drains unpublished events, one bounded batch per transaction, and
+// returns how many events it relayed. The asynchronous relay worker calls it on
+// a tick; Publish calls it inline for the no-transaction path.
+//
+// The drain is bounded twice over. relayMaxBatchesPerDrain caps how much work
+// one call does, so a large backlog is cleared across ticks instead of holding
+// the worker (or an inline publisher) indefinitely. And every event whose
+// fan-out fails is remembered for the rest of this drain and excluded from later
+// batches: without that, the very next batch would re-select the failed event
+// first — it is still unpublished and still has the lowest seq — and burn its
+// whole retry budget inside one drain, parking an event that failed for a
+// transient reason. One drain therefore costs an event at most one attempt.
 func (p *PostgresEventTransport) RelayOnce(ctx context.Context) (int, error) {
 	relayed := 0
-	for {
-		batch, err := p.relayBatch(ctx)
+	drain := &relayDrain{blocked: map[string]bool{}}
+	for batch := 0; batch < relayMaxBatchesPerDrain; batch++ {
+		failedBefore := len(drain.failed)
+		processed, err := p.relayBatch(ctx, drain)
 		if err != nil {
 			return relayed, err
 		}
-		relayed += batch
-		if batch == 0 {
+		relayed += processed
+		// No forward progress and nothing newly failed: the outbox is drained, or
+		// everything left is blocked, parked, or held by another relay's SKIP
+		// LOCKED. Either way another batch would do the same work again.
+		if processed == 0 && len(drain.failed) == failedBefore {
 			return relayed, nil
 		}
 	}
+	return relayed, nil
+}
+
+// relayDrain is the state one RelayOnce accumulates across its batches. Both
+// fields must outlive a single batch, and for opposite reasons.
+//
+// failed keeps an event that has already failed out of this drain's later
+// batches. Without it the next batch re-selects that event immediately — it is
+// still unpublished and still holds the lowest seq — and one drain spends the
+// event's whole retry budget, parking something that failed for a transient
+// reason.
+//
+// blocked keeps the partitions that failure held back. It has to be carried for
+// exactly the same reason failed does: once the failed event is skipped by the
+// scan, nothing in a later batch would otherwise recall that its partition is
+// still waiting, and the very next event of that partition would be published
+// ahead of the one that could not be delivered — silently breaking the ordering
+// the skip list was introduced to leave undisturbed.
+type relayDrain struct {
+	failed  []string
+	blocked map[string]bool
 }
 
 const relaySelectUnpublishedSQL = `
 	SELECT id, type, source, subject, event_time, specversion, datacontenttype,
 	       dataschema, data, tenant_id, boundary_id, partition_key, correlation_id,
 	       causation_id, actor_principal_id, owner_principal_id, traceparent,
-	       schema_version
+	       schema_version, seq
 	FROM public.domain_events
 	WHERE published_at IS NULL
-	ORDER BY partition_key, seq
+	  AND dead_lettered_at IS NULL
+	  AND NOT (id = ANY($2::uuid[]))
+	ORDER BY seq
 	LIMIT $1
 	FOR UPDATE SKIP LOCKED`
 
 const relayMarkPublishedSQL = `UPDATE public.domain_events SET published_at = NOW() WHERE id = $1::uuid`
 
-// relayBatch locks up to one batch of unpublished events with SKIP LOCKED so
-// concurrent relays never fan the same event out twice, then fans each event out
-// to its matching non-revoked subscriptions and marks it published. Each event's
-// fan-out runs inside its own savepoint: a poison event (one whose enqueue keeps
-// failing) is rolled back and left unpublished for a later tick instead of
-// dragging the whole batch — and every other event's deliveries — back with it.
-// Ordering is preserved across the isolation: because pending is ordered by
-// (partition_key, seq), once an event in a partition fails the rest of that
-// partition is held back this batch, so a later same-partition event is never
-// published ahead of an earlier one that could not be delivered.
-func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
+// relayRecordFailureSQL charges one failed fan-out attempt to the event and
+// parks it once the budget is spent, reporting whether this attempt was the one
+// that parked it. It runs on the batch transaction rather than the rolled-back
+// savepoint, so the count survives the failure that caused it.
+const relayRecordFailureSQL = `
+	UPDATE public.domain_events
+	SET relay_attempts   = relay_attempts + 1,
+	    last_relay_error = $2,
+	    dead_lettered_at = CASE WHEN relay_attempts + 1 >= $3 THEN NOW() ELSE NULL END
+	WHERE id = $1::uuid
+	RETURNING dead_lettered_at IS NOT NULL`
+
+// relayBatch locks up to one batch of unpublished, not-yet-parked events with
+// SKIP LOCKED so concurrent relays never fan the same event out twice, then fans
+// each event out to its matching non-revoked subscriptions and marks it
+// published. It returns how many it relayed, and records the failures and the
+// partitions they held back on the shared drain state.
+//
+// Each event's fan-out runs inside its own savepoint: a poison event (one whose
+// enqueue keeps failing) is rolled back and left unpublished instead of dragging
+// the whole batch — and every other event's deliveries — back with it. A failed
+// attempt is then charged to the event on the batch transaction, and once the
+// budget is spent the event is parked, which is what stops a permanently-bad row
+// from stalling its partition for good.
+//
+// Holding back the rest of a partition is what keeps ordered delivery ordered,
+// but it is owed only to events that actually have an ordered subscriber. An
+// event that no ordered subscription matches — or that carries no partition key,
+// which makes it unordered by construction — promises nothing about its position
+// relative to its neighbours, so a failure on it must not hold the events behind
+// it. Blocking those would be head-of-line blocking imposed on a delivery mode
+// whose entire contract is that order does not matter.
+func (p *PostgresEventTransport) relayBatch(ctx context.Context, drain *relayDrain) (int, error) {
 	processed := 0
 	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
-		rows, err := tx.Query(ctx, relaySelectUnpublishedSQL, relayBatchSize)
+		rows, err := tx.Query(ctx, relaySelectUnpublishedSQL, relayBatchSize, skipList(drain.failed))
 		if err != nil {
 			return fmt.Errorf("events: select unpublished: %w", err)
 		}
-		pending, err := scanDomainEvents(rows)
+		pending, _, err := scanDomainEvents(rows)
 		if err != nil {
 			return err
 		}
@@ -218,13 +308,12 @@ func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
 		if err != nil {
 			return err
 		}
-		blocked := make(map[string]bool)
 		for _, e := range pending {
 			partition := e.GetPartitionKey()
-			// An earlier event in this partition failed to fan out; holding the rest
-			// of the partition keeps ordered delivery ordered — this event waits for
-			// the tick that clears the poison ahead of it.
-			if blocked[partition] {
+			// An earlier ordered event in this partition failed to fan out; holding
+			// the rest of the partition keeps ordered delivery ordered — this event
+			// waits for the tick that clears the poison ahead of it.
+			if partition != "" && drain.blocked[partition] {
 				continue
 			}
 			sp, err := tx.Begin(ctx)
@@ -238,8 +327,19 @@ func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
 					return fmt.Errorf("events: rollback poison event %s: %w", e.GetId(), rbErr)
 				}
 				// Poison event isolated: its partial fan-out is undone and it stays
-				// unpublished, and its partition is blocked so ordering holds.
-				blocked[partition] = true
+				// unpublished. Charge the attempt on the batch transaction, which
+				// survives the savepoint rollback above.
+				parked, rerr := p.recordRelayFailure(ctx, tx, e, ferr)
+				if rerr != nil {
+					return rerr
+				}
+				drain.failed = append(drain.failed, e.GetId())
+				// A parked event is out of the relay's way for good, so nothing is
+				// waiting behind it and its partition proceeds. An event still in the
+				// retry budget holds its partition only if it owes ordered delivery.
+				if !parked && owesOrderedDelivery(e, subscriptions) {
+					drain.blocked[partition] = true
+				}
 				continue
 			}
 			if err := sp.Commit(ctx); err != nil {
@@ -253,6 +353,61 @@ func (p *PostgresEventTransport) relayBatch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return processed, nil
+}
+
+// recordRelayFailure charges one failed attempt to the event and reports whether
+// that attempt exhausted the budget and parked it. A parked event keeps its row
+// — Replay is how an operator re-delivers it once the cause is fixed — but it no
+// longer appears in the relay's scan and no longer holds its partition.
+func (p *PostgresEventTransport) recordRelayFailure(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, cause error) (bool, error) {
+	var parked bool
+	if err := tx.QueryRow(ctx, relayRecordFailureSQL,
+		e.GetId(), nackMessage(cause), eventRelayMaxAttempts,
+	).Scan(&parked); err != nil {
+		return false, fmt.Errorf("events: record relay failure for event %s: %w", e.GetId(), err)
+	}
+	if parked {
+		wool.Get(ctx).In("events.relay").Warn("domain event dead-lettered after exhausting relay attempts",
+			wool.Field("event_id", e.GetId()),
+			wool.Field("event_type", e.GetType()),
+			wool.Field("partition_key", e.GetPartitionKey()),
+			wool.Field("attempts", eventRelayMaxAttempts),
+			wool.ErrField(cause))
+	}
+	return parked, nil
+}
+
+// owesOrderedDelivery reports whether this event has a live subscriber that was
+// promised per-partition order, which is the only reason to hold the rest of its
+// partition back when its fan-out fails. An event with no partition key is
+// unordered by construction (eventOrdering yields no ordering key for it), and
+// an internal-visibility event is never delivered at all, so neither owes
+// anything to the events behind it.
+func owesOrderedDelivery(e *eventsv1.EventEnvelope, subscriptions []events.Subscription) bool {
+	if e.GetPartitionKey() == "" || eventcatalog.IsInternalPublished(e.GetType()) {
+		return false
+	}
+	for _, subscription := range subscriptions {
+		if subscription.Delivery != events.DeliveryOrdered {
+			continue
+		}
+		if events.Matches(subscription.TypePattern, e.GetType()) {
+			return true
+		}
+	}
+	return false
+}
+
+// skipList adapts the drain's failed-event set to the uuid[] parameter of the
+// relay scan. pgx encodes a nil slice as NULL, and `id = ANY(NULL)` is NULL
+// rather than false, which would discard every row; an empty non-nil slice
+// encodes as the empty array and matches nothing, which is what "skip nothing"
+// must mean.
+func skipList(ids []string) []string {
+	if ids == nil {
+		return []string{}
+	}
+	return ids
 }
 
 // relayEvent fans one event out to its matching subscriptions and marks it
@@ -413,49 +568,83 @@ func (p *PostgresEventTransport) Nack(ctx context.Context, token string, cause e
 	return mapLeaseError(err)
 }
 
+// replayDomainEventsSQL reads one page of replay history. The keyset cursor is
+// seq, which is unique and ascending, so paging cannot skip or repeat a row the
+// way an OFFSET over a concurrently-written table can. Ordering by seq alone
+// (rather than by partition_key first) is what makes the cursor a single column,
+// and it still yields any one partition's events in their own order, because seq
+// is monotonic within a partition. Parked events are included on purpose: replay
+// is how an operator re-delivers an event the relay had to dead-letter.
 const replayDomainEventsSQL = `
 	SELECT id, type, source, subject, event_time, specversion, datacontenttype,
 	       dataschema, data, tenant_id, boundary_id, partition_key, correlation_id,
 	       causation_id, actor_principal_id, owner_principal_id, traceparent,
-	       schema_version
+	       schema_version, seq
 	FROM public.domain_events
 	WHERE ($1::text IS NULL OR type = $1)
 	  AND ($2::uuid IS NULL OR tenant_id = $2)
 	  AND ($3::timestamptz IS NULL OR created_at >= $3)
-	ORDER BY partition_key, seq`
+	  AND seq > $4
+	ORDER BY seq
+	LIMIT $5`
 
 // Replay re-fans-out the durable events matching the selector so a consumer that
 // attaches later receives history up to retention. Each redelivery carries a
 // fresh nonce in its idempotency key so it is never deduped against the original
 // delivery; the returned count is the number of events replayed, which is at
 // least one even when no subscription matches (the event is still durable).
+//
+// History is walked one bounded page per transaction. A wide selector — a
+// platform-scope replay, or a tenant with a long retained history — would
+// otherwise materialize every matching row at once and hold a single transaction
+// open for the whole fan-out. The cost is that a failure part-way leaves earlier
+// pages already enqueued: acceptable, because replay is at-least-once
+// re-delivery by construction (that is what the nonce is for) and re-running it
+// is safe, whereas an unbounded transaction is not.
 func (p *PostgresEventTransport) Replay(ctx context.Context, sel events.ReplaySelector) (int, error) {
-	rows, err := p.pool.Query(ctx, replayDomainEventsSQL,
-		nullableString(sel.Type),
-		nullableUUID(sel.TenantID),
-		nullableTime(sel.Since),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("events: query replay source: %w", err)
+	replayed := 0
+	var cursor int64
+	for {
+		rows, err := p.pool.Query(ctx, replayDomainEventsSQL,
+			nullableString(sel.Type),
+			nullableUUID(sel.TenantID),
+			nullableTime(sel.Since),
+			cursor,
+			replayPageSize,
+		)
+		if err != nil {
+			return replayed, fmt.Errorf("events: query replay source: %w", err)
+		}
+		page, lastSeq, err := scanDomainEvents(rows)
+		if err != nil {
+			return replayed, err
+		}
+		if len(page) == 0 {
+			return replayed, nil
+		}
+		if err := p.replayPage(ctx, sel, page); err != nil {
+			return replayed, err
+		}
+		replayed += len(page)
+		cursor = lastSeq
+		if len(page) < replayPageSize {
+			return replayed, nil
+		}
 	}
-	replay, err := scanDomainEvents(rows)
-	if err != nil {
-		return 0, err
-	}
-	if len(replay) == 0 {
-		return 0, nil
-	}
+}
 
-	err = pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+// replayPage fans one page of replay history out inside a single transaction.
+func (p *PostgresEventTransport) replayPage(ctx context.Context, sel events.ReplaySelector, page []*eventsv1.EventEnvelope) error {
+	return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
 		subscriptions, err := liveSubscriptions(ctx, tx)
 		if err != nil {
 			return err
 		}
-		for _, e := range replay {
+		for _, e := range page {
 			// An internal-visibility event is never delivered to a subscriber, on
 			// replay no less than on the live path (see relayBatch): skip its
-			// fan-out. It still counts toward the replayed total below — the event
-			// is durable, it simply has no eligible subscriber.
+			// fan-out. It still counts toward the replayed total — the event is
+			// durable, it simply has no eligible subscriber.
 			if eventcatalog.IsInternalPublished(e.GetType()) {
 				continue
 			}
@@ -475,18 +664,17 @@ func (p *PostgresEventTransport) Replay(ctx context.Context, sel events.ReplaySe
 		}
 		return nil
 	})
-	if err != nil {
-		return 0, err
-	}
-	return len(replay), nil
 }
 
 // scanDomainEvents reconstructs the envelope from its stored columns for every
 // row, closing the cursor before returning so the transaction is free for the
-// follow-on writes of a relay or replay.
-func scanDomainEvents(rows pgx.Rows) ([]*eventsv1.EventEnvelope, error) {
+// follow-on writes of a relay or replay. It also returns the seq of the last row
+// scanned, which is the keyset cursor Replay pages on; both callers order by
+// seq ascending, so that is the highest seq in the result.
+func scanDomainEvents(rows pgx.Rows) ([]*eventsv1.EventEnvelope, int64, error) {
 	defer rows.Close()
 	var out []*eventsv1.EventEnvelope
+	var lastSeq int64
 	for rows.Next() {
 		var (
 			id, eventType, source, subject                       string
@@ -497,15 +685,17 @@ func scanDomainEvents(rows pgx.Rows) ([]*eventsv1.EventEnvelope, error) {
 			tenantID                                             *string
 			eventTime                                            *time.Time
 			schemaVersion                                        int32
+			seq                                                  int64
 		)
 		if err := rows.Scan(
 			&id, &eventType, &source, &subject, &eventTime, &specversion,
 			&datacontenttype, &dataschema, &data, &tenantID, &boundaryID,
 			&partitionKey, &correlationID, &causationID, &actorPrincipalID,
-			&ownerPrincipalID, &traceparent, &schemaVersion,
+			&ownerPrincipalID, &traceparent, &schemaVersion, &seq,
 		); err != nil {
-			return nil, fmt.Errorf("events: scan domain event: %w", err)
+			return nil, 0, fmt.Errorf("events: scan domain event: %w", err)
 		}
+		lastSeq = seq
 		e := &eventsv1.EventEnvelope{
 			Id:               id,
 			Type:             eventType,
@@ -533,9 +723,9 @@ func scanDomainEvents(rows pgx.Rows) ([]*eventsv1.EventEnvelope, error) {
 		out = append(out, e)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("events: read domain events: %w", err)
+		return nil, 0, fmt.Errorf("events: read domain events: %w", err)
 	}
-	return out, nil
+	return out, lastSeq, nil
 }
 
 // leaseToken carries the job id and its fencing token in the opaque lease token

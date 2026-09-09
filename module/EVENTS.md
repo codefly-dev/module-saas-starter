@@ -125,8 +125,8 @@ with no schema change:
 
 ## Event catalog
 
-Each module and solution ships one `events.codefly.yaml`, discovered and merged
-exactly like a `permissions-contribution` document:
+Each module and solution ships one `events.codefly.yaml`, shaped like a
+`permissions-contribution` document:
 
 ```yaml
 schema: codefly/saas/events-contribution/v1
@@ -143,7 +143,7 @@ consumes:
     delivery: ordered         # ordered | unordered
 ```
 
-`module-compose` merges every contribution into
+`module-compose` merges the contributions named by its `--events` arguments into
 `deployment/generated/event-catalog.json` (base-manifest-tracked) and validates:
 
 - **Namespace ownership** — a module publishes only `<its namespace>.*`.
@@ -156,10 +156,27 @@ consumes:
   reusing the [CONTRACT_VERSIONING.md](./CONTRACT_VERSIONING.md) compatibility
   rules. A removed field without a major bump fails compose.
 
-Generated projections mirror the typed audit registry: Go/TS/Python typed
-constants and codecs, an **AsyncAPI 3** document for humans and tooling
-(generated, never hand-written), and a docs page listing who publishes and who
-consumes each type.
+Generated projections mirror the typed audit registry: Go typed constants
+(`services/accounts/code/pkg/eventcatalog/catalog_gen.go`), an **AsyncAPI 3**
+document for humans and tooling (generated, never hand-written), and a docs page
+listing who publishes and who consumes each type. TS and Python projections are
+[Phasing](#phasing) P3 and are not generated today.
+
+**A solution's own contribution is not discovered automatically yet.**
+`module-compose` merges exactly the documents its `--events` arguments name,
+which today are this module's own contributions. The Core composition descriptor
+has no `events` contribution kind — unlike `permissions`, which it does carry —
+so a downstream solution's `events.codefly.yaml` is not collected the way its
+permissions contribution is. Two consequences worth stating plainly, because the
+platform behaves as if the catalog were complete:
+
+- The catalog contains only this module's types, so `communication.md` and
+  `asyncapi.json` describe the module's surface, not a whole deployment's.
+- Visibility is classified from the catalog, and a type absent from it is treated
+  as **not** internal. A solution-declared `internal` type is therefore fanned
+  out to matching subscribers rather than suppressed. Until the descriptor
+  carries events, a solution that needs an event kept off tenant queues must not
+  rely on `visibility: internal` alone.
 
 ## Subscriptions and fan-out
 

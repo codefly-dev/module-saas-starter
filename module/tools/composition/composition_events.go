@@ -1,6 +1,7 @@
 package composition
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/format"
@@ -86,6 +87,15 @@ type eventCatalogConsume struct {
 	Delivery   string `json:"delivery"`
 }
 
+// consumedKey identifies one subscription: a namespace consuming one event type
+// on one of its queues. It is the uniqueness key buildEventCatalog enforces, and
+// it matches the tuple renderAsyncAPI keys its receive operations on.
+type consumedKey struct {
+	namespace string
+	eventType string
+	queue     string
+}
+
 // buildEventCatalog validates every events contribution and merges them into the
 // deterministic catalog. It fails compose on namespace-ownership, unresolved
 // schema, duplicate type, unregistered or undeclared-queue consumes, and any
@@ -104,6 +114,7 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 		consume      ConsumedEvent
 	}
 	var consumes []pendingConsume
+	consumedKeys := map[consumedKey]struct{}{}
 
 	for _, contribution := range contributions {
 		if contribution.Schema != eventsContributionSchema {
@@ -166,6 +177,20 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 			if _, declared := declaredQueues[consume.Queue]; !declared {
 				return eventCatalog{}, fmt.Errorf("consumed event %q names queue %q that namespace %q did not declare", consume.Type, consume.Queue, contribution.Namespace)
 			}
+			// A subscriber consuming one type on one queue is a single
+			// subscription; declaring it twice is a contribution bug, and letting
+			// it through makes the generated artifacts contradict each other.
+			// event-catalog.json and catalog_gen.go would carry both rows, while
+			// asyncapi.json keys its receive operation on
+			// (type, subscriber, queue) and silently keeps only the last — three
+			// artifacts, two answers. Rejecting the duplicate at its source is
+			// what keeps the projections in agreement; it also makes the
+			// (Type, Subscriber, Queue) sort key above genuinely total.
+			consumed := consumedKey{namespace: contribution.Namespace, eventType: consume.Type, queue: consume.Queue}
+			if _, duplicate := consumedKeys[consumed]; duplicate {
+				return eventCatalog{}, fmt.Errorf("namespace %q consumes event %q on queue %q more than once", contribution.Namespace, consume.Type, consume.Queue)
+			}
+			consumedKeys[consumed] = struct{}{}
 			consumes = append(consumes, pendingConsume{contribution: contribution, consume: consume})
 		}
 	}
@@ -182,12 +207,28 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 		})
 	}
 
+	// Both comparators must be TOTAL over the values they can see, because
+	// sort.Slice is not stable: any pair it considers equal may come out in
+	// either order, and these slices are written straight into four
+	// base-manifest-tracked artifacts. A tie there would let an unchanged input
+	// regenerate to different bytes on a different toolchain and fail the
+	// base-integrity gate with nothing in the diff to explain it. Publishes ties
+	// on Type alone are impossible — a duplicate type is rejected above — but
+	// Consumes are only unique across the whole (Type, Subscriber, Queue) tuple,
+	// so all three sort, with Delivery last to leave no field outside the key.
 	sort.Slice(catalog.Publishes, func(i, j int) bool { return catalog.Publishes[i].Type < catalog.Publishes[j].Type })
 	sort.Slice(catalog.Consumes, func(i, j int) bool {
-		if catalog.Consumes[i].Type != catalog.Consumes[j].Type {
-			return catalog.Consumes[i].Type < catalog.Consumes[j].Type
+		left, right := catalog.Consumes[i], catalog.Consumes[j]
+		if left.Type != right.Type {
+			return left.Type < right.Type
 		}
-		return catalog.Consumes[i].Subscriber < catalog.Consumes[j].Subscriber
+		if left.Subscriber != right.Subscriber {
+			return left.Subscriber < right.Subscriber
+		}
+		if left.Queue != right.Queue {
+			return left.Queue < right.Queue
+		}
+		return left.Delivery < right.Delivery
 	})
 	return catalog, nil
 }
@@ -289,6 +330,19 @@ func majorFromSchema(schema string) int {
 	return major
 }
 
+// readEventCatalog loads the previously generated catalog, which is the baseline
+// checkBreakingChange compares against. That makes it a security-relevant read,
+// not a convenience one: every field this decoder fails to recover is a field
+// the breaking-change gate can no longer defend, and it fails *open* — an
+// unreadable prior entry looks exactly like a type that has never been published
+// before, so a field removal sails through. A plain json.Unmarshal accepts a
+// truncated object, an unknown or misspelled key, a document of the wrong
+// schema, and trailing garbage, all silently. It is therefore held to the same
+// contract as its sibling readers (generateCoreComposition,
+// readFrontendInstallCatalog): unknown fields rejected, no trailing content, and
+// the schema constant checked, so a catalog that cannot be trusted stops the
+// compose instead of quietly weakening it. A genuinely absent file still means
+// "no baseline yet" and is not an error.
 func readEventCatalog(outputRoot string) (eventCatalog, error) {
 	body, err := os.ReadFile(filepath.Join(outputRoot, filepath.FromSlash(EventCatalogOutput)))
 	if os.IsNotExist(err) {
@@ -297,9 +351,17 @@ func readEventCatalog(outputRoot string) (eventCatalog, error) {
 	if err != nil {
 		return eventCatalog{}, fmt.Errorf("read previous event catalog: %w", err)
 	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
 	var catalog eventCatalog
-	if err := json.Unmarshal(body, &catalog); err != nil {
+	if err := decoder.Decode(&catalog); err != nil {
 		return eventCatalog{}, fmt.Errorf("decode previous event catalog: %w", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return eventCatalog{}, fmt.Errorf("decode previous event catalog: %w", err)
+	}
+	if catalog.Schema != eventsCatalogSchema {
+		return eventCatalog{}, fmt.Errorf("previous event catalog schema must be %s, got %q", eventsCatalogSchema, catalog.Schema)
 	}
 	return catalog, nil
 }
@@ -429,9 +491,23 @@ func renderAsyncAPI(catalog eventCatalog) ([]byte, error) {
 		},
 	}
 
+	// A schema ref is a "<path>#<Message>" string, so sanitizing it collapses
+	// runs of "/", "#" and "." into "_" — and unlike an event type, two distinct
+	// refs can collapse onto one key (documents/v1/a.proto#M and
+	// documents_v1_a_proto#M both become documents_v1_a_proto_M). The winner
+	// would then supply the payload schema for both types, silently publishing a
+	// contract nobody declared, so the collision is caught rather than assumed
+	// away. Keys are tracked by the ref they came from: the same ref reaching the
+	// same key is reuse, a different ref reaching it is a conflict.
+	schemaKeySource := map[string]string{}
 	for _, published := range catalog.Publishes {
 		schemaKey := sanitizeComponentKey(published.Schema)
-		if _, exists := doc.Components.Schemas[schemaKey]; !exists {
+		if source, exists := schemaKeySource[schemaKey]; exists {
+			if source != published.Schema {
+				return nil, fmt.Errorf("event schemas %q and %q collide on AsyncAPI component key %q", source, published.Schema, schemaKey)
+			}
+		} else {
+			schemaKeySource[schemaKey] = published.Schema
 			doc.Components.Schemas[schemaKey] = eventEnvelopeSchema(published.Fields)
 		}
 		messageKey := sanitizeComponentKey(published.Type)
@@ -506,8 +582,10 @@ func protoTypeToJSONSchema(protoType string) asyncAPIProp {
 
 // sanitizeComponentKey maps a catalog identifier (an event type or a
 // "<path>#<Message>" schema ref) to a valid AsyncAPI component key
-// (^[A-Za-z0-9._-]+$). Distinct inputs cannot collide because every unsafe run
-// collapses to a single "_" and the catalog already rejects duplicate types.
+// (^[A-Za-z0-9._-]+$). Event types cannot collide: they are already unique and
+// their grammar admits no unsafe character, so sanitizing is the identity. A
+// schema ref can collide, because "/" and "#" both map to "_"; renderAsyncAPI
+// detects that rather than relying on this function to prevent it.
 func sanitizeComponentKey(id string) string {
 	return componentKeyUnsafe.ReplaceAllString(id, "_")
 }
