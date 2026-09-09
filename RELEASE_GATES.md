@@ -7,11 +7,13 @@ installs the pinned Codefly CLI, supplies the base and head revisions, and
 invokes the gate. It does not encode Go, Rust, Next.js, protobuf, dependency,
 container, or service-specific commands.
 
-For version tags, successful completion of this gate unlocks the immutable
-module-package publication job. That job handles only the release transport:
-strict package-manifest validation, deterministic archive construction, digest,
-aggregate SBOM, provenance signing, and immutable GitHub Release publication.
-It does not duplicate service build or test policy.
+For version tags, successful completion of this gate — together with every other
+mandatory check, through the aggregate described in [Publication
+gating](#publication-gating) — unlocks the immutable module-package publication
+job. That job handles only the release transport: strict package-manifest
+validation, deterministic archive construction, digest, aggregate SBOM,
+provenance signing, and immutable GitHub Release publication. It does not
+duplicate service build or test policy.
 
 Publication requires three release-only repository secrets: the read-only
 Administration token `RELEASE_ADMIN_TOKEN` for immutable-release policy checks,
@@ -19,6 +21,90 @@ the base64 Ed25519 key `RELEASE_PROVENANCE_PRIVATE_KEY` for Core's detached
 module provenance signature, and its independently configured trust-policy key
 `RELEASE_PROVENANCE_PUBLIC_KEY`. Missing, malformed, or mismatched credentials
 fail before a release is created.
+
+## Publication gating
+
+No job that writes an artifact runs unless every mandatory check has *actually
+succeeded*. That is enforced by a single aggregate job, `release-gates`, which
+is the only entry in every publisher's `needs`:
+
+```
+base-integrity ───────┐
+authz-coverage ───────┤
+release-contract ─────┤
+docs-sync ────────────┤
+provider-shim ────────┤                     ┌─▶ publish-module-package  (module-package/v*)
+marketing ────────────┼─▶ release-gates ────┼─▶ publish-frontend-kit    (v*)
+sdk-boundary ─────────┤    (always +        └─▶ handbook-surface-bump   (v*)
+module-package ───────┤     decide)
+codefly-plan ─────────┤
+codefly-quality ──────┤
+codefly-supply-chain ─┤
+codefly-build ────────┘
+```
+
+Before this aggregate existed, `authz-coverage` was an independent job that no
+publisher listed in `needs`, directly or transitively. A tag run could therefore
+publish while the authorization gate was red, and a red overall workflow does not
+retract an artifact that is already public. Branch protection on pull requests
+narrows the opportunity but creates no tag-time dependency.
+
+`release-gates` runs with `always()`, so a failed dependency does not skip it —
+it reaches its own step, which calls `scripts/ci/release-gates.mjs decide` with
+`toJSON(needs)`. A bare `needs:` list cannot tell a check that passed from one
+that never ran; `decide` fails the aggregate unless every mandatory gate reports
+`success`, so `failure`, `cancelled`, and an unexpected `skipped` all block
+publication identically. The publishers carry no `always()` of their own, so a
+failed aggregate skips them.
+
+### Mandatory gates per tag track
+
+Both tracks publish from the same tree, so both require the same gates. There is
+no per-track exemption.
+
+| Gate | `v*` (deploy counter) | `module-package/v*` | Note |
+| --- | --- | --- | --- |
+| `base-integrity` | required | required | canonical manifest freshness |
+| `authz-coverage` | required | required | RBAC, audit, and no-broadening |
+| `release-contract` | required | required | this gating graph itself |
+| `docs-sync` | required | required | interface docs and story tests |
+| `provider-shim` | required | required | non-writing provider shims |
+| `marketing` | required | required | marketing isolation build |
+| `sdk-boundary` | required | required | Codefly SDK boundary and contracts |
+| `module-package` | required | required | package contract, determinism, buf breaking |
+| `codefly-plan` | required | required | affected-service resolution |
+| `codefly-quality` | required | required | affected-scoped (see below) |
+| `codefly-supply-chain` | required | required | affected-scoped (see below) |
+| `codefly-build` | required | required | affected-scoped (see below) |
+
+The three affected-scoped Codefly jobs carry the **one** deliberate exemption:
+off a release tag, a plan with no affected service (`has_work=false`) legitimately
+skips them, and `decide` accepts that skip so a docs-only pull request is a
+near-instant no-op. On either release tag the exemption does not apply — those
+jobs force themselves to run there via their own `if:`, so a skip is a defect,
+not a scoping decision. The exemption also requires `codefly-plan` itself to have
+succeeded; a skipped or failed plan job exempts nothing.
+
+`handbook-surface-bump` counts as a publisher alongside the two package jobs: it
+dispatches the release to a downstream repository, an outward-facing write with
+the same "cannot be retracted" property.
+
+### The contract test
+
+`release-contract` runs `scripts/ci/release-gates.mjs check`, which parses every
+file in `.github/workflows` and rejects any artifact-writing job whose transitive
+`needs` closure does not contain `release-gates`. A job counts as artifact-writing
+when it holds `packages`, `id-token`, or `attestations` write permission, or when
+a step mutates a GitHub release, publishes an npm package, pushes an image, sends
+a `repository_dispatch`, or attests provenance. (`contents: write` alone does not
+count — `dep-audit.yml` holds it only to push a remediation branch.)
+
+The same check fails if `authz-coverage` — or any other gate in `REQUIRED_GATES`
+— is dropped from the aggregate's `needs` or removed from the workflow, if the
+aggregate loses `always()`, if it stops calling `decide`, or if a workflow becomes
+unparsable. `node --test scripts/ci/release-gates.test.mjs` covers both halves
+against fixtures, including a synthetic future publisher wired to the wrong
+dependency.
 
 ## What Codefly owns
 

@@ -88,6 +88,20 @@ jobs:
         working-directory: module/services/accounts/code
         run: go test -run 'Lockstep|RequiredCapabilities|ScanHandlers|EnforcementAllowlist' ./pkg/adapters/
 
+  release-contract:
+    name: Release gate contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test the release-gate contract
+        run: node --test scripts/ci/release-gates.test.mjs
+      - name: Require every artifact-writing job to depend on the release gates
+        run: node scripts/ci/release-gates.mjs check
+
   docs-sync:
     name: Interface docs and story tests
     runs-on: ubuntu-latest
@@ -323,8 +337,9 @@ jobs:
   codefly-quality:
     name: Codefly quality
     needs: codefly-plan
-    # Always run on release tags: the publish job needs this gate, and a
-    # skipped dependency would skip publish silently rather than fail.
+    # Always run on release tags: a release must exercise the full topology
+    # whatever the affected-service plan says, and release-gates counts a skip
+    # on a tag as a failure rather than as a scoping decision.
     if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -403,8 +418,9 @@ jobs:
   codefly-supply-chain:
     name: Codefly supply chain
     needs: codefly-plan
-    # Always run on release tags: the publish job needs this gate, and a
-    # skipped dependency would skip publish silently rather than fail.
+    # Always run on release tags: a release must exercise the full topology
+    # whatever the affected-service plan says, and release-gates counts a skip
+    # on a tag as a failure rather than as a scoping decision.
     if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -474,8 +490,9 @@ jobs:
   codefly-build:
     name: Codefly build
     needs: codefly-plan
-    # Always run on release tags: the publish job needs this gate, and a
-    # skipped dependency would skip publish silently rather than fail.
+    # Always run on release tags: a release must exercise the full topology
+    # whatever the affected-service plan says, and release-gates counts a skip
+    # on a tag as a failure rather than as a scoping decision.
     if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -547,21 +564,47 @@ jobs:
             sync
           done
 
+  # The one aggregate every artifact-writing job below depends on. It runs with
+  # always() so it can read its dependencies' own outcomes: a plain `needs:`
+  # cannot tell a check that passed from one that never ran, and a gate that
+  # never ran is not consent to publish. `decide` owns that rule, including the
+  # single deliberate exemption — the affected-scoped Codefly jobs, which a
+  # no-affected-service plan legitimately skips off a release tag.
+  release-gates:
+    name: Release gates
+    if: ${{ always() }}
+    needs:
+      - authz-coverage
+      - base-integrity
+      - codefly-build
+      - codefly-plan
+      - codefly-quality
+      - codefly-supply-chain
+      - docs-sync
+      - marketing
+      - module-package
+      - provider-shim
+      - release-contract
+      - sdk-boundary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Require every mandatory gate to have succeeded
+        env:
+          GATE_RESULTS: ${{ toJSON(needs) }}
+        run: node scripts/ci/release-gates.mjs decide
+
   publish-module-package:
     name: Publish immutable module package
     # Only the dedicated module-package/v* track publishes the immutable
     # package; the v0.0.x deploy counter never triggers a package release.
     if: startsWith(github.ref, 'refs/tags/module-package/v')
     needs:
-      - base-integrity
-      - provider-shim
-      - marketing
-      - sdk-boundary
-      - module-package
-      - codefly-plan
-      - codefly-quality
-      - codefly-supply-chain
-      - codefly-build
+      - release-gates
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -690,11 +733,7 @@ jobs:
     name: Publish frontend kit to GitHub Packages
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
-      - base-integrity
-      - module-package
-      - codefly-quality
-      - codefly-supply-chain
-      - codefly-build
+      - release-gates
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -747,12 +786,7 @@ jobs:
     # pins, so it is the tag that makes a new interface current.
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
-      - base-integrity
-      - docs-sync
-      - module-package
-      - codefly-quality
-      - codefly-supply-chain
-      - codefly-build
+      - release-gates
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
