@@ -83,7 +83,24 @@ const PUBLIC_PATHS = [
 	"/favicon.ico",
 ];
 
-const SOLUTION_PAGE = /^\/s\/([^/]+)/;
+// The runtime solutions listing, served by THIS server (see
+// src/app/api/solutions/register/route.ts).
+const SOLUTION_LISTING_PATH = "/api/solutions/register";
+// The listing fetch is bounded so a wedged listener cannot stall a page.
+const SOLUTION_LISTING_TIMEOUT_MS = 2_000;
+// How long a listing result (including an empty one from a failed lookup) is
+// reused. The registry changes only when a solution self-registers, and the nav
+// itself polls the same listing every 10s (src/solutions/SolutionsMenu.tsx), so
+// a few seconds of staleness is already the floor of how fast a new solution
+// can surface. Caching here is what keeps a burst of concurrent documents from
+// each opening its own loopback request against the server serving them.
+const SOLUTION_LISTING_TTL_MS = 5_000;
+// A CSP header this long is close to the point where a reverse proxy's response
+// header buffer (nginx proxy_buffer_size defaults to 4k/8k) rejects the upstream
+// response outright. The policy cannot be truncated — dropping origins would
+// silently break the solutions they belong to — so this warns while the site is
+// still serving, rather than letting the failure surface as an opaque 502.
+const SOLUTION_CSP_WARN_BYTES = 8 * 1024;
 
 // Build-time snapshot of the env-derived CSP inputs, inlined by next.config's
 // `env` block. Reading this constant — not re-resolving process.env per request
@@ -106,26 +123,187 @@ function baselineCspInputs(): {
 	return JSON.parse(snapshot);
 }
 
-function safeDecode(segment: string): string | null {
+// A browser enforces the CSP of the DOCUMENT that is executing. Every
+// subresource, XHR, Connect RPC and RSC payload fetch runs under the policy of
+// the document that issued it and never carries one of its own, so deriving the
+// registered origins for a non-document request spends a loopback round trip to
+// compute a header nothing will read. That is not merely wasteful: /v1/*,
+// /saas.accounts.v1.*, /api/* and every client-side navigation are all matched
+// by this proxy and all carry the session cookie, so keying the lookup on the
+// cookie alone put a second request through this same server on the backend-API
+// hot path — doubling authenticated request volume and letting a slow listing
+// add its whole timeout to every API call, with the extra load feeding back into
+// the listener being waited on.
+//
+// Sec-Fetch-Dest is the browser's own statement of what it will do with the
+// response: "document" for a top-level navigation, "empty" for fetch/XHR
+// (including Next's RSC payload requests). The Accept fallback covers clients
+// that predate it. A caller that is neither (curl, a health probe, the loopback
+// lookup below) enforces no CSP at all, so a self-only policy costs it nothing.
+function isDocumentRequest(req: NextRequest): boolean {
+	const dest = req.headers.get("sec-fetch-dest");
+	if (dest !== null) {
+		return dest === "document";
+	}
+	return (req.headers.get("accept") ?? "").includes("text/html");
+}
+
+let listingCache: { origins: string[]; expiresAt: number } | null = null;
+let listingInFlight: Promise<string[]> | null = null;
+// Dedup key for the last reported listing failure. The failure modes here are
+// sticky, not transient — a PORT that does not match the real listener, a
+// listing fronted differently in a multi-replica deploy, a 5xx window — so
+// logging per request would emit one identical line per document served for as
+// long as the misconfiguration lasts. Report each distinct state once, and
+// report the recovery, which is what an operator actually needs to see.
+let lastListingFailure: string | null = null;
+
+function reportListingFailure(
+	key: string,
+	message: string,
+	err?: unknown,
+): void {
+	if (lastListingFailure === key) {
+		return;
+	}
+	lastListingFailure = key;
+	if (err === undefined) {
+		console.error(message);
+	} else {
+		console.error(message, err);
+	}
+}
+
+// The oversized-policy warning has its own dedup state: it is a property of the
+// registered origin set, not of the listing's health, so it must not be cleared
+// by a successful lookup. The byte count is stable for a given origin set (the
+// nonce is fixed width), so keying on it re-reports only when the set changes.
+let lastOversizedCspBytes = 0;
+
+function reportOversizedCsp(bytes: number): void {
+	if (lastOversizedCspBytes === bytes) {
+		return;
+	}
+	lastOversizedCspBytes = bytes;
+	console.error(
+		`solution CSP: policy is ${bytes} bytes; a reverse proxy may reject the response header (nginx proxy_buffer_size defaults to 4k/8k). Serve solutions from fewer origins, or same-origin through the host.`,
+	);
+}
+
+function reportListingRecovered(): void {
+	if (lastListingFailure === null) {
+		return;
+	}
+	lastListingFailure = null;
+	console.info("solution CSP: registry listing recovered");
+}
+
+/** Origin of an absolute http(s) URL, or null for anything unparseable. */
+function manifestOrigin(value: unknown): string | null {
+	if (typeof value !== "string") {
+		return null;
+	}
 	try {
-		return decodeURIComponent(segment);
+		return new URL(value).origin;
 	} catch {
 		return null;
 	}
 }
 
+// Fetch and parse the listing. Total by construction: every path returns an
+// array, so a malformed payload degrades to a self-only policy (logged) instead
+// of throwing out of the proxy. That matters because this now runs for every
+// document — an unguarded parse here would turn one bad registry entry into a
+// 500 on every page rather than on one solution page.
+async function loadRegisteredSolutionOrigins(
+	pathname: string,
+): Promise<string[]> {
+	// Mirror Next's standalone server: parseInt(PORT, 10) || 3000, so an unset,
+	// empty, or non-numeric PORT resolves to the same port the server bound.
+	const port = Number.parseInt(process.env.PORT ?? "", 10) || 3000;
+	const listingUrl = new URL(SOLUTION_LISTING_PATH, `http://127.0.0.1:${port}`);
+	let payload: unknown;
+	try {
+		const listing = await fetch(listingUrl, {
+			headers: { accept: "application/json" },
+			signal: AbortSignal.timeout(SOLUTION_LISTING_TIMEOUT_MS),
+		});
+		if (!listing.ok) {
+			reportListingFailure(
+				`status:${listing.status}`,
+				`solution CSP: registry listing responded ${listing.status} path=${pathname}`,
+			);
+			return [];
+		}
+		payload = await listing.json();
+	} catch (err) {
+		reportListingFailure(
+			"unreachable",
+			`solution CSP: registry listing unavailable path=${pathname}`,
+			err,
+		);
+		return [];
+	}
+	const solutions =
+		typeof payload === "object" && payload !== null
+			? (payload as { solutions?: unknown }).solutions
+			: undefined;
+	if (!Array.isArray(solutions)) {
+		reportListingFailure(
+			"malformed",
+			`solution CSP: registry listing returned no solutions array path=${pathname}`,
+		);
+		return [];
+	}
+	// manifestUrl is validated as an absolute http(s) URL at registration, but
+	// this is the only reader of a payload that crosses a process boundary, so it
+	// re-checks rather than trusting that invariant on every document. Two
+	// solutions served from one origin collapse to a single source expression.
+	const origins = new Set<string>();
+	for (const solution of solutions) {
+		const frontend =
+			typeof solution === "object" && solution !== null
+				? (solution as { frontend?: { manifestUrl?: unknown } }).frontend
+				: undefined;
+		const origin = manifestOrigin(frontend?.manifestUrl);
+		if (origin !== null) {
+			origins.add(origin);
+		}
+	}
+	reportListingRecovered();
+	return [...origins];
+}
+
 // A solution's Module Federation remote registers at RUNTIME (see
-// src/solutions/registry.ts), so the build-time CSP in next.config — which
-// excludes /s/:id precisely for this reason — cannot know its origin. Next runs
-// this proxy in a context whose module singletons and globals are NOT shared
-// with route handlers or pages (see the Next "proxy" docs: "you should not
-// attempt relying on shared modules or globals"), so it cannot read the
-// in-process registry the register endpoint and solution page share. Instead it
-// asks the host over the local solutions listing — which does run in that
-// shared context — and derives the requested remote's origin from the
-// registration, letting a freshly registered cross-origin remote load with no
-// rebuild and no FRONTEND_SOLUTION_ORIGINS entry. Non-solution pages skip the
-// lookup and keep their self-only build-time CSP.
+// src/solutions/registry.ts), so the build-time CSP in next.config cannot know
+// its origin. Next runs this proxy in a context whose module singletons and
+// globals are NOT shared with route handlers or pages (see the Next "proxy"
+// docs: "you should not attempt relying on shared modules or globals"), so it
+// cannot read the in-process registry the register endpoint and solution page
+// share. Instead it asks the host over the local solutions listing — which does
+// run in that shared context — and admits every registered remote's origin,
+// letting a freshly registered cross-origin remote load with no rebuild and no
+// FRONTEND_SOLUTION_ORIGINS entry.
+//
+// Every document gets the full registered set, not only /s/:id. A CSP is
+// document-scoped, and the sidebar reaches a solution through client-side
+// navigation (next/link), which swaps the RSC payload but keeps the policy of
+// the document the user started in. Widening only /s/:id therefore left the
+// manifest fetch blocked by that starting document's self-only connect-src
+// (Module Federation RUNTIME-003) until a hard reload landed a fresh document
+// on /s/:id (#545).
+//
+// The set is NOT gated on the session cookie, and that is load-bearing rather
+// than lax. The cookie is written client-side by AuthProvider after the login
+// response lands (src/lib/auth.tsx), so the login DOCUMENT was always served
+// without it; fixture login and header-injected login then reach the app with
+// router.push (src/features/auth/ui/login-page.tsx), a soft navigation that
+// keeps that cookieless document's policy. Gating on the cookie would leave
+// exactly those two flows self-only — the original bug, one document further
+// along. Nor is there anything to protect: the listing's GET is deliberately
+// unauthenticated (see the register route), so the origins are already public,
+// and the policy this widens is `connect-src`, alongside an `img-src` that
+// already permits any https origin.
 //
 // The listing is fetched over loopback at the port THIS server binds — read
 // from PORT with the same fallback Next's standalone server uses, so it always
@@ -133,50 +311,71 @@ function safeDecode(segment: string): string | null {
 // (the client-controlled Host header): routing a server-side fetch through Host
 // is an SSRF sink, and behind a TLS-terminating ingress the "self" origin is the
 // public hostname, so the request would egress back out instead of staying
-// local. A slow or wedged listener must not stall the page, so the fetch is
-// bounded; on any failure the CSP falls back to self-only and the cause is
-// logged rather than swallowed, since a silent fallback is indistinguishable
-// from the very bug this fixes.
-async function registeredSolutionOrigins(pathname: string): Promise<string[]> {
-	const match = SOLUTION_PAGE.exec(pathname);
-	if (!match) {
+// local. On any failure the CSP falls back to self-only and the cause is logged
+// rather than swallowed, since a silent fallback is indistinguishable from the
+// very bug this fixes.
+async function registeredSolutionOrigins(
+	req: NextRequest,
+	pathname: string,
+): Promise<string[]> {
+	if (!isDocumentRequest(req)) {
 		return [];
 	}
-	const id = safeDecode(match[1]);
-	if (id === null) {
+	// The listing is served by this same server, so the loopback fetch runs back
+	// through this proxy. It carries `accept: application/json` and no
+	// Sec-Fetch-Dest, so the document gate above already stops it from fetching
+	// again — but name the path outright so the absence of recursion is a stated
+	// invariant and not an accident of the loader's request headers.
+	if (pathname === SOLUTION_LISTING_PATH) {
 		return [];
 	}
-	// Mirror Next's standalone server: parseInt(PORT, 10) || 3000, so an unset,
-	// empty, or non-numeric PORT resolves to the same port the server bound.
-	const port = Number.parseInt(process.env.PORT ?? "", 10) || 3000;
-	const listingUrl = new URL(
-		"/api/solutions/register",
-		`http://127.0.0.1:${port}`,
+	const cached = listingCache;
+	if (cached !== null && Date.now() < cached.expiresAt) {
+		return cached.origins;
+	}
+	if (listingInFlight === null) {
+		listingInFlight = loadRegisteredSolutionOrigins(pathname)
+			.catch((err) => {
+				// loadRegisteredSolutionOrigins is total, so this is unreachable
+				// short of a defect in it. Report and degrade rather than letting a
+				// throw here 500 every document the server is serving.
+				console.error("solution CSP: registry lookup failed", err);
+				return [] as string[];
+			})
+			.then((origins) => {
+				listingCache = {
+					origins,
+					expiresAt: Date.now() + SOLUTION_LISTING_TTL_MS,
+				};
+				return origins;
+			})
+			.finally(() => {
+				listingInFlight = null;
+			});
+	}
+	return listingInFlight;
+}
+
+/**
+ * The policy for one response: the build-time snapshot plus, for a document,
+ * every registered solution origin. `baselineCspInputs` is read first so a
+ * build that failed to inline the snapshot fails before any network work.
+ */
+async function contentSecurityPolicyFor(
+	req: NextRequest,
+	pathname: string,
+	nonce: string,
+): Promise<string> {
+	const inputs = baselineCspInputs();
+	const csp = contentSecurityPolicyFromInputs(
+		inputs,
+		await registeredSolutionOrigins(req, pathname),
+		nonce,
 	);
-	let solutions: Array<{ id: string; frontend?: { manifestUrl?: string } }>;
-	try {
-		const listing = await fetch(listingUrl, {
-			headers: { accept: "application/json" },
-			signal: AbortSignal.timeout(2000),
-		});
-		if (!listing.ok) {
-			console.error(
-				`solution CSP: registry listing responded ${listing.status} path=${pathname}`,
-			);
-			return [];
-		}
-		({ solutions } = await listing.json());
-	} catch (err) {
-		console.error(
-			`solution CSP: registry listing unavailable path=${pathname}`,
-			err,
-		);
-		return [];
+	if (csp.length > SOLUTION_CSP_WARN_BYTES) {
+		reportOversizedCsp(csp.length);
 	}
-	const manifestUrl = solutions?.find((s) => s.id === id)?.frontend
-		?.manifestUrl;
-	// manifestUrl is validated as an absolute http(s) URL at registration.
-	return manifestUrl ? [new URL(manifestUrl).origin] : [];
+	return csp;
 }
 
 // Per-request CSP nonce. Built from Web Crypto so it works on either runtime.
@@ -261,7 +460,7 @@ export async function proxy(req: NextRequest) {
 	}
 
 	if (isPublic(pathname)) {
-		const csp = contentSecurityPolicyFromInputs(baselineCspInputs(), [], nonce);
+		const csp = await contentSecurityPolicyFor(req, pathname, nonce);
 		const response = withNoncedCSP(req, gatewayHeaders, nonce, csp);
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
 			response.headers.set("Referrer-Policy", "no-referrer");
@@ -273,6 +472,8 @@ export async function proxy(req: NextRequest) {
 	// cookie contents are not validated here — if present we trust it
 	// and let the backend gateway do the real validation. An invalid
 	// cookie will just cause every backend call to 401, which is fine.
+	// It gates the login redirect only: the CSP deliberately does not
+	// follow it (see registeredSolutionOrigins).
 	const session = req.cookies.get("codefly_session");
 	if (!session) {
 		const loginURL = req.nextUrl.clone();
@@ -281,11 +482,7 @@ export async function proxy(req: NextRequest) {
 		return NextResponse.redirect(loginURL);
 	}
 
-	const csp = contentSecurityPolicyFromInputs(
-		baselineCspInputs(),
-		await registeredSolutionOrigins(pathname),
-		nonce,
-	);
+	const csp = await contentSecurityPolicyFor(req, pathname, nonce);
 	return withNoncedCSP(req, gatewayHeaders, nonce, csp);
 }
 
