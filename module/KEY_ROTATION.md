@@ -32,12 +32,13 @@ Timing the runbook depends on:
 | Clock-skew leeway | 60 s | `tokenClockSkewLeeway`, matched to accounts' `Config.ClockSkew` |
 | Gateway key-set TTL | 5 min | `accessJWKSCacheTTL` |
 | Gateway stale grace | 10 min | `accessJWKSStaleGrace` |
+| Unknown-`kid` refetch spacing | 5 s | `jwksProbeInterval` |
 
 A gateway picks up a newly published key within one TTL at worst, and usually on
-the first token that names it: an unrecognised `kid` spends the window's single
-probe and refetches immediately. A key that stops being published stops
-verifying within one TTL — or within TTL + grace if accounts is unreachable for
-the whole window.
+the first token that names it: an unrecognised `kid` triggers a refetch, rate-
+limited to one per 5 s across all key ids so untrusted token input cannot drive a
+fetch per request. A key that stops being published stops verifying within one
+TTL — or within TTL + grace if accounts is unreachable for the whole window.
 
 ## Rotation
 
@@ -86,7 +87,13 @@ fails closed with 503. This is deliberate:
   authentication down with it, and must not leave a gateway permanently unable
   to verify JWTs. A gateway that has never loaded a key set is *not ready* — it
   answers 503 on `/ready` and is not routed traffic — and it recovers on its own
-  as soon as accounts answers. No operator action, no restart.
+  as soon as accounts answers. No operator action, no restart. A gateway that
+  *has* loaded keys stays ready even once they age past the grace: it refuses
+  JWTs with 503 per request, but the routes that never carried a token (the
+  billing and email webhooks, `/assets`, `/.well-known`) keep being served.
+  Withdrawing the whole listener because the key set aged would turn a
+  degraded-authentication incident into a total one. Alert on
+  `auth_gateway.jwks.refresh{outcome="error"}`, not on readiness, to catch it.
 - **Security.** The grace is bounded, so it also bounds retirement: a key
   withdrawn at accounts stops verifying everywhere within 15 minutes even if
   accounts never becomes reachable again. Nothing else is relaxed — an

@@ -127,15 +127,15 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 		_ = conn.Close()
 	}
 
-	// Authentication configuration is a readiness condition, not a startup
-	// invariant: a gateway that cannot yet verify access tokens would answer
-	// 503 to every authenticated request, so it must not be routed traffic. It
-	// is checked after the upstreams because the key set is published by one of
-	// them — an unreachable accounts is the more actionable reason. It recovers
-	// on its own once the published key set loads.
-	if !g.sidecar.canVerifyAccessTokens() {
+	// A gateway that has never acquired verification keys answers 503 to every
+	// authenticated request, so it must not be routed traffic yet; it recovers
+	// on its own once the published key set loads. Checked after the upstreams
+	// because the key set is published by one of them — an unreachable accounts
+	// is the more actionable reason. Staleness deliberately does not fail this
+	// probe (see Sidecar.hasLoadedAccessTokenKeys).
+	if !g.sidecar.hasLoadedAccessTokenKeys() {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = io.WriteString(w, `{"status":"not ready","reason":"access-token verification keys unavailable"}`)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"access-token verification keys never loaded"}`)
 		return
 	}
 

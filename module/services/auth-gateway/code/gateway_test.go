@@ -134,6 +134,10 @@ func signValidToken(t *testing.T, priv ed25519.PrivateKey) string {
 		SessionID:    uuid.Must(uuid.NewV7()).String(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c)
+	// accounts stamps kid on every access token it mints; so must the tokens
+	// the gateway suite runs against, or these tests only ever cover the
+	// single-key compatibility branch.
+	token.Header["kid"] = accessKeyID(priv.Public().(ed25519.PublicKey))
 	signed, err := token.SignedString(priv)
 	require.NoError(t, err)
 	return signed

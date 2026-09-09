@@ -36,10 +36,14 @@ func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
 	}, priv
 }
 
-// signClaims produces an EdDSA-signed JWT with the given claims.
+// signClaims produces an EdDSA-signed JWT with the given claims, stamped with
+// the same kid accounts derives from the signing key. Every token accounts
+// mints carries one, so the default token shape under test must too — a
+// kid-less token exercises only the single-key compatibility branch.
 func signClaims(t *testing.T, priv ed25519.PrivateKey, c accessClaims) string {
 	t.Helper()
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c)
+	token.Header["kid"] = accessKeyID(priv.Public().(ed25519.PublicKey))
 	signed, err := token.SignedString(priv)
 	require.NoError(t, err)
 	return signed

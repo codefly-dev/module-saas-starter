@@ -14,8 +14,8 @@ const (
 	// accessJWKSCacheTTL bounds how long a published key set answers before the
 	// gateway re-reads it, and so how long after accounts publishes a new key a
 	// gateway can still reject tokens signed by it: at worst one TTL, and in
-	// practice the first token carrying the unrecognised key id spends the
-	// window's probe and picks it up immediately.
+	// practice the first token carrying the unrecognised key id triggers a
+	// refetch that picks it up within jwksProbeInterval.
 	accessJWKSCacheTTL = 5 * time.Minute
 	// accessJWKSStaleGrace is the availability half of the tradeoff. While
 	// accounts is unreachable the last good key set keeps verifying, so a
@@ -47,8 +47,8 @@ type accessKeys interface {
 	// keyFor returns the verification key for keyID, which is the token's `kid`
 	// header and may be empty.
 	keyFor(ctx context.Context, keyID string) (ed25519.PublicKey, error)
-	// usable reports whether a key set is currently held. It does no I/O.
-	usable() bool
+	// loaded reports whether a key set has ever been acquired. It does no I/O.
+	loaded() bool
 }
 
 // accessJWKS resolves access-token verification keys from the JWKS accounts
@@ -83,9 +83,8 @@ func (a *accessJWKS) keyFor(ctx context.Context, keyID string) (ed25519.PublicKe
 	return accessKeyFor(keys, keyID)
 }
 
-func (a *accessJWKS) usable() bool {
-	_, ok := a.cache.snapshot()
-	return ok
+func (a *accessJWKS) loaded() bool {
+	return a.cache.everLoaded()
 }
 
 // refresh reloads the published key set.

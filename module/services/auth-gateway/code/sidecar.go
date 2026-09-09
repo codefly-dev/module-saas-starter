@@ -417,9 +417,16 @@ func hdr(key, value string) *corev3.HeaderValueOption {
 	}
 }
 
-// canVerifyAccessTokens reports whether the sidecar currently holds a usable
+// hasLoadedAccessTokenKeys reports whether the sidecar has ever acquired an
 // access-token key set. The readiness probe reads it; it never fetches, so a
 // probe cannot become a way to drive JWKS traffic.
-func (s *Sidecar) canVerifyAccessTokens() bool {
-	return s != nil && s.keys != nil && s.keys.usable()
+//
+// It deliberately does not report staleness. A gateway holding a stale set
+// still verifies from it for the grace window, and past that it refuses JWTs
+// with 503 per request — but it keeps serving the routes that never carried a
+// token (the billing and email webhooks, /assets, /.well-known). Withdrawing
+// the whole listener because the key set aged would take those down too, which
+// is a larger outage than the one it reports.
+func (s *Sidecar) hasLoadedAccessTokenKeys() bool {
+	return s != nil && s.keys != nil && s.keys.loaded()
 }

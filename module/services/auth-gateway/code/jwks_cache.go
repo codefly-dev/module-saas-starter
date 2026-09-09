@@ -22,6 +22,14 @@ const (
 	// tokens naming keys nobody publishes — would spend one round-trip per
 	// request, adding the request timeout to every one of them.
 	jwksFailureBackoff = time.Second
+	// jwksProbeInterval is the minimum spacing between refetches triggered by a
+	// key id the cached set does not list. It is a rate, deliberately not a
+	// once-per-cache-window budget: a budget is consumed by whichever key id
+	// asks first, so one token naming a key nobody publishes would block the
+	// refetch that a genuinely rotated-in key needs, for the rest of the window.
+	// A rate bounds the same fetch storm without letting one key id speak for
+	// every other.
+	jwksProbeInterval = 5 * time.Second
 )
 
 // errJWKSBackingOff is what the request path reports while a recent failure is
@@ -35,7 +43,7 @@ var errJWKSBackingOff = errors.New("JWKS refresh is backing off after a recent f
 //
 // Untrusted token input decides which key id is looked up, so every path out of
 // here is bounded: at most one fetch in flight (concurrent cold requests share
-// it), at most one extra fetch per cache window for an unrecognised key id, a
+// it), at most one refetch per jwksProbeInterval for an unrecognised key id, a
 // request timeout, a response size cap, and a key-count cap. Redirects are not
 // followed — the configured origin is the only origin.
 //
@@ -65,13 +73,13 @@ type jwksCache[T any] struct {
 	// fails. refresh (the background warm loop) is not subject to it: that loop
 	// paces its own retries and is what makes recovery prompt.
 	retryAfter time.Time
-	// unknownProbed bounds JWKS refetches for unrecognised key ids to one per
-	// cache window, so a stream of garbage tokens carrying attacker-chosen key
-	// ids cannot turn verification into an unbounded fetch loop. A full refresh
-	// opens a fresh probe window, so a rotated-in key is picked up within one
-	// cache TTL at the latest.
-	unknownProbed bool
-	inflight      *jwksFetch[T]
+	// nextProbeAt rate-limits refetches for key ids the cached set does not
+	// list, so a stream of garbage tokens carrying attacker-chosen key ids
+	// cannot turn verification into an unbounded fetch loop. It is only ever set
+	// by an actual probe, so a key rotated in while the cache is fresh is
+	// discovered by the first token that names it.
+	nextProbeAt time.Time
+	inflight    *jwksFetch[T]
 }
 
 // jwksEntry is one immutable fetched key set and the artifact built over it.
@@ -113,16 +121,11 @@ func newJWKSCache[T any](
 	}
 }
 
-// refresh installs the current key set and reopens the unknown-key probe
-// budget. Callers use it to warm the cache at boot and to keep it warm.
+// refresh installs the current key set. Callers use it to warm the cache at
+// boot and to keep it warm.
 func (c *jwksCache[T]) refresh(ctx context.Context) error {
-	if _, err := c.coalescedFetch(ctx); err != nil {
-		return err
-	}
-	c.mu.Lock()
-	c.unknownProbed = false
-	c.mu.Unlock()
-	return nil
+	_, err := c.coalescedFetch(ctx)
+	return err
 }
 
 // resolve returns the artifact that should answer for keyID. A fresh cache that
@@ -139,20 +142,34 @@ func (c *jwksCache[T]) refresh(ctx context.Context) error {
 // one per request.
 func (c *jwksCache[T]) resolve(ctx context.Context, keyID string) (T, error) {
 	var zero T
-	probing := false
 
 	c.mu.Lock()
 	now := c.now()
 	cached := c.current
 	if cached != nil && now.Before(cached.expiresAt) {
-		if _, known := cached.keyIDs[keyID]; known || c.unknownProbed {
+		if _, known := cached.keyIDs[keyID]; known {
 			c.mu.Unlock()
 			return cached.value, nil
 		}
-		// Fresh cache, unrecognised key id, probe budget available: spend it
-		// before releasing the lock, so concurrent unknown-key requests don't
-		// each schedule a probe.
-		probing = true
+		// Fresh cache, unrecognised key id. Refetch in case the publisher has
+		// rotated a key in since this set was fetched, but no more often than
+		// jwksProbeInterval — that spacing is what bounds the fetch rate, and
+		// unlike a per-window budget it cannot be exhausted on one key id and
+		// then denied to another.
+		if now.Before(c.nextProbeAt) {
+			c.mu.Unlock()
+			return cached.value, nil
+		}
+		c.nextProbeAt = now.Add(jwksProbeInterval)
+		c.mu.Unlock()
+
+		entry, err := c.coalescedFetch(ctx)
+		if err != nil {
+			// The probe told us nothing; the cached set is still fresh and is
+			// what the caller must decide against.
+			return cached.value, nil
+		}
+		return entry.value, nil
 	}
 	if now.Before(c.retryAfter) {
 		usable := cached != nil && !now.After(cached.expiresAt.Add(c.staleGrace))
@@ -162,21 +179,10 @@ func (c *jwksCache[T]) resolve(ctx context.Context, keyID string) (T, error) {
 		}
 		return zero, c.wrap(errJWKSBackingOff)
 	}
-	if probing {
-		c.unknownProbed = true
-	}
 	c.mu.Unlock()
 
 	entry, err := c.coalescedFetch(ctx)
 	if err == nil {
-		if !probing {
-			// A cold or expired cache reloaded: the window is new, so the probe
-			// budget resets with it. A probe must NOT reset it — that would let
-			// one unrecognised key id per request refetch forever.
-			c.mu.Lock()
-			c.unknownProbed = false
-			c.mu.Unlock()
-		}
 		return entry.value, nil
 	}
 	if fallback, ok := c.withinStaleGrace(); ok {
@@ -185,10 +191,15 @@ func (c *jwksCache[T]) resolve(ctx context.Context, keyID string) (T, error) {
 	return zero, err
 }
 
-// snapshot returns the cached key set when one is still usable — fresh, or
-// stale within the grace window. Readiness reads it without doing I/O.
-func (c *jwksCache[T]) snapshot() (*jwksEntry[T], bool) {
-	return c.withinStaleGrace()
+// everLoaded reports whether a key set has ever been fetched. It is what
+// readiness is built on, deliberately in preference to "the cached set is still
+// fresh": a gateway that has never acquired keys cannot serve authenticated
+// traffic at all, while one holding a stale set is degraded but still routing —
+// including the public routes that never needed a key. It does no I/O.
+func (c *jwksCache[T]) everLoaded() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.current != nil
 }
 
 func (c *jwksCache[T]) withinStaleGrace() (*jwksEntry[T], bool) {

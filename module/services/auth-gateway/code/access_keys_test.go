@@ -37,7 +37,7 @@ func (f fixedAccessKeys) keyFor(_ context.Context, keyID string) (ed25519.Public
 	return accessKeyFor(f, keyID)
 }
 
-func (f fixedAccessKeys) usable() bool { return len(f) > 0 }
+func (f fixedAccessKeys) loaded() bool { return len(f) > 0 }
 
 // unavailableAccessKeys stands in for a gateway that has not managed to fetch
 // the published key set at all.
@@ -47,7 +47,7 @@ func (unavailableAccessKeys) keyFor(context.Context, string) (ed25519.PublicKey,
 	return nil, fmt.Errorf("%w: test", errNoVerificationKeys)
 }
 
-func (unavailableAccessKeys) usable() bool { return false }
+func (unavailableAccessKeys) loaded() bool { return false }
 
 // accessKeyID mirrors the kid accounts derives in pkg/auth/ed25519 — the first
 // eight bytes of SHA-256 over the public key — so tests mint tokens carrying
@@ -219,7 +219,7 @@ func TestAccessJWKS_StartupOutageRecoversWithoutRestart(t *testing.T) {
 
 	token := signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now()))
 	requireDenied(t, sidecar, token, 503)
-	require.False(t, sidecar.canVerifyAccessTokens())
+	require.False(t, sidecar.hasLoadedAccessTokenKeys())
 	require.Equal(t, http.StatusServiceUnavailable, readyStatus(t, gateway))
 
 	// accounts finishes starting. No gateway restart, no operator action.
@@ -227,7 +227,7 @@ func TestAccessJWKS_StartupOutageRecoversWithoutRestart(t *testing.T) {
 	clock.advance(jwksFailureBackoff)
 
 	requireAdmitted(t, sidecar, token)
-	require.True(t, sidecar.canVerifyAccessTokens())
+	require.True(t, sidecar.hasLoadedAccessTokenKeys())
 	require.Equal(t, http.StatusOK, readyStatus(t, gateway))
 }
 
@@ -244,13 +244,46 @@ func TestAccessJWKS_CachedKeysSurviveAPublisherOutage(t *testing.T) {
 	// accounts restart does not take authentication down with it.
 	clock.advance(accessJWKSCacheTTL + time.Minute)
 	requireAdmitted(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
-	require.True(t, sidecar.canVerifyAccessTokens())
+	require.True(t, sidecar.hasLoadedAccessTokenKeys())
 
 	// Past it the gateway fails closed: an unreachable publisher must not keep
 	// a withdrawn key alive indefinitely.
 	clock.advance(accessJWKSStaleGrace)
 	requireDenied(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
-	require.False(t, sidecar.canVerifyAccessTokens())
+}
+
+// TestAccessJWKS_StaleKeysDoNotWithdrawTheListener pins the scope of the
+// readiness signal. A key set aged past its grace stops verifying tokens, but
+// the gateway keeps reporting ready, because the routes that never carried a
+// token — the billing and email webhooks — must keep being served through an
+// accounts JWKS outage. Only a gateway that has never loaded keys is unready.
+func TestAccessJWKS_StaleKeysDoNotWithdrawTheListener(t *testing.T) {
+	pub, priv := mustEd25519(t)
+	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
+	sidecar := newJWKSSidecar(t, publisher.server.URL)
+	clock := newTestClock(t, sidecar)
+	gateway := NewGateway(sidecar, NewRouteMatcher(testRouteEntries(), nil),
+		map[string]*url.URL{
+			"accounts": MustURL(publisher.server.URL),
+			"frontend": MustURL(publisher.server.URL),
+		}, nil)
+
+	requireAdmitted(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
+	publisher.server.Close()
+	clock.advance(accessJWKSCacheTTL + accessJWKSStaleGrace + time.Minute)
+
+	requireDenied(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
+	require.True(t, sidecar.hasLoadedAccessTokenKeys(),
+		"a gateway that loaded keys once must not report itself unconfigured because they aged")
+
+	// The upstream is unreachable here too, so readiness fails on that — the
+	// more actionable reason — rather than on key staleness. What matters is
+	// that the key age is not itself a reason.
+	publisher2 := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
+	gateway.upstreams["accounts"] = MustURL(publisher2.server.URL)
+	gateway.upstreams["frontend"] = MustURL(publisher2.server.URL)
+	require.Equal(t, http.StatusOK, readyStatus(t, gateway),
+		"stale keys must not withdraw the listener from public routes")
 }
 
 // ---------------------------------------------------------------------------
@@ -546,4 +579,42 @@ func TestAccessJWKS_OutageDoesNotFetchPerRequest(t *testing.T) {
 	}
 	require.Equal(t, int64(1), atomic.LoadInt64(&hits),
 		"a failed fetch must suppress the next one for the backoff window")
+}
+
+// TestAccessJWKS_UnknownKeyIDDoesNotBlockARotatedKey is the regression for the
+// probe budget that a single unrecognised key id could exhaust. One token
+// naming a key nobody publishes used to consume the whole cache window's only
+// refetch, so a key rotated in immediately afterwards stayed invisible — and
+// every token signed by it was rejected 401 — until the next full refresh.
+// Any client could arm that with one unauthenticated request.
+func TestAccessJWKS_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
+	k1pub, k1priv := mustEd25519(t)
+	k2pub, k2priv := mustEd25519(t)
+
+	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, k1pub))
+	sidecar := newJWKSSidecar(t, publisher.server.URL)
+	clock := newTestClock(t, sidecar)
+
+	// Ordinary traffic warms the cache.
+	requireAdmitted(t, sidecar, signAccessToken(t, k1priv, accessKeyID(k1pub), validClaims(time.Now())))
+
+	// One request names a key id nobody publishes. It costs exactly one probe.
+	_, attacker := mustEd25519(t)
+	requireDenied(t, sidecar, signAccessToken(t, attacker, "made-up-key-id", validClaims(time.Now())), 401)
+	fetchesAfterProbe := publisher.fetches()
+
+	// The rotation lands: K2 is published alongside K1 and starts signing.
+	publisher.publish(accessJWKSFor(t, k2pub, k1pub))
+
+	// Within the probe interval the refetch is still rate-limited — that is the
+	// bound that keeps untrusted key ids from driving a fetch per request.
+	requireDenied(t, sidecar, signAccessToken(t, k2priv, accessKeyID(k2pub), validClaims(time.Now())), 401)
+	require.Equal(t, fetchesAfterProbe, publisher.fetches(),
+		"a second unrecognised key id inside the interval must not refetch")
+
+	// Once it passes, the rotated-in key is discovered by the token that names
+	// it. The cache has not expired: this is the probe, not a TTL refresh.
+	clock.advance(jwksProbeInterval)
+	requireAdmitted(t, sidecar, signAccessToken(t, k2priv, accessKeyID(k2pub), validClaims(time.Now())))
+	requireAdmitted(t, sidecar, signAccessToken(t, k1priv, accessKeyID(k1pub), validClaims(time.Now())))
 }

@@ -93,13 +93,14 @@ func runSidecarIntegrationTests(m *testing.M) int {
 	// than a single key pinned at boot. accounts may still be starting, so warm
 	// with a bounded retry.
 	accessKeySet := newAccessJWKS(fmt.Sprintf("http://%s:%d", internalNet.Hostname, internalNet.Port))
-	warmCtx, cancelWarm := context.WithTimeout(ctx, 30*time.Second)
-	go keepAccessKeysWarm(warmCtx, accessKeySet)
-	for i := 0; i < 60 && !accessKeySet.usable(); i++ {
+	// Same lifetime as main: the warm loop runs for the whole process, so the
+	// suite exercises a gateway whose key set is kept current rather than one
+	// warmed once and then left to age.
+	go keepAccessKeysWarm(ctx, accessKeySet)
+	for i := 0; i < 60 && !accessKeySet.loaded(); i++ {
 		time.Sleep(500 * time.Millisecond)
 	}
-	cancelWarm()
-	if !accessKeySet.usable() {
+	if !accessKeySet.loaded() {
 		fmt.Fprintf(os.Stderr, "access-token JWKS never became available\n")
 		return 1
 	}
