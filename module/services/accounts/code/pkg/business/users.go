@@ -140,12 +140,13 @@ func (s *Service) UpdateUser(ctx context.Context, actorID string, access Identit
 			return err
 		}
 		user, err = s.store.UpdateUser(ctx, userID, updates)
-		return err
+		if err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserUpdated, "user", userID, "")
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot update user")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserUpdated, "user", userID, "")
 	return user, nil
 }
 
@@ -161,12 +162,13 @@ func (s *Service) DeleteUser(ctx context.Context, actorID string, access Identit
 		if err := s.store.DeleteUser(ctx, targetID); err != nil {
 			return err
 		}
-		return s.suppressProductIdentity(ctx, userAnalyticsSuppression(targetID), access)
+		if err := s.suppressProductIdentity(ctx, userAnalyticsSuppression(targetID), access); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserDeleted, "user", targetID, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete user")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserDeleted, "user", targetID, "")
 	return nil
 }
 
@@ -186,12 +188,13 @@ func (s *Service) AddIdentity(ctx context.Context, actorID string, access Identi
 	}
 
 	if err := s.store.As(access).Within(ctx, func(ctx context.Context) error {
-		return s.store.AddIdentity(ctx, identity)
+		if err := s.store.AddIdentity(ctx, identity); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserIdentityAdd, "identity", identity.Uuid, "")
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot add identity")
 	}
-
-	s.emit(ctx, actorID, "user", EventUserIdentityAdd, "identity", identity.Uuid, "")
 	return identity, nil
 }
 

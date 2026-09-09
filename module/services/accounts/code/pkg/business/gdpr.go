@@ -83,12 +83,13 @@ func (s *Service) RequestExport(ctx context.Context, userID string) (*GDPRReques
 	}
 
 	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
-		return gdprStore.CreateGDPRRequest(ctx, req)
+		if err := gdprStore.CreateGDPRRequest(ctx, req); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventGDPRExportReq, "gdpr_request", req.ID, "")
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create GDPR export request")
 	}
-
-	s.emit(ctx, userID, "user", EventGDPRExportReq, "gdpr_request", req.ID, "")
 
 	processingRequest := *req
 	go s.processExport(context.Background(), gdprStore, &processingRequest, workflow)
@@ -156,12 +157,13 @@ func (s *Service) RequestDeletion(ctx context.Context, userID string) (*GDPRRequ
 	}
 
 	if err := s.store.As(Identity{UserID: req.UserID}).Within(ctx, func(ctx context.Context) error {
-		return gdprStore.CreateGDPRRequest(ctx, req)
+		if err := gdprStore.CreateGDPRRequest(ctx, req); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventGDPRDeletionReq, "gdpr_request", req.ID, "")
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create GDPR deletion request")
 	}
-
-	s.emit(ctx, userID, "user", EventGDPRDeletionReq, "gdpr_request", req.ID, "")
 
 	processingRequest := *req
 	go s.processDeletion(context.Background(), gdprStore, &processingRequest, workflow)
@@ -230,12 +232,14 @@ func (s *Service) processDeletion(
 		); err != nil {
 			return err
 		}
-		return gdprStore.UpdateGDPRRequest(ctx, req)
+		if err := gdprStore.UpdateGDPRRequest(ctx, req); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, req.UserID, "system", EventGDPRDeletionDone, "gdpr_request", req.ID, "")
 	}); err != nil {
 		s.failGDPRRequest(ctx, gdprStore, req, fmt.Sprintf("complete deletion request: %v", err))
 		return
 	}
-	s.emit(ctx, req.UserID, "system", EventGDPRDeletionDone, "gdpr_request", req.ID, "")
 }
 
 func (s *Service) failGDPRRequest(ctx context.Context, gdprStore GDPRStore, req *GDPRRequest, errMsg string) {

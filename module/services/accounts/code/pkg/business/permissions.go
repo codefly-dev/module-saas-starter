@@ -46,12 +46,13 @@ func (s *Service) DeleteRole(ctx context.Context, actorID string, req *gen.Delet
 	w := wool.Get(ctx).In("DeleteRole")
 
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.DeleteRole(ctx, req.Id)
+		if err := s.store.DeleteRole(ctx, req.Id); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRoleDeleted, "role", req.Id, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete role")
 	}
-
-	s.emit(ctx, actorID, "user", EventRoleDeleted, "role", req.Id, "")
 	return nil
 }
 
@@ -79,7 +80,10 @@ func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.Revok
 	w := wool.Get(ctx).In("RevokeRole")
 
 	wrap := func(ctx context.Context) error {
-		return s.store.RevokeRole(ctx, req.SubjectId, req.RoleId, req.OrgId, req.Scope)
+		if err := s.store.RevokeRole(ctx, req.SubjectId, req.RoleId, req.OrgId, req.Scope); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRoleRevoked, "role", req.RoleId, req.OrgId)
 	}
 	var err error
 	if req.OrgId == "" {
@@ -90,7 +94,5 @@ func (s *Service) RevokeRole(ctx context.Context, actorID string, req *gen.Revok
 	if err != nil {
 		return w.Wrapf(err, "cannot revoke role")
 	}
-
-	s.emit(ctx, actorID, "user", EventRoleRevoked, "role", req.RoleId, req.OrgId)
 	return nil
 }

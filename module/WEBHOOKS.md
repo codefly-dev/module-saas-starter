@@ -43,6 +43,12 @@ Subscription event names are canonical routing identifiers: 1–128 bytes,
 starting with a lowercase letter and containing only lowercase letters, digits,
 dots, underscores, or hyphens. This keeps `X-Webhook-Event` safe and portable.
 
+Fan-out is scoped to the audited event's own tenant: the emitter matches
+subscriptions on the event type and then keeps only those belonging to the
+event's `org_id`, so a security mutation whose transaction runs with RLS
+bypassed (platform-admin and other control-plane writes) cannot reach another
+tenant's endpoints. A NULL-org event has no fan-out at all.
+
 Fan-out routes on the audit event type, which is namespaced
 (`<namespace>.<aggregate>.<event>`, this module minting only `saas.*` — issue
 #520), so a subscription only ever fires for a namespaced name. The routing rule

@@ -72,9 +72,31 @@ type AuditEventTypeRow struct {
 // package family and the domain-event naming law in EVENTS.md.
 const AuditNamespace = "saas"
 
+// AuditDurability declares how an event type's record must reach the log. It is
+// the classification the emit choke points and the durability gate enforce, and
+// every registered definition carries one — a new event type cannot be added
+// without deciding which it is.
+type AuditDurability string
+
+const (
+	// DurabilityTransactional marks a privileged write: a change to who can do
+	// what, or the issue of a credential that grants it. Its audit row and
+	// webhook fan-out are written on a transaction the caller's success depends
+	// on (Service.emitTx / emitEntryTx), so the record and the change it
+	// describes commit together — and a failed audit write fails the operation
+	// rather than returning success with no record.
+	DurabilityTransactional AuditDurability = "transactional"
+	// DurabilityObservational marks a record of something no domain transaction
+	// owns: an authentication outcome, a denial, a read, or an outcome produced
+	// by an external provider. It is emitted on the emitter's own transaction
+	// (Service.emit) precisely so it survives a rolled-back domain write.
+	DurabilityObservational AuditDurability = "observational"
+)
+
 // AuditEventDefinition is one registered event type. Namespace is the collision
 // key (always the leading segment of Type); Owner names the service that emits
-// it, which is a different axis entirely.
+// it, which is a different axis entirely. Durability says how the record must
+// be committed.
 type AuditEventDefinition struct {
 	Type        EventType
 	Namespace   string
@@ -82,16 +104,30 @@ type AuditEventDefinition struct {
 	Category    AuditCategory
 	Owner       string
 	Description string
+	Durability  AuditDurability
 	Fields      []PayloadField
 }
 
-// obj is a terse constructor for a definition with a v1 payload schema owned by
-// accounts. Almost every event today carries no structured payload; the fields
-// declared here are the contract producers fill in as payloads are enriched.
-func def(t EventType, cat AuditCategory, desc string, fields ...PayloadField) AuditEventDefinition {
+// mutation registers a privileged write (DurabilityTransactional); observation
+// registers a record no domain transaction owns (DurabilityObservational).
+// There is deliberately no durability-less constructor: the classification is
+// what the durability gate reads, so a new event type has to state it.
+func mutation(t EventType, cat AuditCategory, desc string, fields ...PayloadField) AuditEventDefinition {
+	return def(t, DurabilityTransactional, cat, desc, fields...)
+}
+
+func observation(t EventType, cat AuditCategory, desc string, fields ...PayloadField) AuditEventDefinition {
+	return def(t, DurabilityObservational, cat, desc, fields...)
+}
+
+// def is the terse constructor for a definition with a v1 payload schema owned
+// by accounts. Almost every event today carries no structured payload; the
+// fields declared here are the contract producers fill in as payloads are
+// enriched.
+func def(t EventType, dur AuditDurability, cat AuditCategory, desc string, fields ...PayloadField) AuditEventDefinition {
 	return AuditEventDefinition{
 		Type: t, Namespace: AuditNamespace, Version: 1, Category: cat,
-		Owner: "accounts", Description: desc, Fields: fields,
+		Owner: "accounts", Description: desc, Durability: dur, Fields: fields,
 	}
 }
 
@@ -257,152 +293,152 @@ const (
 )
 
 var auditEventCatalog = []AuditEventDefinition{
-	def(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
+	mutation(EventUserRegistered, CategoryIdentity, "A new user account was registered.",
 		enum("signup_method", "password", "sso", "magic_link"), pii(str("email"))),
-	def(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email"))),
-	def(EventUserUpdated, CategoryIdentity, "A user profile was updated."),
-	def(EventUserDeleted, CategoryIdentity, "A user account was deleted."),
-	def(EventUserSuspended, CategoryIdentity, "A user account was suspended."),
-	def(EventUserUnsuspended, CategoryIdentity, "A user account was reinstated."),
-	def(EventUserIdentityAdd, CategoryIdentity, "An external identity was linked to a user.", str("provider")),
-	def(EventSettingsUpdated, CategoryIdentity, "A user's personal settings changed."),
-	def(EventConsentTerms, CategoryIdentity, "A user accepted the terms of service.", str("version")),
-	def(EventConsentPrefs, CategoryIdentity, "A user updated their consent preferences."),
+	mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email"))),
+	mutation(EventUserUpdated, CategoryIdentity, "A user profile was updated."),
+	mutation(EventUserDeleted, CategoryIdentity, "A user account was deleted."),
+	mutation(EventUserSuspended, CategoryIdentity, "A user account was suspended."),
+	mutation(EventUserUnsuspended, CategoryIdentity, "A user account was reinstated."),
+	mutation(EventUserIdentityAdd, CategoryIdentity, "An external identity was linked to a user.", str("provider")),
+	observation(EventSettingsUpdated, CategoryIdentity, "A user's personal settings changed."),
+	mutation(EventConsentTerms, CategoryIdentity, "A user accepted the terms of service.", str("version")),
+	mutation(EventConsentPrefs, CategoryIdentity, "A user updated their consent preferences."),
 
-	def(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
-	def(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
-	def(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
-	def(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
-	def(EventRoleUpdated, CategoryAccess, "A role was updated."),
-	def(EventRoleDeleted, CategoryAccess, "A role was deleted."),
-	def(EventRoleAssigned, CategoryAccess, "A role was assigned to a principal.", uid("role_id"), uid("subject_id")),
-	def(EventRoleRevoked, CategoryAccess, "A role assignment was revoked.", uid("role_id")),
-	def(EventSessionRevoked, CategoryAccess, "A session was revoked."),
-	def(EventInvitationCreated, CategoryAccess, "An organization invitation was created.", pii(str("email"))),
-	def(EventInvitationAccepted, CategoryAccess, "An organization invitation was accepted."),
-	def(EventInvitationRevoked, CategoryAccess, "An organization invitation was revoked."),
-	def(EventInvitationResent, CategoryAccess, "An organization invitation was resent."),
-	def(EventDelegationRequested, CategoryAccess, "A delegation grant was requested."),
-	def(EventDelegationApproved, CategoryAccess, "A delegation grant was approved."),
-	def(EventDelegationDenied, CategoryAccess, "A delegation grant was denied."),
-	def(EventDelegationAutoApproved, CategoryAccess, "A delegation grant was auto-approved by policy."),
-	def(EventApprovalAsked, CategoryAccess, "An approval request was opened for a gated action.", str("resource"), str("action")),
-	def(EventApprovalApproved, CategoryAccess, "An approval request reached quorum and was approved.", str("resource"), str("action")),
-	def(EventApprovalDenied, CategoryAccess, "An approval request was denied."),
-	def(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum."),
-	def(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set."),
-	def(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason")),
-	def(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
-	def(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
-	def(EventPrincipalDisabled, CategoryAccess, "An agent principal was disabled.", str("reason")),
-	def(EventPrincipalEnabled, CategoryAccess, "An agent principal was re-enabled."),
-	def(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
-	def(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
-	def(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
-	def(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
+	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
+	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
+	mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
+	mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
+	mutation(EventRoleUpdated, CategoryAccess, "A role was updated."),
+	mutation(EventRoleDeleted, CategoryAccess, "A role was deleted."),
+	mutation(EventRoleAssigned, CategoryAccess, "A role was assigned to a principal.", uid("role_id"), uid("subject_id")),
+	mutation(EventRoleRevoked, CategoryAccess, "A role assignment was revoked.", uid("role_id")),
+	mutation(EventSessionRevoked, CategoryAccess, "A session was revoked."),
+	mutation(EventInvitationCreated, CategoryAccess, "An organization invitation was created.", pii(str("email"))),
+	mutation(EventInvitationAccepted, CategoryAccess, "An organization invitation was accepted."),
+	mutation(EventInvitationRevoked, CategoryAccess, "An organization invitation was revoked."),
+	mutation(EventInvitationResent, CategoryAccess, "An organization invitation was resent."),
+	mutation(EventDelegationRequested, CategoryAccess, "A delegation grant was requested."),
+	mutation(EventDelegationApproved, CategoryAccess, "A delegation grant was approved."),
+	mutation(EventDelegationDenied, CategoryAccess, "A delegation grant was denied."),
+	mutation(EventDelegationAutoApproved, CategoryAccess, "A delegation grant was auto-approved by policy."),
+	mutation(EventApprovalAsked, CategoryAccess, "An approval request was opened for a gated action.", str("resource"), str("action")),
+	mutation(EventApprovalApproved, CategoryAccess, "An approval request reached quorum and was approved.", str("resource"), str("action")),
+	mutation(EventApprovalDenied, CategoryAccess, "An approval request was denied."),
+	mutation(EventApprovalTimeout, CategoryAccess, "An approval request expired before reaching quorum."),
+	mutation(EventApprovalEscalated, CategoryAccess, "An approval request was escalated to a wider approver set."),
+	mutation(EventApprovalCancelled, CategoryAccess, "An approval request was cancelled before a decision.", str("reason")),
+	mutation(EventPrincipalCreated, CategoryAccess, "An agent principal was created.", str("agent_identifier")),
+	mutation(EventPrincipalRevoked, CategoryAccess, "A principal was revoked.", str("reason")),
+	mutation(EventPrincipalDisabled, CategoryAccess, "An agent principal was disabled.", str("reason")),
+	mutation(EventPrincipalEnabled, CategoryAccess, "An agent principal was re-enabled."),
+	mutation(EventScopeNodeRegistered, CategoryAccess, "A scope node was registered.", str("scope_path"), str("kind")),
+	mutation(EventScopeGranted, CategoryAccess, "A role was granted at a scope node.", uid("role_id"), uid("subject_id"), str("scope_path")),
+	mutation(EventScopeRevoked, CategoryAccess, "A scope grant was revoked.", uid("role_id"), str("scope_path")),
+	mutation(EventInstallationCreated, CategoryAccess, "A solution was installed: an agent principal, solution scope node, standing grant, and installation row were composed.",
 		uid("agent_principal_id"), str("solution_identifier"), uid("role_id")),
-	def(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled: its agent principal and standing grant were revoked and its scope node soft-deleted.",
+	mutation(EventInstallationRevoked, CategoryAccess, "A solution was uninstalled: its agent principal and standing grant were revoked and its scope node soft-deleted.",
 		str("solution_identifier")),
-	def(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
+	mutation(EventInstallationOwnershipTransferred, CategoryAccess, "An installation's owner of record was reassigned.",
 		uid("owner_principal_id")),
-	def(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
-	def(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
-	def(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
-	def(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
-	def(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
-	def(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
-	def(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
+	mutation(EventRecordShared, CategoryAccess, "A record was shared with a principal or team.", uid("role_id"), uid("subject_id")),
+	mutation(EventRecordShareRevoked, CategoryAccess, "A record share was revoked.", uid("role_id"), uid("subject_id")),
+	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
+	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
+	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
+	mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
+	mutation(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
 
-	def(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method")),
-	def(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link."),
-	def(EventAuthSSOJitProvisioned, CategorySecurity, "A user was just-in-time provisioned via SSO.", str("provider")),
-	def(EventAuthOrgSwitched, CategorySecurity, "A user switched active organization."),
-	def(EventAuthMFAChallengeStart, CategorySecurity, "An MFA challenge was started."),
-	def(EventAuthMFAChallengeDone, CategorySecurity, "An MFA challenge was completed.", enum("factor", "totp", "webauthn", "backup_code")),
-	def(EventMFATOTPSetupStarted, CategorySecurity, "TOTP enrollment was started."),
-	def(EventMFATOTPVerified, CategorySecurity, "A TOTP device was verified."),
-	def(EventMFAWebAuthnRegStarted, CategorySecurity, "WebAuthn registration was started."),
-	def(EventMFAWebAuthnRegistered, CategorySecurity, "A WebAuthn credential was registered."),
-	def(EventMFAWebAuthnUsed, CategorySecurity, "A WebAuthn credential was used to authenticate."),
-	def(EventMFABackupGenerated, CategorySecurity, "MFA backup codes were generated."),
-	def(EventMFABackupUsed, CategorySecurity, "An MFA backup code was consumed."),
-	def(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked."),
-	def(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted."),
-	def(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked."),
-	def(EventPlatformImpersonated, CategorySecurity, "A platform admin impersonated a user."),
+	observation(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method")),
+	observation(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link."),
+	mutation(EventAuthSSOJitProvisioned, CategorySecurity, "A user was just-in-time provisioned via SSO.", str("provider")),
+	observation(EventAuthOrgSwitched, CategorySecurity, "A user switched active organization."),
+	observation(EventAuthMFAChallengeStart, CategorySecurity, "An MFA challenge was started."),
+	observation(EventAuthMFAChallengeDone, CategorySecurity, "An MFA challenge was completed.", enum("factor", "totp", "webauthn", "backup_code")),
+	mutation(EventMFATOTPSetupStarted, CategorySecurity, "TOTP enrollment was started."),
+	mutation(EventMFATOTPVerified, CategorySecurity, "A TOTP device was verified."),
+	mutation(EventMFAWebAuthnRegStarted, CategorySecurity, "WebAuthn registration was started."),
+	mutation(EventMFAWebAuthnRegistered, CategorySecurity, "A WebAuthn credential was registered."),
+	observation(EventMFAWebAuthnUsed, CategorySecurity, "A WebAuthn credential was used to authenticate."),
+	mutation(EventMFABackupGenerated, CategorySecurity, "MFA backup codes were generated."),
+	observation(EventMFABackupUsed, CategorySecurity, "An MFA backup code was consumed."),
+	mutation(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked."),
+	mutation(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted."),
+	mutation(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked."),
+	mutation(EventPlatformImpersonated, CategorySecurity, "A platform admin impersonated a user."),
 
-	def(EventBillingCheckoutStarted, CategoryBilling, "A billing checkout session was started."),
-	def(EventBillingPortalOpened, CategoryBilling, "The billing portal was opened."),
-	def(EventBillingFreePlan, CategoryBilling, "The free plan was selected."),
-	def(EventEntitlementOverride, CategoryBilling, "An entitlement override was set.", str("key")),
+	observation(EventBillingCheckoutStarted, CategoryBilling, "A billing checkout session was started."),
+	observation(EventBillingPortalOpened, CategoryBilling, "The billing portal was opened."),
+	observation(EventBillingFreePlan, CategoryBilling, "The free plan was selected."),
+	mutation(EventEntitlementOverride, CategoryBilling, "An entitlement override was set.", str("key")),
 
-	def(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
-	def(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
-	def(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
-	def(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated."),
-	def(EventOrgGenericSettingsUpdated, CategoryOrganization, "Organization generic (typed) settings were updated."),
-	def(EventTeamCreated, CategoryOrganization, "A team was created.", str("name")),
-	def(EventTeamUpdated, CategoryOrganization, "A team was updated."),
-	def(EventTeamDeleted, CategoryOrganization, "A team was deleted."),
-	def(EventTeamMemberAdded, CategoryOrganization, "A member was added to a team."),
-	def(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team."),
-	def(EventSSOSetupStarted, CategoryOrganization, "SSO configuration was started."),
-	def(EventSSODisabled, CategoryOrganization, "SSO was disabled for an organization."),
-	def(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step")),
-	def(EventOnboardingStepSkip, CategoryOrganization, "An onboarding step was skipped.", str("step")),
-	def(EventActivationAchieved, CategoryOrganization, "An organization reached activation."),
+	mutation(EventOrgCreated, CategoryOrganization, "An organization was created.", str("name")),
+	mutation(EventOrgMemberAdded, CategoryOrganization, "A member was added to an organization."),
+	mutation(EventOrgMemberRemoved, CategoryOrganization, "A member was removed from an organization."),
+	mutation(EventOrgSettingsUpdated, CategoryOrganization, "Organization branding settings were updated."),
+	mutation(EventOrgGenericSettingsUpdated, CategoryOrganization, "Organization generic (typed) settings were updated."),
+	mutation(EventTeamCreated, CategoryOrganization, "A team was created.", str("name")),
+	mutation(EventTeamUpdated, CategoryOrganization, "A team was updated."),
+	mutation(EventTeamDeleted, CategoryOrganization, "A team was deleted."),
+	mutation(EventTeamMemberAdded, CategoryOrganization, "A member was added to a team."),
+	mutation(EventTeamMemberRemoved, CategoryOrganization, "A member was removed from a team."),
+	mutation(EventSSOSetupStarted, CategoryOrganization, "SSO configuration was started."),
+	mutation(EventSSODisabled, CategoryOrganization, "SSO was disabled for an organization."),
+	observation(EventOnboardingStepDone, CategoryOrganization, "An onboarding step was completed.", str("step")),
+	observation(EventOnboardingStepSkip, CategoryOrganization, "An onboarding step was skipped.", str("step")),
+	observation(EventActivationAchieved, CategoryOrganization, "An organization reached activation."),
 
-	def(EventDashboardCreated, CategoryOrganization, "A dashboard was created."),
-	def(EventDashboardUpdated, CategoryOrganization, "A dashboard was updated."),
-	def(EventDashboardDeleted, CategoryOrganization, "A dashboard was deleted."),
-	def(EventDashboardShared, CategoryOrganization, "A dashboard's visibility was changed."),
+	observation(EventDashboardCreated, CategoryOrganization, "A dashboard was created."),
+	observation(EventDashboardUpdated, CategoryOrganization, "A dashboard was updated."),
+	observation(EventDashboardDeleted, CategoryOrganization, "A dashboard was deleted."),
+	observation(EventDashboardShared, CategoryOrganization, "A dashboard's visibility was changed."),
 
-	def(EventWaitlistJoined, CategoryLifecycle, "A prospect joined the waitlist.", pii(str("email"))),
-	def(EventWaitlistPending, CategoryLifecycle, "A waitlist entry moved to pending."),
-	def(EventWaitlistVerified, CategoryLifecycle, "A waitlist entry was verified."),
-	def(EventWaitlistReviewed, CategoryLifecycle, "A waitlist entry was reviewed by an administrator."),
-	def(EventWaitlistApproved, CategoryLifecycle, "A waitlist entry was approved."),
-	def(EventWaitlistInvited, CategoryLifecycle, "A waitlist entry was invited."),
-	def(EventWaitlistConverted, CategoryLifecycle, "A waitlist entry converted to a user."),
-	def(EventWaitlistRejected, CategoryLifecycle, "A waitlist entry was rejected."),
-	def(EventGDPRExportReq, CategoryLifecycle, "A GDPR data export was requested."),
-	def(EventGDPRDeletionReq, CategoryLifecycle, "A GDPR deletion was requested."),
-	def(EventGDPRDeletionDone, CategoryLifecycle, "A GDPR deletion completed."),
+	observation(EventWaitlistJoined, CategoryLifecycle, "A prospect joined the waitlist.", pii(str("email"))),
+	observation(EventWaitlistPending, CategoryLifecycle, "A waitlist entry moved to pending."),
+	observation(EventWaitlistVerified, CategoryLifecycle, "A waitlist entry was verified."),
+	observation(EventWaitlistReviewed, CategoryLifecycle, "A waitlist entry was reviewed by an administrator."),
+	observation(EventWaitlistApproved, CategoryLifecycle, "A waitlist entry was approved."),
+	observation(EventWaitlistInvited, CategoryLifecycle, "A waitlist entry was invited."),
+	observation(EventWaitlistConverted, CategoryLifecycle, "A waitlist entry converted to a user."),
+	observation(EventWaitlistRejected, CategoryLifecycle, "A waitlist entry was rejected."),
+	mutation(EventGDPRExportReq, CategoryLifecycle, "A GDPR data export was requested."),
+	mutation(EventGDPRDeletionReq, CategoryLifecycle, "A GDPR deletion was requested."),
+	mutation(EventGDPRDeletionDone, CategoryLifecycle, "A GDPR deletion completed."),
 
-	def(EventWebhookCreated, CategorySystem, "A webhook subscription was created."),
-	def(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted."),
-	def(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed."),
-	def(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
-	def(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested."),
-	def(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
-	def(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
+	mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created."),
+	mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted."),
+	mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed."),
+	mutation(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
+	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested."),
+	mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
+	observation(EventDatasourceChangeSetCompiled, CategorySystem, "A GitHub delivery was compiled into a change set.",
 		str("base"), str("head"), PayloadField{Name: "ops", Kind: FieldInt}, enum("mode", "compare", "snapshot"), str("delivery_id")),
-	def(EventDatasourceForcePushReconciled, CategorySystem, "A GitHub force push or divergence was reconciled with a snapshot.",
+	observation(EventDatasourceForcePushReconciled, CategorySystem, "A GitHub force push or divergence was reconciled with a snapshot.",
 		str("head"), str("delivery_id")),
-	def(EventDatasourceBranchDeleted, CategorySystem, "A GitHub branch-deletion delivery was acknowledged without removing documents.",
+	observation(EventDatasourceBranchDeleted, CategorySystem, "A GitHub branch-deletion delivery was acknowledged without removing documents.",
 		str("ref"), str("delivery_id")),
-	def(EventDatasourceSnapshotTooLarge, CategorySystem, "A datasource snapshot manifest exceeded the ingest payload limit; the source was degraded pending operator reset.",
+	observation(EventDatasourceSnapshotTooLarge, CategorySystem, "A datasource snapshot manifest exceeded the ingest payload limit; the source was degraded pending operator reset.",
 		str("head"), PayloadField{Name: "bytes", Kind: FieldInt}, PayloadField{Name: "limit", Kind: FieldInt}, str("delivery_id")),
-	def(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
+	observation(EventDatasourceSourceRecovered, CategorySystem, "A degraded datasource source snapshotted within the ingest limit again and was returned to active.",
 		str("head"), str("delivery_id")),
-	def(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
+	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
 		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
-	def(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
-	def(EventJobReplayed, CategorySystem, "A background job was replayed."),
-	def(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
-	def(EventEventSubscriptionCreated, CategorySystem, "A domain-event subscription was created.",
+	mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
+	observation(EventJobReplayed, CategorySystem, "A background job was replayed."),
+	mutation(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
+	mutation(EventEventSubscriptionCreated, CategorySystem, "A domain-event subscription was created.",
 		uid("subscription_id"), uid("subscriber_principal_id"), str("type_pattern"), str("queue")),
-	def(EventEventSubscriptionRevoked, CategorySystem, "A domain-event subscription was revoked.", uid("subscription_id")),
-	def(EventEventReplayed, CategorySystem, "Domain events were replayed to a subscriber.",
+	mutation(EventEventSubscriptionRevoked, CategorySystem, "A domain-event subscription was revoked.", uid("subscription_id")),
+	mutation(EventEventReplayed, CategorySystem, "Domain events were replayed to a subscriber.",
 		str("type"), PayloadField{Name: "redelivered", Kind: FieldInt}),
-	def(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", documentFields...),
-	def(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
-	def(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),
-	def(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", documentFields...),
-	def(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
-	def(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
-	def(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
-	def(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
+	mutation(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", documentFields...),
+	mutation(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
+	mutation(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),
+	mutation(EventDocumentDeleted, CategoryLifecycle, "A document was deleted.", documentFields...),
+	mutation(EventDocumentQuarantined, CategoryLifecycle, "A document was quarantined.", documentFields...),
+	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
+	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
+	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
 }
 
 // documentFields is the shared payload of every document.* event. `solution`
@@ -425,10 +461,22 @@ var auditEventIndex = func() map[EventType]AuditEventDefinition {
 		if _, dup := m[d.Type]; dup {
 			panic(fmt.Sprintf("audit registry: duplicate event type %q", d.Type))
 		}
+		if d.Durability != DurabilityTransactional && d.Durability != DurabilityObservational {
+			panic(fmt.Sprintf("audit registry: event type %q has no durability classification", d.Type))
+		}
 		m[d.Type] = d
 	}
 	return m
 }()
+
+// IsTransactionalAuditEvent reports whether an event type must be written on a
+// transaction the caller's success depends on. Unregistered types are not
+// transactional: the module-facing surface accepts caller-supplied types and
+// writes them through emitEntryTx regardless.
+func IsTransactionalAuditEvent(t EventType) bool {
+	d, ok := auditEventIndex[t]
+	return ok && d.Durability == DurabilityTransactional
+}
 
 // AuditEventCatalog returns the registered event definitions sorted by type,
 // so DB seeding and the generated facet are deterministic.

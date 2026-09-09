@@ -376,7 +376,11 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 			insErr := scoped.Within(ctx, func(ctx context.Context) error {
 				var e error
 				id, e = s.delegationStore().InsertAutoApproved(ctx, in, hash, expiresAt, pattern)
-				return e
+				if e != nil {
+					return e
+				}
+				return s.emitTx(ctx, in.ActorPrincipalID, "agent",
+					EventDelegationAutoApproved, "delegation_grant", id, in.OrgID)
 			})
 			if insErr != nil {
 				return "", w.Wrapf(insErr, "insert auto-approved (via pattern)")
@@ -384,8 +388,6 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 			w.Info("delegation auto-approved via pattern",
 				wool.Field("grant_id", id),
 				wool.Field("pattern_id", pattern.ID))
-			s.emit(ctx, in.ActorPrincipalID, "agent",
-				EventDelegationAutoApproved, "delegation_grant", id, in.OrgID)
 			// Notify the actor's owning user (when the actor is a
 			// human; agent actors silently skip — no inbox to
 			// post to). Best-effort: failure here doesn't roll
@@ -405,15 +407,17 @@ func (s *Service) RequestDelegation(ctx context.Context, in *RequestDelegationIn
 	if err := scoped.Within(ctx, func(ctx context.Context) error {
 		var e error
 		id, e = s.delegationStore().Insert(ctx, in, hash, expiresAt)
-		return e
+		if e != nil {
+			return e
+		}
+		return s.emitTx(ctx, in.ActorPrincipalID, "agent",
+			EventDelegationRequested, "delegation_grant", id, in.OrgID)
 	}); err != nil {
 		return "", w.Wrapf(err, "insert delegation grant")
 	}
 	w.Info("delegation requested",
 		wool.Field("grant_id", id),
 		wool.Field("expires_at", expiresAt.Format(time.RFC3339)))
-	s.emit(ctx, in.ActorPrincipalID, "agent",
-		EventDelegationRequested, "delegation_grant", id, in.OrgID)
 	return id, nil
 }
 
@@ -470,11 +474,21 @@ func (s *Service) DecideDelegation(ctx context.Context, id, orgID, grantorID str
 		// defense.
 		return nil, w.NewError("denied decisions require a reason")
 	}
+	// Audit is mandatory (the approval trail is a compliance requirement) and so
+	// commits with the decision; the notification below is best-effort (the inbox
+	// is a UX nicety).
+	auditEvent := EventDelegationApproved
+	if decision == GrantStatusDenied {
+		auditEvent = EventDelegationDenied
+	}
 	var grant *DelegationGrant
 	if err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
 		var e error
 		grant, e = s.delegationStore().Decide(ctx, id, orgID, grantorID, decision, reason)
-		return e
+		if e != nil {
+			return e
+		}
+		return s.emitTx(ctx, grantorID, "user", auditEvent, "delegation_grant", grant.ID, grant.OrgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "decide delegation")
 	}
@@ -482,14 +496,6 @@ func (s *Service) DecideDelegation(ctx context.Context, id, orgID, grantorID str
 		wool.Field("status", string(grant.Status)),
 		wool.Field("grantor_id", grantorID))
 
-	// Audit + notification fan-out. Audit is mandatory (the
-	// approval-trail is a compliance requirement); notification
-	// is best-effort (the inbox is a UX nicety).
-	auditEvent := EventDelegationApproved
-	if decision == GrantStatusDenied {
-		auditEvent = EventDelegationDenied
-	}
-	s.emit(ctx, grantorID, "user", auditEvent, "delegation_grant", grant.ID, grant.OrgID)
 	s.notifyDelegationDecision(ctx, grant.ActorPrincipalID, grant.OrgID, grant.ID,
 		string(decision), reason, grant.Action)
 	return grant, nil

@@ -32,7 +32,10 @@ func (s *burstOutboxStore) InsertAuditEvent(_ context.Context, entry AuditEntry)
 	return nil
 }
 
-func (s *burstOutboxStore) GetActiveWebhookSubscriptions(_ context.Context, _ string) ([]*WebhookSubscription, error) {
+func (s *burstOutboxStore) GetActiveWebhookSubscriptions(_ context.Context, orgID, _ string) ([]*WebhookSubscription, error) {
+	if s.sub.OrgID != orgID {
+		return nil, nil
+	}
 	return []*WebhookSubscription{s.sub}, nil
 }
 
@@ -57,13 +60,16 @@ func (s *burstOutboxStore) EnqueueJob(
 	}, nil
 }
 
+const burstOrgID = "00000000-0000-0000-0000-000000000001"
+
 func TestDurableAuditEmitterBurstHasNoQueueSaturationLoss(t *testing.T) {
 	store := &burstOutboxStore{
 		audits:     map[string]struct{}{},
 		deliveries: map[string]struct{}{},
 		jobs:       map[string]*jobsv1.EnqueueJobRequest{},
 		sub: &WebhookSubscription{
-			ID: "00000000-0000-0000-0000-000000000002",
+			ID:    "00000000-0000-0000-0000-000000000002",
+			OrgID: burstOrgID,
 		},
 	}
 	emitter, err := NewDurableAuditEmitter(store, store)
@@ -79,7 +85,7 @@ func TestDurableAuditEmitterBurstHasNoQueueSaturationLoss(t *testing.T) {
 		go func() {
 			defer wait.Done()
 			emitter.Emit(t.Context(), AuditEntry{
-				ID: NewIDString(), OrgID: "00000000-0000-0000-0000-000000000001",
+				ID: NewIDString(), OrgID: burstOrgID,
 				ActorType: "system", EventType: EventType(fmt.Sprintf("burst.event.%d", i)),
 			})
 		}()

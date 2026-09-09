@@ -369,12 +369,14 @@ func (s *Service) OverrideEntitlement(ctx context.Context, actorID string, req i
 	}
 	// entitlement_overrides is RLS-protected (Phase 2B).
 	if err := s.store.WithOrgTx(ctx, req.GetOrgId(), func(ctx context.Context) error {
-		return s.store.CreateEntitlementOverride(ctx, override)
+		if err := s.store.CreateEntitlementOverride(ctx, override); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventEntitlementOverride,
+			"entitlement_override", override.ID, req.GetOrgId())
 	}); err != nil {
 		return "", fmt.Errorf("create override: %w", err)
 	}
-	s.emit(ctx, actorID, "user", EventEntitlementOverride,
-		"entitlement_override", override.ID, req.GetOrgId())
 	return override.ID, nil
 }
 

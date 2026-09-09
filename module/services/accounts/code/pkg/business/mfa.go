@@ -139,7 +139,10 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 		if err != nil {
 			return err
 		}
-		return mfaStore.CreateMFADevice(ctx, device)
+		if err := mfaStore.CreateMFADevice(ctx, device); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventMFATOTPSetupStarted, "mfa_device", device.ID, "")
 	}); err != nil {
 		return "", "", w.Wrapf(err, "cannot load user and create MFA device")
 	}
@@ -147,8 +150,6 @@ func (s *Service) SetupTOTP(ctx context.Context, userID string) (secret string, 
 	// Build otpauth:// URI per https://github.com/google/google-authenticator/wiki/Key-Uri-Format
 	uri := fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s&digits=%d&period=%d",
 		mfaAppName, user.PrimaryEmail, secretB32, mfaAppName, totpDigits, totpPeriod)
-
-	s.emit(ctx, userID, "user", EventMFATOTPSetupStarted, "mfa_device", device.ID, "")
 
 	return secretB32, uri, nil
 }
@@ -197,8 +198,7 @@ func (s *Service) VerifyTOTP(ctx context.Context, userID, code string) error {
 				if err := mfaStore.UpdateMFADevice(ctx, device); err != nil {
 					return w.Wrapf(err, "cannot mark device as verified")
 				}
-				s.emit(ctx, userID, "user", EventMFATOTPVerified, "mfa_device", device.ID, "")
-				return nil
+				return s.emitTx(ctx, userID, "user", EventMFATOTPVerified, "mfa_device", device.ID, "")
 			}
 		}
 		return w.NewError("invalid TOTP code")
@@ -247,12 +247,13 @@ func (s *Service) RevokeMFADevice(ctx context.Context, userID, deviceID string) 
 		if device.UserID != userID {
 			return w.NewError("device does not belong to user")
 		}
-		return mfaStore.DeleteMFADevice(ctx, deviceID)
+		if err := mfaStore.DeleteMFADevice(ctx, deviceID); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventMFADeviceRevoked, "mfa_device", deviceID, "")
 	}); err != nil {
 		return w.Wrapf(err, "cannot delete MFA device")
 	}
-
-	s.emit(ctx, userID, "user", EventMFADeviceRevoked, "mfa_device", deviceID, "")
 	return nil
 }
 
@@ -290,12 +291,13 @@ func (s *Service) GenerateBackupCodes(ctx context.Context, userID string) ([]str
 		if err := mfaStore.DeleteBackupCodes(ctx, userID); err != nil {
 			return w.Wrapf(err, "cannot delete existing backup codes")
 		}
-		return mfaStore.CreateBackupCodes(ctx, codes)
+		if err := mfaStore.CreateBackupCodes(ctx, codes); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventMFABackupGenerated, "user", userID, "")
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create backup codes")
 	}
-
-	s.emit(ctx, userID, "user", EventMFABackupGenerated, "user", userID, "")
 	return plaintextCodes, nil
 }
 

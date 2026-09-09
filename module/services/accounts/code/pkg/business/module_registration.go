@@ -113,8 +113,13 @@ func (s *Service) ModuleMintRegistration(ctx context.Context, prefix, secret str
 	}
 	// Issuing a credential that grants control over request routing is a
 	// security event with no authenticated edge call behind it to carry the
-	// record, so this hop emits its own.
-	s.emit(ctx, "module:"+prefix, "system", EventModuleRegistrationMint, "module", prefix, "",
-		map[string]any{"prefix": prefix})
+	// record, so this hop emits its own — and refuses to hand the credential out
+	// when the record cannot be committed.
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.emitTx(ctx, "module:"+prefix, "system", EventModuleRegistrationMint, "module", prefix, "",
+			map[string]any{"prefix": prefix})
+	}); err != nil {
+		return "", time.Time{}, err
+	}
 	return token, expiresAt, nil
 }

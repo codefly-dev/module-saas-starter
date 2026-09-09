@@ -250,6 +250,11 @@ func (r *recordingEmitter) Emit(_ context.Context, e business.AuditEntry) {
 	r.entries = append(r.entries, e)
 }
 
+func (r *recordingEmitter) EmitTx(ctx context.Context, e business.AuditEntry) error {
+	r.Emit(ctx, e)
+	return nil
+}
+
 // TestApprovals_AuditFailureRollsBackCreate proves the approval.asked audit event
 // is written in the SAME transaction as the request insert: when the audit write
 // fails, the whole operation rolls back and no request row is persisted. Before

@@ -456,12 +456,14 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
-		return s.store.InsertDatasourceSource(ctx, source)
+		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
+			map[string]any{"repo": source.Repo})
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
-		map[string]any{"repo": source.Repo})
 	return source, nil
 }
 
@@ -614,12 +616,14 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 			return err
 		}
 		source.BoundaryNodeID = boundaryID
-		return s.store.InsertDatasourceSource(ctx, source)
+		if err := s.store.InsertDatasourceSource(ctx, source); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
+			map[string]any{"provider": source.Provider})
 	}); err != nil {
 		return nil, w.Wrapf(err, "persist datasource source")
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceAdded, "datasource", source.ID, orgID,
-		map[string]any{"provider": source.Provider})
 	return source, nil
 }
 
@@ -848,11 +852,13 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 		return errors.New("org id and source id are required")
 	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		return s.store.DeleteDatasourceSource(ctx, orgID, id)
+		if err := s.store.DeleteDatasourceSource(ctx, orgID, id); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID)
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceRemoved, "datasource", id, orgID)
 	return nil
 }
 

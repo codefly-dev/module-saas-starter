@@ -120,7 +120,7 @@ func (s *Service) BeginWebAuthnRegistration(ctx context.Context, userID string) 
 		if err != nil {
 			return w.Wrapf(err, "encrypt WebAuthn registration state")
 		}
-		return store.CreateWebAuthnCeremony(txCtx, &WebAuthnCeremony{
+		if err := store.CreateWebAuthnCeremony(txCtx, &WebAuthnCeremony{
 			ID:                   NewIDString(),
 			TokenHash:            tokenHash,
 			UserID:               userID,
@@ -128,13 +128,14 @@ func (s *Service) BeginWebAuthnRegistration(ctx context.Context, userID string) 
 			SessionDataEncrypted: encrypted,
 			ExpiresAt:            expiresAt,
 			CreatedAt:            time.Now(),
-		})
+		}); err != nil {
+			return err
+		}
+		return s.emitTx(txCtx, userID, "user", EventMFAWebAuthnRegStarted, "user", userID, "")
 	})
 	if err != nil {
 		return "", "", err
 	}
-
-	s.emit(ctx, userID, "user", EventMFAWebAuthnRegStarted, "user", userID, "")
 	return token, string(options), nil
 }
 
@@ -194,7 +195,10 @@ func (s *Service) FinishWebAuthnRegistration(ctx context.Context, userID, ceremo
 		if err := store.CreateWebAuthnCredential(txCtx, device, credential); err != nil {
 			return w.Wrapf(err, "persist WebAuthn credential")
 		}
-		return store.ConsumeWebAuthnCeremony(txCtx, ceremony.ID, now)
+		if err := store.ConsumeWebAuthnCeremony(txCtx, ceremony.ID, now); err != nil {
+			return err
+		}
+		return s.emitTx(txCtx, userID, "user", EventMFAWebAuthnRegistered, "mfa_device", device.ID, "")
 	})
 	if err != nil {
 		if errors.Is(err, ErrWebAuthnCeremonyRejected) {
@@ -203,7 +207,6 @@ func (s *Service) FinishWebAuthnRegistration(ctx context.Context, userID, ceremo
 		return nil, err
 	}
 
-	s.emit(ctx, userID, "user", EventMFAWebAuthnRegistered, "mfa_device", device.ID, "")
 	return device, nil
 }
 

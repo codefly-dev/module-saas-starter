@@ -38,10 +38,23 @@ type AuditEntry struct {
 	IdempotencyKey string
 }
 
-// AuditEmitter writes audit events. Production uses DurableAuditEmitter so the
-// audit row and every matching webhook outbox row commit atomically.
+// AuditEmitter writes audit events on a transaction it opens itself. It is the
+// path for observations a domain transaction does not own — authentication
+// outcomes, denials, reads, outcomes produced by an external provider — which
+// must survive a rolled-back domain write.
 type AuditEmitter interface {
 	Emit(ctx context.Context, entry AuditEntry)
+}
+
+// TxAuditEmitter additionally writes on the caller's ambient transaction and
+// returns the error, so a security mutation and its record commit or roll back
+// together. Every event registered DurabilityTransactional travels this path;
+// production construction rejects an emitter that does not implement it (see
+// Service.VerifyAuditWiring), and test doubles must implement it rather than
+// letting a security write fall back to best effort.
+type TxAuditEmitter interface {
+	AuditEmitter
+	EmitTx(ctx context.Context, entry AuditEntry) error
 }
 
 // DurableAuditEmitter has no process-local queue. A process crash before commit
@@ -124,7 +137,11 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 	if entry.OrgID == "" {
 		return nil
 	}
-	subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, string(entry.EventType))
+	// The tenant predicate is the event's own org, passed explicitly: the audit
+	// write runs inside its mutation's transaction, and that transaction is the
+	// control plane for platform-admin and other privileged writes, where RLS
+	// would not scope this read at all.
+	subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, entry.OrgID, string(entry.EventType))
 	if err != nil {
 		return err
 	}
@@ -395,6 +412,9 @@ func (s *Service) buildAuditEntry(ctx context.Context, actorID, actorType string
 
 // emit is the fire-and-forget audit path: the emitter owns its own transaction,
 // so the event is written after (and independently of) the caller's mutation.
+// It is reserved for DurabilityObservational events — an observation must not
+// vanish because the domain transaction it was observed under rolled back.
+// TestAuditDurability_EmitSitesMatchTheirClassification enforces that.
 func (s *Service) emit(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) {
 	if s.audit == nil {
 		return
@@ -406,8 +426,7 @@ func (s *Service) emit(ctx context.Context, actorID, actorType string, eventType
 // audit trail commits atomically with the business mutation. It MUST be called
 // inside a Within/WithOrgTx block, and its error MUST be propagated: a failed
 // audit write then aborts the mutation (fail-closed — no state change without
-// its compliance record). Emitters that don't support transactional writes
-// (test fakes) fall back to a best-effort non-transactional emit.
+// its compliance record).
 func (s *Service) emitTx(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) error {
 	if s.audit == nil {
 		return nil
@@ -418,15 +437,19 @@ func (s *Service) emitTx(ctx context.Context, actorID, actorType string, eventTy
 // emitEntryTx writes a pre-built AuditEntry on the caller's ambient transaction,
 // the same fail-closed contract as emitTx. It is the seam for callers that set
 // fields buildAuditEntry does not take positionally (e.g. IdempotencyKey).
+//
+// An emitter that cannot write on the caller's transaction is an error, not a
+// reason to downgrade to a best-effort write: silently emitting outside the
+// transaction is exactly the mutation/record split this path exists to close.
+// Production never reaches that branch — VerifyAuditWiring rejects such an
+// emitter at boot — so it fires only for a test double that skipped the
+// contract.
 func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
+	if s.auditTx != nil {
+		return s.auditTx.EmitTx(ctx, entry)
+	}
 	if s.audit == nil {
 		return nil
 	}
-	if txEmitter, ok := s.audit.(interface {
-		EmitTx(context.Context, AuditEntry) error
-	}); ok {
-		return txEmitter.EmitTx(ctx, entry)
-	}
-	s.audit.Emit(ctx, entry)
-	return nil
+	return fmt.Errorf("audit: emitter %T cannot write %q on the caller's transaction (implement TxAuditEmitter)", s.audit, entry.EventType)
 }

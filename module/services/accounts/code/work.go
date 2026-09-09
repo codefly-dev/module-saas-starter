@@ -430,6 +430,13 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	service.SetAuditEmitter(auditEmitter)
+	// Refuse to serve behind an emitter that cannot write on the caller's
+	// transaction: every security mutation commits its audit row and webhook
+	// fan-out inside its own transaction, and an emitter without EmitTx would let
+	// those mutations succeed unrecorded.
+	if err := service.VerifyAuditWiring(); err != nil {
+		return nil, err
+	}
 
 	var auditExportWorker *jobs.Worker
 	if auditSinkMode == auditSinkBoth {

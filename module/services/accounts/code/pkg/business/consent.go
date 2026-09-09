@@ -102,17 +102,19 @@ func (s *Service) AcceptTerms(
 		return wool.Get(ctx).NewError("terms version is not current")
 	}
 	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.SetUserConsent(
+		if err := s.store.SetUserConsent(
 			ctx,
 			userID,
 			version,
 			consentContext,
 			time.Now(),
-		)
+		); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventConsentTerms, "user", userID, "")
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, userID, "user", EventConsentTerms, "user", userID, "")
 	return nil
 }
 
@@ -132,12 +134,14 @@ func (s *Service) UpdateConsentPreferences(
 		{Purpose: "marketing", Granted: marketing, PolicyVersion: policyVersion, UpdatedAt: now},
 	}
 	if err := s.store.As(Identity{UserID: userID}).Within(ctx, func(ctx context.Context) error {
-		return s.store.SetUserConsentPreferences(
+		if err := s.store.SetUserConsentPreferences(
 			ctx, userID, preferences, region, consentContext,
-		)
+		); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventConsentPrefs, "user", userID, "")
 	}); err != nil {
 		return err
 	}
-	s.emit(ctx, userID, "user", EventConsentPrefs, "user", userID, "")
 	return nil
 }

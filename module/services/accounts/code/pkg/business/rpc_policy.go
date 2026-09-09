@@ -54,7 +54,7 @@ type RPCPolicy struct {
 	Description     string
 	Scopes          []string
 	Tier            RPCPolicyTier
-	EmitsAudit      bool
+	EmitsAudit      bool // declared by the method policy; see policyEmitsAudit
 	Streaming       bool
 	MethodPolicy    *policyv1.MethodPolicy
 	PolicyError     string
@@ -225,6 +225,12 @@ func descriptorPolicyTier(policy *policyv1.MethodPolicy) RPCPolicyTier {
 	}
 }
 
+// policyEmitsAudit reports whether the method policy DECLARES an audit
+// emission. It is a statement of intent read off the policy, not evidence that
+// any event was committed durably with the mutation — an event can be declared
+// here and never emitted, or emitted outside the mutation's transaction. What
+// the record actually guarantees comes from the event's registered durability
+// and the gate over the emit sites (see audit_registry.go and AUTHZ.md).
 func policyEmitsAudit(policy *policyv1.MethodPolicy) bool {
 	return policy != nil && policy.GetAudit() != nil &&
 		policy.GetAudit().GetEmission() != policyv1.AuditEmission_AUDIT_EMISSION_NONE &&

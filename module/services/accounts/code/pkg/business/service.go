@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/jobs"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -29,6 +30,7 @@ type Service struct {
 	billingURLs               BillingRedirects // server-owned Stripe return destinations
 	appBaseURL                string           // public URL of the frontend, used in email bodies
 	audit                     AuditEmitter
+	auditTx                   TxAuditEmitter // set when audit also writes on the caller's tx; required in production
 	entitlements              EntitlementChecker
 	membership                MembershipInvalidator
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
@@ -338,6 +340,23 @@ func (s *Service) publicBaseURL(ctx context.Context) string {
 
 func (s *Service) SetAuditEmitter(a AuditEmitter) {
 	s.audit = a
+	s.auditTx, _ = a.(TxAuditEmitter)
+}
+
+// VerifyAuditWiring fails startup when the wired audit emitter cannot write on
+// the caller's transaction. Every security mutation commits its audit row and
+// webhook fan-out inside its own transaction; an emitter without EmitTx would
+// let those mutations succeed with no durable record and no fan-out, which is
+// precisely the state a security-write path must not be able to reach. Boot
+// refuses it rather than discovering it as a hole in the trail later.
+func (s *Service) VerifyAuditWiring() error {
+	if s.audit == nil {
+		return errors.New("verify audit wiring: no audit emitter is wired; security mutations would commit unrecorded")
+	}
+	if s.auditTx == nil {
+		return fmt.Errorf("verify audit wiring: audit emitter %T does not implement TxAuditEmitter; security mutations could not commit their audit record atomically", s.audit)
+	}
+	return nil
 }
 
 func (s *Service) SetEntitlementChecker(e EntitlementChecker) {
@@ -436,8 +455,19 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 	}
 	// Personal-org bootstrap: see CreateOrganization comment — at
 	// this moment the org doesn't exist; WithControlPlane is correct.
+	//
+	// The registration is recorded here rather than alongside the role
+	// assignment below: this transaction always runs, so the record does not
+	// hinge on a built-in admin role existing. Its fan-out is empty by
+	// construction — the org is being created in this transaction, so nothing
+	// can yet be subscribed to it — which is what lets an org-scoped event be
+	// recorded from control-plane scope (the job platform admits tenant outbox
+	// work from tenant traffic only).
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.CreateOrganization(ctx, org)
+		if err := s.store.CreateOrganization(ctx, org); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, userID, "user", EventUserRegistered, "user", userID, orgID)
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create default organization")
 	}
@@ -471,8 +501,6 @@ func (s *Service) RegisterUser(ctx context.Context, input *gen.RegisterUserReque
 			break
 		}
 	}
-
-	s.emit(ctx, userID, "user", EventUserRegistered, "user", userID, orgID)
 
 	return &gen.RegisterUserResponse{User: user, Identity: identity}, nil
 }
@@ -557,12 +585,19 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 		Slug:    slug,
 		OwnerId: ownerID,
 	}
+	// The audit row commits with the organization inside this control-plane
+	// transaction. Its webhook fan-out is empty by construction — the org is being
+	// created here, so no endpoint can yet be subscribed to it — which is what
+	// lets an org-scoped event be recorded from control-plane scope at all: the
+	// job platform admits tenant outbox work from tenant traffic only.
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.CreateOrganization(ctx, org)
+		if err := s.store.CreateOrganization(ctx, org); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, ownerID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, ownerID, "user", EventOrgCreated, "organization", org.Id, org.Id)
 	return &gen.CreateOrganizationResponse{Organization: org}, nil
 }
 
@@ -608,11 +643,13 @@ func (s *Service) CreateTeam(ctx context.Context, actorID string, req *gen.Creat
 			}
 			team.Path = parentPath + "/" + slug
 		}
-		return s.store.CreateTeam(ctx, team)
+		if err := s.store.CreateTeam(ctx, team); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventTeamCreated, "team", team.Id, req.OrgId)
 	}); err != nil {
 		return nil, err
 	}
-	s.emit(ctx, actorID, "user", EventTeamCreated, "team", team.Id, req.OrgId)
 	return &gen.CreateTeamResponse{Team: team}, nil
 }
 
@@ -651,7 +688,12 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 		BuiltIn:     false,
 		OrgId:       req.OrgId,
 	}
-	wrap := func(ctx context.Context) error { return s.store.CreateRole(ctx, role) }
+	wrap := func(ctx context.Context) error {
+		if err := s.store.CreateRole(ctx, role); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, actorID, "user", EventRoleCreated, "role", role.Id, req.OrgId)
+	}
 	var err error
 	if req.OrgId == "" {
 		err = s.store.WithControlPlane(ctx, wrap)
@@ -661,7 +703,6 @@ func (s *Service) CreateRole(ctx context.Context, actorID string, req *gen.Creat
 	if err != nil {
 		return nil, err
 	}
-	s.emit(ctx, actorID, "user", EventRoleCreated, "role", role.Id, req.OrgId)
 	return &gen.CreateRoleResponse{Role: role}, nil
 }
 
@@ -678,7 +719,12 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 		OrgId:       req.OrgId,
 		Scope:       req.Scope,
 	}
-	wrap := func(ctx context.Context) error { return s.store.AssignRole(ctx, assignment) }
+	wrap := func(ctx context.Context) error {
+		if err := s.store.AssignRole(ctx, assignment); err != nil {
+			return err
+		}
+		return s.emitTx(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
+	}
 	var err error
 	if req.OrgId == "" {
 		err = s.store.WithControlPlane(ctx, wrap)
@@ -688,6 +734,5 @@ func (s *Service) AssignRole(ctx context.Context, req *gen.AssignRoleRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	s.emit(ctx, req.SubjectId, "user", EventRoleAssigned, "role", req.RoleId, req.OrgId)
 	return &gen.AssignRoleResponse{Assignment: assignment}, nil
 }
