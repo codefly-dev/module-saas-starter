@@ -67,6 +67,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"domain_events":                        {selectRows: true}, // request traffic reads its own tenant's events; publishes via SECURITY DEFINER
 	"entitlement_overrides":                {selectRows: true, insertRows: true, updateRows: true},
 	"invitations":                          {selectRows: true, insertRows: true, updateRows: true},
+	"membership_integrity_findings":        {}, // operator repair evidence; no request-traffic authority at all
 	"org_generic_settings":                 {selectRows: true, insertRows: true, updateRows: true},
 	"org_identity_providers":               {selectRows: true, insertRows: true, updateRows: true},
 	"org_settings":                         {selectRows: true, insertRows: true, updateRows: true},
