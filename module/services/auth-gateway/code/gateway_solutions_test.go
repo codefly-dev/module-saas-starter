@@ -703,6 +703,33 @@ func TestGateway_Solution_Register_CarriesCachedRevision(t *testing.T) {
 
 // A registry refusal is relayed as a conflict, not as a success or a generic
 // 502: the registrant has to re-read and retry, and must be told so.
+// A replica that has not seen a registration cannot name its revision, so the
+// registry refuses the write — recoverably. While that refusal shared a code
+// with the tombstone refusal, which must never be retried, the gateway retried
+// neither, and a legitimate upstream change 409'd until the next reconcile tick.
+func TestGateway_Solution_ColdCacheRecoversRegistrationChange(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	registerSolutionUpstream(t, gw, "audit")
+	registry := solutionRegistryFake(t, gw)
+	before := len(registry.puts)
+
+	// The state right after a restart, or a registration that landed on another
+	// replica moments ago.
+	gw.solutions.mu.Lock()
+	gw.solutions.records = map[string]*accountsv1.SolutionRegistration{}
+	gw.solutions.mu.Unlock()
+
+	postSolutionRegistration(t, gw, "/solutions/_register",
+		`{"id":"audit","upstream":"http://10.0.0.9:8080"}`, http.StatusOK)
+
+	require.Equal(t, before+2, len(registry.puts),
+		"the refused write is retried once, against a freshly read snapshot")
+	require.Nil(t, registry.puts[before].ExpectedRevision,
+		"the cold attempt can name no revision")
+	require.NotNil(t, registry.puts[before+1].ExpectedRevision,
+		"the retry names the revision it just read")
+}
+
 func TestGateway_Solution_Register_RelaysConflict(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
 	solutionRegistryFake(t, gw).putErr = grpcstatus.Error(codes.Aborted, "stale")

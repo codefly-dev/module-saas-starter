@@ -37,7 +37,11 @@ func solutionRegistryError(err error) error {
 	case errors.Is(err, business.ErrSolutionRegistrationStale):
 		return status.Error(codes.Aborted, "solution registration revision is stale")
 	case errors.Is(err, business.ErrSolutionRegistrationRevisionRequired):
-		return status.Error(codes.FailedPrecondition, "solution registration revision required")
+		// Aborted, not FailedPrecondition: the caller can make this write valid by
+		// re-reading and naming the revision. Sharing a code with the tombstone
+		// refusal — which must never be retried — left a client unable to tell the
+		// recoverable case from the permanent one, so it could retry neither.
+		return status.Error(codes.Aborted, "solution registration revision required")
 	case errors.Is(err, business.ErrSolutionRegistrationTombstoned):
 		return status.Error(codes.FailedPrecondition, "solution registration is tombstoned")
 	case errors.Is(err, business.ErrSolutionPublisherMismatch):

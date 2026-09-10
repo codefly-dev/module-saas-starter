@@ -335,7 +335,7 @@ func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request)
 			ContractVersion: body.ContractVersion,
 		},
 	}
-	g.submitSolutionPut(w, r, req, body.Reactivate)
+	g.submitSolutionPut(w, r, req, body)
 }
 
 // handleSolutionFrontendRegister serves the frontend half. The frontend cannot
@@ -361,7 +361,7 @@ func (g *Gateway) handleSolutionFrontendRegister(w http.ResponseWriter, r *http.
 			ContractVersion: body.ContractVersion,
 		},
 	}
-	g.submitSolutionPut(w, r, req, body.Reactivate)
+	g.submitSolutionPut(w, r, req, body)
 }
 
 // newSolutionPut builds the part of a registry write both halves share,
@@ -378,9 +378,12 @@ func (g *Gateway) newSolutionPut(body *solutionRegistrationBody) *accountsv1.Put
 
 // submitSolutionPut sends the write and renders its outcome.
 func (g *Gateway) submitSolutionPut(
-	w http.ResponseWriter, r *http.Request, req *accountsv1.PutSolutionRegistrationRequest, reactivate bool,
+	w http.ResponseWriter, r *http.Request, req *accountsv1.PutSolutionRegistrationRequest,
+	body *solutionRegistrationBody,
 ) {
-	record, err := g.solutions.write(r.Context(), req, reactivate)
+	record, err := g.solutions.write(r.Context(), req, func() *int64 {
+		return g.solutionExpectedRevision(body)
+	})
 	if err != nil {
 		writeSolutionRegistryError(w, err)
 		return

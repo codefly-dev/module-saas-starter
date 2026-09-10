@@ -130,6 +130,28 @@ const SNAPSHOT_TTL_MS = 5_000;
  */
 const FALLBACK_SNAPSHOT_MAX_AGE_MS = 120_000;
 
+/**
+ * A reported lease longer than this is a misreport, not a policy. The ceiling
+ * is a safety bound, so it must not be settable to "effectively never" by the
+ * far side: `{"leaseSeconds": 1e999}` parses to Infinity, and an unchecked
+ * `> 0` test would accept it and silently restore unbounded staleness.
+ */
+const MAX_REPORTED_LEASE_MS = 3_600_000;
+
+/**
+ * How long the gateway gets to answer a snapshot read. It serves this from its
+ * own in-memory cache, so it is fast or it is wedged. Matches the bound
+ * src/proxy.ts puts on the same class of loopback lookup.
+ */
+const REGISTRY_READ_TIMEOUT_MS = 2_000;
+
+/**
+ * How long a registration write gets. Longer than the read because the gateway
+ * brokers it on to accounts under its own 10s budget and may retry once; the
+ * point is that it is finite, not that it is tight.
+ */
+const REGISTRY_WRITE_TIMEOUT_MS = 30_000;
+
 interface RegistrySnapshot {
 	revision: number;
 	solutions: SolutionManifest[];
@@ -203,6 +225,34 @@ interface GatewayRegistryEntry {
  * boundary since it was validated, and re-validating is cheaper than trusting
  * that a stored blob is still well-formed.
  */
+// Whether the fallback has already been reported. A dropped field would
+// otherwise degrade in complete silence, which is how the mirrored constant
+// this replaced went wrong in the first place.
+let reportedMissingLease = false;
+
+/**
+ * The staleness ceiling this snapshot carries, from the lease the gateway says
+ * it grants. Clamped and finite-checked: the far side supplies it, so it is
+ * input, not configuration.
+ */
+function reportedMaxAgeMs(leaseSeconds: unknown): number {
+	if (
+		typeof leaseSeconds === "number" &&
+		Number.isFinite(leaseSeconds) &&
+		leaseSeconds > 0
+	) {
+		return Math.min(leaseSeconds * 1_000, MAX_REPORTED_LEASE_MS);
+	}
+	if (!reportedMissingLease) {
+		reportedMissingLease = true;
+		console.error(
+			"solution registry: snapshot carried no usable leaseSeconds; " +
+				"bounding staleness by the local fallback instead",
+		);
+	}
+	return FALLBACK_SNAPSHOT_MAX_AGE_MS;
+}
+
 function manifestsFromSnapshot(payload: unknown): {
 	revision: number;
 	maxAgeMs: number;
@@ -237,10 +287,7 @@ function manifestsFromSnapshot(payload: unknown): {
 	manifests.sort((a, b) => (a.nav.order ?? 0) - (b.nav.order ?? 0));
 	return {
 		revision: typeof revision === "number" ? revision : 0,
-		maxAgeMs:
-			typeof leaseSeconds === "number" && leaseSeconds > 0
-				? leaseSeconds * 1_000
-				: FALLBACK_SNAPSHOT_MAX_AGE_MS,
+		maxAgeMs: reportedMaxAgeMs(leaseSeconds),
 		solutions: manifests,
 	};
 }
@@ -259,6 +306,7 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
 		response = await fetch(`${origin}${GATEWAY_REGISTRY_PATH}`, {
 			headers: { [INTERNAL_TOKEN_HEADER]: token, accept: "application/json" },
 			cache: "no-store",
+			signal: AbortSignal.timeout(REGISTRY_READ_TIMEOUT_MS),
 		});
 	} catch (err) {
 		console.error("solution registry: gateway unreachable", err);
@@ -293,7 +341,13 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
  */
 async function snapshot(): Promise<RegistrySnapshot | null> {
 	const cached = globalForRegistry.__solutionSnapshot ?? null;
-	if (cached !== null && Date.now() < cached.expiresAt) return cached;
+	if (
+		cached !== null &&
+		Date.now() < cached.expiresAt &&
+		Date.now() - cached.fetchedAt < cached.maxAgeMs
+	) {
+		return cached;
+	}
 	if (!globalForRegistry.__solutionSnapshotInFlight) {
 		globalForRegistry.__solutionSnapshotInFlight = fetchSnapshot()
 			.then((fresh) => {
@@ -354,6 +408,7 @@ async function writeToGateway(
 				"content-type": "application/json",
 			},
 			cache: "no-store",
+			signal: AbortSignal.timeout(REGISTRY_WRITE_TIMEOUT_MS),
 		});
 	} catch (err) {
 		console.error("solution registry: gateway unreachable", err);

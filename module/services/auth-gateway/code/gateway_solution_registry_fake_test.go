@@ -62,6 +62,10 @@ func (f *fakeSolutionRegistry) Put(
 		if record.GetTombstonedAt() != nil && req.ExpectedRevision == nil {
 			return nil, grpcstatus.Error(codes.FailedPrecondition, "solution registration is tombstoned")
 		}
+		if record.GetTombstonedAt() == nil && req.ExpectedRevision == nil &&
+			fakeSolutionHalfDiffers(record, req) {
+			return nil, grpcstatus.Error(codes.Aborted, "solution registration revision required")
+		}
 	}
 	f.revision++
 	if record == nil {
@@ -165,4 +169,24 @@ func fakeSolutionStatus(record *accountsv1.SolutionRegistration, now time.Time) 
 	default:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
 	}
+}
+
+// fakeSolutionHalfDiffers reports whether a write replaces a half the record
+// already holds with different content — the case the registry refuses unless
+// the caller names the revision it believes it is replacing.
+func fakeSolutionHalfDiffers(
+	record *accountsv1.SolutionRegistration, req *accountsv1.PutSolutionRegistrationRequest,
+) bool {
+	if half := req.GetFrontend(); half != nil {
+		held := record.GetFrontend()
+		return held != nil && (held.GetManifest() != half.GetManifest() ||
+			held.GetContractVersion() != half.GetContractVersion())
+	}
+	if half := req.GetBackend(); half != nil {
+		held := record.GetBackend()
+		return held != nil && (held.GetUpstream() != half.GetUpstream() ||
+			held.GetServiceAlias() != half.GetServiceAlias() ||
+			held.GetContractVersion() != half.GetContractVersion())
+	}
+	return false
 }

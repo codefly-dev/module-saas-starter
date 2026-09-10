@@ -332,6 +332,96 @@ describe("registry snapshot", () => {
     expect(await loadSolutions()).toBe("unavailable");
   });
 
+  // Unbounded, a wedged gateway never settles the fetch. Readers coalesce onto
+  // that promise and `__solutionSnapshotInFlight` is only cleared in .finally,
+  // so one half-open connection stalls every later read in the process.
+  it("bounds every registry request so a wedged gateway cannot stall the process", async () => {
+    const seen: Array<RequestInit | undefined> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        seen.push(init);
+        return snapshotResponse([
+          { id: "a", status: "active", manifest: manifestFor("a", 1) },
+        ]);
+      }),
+    );
+
+    await loadSolutions();
+    const manifest = parseManifest(JSON.parse(manifestFor("a", 1)));
+    if (!manifest) throw new Error("fixture failed to parse");
+    await registerSolution(manifest);
+
+    expect(seen.length).toBeGreaterThanOrEqual(2);
+    for (const init of seen) {
+      expect(
+        init?.signal,
+        "every registry request must carry an abort signal",
+      ).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  // The TTL and the ceiling are independent windows. Serving on the TTL alone
+  // is only safe while the ceiling is the larger of the two, which nothing
+  // guarantees once the gateway reports the lease.
+  it("honours a lease shorter than the snapshot TTL", async () => {
+    const shortLease = new Response(
+      JSON.stringify({
+        revision: 7,
+        leaseSeconds: 1,
+        solutions: [
+          { id: "a", status: "active", manifest: manifestFor("a", 1) },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(shortLease)
+        .mockRejectedValue(new Error("unreachable")),
+    );
+    expect(await loadSolutions()).toHaveLength(1);
+
+    // Past the 1s lease but still inside the 5s TTL: the fast path must not
+    // serve it just because the TTL has not elapsed.
+    const g = globalThis as Record<string, unknown>;
+    g.__solutionSnapshot = {
+      ...(g.__solutionSnapshot as object),
+      fetchedAt: Date.now() - 2_000,
+      expiresAt: Date.now() + 3_000,
+    };
+    expect(await loadSolutions()).toBe("unavailable");
+  });
+
+  // The ceiling is a safety bound, so the far side must not be able to set it
+  // to "effectively never".
+  it("clamps an out-of-range reported lease", async () => {
+    // 1e999 parses to Infinity; an unchecked `> 0` accepts it and the ceiling
+    // silently never trips again.
+    const absurd = new Response(
+      `{"revision":7,"leaseSeconds":1e999,"solutions":[{"id":"a","status":"active","manifest":${JSON.stringify(manifestFor("a", 1))}}]}`,
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(absurd)
+        .mockRejectedValue(new Error("unreachable")),
+    );
+    expect(await loadSolutions()).toHaveLength(1);
+
+    const g = globalThis as Record<string, unknown>;
+    g.__solutionSnapshot = {
+      ...(g.__solutionSnapshot as object),
+      expiresAt: 0,
+      fetchedAt: Date.now() - 3_600_001,
+    };
+    expect(await loadSolutions()).toBe("unavailable");
+  });
+
   it("drops a stored manifest that no longer validates", async () => {
     vi.stubGlobal(
       "fetch",

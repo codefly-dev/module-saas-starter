@@ -315,21 +315,27 @@ func (c *solutionRegistryCache) expectedRevisionFor(id string, reactivate bool) 
 // retried once against a freshly read snapshot. A second refusal is returned to
 // the caller: two publishers are racing, and picking a winner by looping is
 // worse than telling one of them to try again.
+// retoken re-derives the compare-and-swap token after a refresh. It is supplied
+// by the caller rather than reconstructed here so the initial token and the
+// retry token are, structurally, the same rule: a second copy of that rule is
+// exactly how a retry once handed a plain heartbeat a tombstone's revision.
 func (c *solutionRegistryCache) write(
-	ctx context.Context, req *accountsv1.PutSolutionRegistrationRequest, reactivate bool,
+	ctx context.Context, req *accountsv1.PutSolutionRegistrationRequest, retoken func() *int64,
 ) (*accountsv1.SolutionRegistration, error) {
 	if c.client == nil {
 		return nil, errSolutionRegistryUnconfigured
 	}
 	record, err := c.client.Put(ctx, req)
-	if status.Code(err) == codes.Aborted && req.ExpectedRevision != nil {
+	// Aborted is the registry saying "your view is behind". That covers a token
+	// that lost a race and, just as importantly, no token at all because this
+	// replica had not seen the record yet — the case a refresh actually fixes.
+	// A tombstone refusal is FailedPrecondition and deliberately does not land
+	// here, so retrying cannot resurrect a removed registration.
+	if status.Code(err) == codes.Aborted {
 		if refreshErr := c.refresh(ctx); refreshErr != nil {
 			return nil, err
 		}
-		// Re-derive under the same rule the handler used. Adopting the freshly
-		// read revision unconditionally would hand a plain heartbeat the
-		// tombstone's own revision and turn it into an authorized reactivation.
-		req.ExpectedRevision = c.expectedRevisionFor(req.GetSolutionId(), reactivate)
+		req.ExpectedRevision = retoken()
 		record, err = c.client.Put(ctx, req)
 	}
 	if err != nil {
