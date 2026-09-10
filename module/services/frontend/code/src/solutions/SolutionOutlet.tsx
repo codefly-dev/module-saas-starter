@@ -45,7 +45,7 @@ const SEALED_SHARE_CONFIG = { singleton: true, requiredVersion: false } as const
 // lose singleton resolution to a remote that bundles a higher one, splitting the
 // instance the dedup exists to keep single. The `kit-shared-version` test pins
 // this to the packages' actual versions so a bump can't drift it silently.
-export const CODEFLY_KIT_VERSION = "0.1.0";
+export const CODEFLY_KIT_VERSION = "0.2.0";
 
 // @codefly-dev/saas-sdk tracks the published accounts/connect API contract, not
 // the UI kit's release cadence, so it versions independently of the kit. Its

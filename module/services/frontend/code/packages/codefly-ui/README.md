@@ -95,16 +95,26 @@ sealing is that there is a single shared instance at all. See invariant 5 in
 **Version discipline.** The kit is a Module-Federation singleton: at runtime the
 solution shares the host's single instance. A solution must therefore pin an
 `@codefly-dev/ui` that is semver-compatible with the version this host ships.
-`@codefly-dev/ui`'s own `version` is the coupling point — it bumps when the kit's
-public surface changes, and CI publishes that exact version from the release
-commit, so the published bytes are the bytes the host serves. Pin the version
-the host module release ships (the two move together on every release tag).
+`@codefly-dev/ui`'s own `version` is the coupling point — it bumps whenever the
+kit's published content changes, and CI publishes that exact version from the
+release commit, so the published bytes are the bytes the host serves. Pin the
+version the host module release ships (the two move together on every release
+tag).
 
-The release publish enforces this rather than trusting it: it compares the
-freshly built tarball's integrity against the version already on the registry. A
-release that didn't touch the kit re-publishes nothing (same bytes → skip); a
-release that changed the kit *without* bumping `version` fails the publish, so a
-stale `@codefly-dev/ui` can never silently ship to solutions.
+CI enforces this rather than trusting it, in two places. On every pull request,
+`scripts/ci/kit-version.mjs` compares the kit's content against the newest
+release tag — the baseline of what the registry serves — and fails when it
+changed under an unchanged `version`. At release time the publish compares the
+freshly built tarball's integrity against the version already on the registry: a
+release that didn't touch the kit re-publishes nothing (same bytes → skip), and a
+release that changed the kit *without* bumping `version` fails rather than
+overwrite an immutable version, so a stale `@codefly-dev/ui` can never silently
+ship to solutions.
+
+The version is co-versioned with `@codefly/saas-ui` and with the host's
+`CODEFLY_KIT_VERSION` (`src/solutions/SolutionOutlet.tsx`); the
+`kit-shared-version` test pins all three together, so one bump means three
+edits.
 
 ## Skin resolution
 
