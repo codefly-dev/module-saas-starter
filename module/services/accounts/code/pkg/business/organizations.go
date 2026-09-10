@@ -174,7 +174,7 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 		if targetIsAdmin && adminCount <= 1 {
 			return w.NewError("cannot remove the last admin/owner from the organization")
 		}
-		// Dependent access before the parent row: migration 123 made team_members
+		// Dependent access before the parent row: migration 127 made team_members
 		// a child of organization_members with ON DELETE CASCADE, so deleting the
 		// membership first would leave this statement nothing to find and its
 		// reported count permanently zero. Removing explicitly keeps that count

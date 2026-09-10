@@ -90,7 +90,7 @@ func (s *PostgresStore) GetTeamPath(ctx context.Context, teamID string) (string,
 // row rather than from an argument, and the join to organization_members makes
 // the parent membership a precondition of the write itself: an ineligible
 // target writes no row instead of relying on an earlier check in some caller.
-// The composite foreign keys behind it (migration 123) hold the same line for
+// The composite foreign keys behind it (migration 127) hold the same line for
 // writers that never come through here at all.
 func (s *PostgresStore) AddTeamMember(ctx context.Context, teamID string, userID string, role string) error {
 	w := wool.Get(ctx).In("AddTeamMember")

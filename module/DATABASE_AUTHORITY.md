@@ -130,7 +130,7 @@ inserts may target only a custom role owned by the current tenant.
 
 Row security decides which team's rows a transaction may reach. It says nothing
 about whether the person being added belongs to the team's organization, so
-until migration `123_team_membership_parent_org` a caller authorized to
+until migration `127_team_membership_parent_org` a caller authorized to
 administer a team could install any user in the database as a team
 administrator.
 

@@ -78,13 +78,13 @@ WITH orphan AS (
 )
 INSERT INTO team_membership_quarantine (team_id, org_id, user_id, role, joined_at, reason)
 SELECT team_id, org_id, user_id, role, joined_at,
-       'no parent-organization membership when migration 123 introduced the invariant'
+       'no parent-organization membership when migration 127 introduced the invariant'
 FROM orphan;
 
 -- ADD COLUMN took an ACCESS EXCLUSIVE lock that this file holds until it
 -- commits, so the backfill above and this scan are a write outage on a large
 -- team_members. The two constraint validations are deliberately not part of
--- it — see migration 124.
+-- it — see migration 128.
 ALTER TABLE team_members ALTER COLUMN org_id SET NOT NULL;
 
 -- The referencing side of an ON DELETE CASCADE needs its own index, or every
@@ -97,11 +97,11 @@ ALTER TABLE team_members
     ADD CONSTRAINT team_members_parent_org_membership_fkey
         FOREIGN KEY (org_id, user_id) REFERENCES organization_members (org_id, user_id) ON DELETE CASCADE NOT VALID;
 
--- Declared NOT VALID, and validated by migration 124 rather than here. Each
+-- Declared NOT VALID, and validated by migration 128 rather than here. Each
 -- migration file runs as one implicit transaction, so validating in this file
 -- would hold the ACCESS EXCLUSIVE lock above across two more full scans of
 -- team_members. A NOT VALID constraint still rejects every new write, so the
--- invariant is live from this migration on; 124 only settles the rows that
+-- invariant is live from this migration on; 128 only settles the rows that
 -- predate it, under a lock that does not block reads or writes.
 
 -- The single-column team reference is subsumed by the composite one.

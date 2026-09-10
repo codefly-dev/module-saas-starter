@@ -410,7 +410,7 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "domain_events" || relation == "event_subscriptions" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
-			// team_membership_quarantine records what migration 123 removed. Only
+			// team_membership_quarantine records what migration 127 removed. Only
 			// the migration writes it, and it is evidence of a repair — the
 			// runtime reads it and must not be able to edit the record away.
 			if relation == "team_membership_quarantine" {

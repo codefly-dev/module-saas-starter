@@ -11,16 +11,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Migration 123 makes a team membership a child of an organization membership.
+// Migration 127 makes a team membership a child of an organization membership.
 // A deployed database can already hold rows the new invariant forbids, and the
 // repair for those is the part no later state reveals: they are recorded and
 // removed, never fixed by granting the parent membership the organization
-// never issued. This replays the real migration files — down to the pre-123
+// never issued. This replays the real migration files — down to the pre-127
 // shape, seed an orphan a deployed database could hold, then up.
-func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
-	down := migrationSQL(t, "123_team_membership_parent_org.down.sql")
-	up := migrationSQL(t, "123_team_membership_parent_org.up.sql")
-	validate := migrationSQL(t, "124_team_membership_parent_org_validate.up.sql")
+func TestMigration127QuarantinesOrphanTeamMemberships(t *testing.T) {
+	down := migrationSQL(t, "127_team_membership_parent_org.down.sql")
+	up := migrationSQL(t, "127_team_membership_parent_org.up.sql")
+	validate := migrationSQL(t, "128_team_membership_parent_org_validate.up.sql")
 
 	orgID := uuid.NewString()
 	memberID := uuid.NewString()
@@ -48,10 +48,10 @@ func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
 		for _, id := range []string{memberID, outsiderID} {
 			mustExec(t, ctx, conn,
 				`INSERT INTO users (uuid, primary_email) VALUES ($1, $2)`,
-				id, fmt.Sprintf("%s@migration-123.test", id))
+				id, fmt.Sprintf("%s@migration-127.test", id))
 		}
 		mustExec(t, ctx, conn,
-			`INSERT INTO organizations (id, name, slug, owner_id) VALUES ($1, 'Acme', 'acme-migration-123', $2)`,
+			`INSERT INTO organizations (id, name, slug, owner_id) VALUES ($1, 'Acme', 'acme-migration-127', $2)`,
 			orgID, memberID)
 		mustExec(t, ctx, conn,
 			`INSERT INTO organization_members (org_id, user_id, role) VALUES ($1, $2, 'owner')`,
@@ -59,7 +59,7 @@ func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
 		mustExec(t, ctx, conn,
 			`INSERT INTO teams (id, org_id, name, slug, path) VALUES ($1, $2, 'Example Team', 'example-team', 'example-team')`,
 			teamID, orgID)
-		// The pre-123 shape accepts both: only the second has a parent membership.
+		// The pre-127 shape accepts both: only the second has a parent membership.
 		mustExec(t, ctx, conn,
 			`INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, 'admin'), ($1, $3, 'member')`,
 			teamID, outsiderID, memberID)
@@ -120,7 +120,7 @@ func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
 			SELECT COUNT(*) FROM team_membership_quarantine
 			WHERE team_id = $1 AND user_id = $2`, teamID, outsiderID).Scan(&surviving))
 		require.Equal(t, 1, surviving,
-			"rolling back migration 123 must leave the quarantine record standing")
+			"rolling back migration 127 must leave the quarantine record standing")
 		return nil
 	})
 	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
