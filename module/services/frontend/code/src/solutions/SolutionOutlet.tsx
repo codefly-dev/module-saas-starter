@@ -52,7 +52,7 @@ export const CODEFLY_KIT_VERSION = "0.2.0";
 // shared version MUST still match the package's real version (same
 // `kit-shared-version` invariant, checked per package rather than against one
 // shared constant).
-export const CODEFLY_SAAS_SDK_VERSION = "0.2.0";
+export const CODEFLY_SAAS_SDK_VERSION = "0.2.1";
 
 // The co-versioned kit + module-UI packages, sealed into the Module-Federation
 // scope. This is the single source of truth the `kit-shared-version` test
