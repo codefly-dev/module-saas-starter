@@ -14,6 +14,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
+	"accounts/pkg/relationcatalog"
 )
 
 // authedCtx returns a context that GetServiceInfo will treat as
@@ -60,7 +61,10 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 			"table %q must declare fail_closed=true", tbl.Table)
 		require.NotEmpty(t, tbl.Table)
 		require.Contains(t,
-			[]string{"control_plane", "direct", "join", "polymorphic", "self_referential"},
+			[]string{
+				"control_plane", "direct", "function_scoped", "join",
+				"polymorphic", "self_referential",
+			},
 			tbl.PolicyShape,
 			"table %q has unexpected policy_shape %q", tbl.Table, tbl.PolicyShape)
 	}
@@ -78,6 +82,35 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 	}
 	require.True(t, adminWildcard,
 		"built-in 'admin' role must hold wildcard *:* permission")
+}
+
+// TestIntrospection_RLSCatalogCoversEveryProtectedRelation — drift guard. The
+// published catalog is a projection of the store schema's authority inventory,
+// which the infrastructure suite checks against a live database. Anything the
+// catalog omits or invents is therefore a projection bug rather than a stale
+// hand-maintained list.
+func TestIntrospection_RLSCatalogCoversEveryProtectedRelation(t *testing.T) {
+	resp, err := testService.GetServiceInfo(authedCtx(), &gen.GetServiceInfoRequest{})
+	require.NoError(t, err)
+
+	var expected []string
+	for relation, authority := range relationcatalog.Authorities {
+		if authority.Scope.RequiresRLS() {
+			expected = append(expected, relation)
+		}
+	}
+	sort.Strings(expected)
+
+	published := make([]string, 0, len(resp.Capabilities.RlsTables))
+	for _, table := range resp.Capabilities.RlsTables {
+		published = append(published, table.Table)
+
+		authority := relationcatalog.Authorities[table.Table]
+		require.Equal(t, authority.PolicyShape, table.PolicyShape, table.Table)
+		require.Equal(t, authority.ScopeColumn, table.ScopeColumn, table.Table)
+		require.Equal(t, authority.Notes, table.Notes, table.Table)
+	}
+	require.Equal(t, expected, published)
 }
 
 // TestIntrospection_NoMissingPolicy — drift guard. The RPC list and policy are
