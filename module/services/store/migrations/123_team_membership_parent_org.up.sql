@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS "team_membership_quarantine" (
 ALTER TABLE team_membership_quarantine ENABLE ROW LEVEL SECURITY;
 ALTER TABLE team_membership_quarantine FORCE  ROW LEVEL SECURITY;
 
+-- The table outlives a rollback (see the down migration), so re-applying this
+-- migration meets an existing policy.
+DROP POLICY IF EXISTS team_membership_quarantine_tenant ON team_membership_quarantine;
+
 CREATE POLICY team_membership_quarantine_tenant ON team_membership_quarantine
     USING (org_id::text = current_setting('app.current_org_id', true))
     WITH CHECK (org_id::text = current_setting('app.current_org_id', true));
@@ -77,6 +81,10 @@ SELECT team_id, org_id, user_id, role, joined_at,
        'no parent-organization membership when migration 123 introduced the invariant'
 FROM orphan;
 
+-- ADD COLUMN took an ACCESS EXCLUSIVE lock that this file holds until it
+-- commits, so the backfill above and this scan are a write outage on a large
+-- team_members. The two constraint validations are deliberately not part of
+-- it — see migration 124.
 ALTER TABLE team_members ALTER COLUMN org_id SET NOT NULL;
 
 -- The referencing side of an ON DELETE CASCADE needs its own index, or every
@@ -89,12 +97,12 @@ ALTER TABLE team_members
     ADD CONSTRAINT team_members_parent_org_membership_fkey
         FOREIGN KEY (org_id, user_id) REFERENCES organization_members (org_id, user_id) ON DELETE CASCADE NOT VALID;
 
--- Declared NOT VALID and validated separately: enforcement of new writes begins
--- with the constraint, so a deployment whose team_members is too large to scan
--- inside one release window can carry the two VALIDATE statements into a
--- follow-up migration without weakening anything in the meantime.
-ALTER TABLE team_members VALIDATE CONSTRAINT team_members_team_org_fkey;
-ALTER TABLE team_members VALIDATE CONSTRAINT team_members_parent_org_membership_fkey;
+-- Declared NOT VALID, and validated by migration 124 rather than here. Each
+-- migration file runs as one implicit transaction, so validating in this file
+-- would hold the ACCESS EXCLUSIVE lock above across two more full scans of
+-- team_members. A NOT VALID constraint still rejects every new write, so the
+-- invariant is live from this migration on; 124 only settles the rows that
+-- predate it, under a lock that does not block reads or writes.
 
 -- The single-column team reference is subsumed by the composite one.
 ALTER TABLE team_members DROP CONSTRAINT team_members_team_id_fkey;

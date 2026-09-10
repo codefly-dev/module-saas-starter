@@ -20,6 +20,7 @@ import (
 func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
 	down := migrationSQL(t, "123_team_membership_parent_org.down.sql")
 	up := migrationSQL(t, "123_team_membership_parent_org.up.sql")
+	validate := migrationSQL(t, "124_team_membership_parent_org_validate.up.sql")
 
 	orgID := uuid.NewString()
 	memberID := uuid.NewString()
@@ -33,6 +34,7 @@ func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
 				// A failure between down and up would leave the shared schema
 				// without the invariant for every later test in the package.
 				mustExec(t, ctx, conn, up)
+				mustExec(t, ctx, conn, validate)
 			}
 			mustExec(t, ctx, conn, `DELETE FROM team_membership_quarantine WHERE org_id = $1`, orgID)
 			mustExec(t, ctx, conn, `DELETE FROM organizations WHERE id = $1`, orgID)
@@ -63,6 +65,7 @@ func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
 			teamID, outsiderID, memberID)
 
 		mustExec(t, ctx, conn, up)
+		mustExec(t, ctx, conn, validate)
 	})
 	restored = true
 
@@ -102,5 +105,27 @@ func TestMigration123QuarantinesOrphanTeamMemberships(t *testing.T) {
 			orgID, outsiderID).Scan(&membership))
 		require.Zero(t, membership, "the repair must never manufacture a parent membership")
 		return nil
+	})
+
+	// Rolling back must not erase the record. The memberships it describes are
+	// already deleted and `up` never restores them, so dropping the table with
+	// the schema would destroy the only evidence that they ever existed.
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		restored = false
+		mustExec(t, ctx, conn, down)
+	})
+	controlPlaneTx(t, func(ctx context.Context, tx pgx.Tx) error {
+		var surviving int
+		require.NoError(t, tx.QueryRow(ctx, `
+			SELECT COUNT(*) FROM team_membership_quarantine
+			WHERE team_id = $1 AND user_id = $2`, teamID, outsiderID).Scan(&surviving))
+		require.Equal(t, 1, surviving,
+			"rolling back migration 123 must leave the quarantine record standing")
+		return nil
+	})
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		mustExec(t, ctx, conn, up)
+		mustExec(t, ctx, conn, validate)
+		restored = true
 	})
 }

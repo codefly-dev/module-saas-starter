@@ -152,7 +152,10 @@ predate the invariant were never repaired by manufacturing the missing parent â€
 they were moved to `team_membership_quarantine`. That record carries no
 request-relation grant and is read through the control plane; it still forces
 row level security under a tenant policy, because a table with a tenant column
-and no policy is indistinguishable from one whose isolation was forgotten.
+and no policy is indistinguishable from one whose isolation was forgotten. It
+also outlives a rollback of the migration that filled it â€” the memberships it
+describes are already deleted and no migration restores them, so dropping the
+record with the schema would destroy the only evidence they existed.
 
 ## Generic job platform
 

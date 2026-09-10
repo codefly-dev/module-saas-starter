@@ -1,7 +1,7 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
-import { ConnectError } from "@connectrpc/connect";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createColumnHelper,
@@ -29,6 +29,20 @@ import { teamMutations } from "../service/mutations";
 import { teamQueries } from "../service/queries";
 
 const col = createColumnHelper<TeamMembership>();
+
+// Only an ineligible target carries a message written for whoever is reading it.
+// Handlers return every other failure unwrapped, so its text is server internals
+// — reporting it verbatim would put that in a toast.
+export function addMemberErrorMessage(error: unknown): string {
+	const connectError = ConnectError.from(error);
+	if (
+		connectError.code === Code.FailedPrecondition &&
+		connectError.rawMessage
+	) {
+		return connectError.rawMessage;
+	}
+	return "Failed to add member";
+}
 
 interface TeamMembersPanelProps {
 	orgId: string;
@@ -72,10 +86,7 @@ export function TeamMembersPanel({
 			queryClient.invalidateQueries({ queryKey: ["team-members", teamId] });
 			setNewUserId("");
 		},
-		onError: (error) =>
-			toast.error(
-				ConnectError.from(error).rawMessage || "Failed to add member",
-			),
+		onError: (error) => toast.error(addMemberErrorMessage(error)),
 	});
 
 	const removeMutation = useMutation({

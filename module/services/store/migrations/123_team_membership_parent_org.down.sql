@@ -14,4 +14,8 @@ ALTER TABLE team_members DROP COLUMN org_id;
 
 ALTER TABLE teams DROP CONSTRAINT teams_id_org_id_key;
 
-DROP TABLE team_membership_quarantine;
+-- team_membership_quarantine is deliberately NOT dropped. It records memberships
+-- this migration deleted, and `up` never restores them: dropping the table on
+-- rollback would destroy the only evidence of what was removed, which is the one
+-- thing the record exists to prevent. It has no foreign keys precisely so it can
+-- outlive the schema that produced it.
