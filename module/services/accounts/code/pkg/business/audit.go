@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
-	"google.golang.org/grpc/metadata"
 )
 
 // AuditEntry is the domain representation of an audit event. EventType is the
@@ -445,9 +445,12 @@ func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, spec Audi
 	return out, err
 }
 
-// buildAuditEntry assembles an AuditEntry, detecting impersonation context from
-// gRPC metadata headers injected by the auth sidecar (x-is-impersonated,
-// x-impersonated-by).
+// buildAuditEntry assembles an AuditEntry. actorID is the effective subject the
+// action ran as; when that subject is not the person behind the request, the
+// entry additionally records the real actor, so an impersonated action is
+// attributable to both. Both ids come from the typed request identity the
+// authentication interceptors project — never from a separate metadata
+// convention, which is how the two representations drifted apart before.
 func (s *Service) buildAuditEntry(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) AuditEntry {
 	entry := AuditEntry{
 		ActorID:    actorID,
@@ -460,13 +463,9 @@ func (s *Service) buildAuditEntry(ctx context.Context, actorID, actorType string
 	if len(payload) > 0 {
 		entry.Payload = payload[0]
 	}
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if vals := md.Get("x-is-impersonated"); len(vals) > 0 && vals[0] == "true" {
-			entry.IsImpersonated = true
-			if by := md.Get("x-impersonated-by"); len(by) > 0 {
-				entry.ImpersonatedBy = by[0]
-			}
-		}
+	if identity, ok := auth.VerifiedRequestIdentity(ctx); ok && identity.Impersonated() {
+		entry.IsImpersonated = true
+		entry.ImpersonatedBy = identity.RealActorID()
 	}
 	return entry
 }

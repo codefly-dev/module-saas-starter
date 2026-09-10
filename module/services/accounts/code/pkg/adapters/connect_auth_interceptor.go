@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"connectrpc.com/connect"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
@@ -25,6 +26,29 @@ var forwardedIdentityHeaders = []string{
 }
 
 const publicOriginHeader = "X-Codefly-Public-Origin"
+
+// restIdentityHeaderMatcher forwards the caller's bearer credential and the
+// canonical identity headers across the REST transcoding hop into gRPC
+// metadata, so a request that arrives over REST reaches this interceptor
+// carrying the same fields a direct Connect or gRPC request carries. Without it
+// the hop keeps only the six wool header mappings, which drops the acting-as
+// subject, the session and the assurance evidence — REST would authorize a
+// support session as the actor instead of as the target.
+//
+// Forwarding is not trust: everything named here is still stripped before
+// admission unless the request also carried a valid gateway token, exactly as on
+// the direct transports.
+func restIdentityHeaderMatcher(header string) (string, bool) {
+	if strings.EqualFold(header, "Authorization") {
+		return "authorization", true
+	}
+	for _, forwarded := range forwardedIdentityHeaders {
+		if strings.EqualFold(header, forwarded) {
+			return strings.ToLower(forwarded), true
+		}
+	}
+	return runtime.DefaultHeaderMatcher(header)
+}
 
 type connectPolicyInterceptor struct {
 	getMinter func() auth.JWTMinter
@@ -102,7 +126,11 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	}
 
 	if trustedForwarded && headers.Get("X-User-Id") != "" {
-		return stampForwardedHTTPIdentity(ctx, headers), nil
+		forwarded, err := stampForwardedHTTPIdentity(ctx, headers)
+		if err != nil {
+			return ctx, connect.NewError(connect.CodePermissionDenied, errors.New("forwarded identity is malformed"))
+		}
+		return forwarded, nil
 	}
 	var minter auth.JWTMinter
 	if i.getMinter != nil {
@@ -126,19 +154,28 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 		return ctx, connect.NewError(connect.CodeUnauthenticated, errors.New("invalid or expired access token"))
 	}
 
-	ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
-	ctx = auth.WithVerifiedActor(ctx, identity.Actor)
+	ctx = stampRequestIdentity(ctx, auth.RequestIdentityOf(identity), identity.Assurance())
 	ctx = withScopedRoles(ctx, identity.ScopedRoles)
 	ctx = withScopedRolesTruncated(ctx, identity.ScopedRolesTruncated)
 	// Locally verified access token: an interactive session by construction.
 	// API keys are exchanged at the perimeter through ValidateAPIKey and never
 	// reach VerifyAccess, so this branch cannot be a machine credential.
 	ctx = withCredentialKind(ctx, credentialKindSession)
-	return auth.WithVerifiedSessionID(ctx, identity.SessionID), nil
+	return ctx, nil
 }
 
-func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) context.Context {
-	ctx = stampVerifiedIdentity(ctx, headers.Get("X-User-Id"), headers.Get("X-Org-Id"), assuranceFromTransport(
+func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) (context.Context, error) {
+	identity, err := auth.ParseRequestIdentity(
+		headers.Get("X-User-Id"),
+		headers.Get("X-Acting-As-User-Id"),
+		headers.Get("X-Org-Id"),
+		headers.Get("X-Session-Id"),
+	)
+	if err != nil {
+		return ctx, err
+	}
+	identity.Delegation = auth.ParseActor(headers.Get("X-Act"))
+	ctx = stampRequestIdentity(ctx, identity, assuranceFromTransport(
 		headers.Get("X-Authentication-Methods"),
 		headers.Get("X-Auth-Time"),
 		headers.Get("X-Assurance-Level"),
@@ -151,7 +188,5 @@ func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) contex
 	if scopedRoles := headers.Get("X-Scoped-Roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
-	ctx = withScopedRolesTruncated(ctx, headers.Get("X-Scoped-Roles-Truncated") == "true")
-	ctx = auth.WithVerifiedActor(ctx, auth.ParseActor(headers.Get("X-Act")))
-	return auth.WithVerifiedSessionIDString(ctx, headers.Get("X-Session-Id"))
+	return withScopedRolesTruncated(ctx, headers.Get("X-Scoped-Roles-Truncated") == "true"), nil
 }

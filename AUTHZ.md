@@ -30,6 +30,68 @@
                  Postgres
 ```
 
+## Request identity — real actor vs effective subject
+
+Every layer below asks its question about *a* principal, so there is exactly one
+typed answer to "which principal": `auth.RequestIdentity`
+(`pkg/auth/request_identity.go`). It carries two ids, because authorization and
+accountability are different questions:
+
+| Field | Answers | Used by |
+|---|---|---|
+| `EffectiveSubject` | "whose authority does this request run under?" | tenant membership, scoped roles, resource authority, the user-scoped RLS context (`app.current_user_id`) |
+| `RealActor` | "who is this request attributable to?" | audit (`impersonated_by`), and the platform-authority gates, which withhold platform authority whenever the two differ |
+
+For an ordinary session the two are the same id and nothing needs a special
+case. They diverge only under **impersonation**: `PlatformAdminService.Impersonate`
+mints a token whose `sub` is the admin and whose `acting` claim is the target, so
+a support engineer can act inside a tenant **without joining it** — the
+membership lookup resolves for the target, not for them.
+
+`Delegation` is a third, separate field. The RFC 8693 `act` chain names a service
+acting *on behalf of* the subject and can nest; impersonation names one user an
+admin is *viewing as* and cannot. Neither is an authorization grant on its own.
+
+### One projection, every transport
+
+The identity is installed only by an authentication interceptor that either
+verified a token locally or verified the gateway credential on a forwarded
+request — never from caller-controlled headers, which are stripped
+(`forwardedIdentityHeaders`) when that credential is absent.
+
+| Path | Source of the pair |
+|---|---|
+| Direct Connect / gRPC bearer | `Identity.UserID` + `Identity.ActingAsUserID` from the verified JWT |
+| Gateway → Connect | `X-User-Id` + `X-Acting-As-User-Id` |
+| Gateway → gRPC | `x-user-id` + `x-acting-as-user-id` |
+| Gateway → REST | the same headers, carried across the grpc-gateway transcoding hop by `restIdentityHeaderMatcher`, then projected by the Connect interceptor |
+| Billing HTTP extensions | the same two paths as Connect |
+
+All of them converge on `stampRequestIdentity`, which makes the **effective
+subject** the wool principal and the verified database scope. `requireAuth` and
+`callerID` therefore return the effective subject, and `buildAuditEntry` reads
+the real actor off the same typed identity. A forwarded acting-as value that
+does not parse is refused (`PermissionDenied`) rather than admitted as "not
+impersonating", which would silently run the request with the admin's own
+authority.
+
+### What impersonation deliberately does not grant
+
+- **No platform authority, in either direction.** `platformRole` (adapters) and
+  `Service.requirePlatformRole` (business) both resolve to nothing while a
+  request is impersonated. The target's platform grants are not the admin's to
+  borrow, and the admin's own grants do not follow them into someone else's
+  session — including the `super_admin` bypass inside `requireOrgAdmin`,
+  `requireBillingAdmin` and `requireTeamAdmin`.
+- **No nesting.** `Impersonate` sits behind that same platform gate, so an
+  impersonated session cannot mint a further impersonation token.
+- **No inactive target.** The target must be an active account, so a support
+  session cannot outlive the account's own lifecycle.
+- **A short, separately capped lifetime.** `Config.ImpersonationTokenTTL` caps
+  the access token independently of the ordinary TTL, and the token carries no
+  refresh half — exiting impersonation means falling back to the admin's own
+  session, which impersonation never touched.
+
 ## Layer 1 — Policy gates (handler-level)
 
 **Where:** `pkg/adapters/auth.go`, `pkg/adapters/connect_auth_interceptor.go`,

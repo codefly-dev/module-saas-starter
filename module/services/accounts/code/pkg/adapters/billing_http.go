@@ -180,7 +180,11 @@ func authenticateBillingHTTPRequest(svc *business.Service, r *http.Request) (con
 	}
 	ctx := r.Context()
 	if validGatewayToken(r.Header.Get("X-Codefly-Gateway-Token")) && r.Header.Get("X-User-Id") != "" {
-		ctx = stampForwardedHTTPIdentity(ctx, r.Header)
+		forwarded, err := stampForwardedHTTPIdentity(ctx, r.Header)
+		if err != nil {
+			return ctx, "", "", err
+		}
+		ctx = forwarded
 	} else {
 		minter := svc.JWTMinter()
 		if minter == nil {
@@ -203,7 +207,7 @@ func authenticateBillingHTTPRequest(svc *business.Service, r *http.Request) (con
 		if identity == nil {
 			return ctx, "", "", errors.New("access token is invalid")
 		}
-		ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
+		ctx = stampRequestIdentity(ctx, auth.RequestIdentityOf(identity), identity.Assurance())
 	}
 	tenantID, userID, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok {

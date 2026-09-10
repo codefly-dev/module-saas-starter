@@ -3,7 +3,10 @@ export type OrgRole = "owner" | "admin" | "member";
 
 export interface ImpersonationInfo {
 	isImpersonating: boolean;
+	/** The admin the session stays attributable to — the token's `sub`. */
 	impersonatorId?: string;
+	/** The user the session acts as — the `acting` claim. */
+	subjectId?: string;
 }
 
 export interface SessionContext {
@@ -55,17 +58,17 @@ export function extractRoles(
 	return { platformRole, orgRole };
 }
 
+// detectImpersonation reads the one claim that means impersonation: `acting`
+// names the effective subject and `sub` stays the real actor. The `act`
+// delegation chain is deliberately not consulted — it names a service acting on
+// behalf of the subject, which is a different relationship and would light up
+// the banner on ordinary delegated traffic.
 export function detectImpersonation(accessToken: string): ImpersonationInfo {
 	const payload = decodeJWTPayload(accessToken);
-	const acting = payload.acting as string | undefined;
-	const act = payload.act as { sub?: string } | undefined;
-	const impersonatedBy = payload.impersonated_by as string | undefined;
-	const sub = payload.sub as string | undefined;
-
-	return {
-		isImpersonating: !!acting || !!act?.sub || !!impersonatedBy,
-		impersonatorId: (acting ? sub : undefined) ?? act?.sub ?? impersonatedBy,
-	};
+	const acting = typeof payload.acting === "string" ? payload.acting : "";
+	if (!acting) return { isImpersonating: false };
+	const sub = typeof payload.sub === "string" ? payload.sub : undefined;
+	return { isImpersonating: true, impersonatorId: sub, subjectId: acting };
 }
 
 const REFRESH_TOKEN_KEY = "codefly_refresh_token";
