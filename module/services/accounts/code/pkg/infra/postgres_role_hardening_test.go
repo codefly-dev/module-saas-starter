@@ -4,7 +4,6 @@ import (
 	"context"
 	"regexp"
 	"sort"
-	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -265,7 +264,7 @@ func TestTenantRoleRelationGrantsAreExact(t *testing.T) {
 func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		for relation, authority := range relationcatalog.Authorities {
+		for relation, authority := range relationcatalog.All() {
 			want := relationPrivileges{
 				selectRows: true,
 				insertRows: true,
@@ -408,7 +407,7 @@ func TestWebhookProjectionRoleHasProjectionOnlyAuthority(t *testing.T) {
 	}
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		for relation := range relationcatalog.Authorities {
+		for relation := range relationcatalog.All() {
 			var got relationPrivileges
 			var truncateRows bool
 			require.NoError(t, tx.QueryRow(ctx, `
@@ -523,12 +522,12 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 		}
 		require.NoError(t, rows.Err())
 
-		expected := make([]string, 0, len(relationcatalog.Authorities)+len(externalRelationAuthorities))
-		for relation := range relationcatalog.Authorities {
+		expected := make([]string, 0, len(relationcatalog.All())+len(externalRelationAuthorities))
+		for relation := range relationcatalog.All() {
 			expected = append(expected, relation)
 		}
 		for relation, authority := range externalRelationAuthorities {
-			_, baseRelation := relationcatalog.Authorities[relation]
+			_, baseRelation := relationcatalog.All()[relation]
 			require.False(t, baseRelation, "%s cannot be both Accounts-owned and externally owned by %s", relation, authority.owner)
 			expected = append(expected, relation)
 
@@ -564,9 +563,9 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 		}
 		sort.Strings(expected)
 		require.Equal(t, expected, actual, "every public table needs an explicit authority classification")
-		require.Len(t, appTenantRelationPrivileges, len(relationcatalog.Authorities),
+		require.Len(t, appTenantRelationPrivileges, len(relationcatalog.All()),
 			"scope and privilege inventories must cover the same relations")
-		for relation := range relationcatalog.Authorities {
+		for relation := range relationcatalog.All() {
 			_, ok := appTenantRelationPrivileges[relation]
 			require.True(t, ok, relation)
 		}
@@ -577,7 +576,7 @@ func TestDatabaseRelationAuthorityInventoryIsComplete(t *testing.T) {
 func TestDatabaseRelationRLSMatchesAuthorityScope(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		for relation, authority := range relationcatalog.Authorities {
+		for relation, authority := range relationcatalog.All() {
 			var enabled, forced bool
 			var policyCount int
 			err := tx.QueryRow(ctx, `
@@ -625,15 +624,19 @@ func TestActivePoliciesDoNotTrustSessionBypassSettings(t *testing.T) {
 }
 
 // TestPublishedRLSPolicyDetailMatchesLivePolicies gates the per-relation
-// editorial detail the api service publishes through GetServiceInfo. The scope
-// inventory alone says a relation is protected; this checks that the column
-// each entry names as its scope is a real column of that relation and is
-// actually what the live policy compares, and that a relation documented as
-// control-plane-only really admits nothing to request traffic.
+// editorial detail the api service publishes through GetServiceInfo, which
+// claims fail_closed for every relation it lists.
+//
+// Scope inventory and policy presence alone cannot support that claim: a
+// relation keeps forced RLS and a non-zero policy count when a migration adds a
+// permissive USING (true) policy beside the scoped one. So this checks EVERY
+// policy expression individually — each must compare the published scope column
+// or admit nothing — rather than asking whether the column appears somewhere in
+// the relation's policies.
 func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		for relation, authority := range relationcatalog.Authorities {
+		for relation, authority := range relationcatalog.All() {
 			if !authority.Scope.RequiresRLS() {
 				require.Empty(t, authority.PolicyShape, relation)
 				require.Empty(t, authority.ScopeColumn, relation)
@@ -641,55 +644,85 @@ func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 			}
 			require.NotEmpty(t, authority.PolicyShape, relation)
 
-			rows, err := tx.Query(ctx, `
-				SELECT COALESCE(pg_get_expr(policy.polqual, policy.polrelid), ''),
-				       COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')
-				FROM pg_policy policy
-				WHERE policy.polrelid = $1::regclass`, relation)
-			require.NoError(t, err, relation)
-			var expressions []string
-			for rows.Next() {
-				var using, check string
-				require.NoError(t, rows.Scan(&using, &check), relation)
-				expressions = append(expressions, using, check)
-			}
-			rows.Close()
-			require.NoError(t, rows.Err(), relation)
+			policies := livePolicies(ctx, t, tx, relation)
+			require.NotEmpty(t, policies, relation)
 
-			if authority.PolicyShape == relationcatalog.ShapeControlPlane {
+			switch authority.PolicyShape {
+			case relationcatalog.ShapeControlPlane:
 				require.Empty(t, authority.ScopeColumn, relation)
-				for _, expression := range expressions {
-					if expression != "" {
+				for _, policy := range policies {
+					for _, expression := range policy.expressions {
 						require.Equal(t, "false", expression,
-							"%s is published as control-plane-only but its policy admits rows", relation)
+							"%s is published as control-plane-only but a policy admits rows", relation)
 					}
 				}
-				continue
+			case relationcatalog.ShapeFunctionScoped:
+				require.Empty(t, authority.ScopeColumn, relation)
+				for _, policy := range policies {
+					require.NotContains(t, []string{"r", "*"}, policy.command,
+						"%s is published as function-scoped but a policy grants request traffic reads", relation)
+				}
+			default:
+				require.NotEmpty(t, authority.ScopeColumn, relation)
+				// pg_attribute rather than information_schema.columns: the latter
+				// hides relations the current role holds no privilege on, and the
+				// job platform grants the control plane none.
+				var columnExists bool
+				require.NoError(t, tx.QueryRow(ctx, `
+					SELECT EXISTS (
+					    SELECT 1 FROM pg_attribute
+					    WHERE attrelid = $1::regclass
+					      AND attname = $2
+					      AND attnum > 0
+					      AND NOT attisdropped
+					)`, relation, authority.ScopeColumn,
+				).Scan(&columnExists), relation)
+				require.True(t, columnExists,
+					"%s publishes scope column %q, which the relation does not have", relation, authority.ScopeColumn)
+
+				reference := regexp.MustCompile(
+					`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(authority.ScopeColumn) + `([^A-Za-z0-9_]|$)`)
+				for _, policy := range policies {
+					for _, expression := range policy.expressions {
+						require.True(t, expression == "false" || reference.MatchString(expression),
+							"%s publishes scope column %q, but one of its policies neither compares it nor denies: %s",
+							relation, authority.ScopeColumn, expression)
+					}
+				}
 			}
-
-			require.NotEmpty(t, authority.ScopeColumn, relation)
-			// pg_attribute rather than information_schema.columns: the latter
-			// hides relations the current role holds no privilege on, and the
-			// job platform grants the control plane none.
-			var columnExists bool
-			require.NoError(t, tx.QueryRow(ctx, `
-				SELECT EXISTS (
-				    SELECT 1 FROM pg_attribute
-				    WHERE attrelid = $1::regclass
-				      AND attname = $2
-				      AND attnum > 0
-				      AND NOT attisdropped
-				)`, relation, authority.ScopeColumn,
-			).Scan(&columnExists), relation)
-			require.True(t, columnExists,
-				"%s publishes scope column %q, which the relation does not have", relation, authority.ScopeColumn)
-
-			reference := regexp.MustCompile(
-				`(^|[^A-Za-z0-9_])` + regexp.QuoteMeta(authority.ScopeColumn) + `([^A-Za-z0-9_]|$)`)
-			require.True(t, reference.MatchString(strings.Join(expressions, " ")),
-				"%s publishes scope column %q, which none of its policies compare",
-				relation, authority.ScopeColumn)
 		}
 		return nil
 	}))
+}
+
+type livePolicy struct {
+	command     string
+	expressions []string
+}
+
+func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string) []livePolicy {
+	t.Helper()
+	rows, err := tx.Query(ctx, `
+		SELECT policy.polcmd::text,
+		       COALESCE(pg_get_expr(policy.polqual, policy.polrelid), ''),
+		       COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')
+		FROM pg_policy policy
+		WHERE policy.polrelid = $1::regclass`, relation)
+	require.NoError(t, err, relation)
+	defer rows.Close()
+
+	var policies []livePolicy
+	for rows.Next() {
+		var command, using, check string
+		require.NoError(t, rows.Scan(&command, &using, &check), relation)
+		policy := livePolicy{command: command}
+		for _, expression := range []string{using, check} {
+			if expression != "" {
+				policy.expressions = append(policy.expressions, expression)
+			}
+		}
+		policies = append(policies, policy)
+	}
+	require.NoError(t, rows.Err(), relation)
+	return policies
 }

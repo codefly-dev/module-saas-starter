@@ -63,7 +63,7 @@ func TestIntrospection_GetServiceInfo(t *testing.T) {
 		require.Contains(t,
 			[]string{
 				"control_plane", "direct", "function_scoped", "join",
-				"polymorphic", "self_referential",
+				"polymorphic", "self_referential", "union",
 			},
 			tbl.PolicyShape,
 			"table %q has unexpected policy_shape %q", tbl.Table, tbl.PolicyShape)
@@ -93,8 +93,9 @@ func TestIntrospection_RLSCatalogCoversEveryProtectedRelation(t *testing.T) {
 	resp, err := testService.GetServiceInfo(authedCtx(), &gen.GetServiceInfoRequest{})
 	require.NoError(t, err)
 
+	inventory := relationcatalog.All()
 	var expected []string
-	for relation, authority := range relationcatalog.Authorities {
+	for relation, authority := range inventory {
 		if authority.Scope.RequiresRLS() {
 			expected = append(expected, relation)
 		}
@@ -105,7 +106,7 @@ func TestIntrospection_RLSCatalogCoversEveryProtectedRelation(t *testing.T) {
 	for _, table := range resp.Capabilities.RlsTables {
 		published = append(published, table.Table)
 
-		authority := relationcatalog.Authorities[table.Table]
+		authority := inventory[table.Table]
 		require.Equal(t, authority.PolicyShape, table.PolicyShape, table.Table)
 		require.Equal(t, authority.ScopeColumn, table.ScopeColumn, table.Table)
 		require.Equal(t, authority.Notes, table.Notes, table.Table)
@@ -320,6 +321,8 @@ func TestIntrospection_UnauthenticatedRedacts(t *testing.T) {
 	}
 	require.NotEmpty(t, anonResp.Capabilities.Rpcs,
 		"anonymous still gets non-privileged RPCs")
+	require.Empty(t, anonResp.Capabilities.RlsTables,
+		"anonymous response must not map the schema: relation names, scope columns, and the notes describing each boundary's mechanism")
 }
 
 var _ = business.ServiceVersion // keep business import alive

@@ -35,20 +35,26 @@ const ServiceVersion = "0.4.0"
 // in rpcDescriptions until P1-DOC-001 makes source comments compiler-readable.
 //
 // The redaction pass at the end strips platform_admin / mfa-tier
-// RPCs for unauthenticated callers (the catalog is exposed publicly
-// at GET /v1/.well-known/service-info; no need to advertise the
-// privileged attack surface to anonymous probes).
+// RPCs for unauthenticated callers, and the RLS catalog with them
+// (the catalog is exposed publicly at GET /v1/.well-known/service-info;
+// no need to advertise the privileged attack surface to anonymous
+// probes). The relation inventory names every user-scoped relation and
+// the column that scopes it, and its notes describe the mechanisms
+// behind each boundary — evidence for an authenticated auditor, a
+// schema map for an anonymous one. Authenticate for it.
 func (s *Service) GetServiceInfo(ctx context.Context, _ *gen.GetServiceInfoRequest) (*gen.GetServiceInfoResponse, error) {
 	rpcs := buildRPCList()
+	rlsTables := serviceRLSTables
 	if !callerIsAuthenticated(ctx) {
 		rpcs = redactPrivilegedRPCs(rpcs)
+		rlsTables = nil
 	}
 	return &gen.GetServiceInfoResponse{
 		Capabilities: &gen.ServiceCapabilities{
 			Info:        serviceInfo,
 			Rpcs:        rpcs,
 			Permissions: servicePermissions,
-			RlsTables:   serviceRLSTables,
+			RlsTables:   rlsTables,
 			Scopes:      serviceScopes,
 		},
 	}, nil
@@ -333,8 +339,9 @@ func redactPrivilegedRPCs(in []*gen.RPCInfo) []*gen.RPCInfo {
 // a scope that requires row-level security is enabled, forced, and carries at
 // least one policy, which is what fail_closed claims.
 var serviceRLSTables = func() []*gen.RLSPolicyInfo {
-	out := make([]*gen.RLSPolicyInfo, 0, len(relationcatalog.Authorities))
-	for table, authority := range relationcatalog.Authorities {
+	inventory := relationcatalog.All()
+	out := make([]*gen.RLSPolicyInfo, 0, len(inventory))
+	for table, authority := range inventory {
 		if !authority.Scope.RequiresRLS() {
 			continue
 		}

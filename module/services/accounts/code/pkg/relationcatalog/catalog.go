@@ -45,6 +45,8 @@ const (
 	ShapePolymorphic = "polymorphic"
 	// ShapeSelfReferential scopes a relation by its own primary key.
 	ShapeSelfReferential = "self_referential"
+	// ShapeUnion accepts several alternative scopes; the notes name them.
+	ShapeUnion = "union"
 	// ShapeControlPlane denies every row to request traffic; all access runs
 	// under the audited control-plane role.
 	ShapeControlPlane = "control_plane"
@@ -74,10 +76,23 @@ func (s Scope) RequiresRLS() bool {
 	}
 }
 
-// Authorities is the complete public-relation inventory. A relation missing
-// here fails the infrastructure completeness gate, which compares this map to
-// PostgreSQL's own catalog.
-var Authorities = map[string]Authority{
+// All returns the complete public-relation inventory, keyed by relation name.
+// A relation missing from it fails the infrastructure completeness gate, which
+// compares the inventory to PostgreSQL's own catalog.
+//
+// The returned map is a copy. The published catalog projects the inventory once
+// at process start, so a mutation of the backing map would desynchronize what
+// the service publishes from what the infrastructure suite validates, with
+// neither failing.
+func All() map[string]Authority {
+	out := make(map[string]Authority, len(authorities))
+	for relation, authority := range authorities {
+		out[relation] = authority
+	}
+	return out
+}
+
+var authorities = map[string]Authority{
 	// Platform-wide catalogs. Seeded and administered centrally, read by
 	// request traffic under exact grants.
 	"audit_event_types":       {Scope: ScopeGlobal},
@@ -134,16 +149,13 @@ var Authorities = map[string]Authority{
 		Notes: "Read-only tenant policy; the control plane bumps the revision that invalidates live sessions.",
 	},
 	"organization_members": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
-	"organizations": {
-		Scope: ScopeTenant, PolicyShape: ShapeSelfReferential, ScopeColumn: "id",
-		Notes: "The organization row is its own scope.",
-	},
+	"organizations":        {Scope: ScopeTenant, PolicyShape: ShapeSelfReferential, ScopeColumn: "id"},
 	"principal_authorization_revisions": {
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
 		Notes: "Read-only tenant policy; the control plane bumps the revision that invalidates live sessions.",
 	},
 	"principals": {
-		Scope: ScopeTenant, PolicyShape: ShapePolymorphic, ScopeColumn: "org_id",
+		Scope: ScopeTenant, PolicyShape: ShapeUnion, ScopeColumn: "org_id",
 		Notes: "Agent principals are tenant-owned; a user principal (org_id IS NULL) is visible to itself and to members of the caller's organization.",
 	},
 	"record_shares": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
@@ -157,14 +169,14 @@ var Authorities = map[string]Authority{
 	},
 	"roles": {
 		Scope: ScopeTenant, PolicyShape: ShapePolymorphic, ScopeColumn: "org_id",
-		Notes: "Built-in roles (org_id IS NULL) are globally readable; tenant rows are scoped.",
+		Notes: "Built-in roles (org_id IS NULL) globally readable; tenant rows scoped.",
 	},
 	"scope_grants":  {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"scope_nodes":   {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"subscriptions": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"team_members": {
 		Scope: ScopeTenant, PolicyShape: ShapeJoin, ScopeColumn: "team_id",
-		Notes: "The join walks team_id to teams.org_id.",
+		Notes: "JOIN walks team_id → teams.org_id",
 	},
 	"team_membership_quarantine": {
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
@@ -181,7 +193,7 @@ var Authorities = map[string]Authority{
 	},
 	"webhook_deliveries": {
 		Scope: ScopeTenant, PolicyShape: ShapeJoin, ScopeColumn: "subscription_id",
-		Notes: "The join walks subscription_id to webhook_subscriptions.org_id.",
+		Notes: "JOIN walks subscription_id → webhook_subscriptions.org_id",
 	},
 	"webhook_subscriptions": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"work_context_replay": {
@@ -211,11 +223,11 @@ var Authorities = map[string]Authority{
 	},
 	"webauthn_ceremonies": {
 		Scope: ScopeUser, PolicyShape: ShapeDirect, ScopeColumn: "user_id",
-		Notes: "Short-lived server-side ceremony state; login ceremonies are bound to an MFA login transaction.",
+		Notes: "Short-lived server-side state; login ceremonies are bound to an MFA login transaction.",
 	},
 	"webauthn_credentials": {
 		Scope: ScopeUser, PolicyShape: ShapeDirect, ScopeColumn: "user_id",
-		Notes: "The complete credential record is Vault-encrypted; the public credential ID is unique.",
+		Notes: "Complete credential record is Vault-encrypted; public credential ID is unique.",
 	},
 
 	// Pre-authentication relations. Read and written before any session
@@ -226,13 +238,13 @@ var Authorities = map[string]Authority{
 	},
 	"waitlist_entries": {
 		Scope: ScopePreAuth, PolicyShape: ShapeControlPlane,
-		Notes: "Public writes and platform administration run as bounded service operations under the control-plane role.",
+		Notes: "Public writes and platform administration use bounded service operations under the control-plane role.",
 	},
 
 	// Generic job platform.
 	"job_messages": {
-		Scope: ScopeJob, PolicyShape: ShapeFunctionScoped, ScopeColumn: "organization_id",
-		Notes: "Insert-only policy keyed on scope_kind (organization_id or subject_id). Request traffic holds no relation grant: it enqueues through the scoped SECURITY DEFINER operation and never reads payloads.",
+		Scope: ScopeJob, PolicyShape: ShapeFunctionScoped,
+		Notes: "No single scope column: the insert-only policy keys on scope_kind, comparing organization_id for tenant work and subject_id for subject work. Request traffic holds no relation grant — it enqueues through the scoped SECURITY DEFINER operation and never reads payloads.",
 	},
 
 	// Worker-owned relations. Reached only by a bypass-RLS worker role, so
