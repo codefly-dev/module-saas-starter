@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -16,14 +17,16 @@ const generatedGenRoot = join(
 	"src",
 	"gen",
 );
-const distGenRoot = join(
-	packageRoot,
-	"dist",
-	"generated",
-	"typescript",
-	"src",
-	"gen",
-);
+// Where the freshly-emitted tree is inspected. The build below writes to a
+// TEMPORARY outDir rather than the package's real `dist`, because this spec is
+// collected by the frontend host's `pure` vitest project (its include covers
+// `packages/**`) and therefore runs CONCURRENTLY with files that import
+// `@codefly-dev/saas-sdk` and `@codefly-dev/saas-ui`. Emitting over — or, worse,
+// clearing — the live `dist` mid-run deletes the package entry those files are
+// resolving, and Vite fails them with `resolvePackageEntry`. A temp outDir also
+// makes the assertions honest: they read only what THIS tsc invocation emitted,
+// never an artifact orphaned in `dist` by an earlier config.
+let distGenRoot = "";
 
 function listFiles(dir: string): string[] {
 	if (!existsSync(dir)) return [];
@@ -135,16 +138,18 @@ const FORBIDDEN_MODULES = [
 ];
 
 describe("@codefly-dev/saas-sdk published proto surface", () => {
-	// The published tarball is `dist` (`files: ["dist"]`), so the guard checks the
-	// real build output. Build it here so the assertions run against a fresh
-	// `dist` regardless of whether one already exists — and fail loudly, never
-	// silently skip, if the build itself breaks.
+	// The published tarball is `dist` (`files: ["dist"]`), so the guard checks
+	// what this tsconfig emits. Build it here into a scratch outDir so the
+	// assertions run against a fresh emit regardless of the state of `dist` —
+	// and fail loudly, never silently skip, if the build itself breaks.
 	beforeAll(() => {
 		const require = createRequire(import.meta.url);
 		const tsc = require.resolve("typescript/bin/tsc");
+		const outDir = mkdtempSync(join(tmpdir(), "saas-sdk-surface-"));
+		distGenRoot = join(outDir, "generated", "typescript", "src", "gen");
 		const result = spawnSync(
 			process.execPath,
-			[tsc, "-p", join(packageRoot, "tsconfig.json")],
+			[tsc, "-p", join(packageRoot, "tsconfig.json"), "--outDir", outDir],
 			{ cwd: packageRoot, encoding: "utf8" },
 		);
 		if (result.status !== 0) {

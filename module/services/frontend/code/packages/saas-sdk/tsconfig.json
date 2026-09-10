@@ -6,15 +6,16 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "declaration": true,
-    // No declarationMap: a .d.ts.map cannot embed its sources, and this
-    // package must not ship `src`/`generated` (see the include note below),
-    // so one would always point at files absent from the tarball.
+    // This package ships neither `src` nor `generated` (see the include note
+    // below — shipping `generated` would leak the internal proto surfaces the
+    // published-surface test forbids), so any map it emitted would name sources
+    // absent from the tarball. Inlining them instead was measured at 513 kB of
+    // embedded source text — 89% of all map bytes and 43% of the unpacked
+    // package, paid by every solution that installs it, for frames most
+    // consumers never open. Emitting no maps fixes the same defect and makes
+    // the package 576 kB smaller. `target: ES2022` output stays close to source.
     "declarationMap": false,
-    "sourceMap": true,
-    // Embeds the source text INTO each .js.map, so runtime debugging works
-    // from the tarball alone. Only the reachable closure is emitted, so this
-    // exposes nothing `dist` does not already contain as compiled JS.
-    "inlineSources": true,
+    "sourceMap": false,
     "rootDir": ".",
     "outDir": "dist",
     "skipLibCheck": true,

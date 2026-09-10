@@ -78,25 +78,6 @@ export const CODEFLY_KIT_SHARED = {
 	},
 } as const;
 
-// Migration shim for the kit's scope rename — DELETE once every solution remote
-// has rebuilt against `@codefly-dev/saas-ui`.
-//
-// Module Federation matches share entries by EXACT STRING KEY. Up to v0.0.59 this
-// package shipped as `@codefly/saas-ui`, so a remote built before the rename asks
-// the shared scope for that key. Publishing only the new key means such a remote
-// finds no host entry, silently falls back to the copy in its own bundle, and now
-// runs a second instance of the panel — a split React context and skin, with no
-// error raised at either end. That is precisely the split the sealing invariant
-// exists to prevent (packages/codefly-ui/ARCHITECTURE.md, "Sealed downward"), and
-// it is invisible rather than loud, so it cannot be caught by a smoke test.
-//
-// Publishing BOTH keys from the one `lib` keeps old and new remotes on the same
-// instance for the duration of the migration: the alias is not a second copy, it
-// is a second name for the entry above.
-export const LEGACY_KIT_SHARE_ALIASES = {
-	"@codefly/saas-ui": CODEFLY_KIT_SHARED["@codefly-dev/saas-ui"],
-} as const;
-
 // React is the bottom of the cake and is sealed the same way: the host owns the
 // single instance and every remote consumes it, so hooks and context hold across
 // the boundary. `requiredVersion: false` (rather than a version range) only means
@@ -127,7 +108,6 @@ const REACT_SHARED = {
 export const SEALED_SHARED = {
 	...REACT_SHARED,
 	...CODEFLY_KIT_SHARED,
-	...LEGACY_KIT_SHARE_ALIASES,
 } as const;
 
 /**

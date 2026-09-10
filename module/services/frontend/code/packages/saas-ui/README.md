@@ -60,7 +60,8 @@ npm i @codefly-dev/saas-ui @codefly-dev/saas-sdk \
 ```
 
 Omitting one does not fail the install — npm only warns about unmet peers — it
-fails later at import. `@codefly-dev/saas-sdk` is deliberately a range rather
+fails later at import. (`peer-docs.test.ts` pins this list to `peerDependencies`,
+so it cannot drift the way a hand-maintained list otherwise would.) `@codefly-dev/saas-sdk` is deliberately a range rather
 than an exact pin: it versions independently of this package, so an exact pin
 here would make an SDK patch bump uninstallable against the published saas-ui.
 
