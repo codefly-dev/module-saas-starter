@@ -43,8 +43,46 @@ export async function POST(request: Request): Promise<Response> {
 	if (!manifest) {
 		return Response.json({ error: "invalid_manifest" }, { status: 422 });
 	}
-	registerSolution(manifest);
-	return Response.json({ ok: true, id: manifest.id });
+	// A solution whose registration was deregistered has to say so to come back:
+	// an ordinary retry from a retiring deployment must not resurrect what an
+	// operator removed.
+	const reactivate =
+		typeof body === "object" &&
+		body !== null &&
+		(body as { reactivate?: unknown }).reactivate === true;
+	const result = await registerSolution(manifest, { reactivate });
+	if (!result.ok) {
+		return writeFailure(result.reason);
+	}
+	return Response.json({
+		ok: true,
+		id: manifest.id,
+		revision: result.revision,
+		status: result.status,
+	});
+}
+
+/**
+ * Registration is a write to a shared, versioned record, so it can fail in ways
+ * a caller must tell apart: `conflict` means re-read and retry, `forbidden`
+ * means the id belongs to someone else, `unavailable` means back off. Answering
+ * 200 for any of these would let a solution believe it is serving when it is
+ * not — the exact incoherence this registry exists to prevent.
+ */
+function writeFailure(
+	reason: "unavailable" | "conflict" | "forbidden",
+): Response {
+	switch (reason) {
+		case "conflict":
+			return Response.json({ error: "revision_conflict" }, { status: 409 });
+		case "forbidden":
+			return Response.json(
+				{ error: "not_registration_owner" },
+				{ status: 403 },
+			);
+		default:
+			return Response.json({ error: "registry_unavailable" }, { status: 503 });
+	}
 }
 
 export async function DELETE(request: Request): Promise<Response> {
@@ -55,8 +93,11 @@ export async function DELETE(request: Request): Promise<Response> {
 	if (!id) {
 		return Response.json({ error: "missing_id" }, { status: 400 });
 	}
-	unregisterSolution(id);
-	return Response.json({ ok: true });
+	const result = await unregisterSolution(id);
+	if (!result.ok) {
+		return writeFailure(result.reason);
+	}
+	return Response.json({ ok: true, revision: result.revision });
 }
 
 // GET is the public navigation projection: the id and the nav entry the browser
@@ -67,5 +108,12 @@ export async function DELETE(request: Request): Promise<Response> {
 // deployment topology; they are served by the internal detail lookup
 // (app/api/internal/solutions) to callers holding the cluster-internal token.
 export async function GET(): Promise<Response> {
-	return Response.json({ solutions: loadSolutions().map(navProjection) });
+	const registered = await loadSolutions();
+	// An empty registry and an unreadable one must not render the same: the
+	// first correctly shows no solutions, the second would silently empty a
+	// working navigation.
+	if (registered === "unavailable") {
+		return Response.json({ error: "registry_unavailable" }, { status: 503 });
+	}
+	return Response.json({ solutions: registered.map(navProjection) });
 }

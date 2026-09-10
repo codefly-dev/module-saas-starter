@@ -39,6 +39,7 @@ var relationsByScope = map[relationScope][]string{
 		"plan_entitlements",
 		"plans",
 		"platform_admins",
+		"solution_registrations",
 	},
 	relationScopeTenant: {
 		"actor_chain_journal",
@@ -132,6 +133,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
 	"event_subscriptions":     {}, // platform relation; request traffic has no direct access
+	"solution_registrations":  {}, // platform relation; request traffic has no direct access
 	"job_attempts":            {},
 	"job_messages":            {},
 	"job_state_transitions":   {},

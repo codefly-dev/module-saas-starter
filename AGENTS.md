@@ -83,6 +83,22 @@ Module-Federation remote in the frontend and as an upstream in the gateway — s
 the host learns to render and proxy them with no rebuild. Nothing in the module
 names a specific solution; the seam is generic.
 
+Both halves are **one durable record**, not two process-local maps.
+`solution_registrations` in the store (accounts owns it, migration
+`126_solution_registrations`) holds the solution identity, its publisher, the
+frontend and backend halves, a registry-wide `revision`, and a per-half lease.
+A registration therefore survives a restart, reaches every replica, and is only
+served when it is *whole*: a solution that registered its page but not its
+backend is a durable `pending` record and is deliberately absent from the
+navigation. Writes are compare-and-swap on the revision, so a stale publisher
+cannot overwrite newer state, and a deregistration leaves a **tombstone** that a
+retiring deployment's delayed heartbeat cannot resurrect. accounts serves this
+as `SolutionRegistryService` on the internal listener; the auth-gateway is its
+only client and brokers the frontend's half, exactly as it brokers module
+registration. Both surfaces hold a short-lived cache rebuilt from that snapshot,
+so convergence after any write is bounded (gateway ~10s reconcile plus an
+on-demand refresh on a cache miss; frontend a 5s snapshot TTL).
+
 - **Frontend registration** — `POST /api/solutions/register` (and `DELETE
   ?id=…`) at
   `module/services/frontend/code/src/app/api/solutions/register/route.ts`,
@@ -90,11 +106,18 @@ names a specific solution; the seam is generic.
   (read via the codefly SDK `getWorkspaceSecret("internal-auth",
   "CODEFLY_INTERNAL_TOKEN")`; fails closed when unset). The POST body is the
   solution manifest (`id`, `nav`, `frontend.manifestUrl` + `exposedModule`,
-  optional `backend.serviceAlias`), validated in `src/solutions/registry.ts`.
-  `GET` on that route is unauthenticated and returns exactly the public
-  navigation projection — `{id, nav}` per solution and nothing else — which is
-  what the sidebar polls. Everything else a manifest carries (`frontend`,
-  `backend`) is deployment topology and is served instead by `GET
+  optional `backend.serviceAlias`), validated in `src/solutions/registry.ts`,
+  which then writes the frontend half through the gateway
+  (`POST /solutions/_frontend`). The route relays the registry's own answer:
+  `409` for a revision conflict, `403` when the id belongs to another
+  publisher, `503` when the registry cannot be reached — a registrant is never
+  told it is serving when it is not. Re-registering a deregistered solution
+  requires an explicit `reactivate: true`. `GET` on that route is
+  unauthenticated and returns exactly the public navigation projection —
+  `{id, nav}` per solution and nothing else — which is what the sidebar polls,
+  answering `503` (never an empty list) when this replica cannot read the
+  registry. Everything else a manifest carries (`frontend`, `backend`) is
+  deployment topology and is served instead by `GET
   /api/internal/solutions`
   (`src/app/api/internal/solutions/route.ts`), gated on the same
   cluster-internal token. The dashboard graph is on neither: the solution page
@@ -102,7 +125,12 @@ names a specific solution; the seam is generic.
 - **Gateway upstream registration** — `POST /solutions/_register` on the
   auth-gateway (`module/services/auth-gateway/code/gateway_solutions.go`),
   gated by the same credential in the `X-Codefly-Internal-Token` header, with a
-  `{id, upstream}` JSON payload. The gateway then proxies `/solutions/{id}/…`
+  `{id, upstream}` JSON payload (unchanged; the gateway supplies the
+  compare-and-swap revision it last saw). `GET /solutions/_registry` returns
+  this replica's snapshot — id, publisher, revision, and status
+  (`active` / `pending` / `expired` / `incompatible` / `tombstoned`), never an
+  upstream — which is both what the frontend rebuilds from and what an operator
+  reads to tell those states apart. The gateway then proxies `/solutions/{id}/…`
   to the registered upstream, running the same ext_authz Check and
   identity-header discipline as catalog routes; only the public `/assets` and
   `/.well-known` sub-paths are served unauthenticated (GET/HEAD).

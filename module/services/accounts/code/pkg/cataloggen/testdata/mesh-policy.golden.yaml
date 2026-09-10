@@ -54,6 +54,9 @@ spec:
               - /saas.accounts.v1.PrincipalService/EnableAgentPrincipal
               - /saas.accounts.v1.PrincipalService/GetAgentPrincipal
               - /saas.accounts.v1.PrincipalService/GetPrincipal
+              - /saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration
+              - /saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations
+              - /saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration
               - /saas.accounts.v1.UsageService/ConsumeUsage
               - /saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead
               - /saas.accounts.v1.WorkContextService/CheckAuthorizationRevision

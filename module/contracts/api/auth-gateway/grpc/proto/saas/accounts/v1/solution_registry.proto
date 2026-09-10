@@ -1,0 +1,179 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// ============================================================================
+// Durable solution registry (issue #534)
+//
+// A solution is an independently deployed component the host has no build-time
+// knowledge of. It self-registers two halves at runtime: a frontend half (the
+// Module-Federation manifest the host renders and navigates to) and a backend
+// half (the upstream the gateway proxies /solutions/<id>/* to). Both used to be
+// process-local maps, so a restart lost them, a registration behind a load
+// balancer reached one replica only, and one half could be live while the other
+// was missing.
+//
+// These messages live in their own file, with deliberately minimal imports, so
+// the auth-gateway can generate the same types from the same source proto and
+// call SolutionRegistryService (declared in solution_registry_service.proto)
+// over the internal listener. Sharing the generated definition rather than
+// restating the wire shape is what keeps the two sides from drifting.
+//
+// Two facts are deliberately distinct. Durable installation intent is the
+// record existing and not being tombstoned; ephemeral endpoint liveness is the
+// per-half lease, renewed by whoever registered that half. A lapsed lease
+// suspends routing without discarding the registration, and the derived status
+// says which of the two is at fault.
+// ============================================================================
+
+// SolutionRegistrationStatus is derived at read time from the stored record; it
+// is never a stored column. It is what lets an operator tell a registration
+// that was never completed from one whose publisher stopped renewing, and both
+// from one that was deliberately removed.
+enum SolutionRegistrationStatus {
+  SOLUTION_REGISTRATION_STATUS_UNSPECIFIED = 0;
+  // Both halves are present, their leases are live, and their declared contract
+  // versions agree. This is the only status either surface serves.
+  SOLUTION_REGISTRATION_STATUS_ACTIVE = 1;
+  // A half has never registered. The record is durable but incomplete, so no
+  // page advertises it and the gateway has nothing to route to.
+  SOLUTION_REGISTRATION_STATUS_PENDING = 2;
+  // Both halves registered, but at least one lease lapsed: the deployment that
+  // owns it stopped renewing. The intent survives; the endpoint is not live.
+  SOLUTION_REGISTRATION_STATUS_EXPIRED = 3;
+  // The two halves declare different contract versions, so activating them
+  // together would serve a page against a backend it was not built for.
+  SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE = 4;
+  // The registration was deregistered. The row survives as a tombstone so a
+  // delayed heartbeat from a retiring deployment cannot recreate it.
+  SOLUTION_REGISTRATION_STATUS_TOMBSTONED = 5;
+}
+
+// SolutionFrontendBinding is the stored frontend half. manifest is the document
+// the frontend validated before handing it over; this service persists it
+// verbatim and never reinterprets it, so the host keeps sole ownership of what
+// a manifest may contain.
+message SolutionFrontendBinding {
+  int64 revision = 1;
+  string manifest = 2;
+  string contract_version = 3;
+  google.protobuf.Timestamp lease_expires_at = 4;
+}
+
+// SolutionBackendBinding is the stored backend half: the upstream the gateway
+// proxies to and the logical service alias it is addressed by.
+message SolutionBackendBinding {
+  int64 revision = 1;
+  string upstream = 2;
+  string service_alias = 3;
+  string contract_version = 4;
+  google.protobuf.Timestamp lease_expires_at = 5;
+}
+
+// SolutionRegistration is the canonical record. revision is drawn from one
+// registry-wide sequence, so revisions are comparable across records and a
+// consumer can order two snapshots without a wall clock.
+message SolutionRegistration {
+  string solution_id = 1;
+  // Owner of record. First claim binds it; a registration naming a different
+  // publisher is refused rather than overwriting.
+  string publisher = 2;
+  int64 revision = 3;
+  SolutionRegistrationStatus status = 4;
+  optional SolutionFrontendBinding frontend = 5;
+  optional SolutionBackendBinding backend = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  optional google.protobuf.Timestamp tombstoned_at = 8;
+}
+
+// SolutionFrontendRegistration is the caller-supplied frontend half. Revision
+// and lease are assigned by the server, never proposed by the registrant.
+message SolutionFrontendRegistration {
+  string manifest = 1 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 262144
+  }];
+  string contract_version = 2 [(buf.validate.field).string.max_len = 128];
+}
+
+// SolutionBackendRegistration is the caller-supplied backend half. The gateway
+// has already constrained the upstream to a permitted host before it gets here;
+// this service stores what it is told and does not re-derive routing policy.
+message SolutionBackendRegistration {
+  string upstream = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 2048
+    uri: true
+  }];
+  string service_alias = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  string contract_version = 3 [(buf.validate.field).string.max_len = 128];
+}
+
+// PutSolutionRegistrationRequest writes exactly one half of one record.
+//
+// Writing a half whose content is byte-identical to what is stored is a lease
+// renewal: it refreshes liveness and deliberately does not advance the
+// revision, so a heartbeat never looks like a change to a consumer. Writing
+// different content to a half that already exists requires expected_revision,
+// which must equal the record's current revision — that is how a publisher
+// still holding an older view is stopped from overwriting newer state, and how
+// two concurrent updates serialize instead of racing.
+message PutSolutionRegistrationRequest {
+  string solution_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$"
+  }];
+  string publisher = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 256
+  }];
+  // Compare-and-swap guard against the record's current revision. Required to
+  // change an existing half, and the only way to re-register a tombstoned
+  // record: the caller must name the tombstone's own revision, which a delayed
+  // retry from a retired deployment does not hold.
+  optional int64 expected_revision = 3 [(buf.validate.field).int64.gt = 0];
+  // Requested liveness window for this half. The registrant renews within it.
+  uint32 lease_seconds = 4 [(buf.validate.field).uint32 = {
+    gte: 30
+    lte: 3600
+  }];
+  oneof half {
+    option (buf.validate.oneof).required = true;
+    SolutionFrontendRegistration frontend = 5;
+    SolutionBackendRegistration backend = 6;
+  }
+}
+
+// DeleteSolutionRegistrationRequest tombstones a record: both halves are
+// cleared in the same statement that marks it deleted, so a reader that somehow
+// ignored the tombstone still has no endpoint to route to.
+message DeleteSolutionRegistrationRequest {
+  string solution_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+  }];
+  optional int64 expected_revision = 2 [(buf.validate.field).int64.gt = 0];
+}
+
+// ListSolutionRegistrationsRequest reads the whole registry. There is one
+// registry per deployment and it holds tens of records at most, so consumers
+// rebuild their cache from a full snapshot rather than tailing a change feed.
+message ListSolutionRegistrationsRequest {
+  // Tombstones are omitted by default: a routing cache wants the live set. An
+  // operator diagnosing "was this deleted or never registered?" asks for them.
+  bool include_tombstoned = 1;
+}
+
+message ListSolutionRegistrationsResponse {
+  repeated SolutionRegistration registrations = 1;
+  // Highest revision in the registry, tombstones included. Two consumers that
+  // report the same registry_revision have converged on the same state.
+  int64 registry_revision = 2;
+}

@@ -221,7 +221,15 @@ func main() {
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
 		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
-		gateway := NewGateway(authz, matcher, upstreams, rateLimiter)
+		// The durable solution registry lives in accounts and is reached over the
+		// same internal connection as the other brokered internal calls. The
+		// reconcile loop rebuilds this replica's routing cache from it — once at
+		// startup, so a restart recovers registrations without anyone
+		// re-registering, then on its interval so a registration made against
+		// another replica converges here.
+		solutionRegistry := &accountsSolutionRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
+		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry)
+		go gateway.solutions.reconcile(ctx)
 		if apiHTTPURL != "" {
 			gateway.workContext = newWorkContextVerifier(apiHTTPURL)
 			// Warm in the background: per-request verification lazily refreshes

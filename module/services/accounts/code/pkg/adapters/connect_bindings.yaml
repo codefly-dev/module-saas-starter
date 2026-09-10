@@ -102,6 +102,11 @@ services:
     handler: ssoAdminConnectHandler
     source:
       kind: business
+  SolutionRegistryService:
+    handler: solutionRegistryConnectHandler
+    source:
+      kind: singleton
+      name: SolutionRegistrySingleton
   TeamService:
     handler: teamConnectHandler
     source:

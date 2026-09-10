@@ -82,7 +82,13 @@ async function handler(
 		return new Response("cross-origin request rejected", { status: 403 });
 	}
 
-	const solution = findSolution(id);
+	const solution = await findSolution(id);
+	// Distinguish a solution that is not registered from a registry this
+	// replica cannot read: the first is permanent for the caller, the second is
+	// worth retrying.
+	if (solution === "unavailable") {
+		return new Response("solution registry unavailable", { status: 503 });
+	}
 	if (!solution) {
 		return new Response("solution not registered", { status: 404 });
 	}
