@@ -561,7 +561,7 @@
     "services/accounts/code/pkg/cataloggen/connect_registration.go": "3cab1c80e37fe4515fe002de358ef5a64b0cc0aab85401a7b6079ce97931ab30",
     "services/accounts/code/pkg/cataloggen/connect_registration_test.go": "3f8b02c1783095e43e97fc269dbbb9010a4843173ae7f0060f7c981ef67d2926",
     "services/accounts/code/pkg/cataloggen/deployment_topology.go": "7caff7c4308e6a7e67c832ae7e9798c0b84ebebcbc9ecb3b37bf9b40e555902c",
-    "services/accounts/code/pkg/cataloggen/deployment_topology_test.go": "4affc3f4f2f0a2617a62d15b6dd1ba2801d677bdcea9b3c861f37f4b2fe09948",
+    "services/accounts/code/pkg/cataloggen/deployment_topology_test.go": "a324f9027dc2bb7fbce0db77691cb1c80b4b13b608ed91aad4dd54301f75d9be",
     "services/accounts/code/pkg/cataloggen/frontend_catalog.go": "de43b6122c05006de69c75edeb61e0eff9ad351dd316c5e992a9cc2a3c2ec36c",
     "services/accounts/code/pkg/cataloggen/frontend_catalog_test.go": "c3af57b55dd5f88c82c9e56abbcfdd07864e9b6d3b692b9d268667a1be343fbc",
     "services/accounts/code/pkg/cataloggen/frontend_plugin_service_dependencies.go": "61aa83339c63467627377a38c060668a86eb9bad85349c326bce490b4e42a536",

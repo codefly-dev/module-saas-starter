@@ -150,11 +150,11 @@ func TestApplicationBindingsAddOnlyNamedPostgresMigrationSources(t *testing.T) {
 module_name: installed-saas
 postgres_migration_sources:
   - service: store
-    name: eventlog
-    path: ../../../platform/services/eventlog/migrations
-  - service: store
     name: acme
     path: ../../../platform/services/acme/migrations
+  - service: store
+    name: eventlog
+    path: ../../../platform/services/eventlog/migrations
 `)
 
 	artifacts, err := cataloggen.BuildDeploymentArtifactsWithApplicationBindings(
