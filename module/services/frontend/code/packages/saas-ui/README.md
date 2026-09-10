@@ -1,4 +1,4 @@
-# @codefly/saas-ui
+# @codefly-dev/saas-ui
 
 Reusable SaaS-domain frontend components the portal **and** solutions import — so
 there is one `<DatasourcesPanel>`, not a per-consumer copy. Components are built on
@@ -48,4 +48,4 @@ scan this package's source** or the utilities used only here (e.g. the modal's
   detection already scans `packages/**`.
 - An external consumer that installs the built package from `node_modules` (which
   Tailwind v4 excludes by default) must opt it in, e.g.
-  `@source "../node_modules/@codefly/saas-ui/dist";` in its CSS.
+  `@source "../node_modules/@codefly-dev/saas-ui/dist";` in its CSS.

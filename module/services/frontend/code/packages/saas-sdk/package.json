@@ -2,6 +2,11 @@
 	"name": "@codefly-dev/saas-sdk",
 	"version": "0.2.0",
 	"description": "Typed Connect client, gateway-bound facades, and audit data-graph tooling for the saas-starter public API.",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/codefly-dev/module-saas-starter.git",
+		"directory": "module/services/frontend/code/packages/saas-sdk"
+	},
 	"type": "module",
 	"sideEffects": false,
 	"files": [

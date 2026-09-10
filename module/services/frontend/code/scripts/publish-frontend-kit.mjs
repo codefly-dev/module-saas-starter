@@ -9,14 +9,25 @@ const CODE_ROOT = join(dirname(SCRIPT_PATH), "..");
 
 // The solution-facing kit packages published to GitHub Packages on release.
 // Kept to what a solution fe-remote genuinely consumes: `@codefly-dev/ui` carries
-// the peer-free `/layout` + `/dashboard` surface, and `@codefly-dev/saas-sdk`
-// carries the generated accounts/connect Connect client + data-graph tooling a
-// remote binds to the gateway. Both are Module-Federation singletons the host
-// shares, so a remote resolves the host's instance from the registry version.
-// Their plugin peers are optional (see each manifest), so a solution installs
-// those subpaths without the host-internal plugin packages — no need to publish
-// them here.
-export const PACKAGES = ["@codefly-dev/ui", "@codefly-dev/saas-sdk"];
+// the peer-free `/layout` + `/dashboard` surface, `@codefly-dev/saas-ui` carries
+// the SaaS-domain panels (`<DatasourcesPanel>`: the add-source form + list that
+// front DatasourceService, which lives in this module), and
+// `@codefly-dev/saas-sdk` carries the generated accounts/connect Connect client
+// + data-graph tooling a remote binds to the gateway. All three are
+// Module-Federation singletons the host shares (`CODEFLY_KIT_SHARED` in
+// src/solutions/SolutionOutlet.tsx), so a remote resolves the host's instance
+// from the registry version — which is why every shared package must be
+// installable from the registry: a package the host shares but nobody publishes
+// forces each solution to re-implement the panel instead of mounting it.
+// GitHub Packages only accepts the org's `@codefly-dev` scope, so each of these
+// is named under it. Their plugin peers are optional (see each manifest), so a
+// solution installs those subpaths without the host-internal plugin packages —
+// no need to publish them here.
+export const PACKAGES = [
+	"@codefly-dev/ui",
+	"@codefly-dev/saas-ui",
+	"@codefly-dev/saas-sdk",
+];
 
 export function workspacesByName(codeRoot = CODE_ROOT) {
 	const packagesRoot = join(codeRoot, "packages");

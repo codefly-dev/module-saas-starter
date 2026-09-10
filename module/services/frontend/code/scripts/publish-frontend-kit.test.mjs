@@ -11,6 +11,23 @@ describe("frontend kit publish set", () => {
 		expect(PACKAGES).toContain("@codefly-dev/ui");
 	});
 
+	// Every package the host shares as a Module-Federation singleton must be
+	// installable by a solution remote, or the remote cannot mount the host's
+	// instance (core-solutions' wiki hand-rolled a sources list because
+	// `<DatasourcesPanel>` was shared but never published).
+	it("publishes the SaaS-domain panels and the SDK the host shares", () => {
+		expect(PACKAGES).toContain("@codefly-dev/saas-ui");
+		expect(PACKAGES).toContain("@codefly-dev/saas-sdk");
+	});
+
+	// GitHub Packages rejects any scope but the org's, so a package named
+	// outside `@codefly-dev` would fail at release time, not here.
+	it("only publishes packages under the @codefly-dev scope", () => {
+		for (const name of PACKAGES) {
+			expect(name.startsWith("@codefly-dev/"), name).toBe(true);
+		}
+	});
+
 	it("only publishes packages that exist as workspaces", () => {
 		const byName = workspacesByName(process.cwd());
 		for (const name of PACKAGES) {

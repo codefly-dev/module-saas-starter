@@ -1,7 +1,7 @@
 "use client";
 
 import * as SaasSdk from "@codefly-dev/saas-sdk";
-import * as SaasUi from "@codefly/saas-ui";
+import * as SaasUi from "@codefly-dev/saas-ui";
 import * as CodeflyUi from "@codefly-dev/ui";
 import {
 	createInstance,
@@ -39,7 +39,7 @@ import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 // The `kit-shared-version` test asserts the singleton flag on this object.
 const SEALED_SHARE_CONFIG = { singleton: true, requiredVersion: false } as const;
 
-// The co-versioned @codefly UI kit (@codefly-dev/ui + @codefly/saas-ui) ships
+// The co-versioned @codefly-dev UI kit (@codefly-dev/ui + @codefly-dev/saas-ui) ships
 // lockstep with this host, so one version covers both. It MUST track the
 // packages' real version — a shared module that under-reports its version can
 // lose singleton resolution to a remote that bundles a higher one, splitting the
@@ -63,7 +63,7 @@ export const CODEFLY_KIT_SHARED = {
 		lib: () => CodeflyUi,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
-	"@codefly/saas-ui": {
+	"@codefly-dev/saas-ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasUi,
 		shareConfig: SEALED_SHARE_CONFIG,
@@ -116,7 +116,7 @@ export const SEALED_SHARED = {
  * boundary). The remote's build marks react/react-dom/jsx-runtime as shared
  * singletons and therefore ships without them.
  *
- * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly/saas-ui`,
+ * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly-dev/saas-ui`,
  * `@codefly-dev/saas-sdk`) is shared the same way, so a remote imports
  * `<DatasourcesPanel gateway={…}>` and renders it against the host's one copy —
  * no bundling, and one React instance across the boundary.

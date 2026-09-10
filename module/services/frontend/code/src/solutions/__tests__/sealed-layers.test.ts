@@ -48,7 +48,7 @@ describe("the sealed set covers React, the kit, and each module UI package", () 
 		expect(SEALED_PACKAGES).toEqual(
 			expect.arrayContaining([
 				"@codefly-dev/ui",
-				"@codefly/saas-ui",
+				"@codefly-dev/saas-ui",
 				"@codefly-dev/saas-sdk",
 			]),
 		);
