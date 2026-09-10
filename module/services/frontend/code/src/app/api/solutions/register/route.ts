@@ -19,9 +19,15 @@ export const runtime = "nodejs";
  * as a Module Federation remote, so it is NOT public: it requires the
  * cluster-internal token. Without this, any caller that can reach the frontend
  * could register an attacker-controlled MF remote (arbitrary in-origin script
- * execution) or nav entry. Fails closed when the secret is unset; in a deployed
- * environment this should additionally be reachable solely from inside the mesh
- * (NetworkPolicy).
+ * execution) or nav entry. Fails closed when the secret is unset.
+ *
+ * That token is the ONLY gate, and a NetworkPolicy cannot add a second one:
+ * `frontend/http` is a public module export, so this path shares TCP 3000 with
+ * every browser-facing page, and a NetworkPolicy selects pods and ports, never
+ * paths. In the generated base topology the only ingress rule for the frontend
+ * admits the Istio ingress gateway, so a solution registers through the public
+ * front door rather than from inside the mesh. See
+ * module/DEPLOYMENT_TOPOLOGY.md, "HTTP internal surfaces are not mesh-gated".
  */
 export async function POST(request: Request): Promise<Response> {
 	if (!isTrustedInternalCall(request)) {

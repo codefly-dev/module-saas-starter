@@ -102,10 +102,10 @@ remain as defense-in-depth on top of the mesh.
 ### Internal-authority reach gate
 
 For every service that owns `EXPOSURE_INTERNAL` methods (read from its
-`authz-methods.json`), the baseline adds a `deny-<service>-internal-authority`
-`AuthorizationPolicy` that DENYs those gRPC method paths from every source
-principal except the allowlisted in-mesh caller identity — the ingress-gateway
-service account included. Istio matches by request path, so the internal
+`authz-methods.json`), the baseline adds an `allow-<service>-internal-authority`
+`AuthorizationPolicy` that ALLOWs those gRPC method paths only from the
+allowlisted in-mesh caller identity, denying every other source principal by
+default — the ingress-gateway service account included. Istio matches by request path, so the internal
 authority surface is gated by caller workload identity even while it stays
 multiplexed on the shared HTTP port; no dedicated port is required.
 
@@ -114,6 +114,26 @@ namespace `waypoint` Gateway (`gateway.networking.k8s.io/v1`,
 `gatewayClassName: istio-waypoint`) is provisioned and the namespace opts in via
 `istio.io/use-waypoint`, so the path match is actually evaluated. The test-only
 `mesh-policy.golden.yaml` mirrors these resources.
+
+### HTTP internal surfaces are not mesh-gated
+
+That reach gate is derived from `authz-methods.json`, so it covers exactly the
+catalog owner's `EXPOSURE_INTERNAL` **gRPC procedures**. It renders no policy for
+any other service and has no notion of HTTP paths.
+`TestMeshPolicyGatesOnlyOwnerGRPCProcedures` holds the generated policy to that.
+
+The frontend's cluster-internal HTTP routes (`POST`/`DELETE
+/api/solutions/register`) are therefore gated by the shared internal token
+alone, and no NetworkPolicy can narrow them: `frontend/http` is a public module
+export, so those paths share TCP 3000 with every browser-facing page, and a
+NetworkPolicy selects pods and ports, never paths. `allow-istio-ingress-to-frontend`
+is also the only ingress rule for `app: frontend`, so an in-mesh solution pod
+cannot reach registration directly — it registers through the public ingress.
+"Cluster-internal" names the credential, not the reachability.
+
+Gating those paths by caller identity would mean emitting an HTTP-path
+`AuthorizationPolicy` for a non-owner service, which the renderer does not do
+today. Until it does, the token is the boundary and must be treated as one.
 
 ## Generation and validation
 
