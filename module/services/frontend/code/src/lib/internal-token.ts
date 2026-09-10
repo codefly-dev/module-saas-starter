@@ -1,5 +1,12 @@
-import "server-only";
-
+// Deliberately NOT marked `server-only`. This module sits on the import path of
+// src/proxy.ts, and Next's proxy is neither a Server Component nor a Client
+// Component: Next resolves the marker to its `react-server` no-op when it
+// bundles the proxy, so the marker guards nothing there, while every test suite
+// that transitively reaches the proxy has to stub it out to load at all.
+//
+// What actually keeps this off a client bundle is `codefly` — a Node-only SDK
+// that cannot resolve in the browser — and, for the route handlers, the
+// `server-only` marker they already inherit through @/solutions/registry.
 import { timingSafeEqual } from "node:crypto";
 
 import { getWorkspaceSecret } from "codefly";
