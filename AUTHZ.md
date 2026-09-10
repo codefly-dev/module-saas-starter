@@ -377,7 +377,7 @@ so eligibility is `role IN ('owner','admin') AND users.status = 'active'`.
 Request traffic cannot read a co-member's `users` row (migration 69), so tenant
 code resolves that through `organization_eligible_administrators`, a
 `SECURITY DEFINER` function owned by `app_control_plane` and scoped to the
-caller's own organization (migration 130). This is not a convenience: a direct
+caller's own organization (migration 133). This is not a convenience: a direct
 join under `app_tenant` returns **zero** rows, and zero administrators reads as
 "this organization never had one", which the rule exempts — the failure mode
 silently disables the invariant instead of tightening it. Control-plane

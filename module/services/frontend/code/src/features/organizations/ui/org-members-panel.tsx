@@ -40,7 +40,7 @@ const col = createColumnHelper<OrgMembership>();
 // Deliberately only FailedPrecondition. Other codes carry wrapped internal
 // messages (a quota rejection reads "AddOrgMember: cannot add member: …"), and
 // a call path is not something to render to a user.
-function memberErrorMessage(error: unknown, fallback: string): string {
+export function memberErrorMessage(error: unknown, fallback: string): string {
 	if (!(error instanceof ConnectError)) return fallback;
 	if (error.code !== Code.FailedPrecondition) return fallback;
 	return error.rawMessage || fallback;

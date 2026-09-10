@@ -210,7 +210,7 @@ deletion and remains constrained by `user_identities_user` RLS.
 
 ## Administrative continuity and eligible administrators
 
-Migration `130_organization_administrator_eligibility` adds
+Migration `133_organization_administrator_eligibility` adds
 `organization_eligible_administrators(org_id)`, the counter behind the
 administrative-continuity invariant (see `AUTHZ.md`). An administrator counts
 only when the membership carries an administrative role **and** the identity
