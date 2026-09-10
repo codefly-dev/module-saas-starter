@@ -1,10 +1,9 @@
 import { defineConfig } from "@playwright/test";
 import {
-	type EndpointProtocol,
-	getCurrentModule,
-	getEndpoints,
-	resolveServiceAddressSync,
-} from "codefly";
+	codeflyInjectedRuntime,
+	productGatewayURL,
+	productOrigin,
+} from "./src/test/codefly-endpoints";
 
 // Resolve EVERY address from codefly — NEVER hardcode a port. Ports are
 // workspace+module+service hashes, so they differ per consumer (the canonical
@@ -13,43 +12,23 @@ import {
 // the stack up via withDependencies), so if resolution fails we THROW rather
 // than fall back to a wrong guess.
 //
-// Under `codefly test service frontend --suite e2e` Codefly owns this process
-// and injects the endpoints, so those win: a deterministic CLI lookup would
-// answer for the default naming scope, not the one Codefly actually started.
-function mustResolve(
-	service: string,
-	type: EndpointProtocol,
-	protocol: "HTTP" | "REST",
-): string {
-	const currentModule = getCurrentModule();
-	const injected = getEndpoints().filter(
-		(endpoint) =>
-			endpoint.service === service &&
-			endpoint.protocol === protocol &&
-			(!currentModule || endpoint.module === currentModule),
-	);
-	if (injected.length > 1) {
-		throw new Error(
-			`playwright.config: codefly injected multiple ${service}/${type} endpoints.`,
-		);
-	}
-	const url = injected[0]?.address ?? resolveServiceAddressSync(service, type);
-	if (!url) {
-		throw new Error(
-			`playwright.config: codefly could not resolve ${service}/${type}. ` +
-				`Run inside the workspace with codefly on PATH — the e2e depends on it.`,
-		);
-	}
-	return url;
-}
-
-const frontendUrl = mustResolve("frontend", "http", "HTTP"); // the FE's own codefly address
+// Resolution itself lives in src/test/codefly-endpoints, shared with the
+// pipeline vitest tier and the e2e global setup, so the ambiguity guard and the
+// scope-aware fallback cannot drift between the three harnesses. Under `codefly
+// test service frontend --suite e2e` Codefly owns this process and injects the
+// endpoints, so those win — and if it owns the process but has not injected
+// them yet, the shared resolver refuses rather than answering for the default
+// naming scope, which is not the scope Codefly started.
+const frontendUrl = productOrigin(); // the FE's own codefly address
 const frontendPort = new URL(frontendUrl).port;
 // The browser suite exercises the product path, so its server addresses the
-// same auth-gateway every other runtime does. Accounts is never a rewrite
-// destination here — a direct-backend run would prove nothing about the
-// gateway's route allow-list, limiter, or identity headers.
-const productGateway = mustResolve("auth-gateway", "rest", "REST");
+// same auth-gateway every other runtime does. Accounts is never a destination
+// here — a direct-backend run would prove nothing about the gateway's route
+// allow-list, limiter, or identity headers.
+const productGateway = productGatewayURL();
+// Codefly owns this process only under `codefly test service frontend --suite
+// e2e`, where the graph — and possibly the frontend itself — is already up.
+const codeflyOwnsProcess = codeflyInjectedRuntime();
 
 export default defineConfig({
 	testDir: "./tests/e2e",
@@ -61,9 +40,9 @@ export default defineConfig({
 	//     (--exclude-root because the FE itself runs in step 2.)
 	//  2. webServer → playwright runs a production build of the FE on the FE's
 	//     codefly-resolved port. The browser talks SAME-ORIGIN to it; the Next
-	//     server proxies /v1/* + /saas.accounts.v1.* to the auth-gateway
-	//     (next.config rewrites), so auth cookies are first-party and survive
-	//     full-page loads.
+	//     server (src/proxy.ts) forwards /v1/* + /saas.accounts.v1.* to the
+	//     auth-gateway, so auth cookies are first-party and survive full-page
+	//     loads.
 	//
 	// Run it as `codefly test service frontend --suite e2e`. Codefly then owns
 	// the process, skips step 1 (its graph is already up), and carries the
@@ -86,22 +65,26 @@ export default defineConfig({
 		command: `npm run build && npm run start -- -p ${frontendPort}`,
 		url: frontendUrl,
 		timeout: 300_000,
-		// Always start a fresh server: reusing a leftover one silently runs a
-		// STALE build (old inlined NEXT_PUBLIC_* / old port), which makes config
-		// changes appear to do nothing. Determinism over inner-loop speed.
-		reuseExistingServer: false,
+		// Reusing a leftover server silently runs a STALE build (old inlined
+		// NEXT_PUBLIC_* / old port), which makes config changes appear to do
+		// nothing — so a self-started run always builds fresh. Under a
+		// Codefly-owned run that choice is not ours to make: if Codefly already
+		// started the frontend on this port, refusing to reuse it aborts the whole
+		// suite on a port collision, and there is no leftover from a previous run
+		// to be stale — the server on that port is the one Codefly just started.
+		reuseExistingServer: codeflyOwnsProcess,
 		stdout: "pipe",
 		stderr: "pipe",
 		env: {
 			// Fixture dev-login mode (no real WorkOS); without it the login page
 			// renders no user picker and every spec times out at "Sarah Chen".
 			CODEFLY__FIXTURE: "dev-admin",
-			// Browser talks same-origin to the frontend; the Next server proxies
-			// API traffic to the auth-gateway (next.config rewrites). Keeps auth
-			// cookies first-party so full-page loads re-auth instead of bouncing to
-			// login. This server runs outside the module graph, so it needs the
-			// gateway named explicitly — it is the same single product API path,
-			// not an alternate one.
+			// Browser talks same-origin to the frontend; the Next server forwards
+			// API traffic to the auth-gateway (src/proxy.ts). Keeps auth cookies
+			// first-party so full-page loads re-auth instead of bouncing to login.
+			// This server runs outside the module graph, so it needs the gateway
+			// named explicitly — it is the same single product API path, not an
+			// alternate one.
 			PRODUCT_GATEWAY_INTERNAL: productGateway,
 			// Force the Codefly fixture identity adapter for this browser suite.
 			NEXT_PUBLIC_IDENTITY_PROVIDER: "fixture",

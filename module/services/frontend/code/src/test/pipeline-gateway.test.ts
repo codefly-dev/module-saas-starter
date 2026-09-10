@@ -49,6 +49,17 @@ function runtime(
 	};
 }
 
+/** A harness that started the graph itself: Codefly owns no execution context. */
+function selfStartedRuntime(
+	overrides: Partial<PipelineRuntimeReader> = {},
+): PipelineRuntimeReader {
+	return runtime({
+		currentModule: () => "",
+		currentService: () => "",
+		...overrides,
+	});
+}
+
 describe("codeflyInjectedRuntime", () => {
 	it("recognizes a Codefly-owned test before endpoints are injected", () => {
 		expect(codeflyInjectedRuntime(runtime({ endpoints: () => [] }))).toBe(true);
@@ -101,16 +112,19 @@ describe("productOrigin", () => {
 		expect(productOrigin(withNoise)).toBe(ORIGIN);
 	});
 
-	it("falls back to SDK resolution when nothing is injected", () => {
+	it("falls back to SDK resolution when the harness started the graph itself", () => {
 		expect(
 			productOrigin(
-				runtime({ endpoints: () => [], resolveAddress: () => ORIGIN }),
+				selfStartedRuntime({
+					endpoints: () => [],
+					resolveAddress: () => ORIGIN,
+				}),
 			),
 		).toBe(ORIGIN);
 	});
 
 	it("throws when the origin can be neither injected nor resolved", () => {
-		expect(() => productOrigin(runtime())).toThrow(
+		expect(() => productOrigin(selfStartedRuntime())).toThrow(
 			/did not resolve frontend\/http/i,
 		);
 	});
@@ -136,11 +150,34 @@ describe("productGatewayURL", () => {
 		);
 	});
 
-	it("falls back to SDK resolution when nothing is injected", () => {
+	it("falls back to SDK resolution when the harness started the graph itself", () => {
 		expect(
 			productGatewayURL(
-				runtime({ endpoints: () => [], resolveAddress: () => GATEWAY }),
+				selfStartedRuntime({
+					endpoints: () => [],
+					resolveAddress: () => GATEWAY,
+				}),
 			),
 		).toBe(GATEWAY);
+	});
+
+	it("refuses a default-scope fallback while Codefly owns the process", () => {
+		// Codefly owns this process (module + service are set) but has not
+		// injected the endpoint yet. The deterministic lookup answers for the
+		// DEFAULT naming scope, not the scope Codefly actually started, so
+		// accepting it would hand the harness a well-formed address for a graph
+		// that is not under test — the Playwright web server would then proxy the
+		// product API to the wrong gateway and the suite would prove nothing while
+		// looking healthy. It must refuse instead.
+		const notYetInjected = runtime({
+			endpoints: () => [],
+			resolveAddress: () => "http://localhost:9999",
+		});
+		expect(() => productGatewayURL(notYetInjected)).toThrow(
+			/owns this process but injected no auth-gateway\/rest/i,
+		);
+		expect(() => productOrigin(notYetInjected)).toThrow(
+			/owns this process but injected no frontend\/http/i,
+		);
 	});
 });

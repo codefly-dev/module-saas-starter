@@ -65,13 +65,6 @@ function configuredGateway(options) {
 	return serviceURL(gateway, "Codefly auth-gateway/rest endpoint");
 }
 
-function isolatedBindings({ rest, connect }) {
-	return Object.freeze({
-		rest: serviceURL(rest, "Isolated Accounts REST destination"),
-		connect: serviceURL(connect, "Isolated Accounts Connect destination"),
-	});
-}
-
 /**
  * Server-only product API resolution through the Codefly SDK.
  *
@@ -80,19 +73,18 @@ function isolatedBindings({ rest, connect }) {
  * every product API call traverses the gateway's route allow-list, rate
  * limiter, and identity-header discipline. Resolution therefore fails closed —
  * a composition without a gateway is a configuration error, never a cue to
- * address Accounts directly.
+ * address Accounts directly. There is no direct-Accounts branch left to reach:
+ * this function returns the gateway or throws.
  *
- * `options.isolatedDirectAccounts` is the only remaining direct path, and it is
- * deliberately a call argument rather than an environment value: no fixture,
- * build mode, or leftover variable can reach it, and the running server passes
- * no arguments at all. Only an in-process test that constructs the object
- * selects it — and such a test covers the frontend in isolation, never the
- * gateway.
+ * Every caller resolves at RUNTIME, against the environment the running
+ * composition injected. `src/proxy.ts` forwards the product API namespaces to
+ * the address this returns, on the request, rather than Next baking a rewrite
+ * destination into the build manifest. A build therefore cannot freeze a
+ * destination that the running server never re-checks — the image carries no
+ * product API address at all, and an image built outside the module graph is
+ * exactly as correct as one built inside it.
  */
 export function resolveAccountsBindings(options = {}) {
-	if (options.isolatedDirectAccounts) {
-		return isolatedBindings(options.isolatedDirectAccounts);
-	}
 	const gateway = configuredGateway(options);
 	if (!gateway) {
 		throw new Error(
@@ -102,23 +94,6 @@ export function resolveAccountsBindings(options = {}) {
 				"address.",
 		);
 	}
-	return Object.freeze({ rest: gateway, connect: gateway });
-}
-
-/**
- * Build-time destinations for the Next product API rewrites.
- *
- * Next compiles rewrite destinations into the build manifest, and a container
- * image is built outside the module graph, so an unresolved gateway cannot fail
- * the build. It returns undefined instead: the image then carries no product
- * API rewrite, and the running server rejects that composition — at startup via
- * `instrumentation.ts`, and on the `/api/healthz` readiness probe. What it never
- * does is name a second destination; an ambiguous or malformed gateway still
- * fails the build.
- */
-export function resolveProductAPIRewrites(options = {}) {
-	const gateway = configuredGateway(options);
-	if (!gateway) return undefined;
 	return Object.freeze({ rest: gateway, connect: gateway });
 }
 

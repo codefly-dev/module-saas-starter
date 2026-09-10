@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
 	requireAccountsConnect,
 	resolveAccountsBindings,
-	resolveProductAPIRewrites,
 } from "../../../server/accounts-bindings.mjs";
 
 describe("server-only accounts bindings", () => {
@@ -148,33 +147,22 @@ describe("server-only accounts bindings", () => {
 		).toThrow(/did not resolve auth-gateway\/rest/);
 	});
 
-	it("lets an explicitly injected isolated test address Accounts directly", () => {
+	it("offers no option shape that reaches Accounts directly", () => {
+		// The direct-Accounts seam is gone rather than merely hard to select. No
+		// caller ever constructed it, so the only thing it kept alive was a
+		// working constructor for the path this module exists to remove.
 		expect(
-			resolveAccountsBindings({
-				endpoints: [],
-				environment: {},
-				isolatedDirectAccounts: {
-					rest: "http://localhost:2072/",
-					connect: "http://localhost:12930/",
-				},
-			}),
-		).toEqual({
-			rest: "http://localhost:2072",
-			connect: "http://localhost:12930",
-		});
-	});
-
-	it("validates an isolated injection as strictly as a gateway", () => {
-		expect(() =>
-			resolveAccountsBindings({
-				endpoints: [],
-				environment: {},
-				isolatedDirectAccounts: {
-					rest: "http://localhost:2072",
-					connect: "ftp://localhost:12930",
-				},
-			}),
-		).toThrow(/Isolated Accounts Connect destination/);
+			Object.keys(
+				resolveAccountsBindings({
+					currentModule: "saas",
+					environment: {},
+					endpoints: [
+						...directAccounts,
+						gatewayEndpoint("http://auth-gateway.internal"),
+					],
+				}),
+			).sort(),
+		).toEqual(["connect", "rest"]);
 	});
 
 	it("gives server routes the gateway as their Connect base", () => {
@@ -198,9 +186,10 @@ describe("server-only accounts bindings", () => {
 	});
 
 	it("gives the browser and the server the same gateway binding", () => {
-		// The browser reaches Accounts through the Next rewrites; a server route
-		// dials the gateway itself. Both must name one destination, or the two
-		// halves of a journey would cross different security paths.
+		// The browser reaches Accounts through the proxy's runtime forwarding; a
+		// server route dials the gateway itself. Both read THIS resolver, so both
+		// must name one destination, or the two halves of a journey would cross
+		// different security paths.
 		const options = {
 			currentModule: "saas",
 			environment: {},
@@ -209,47 +198,9 @@ describe("server-only accounts bindings", () => {
 				gatewayEndpoint("http://auth-gateway.internal"),
 			],
 		};
-		const browserPath = resolveProductAPIRewrites(options);
-		expect(browserPath).toEqual({
+		expect(resolveAccountsBindings(options)).toEqual({
 			rest: requireAccountsConnect(options),
 			connect: requireAccountsConnect(options),
-		});
-	});
-
-	describe("build-time rewrite destinations", () => {
-		it("names the gateway when the build can resolve one", () => {
-			expect(
-				resolveProductAPIRewrites({
-					currentModule: "saas",
-					environment: {},
-					endpoints: [gatewayEndpoint("http://auth-gateway.internal")],
-				}),
-			).toEqual({
-				rest: "http://auth-gateway.internal",
-				connect: "http://auth-gateway.internal",
-			});
-		});
-
-		it("emits no destination rather than naming Accounts", () => {
-			// An image is built outside the module graph, so this must not fail the
-			// build — but it must also never produce a second API path.
-			expect(
-				resolveProductAPIRewrites({
-					currentModule: "saas",
-					environment: {},
-					endpoints: directAccounts,
-				}),
-			).toBeUndefined();
-		});
-
-		it("fails the build on a retired direct binding", () => {
-			expect(() =>
-				resolveProductAPIRewrites({
-					currentModule: "saas",
-					endpoints: [],
-					environment: { API_REST_INTERNAL: "http://accounts-rest.internal" },
-				}),
-			).toThrow(/no longer selects an Accounts destination/);
 		});
 	});
 });

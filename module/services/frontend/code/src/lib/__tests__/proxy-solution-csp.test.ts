@@ -142,6 +142,12 @@ describe("proxy solution CSP", () => {
 		// A distinctive non-default port proves the listing target is read from
 		// the server's PORT, not hardcoded and not taken from the request.
 		vi.stubEnv("PORT", "4711");
+		// The product API cases below (/v1/*, /saas.accounts.v1.*) are forwarded
+		// to auth-gateway/rest by the proxy, which resolves it per request. A
+		// running server always has one — instrumentation.ts refuses to start
+		// otherwise — so name it here; without it those requests take the
+		// fail-closed 503 path, which carries no CSP to assert on.
+		vi.stubEnv("PRODUCT_GATEWAY_INTERNAL", "http://auth-gateway.internal");
 		vi.spyOn(console, "error").mockImplementation(() => {});
 		vi.spyOn(console, "info").mockImplementation(() => {});
 		vi.resetModules();

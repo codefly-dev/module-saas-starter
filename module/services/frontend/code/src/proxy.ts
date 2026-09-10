@@ -22,6 +22,7 @@ import {
 	expectedInternalToken,
 	INTERNAL_TOKEN_HEADER,
 } from "@/lib/internal-token";
+import { resolveAccountsBindings } from "../server/accounts-bindings.mjs";
 import { contentSecurityPolicyFromInputs } from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
@@ -66,6 +67,27 @@ export function trustedGatewayRequestHeaders(
 	headers.set(INTERNAL_TOKEN_HEADER, context.internalToken);
 	headers.set(PUBLIC_ORIGIN_HEADER, context.publicOrigin);
 	return headers;
+}
+
+/**
+ * Destination for a product API request, resolved from the RUNNING
+ * composition on the request rather than baked into the build.
+ *
+ * Next compiles `next.config` rewrite destinations into the build manifest, so
+ * a rewrite there names whatever the build could resolve — nothing in a
+ * container image build, or the build host's gateway when built beside a live
+ * graph — and the running server never re-checks it. Resolving here means the
+ * address the startup gate (instrumentation.ts) accepted is the same address
+ * every request is forwarded to, in the same process, from the same
+ * environment: there is no state where the server reports healthy while the
+ * product API path is missing or points somewhere else.
+ *
+ * The gateway is normalised without a trailing slash, so concatenating the
+ * request's own path and query preserves any base path the address carries.
+ */
+export function productAPIDestination(pathname: string, search: string): URL {
+	const { rest } = resolveAccountsBindings();
+	return new URL(`${rest}${pathname}${search}`);
 }
 
 const PUBLIC_PATHS = [
@@ -426,18 +448,44 @@ function mintNonce(): string {
 // Attach the nonce'd CSP to a pass-through response: the nonce goes on the
 // forwarded request headers (Next reads it to nonce its inline scripts) and the
 // policy is set on the response the browser receives.
+//
+// With `destination` the same forwarded headers ride a rewrite to the product
+// API gateway instead of continuing into this app, so the trust headers stamped
+// above reach the gateway exactly as they did when a next.config rewrite
+// carried them.
 function withNoncedCSP(
 	req: NextRequest,
 	baseRequestHeaders: Headers | undefined,
 	nonce: string,
 	csp: string,
+	destination?: URL,
 ): NextResponse {
 	const requestHeaders = baseRequestHeaders ?? new Headers(req.headers);
 	requestHeaders.set("x-nonce", nonce);
 	requestHeaders.set("content-security-policy", csp);
-	const response = NextResponse.next({ request: { headers: requestHeaders } });
+	const response = destination
+		? NextResponse.rewrite(destination, {
+				request: { headers: requestHeaders },
+			})
+		: NextResponse.next({ request: { headers: requestHeaders } });
 	response.headers.set("Content-Security-Policy", csp);
 	return response;
+}
+
+// A composition with no auth-gateway/rest is refused at startup
+// (instrumentation.ts), and the environment it reads cannot change afterwards,
+// so reaching this is a defect rather than a transient state — report it once
+// instead of once per request. Its own flag: it is a property of the
+// composition, not of the registry listing's health.
+let reportedMissingGateway = false;
+
+function reportMissingGateway(err: unknown): void {
+	if (reportedMissingGateway) return;
+	reportedMissingGateway = true;
+	console.error(
+		"product API: no auth-gateway/rest resolved; refusing to answer product API traffic from this app",
+		err,
+	);
 }
 
 function isPublic(pathname: string): boolean {
@@ -500,7 +548,31 @@ export async function proxy(req: NextRequest) {
 			nonce,
 			internalToken,
 		);
-		const response = withNoncedCSP(req, gatewayHeaders, nonce, csp);
+		// The product API namespaces are forwarded to auth-gateway/rest here, on
+		// the request, so the destination is always the one the running
+		// composition resolves. Failing the request closed matters: without a
+		// destination these paths would fall through to this app and answer a
+		// product API call with a 404 page, which reads to the browser as an empty
+		// result rather than as the misconfiguration it is.
+		let destination: URL | undefined;
+		if (isProductAPI(pathname)) {
+			try {
+				destination = productAPIDestination(pathname, search);
+			} catch (err) {
+				reportMissingGateway(err);
+				return NextResponse.json(
+					{ error: "product API gateway unavailable" },
+					{ status: 503 },
+				);
+			}
+		}
+		const response = withNoncedCSP(
+			req,
+			gatewayHeaders,
+			nonce,
+			csp,
+			destination,
+		);
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
 			response.headers.set("Referrer-Policy", "no-referrer");
 		}
