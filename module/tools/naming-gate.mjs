@@ -54,6 +54,15 @@ const PRUNE_DIRS = new Set([
 // Matched on the suffix, not the whole path: `rel` is relative to the scan root, which is the
 // repository root in canonical (`module/tools/...`) and the module root in a consumer copy
 // (`tools/...`).
+//
+// `.binpb` needs its reason stated, because skipping it looks unsafe and nearly was. A compiled
+// descriptor embeds the leading comments of the protos it was built from, so a forbidden name in
+// a proto reaches the binary verbatim — this scrub renamed a proto comment and left the shipped
+// descriptor still carrying the old name. Nothing here reads it. What closes that is not this
+// gate but the pair around it: the protos themselves are scanned as text, and
+// `codefly generate contracts --check` fails the build unless the descriptor matches them. A
+// clean proto plus an in-sync descriptor is a clean descriptor; drop either half and this skip
+// becomes a hole.
 const SKIP_FILE = (rel) =>
   /(?:^|\/)tools\/base-manifest\.json$/.test(rel) ||
   /(?:^|\/)tools\/naming-terms\.json$/.test(rel) || // digests only, by construction

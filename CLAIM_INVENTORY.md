@@ -113,13 +113,25 @@ means concretely:
 
 | Claim | Source | Executable evidence | Status | Owner |
 | --- | --- | --- | --- | --- |
-| The repository names no real customer, partner, employer, or downstream consumer | AGENTS.md § Naming and confidentiality | `node module/tools/naming-gate.mjs check` scans every file's contents *and* its path, holding its forbidden terms as digests rather than literals; `naming-gate.test.mjs` covers the matcher and asserts the shipped tree is clean. Both run in the `base-integrity` job | **implemented** | #569 |
+| No **text** file in the repository names a real customer, partner, employer, or downstream consumer | AGENTS.md § Naming and confidentiality | `node module/tools/naming-gate.mjs check` scans every file's contents *and* its path, holding its forbidden terms as digests rather than literals; `naming-gate.test.mjs` covers the matcher and asserts the shipped tree is clean. Both run in the `base-integrity` job | **implemented** | #569 |
+| One checked-in **binary** descriptor still carries such a name | `packages/saas-sdk/generated/contract/contract.binpb` | **none — outside the gate's reach.** A compiled descriptor embeds its protos' comments, and the gate skips binaries, so nothing detects this | known drift, filed | #585 |
 
   The gate runs as a step of the `base-integrity` job rather than as a job of
   its own, so it is mandatory through that job and adds no row to
-  § Repository-specific gates. Note the limit of what it establishes: it scans
-  the working tree, so it does not un-publish the names already in this
-  repository's git history or in its public issues. Both remain open.
+  § Repository-specific gates.
+
+  Three limits on what the first row establishes, none of them closed here.
+  It scans the working tree, so it does not un-publish the names already in
+  this repository's git history or in its public issues. And it reads text: the
+  accounts descriptor was regenerated with this change so that it matches its
+  scrubbed proto, but the saas-sdk copy cannot be — `codefly generate client`
+  refuses without `--force`, which also bumps the SDK toolchain, so it is
+  #585's to regenerate rather than something to smuggle into a scrub. Until
+  then that one file still spells a consumer's name in a public repository.
+  What keeps this from recurring in the accounts descriptor is not the gate but
+  the pair around it: the protos are scanned as text, and
+  `codefly generate contracts --check` fails the build unless the descriptor
+  matches them.
 - No public denylist of real names is introduced by this file or by anything in
   this change, and no functional or operational identifier was renamed — a
   configuration key such as `SIDECAR_REVOCATION_FAIL_OPEN` keeps its name until a
