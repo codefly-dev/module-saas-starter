@@ -15,6 +15,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
@@ -170,6 +171,57 @@ func callerID(ctx context.Context) (string, error) {
 		return "", status.Error(codes.Unauthenticated, "caller identity not found")
 	}
 	return id, nil
+}
+
+// verifiedActor resolves the audit identity of an already-authenticated caller.
+// actorID is the verified caller id the handler authorized; the credential kind
+// is the one the auth perimeter reports it authenticated (see
+// credentialKindFromContext), and the delegation chain comes from the trusted
+// `act` claim or gateway-forwarded X-Act header, never from a caller-controlled
+// one.
+//
+// It returns an error rather than a default when the perimeter reported no
+// credential kind. A record naming the wrong kind of credential is worse than
+// no record: the mutation fails loudly and leaves nothing behind, which is the
+// same fail-closed contract emitTx enforces for a failed audit write.
+func verifiedActor(ctx context.Context, actorID string) (business.AuditActor, error) {
+	actor := business.AuditActor{ID: actorID}
+	switch kind := credentialKindFromContext(ctx); kind {
+	case credentialKindSession:
+		actor.Type = business.ActorTypeUser
+	case credentialKindAPIKey:
+		actor.Type = business.ActorTypeAPIKey
+	default:
+		return business.AuditActor{}, status.Error(codes.Internal,
+			"cannot attribute the caller: the auth perimeter reported no credential kind")
+	}
+	actor.DelegationChain = verifiedDelegationChain(ctx)
+	return actor, nil
+}
+
+// verifiedDelegationChain flattens the RFC 8693 `act` chain into the parties
+// that acted on the subject's behalf, immediate delegate first. Every hop is
+// recorded: the chain exists only in the token, so a hop dropped here is
+// unrecoverable — the audit trail could no longer answer which systems touched
+// the mutation, only which one touched it last.
+//
+// The walk is bounded by MaxActorChainDepth. Both the mint and the verify paths
+// already enforce that bound (see auth.ValidateActorChain), so this cannot
+// truncate a legitimate chain; it fails closed against an in-memory cycle
+// rather than looping forever.
+func verifiedDelegationChain(ctx context.Context) []string {
+	delegate, ok := auth.VerifiedActorFromContext(ctx)
+	if !ok {
+		return nil
+	}
+	var chain []string
+	for hop := delegate; hop != nil && len(chain) < auth.MaxActorChainDepth; hop = hop.Act {
+		if hop.Subject == "" {
+			continue
+		}
+		chain = append(chain, hop.Subject)
+	}
+	return chain
 }
 
 // callerOrg extracts the caller's org id from context, empty string if absent.
@@ -604,7 +656,11 @@ func (h *webhookConnectHandler) CreateSubscription(ctx context.Context, req *con
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	sub, err := h.svc.CreateSubscription(ctx, req.Msg.OrgId, req.Msg.Url, req.Msg.Events, req.Msg.Description)
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	sub, err := h.svc.CreateSubscription(ctx, actor, req.Msg.OrgId, req.Msg.Url, req.Msg.Events, req.Msg.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +680,11 @@ func (h *webhookConnectHandler) DeleteSubscription(ctx context.Context, req *con
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	if err := h.svc.DeleteSubscription(ctx, orgID, req.Msg.Id); err != nil {
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	if err := h.svc.DeleteSubscription(ctx, actor, orgID, req.Msg.Id); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -742,7 +802,11 @@ func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.ReplayWebhookDelivery(ctx, orgID, req.Msg.Id)
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	d, err := h.svc.ReplayWebhookDelivery(ctx, actor, orgID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -773,7 +837,11 @@ func (h *webhookConnectHandler) RotateSecret(ctx context.Context, req *connect.R
 		return nil, translateGRPCError(err)
 	}
 	gracePeriod := time.Duration(req.Msg.GracePeriodSeconds) * time.Second
-	secret, oldSecretExpiresAt, err := h.svc.RotateWebhookSecret(ctx, orgID, req.Msg.Id, gracePeriod)
+	actor, err := verifiedActor(ctx, actorID)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	secret, oldSecretExpiresAt, err := h.svc.RotateWebhookSecret(ctx, actor, orgID, req.Msg.Id, gracePeriod)
 	if err != nil {
 		return nil, err
 	}

@@ -126,7 +126,11 @@ func TestReplayWebhookCommandPreservesExactEventAndQueuesNewDelivery(t *testing.
 	}
 	service.SetWebhookJobProducer(store)
 
-	replay, err := service.ReplayWebhookDelivery(t.Context(), orgID, original.ID)
+	replay, err := service.ReplayWebhookDelivery(
+		t.Context(),
+		AuditActor{ID: "00000000-0000-0000-0000-0000000000a1", Type: ActorTypeUser},
+		orgID, original.ID,
+	)
 	if err != nil {
 		t.Fatalf("ReplayWebhookDelivery: %v", err)
 	}

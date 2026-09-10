@@ -10,6 +10,7 @@ import (
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -36,6 +37,66 @@ type AuditEntry struct {
 	// second row, no second webhook fan-out). Empty disables dedup. See
 	// audit_event_idempotency (migration 118).
 	IdempotencyKey string
+}
+
+// Audit actor types. They are the values audit_events.actor_type admits, and
+// name what kind of credential the mutation was made with.
+const (
+	ActorTypeUser   = "user"
+	ActorTypeAPIKey = "api_key"
+	ActorTypeSystem = "system"
+	ActorTypeAgent  = "agent"
+)
+
+// AuditActor is the verified initiator of a privileged mutation. A transport
+// adapter resolves it from the authenticated request context after it has
+// authorized the call, never from fields the caller supplies in the request
+// body. ActorTypeSystem belongs to genuinely automated work: a caller with no
+// human behind it.
+type AuditActor struct {
+	ID   string
+	Type string
+	// DelegationChain names every party that acted on the actor's behalf
+	// (RFC 8693 `act`), immediate delegate first, when the request arrived
+	// through a delegation chain. It answers a different question than
+	// impersonation: who is acting *for* this actor, not which subject the
+	// actor is acting *as*.
+	//
+	// It is the whole chain, not its head: a multi-hop call is recorded by the
+	// only party that ever sees the chain, so an intermediary dropped here can
+	// never be recovered from the trail afterwards.
+	DelegationChain []string
+}
+
+func (a AuditActor) validate() error {
+	if a.ID == "" {
+		return errors.New("audit actor id is required")
+	}
+	// audit_events.actor_id is a UUID column, and the insert path maps a
+	// non-UUID id to NULL (see nilIfNotUUID). Rejecting it here is what makes
+	// this guard fail closed: without the check, an id this validator accepts
+	// still commits as an unattributed row — the exact outcome it exists to
+	// prevent — and does it silently.
+	if _, err := uuid.Parse(a.ID); err != nil {
+		return fmt.Errorf("audit actor id %q is not a uuid, and would be stored as no actor at all: %w", a.ID, err)
+	}
+	switch a.Type {
+	case ActorTypeUser, ActorTypeAPIKey, ActorTypeSystem, ActorTypeAgent:
+		return nil
+	default:
+		return fmt.Errorf("audit actor type %q is not one of %q, %q, %q, %q",
+			a.Type, ActorTypeUser, ActorTypeAPIKey, ActorTypeSystem, ActorTypeAgent)
+	}
+}
+
+// provenance is the payload the actor contributes to every event it initiates.
+// A direct call contributes nothing, so the stored payload stays empty rather
+// than carrying an empty delegation.
+func (a AuditActor) provenance() map[string]any {
+	if len(a.DelegationChain) == 0 {
+		return nil
+	}
+	return map[string]any{"delegated_by": a.DelegationChain}
 }
 
 // AuditEmitter writes audit events on a transaction it opens itself. It is the

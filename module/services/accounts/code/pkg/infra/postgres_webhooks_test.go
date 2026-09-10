@@ -545,7 +545,11 @@ func TestManualWebhookCommandsUseTransactionalGenericOutbox(t *testing.T) {
 	require.Equal(t, testDelivery.EventID, workload.GetEventId())
 	require.Equal(t, []byte(testDelivery.Payload), workload.GetRawBody())
 
-	replay, err := service.ReplayWebhookDelivery(testCtx, orgID, testDelivery.ID)
+	replay, err := service.ReplayWebhookDelivery(
+		testCtx,
+		business.AuditActor{ID: userID, Type: business.ActorTypeUser},
+		orgID, testDelivery.ID,
+	)
 	require.NoError(t, err)
 	require.NotEqual(t, testDelivery.ID, replay.ID)
 	require.Equal(t, testDelivery.EventID, replay.EventID)

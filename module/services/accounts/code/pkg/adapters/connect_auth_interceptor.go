@@ -20,7 +20,7 @@ import (
 var forwardedIdentityHeaders = []string{
 	"X-User-Id", "X-Org-Id", "X-Org-Role", "X-Platform-Role", "X-Roles",
 	"X-Scoped-Roles", "X-Scoped-Roles-Truncated", "X-Auth-Id", "X-User-Email", "X-User-Name", "X-Session-Id",
-	"X-Acting-As-User-Id", "X-Act", "X-Scopes", "X-MFA-Satisfied",
+	"X-Acting-As-User-Id", "X-Act", "X-Scopes", "X-Credential-Kind", "X-MFA-Satisfied",
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
 }
 
@@ -130,6 +130,10 @@ func (i *connectPolicyInterceptor) authorize(ctx context.Context, procedure stri
 	ctx = auth.WithVerifiedActor(ctx, identity.Actor)
 	ctx = withScopedRoles(ctx, identity.ScopedRoles)
 	ctx = withScopedRolesTruncated(ctx, identity.ScopedRolesTruncated)
+	// Locally verified access token: an interactive session by construction.
+	// API keys are exchanged at the perimeter through ValidateAPIKey and never
+	// reach VerifyAccess, so this branch cannot be a machine credential.
+	ctx = withCredentialKind(ctx, credentialKindSession)
 	return auth.WithVerifiedSessionID(ctx, identity.SessionID), nil
 }
 
@@ -143,6 +147,7 @@ func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) contex
 	if scopes := headers.Get("X-Scopes"); scopes != "" {
 		ctx = withScopes(ctx, parseScopes(scopes))
 	}
+	ctx = withCredentialKind(ctx, headers.Get("X-Credential-Kind"))
 	if scopedRoles := headers.Get("X-Scoped-Roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
