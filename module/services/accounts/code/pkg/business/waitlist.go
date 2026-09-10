@@ -201,7 +201,12 @@ func (s *Service) JoinWaitlist(
 	}
 
 	if result != nil && result.Created {
-		s.emit(ctx, entry.ID, "waitlist", EventWaitlistJoined, "waitlist_entry", entry.ID, "")
+		// A prospect is a human with no user record yet, so the entry stands in
+		// for the actor id. The kind is still "user": "waitlist" is not a value
+		// audit_events.actor_type admits, so the CHECK constraint rejected these
+		// rows — and because an observation emits on its own transaction, the
+		// rejection was logged and swallowed, leaving no record at all.
+		s.emit(ctx, entry.ID, ActorTypeUser, EventWaitlistJoined, "waitlist_entry", entry.ID, "")
 	}
 	return generic, nil
 }
@@ -234,7 +239,9 @@ func (s *Service) VerifyWaitlist(
 	}
 	entry := result.Entry
 	if result.Transitioned {
-		s.emit(ctx, entry.ID, "waitlist", EventWaitlistVerified, "waitlist_entry", entry.ID, "")
+		// Same as JoinWaitlist: a person followed the verification link, and
+		// "waitlist" was never a storable actor_type.
+		s.emit(ctx, entry.ID, ActorTypeUser, EventWaitlistVerified, "waitlist_entry", entry.ID, "")
 	}
 	return &gen.VerifyWaitlistResponse{
 		State:   waitlistStateFromString(entry.State),

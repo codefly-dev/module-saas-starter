@@ -63,7 +63,13 @@ type webhookPayload struct {
 func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelivery, []byte, error) {
 	deliveryID := NewIDString()
 	data, err := json.Marshal(map[string]any{
-		"event_type":      string(entry.EventType),
+		"event_type": string(entry.EventType),
+		// The registered version of this event's contract. A subscriber reads
+		// actor_id and actor_type out of this envelope, so when a field's
+		// meaning is revised under a name that cannot change (saas.webhook.*
+		// v2: actor_id became the initiating user, not the organization) this
+		// is the only in-band way to tell which contract a delivery follows.
+		"schema_version":  entry.SchemaVersion,
 		"resource":        entry.Resource,
 		"resource_id":     entry.ResourceID,
 		"actor_id":        entry.ActorID,

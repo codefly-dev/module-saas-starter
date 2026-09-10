@@ -131,7 +131,22 @@ func def(t EventType, dur AuditDurability, cat AuditCategory, desc string, field
 	}
 }
 
+// revised marks a definition whose payload or field meaning changed after the
+// type was published. `type` is immutable (see EVENTS.md), so the version is
+// the only signal that separates rows written under the old contract from rows
+// written under the new one — and it is the signal
+// TestAuditCatalog_TypesCarryNoVersionSuffix points producers at. Bumping it
+// costs no migration: SyncAuditEventTypes upserts the projection at boot and
+// normalize stamps schema_version from here.
+func revised(d AuditEventDefinition, version int) AuditEventDefinition {
+	d.Version = version
+	return d
+}
+
 func str(name string) PayloadField { return PayloadField{Name: name, Kind: FieldString} }
+func strs(name string) PayloadField {
+	return PayloadField{Name: name, Kind: FieldStringArray}
+}
 func uid(name string) PayloadField { return PayloadField{Name: name, Kind: FieldUUID} }
 func enum(name string, values ...string) PayloadField {
 	return PayloadField{Name: name, Kind: FieldEnum, Enum: values}
@@ -405,9 +420,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventGDPRDeletionReq, CategoryLifecycle, "A GDPR deletion was requested."),
 	mutation(EventGDPRDeletionDone, CategoryLifecycle, "A GDPR deletion completed."),
 
-	mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created.", webhookAdminFields...),
-	mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted.", webhookAdminFields...),
-	mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...),
+	revised(mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created.", webhookAdminFields...), webhookAdminVersion),
+	revised(mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted.", webhookAdminFields...), webhookAdminVersion),
+	revised(mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...), webhookAdminVersion),
 	mutation(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested."),
 	mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
@@ -423,7 +438,7 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("head"), str("delivery_id")),
 	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
 		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
-	mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated.", webhookAdminFields...),
+	revised(mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated.", webhookAdminFields...), webhookAdminVersion),
 	observation(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	mutation(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
 	mutation(EventEventSubscriptionCreated, CategorySystem, "A domain-event subscription was created.",
@@ -441,12 +456,24 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
 }
 
+// webhookAdminVersion is version 2 of the webhook administration events: the
+// version at which actor_id became the initiating user rather than the
+// organization the change was made in, and `delegated_by` appeared. The value
+// of actor_id changed meaning under a name that could not change, so the
+// version is what tells a v1 row (actor_id is an org) from a v2 row (actor_id
+// is a user) — in the audit table and in the webhook fan-out alike. Without it
+// the release boundary exists only in prose, and an append-only trail cannot be
+// re-dated later.
+const webhookAdminVersion = 2
+
 // webhookAdminFields is the shared payload of the webhook administration
 // events. The initiator itself is the row's actor_id/actor_type; `delegated_by`
-// records the RFC 8693 `act` party that called on the initiator's behalf, and is
-// absent on a direct call.
+// records the RFC 8693 `act` parties that called on the initiator's behalf,
+// immediate delegate first, and is absent on a direct call. It is a list
+// because a delegation chain nests: recording only its head would discard every
+// intermediary, and the chain lives nowhere but the request's token.
 var webhookAdminFields = []PayloadField{
-	str("delegated_by"),
+	strs("delegated_by"),
 }
 
 // documentFields is the shared payload of every document.* event. `solution`

@@ -123,23 +123,36 @@ transaction. The event names the caller who ran it:
 - `actor_id` is the verified initiator resolved from the authenticated request,
   never the organization the change was made in.
 - `actor_type` is the credential the caller presented — `user` for an
-  interactive session, `api_key` for a scoped key. `system` is reserved for
-  genuinely automated work; no caller of these four operations claims it today.
-- `delegated_by` (payload) names the immediate party that called on the
-  initiator's behalf (the RFC 8693 `act` chain), and is absent on a direct call.
-  It is delegation, not impersonation: the initiator stays the subject.
+  interactive session, `api_key` for a key — as the auth perimeter reports it in
+  `X-Credential-Kind`. It is not inferred from the caller's scopes: scopes are a
+  key's authorization ceiling, and a key created without any carries none, so a
+  scope set answers "was this constrained", never "was this a machine
+  credential". A request whose credential kind the perimeter did not report is
+  refused, not attributed to a guessed kind. `system` is reserved for genuinely
+  automated work; no caller of these four operations claims it today.
+- `delegated_by` (payload) lists every party that called on the initiator's
+  behalf (the RFC 8693 `act` chain), immediate delegate first, and is absent on
+  a direct call. It is the whole chain, not its head: the chain exists only in
+  the request's token, so a hop left out here can never be recovered. It is
+  delegation, not impersonation: the initiator stays the subject.
 
 Nothing about the endpoint travels in the payload — not the signing secret, not
 the one-time reveal, not the endpoint's query string.
 
-A subscriber to one of these types reads the same values from the delivery
-payload's `data.actor_id` and `data.actor_type`, so a consumer that treated
-`actor_id` as an organization id now sees a user id. The event type names and
-schema version are unchanged, so the subscription itself keeps firing. Events
-written before this behaviour landed carry the organization id and `system`, and
-are left as they were recorded: an append-only trail is not rewritten with a
-guessed actor. Attribution is complete for events written from the release
-containing this change onward.
+These four events are at **schema version 2**. A version 1 row recorded
+`actor_id` as the organization and `actor_type` as `system`; a version 2 row
+records the initiating user and the credential they used. The event type names
+are unchanged — a published type is immutable — so subscriptions keep firing,
+and a subscriber reads the same values from the delivery payload's
+`data.actor_id` and `data.actor_type`, where a consumer that treated `actor_id`
+as an organization id now sees a user id.
+
+`data.schema_version` is what tells the two contracts apart, in the audit table
+and in the delivery envelope alike; every delivery now carries it, for every
+event type. Branch on it rather than on a deployment date. Rows written before
+this change are left exactly as they were recorded — an append-only trail is
+not rewritten with a guessed actor — and their version, not a release note, is
+what identifies them.
 
 Impersonation is not yet part of this record. The accounts service does not
 resolve an effective subject from the forwarded impersonation assertion at all,

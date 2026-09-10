@@ -214,19 +214,25 @@ func (s *Service) principalStore() PrincipalStore {
 // would be mislabeled "user" in the audit trail.
 func (s *Service) actorTypeForCreator(ctx context.Context, principalID string) string {
 	if principalID == "" {
-		return "user"
+		return ActorTypeUser
 	}
 	creator, err := s.GetPrincipal(ctx, principalID)
 	if err != nil {
-		return "user"
+		return ActorTypeUser
 	}
 	switch creator.Kind {
 	case PrincipalKindAgent:
-		return "agent"
+		return ActorTypeAgent
 	case PrincipalKindService:
-		return "service"
+		// A service principal is automated work with no human behind it, which
+		// is what ActorTypeSystem names. "service" is not a value
+		// audit_events.actor_type admits, so emitting it made the CHECK
+		// constraint reject the row — and because emitTx runs inside the
+		// caller's transaction, that rejection failed the whole
+		// CreateAgentPrincipal mutation rather than just the record.
+		return ActorTypeSystem
 	default:
-		return "user"
+		return ActorTypeUser
 	}
 }
 

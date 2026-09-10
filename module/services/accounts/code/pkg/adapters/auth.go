@@ -480,6 +480,50 @@ func scopesFromContext(ctx context.Context) []string {
 	return v
 }
 
+// Credential kinds the perimeter reports in X-Credential-Kind. They name the
+// credential a request actually presented, which is knowledge only the
+// authenticating perimeter has: a handler sees the resulting identity, never
+// the credential behind it.
+const (
+	credentialKindSession = "session"
+	credentialKindAPIKey  = "api_key"
+)
+
+// credentialKindCtxKey holds the credential kind the auth perimeter
+// authenticated this request with — the gateway-forwarded `X-Credential-Kind`
+// header, or `session` stamped locally when this service verified an access
+// token itself (an API key never reaches VerifyAccess; the gateway exchanges it
+// through ValidateAPIKey).
+//
+// It is deliberately NOT derived from the scope set: scopes are an API key's
+// authorization ceiling, and a key created with none — which CreateAPIKey
+// permits — carries no scopes at all, so scope presence answers "was this
+// constrained", never "was this a machine credential".
+type credentialKindCtxKeyType struct{}
+
+var credentialKindCtxKey = credentialKindCtxKeyType{}
+
+// withCredentialKind stamps the authenticated credential kind on the context.
+// An unrecognized or empty value is not stamped, so a consumer sees "unknown"
+// rather than a wrong-but-plausible kind.
+func withCredentialKind(ctx context.Context, kind string) context.Context {
+	switch kind {
+	case credentialKindSession, credentialKindAPIKey:
+		return context.WithValue(ctx, credentialKindCtxKey, kind)
+	default:
+		return ctx
+	}
+}
+
+// credentialKindFromContext returns the authenticated credential kind, or ""
+// when the perimeter did not report one. Callers that record the kind must
+// treat "" as unattributable rather than assuming a default — see
+// verifiedActor.
+func credentialKindFromContext(ctx context.Context) string {
+	kind, _ := ctx.Value(credentialKindCtxKey).(string)
+	return kind
+}
+
 // scopedRolesCtxKey holds the caller's per-scope role grants, forwarded by the
 // auth-gateway as the JSON `X-Scoped-Roles` header (or read from the `sr` claim
 // on the direct-JWT path). It lets a handler authorize a scoped operation from

@@ -97,6 +97,11 @@ func TestWebhookAdministrationIsAttributedToItsInitiatorInTheDatabase(t *testing
 	require.Len(t, created, 1)
 	require.Equal(t, adminA, created[0].ActorID, "the creating administrator, not the organization")
 	require.NotEqual(t, orgID, created[0].ActorID)
+	// Version 2 is what separates a row whose actor_id is a user from a v1 row
+	// whose actor_id is the organization. Without it the release boundary
+	// exists only in prose, and an append-only trail cannot be re-dated.
+	require.Equal(t, 2, created[0].SchemaVersion,
+		"the revised actor_id contract must be legible from the row itself")
 	require.Equal(t, business.ActorTypeUser, created[0].ActorType)
 	require.Equal(t, orgID, created[0].OrgID)
 	require.Equal(t, "webhook_subscription", created[0].Resource)
@@ -112,6 +117,7 @@ func TestWebhookAdministrationIsAttributedToItsInitiatorInTheDatabase(t *testing
 	rotations := webhookAuditEntries(t, ctx, orgID, business.EventWebhookSecretRotated)
 	require.Len(t, rotations, 1)
 	require.Equal(t, adminB, rotations[0].ActorID)
+	require.Equal(t, 2, rotations[0].SchemaVersion)
 	require.Equal(t, business.ActorTypeUser, rotations[0].ActorType)
 	require.Equal(t, sub.ID, rotations[0].ResourceID)
 	require.NotEqual(t, created[0].ActorID, rotations[0].ActorID,
@@ -175,7 +181,8 @@ func TestDelegatedWebhookAdministrationRecordsBothPartiesInTheDatabase(t *testin
 	orgID := org.Organization.Id
 
 	_, err = testService.CreateSubscription(ctx, business.AuditActor{
-		ID: owner, Type: business.ActorTypeUser, DelegatedBy: "svc:automation-runner",
+		ID: owner, Type: business.ActorTypeUser,
+		DelegationChain: []string{"svc:automation-runner", "svc:gateway"},
 	}, orgID, attributionWebhookURL, []string{"saas.user.registered"}, "delegated")
 	require.NoError(t, err)
 
@@ -183,7 +190,10 @@ func TestDelegatedWebhookAdministrationRecordsBothPartiesInTheDatabase(t *testin
 	require.Len(t, created, 1)
 	require.Equal(t, owner, created[0].ActorID)
 	require.Equal(t, business.ActorTypeUser, created[0].ActorType)
-	require.Equal(t, "svc:automation-runner", created[0].Payload["delegated_by"])
+	// Read back through JSONB, so the hops arrive as []any. Every hop survives
+	// the round trip: a multi-hop chain that reached the mutation must still be
+	// answerable from the committed row.
+	require.Equal(t, []any{"svc:automation-runner", "svc:gateway"}, created[0].Payload["delegated_by"])
 	require.False(t, created[0].IsImpersonated)
 }
 
@@ -211,6 +221,14 @@ func TestUnattributedWebhookAdministrationCommitsNothing(t *testing.T) {
 
 	_, err = testService.CreateSubscription(ctx, business.AuditActor{}, orgID,
 		attributionWebhookURL, []string{"saas.user.registered"}, "unattributed")
+	require.Error(t, err)
+
+	// An id the UUID column cannot hold would be stored as NULL — an
+	// unattributed row wearing an actor_type — so it is refused before the
+	// mutation opens its transaction.
+	_, err = testService.CreateSubscription(ctx, business.AuditActor{
+		ID: "module:acme", Type: business.ActorTypeUser,
+	}, orgID, attributionWebhookURL, []string{"saas.user.registered"}, "unstorable actor")
 	require.Error(t, err)
 
 	subs, err := testService.ListSubscriptions(ctx, orgID)

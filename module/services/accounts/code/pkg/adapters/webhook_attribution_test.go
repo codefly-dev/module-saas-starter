@@ -11,6 +11,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+
 	"connectrpc.com/connect"
 	"github.com/stretchr/testify/require"
 )
@@ -164,14 +165,29 @@ func installWebhookAttributionService(t *testing.T) (*webhookConnectHandler, *we
 
 // webhookCallerContext models a caller the auth interceptor has already
 // verified: a session identity plus the recent step-up sensitive webhook
-// operations require.
+// operations require. The credential kind is stamped exactly as the
+// interceptor stamps it, because attribution reads it and refuses without it.
 func webhookCallerContext(userID string) context.Context {
-	return stampVerifiedIdentity(context.Background(), userID, webhookOrgID, auth.Assurance{
+	return withCredentialKind(stampVerifiedIdentity(context.Background(), userID, webhookOrgID, auth.Assurance{
+		AuthenticationMethods: []string{auth.AuthenticationMethodOAuth, auth.AuthenticationMethodOTP},
+		Level:                 auth.AssuranceLevelAAL2,
+		AuthenticatedAt:       time.Now(),
+		MFAVerifiedAt:         time.Now(),
+	}), credentialKindSession)
+}
+
+// webhookAPIKeyCallerContext models the same caller arriving on an API key the
+// gateway validated. scopes is what that key carries — deliberately allowed to
+// be empty, which is a key CreateAPIKey accepts today.
+func webhookAPIKeyCallerContext(userID string, scopes ...string) context.Context {
+	ctx := stampVerifiedIdentity(context.Background(), userID, webhookOrgID, auth.Assurance{
 		AuthenticationMethods: []string{auth.AuthenticationMethodOAuth, auth.AuthenticationMethodOTP},
 		Level:                 auth.AssuranceLevelAAL2,
 		AuthenticatedAt:       time.Now(),
 		MFAVerifiedAt:         time.Now(),
 	})
+	ctx = withScopes(ctx, scopes)
+	return withCredentialKind(ctx, credentialKindAPIKey)
 }
 
 func seedSubscription(t *testing.T, store *webhookAttributionStore) *business.WebhookSubscription {
@@ -288,18 +304,58 @@ func TestWebhookMutationsDistinguishTwoAdminsInOneOrganization(t *testing.T) {
 
 // TestWebhookMutationCarriesTheCredentialKind proves an API-key request is not
 // filed as an interactive session, and that neither is filed as system work.
+//
+// The scopeless case is the regression: attribution used to read the credential
+// kind off the scope set, and a key created with no scopes — which
+// CreateAPIKey permits, the proto declares no min_items — carries none, so a
+// machine credential was recorded as a human session. Those keys also satisfy
+// requireScope vacuously, which makes them the least constrained callers in the
+// system and the ones whose attribution matters most.
 func TestWebhookMutationCarriesTheCredentialKind(t *testing.T) {
+	for name, scopes := range map[string][]string{
+		"a scoped key":    {"webhooks:write"},
+		"a scopeless key": nil,
+	} {
+		t.Run(name, func(t *testing.T) {
+			handler, store, emitter := installWebhookAttributionService(t)
+			sub := seedSubscription(t, store)
+
+			ctx := webhookAPIKeyCallerContext(webhookAdminAID, scopes...)
+			_, err := handler.DeleteSubscription(ctx, connect.NewRequest(&gen.DeleteWebhookSubscriptionRequest{Id: sub.ID}))
+			require.NoError(t, err)
+
+			entry := emitter.only(t)
+			require.Equal(t, webhookAdminAID, entry.ActorID)
+			require.Equal(t, business.ActorTypeAPIKey, entry.ActorType,
+				"a key that carries no scopes is still a machine credential")
+			require.NotEqual(t, business.ActorTypeUser, entry.ActorType)
+			require.NotEqual(t, business.ActorTypeSystem, entry.ActorType)
+		})
+	}
+}
+
+// TestWebhookMutationRefusesACallerOfUnknownCredentialKind — when the perimeter
+// reports no credential kind, the mutation fails rather than guessing one. A
+// record naming the wrong kind of credential is worse than no record, and the
+// mutation must not outlive its record either.
+func TestWebhookMutationRefusesACallerOfUnknownCredentialKind(t *testing.T) {
 	handler, store, emitter := installWebhookAttributionService(t)
 	sub := seedSubscription(t, store)
 
-	ctx := withScopes(webhookCallerContext(webhookAdminAID), []string{"webhooks:write"})
-	_, err := handler.DeleteSubscription(ctx, connect.NewRequest(&gen.DeleteWebhookSubscriptionRequest{Id: sub.ID}))
-	require.NoError(t, err)
+	// A verified identity with no credential kind: what an older perimeter,
+	// or a transport that forgot to stamp it, would produce.
+	ctx := stampVerifiedIdentity(context.Background(), webhookAdminAID, webhookOrgID, auth.Assurance{
+		AuthenticationMethods: []string{auth.AuthenticationMethodOAuth, auth.AuthenticationMethodOTP},
+		Level:                 auth.AssuranceLevelAAL2,
+		AuthenticatedAt:       time.Now(),
+		MFAVerifiedAt:         time.Now(),
+	})
 
-	entry := emitter.only(t)
-	require.Equal(t, webhookAdminAID, entry.ActorID)
-	require.Equal(t, business.ActorTypeAPIKey, entry.ActorType)
-	require.NotEqual(t, business.ActorTypeSystem, entry.ActorType)
+	_, err := handler.DeleteSubscription(ctx, connect.NewRequest(&gen.DeleteWebhookSubscriptionRequest{Id: sub.ID}))
+	require.Error(t, err)
+	require.Equal(t, connect.CodeInternal, connect.CodeOf(err))
+	require.Empty(t, emitter.entries, "no event may claim a credential kind nobody reported")
+	require.Len(t, store.subscriptions, 1, "and the mutation must not have happened either")
 }
 
 // TestWebhookMutationRecordsDelegationSeparatelyFromTheActor proves the RFC 8693
@@ -309,14 +365,23 @@ func TestWebhookMutationRecordsDelegationSeparatelyFromTheActor(t *testing.T) {
 	handler, store, emitter := installWebhookAttributionService(t)
 	sub := seedSubscription(t, store)
 
-	ctx := auth.WithVerifiedActor(webhookCallerContext(webhookAdminAID), &auth.Actor{Subject: "svc:automation-runner"})
+	ctx := auth.WithVerifiedActor(webhookCallerContext(webhookAdminAID), &auth.Actor{
+		Subject: "svc:automation-runner",
+		Act:     &auth.Actor{Subject: "svc:gateway"},
+	})
 	_, err := handler.DeleteSubscription(ctx, connect.NewRequest(&gen.DeleteWebhookSubscriptionRequest{Id: sub.ID}))
 	require.NoError(t, err)
 
 	entry := emitter.only(t)
 	require.Equal(t, webhookAdminAID, entry.ActorID)
 	require.Equal(t, business.ActorTypeUser, entry.ActorType)
-	require.Equal(t, map[string]any{"delegated_by": "svc:automation-runner"}, entry.Payload)
+	// Every hop, immediate delegate first. The chain lives only in the request
+	// token, so an intermediary omitted here is gone for good — the trail could
+	// then say which system touched the mutation last, never which systems
+	// touched it.
+	require.Equal(t, map[string]any{
+		"delegated_by": []string{"svc:automation-runner", "svc:gateway"},
+	}, entry.Payload)
 	require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload))
 	require.False(t, entry.IsImpersonated, "a delegation chain is not an impersonation")
 }
@@ -391,6 +456,10 @@ func TestWebhookMutationRefusesAnUnattributedActor(t *testing.T) {
 		"no id":        {Type: business.ActorTypeUser},
 		"unknown type": {ID: webhookAdminAID, Type: "operator"},
 		"unattributed": {},
+		// audit_events.actor_id is a UUID column and the insert maps a
+		// non-UUID id to NULL, so accepting one here would commit exactly the
+		// unattributed row this guard exists to prevent.
+		"id that cannot be stored": {ID: "module:acme", Type: business.ActorTypeUser},
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.Error(t, service.DeleteSubscription(context.Background(), actor, webhookOrgID, sub.ID))
@@ -404,20 +473,50 @@ func TestWebhookMutationRefusesAnUnattributedActor(t *testing.T) {
 // verified request context the interceptor installed, never from anything the
 // caller can put in the request body.
 func TestVerifiedActorReadsOnlyTrustedContext(t *testing.T) {
-	session := verifiedActor(context.Background(), webhookAdminAID)
+	session, err := verifiedActor(withCredentialKind(context.Background(), credentialKindSession), webhookAdminAID)
+	require.NoError(t, err)
 	require.Equal(t, business.AuditActor{ID: webhookAdminAID, Type: business.ActorTypeUser}, session)
 
-	apiKey := verifiedActor(withScopes(context.Background(), []string{"webhooks:write"}), webhookAdminAID)
+	// The kind comes from the perimeter, never from the scope set: a key with
+	// no scopes is an API key, and a session with scopes stamped on it is not.
+	apiKey, err := verifiedActor(withCredentialKind(context.Background(), credentialKindAPIKey), webhookAdminAID)
+	require.NoError(t, err)
 	require.Equal(t, business.ActorTypeAPIKey, apiKey.Type)
 
-	delegated := verifiedActor(
-		auth.WithVerifiedActor(context.Background(), &auth.Actor{
-			Subject: "svc:automation-runner",
-			Act:     &auth.Actor{Subject: "svc:gateway"},
-		}),
+	scoped, err := verifiedActor(
+		withScopes(withCredentialKind(context.Background(), credentialKindSession), []string{"webhooks:write"}),
 		webhookAdminAID,
 	)
+	require.NoError(t, err)
+	require.Equal(t, business.ActorTypeUser, scoped.Type,
+		"scopes are an authorization ceiling, not evidence of the credential kind")
+
+	delegated, err := verifiedActor(
+		auth.WithVerifiedActor(
+			withCredentialKind(context.Background(), credentialKindSession),
+			&auth.Actor{
+				Subject: "svc:automation-runner",
+				Act:     &auth.Actor{Subject: "svc:gateway"},
+			},
+		),
+		webhookAdminAID,
+	)
+	require.NoError(t, err)
 	require.Equal(t, webhookAdminAID, delegated.ID)
-	require.Equal(t, "svc:automation-runner", delegated.DelegatedBy,
-		"the immediate delegate is recorded, not the outermost hop")
+	require.Equal(t, []string{"svc:automation-runner", "svc:gateway"}, delegated.DelegationChain,
+		"every hop is recorded, immediate delegate first")
+
+	_, err = verifiedActor(context.Background(), webhookAdminAID)
+	require.Error(t, err, "an unreported credential kind is refused, not defaulted")
+}
+
+// TestVerifiedDelegationChainIsBounded — the chain is validated at mint and at
+// verify, so a legitimate one can never reach the bound; this pins that a
+// cycle in an in-memory chain terminates instead of hanging the request.
+func TestVerifiedDelegationChainIsBounded(t *testing.T) {
+	cycle := &auth.Actor{Subject: "svc:a"}
+	cycle.Act = cycle
+
+	chain := verifiedDelegationChain(auth.WithVerifiedActor(context.Background(), cycle))
+	require.Len(t, chain, auth.MaxActorChainDepth)
 }
