@@ -136,6 +136,7 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 
 			{selectedTeam && (
 				<TeamMembersPanel
+					orgId={orgId}
 					teamId={selectedTeam.id}
 					teamName={selectedTeam.name}
 					onClose={() => setSelectedTeam(null)}

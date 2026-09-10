@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -23,9 +24,21 @@ func (s *Service) ListTeams(ctx context.Context, req *gen.ListTeamsRequest) (*ge
 	return &gen.ListTeamsResponse{Teams: teams}, nil
 }
 
+// ErrTeamMemberNotInParentOrganization is the single answer for every target
+// the organization has not admitted — a user who does not exist, one who exists
+// but belongs to no organization, one who belongs to a different organization,
+// and one whose membership was retired while the write was in flight. Telling
+// them apart would let a team administrator enumerate the user table.
+var ErrTeamMemberNotInParentOrganization = errors.New("user is not a member of the team's organization")
+
 // AddTeamMember adds a member to a team. The team_id-only request
 // shape forces a team→org resolve under WithControlPlane before entering
 // the tenant-scoped tx that does the actual write.
+//
+// A team membership is a child of an organization membership, so the target's
+// eligibility is settled in the same transaction as the write and under the
+// same lock a membership removal takes. The caller's authority over the team
+// is a separate question, answered by the handler before we get here.
 func (s *Service) AddTeamMember(ctx context.Context, actorID string, req *gen.AddTeamMemberRequest) error {
 	w := wool.Get(ctx).In("AddTeamMember")
 
@@ -35,6 +48,9 @@ func (s *Service) AddTeamMember(ctx context.Context, actorID string, req *gen.Ad
 	}
 
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		if err := s.store.LockOrgMembership(ctx, orgID, req.UserId); err != nil {
+			return err
+		}
 		if err := s.store.AddTeamMember(ctx, req.TeamId, req.UserId, teamRoleToString(req.Role)); err != nil {
 			return err
 		}

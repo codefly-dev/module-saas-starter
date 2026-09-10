@@ -114,7 +114,7 @@ executable inventory and this table in the same change.
 | Scope | Relations | Required database boundary |
 |---|---|---|
 | `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `solution_registrations` | No RLS; exact grants |
-| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `installations`, `invitations`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `installations`, `invitations`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
@@ -125,6 +125,37 @@ LEVEL SECURITY`, and policy presence for every public application table against
 a live database. Migration `65_role_permissions_rls` closes the former
 child-table gap: `role_permissions` reads follow parent-role visibility, while
 inserts may target only a custom role owned by the current tenant.
+
+## Team membership is a child of organization membership
+
+Row security decides which team's rows a transaction may reach. It says nothing
+about whether the person being added belongs to the team's organization, so
+until migration `127_team_membership_parent_org` a caller authorized to
+administer a team could install any user in the database as a team
+administrator.
+
+`team_members` now carries `org_id NOT NULL` under two composite foreign keys:
+`(team_id, org_id)` references `teams (id, org_id)`, so the organization on a
+membership row cannot disagree with the team's own and no writer can offer an
+organization of its own choosing as proof; `(org_id, user_id)` references
+`organization_members (org_id, user_id)` with `ON DELETE CASCADE`, so a team
+membership cannot exist without a live parent membership and losing the parent
+retires it in the same transaction. PostgreSQL performs referential checks with
+row security bypassed, so both hold for `app_tenant`, `app_control_plane`, the
+migration principal, and direct SQL alike.
+
+The insert's `FOR KEY SHARE` lock on the `organization_members` row serializes a
+team write against a concurrent organization removal, so neither commit order
+leaves an orphan; `Store.LockOrgMembership` takes the matching advisory lock for
+transactions that read a membership before acting on it. Memberships that
+predate the invariant were never repaired by manufacturing the missing parent —
+they were moved to `team_membership_quarantine`. That record carries no
+request-relation grant and is read through the control plane; it still forces
+row level security under a tenant policy, because a table with a tenant column
+and no policy is indistinguishable from one whose isolation was forgotten. It
+also outlives a rollback of the migration that filled it — the memberships it
+describes are already deleted and no migration restores them, so dropping the
+record with the schema would destroy the only evidence they existed.
 
 ## Generic job platform
 
