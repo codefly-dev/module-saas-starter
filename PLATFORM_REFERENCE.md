@@ -157,7 +157,7 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   neither party's platform grants reach an impersonated request. See
   [AUTHZ.md](./AUTHZ.md) "Request identity".
 - **Audited, ✅:** emits `platform.user_impersonated`; every audited action taken
-  while impersonating carries `impersonated_by` (migration 125); `RevokeSession`
+  while impersonating carries `impersonated_by` (migration 129); `RevokeSession`
   / `ListActiveSessions` are support+.
 - **Per-request re-validation, ✅:** the impersonation token is a normal
   L1/L2/L3-checked runtime identity each request; it is a signed 15-minute
