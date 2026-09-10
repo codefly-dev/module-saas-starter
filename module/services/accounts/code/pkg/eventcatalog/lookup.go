@@ -56,28 +56,40 @@ func InternalPublishedTypes() []string {
 	return out
 }
 
-// PartitionKey resolves the ordering domain a published event type declares in
-// the composed catalog, substituting the envelope's scope fields into the
-// declared template ("{tenant_id}", "{tenant_id}/{boundary_id}"). A type that
-// declares no partition — or that the catalog does not carry at all — is
-// unordered and resolves to the empty key.
+// UnorderedPublishedTypes returns the types of every published event that
+// declares no partition. Such a type has no ordering domain at all, so an
+// ordered subscription to it cannot be honoured: the relay orders a delivery
+// only when the event carries a partition key, and silently treats the rest as
+// unordered. The Subscribe authority gate consults this so a subscriber is told
+// at subscribe time, rather than discovering reordered deliveries in production.
+// The list is small; callers match their pattern against it directly.
+func UnorderedPublishedTypes() []string {
+	var out []string
+	for _, e := range published {
+		if e.Partition == "" {
+			out = append(out, e.Type)
+		}
+	}
+	return out
+}
+
+// ResolvePartition substitutes one envelope's scope fields into the partition
+// template a published event declares ("{tenant_id}", "{tenant_id}/{boundary_id}").
+// An empty template is a type that declares no ordering domain and resolves to
+// the empty key.
 //
 // The empty key is load-bearing, not a fallback: publish_domain_event takes a
 // transaction-scoped advisory lock on any non-empty partition, held until the
 // producing transaction commits, so inventing a partition an event never
 // declared serializes every publish sharing it for an ordering nobody consumes.
-func PartitionKey(eventType, tenantID, boundaryID string) string {
-	e, ok := publishedIndex[eventType]
-	if !ok {
-		return ""
-	}
-	return resolvePartition(e.Partition, tenantID, boundaryID)
-}
-
-// resolvePartition substitutes the scope fields of one envelope into a declared
-// partition template. An absent declaration stays absent — the template is the
-// only thing that can name a partition.
-func resolvePartition(template, tenantID, boundaryID string) string {
+// Callers resolve against a declaration they looked up, so that a type missing
+// from the catalog is a decision the caller makes explicitly rather than a
+// silent slide into "unordered" — see LookupPublished.
+//
+// Templates are validated at compose time: every placeholder names a field this
+// substitutes, and every non-empty template carries {tenant_id}, so a resolved
+// key is always scoped to one tenant.
+func ResolvePartition(template, tenantID, boundaryID string) string {
 	if template == "" {
 		return ""
 	}

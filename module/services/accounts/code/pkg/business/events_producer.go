@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"accounts/pkg/eventcatalog"
 	"accounts/pkg/events"
 
 	"github.com/google/uuid"
@@ -23,10 +22,9 @@ const domainEventSource = "saas.accounts"
 // producer (the #488 §5 rule): the envelope row is inserted inside the caller's
 // WithOrgTx transaction — the transactional outbox — so the fact and its event
 // commit together or not at all, and the asynchronous relay fans it out to
-// subscribers after commit. The partition key comes from the event type's
-// declared partition template in the composed catalog, so an ordered subscriber
-// sees the ordering domain the contract advertises and nothing pays for a
-// partition lock the contract never promised.
+// subscribers after commit. Every accounts event partitions on {tenant_id}, so
+// partition_key is the tenant; an ordered subscriber therefore sees one org's
+// lifecycle in the order it happened.
 //
 // It is a deliberate no-op when no transport is wired (unit tests that exercise
 // only the write path, and any deployment that has not yet enabled eventing), so
@@ -51,7 +49,7 @@ func (s *Service) publishLifecycleEvent(ctx context.Context, eventType EventType
 		Data:             payload,
 		TenantId:         tenant,
 		BoundaryId:       boundary,
-		PartitionKey:     eventcatalog.PartitionKey(string(eventType), tenant, boundary),
+		PartitionKey:     tenant,
 		ActorPrincipalId: actor,
 	}
 	return s.eventTransport.Publish(ctx, moduleTx(ctx), envelope)
