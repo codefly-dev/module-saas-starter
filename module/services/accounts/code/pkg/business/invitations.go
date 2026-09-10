@@ -385,7 +385,7 @@ func (s *Service) AcceptInvitation(
 		return nil, txErr
 	}
 
-	s.invalidateMembership(ctx, inv.OrgID, userID)
+	_ = s.invalidateMembership(ctx, inv.OrgID, userID)
 	if !alreadyAccepted {
 		_, _ = s.CreateNotification(ctx, CreateNotificationInput{
 			UserID:    inv.InviterID,
@@ -622,7 +622,7 @@ func (s *Service) announceInvitationAccepted(ctx context.Context, inv *Invitatio
 			map[string]any{"role": inv.Role},
 		)
 	})
-	s.invalidateMembership(ctx, inv.OrgID, userID)
+	_ = s.invalidateMembership(ctx, inv.OrgID, userID)
 	s.emit(ctx, userID, "user", EventInvitationAccepted, "invitation", inv.ID, inv.OrgID)
 
 	orgName := "the organization"

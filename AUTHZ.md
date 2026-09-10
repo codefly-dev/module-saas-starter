@@ -213,6 +213,74 @@ inside the api process — they're trusted by L1 implicitly. The L3
 bypass is itself audit-able: every WithBypass call logs a wool event,
 making it grep-able.
 
+## Removing an organization member: deleted vs. rendered ineffective
+
+Organization membership is the root of a member's authority in a tenant, and
+several relations hang off it. `RemoveOrgMember`
+(`module/services/accounts/code/pkg/business/organizations.go`) deletes exactly
+one of them and deliberately leaves the rest alone. The distinction is whether
+the relation can still produce an **allow** decision once the
+`organization_members` row is gone:
+
+| Relation | On removal | Why |
+| --- | --- | --- |
+| `team_members` | **Deleted**, in the same transaction | Permission resolution matches team-subject role assignments through `subject_id IN (SELECT team_id FROM team_members WHERE user_id = ...)`. A surviving row keeps producing allow decisions on its own, so it is retained authority, not residue. |
+| `role_assignments` (org-scoped, user subject) | Retained | `requireOrgPermission` checks `requireOrgMember` **before** `CheckPermission`, so an assignment held by a nonmember can never be reached. Deleting it would also destroy the intent an operator expressed, which a rejoin should not have to reconstruct. |
+| `installations` (owner of record, co-owners) | Retained | `firstEligibleOwner` / `isCurrentOrgAdmin` (`pkg/infra/postgres_installations.go`) derive owner eligibility from live `organization_members` on every read. A departed owner fails the installation closed and hands it to a co-owner or to nobody; the row is the accountability record, and erasing it would erase who was responsible. |
+| Sessions and cached membership | Invalidated | Migration 78's row-level triggers bump the authorization revision for every deleted `organization_members` and `team_members` row, which invalidates the member's sessions. The org-membership cache entry is dropped after commit. |
+
+Two properties make the retentions safe to state rather than merely assume, and
+both are tested: the team-admin helper denies a verified nonmember before it
+ever reads a team row, and a removed-then-reinvited member returns with no team
+privileges because the rows were deleted, not deactivated.
+
+The dependent delete is one set-based statement on the removal's own
+transaction, so a failure aborts the removal rather than leaving a partially
+unwound member behind. It is deliberately row-level (`DELETE ... USING teams`,
+not a statement-level path) so the revision-bump trigger still fires per removed
+membership.
+
+### Diagnosing and repairing historical orphans
+
+Rows written before the cleanup became transactional can still exist. They are
+inert against the helper above, but they are visible in team rosters and they
+keep matching team-subject role assignments for any caller that resolves
+permissions without a membership precondition, so they are worth clearing
+deliberately rather than sweeping up on the next removal.
+
+Diagnose first — this is read-only and safe to run on a live database:
+
+```sql
+SELECT t.org_id, tm.team_id, tm.user_id, tm.role, tm.joined_at
+FROM team_members tm
+JOIN teams t ON t.id = tm.team_id
+LEFT JOIN organization_members om
+       ON om.org_id = t.org_id AND om.user_id = tm.user_id
+WHERE om.user_id IS NULL
+ORDER BY t.org_id, tm.joined_at;
+```
+
+Repair is the same predicate as a `DELETE`, run per organization after the
+diagnostic output has been reviewed:
+
+```sql
+DELETE FROM team_members tm
+USING teams t
+WHERE tm.team_id = t.id
+  AND t.org_id = :org_id
+  AND NOT EXISTS (
+      SELECT 1 FROM organization_members om
+      WHERE om.org_id = t.org_id AND om.user_id = tm.user_id
+  );
+```
+
+Run it as the schema owner (both relations are RLS-protected and the repair is
+cross-tenant by nature), one organization at a time, so the row-level revision
+trigger fires per deleted membership and the affected users' sessions are
+invalidated. Do not fold this into application startup or into the removal path:
+a background sweep that deletes authority rows on its own is a larger hazard
+than the orphans it collects.
+
 ## Scoped roles downstream: two paths, and when to use which
 
 A product is many backend services, each with per-module roles. A downstream

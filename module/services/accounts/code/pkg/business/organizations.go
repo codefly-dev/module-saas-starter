@@ -97,7 +97,7 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 	// Tell the cache the old "not a member" entry is stale — without this,
 	// the first request from the newly-added user would spend 30s hitting
 	// the cache with the wrong negative answer. No-op when caching is off.
-	s.invalidateMembership(ctx, req.OrgId, req.UserId)
+	_ = s.invalidateMembership(ctx, req.OrgId, req.UserId)
 
 	if orgName == "" {
 		orgName = req.OrgId
@@ -123,25 +123,39 @@ func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgM
 	}); err != nil {
 		return w.Wrapf(err, "cannot converge fixture member")
 	}
-	s.invalidateMembership(ctx, req.OrgId, req.UserId)
+	_ = s.invalidateMembership(ctx, req.OrgId, req.UserId)
 	return nil
 }
 
-// RemoveOrgMember removes a member from an organization.
+// RemoveOrgMember removes a member from an organization together with the team
+// authority that depends on that membership.
 //
 // Guards:
 //   - Last-owner guard: if the target is the only remaining owner/admin,
 //     reject. Otherwise we'd leave the org with no one who can manage it.
-//   - Cascade: also remove the target's team memberships within the org,
-//     otherwise a removed user still holds team access via orphaned rows.
+//   - Dependent access: team_members is the one relation that still confers
+//     live permissions after the organization membership is gone — permission
+//     resolution matches team-subject role assignments through it — so those
+//     rows are deleted in the same transaction. Organization-scoped role
+//     assignments and installation ownership are deliberately left in place:
+//     both are gated on current organization membership at read time, so they
+//     are already ineffective for a departed member.
 func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.RemoveOrgMemberRequest) error {
 	w := wool.Get(ctx).In("RemoveOrgMember")
 
-	// Last-admin guard, delete, team-membership cascade, and the audit event all
-	// run inside one org-scoped WithOrgTx: org_members RLS + organizations RLS
-	// both let the queries through, and the record cannot commit describing a
-	// removal whose cascade has not been applied.
+	// Lock, last-admin guard, membership delete, dependent-access delete, and
+	// the audit event all run inside one org-scoped WithOrgTx: org_members RLS
+	// + organizations RLS both let the queries through, and the record cannot
+	// commit describing a removal whose dependent access is still standing.
+	//
+	// Lock first, before any read the decision depends on: a concurrent team
+	// insert for the same (org, user) either commits before the guard reads or
+	// waits behind this transaction, so it can neither be missed by the delete
+	// nor land after it.
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		if err := s.store.LockOrgMembership(ctx, req.OrgId, req.UserId); err != nil {
+			return w.Wrapf(err, "cannot lock org membership")
+		}
 		members, err := s.store.ListOrgMembers(ctx, req.OrgId)
 		if err != nil {
 			return w.Wrapf(err, "cannot load org members for guard")
@@ -163,13 +177,8 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 		if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
 			return err
 		}
-		// Cascade: unwind team memberships in this org for the removed user,
-		// otherwise a removed user still holds team access via orphaned rows.
-		// Store may or may not expose a bulk delete; iterate teams best-effort.
-		if teams, tErr := s.store.ListTeams(ctx, req.OrgId); tErr == nil {
-			for _, t := range teams {
-				_ = s.store.RemoveTeamMember(ctx, t.Id, req.UserId)
-			}
+		if _, err := s.store.RemoveOrgTeamMemberships(ctx, req.OrgId, req.UserId); err != nil {
+			return w.Wrapf(err, "cannot remove dependent team memberships")
 		}
 		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
 	}); err != nil {
@@ -178,8 +187,10 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 
 	// Invalidate the membership cache — otherwise the removed user
 	// keeps passing authorization checks for up to 30s while their
-	// cached entry is still "admin" or "member".
-	s.invalidateMembership(ctx, req.OrgId, req.UserId)
+	// cached entry is still "admin" or "member". The removal is committed by
+	// now, so a failure here is reported, not raised: turning it into an error
+	// would tell the caller the removal did not happen when it did.
+	_ = s.invalidateMembership(ctx, req.OrgId, req.UserId)
 
 	return nil
 }

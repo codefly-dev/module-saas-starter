@@ -368,11 +368,16 @@ func (s *Service) SetEntitlementChecker(e EntitlementChecker) {
 // nil invalidator (SetMembershipInvalidator never called) is a no-op,
 // which is the correct fallback when Redis caching is disabled.
 //
+// It reports whether the cached entry was actually dropped. Invalidation runs
+// after the mutation has committed, so a failure can never undo the mutation —
+// but on a removal it does leave the departed member's positive entry standing
+// until it expires, which callers must be able to see rather than infer.
+//
 // The implementation lives in adapters; this interface keeps the
 // business layer from importing adapters or cache directly, matching
 // the SetAuditEmitter / SetEntitlementChecker pattern.
 type MembershipInvalidator interface {
-	InvalidateMembership(ctx context.Context, orgID, userID string)
+	InvalidateMembership(ctx context.Context, orgID, userID string) error
 }
 
 func (s *Service) SetMembershipInvalidator(i MembershipInvalidator) {
@@ -381,11 +386,23 @@ func (s *Service) SetMembershipInvalidator(i MembershipInvalidator) {
 
 // invalidateMembership is the internal helper Service methods call after
 // mutating membership. Nil-safe so non-cache-wired setups keep working.
-func (s *Service) invalidateMembership(ctx context.Context, orgID, userID string) {
+//
+// The mutation is already committed when this runs, so a cache failure cannot
+// be reported as a failed mutation. What it can do is leave a stale entry
+// standing until its TTL expires — for a removal, an entry that still says the
+// departed member holds a role. That is logged here so it is visible in the one
+// place every membership mutation passes through, and returned so a caller can
+// react.
+func (s *Service) invalidateMembership(ctx context.Context, orgID, userID string) error {
 	if s.membership == nil {
-		return
+		return nil
 	}
-	s.membership.InvalidateMembership(ctx, orgID, userID)
+	err := s.membership.InvalidateMembership(ctx, orgID, userID)
+	if err != nil {
+		wool.Get(ctx).Warn("cached organization membership survived a membership mutation; it stays authoritative until it expires",
+			wool.Field("org_id", orgID), wool.Field("user_id", userID), wool.ErrField(err))
+	}
+	return err
 }
 
 // SetSlackNotifier wires an optional Slack webhook notifier for critical events.

@@ -135,11 +135,11 @@ type CacheInvalidator struct{}
 // the call will just be a no-op.
 func NewCacheInvalidator() *CacheInvalidator { return &CacheInvalidator{} }
 
-func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID string) {
+func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID string) error {
 	if orgMembershipCache == nil {
-		return
+		return nil
 	}
-	_ = orgMembershipCache.Invalidate(ctx, orgID, userID)
+	return orgMembershipCache.Invalidate(ctx, orgID, userID)
 }
 
 // requireAuth extracts and validates the caller's user id from gRPC
@@ -315,6 +315,14 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 	}
 	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
 		return orgID, nil
+	}
+	// An empty role is a verified answer — "not a member of this organization" —
+	// not a missing one. Team authority is derived from organization membership,
+	// so a nonmember is denied here rather than being tested against a team row
+	// that should no longer exist. That keeps a legacy orphan inert instead of
+	// making it sufficient on its own.
+	if role == "" {
+		return "", status.Error(codes.PermissionDenied, "not a member of this organization")
 	}
 	membership, err := service.Store().GetTeamMembership(ctx, orgID, teamID, actorID)
 	if err != nil {
