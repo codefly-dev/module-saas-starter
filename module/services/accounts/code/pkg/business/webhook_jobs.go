@@ -57,6 +57,18 @@ func createOutboundWebhookDelivery(
 	return nil
 }
 
+// NewOutboundWebhookJobRequest builds the durable dispatch command for one
+// pending delivery. The relay enqueues it inside its fan-out transaction, which
+// is what keeps the dispatcher, its signing, and its attempt schedule unchanged
+// by the move onto subscriptions.
+func NewOutboundWebhookJobRequest(
+	orgID string,
+	delivery *WebhookDelivery,
+	rawBody []byte,
+) (*jobsv1.EnqueueJobRequest, error) {
+	return newOutboundWebhookJob(orgID, delivery, rawBody)
+}
+
 func newOutboundWebhookJob(
 	orgID string,
 	delivery *WebhookDelivery,

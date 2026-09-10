@@ -87,6 +87,21 @@ type PostgresEventTransport struct {
 	pool          *pgxpool.Pool
 	workerID      string
 	leaseDuration time.Duration
+	webhooks      WebhookRelay
+}
+
+// WebhookRelay dispatches one event to one outbound endpoint on the relay's own
+// transaction. It is a seam rather than a direct call so the transport keeps
+// knowing only about envelopes and subscriptions, and a deployment with no
+// webhook dispatcher wired simply relays nothing to endpoints.
+type WebhookRelay interface {
+	Deliver(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, subscription events.Subscription) error
+}
+
+// WithWebhookRelay wires the outbound dispatcher into the relay, which is what
+// makes a delivery = webhook subscription deliver.
+func WithWebhookRelay(relay WebhookRelay) func(*PostgresEventTransport) {
+	return func(p *PostgresEventTransport) { p.webhooks = relay }
 }
 
 func NewPostgresEventTransport(
@@ -94,13 +109,18 @@ func NewPostgresEventTransport(
 	pool *pgxpool.Pool,
 	workerID string,
 	leaseDuration time.Duration,
+	opts ...func(*PostgresEventTransport),
 ) *PostgresEventTransport {
-	return &PostgresEventTransport{
+	transport := &PostgresEventTransport{
 		store:         store,
 		pool:          pool,
 		workerID:      workerID,
 		leaseDuration: leaseDuration,
 	}
+	for _, opt := range opts {
+		opt(transport)
+	}
+	return transport
 }
 
 var _ events.Transport = (*PostgresEventTransport)(nil)
@@ -429,6 +449,12 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 		if !events.Matches(subscription.TypePattern, e.GetType()) {
 			continue
 		}
+		if subscription.Delivery == events.DeliveryWebhook {
+			if err := p.relayToWebhook(ctx, tx, e, subscription); err != nil {
+				return err
+			}
+			continue
+		}
 		request := p.delivery(e, subscription, e.GetId()+":"+subscription.ID)
 		if err := enqueueOne(ctx, tx, request); err != nil {
 			return mapEnqueueError(err)
@@ -438,6 +464,34 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 		return fmt.Errorf("events: mark published: %w", err)
 	}
 	return nil
+}
+
+// relayToWebhook dispatches one event to one endpoint registration. Two gates
+// stand between a matching pattern and an outbound request. The type must be
+// declared external, because visibility is what makes a fact eligible to leave
+// the platform and a wildcard subscription can match a type registered later or
+// reclassified since. The event's tenant must be the subscription's, because a
+// pattern says nothing about ownership and the relay runs with RLS bypassed —
+// this is the only thing standing between one tenant's event and another
+// tenant's endpoint.
+//
+// Past those, the work is the dispatcher's existing contract: a pending
+// webhook_deliveries row holding the exact bytes that will be signed, and the
+// same OutboundWebhookJob the audit emitter used to enqueue, both on the relay's
+// transaction so a failed fan-out leaves neither behind.
+func (p *PostgresEventTransport) relayToWebhook(
+	ctx context.Context,
+	tx pgx.Tx,
+	e *eventsv1.EventEnvelope,
+	subscription events.Subscription,
+) error {
+	if p.webhooks == nil || !eventcatalog.IsExternalPublished(e.GetType()) {
+		return nil
+	}
+	if subscription.OrgID == "" || subscription.OrgID != e.GetTenantId() {
+		return nil
+	}
+	return p.webhooks.Deliver(ctx, tx, e, subscription)
 }
 
 func enqueueOne(ctx context.Context, tx pgx.Tx, request *jobsv1.EnqueueJobRequest) error {
@@ -456,10 +510,19 @@ func mapEnqueueError(err error) error {
 	return err
 }
 
+// A webhook subscription is live only while its endpoint registration is active,
+// which is the same predicate the audit emitter's inline fan-out applied before
+// webhooks moved onto subscriptions. Deactivating an endpoint therefore stops
+// delivery without rewriting any subscription row.
 const liveSubscriptionsSQL = `
-	SELECT id, subscriber_principal_id, type_pattern, queue, delivery
-	FROM public.event_subscriptions
-	WHERE revoked_at IS NULL`
+	SELECT subscription.id, subscription.subscriber_principal_id, subscription.type_pattern,
+	       subscription.queue, subscription.delivery, subscription.org_id,
+	       subscription.webhook_subscription_id
+	FROM public.event_subscriptions AS subscription
+	LEFT JOIN public.webhook_subscriptions AS endpoint
+	       ON endpoint.id = subscription.webhook_subscription_id
+	WHERE subscription.revoked_at IS NULL
+	  AND (subscription.webhook_subscription_id IS NULL OR endpoint.active)`
 
 func liveSubscriptions(ctx context.Context, tx pgx.Tx) ([]events.Subscription, error) {
 	rows, err := tx.Query(ctx, liveSubscriptionsSQL)
@@ -469,16 +532,19 @@ func liveSubscriptions(ctx context.Context, tx pgx.Tx) ([]events.Subscription, e
 	defer rows.Close()
 	var subscriptions []events.Subscription
 	for rows.Next() {
-		var id, principal, pattern, queue, delivery string
-		if err := rows.Scan(&id, &principal, &pattern, &queue, &delivery); err != nil {
+		var id, pattern, queue, delivery string
+		var principal, orgID, webhookSubscriptionID *string
+		if err := rows.Scan(&id, &principal, &pattern, &queue, &delivery, &orgID, &webhookSubscriptionID); err != nil {
 			return nil, fmt.Errorf("events: scan subscription: %w", err)
 		}
 		subscriptions = append(subscriptions, events.Subscription{
 			ID:                    id,
-			SubscriberPrincipalID: principal,
+			SubscriberPrincipalID: derefString(principal),
 			TypePattern:           pattern,
 			Queue:                 queue,
 			Delivery:              events.Delivery(delivery),
+			OrgID:                 derefString(orgID),
+			WebhookSubscriptionID: derefString(webhookSubscriptionID),
 		})
 	}
 	if err := rows.Err(); err != nil {

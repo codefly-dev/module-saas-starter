@@ -287,63 +287,6 @@ func TestDeleteWebhookSubscription(t *testing.T) {
 	}))
 }
 
-func TestGetActiveWebhookSubscriptions(t *testing.T) {
-	userID := seedUser(t)
-	orgID := seedOrg(t, userID)
-
-	activeSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/active", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: true,
-	}
-	inactiveSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/inactive", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: false,
-	}
-	otherEventSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/other", SecretEncrypted: "encrypted:sec",
-		Events: []string{"org.created"}, Active: true,
-	}
-	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, activeSub))
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, inactiveSub))
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, otherEventSub))
-		return nil
-	}))
-
-	otherOwner := seedUser(t)
-	otherOrgID := seedOrg(t, otherOwner)
-	foreignSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: otherOrgID,
-		URL: "https://example.com/foreign", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: true,
-	}
-	require.NoError(t, testStore.WithOrgTx(testCtx, otherOrgID, func(ctx context.Context) error {
-		return testStore.CreateWebhookSubscription(ctx, foreignSub)
-	}))
-
-	// Read under the control plane deliberately: that is the scope audit fan-out
-	// runs in for platform-admin and other privileged writes, and there RLS
-	// scopes nothing. The org argument is what must exclude the other tenant.
-	var subs []*business.WebhookSubscription
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		s, err := testStore.GetActiveWebhookSubscriptions(ctx, orgID, "user.registered")
-		subs = s
-		return err
-	}))
-
-	ids := make(map[string]bool)
-	for _, s := range subs {
-		ids[s.ID] = true
-	}
-	require.True(t, ids[activeSub.ID], "active sub with matching event should be returned")
-	require.False(t, ids[inactiveSub.ID], "inactive sub should not be returned")
-	require.False(t, ids[otherEventSub.ID], "sub with different event should not be returned")
-	require.False(t, ids[foreignSub.ID], "another tenant's sub must be excluded with RLS bypassed")
-}
-
 func TestCreateAndListWebhookDeliveries(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)

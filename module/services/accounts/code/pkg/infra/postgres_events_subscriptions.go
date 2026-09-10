@@ -2,6 +2,7 @@ package infra
 
 import (
 	"context"
+	"regexp"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
@@ -32,7 +33,14 @@ var maxEventSubscriptionsRead = 1000
 // read it. These three methods therefore assume the caller has already opened a
 // WithControlPlane transaction — getQueryExecutor picks that tx up from ctx.
 
-const eventSubscriptionColumns = `id, subscriber_principal_id, type_pattern, queue, delivery,
+// publishableEventType is the domain-event type grammar the domain_events and
+// event_subscriptions CHECK constraints enforce. It is stricter than the webhook
+// event-name grammar, which also admits hyphens.
+var publishableEventType = regexp.MustCompile(`^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$`)
+
+// subscriber_principal_id is NULL on a webhook subscription, whose subscriber is
+// an endpoint registration rather than a principal.
+const eventSubscriptionColumns = `id, COALESCE(subscriber_principal_id::text, ''), type_pattern, queue, delivery,
 	COALESCE(created_by::text, ''), created_at`
 
 func scanEventSubscription(row pgx.Row) (*business.EventSubscription, error) {
@@ -154,4 +162,47 @@ func (s *PostgresStore) CountLiveEventSubscriptions(ctx context.Context) (int, e
 		return 0, err
 	}
 	return n, nil
+}
+
+// SyncWebhookEventSubscriptions makes the subscription rows for one endpoint
+// registration match the event names it is registered for. Create, update, and
+// re-registration all funnel through it, so the registration stays the single
+// place a customer edits and the subscriptions are derived state.
+//
+// A name that cannot be a domain event type is skipped rather than rejected.
+// Webhook event names permit hyphens and are accepted even when they match no
+// registered event, so such a name has never been delivered and cannot start
+// being delivered by acquiring a row here.
+//
+// Rows are deleted rather than revoked: a revoked module subscription is a
+// record of a grant that was withdrawn, but a webhook subscription is derived
+// from a registration whose own lifecycle is already audited, and the endpoint's
+// deletion cascades these away regardless.
+func (s *PostgresStore) SyncWebhookEventSubscriptions(ctx context.Context, orgID, webhookSubscriptionID string, eventNames []string) error {
+	q := s.getQueryExecutor(ctx)
+	publishable := make([]string, 0, len(eventNames))
+	for _, name := range eventNames {
+		if publishableEventType.MatchString(name) {
+			publishable = append(publishable, name)
+		}
+	}
+	if _, err := q.Exec(ctx, `
+		DELETE FROM public.event_subscriptions
+		WHERE webhook_subscription_id = $1 AND type_pattern <> ALL($2)`,
+		webhookSubscriptionID, publishable,
+	); err != nil {
+		return err
+	}
+	if len(publishable) == 0 {
+		return nil
+	}
+	_, err := q.Exec(ctx, `
+		INSERT INTO public.event_subscriptions
+			(subscriber_principal_id, type_pattern, queue, delivery, org_id, webhook_subscription_id)
+		SELECT NULL::uuid, event_name, $1, 'webhook', $2::uuid, $3::uuid
+		FROM unnest($4::text[]) AS event_name
+		ON CONFLICT DO NOTHING`,
+		business.OutboundWebhookQueue, orgID, webhookSubscriptionID, publishable,
+	)
+	return err
 }

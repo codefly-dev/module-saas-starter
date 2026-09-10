@@ -41,6 +41,15 @@ func IsInternalPublished(eventType string) bool {
 	return ok && e.Visibility == "internal"
 }
 
+// IsExternalPublished reports whether the event type is declared with external
+// visibility — the only kind an outbound webhook may carry. A type absent from
+// the catalog is not external: eligibility is granted by declaration, never by
+// omission, so an unregistered type is never delivered outside the platform.
+func IsExternalPublished(eventType string) bool {
+	e, ok := publishedIndex[eventType]
+	return ok && e.Visibility == "external"
+}
+
 // InternalPublishedTypes returns the types of every published event declared
 // with internal visibility. The Subscribe authority gate rejects a solution
 // principal whose type pattern would match any of these, so an internal event
