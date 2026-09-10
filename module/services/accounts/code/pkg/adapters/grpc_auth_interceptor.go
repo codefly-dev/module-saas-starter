@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/google/uuid"
+
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
@@ -253,7 +255,11 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	}
 
 	if trustedForwarded && hasForwardedIdentity(md) {
-		return stampForwardedGRPCIdentity(ctx, md), nil
+		forwarded, err := stampForwardedGRPCIdentity(ctx, md)
+		if err != nil {
+			return ctx, status.Error(codes.PermissionDenied, "forwarded identity is malformed")
+		}
+		return forwarded, nil
 	}
 	var minter auth.JWTMinter
 	if i.getMinter != nil {
@@ -278,9 +284,7 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 		wool.Get(ctx).In("grpcPolicyInterceptor").Debug("VerifyAccess failed", wool.ErrField(err))
 		return ctx, status.Error(codes.Unauthenticated, "invalid or expired access token")
 	}
-	ctx = stampVerifiedIdentity(ctx, identity.UserID.String(), identity.OrgID.String(), identity.Assurance())
-	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)
-	ctx = auth.WithVerifiedActor(ctx, identity.Actor)
+	ctx = stampRequestIdentity(ctx, auth.RequestIdentityOf(identity), identity.Assurance())
 	ctx = withScopedRoles(ctx, identity.ScopedRoles)
 	ctx = withScopedRolesTruncated(ctx, identity.ScopedRolesTruncated)
 	if values := md.Get("x-scopes"); len(values) > 0 && values[0] != "" {
@@ -298,8 +302,18 @@ func firstMetadataValue(md metadata.MD, key string) string {
 	return ""
 }
 
-func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) context.Context {
-	ctx = stampVerifiedIdentity(ctx, firstMetadataValue(md, "x-user-id"), firstMetadataValue(md, "x-org-id"), assuranceFromTransport(
+func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Context, error) {
+	identity, err := auth.ParseRequestIdentity(
+		firstMetadataValue(md, "x-user-id"),
+		firstMetadataValue(md, "x-acting-as-user-id"),
+		firstMetadataValue(md, "x-org-id"),
+		firstMetadataValue(md, "x-session-id"),
+	)
+	if err != nil {
+		return ctx, err
+	}
+	identity.Delegation = auth.ParseActor(firstMetadataValue(md, "x-act"))
+	ctx = stampRequestIdentity(ctx, identity, assuranceFromTransport(
 		firstMetadataValue(md, "x-authentication-methods"),
 		firstMetadataValue(md, "x-auth-time"),
 		firstMetadataValue(md, "x-assurance-level"),
@@ -312,19 +326,33 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) context.Con
 	if scopedRoles := firstMetadataValue(md, "x-scoped-roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}
-	ctx = withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true")
-	ctx = auth.WithVerifiedActor(ctx, auth.ParseActor(firstMetadataValue(md, "x-act")))
-	return auth.WithVerifiedSessionIDString(ctx, firstMetadataValue(md, "x-session-id"))
+	return withScopedRolesTruncated(ctx, firstMetadataValue(md, "x-scoped-roles-truncated") == "true"), nil
 }
 
-func stampVerifiedIdentity(ctx context.Context, userID, orgID string, assurance auth.Assurance) context.Context {
-	ctx = auth.WithVerifiedDatabaseIdentity(ctx, userID, orgID)
-	ctx = context.WithValue(ctx, wool.UserIDKey, userID)
-	ctx = context.WithValue(ctx, wool.UserAuthIDKey, userID)
-	if orgID != "" && orgID != "00000000-0000-0000-0000-000000000000" {
+// stampRequestIdentity is the single projection every transport shares. The
+// effective subject — not the real actor — becomes the wool principal and the
+// verified database scope, so tenant membership, scoped roles and RLS all
+// resolve for the user the request is acting as. The real actor travels with
+// the typed identity for audit and for the platform-authority gates.
+func stampRequestIdentity(ctx context.Context, identity auth.RequestIdentity, assurance auth.Assurance) context.Context {
+	subject := identity.EffectiveSubjectID()
+	orgID := identity.OrgID.String()
+	ctx = auth.WithVerifiedDatabaseIdentity(ctx, subject, orgID)
+	ctx = context.WithValue(ctx, wool.UserIDKey, subject)
+	ctx = context.WithValue(ctx, wool.UserAuthIDKey, subject)
+	if identity.OrgID != uuid.Nil {
 		ctx = context.WithValue(ctx, wool.OrgIDKey, orgID)
 	}
+	ctx = auth.WithVerifiedRequestIdentity(ctx, identity)
+	ctx = auth.WithVerifiedActor(ctx, identity.Delegation)
+	ctx = auth.WithVerifiedSessionID(ctx, identity.SessionID)
 	return auth.WithAssurance(ctx, assurance)
+}
+
+// stampVerifiedIdentity projects an ordinary, non-impersonated principal, where
+// the real actor and the effective subject are the same user.
+func stampVerifiedIdentity(ctx context.Context, userID, orgID string, assurance auth.Assurance) context.Context {
+	return stampRequestIdentity(ctx, auth.OrdinaryRequestIdentity(userID, orgID), assurance)
 }
 
 func hasForwardedIdentity(md metadata.MD) bool {

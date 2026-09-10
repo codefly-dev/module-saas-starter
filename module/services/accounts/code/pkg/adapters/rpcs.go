@@ -1668,7 +1668,7 @@ func (s *PlatformAdminServer) UpsertFeatureFlag(ctx context.Context, req *gen.Up
 	if err != nil {
 		return nil, err
 	}
-	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	role, err := platformRole(ctx, actorID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
 	}

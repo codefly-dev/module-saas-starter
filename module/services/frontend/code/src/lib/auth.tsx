@@ -382,6 +382,14 @@ interface AuthContextType extends AuthState {
 	) => boolean;
 	logout: () => Promise<void>;
 	switchOrganization: (organizationId: string) => Promise<void>;
+	// Installs an impersonation access token as the active session. The admin's
+	// own refresh cookie is untouched, so it remains the way back out.
+	enterImpersonation: (accessToken: string) => void;
+	// Leaves an impersonated session by re-exchanging the admin's refresh cookie.
+	// The restored session is minted from that cookie alone, so it carries no
+	// trace of the target; a cookie that no longer works logs out rather than
+	// leaving the impersonation token installed.
+	exitImpersonation: () => Promise<void>;
 	getToken: () => string | null;
 }
 
@@ -827,6 +835,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		});
 	}, [state.accessToken]);
 
+	const enterImpersonation = useCallback(
+		(accessToken: string) => {
+			if (!accessToken)
+				throw new Error("Impersonation returned no access token");
+			applyAccessToken(accessToken);
+		},
+		[applyAccessToken],
+	);
+
+	const exitImpersonation = useCallback(async () => {
+		const outcome = await exchangeRefreshCookie();
+		if (outcome.status === "ok") {
+			setTokens(outcome.accessToken, outcome.refreshToken);
+			return;
+		}
+		await logout();
+	}, [logout, setTokens]);
+
 	useEffect(() => {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
 		// cookie the browser sends automatically (credentials: "include").
@@ -949,6 +975,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
+			enterImpersonation,
+			exitImpersonation,
 			getToken,
 		}),
 		[
@@ -963,6 +991,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
+			enterImpersonation,
+			exitImpersonation,
 			getToken,
 		],
 	);

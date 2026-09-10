@@ -246,30 +246,35 @@ func TestForwardedIdentityRequiresGatewayCredential(t *testing.T) {
 	SetGatewayToken("test-gateway-token")
 	t.Cleanup(func() { SetGatewayToken(previousToken) })
 
+	const (
+		forwardedUser = "019f6bf7-5b1c-730d-9687-fe6d4aff31ee"
+		forwardedOrg  = "019f6bf7-5b4b-74e5-8c17-092259bb1663"
+	)
+
 	connectPolicy := &connectPolicyInterceptor{getMinter: nil}
 	headers := http.Header{
 		"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
-		"X-User-Id":               []string{"user-1"},
-		"X-Org-Id":                []string{"org-1"},
+		"X-User-Id":               []string{forwardedUser},
+		"X-Org-Id":                []string{forwardedOrg},
 	}
 	ctx, err := connectPolicy.authorize(context.Background(), "/saas.accounts.v1.UserService/GetSelf", headers)
 	require.NoError(t, err)
 	userID, ok := wool.Get(ctx).UserID()
 	require.True(t, ok)
-	require.Equal(t, "user-1", userID)
+	require.Equal(t, forwardedUser, userID)
 	require.Empty(t, headers.Get("X-Codefly-Gateway-Token"))
 
 	grpcPolicy := &grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}
 	grpcCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(
 		"x-codefly-gateway-token", "test-gateway-token",
-		"x-user-id", "user-1",
-		"x-org-id", "org-1",
+		"x-user-id", forwardedUser,
+		"x-org-id", forwardedOrg,
 	))
 	grpcCtx, err = grpcPolicy.authorize(grpcCtx, "/saas.accounts.v1.UserService/GetSelf")
 	require.NoError(t, err)
 	userID, ok = wool.Get(grpcCtx).UserID()
 	require.True(t, ok)
-	require.Equal(t, "user-1", userID)
+	require.Equal(t, forwardedUser, userID)
 }
 
 func TestPublicOriginRequiresGatewayCredential(t *testing.T) {

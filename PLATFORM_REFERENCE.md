@@ -149,16 +149,25 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
   support must be authority-stripped server-side, not cosmetic.
   `pkg/business/platform_admin.go` (`ImpersonateUser`),
   [PRODUCTION_READY.md](./PRODUCTION_READY.md) decisions 7–8.
-- **Audited, ✅:** emits `platform.user_impersonated`; `RevokeSession` /
-  `ListActiveSessions` are support+.
+- **Actor/subject separated, ✅:** every transport projects one typed
+  `auth.RequestIdentity` carrying both the real actor and the effective subject
+  (`pkg/auth/request_identity.go`); authorization, the RLS user context and the
+  membership cache resolve for the subject while audit records both, and the
+  platform-authority gates resolve to nothing whenever the two differ — so
+  neither party's platform grants reach an impersonated request. See
+  [AUTHZ.md](./AUTHZ.md) "Request identity".
+- **Audited, ✅:** emits `platform.user_impersonated`; every audited action taken
+  while impersonating carries `impersonated_by` (migration 125); `RevokeSession`
+  / `ListActiveSessions` are support+.
 - **Per-request re-validation, ✅:** the impersonation token is a normal
   L1/L2/L3-checked runtime identity each request; it is a signed 15-minute
   snapshot rather than a re-read-every-request cookie.
 - **Divergence ↔:** capability derives from the platform `support` role, not
   from an org **access type** (`staff`/`delegated`) as the audit recommends. The
   audit's access-type model is worth considering if delegated/contractor access
-  ever needs an explicit per-org allowlist. A user-visible impersonation banner
-  is roadmap P4.4.
+  ever needs an explicit per-org allowlist. The user-visible impersonation banner
+  ships: it names the target being viewed and owns the exit, which restores the
+  admin's own session from the refresh cookie impersonation never touches.
 
 ### 1.7 The BFF / proxy perimeter — ✅
 

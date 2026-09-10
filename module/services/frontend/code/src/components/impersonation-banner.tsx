@@ -4,8 +4,9 @@ import { useState } from "react";
 import { useAuth } from "@/lib/auth";
 
 export function ImpersonationBanner() {
-	const { impersonation, user, logout } = useAuth();
+	const { impersonation, user, exitImpersonation } = useAuth();
 	const [minimized, setMinimized] = useState(false);
+	const [exiting, setExiting] = useState(false);
 
 	if (!impersonation.isImpersonating) return null;
 
@@ -27,14 +28,16 @@ export function ImpersonationBanner() {
 				<div className="flex items-center gap-2 text-sm">
 					<span className="font-bold">Impersonation Active</span>
 					<span>&mdash;</span>
+					{/* The subject is who the session acts as; the signed-in admin is
+					    who it stays attributable to. Naming the admin here as the
+					    person "viewed as" is the identity confusion this banner
+					    exists to make visible. */}
 					<span>
-						Viewing as <strong>{user?.email || user?.id}</strong>
+						Viewing as <strong>{impersonation.subjectId}</strong>
 					</span>
-					{impersonation.impersonatorId && (
-						<span className="text-amber-700">
-							(by {impersonation.impersonatorId})
-						</span>
-					)}
+					<span className="text-amber-700">
+						(signed in as {user?.email || impersonation.impersonatorId})
+					</span>
 				</div>
 				<div className="flex items-center gap-2">
 					<button
@@ -44,10 +47,14 @@ export function ImpersonationBanner() {
 						Minimize
 					</button>
 					<button
-						onClick={logout}
-						className="bg-amber-900 text-amber-100 px-3 py-1 rounded text-sm font-medium hover:bg-amber-800 transition-colors"
+						onClick={() => {
+							setExiting(true);
+							void exitImpersonation().finally(() => setExiting(false));
+						}}
+						disabled={exiting}
+						className="bg-amber-900 text-amber-100 px-3 py-1 rounded text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-60"
 					>
-						Stop Impersonating
+						{exiting ? "Exiting…" : "Stop Impersonating"}
 					</button>
 				</div>
 			</div>
