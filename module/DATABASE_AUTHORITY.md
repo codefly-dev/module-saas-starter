@@ -159,7 +159,7 @@ describes are already deleted and no migration restores them, so dropping the
 record with the schema would destroy the only evidence they existed.
 ## Organization administrative-continuity diagnostic
 
-Migration `130_organization_administrator_diagnostic` inventories the
+Migration `132_organization_administrator_diagnostic` inventories the
 organizations whose administrative authority is *already* inconsistent, so that
 work enforcing the invariant has a sized backlog rather than a guess. It changes
 no existing relation and grants no new request authority.
@@ -170,21 +170,62 @@ no existing relation and grants no new request authority.
 | Finding | Why it is not repaired |
 |---|---|
 | `organization_without_administrator` | The only way to give an organization an administrator is to pick a user and grant them one. A deploy that does this performs a privilege escalation with no operator deciding who. |
-| `owner_of_record_is_not_an_administrator` | `organizations.owner_id` is written only by `CreateOrganization` and there is no owner-transfer path, so it is immutable provenance rather than live authority. Writing either side to match the other moves authority silently. `detail.membership_role` is `null` when the owner holds no membership at all, and the role string when they hold a non-administrative one. |
+| `owner_of_record_is_not_an_administrator` | `organizations.owner_id` is written only by `CreateOrganization` and there is no owner-transfer path, so it is immutable provenance rather than live authority. Writing either side to match the other moves authority silently. |
 
-The scan is a function, not inline migration DML, so an operator can re-run it
-after repairing organizations and watch the backlog shrink. Re-running is
-non-destructive: a finding that still holds keeps its original `found_at` (the
-conflict target is the `(org_id, finding)` pair and the update refreshes only
-`detail`), and a finding that has since been repaired is deleted, so the table
-always reads as the current backlog rather than an append-only history. It
-returns the number of findings outstanding.
+The two are **mutually exclusive**, and the second is restricted to
+organizations that do have an administrator. An organization with none also
+satisfies the second predicate — its owner is trivially not an administrator —
+and recording both would count the same organization twice in a backlog
+somebody is trying to size. The first finding is the stronger statement and
+carries the owner's membership role itself: `detail.membership_role` is `null`
+when the owner holds no membership at all, and the role string when they hold a
+non-administrative one, on either finding. So the row count is an organization
+count, and that is what the function returns.
+
+The natural key is `(org_id, finding)`; there is no surrogate id. A finding *is*
+the fact that this organization is in this state, and migration 13 dropped
+server-side `gen_random_uuid()` defaults on purpose.
+
+### Running it
+
+`membership-integrity-scan` is the operator's vehicle:
+
+```
+membership-integrity-scan -database-url "$DATABASE_URL" [-list-only]
+```
+
+The scan is a function, not inline migration DML, so it can be re-run after
+repairs and watched shrinking. Re-running is non-destructive: a finding that
+still holds keeps its original `found_at` (the conflict target is the
+`(org_id, finding)` pair and the update refreshes only `detail`), and a finding
+that has since been repaired is deleted, so the table always reads as the
+current backlog rather than an append-only history.
+
+**The connection principal must be a member of `app_control_plane`**, and that
+is load-bearing rather than ceremonial. `organizations`, `organization_members`
+and `membership_integrity_findings` all force RLS — which binds the table owner
+too — with policies scoped to `app.current_org_id` and no bypass clause. A
+principal that does not span organizations therefore reads zero rows through
+all three: it would record an empty backlog and report a healthy platform. The
+function refuses to run for such a principal instead, and the migration assumes
+`app_control_plane` before its own initial scan for the same reason. The store
+owner-connection alone is not sufficient, and reading the findings table
+directly under it returns silently empty.
+
+### Authority
 
 It is a plain invoker-rights function. `app_control_plane` is the only role
 granted `EXECUTE`, and it already spans organizations through `BYPASSRLS`, so
 `SECURITY DEFINER` would add privilege without adding capability. `app_tenant`
 holds no grant on either the function or the table: these are operator evidence
 read through the control-plane boundary, not product data.
+
+No role actually reaches these rows *through* the table's policy — request
+traffic holds no grant, and `BYPASSRLS` is decided before any policy is
+consulted for the one role that does. The policy is nobody's access-control
+decision. It exists because a tenant-columned table without one is
+indistinguishable from an unprotected one, and because the inventory above
+requires every tenant relation to force RLS and carry a tenant-scoped policy.
 
 Scope: organization-level findings only. A team membership with no parent
 organization membership is a different relation with its own repair, and this

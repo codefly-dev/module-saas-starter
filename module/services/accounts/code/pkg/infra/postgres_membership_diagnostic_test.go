@@ -2,24 +2,25 @@ package infra_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"accounts/pkg/business"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 )
 
-// runMembershipDiagnostic re-runs the inventory the way an operator would,
-// through the one role granted EXECUTE on it.
-func runMembershipDiagnostic(t *testing.T) {
+// runMembershipDiagnostic re-runs the inventory the way an operator does, through
+// the store method `membership-integrity-scan` calls — which assumes the control
+// plane, the only boundary that can see every organization.
+func runMembershipDiagnostic(t *testing.T) int {
 	t.Helper()
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		var outstanding int
-		return tx.QueryRow(ctx,
-			`SELECT public.record_membership_integrity_findings()`).Scan(&outstanding)
-	}))
+	outstanding, err := testStore.RecordMembershipIntegrityFindings(testCtx)
+	require.NoError(t, err)
+	return outstanding
 }
 
 // membershipFindings returns the finding kinds recorded against one
@@ -49,19 +50,18 @@ func membershipFindings(t *testing.T, orgID string) []string {
 	return found
 }
 
-// An organization with no owner or admin membership is reported, and its owner
-// of record is reported as non-administrative in the same pass — the two
-// findings are independent, and this organization is in both states at once.
+// An organization with no owner or admin membership is reported once. Its owner
+// of record is trivially not an administrator too, but reporting that as well
+// would count the same organization twice in a backlog somebody is trying to
+// size — the findings are mutually exclusive, and the stronger one wins.
 func TestMembershipDiagnosticReportsAnOrganizationWithNoAdministrator(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 
 	runMembershipDiagnostic(t)
 
-	require.Equal(t, []string{
-		"organization_without_administrator",
-		"owner_of_record_is_not_an_administrator",
-	}, membershipFindings(t, orgID))
+	require.Equal(t, []string{"organization_without_administrator"},
+		membershipFindings(t, orgID))
 }
 
 // An organization whose owner of record holds only an ordinary membership is
@@ -80,6 +80,41 @@ func TestMembershipDiagnosticSeparatesOwnerMismatchFromMissingAdministrator(t *t
 
 	require.Equal(t, []string{"owner_of_record_is_not_an_administrator"},
 		membershipFindings(t, orgID))
+}
+
+// The owner's membership role survives on both findings, so an operator can
+// tell "the owner holds no membership at all" from "the owner is a plain
+// member" without going back to the membership table. Collapsing the duplicate
+// finding must not take this with it.
+func TestMembershipDiagnosticRecordsTheOwnersMembershipRole(t *testing.T) {
+	ownerWithNoMembership := seedUser(t)
+	orphaned := seedOrg(t, ownerWithNoMembership)
+
+	demotedOwner := seedUser(t)
+	administrator := seedUser(t)
+	mismatched := seedOrg(t, demotedOwner)
+	seedOrgMember(t, mismatched, demotedOwner)
+	require.NoError(t, testStore.As(business.Identity{OrgID: mismatched}).AddOrgMember(
+		testCtx, administrator, "admin",
+	))
+
+	runMembershipDiagnostic(t)
+
+	require.Equal(t, "null", membershipFindingDetail(t, orphaned, "membership_role"),
+		"an owner holding no membership at all must be distinguishable")
+	require.Equal(t, `"member"`, membershipFindingDetail(t, mismatched, "membership_role"))
+}
+
+func membershipFindingDetail(t *testing.T, orgID, key string) string {
+	t.Helper()
+	var value string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		return tx.QueryRow(ctx,
+			`SELECT (detail -> $2)::text FROM membership_integrity_findings WHERE org_id = $1`,
+			orgID, key).Scan(&value)
+	}))
+	return value
 }
 
 // A healthy organization — the owner of record is also an administrative
@@ -116,6 +151,56 @@ func TestMembershipDiagnosticClearsARepairedOrganization(t *testing.T) {
 		"a repaired organization must leave the backlog on the next scan")
 }
 
+// The count the scan returns is the count an operator sizes the work from, so it
+// has to be organizations rather than rows about organizations. Asserted as a
+// whole-table invariant rather than a before/after delta: sibling test packages
+// share this database and seed organizations concurrently, so a delta would be
+// flaky where the invariant is not.
+func TestMembershipDiagnosticCountsEachOrganizationOnce(t *testing.T) {
+	owner := seedUser(t)
+	seedOrg(t, owner)
+
+	outstanding := runMembershipDiagnostic(t)
+
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		var rows, organizations int
+		if err := tx.QueryRow(ctx,
+			`SELECT count(*), count(DISTINCT org_id) FROM membership_integrity_findings`,
+		).Scan(&rows, &organizations); err != nil {
+			return err
+		}
+		require.Equal(t, organizations, rows,
+			"the findings are mutually exclusive: no organization may hold two")
+		require.Equal(t, rows, outstanding,
+			"the returned count is the backlog an operator sizes the work from")
+		return nil
+	}))
+}
+
+// The operator's read path reports the rows that exist. Reading the same table
+// as any role that does not span tenants — the store owner-connection
+// included — returns silently empty instead, which is why this path exists at
+// all.
+func TestMembershipDiagnosticListsTheBacklogThroughTheControlPlane(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+	runMembershipDiagnostic(t)
+
+	findings, err := testStore.ListMembershipIntegrityFindings(testCtx)
+	require.NoError(t, err)
+
+	var mine []string
+	for _, finding := range findings {
+		if finding.OrgID == orgID {
+			mine = append(mine, finding.Finding)
+			require.False(t, finding.FoundAt.IsZero())
+			require.Contains(t, string(finding.Detail), owner)
+		}
+	}
+	require.Equal(t, []string{"organization_without_administrator"}, mine)
+}
+
 // The findings are operator evidence, not product data: request traffic has no
 // authority over them at all, so a tenant transaction cannot read another
 // organization's backlog or forge one of its own.
@@ -139,4 +224,63 @@ func TestMembershipDiagnosticIsNotReachableByRequestTraffic(t *testing.T) {
 		return execErr
 	})
 	require.Error(t, err, "app_tenant may not run a cross-organization inventory")
+}
+
+// Regression test for the defect this diagnostic shipped with.
+//
+// The migration ran the scan directly under the store owner-connection. That
+// principal is a plain table owner, and organizations / organization_members are
+// FORCE ROW LEVEL SECURITY — which binds the owner too — with policies scoped to
+// app.current_org_id and no bypass clause. On managed Postgres, where the owner
+// is neither superuser nor BYPASSRLS, the scan therefore saw zero organizations,
+// recorded nothing, and returned 0: the same answer a healthy platform gives.
+//
+// No test that simply runs the scan as the owner-connection can catch this,
+// because the local owner-connection role IS a superuser and so bypasses RLS
+// outright. Build the production role shape explicitly instead: a principal that
+// may execute the function and read both tables, but cannot span organizations.
+// It must be refused, not answered with a reassuring zero.
+func TestMembershipDiagnosticRefusesACallerThatCannotSpanOrganizations(t *testing.T) {
+	role := "diag_narrow_" + strings.ReplaceAll(business.NewIDString(), "-", "")
+
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		mustExec(t, ctx, conn, fmt.Sprintf(
+			`CREATE ROLE %s NOSUPERUSER NOBYPASSRLS NOLOGIN`, role))
+		defer func() {
+			_, _ = conn.Exec(ctx, `RESET ROLE`)
+			_, _ = conn.Exec(ctx, fmt.Sprintf(`DROP OWNED BY %s`, role))
+			_, _ = conn.Exec(ctx, fmt.Sprintf(`DROP ROLE %s`, role))
+		}()
+		// Grant everything except the ability to span organizations, so the
+		// refusal cannot be mistaken for a missing privilege.
+		mustExec(t, ctx, conn, fmt.Sprintf(
+			`GRANT EXECUTE ON FUNCTION public.record_membership_integrity_findings() TO %s`, role))
+		mustExec(t, ctx, conn, fmt.Sprintf(
+			`GRANT SELECT ON organizations, organization_members TO %s`, role))
+		mustExec(t, ctx, conn, fmt.Sprintf(
+			`GRANT INSERT, UPDATE, DELETE, SELECT ON membership_integrity_findings TO %s`, role))
+		mustExec(t, ctx, conn, fmt.Sprintf(`SET ROLE %s`, role))
+
+		var outstanding int
+		err := conn.QueryRow(ctx,
+			`SELECT public.record_membership_integrity_findings()`).Scan(&outstanding)
+		require.Error(t, err,
+			"a caller that cannot span organizations must be refused, not answered with an empty backlog")
+		require.Contains(t, err.Error(), "spans every organization")
+	})
+}
+
+// The deploy path itself: the migration assumes app_control_plane before
+// scanning, which only works if the principal migrations run under is a member
+// of that role. That is an environment fact, not a code fact, so assert it here
+// rather than discovering it during a release.
+func TestMigrationOwnerCanAssumeTheControlPlaneToScan(t *testing.T) {
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		mustExec(t, ctx, conn, `SET ROLE app_control_plane`)
+		defer func() { _, _ = conn.Exec(ctx, `RESET ROLE`) }()
+
+		var outstanding int
+		require.NoError(t, conn.QueryRow(ctx,
+			`SELECT public.record_membership_integrity_findings()`).Scan(&outstanding))
+	})
 }
