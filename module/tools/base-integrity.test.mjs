@@ -21,7 +21,9 @@ import {
   productionTruthErrors,
   requiredAdditionsErrors,
   verifyErrors,
+  satisfiesWorkspaceRange,
   workspaceInstallGraphErrors,
+  workspaceLinkSatisfactionErrors,
 } from "./base-integrity.mjs";
 
 function writeJSON(path, value) {
@@ -480,4 +482,90 @@ test("does not require the frontend capability manifest when frontend is omitted
   );
 
   assert.deepEqual(productionTruthErrors(root), []);
+});
+
+// `module/tools` runs on bare node, so the range evaluation is hand-rolled and
+// has to be pinned — especially npm's leading-zero caret rules, where getting it
+// wrong in the permissive direction would let an unsatisfiable pin through.
+test("satisfiesWorkspaceRange evaluates the ranges workspace links use", () => {
+  assert.equal(satisfiesWorkspaceRange("0.2.1", "0.2.1"), true);
+  assert.equal(satisfiesWorkspaceRange("0.2.0", "0.2.1"), false);
+  assert.equal(satisfiesWorkspaceRange("^0.2.1", "0.2.9"), true);
+  // ^0.2.1 must NOT allow 0.3.0: in a 0.x line npm treats a minor as breaking.
+  assert.equal(satisfiesWorkspaceRange("^0.2.1", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^0.0.3", "0.0.4"), false);
+  assert.equal(satisfiesWorkspaceRange("^1.2.3", "1.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("^1.2.3", "2.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("~0.2.1", "0.2.9"), true);
+  assert.equal(satisfiesWorkspaceRange("~0.2.1", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange(">=19.2 <20", "19.2.8"), true);
+  assert.equal(satisfiesWorkspaceRange(">=19.2 <20", "20.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^1.0.0 || ^2.0.0", "2.1.0"), true);
+});
+
+// Fail closed: a range shape the evaluator does not understand must surface as
+// unknown (null) so the caller errors, never as a silent pass.
+test("satisfiesWorkspaceRange reports unknown rather than guessing", () => {
+  for (const range of ["*", "x", "workspace:*", "1.x", ">=1.0.0-beta.1", ""]) {
+    assert.equal(satisfiesWorkspaceRange(range, "1.0.0"), null, range);
+  }
+});
+
+// The regression this gate exists for: `@codefly-dev/saas-ui` kept requiring
+// `@codefly-dev/saas-sdk@0.2.0` after the SDK workspace moved to 0.2.1. The
+// lockfile agreed with the manifest, so every metadata-equality check passed and
+// "Base manifest integrity" reported in-sync — while `npm ci` went to the public
+// registry for a package that is not there and failed three CI jobs with E404.
+test("workspaceLinkSatisfactionErrors catches a workspace pin the workspace cannot satisfy", () => {
+  const workspaces = [
+    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
+    {
+      label: "packages/saas-ui/package.json",
+      manifest: {
+        name: "@codefly-dev/saas-ui",
+        version: "0.2.0",
+        devDependencies: { "@codefly-dev/saas-sdk": "0.2.0" },
+        peerDependencies: { "@codefly-dev/saas-sdk": "0.2.0", react: ">=19.2 <20" },
+      },
+    },
+  ];
+  const errors = workspaceLinkSatisfactionErrors({ root: {}, workspaces });
+  assert.equal(errors.length, 2);
+  for (const error of errors) {
+    assert.match(error, /@codefly-dev\/saas-sdk = "0\.2\.0" is not satisfied by workspace @codefly-dev\/saas-sdk@0\.2\.1/);
+  }
+  // A third-party range is not a workspace edge and must not be evaluated.
+  assert.ok(!errors.some((error) => error.includes("react")));
+});
+
+test("workspaceLinkSatisfactionErrors accepts a range the workspace satisfies", () => {
+  const workspaces = [
+    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
+    {
+      label: "packages/saas-ui/package.json",
+      manifest: {
+        name: "@codefly-dev/saas-ui",
+        version: "0.2.0",
+        peerDependencies: { "@codefly-dev/saas-sdk": "^0.2.1" },
+      },
+    },
+  ];
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      root: { dependencies: { "@codefly-dev/saas-ui": "0.2.0" } },
+      workspaces,
+    }),
+    [],
+  );
+});
+
+test("workspaceLinkSatisfactionErrors fails closed on an unevaluatable workspace range", () => {
+  const errors = workspaceLinkSatisfactionErrors({
+    root: { dependencies: { "@codefly-dev/saas-ui": "*" } },
+    workspaces: [
+      { label: "packages/saas-ui/package.json", manifest: { name: "@codefly-dev/saas-ui", version: "0.2.0" } },
+    ],
+  });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /cannot evaluate/);
 });

@@ -36,6 +36,34 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`.
 
+## Installing from a solution
+
+This package is published to GitHub Packages under the org's `@codefly-dev`
+scope, so a consumer needs that scope routed to the GitHub registry with a read
+token:
+
+```
+@codefly-dev:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+
+Everything this package renders with is a **peer**, not a bundled dependency, so
+that the host and every Module-Federation remote share one instance of each (a
+second copy of React Query or React Hook Form means a second context, which is
+the split the sealing invariant exists to prevent). That means the consumer
+installs them:
+
+```
+npm i @codefly-dev/saas-ui @codefly-dev/saas-sdk \
+      react react-hook-form @hookform/resolvers zod \
+      @tanstack/react-query @connectrpc/connect @connectrpc/connect-web @bufbuild/protobuf
+```
+
+Omitting one does not fail the install — npm only warns about unmet peers — it
+fails later at import. `@codefly-dev/saas-sdk` is deliberately a range rather
+than an exact pin: it versions independently of this package, so an exact pin
+here would make an SDK patch bump uninstallable against the published saas-ui.
+
 ## Styling
 
 Components are styled with Tailwind utility classes against the shared shadcn

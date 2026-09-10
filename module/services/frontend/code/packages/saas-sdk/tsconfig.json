@@ -6,8 +6,15 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "declaration": true,
-    "declarationMap": true,
+    // No declarationMap: a .d.ts.map cannot embed its sources, and this
+    // package must not ship `src`/`generated` (see the include note below),
+    // so one would always point at files absent from the tarball.
+    "declarationMap": false,
     "sourceMap": true,
+    // Embeds the source text INTO each .js.map, so runtime debugging works
+    // from the tarball alone. Only the reachable closure is emitted, so this
+    // exposes nothing `dist` does not already contain as compiled JS.
+    "inlineSources": true,
     "rootDir": ".",
     "outDir": "dist",
     "skipLibCheck": true,

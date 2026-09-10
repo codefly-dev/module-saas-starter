@@ -72,7 +72,7 @@ from the public registry with no extra config.
 A solution fe-remote imports `@codefly-dev/ui/layout` + `@codefly-dev/ui/dashboard` and
 shares them as Module-Federation singletons served by the host. Because the
 plugin peers are optional, the solution only needs an `.npmrc` pointing the
-`@codefly` scope at the GitHub Packages registry (with a read token) plus a
+`@codefly-dev` scope at the GitHub Packages registry (with a read token) plus a
 `react` peer it already has:
 
 ```

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { SEALED_SHARED } from "../SolutionOutlet";
+import {
+	CODEFLY_KIT_SHARED,
+	LEGACY_KIT_SHARE_ALIASES,
+	SEALED_SHARED,
+} from "../SolutionOutlet";
 
 // Sealing invariant (packages/codefly-ui/ARCHITECTURE.md, "Sealed downward"):
 // a higher layer composes what a lower layer ships but cannot shadow or replace
@@ -52,5 +56,35 @@ describe("the sealed set covers React, the kit, and each module UI package", () 
 				"@codefly-dev/saas-sdk",
 			]),
 		);
+	});
+});
+
+// Module Federation matches share entries by exact string key, so renaming a
+// shared package silently unshares it for every remote still built against the
+// old name: that remote finds no host entry, falls back to its own bundled copy
+// and splits the singleton, with no error at either end. The scope rename
+// (`@codefly/saas-ui` → `@codefly-dev/saas-ui`) is exactly that hazard, so the
+// host publishes the old key alongside the new one for the migration.
+//
+// These assertions are what a rename must not break: the alias has to be IN the
+// sealed set (a renamed-but-unaliased key is the bug), and it has to resolve to
+// the very same entry object as its canonical key — an alias that merely looks
+// alike but carries its own `lib` would hand a remote a second instance, which
+// is the split it exists to prevent.
+describe("legacy share keys stay aliased through the scope rename", () => {
+	it("aliases @codefly/saas-ui onto the renamed @codefly-dev/saas-ui", () => {
+		expect(LEGACY_KIT_SHARE_ALIASES["@codefly/saas-ui"]).toBe(
+			CODEFLY_KIT_SHARED["@codefly-dev/saas-ui"],
+		);
+	});
+
+	it("publishes every legacy alias into the sealed set", () => {
+		for (const [legacyKey, entry] of Object.entries(LEGACY_KIT_SHARE_ALIASES)) {
+			expect(SEALED_PACKAGES).toContain(legacyKey);
+			// Same entry object, so both names resolve to one shared instance.
+			expect(SEALED_SHARED[legacyKey as keyof typeof SEALED_SHARED]).toBe(
+				entry,
+			);
+		}
 	});
 });

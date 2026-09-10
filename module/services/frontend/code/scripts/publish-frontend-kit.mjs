@@ -95,21 +95,61 @@ function remoteIntegrity(name, version) {
 	}
 }
 
+// Resolve EVERY package's action before any of them is published.
+//
+// A registry publish is irreversible (GitHub Packages restricts version
+// deletion), so publishing inside the same loop that packs and decides means a
+// failure on package N — an unbumped version, a 5xx, a bad token — leaves
+// packages 1..N-1 published and the rest not. The host then advertises three
+// Module-Federation singletons at versions only some of which a solution can
+// install: exactly the host-serves-bytes-nobody-can-resolve drift the version
+// gate exists to prevent, now baked into an immutable registry. Deciding first
+// means every failure that is knowable before the first publish happens with
+// nothing published at all.
+//
+// This cannot make publishing atomic — nothing can, once the first `npm publish`
+// returns — but it shrinks the unrecoverable window to the publish calls
+// themselves, which is the only part that genuinely cannot be pre-checked.
+export function planPublications({
+	packages,
+	manifests,
+	packPackage,
+	readRemoteIntegrity,
+}) {
+	return packages.map((name) => {
+		const manifest = manifests.get(name);
+		if (!manifest) throw new Error(`no workspace package named '${name}'`);
+		const { version } = manifest;
+		const { path, integrity } = packPackage(name);
+		return {
+			name,
+			version,
+			path,
+			action: decidePublish({
+				name,
+				version,
+				localIntegrity: integrity,
+				remoteIntegrity: readRemoteIntegrity(name, version),
+			}),
+		};
+	});
+}
+
 function main() {
 	const packDir = process.env.RUNNER_TEMP ?? tmpdir();
 	const manifests = workspacesByName();
 	const published = [];
-	for (const name of PACKAGES) {
-		const manifest = manifests.get(name);
-		if (!manifest) throw new Error(`no workspace package named '${name}'`);
-		const { version } = manifest;
-		const { path, integrity } = pack(name, packDir);
-		const action = decidePublish({
-			name,
-			version,
-			localIntegrity: integrity,
-			remoteIntegrity: remoteIntegrity(name, version),
-		});
+
+	// Phase 1 — pack and decide everything. Throws before anything is published.
+	const plan = planPublications({
+		packages: PACKAGES,
+		manifests,
+		packPackage: (name) => pack(name, packDir),
+		readRemoteIntegrity: remoteIntegrity,
+	});
+
+	// Phase 2 — publish only what phase 1 approved.
+	for (const { name, version, path, action } of plan) {
 		if (action === "skip") {
 			console.log(`${name}@${version} already published — skipping`);
 			continue;

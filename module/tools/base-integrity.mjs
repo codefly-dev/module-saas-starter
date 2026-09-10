@@ -161,6 +161,112 @@ function packageLockProjection(value) {
   );
 }
 
+// Semver just far enough for workspace→workspace ranges, and FAIL CLOSED beyond
+// it. `module/tools` runs on bare node with no node_modules (the Base-manifest
+// job installs nothing), so the real `semver` package is unavailable here.
+// Returns true/false for a range this understands and `null` for one it does
+// not — the caller turns `null` into an error rather than a pass, so a range
+// shape this cannot evaluate can never slip through as "fine".
+function parseVersionTriple(text) {
+  const match = /^(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(text.trim());
+  if (!match) return null;
+  return [Number(match[1]), Number(match[2] ?? 0), Number(match[3] ?? 0)];
+}
+
+const compareTriples = (left, right) =>
+  left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
+
+// The upper bound npm gives `^`/`~`, including npm's special-casing of leading
+// zeros: ^0.2.1 allows <0.3.0 (not <1.0.0) and ^0.0.3 allows <0.0.4, because a
+// 0.x line makes every minor a potential breaking change.
+function caretUpperBound([major, minor, patch]) {
+  if (major !== 0) return [major + 1, 0, 0];
+  if (minor !== 0) return [0, minor + 1, 0];
+  return [0, 0, patch + 1];
+}
+
+export function satisfiesWorkspaceRange(range, version) {
+  const target = parseVersionTriple(version);
+  if (target === null || typeof range !== "string") return null;
+  // `||` alternation: satisfied when any branch is.
+  const branches = range.split("||").map((branch) => branch.trim());
+  let anySatisfied = false;
+  for (const branch of branches) {
+    if (!branch) return null;
+    let branchSatisfied = true;
+    for (const comparator of branch.split(/\s+/)) {
+      const operatorMatch = /^(>=|<=|>|<|=|\^|~|)(.*)$/.exec(comparator);
+      if (!operatorMatch) return null;
+      const [, operator, rest] = operatorMatch;
+      const bound = parseVersionTriple(rest);
+      // Wildcards, hyphen ranges, prerelease/build tags and `x`-ranges all land
+      // here: unevaluatable, so report unknown rather than guess.
+      if (bound === null) return null;
+      const ordering = compareTriples(target, bound);
+      let ok;
+      if (operator === ">=") ok = ordering >= 0;
+      else if (operator === ">") ok = ordering > 0;
+      else if (operator === "<=") ok = ordering <= 0;
+      else if (operator === "<") ok = ordering < 0;
+      else if (operator === "^")
+        ok = ordering >= 0 && compareTriples(target, caretUpperBound(bound)) < 0;
+      else if (operator === "~")
+        ok = ordering >= 0 && compareTriples(target, [bound[0], bound[1] + 1, 0]) < 0;
+      else ok = ordering === 0; // "=" and the bare exact form
+      if (!ok) {
+        branchSatisfied = false;
+        break;
+      }
+    }
+    if (branchSatisfied) anySatisfied = true;
+  }
+  return anySatisfied;
+}
+
+// Every dependency edge that points at another workspace in this repo must be
+// satisfiable BY that workspace. npm links a workspace only when the declared
+// range covers the workspace's own version; when it does not, npm silently
+// stops treating it as local and goes to the public registry for it instead —
+// where these packages do not exist, so `npm ci` dies with E404 (and would
+// install a stranger's package if the name were ever squatted).
+//
+// The metadata equality checks above cannot see this: they prove the lockfile
+// AGREES with each manifest, and a stale exact pin copied faithfully into the
+// lockfile agrees perfectly while being unsatisfiable. That is exactly how
+// `@codefly-dev/saas-ui` kept requiring `@codefly-dev/saas-sdk@0.2.0` after the
+// SDK workspace moved to 0.2.1: this gate reported "in sync" while three CI jobs
+// died on `npm ci`. Agreement is not satisfiability.
+export function workspaceLinkSatisfactionErrors({ root, workspaces }) {
+  const versions = new Map();
+  for (const { manifest } of workspaces) {
+    if (typeof manifest?.name === "string" && typeof manifest.version === "string") {
+      versions.set(manifest.name, manifest.version);
+    }
+  }
+  const errors = [];
+  for (const { label, manifest } of [{ label: "package.json", manifest: root }, ...workspaces]) {
+    for (const field of PACKAGE_DEPENDENCY_FIELDS) {
+      for (const [name, range] of Object.entries(manifest?.[field] ?? {})) {
+        const version = versions.get(name);
+        if (version === undefined) continue; // Not a local workspace.
+        const satisfied = satisfiesWorkspaceRange(range, version);
+        if (satisfied === null) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" uses a range this gate cannot evaluate; ` +
+              "use an exact, ^, ~ or comparator range so the workspace link stays checkable",
+          );
+        } else if (!satisfied) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" is not satisfied by workspace ${name}@${version}, ` +
+              "so npm ci resolves it from the public registry instead of the local workspace",
+          );
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 // package-lock.json is application-generated, but it is not unchecked. The
 // protected root package.json fixes Starter-owned scripts/dependencies and its
 // packages/* wildcard. Consumer package.json files are additive side-files.
@@ -214,6 +320,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   const packagesRoot = join(frontendCodeRoot, "packages");
   const workspaceKeys = [];
   const packageNames = new Set();
+  const workspaceManifests = [];
   if (existsSync(packagesRoot)) {
     for (const entry of readdirSync(packagesRoot, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
       if (!entry.isDirectory()) continue;
@@ -233,6 +340,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
         continue;
       }
       packageNames.add(manifest.name);
+      workspaceManifests.push({ label: `${key}/package.json`, manifest });
       const locked = lock.packages[key];
       if (!locked || JSON.stringify(normalizedJSON(packageLockProjection(locked))) !==
           JSON.stringify(normalizedJSON(packageLockProjection(manifest)))) {
@@ -250,6 +358,9 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   if (JSON.stringify(lockedWorkspaceKeys) !== JSON.stringify(workspaceKeys.sort())) {
     errors.push("frontend package-lock.json contains a missing or removed packages/* workspace");
   }
+  errors.push(
+    ...workspaceLinkSatisfactionErrors({ root: rootManifest, workspaces: workspaceManifests }),
+  );
   return errors;
 }
 
