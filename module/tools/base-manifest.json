@@ -1266,7 +1266,7 @@
     "services/frontend/code/packages/saas-settings/tsconfig.json": "18ea5df4eb6d3247fc7ec16a2aa954e179d7af658749b0fdc6f3fb539e87a348",
     "services/frontend/code/packages/saas-settings/vitest.config.ts": "3dcadc921171a8bab4ddc41bd2a1f9ee34944df4d00d433b001ad343b9349dd1",
     "services/frontend/code/packages/saas-ui/README.md": "43a32d5bf6fe02001adf2e150e9dcc87468ec16c076c046db3cc85fc47b13c00",
-    "services/frontend/code/packages/saas-ui/package.json": "e2f11e35b42a60a8d7b376de216fd75cb9a5cbdc88db13692098ab335caf1067",
+    "services/frontend/code/packages/saas-ui/package.json": "73bebac86f1ab41936b2fa35c14baeccab22d1728ca15440b4636d972f7fc428",
     "services/frontend/code/packages/saas-ui/src/datasources/__tests__/datasources-panel.test.tsx": "1774d86c5a2a3e803a23f0f3da6ff6440ee9dff73b1e5784bbbeaf3de4776600",
     "services/frontend/code/packages/saas-ui/src/datasources/__tests__/gateway.test.tsx": "38267cdaeb9c18ff3ab4498866b5c474a5faf8a6ed11f7d85b6bba232f62d5d0",
     "services/frontend/code/packages/saas-ui/src/datasources/__tests__/schema.test.ts": "a9a78abaea30bb70eef2bf9812bdd8edb57ca1d8494db920f9a37261fbaabf5f",
