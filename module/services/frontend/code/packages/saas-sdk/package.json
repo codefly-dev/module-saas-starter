@@ -1,6 +1,6 @@
 {
 	"name": "@codefly-dev/saas-sdk",
-	"version": "0.2.0",
+	"version": "0.2.1",
 	"description": "Typed Connect client, gateway-bound facades, and audit data-graph tooling for the saas-starter public API.",
 	"type": "module",
 	"sideEffects": false,
