@@ -207,11 +207,13 @@ at all; that needs an inventory of privileged writes, which does not exist. They
 catch an event on the wrong path, and a write that skips the paths entirely.
 
 The worker paths (audit-exporter goroutine, webhook dispatcher,
-billing reconciler, migration runner, platform-admin endpoints) bypass
-L3 deliberately by setting `app.bypass = '1'`. They run unauthenticated
-inside the api process — they're trusted by L1 implicitly. The L3
-bypass is itself audit-able: every WithBypass call logs a wool event,
-making it grep-able.
+billing reconciler, migration runner, platform-admin endpoints) cross scopes
+deliberately, through `WithControlPlane`. There is no application-settable
+bypass: the historical `app.bypass = '1'` setting is gone, and crossing scopes
+now means assuming a *different database role* (`app_control_plane`, `SET LOCAL
+ROLE`) with its own explicit grants, which a request transaction has no way to
+reach. Each entry is recorded (`recordControlPlane`), so the crossings are
+countable rather than merely greppable.
 
 ## Removing an organization member: deleted vs. rendered ineffective
 
@@ -373,9 +375,18 @@ answer is unacceptable.
 |---|---|
 | L1 Policy gates | ✅ Live. All admin RPCs gated. Webhook + api-key handlers added scope checks 2026-04-26. |
 | L2 Permissions | ✅ Live. `CheckPermission` + RBAC tables. Wildcard + team inheritance. |
-| L3 RLS | ✅ Live across **all** per-tenant tables, **fail-closed** end-to-end. Connection-level role downgrade (`BeforeAcquire` SET ROLE app_tenant) makes un-wrapped Store calls return zero rows by default. `WithOrgTx` / `WithBypass` helpers, `app_tenant` role. 11 integration tests prove cross-tenant blocking + fail-closed-on-unwrapped across direct-org, JOIN, polymorphic, and self-referential policies. |
+| L3 RLS | ✅ Live across **all** per-tenant and per-user relations, **fail-closed** end-to-end. Connection-level role downgrade (`BeforeAcquire` SET ROLE app_tenant) makes un-wrapped Store calls return zero rows by default. `WithOrgTx` / `WithUserTx` / `WithControlPlane` helpers, `app_tenant` and `app_control_plane` roles. Integration tests prove cross-tenant blocking + fail-closed-on-unwrapped across direct-org, JOIN, polymorphic, and self-referential policies. The authoritative relation inventory is [module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md). |
 
 ### RLS coverage (table → migration)
+
+**Historical adoption record.** This table records how the first policies were
+rolled out, migration by migration, and is kept for that history. It is *not*
+the current inventory and has not been maintained as one — `audit_export_configs`
+below was dropped by store migration 102, and `usage_records` was replaced by
+`usage_events` + `usage_totals` in `60_usage_metering`. For what is protected
+today, read the scope inventory in
+[module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md), which is held to
+the executable inventory by a test.
 
 | Table | Policy shape | Migration |
 |---|---|---|
@@ -391,14 +402,18 @@ answer is unacceptable.
 | `organizations` | self-referential (id matches setting) | 33 |
 | `org_identity_providers` | direct org_id (pre-auth discovery via control-plane) | 92 |
 
-### Skip-list (intentionally NOT RLS-protected)
+### Skip-list — superseded
 
-| Table | Why |
-|---|---|
-| `users` | Global lookup needed for cross-org auth flows; `WHERE user_id = $1` filters at the SQL layer. |
-| `plans`, `plan_entitlements`, `feature_flags` | Global catalogs; no tenant data. |
-| `oauth_state`, `refresh_tokens`, `mfa_devices`, `notifications` | User-scoped, not tenant-scoped. A symmetric `WithUserTx` + `app.current_user_id` GUC would close the symmetric defense, but the existing `WHERE user_id = $1` filters already provide the primary safety property. Lower priority. |
-| `role_permissions` | Child of `roles` (FK role_id). A JOIN-via-role policy would be redundant — the rows are not tenant-secret data. |
+The user-scoped half of this list is gone: `users`, `mfa_devices`,
+`notifications`, `sessions` and their siblings carry forced RLS policies today
+and enter through `WithUserTx` (`app.current_user_id`), so `WHERE user_id = $1`
+is no longer the safety property. `oauth_state` and `refresh_tokens` no longer
+exist at all. `role_permissions` gained a parent-visibility policy in
+`65_role_permissions_rls`.
+
+What remains outside RLS is the global catalog scope, and only that. It is
+listed — with every other relation and its required boundary — in
+[module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md).
 
 ## How the role-downgrade works
 
@@ -414,25 +429,27 @@ changing codefly's Postgres plugin:
                                                      │
                               ┌──────────────────────┤
                               ▼                      ▼
-                       ┌─────────────┐         ┌─────────────┐
-                       │ WithOrgTx   │         │ WithBypass  │
-                       └─────────────┘         └─────────────┘
-                              │                      │
-                              ▼                      ▼
-              SET LOCAL                  SET LOCAL ROLE NONE
-              app.current_org_id = X     (revert to session_user
-              (still app_tenant —         = the original superuser
-               policy filters by org)     for this tx)
+                       ┌─────────────┐         ┌──────────────────┐
+                       │ WithOrgTx   │         │ WithControlPlane │
+                       │ WithUserTx  │         └──────────────────┘
+                       └─────────────┘                │
+                              │                       ▼
+                              ▼            SET LOCAL ROLE app_control_plane
+              SET LOCAL                    (a named role with BYPASSRLS and
+              app.current_org_id = X        its own explicit grants — NOT
+              app.current_user_id = U       the session superuser)
+              (still app_tenant —
+               policy filters by scope)
 
-                              ↓                      ↓
-                       RLS applies            RLS bypassed
-                       fail-closed            (intentional)
+                              ↓                       ↓
+                       RLS applies             RLS bypassed by role
+                       fail-closed             (audited, grant-limited)
 ```
 
 `BeforeAcquire` runs on every connection checkout — every operation
 the api performs (request-path or worker) starts as `app_tenant`.
-`WithOrgTx` adds the org filter; `WithBypass` elevates back to
-session_user via `SET LOCAL ROLE NONE` for the tx duration. Both
+`WithOrgTx` and `WithUserTx` add the scope filter; `WithControlPlane` assumes
+`app_control_plane` via `SET LOCAL ROLE` for the tx duration. All three
 unwind on commit/rollback. `AfterRelease` does `RESET ROLE` as a
 safety net before the connection returns to the pool.
 
@@ -591,9 +608,10 @@ runs. It carries no repository, revision, or Argo resource.
 - **Don't forget WithOrgTx on per-tenant Store calls** once policies
   are live. Missing one returns zero rows in production — fail-closed
   but invisible. Catch with cross-tenant tests per Store method.
-- **Don't WithBypass casually.** Every bypass is a layer-skip;
-  legitimate cases are workers + platform admin only. Greppable
-  audit log: `wool.Get(ctx).In("WithBypass").Info(...)`.
+- **Don't WithControlPlane casually.** Every crossing is a layer-skip;
+  legitimate cases are workers + platform admin only. Each call is counted
+  (`recordControlPlane`), and `app_control_plane` holds only the grants it was
+  given — so a careless crossing is visible and still bounded.
 - **Don't omit the empty-orgID guard.** WithOrgTx rejects "" — this
   is the load-bearing check that prevents a missing-context bug from
   silently matching the empty tenant.

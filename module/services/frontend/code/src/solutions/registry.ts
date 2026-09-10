@@ -45,6 +45,12 @@ export interface SolutionManifest {
 	dashboard?: DataGraph;
 }
 
+/** The public navigation projection (see navProjection). */
+export type SolutionNav = Pick<SolutionManifest, "id" | "nav">;
+
+/** The internal detail projection (see detailProjection). */
+export type SolutionDetail = Omit<SolutionManifest, "dashboard">;
+
 /**
  * A nav path is rendered directly as an <a href> in the sidebar and home
  * cards. It must be a same-origin, absolute in-app path so a manifest can never
@@ -113,6 +119,32 @@ export function loadSolutions(): SolutionManifest[] {
 
 export function findSolution(id: string): SolutionManifest | null {
 	return registry.get(id) ?? null;
+}
+
+/**
+ * What every signed-in browser may read: the id and the nav entry the Solutions
+ * menu renders. A manifest also carries deployment topology — the origin the
+ * solution's code is served from, the backend service that fronts it, and its
+ * dashboard declaration — which no browser needs to render a link, so the
+ * public listing projects it away rather than shipping it to every poll.
+ */
+export function navProjection(manifest: SolutionManifest): SolutionNav {
+	return { id: manifest.id, nav: { ...manifest.nav } };
+}
+
+/**
+ * What a caller holding the cluster-internal token may read: everything needed
+ * to resolve the remote and its backend. The dashboard graph is left out — it
+ * is read in-process by the solution page (findSolution), never over HTTP, so
+ * no reader would spend the bytes.
+ */
+export function detailProjection(manifest: SolutionManifest): SolutionDetail {
+	return {
+		id: manifest.id,
+		nav: { ...manifest.nav },
+		frontend: { ...manifest.frontend },
+		backend: { ...manifest.backend },
+	};
 }
 
 /** Minimal structural validation of a self-registration payload. */

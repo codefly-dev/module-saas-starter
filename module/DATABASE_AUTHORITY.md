@@ -100,19 +100,28 @@ it fails the gate.
 
 ## Scope and RLS inventory
 
+Every public application relation carries exactly one scope, and the scope
+decides the required database boundary. This table is the documented copy of the
+executable inventory `relationsByScope` in
+`services/accounts/code/pkg/infra/postgres_role_hardening_test.go`; the two are
+compared relation-by-relation by `TestDatabaseAuthorityScopeInventoryMatchesCode`
+in `tools`, which fails on any drift in either direction. Add a relation to the
+executable inventory and this table in the same change.
+
 | Scope | Relations | Required database boundary |
 |---|---|---|
-| global | `bootstrap_state`, `data_retention_policies`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins` | No RLS; exact grants |
-| tenant | `api_keys`, `audit_events`, `audit_export_configs`, `delegation_grants`, `entitlement_overrides`, `invitations`, `org_settings`, `organization_members`, `organizations`, `principals`, `role_assignments`, `role_permissions`, `roles`, `subscriptions`, `team_members`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions` | Enabled and forced RLS with at least one policy |
-| user | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `sessions`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
-| pre-auth | `magic_links` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
-| job platform | `job_attempts`, `job_messages`, `job_state_transitions` | No request relation grant; function-only scoped enqueue plus exact job-worker grants |
+| `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins` | No RLS; exact grants |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `installations`, `invitations`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `user` | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
+| `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
+| `job` | `job_messages` | No request relation grant; function-only scoped enqueue plus exact job-worker grants |
+| `worker` | `analytics_deliveries`, `email_delivery_events`, `event_subscriptions`, `job_attempts`, `job_state_transitions` | No request relation grant; exact grants to one named worker role |
 
-Migration `65_role_permissions_rls` closes the former child-table gap:
-`role_permissions` reads follow parent-role visibility, while inserts may target
-only a custom role owned by the current tenant. The executable inventory checks
-scope, `ENABLE ROW LEVEL SECURITY`, `FORCE ROW LEVEL SECURITY`, and policy
-presence for every public application table.
+The executable inventory checks scope, `ENABLE ROW LEVEL SECURITY`, `FORCE ROW
+LEVEL SECURITY`, and policy presence for every public application table against
+a live database. Migration `65_role_permissions_rls` closes the former
+child-table gap: `role_permissions` reads follow parent-role visibility, while
+inserts may target only a custom role owned by the current tenant.
 
 ## Generic job platform
 

@@ -32,21 +32,21 @@ performance claims.
 
 ## Architectural decisions (locked)
 
-0. **Frontend is the product entry; the gateway is the only API path.** Pages and static assets enter through `frontend/http`. Every backend request — including public OAuth, primary-authentication, MFA, refresh, logout, registration, and discovery ceremonies — is same-origin proxied through the private sidecar gateway. Accounts is never publicly reachable. Exposure, rate-limit class, tenant requirements, sensitivity, and audit behavior come from each protobuf method's `saas.policy.v1.method_policy`; unclassified methods fail descriptor validation and are denied at runtime.
+0. **Frontend is the product entry; the gateway is the only API path.** Pages and static assets enter through `frontend/http`. Every backend request — including public OAuth, primary-authentication, MFA, refresh, logout, registration, and discovery ceremonies — is same-origin proxied through the private auth gateway. Accounts is never publicly reachable. Exposure, rate-limit class, tenant requirements, sensitivity, and audit behavior come from each protobuf method's `saas.policy.v1.method_policy`; unclassified methods fail descriptor validation and are denied at runtime.
 
-1. **Two auth paths, hard-separated.** Authentication ceremonies, refresh/logout, and organization token exchange go through the accounts backend via the gateway. Normal product requests use the sidecar-verified runtime identity. The switch endpoint is authenticated by the current access token; it never accepts identity or role claims from the browser.
+1. **Two auth paths, hard-separated.** Authentication ceremonies, refresh/logout, and organization token exchange go through the accounts backend via the gateway. Normal product requests use the gateway-verified runtime identity. The switch endpoint is authenticated by the current access token; it never accepts identity or role claims from the browser.
 
-2. **Our own JWT is the runtime token.** On login/signup, backend mints an Ed25519-signed JWT carrying `sub=user_id`, `org=organization_id`, `or=organization_role`, `pr=platform_role`, and `sid=session_id`. Sidecar validates that token on every request — no DB hit, no provider knowledge.
+2. **Our own JWT is the runtime token.** On login/signup, backend mints an Ed25519-signed JWT carrying `sub=user_id`, `org=organization_id`, `or=organization_role`, `pr=platform_role`, and `sid=session_id`. The gateway validates that token on every request — no DB hit and no provider knowledge, but see [Hot path](#hot-path-every-non-auth-request): key resolution and revocation are cached network reads, not local-only work.
 
-3. **WorkOS is login-only.** WorkOS tokens never enter the runtime path. They are validated exactly once during `Authenticate`, then thrown away. The sidecar has no WorkOS dependency.
+3. **WorkOS is login-only.** WorkOS tokens never enter the runtime path. They are validated exactly once during `Authenticate`, then thrown away. The gateway has no WorkOS dependency.
 
-4. **`TokenValidator` + `IdentityResolver` live in the backend `pkg/auth/`**, not in the sidecar. They run during login/signup only. Sidecar has its own much smaller `LocalValidator` for our JWT.
+4. **`TokenValidator` + `IdentityResolver` live in the backend `pkg/auth/`**, not in the gateway. They run during login/signup only. The gateway carries its own much smaller access-token check for our JWT.
 
 5. **UUID v7 for all primary keys.** `github.com/google/uuid` v1.6+ `uuid.NewV7()`. Never v5 for user-visible ids.
 
 6. **Identity translation layer.** `(provider, provider_sub)` → internal `user_id` via `provider_identities` table. Runs exactly once per provider identity, at first login. Provider's `sub` never enters the JWT or headers.
 
-7. **Forwarded headers** (sidecar → upstream):
+7. **Forwarded headers** (gateway → upstream):
    - `X-User-ID` — canonical internal user uuid v7
    - `X-Org-ID` — canonical internal org uuid v7
    - `X-Org-Role` — `owner | admin | member`
@@ -56,7 +56,7 @@ performance claims.
 
 8. **Token and device-session policy**: access tokens live 15 minutes. A refresh family has a fixed seven-day absolute lifetime and a 24-hour idle window by default; rotation advances only idle expiry and cannot slide the absolute boundary. Initial login atomically enforces the configured active-device cap (default ten) and evicts the least-recently active family. Bounded display-only device metadata survives MFA and rotation, while management uses the stable family id and revokes the whole device. Refresh consumption, current-authorization resolution, family revocation, and successor insertion are one locked PostgreSQL transaction. Each refresh requires an active user and current selected-org membership, projects current org/platform roles, and evaluates current verified MFA enrollment. Concurrent reuse of a token consumed by rotation commits revocation of every active refresh session for the affected user; logout and administrative revocation are not misclassified as replay. Database triggers revoke affected refresh sessions atomically when user status, membership/org role, platform role, or verified MFA enrollment changes. Organization switching is a separate authenticated access-token exchange serialized on the exact active session row: the server resolves current target membership/roles, signs a fresh access token with the same `sid`, and updates only the selected organization projection. It does not rotate the refresh credential, create a device, or advance session lifetime, so a switch racing refresh cannot be misclassified as replay. An already-issued access token remains a signed snapshot for at most its 15-minute lifetime; high-risk deployments can shorten that TTL or add a stateful gateway session check without weakening refresh invariants.
 
-9. **Codefly `identity` configuration selects the login adapter.** Fixture mode additionally requires an explicit Codefly fixture; WorkOS, Auth0, and Google use the same generic configuration contract. The sidecar does not select a provider—it only validates our JWT.
+9. **Codefly `identity` configuration selects the login adapter.** Fixture mode additionally requires an explicit Codefly fixture; WorkOS, Auth0, and Google use the same generic configuration contract. The gateway does not select a provider—it only validates our JWT.
 
 10. **Orgs are canonical in our DB.** `orgs.provider_org_id` is a nullable link to a WorkOS organization for SSO configuration, but not the source of truth.
 
@@ -64,7 +64,7 @@ performance claims.
 
 12. **First super_admin bootstrap**: env-gated `BOOTSTRAP_ADMIN_EMAIL`. On first login of that email, `IdentityResolver.Resolve` grants super_admin inside the JIT provisioning transaction and stamps `bootstrap_state.bootstrapped_at`. Self-disarms forever.
 
-13. **WorkOS last.** Land schema + backend interfaces + Dev validator + sidecar rewrite + business-layer strip first. Plug in WorkOSValidator + AuthKit as the final phase.
+13. **WorkOS last.** *(Historical sequencing decision; this rollout is done.)* Land schema + backend interfaces + Dev validator + gateway rewrite + business-layer strip first. Plug in WorkOSValidator + AuthKit as the final phase.
 
 ## Backend authentication surface
 
@@ -84,22 +84,48 @@ not maintain an independent route list.
 | `Logout` | `POST /v1/auth/logout` | Opaque refresh credential |
 | `GetJWKS` | `GET /v1/auth/.well-known/jwks.json` | Public discovery |
 
-Everything else under `pkg/business/` (users, orgs, teams, invitations, api_keys, audit, etc.) takes `userID`, `orgID`, `orgRole`, `platformRole uuid.UUID / string` as parameters derived from sidecar headers. No auth imports. No JWT parsing. No provider knowledge.
+Everything else under `pkg/business/` (users, orgs, teams, invitations, api_keys, audit, etc.) takes `userID`, `orgID`, `orgRole`, `platformRole uuid.UUID / string` as parameters derived from gateway-stamped headers. No auth imports. No JWT parsing. No provider knowledge.
 
 ## Hot path (every non-auth request)
 
 ```
-browser → sidecar
-  1. Extract JWT from Authorization header or session cookie
-  2. LocalValidator.Validate() — Ed25519 signature check (in-memory pubkey)
-  3. Read claims directly: sub, org, or, pr, sid
-  4. Forward headers: X-User-ID / X-Org-ID / X-Org-Role / X-Platform-Role / X-Session-ID
-  5. Proxy to upstream service
+browser → auth-gateway ext_authz Check (module/services/auth-gateway/code/ext_authz.go)
+  1. Extract the bearer credential from the Authorization header
+  2. Parse and validate: EdDSA only, iss + aud + exp, 60s leeway,
+     verifying key resolved by `kid` from the cached JWKS
+  3. Revocation: is this `jti` revoked? is this `sid` revoked?
+  4. Read claims: sub, org, or, pr, sid (+ mfa, amr, auth_time, acr, acting)
+  5. Stamp the identity headers and let the request through
 ```
 
-No database, no provider API, no policy evaluation. ~200 lines of Go + the validator.
+**This path is not dependency-free, and the previous text here claimed it was.**
+Two of its five steps can reach off-process:
 
-Total request overhead: one Ed25519 verify (microseconds) + one header rewrite. No network, no DB.
+- **Verification keys** come from accounts' published JWKS, cached in-process
+  for `accessJWKSCacheTTL` (5 min) with a further `accessJWKSStaleGrace`
+  (10 min) during which the last good key set keeps verifying while accounts is
+  unreachable. A warm loop refreshes at half the TTL, and an unrecognised `kid`
+  triggers a lazy refetch. Holding no usable key set at all answers **503**, not
+  401 — an availability failure, not a bad credential.
+- **Revocation** is a Redis read per request for the token's `jti`, and a second
+  for its `sid`. Answers are cached locally for `defaultRevocationCacheTTL`
+  (3 s, capped at 50 000 entries), which is also the documented worst case
+  between a revocation and every replica honouring it. On a logout route the
+  cached answer for that `jti` is dropped *after* the check, so the logout
+  request cannot shield an immediate replay of the token it revokes.
+
+Failure semantics are configurable and **fail closed by default**: if the
+revocation store cannot be consulted, the check answers 503 unless
+`SIDECAR_REVOCATION_FAIL_OPEN` is explicitly `true` in the `security`
+configuration group (the setting keeps its historical key name). With no revoker
+wired at all — local development without Redis — the check uses a no-op revoker
+and nothing is revoked, matching accounts' own `NoopTokenRevoker` so both paths
+behave alike.
+
+What the path still does *not* do: no database, no identity-provider API, no
+policy evaluation per request. Steady-state overhead is one Ed25519 verify plus
+two local cache hits; the network cost appears on a cache miss, on key rollover,
+and while a store is unreachable.
 
 ## Login path (once per session)
 
@@ -131,7 +157,7 @@ same provider-code exchange as every returning user.
 - `X-Dev-Role` / `X-Dev-User-ID` header bypass → replaced by explicitly configured fixture identity plus a Codefly-selected fixture
 - Caller-asserted provider subjects, emails, roles, organizations, or session ids; the server derives all identity and authorization state
 - Any `pkg/business/*.go` import of `jwt`, `auth`, or session/token parsing
-- Method admission is derived from the protobuf RPC inventory and enforced by deny-by-default Connect/gRPC interceptors. Resource ownership and tenant checks remain in handlers and PostgreSQL RLS; the sidecar only validates credentials and stamps canonical identity.
+- Method admission is derived from the protobuf RPC inventory and enforced by deny-by-default Connect/gRPC interceptors. Resource ownership and tenant checks remain in handlers and PostgreSQL RLS; the gateway only validates credentials and stamps canonical identity.
 
 ## Schema migration
 
@@ -247,8 +273,8 @@ Concrete implementations:
 - `pkg/auth/pg/resolver.go` — Postgres-backed resolver with JIT provisioning + bootstrap
 - `pkg/auth/ed25519/minter.go` — JWT mint + verify + refresh storage (single Ed25519 keypair from Vault)
 
-Sidecar-side (module/services/auth-gateway/code/pkg/auth/):
-- `localvalidator.go` — single-purpose Ed25519 JWT validator. Reads pubkey at startup, validates signature + exp on every request. No interfaces, no abstraction. This is the only auth code the sidecar runs on the hot path.
+Gateway-side (module/services/auth-gateway/code/):
+- `ext_authz.go` — the Envoy ext_authz `Check`: alg-locked Ed25519 validation, iss/aud/exp, revocation, then identity-header projection. `access_keys.go` holds the refreshing JWKS and `revocation.go` the revocation reads. This is the only auth code the gateway runs on the hot path.
 
 ## Security hardening (applied throughout)
 
@@ -259,7 +285,13 @@ State-of-the-art, not "good enough". Every item below lands as part of the phase
 - **Refresh tokens hashed at rest** with SHA-256. Tokens contain 256 random bits, so a fast indexed digest is appropriate; the minter retains a constant-time comparison (`crypto/subtle`) as defense in depth.
 - **Cookies**: refresh token in `HttpOnly; Secure; SameSite=Strict; Path=/auth`. Access token in memory only (never localStorage).
 - **CSRF**: double-submit token on state-changing requests wherever cookies are in play.
-- **Key rotation**: sidecar loads `current` + `previous` Ed25519 pubkeys from Vault. Backend mints with current, sidecar accepts either. Rotation = Vault update, no deploy.
+- **Key rotation**: accounts publishes its Ed25519 verification keys as a
+  `kid`-keyed JWKS (`GET /v1/auth/.well-known/jwks.json`); the gateway resolves
+  the key named by the token's `kid` from a refreshing cache, so overlapping
+  keys verify without a deploy and a retired key stops verifying within
+  `accessJWKSCacheTTL + accessJWKSStaleGrace` even if accounts never becomes
+  reachable again. An unknown or ambiguous `kid` is a 401; no key set at all is
+  a 503 (#532).
 - **Gateway rate limits**: pooled Redis-backed fixed windows use canonical org
   identity for authenticated traffic and trusted client IP otherwise. MFA
   completion has a dedicated 10 req/min/IP budget and each durable MFA
@@ -357,7 +389,7 @@ Every commit that touches auth lands with tests. No separate test pass.
 - `IdentityResolver`: new identity JIT path, existing identity path, bootstrap hit (first call grants super_admin, second call no-ops), race condition (two concurrent first-logins for same identity → one row, one super_admin).
 - `JWTMinter`: mint → verify roundtrip. Mint with current key, verify with previous key. Expired access rejected. JTI replay rejected.
 - Refresh rotation: mint refresh A, use A → get B + new access, reuse A → detect reuse, revoke session family, log audit event.
-- `localvalidator` (sidecar): all negative cases above. Key rotation during verify (previous key still valid).
+- The gateway `checkJWT` path: all negative cases above, plus an unknown `kid`, an ambiguous `kid`, an empty key set (503, not 401), a revoked `jti`, a revoked `sid`, and a revocation store that cannot be reached under both fail-open and fail-closed configuration.
 
 ### Integration tests (real postgres via `WithDependencies`)
 - Each `/auth/*` endpoint end-to-end.
@@ -367,7 +399,7 @@ Every commit that touches auth lands with tests. No separate test pass.
 - Invitations flow end-to-end via the new token path (regression).
 - Impersonation: super_admin impersonates user, `X-Acting-As-User-ID` populated, audit log row inserted, stop restores.
 
-### Gateway / sidecar tests
+### Gateway tests
 - Public routes allow no-token requests.
 - Authenticated routes reject missing/expired/revoked/forged tokens.
 - Rate limits return 429 on overflow (per-IP on public, per-user on authenticated).

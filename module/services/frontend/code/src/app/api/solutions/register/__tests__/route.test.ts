@@ -5,7 +5,8 @@ vi.mock("server-only", () => ({}));
 // The route reads the cluster-internal secret via the Codefly SDK. vi.mock is
 // hoisted above module init, so the stub must be created with vi.hoisted.
 const { getWorkspaceSecret } = vi.hoisted(() => ({
-	getWorkspaceSecret: vi.fn<(name: string, key: string) => string | undefined>(),
+	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
 }));
 vi.mock("codefly", () => ({ getWorkspaceSecret }));
 
@@ -26,7 +27,9 @@ function manifestBody(id = "audit") {
 }
 
 function postRequest(body: unknown, token?: string): Request {
-	const headers: Record<string, string> = { "content-type": "application/json" };
+	const headers: Record<string, string> = {
+		"content-type": "application/json",
+	};
 	if (token !== undefined) {
 		headers["x-codefly-internal-token"] = token;
 	}
@@ -92,7 +95,7 @@ describe("solutions register route auth", () => {
 		await expect(res.json()).resolves.toHaveProperty("solutions");
 	});
 
-	it("omits the dashboard data graph from the GET nav list", async () => {
+	it("projects the public nav list down to id and nav", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		const body = manifestBody() as Record<string, unknown>;
 		body.dashboard = {
@@ -121,10 +124,35 @@ describe("solutions register route auth", () => {
 			solutions: Array<Record<string, unknown>>;
 		};
 		const audit = listed.solutions.find((s) => s.id === "audit");
-		// The graph is stored (the page renders it server-side) but never rides the
-		// public nav poll, which only reads id/nav.
 		expect(audit).toBeDefined();
-		expect(audit).not.toHaveProperty("dashboard");
 		expect(audit?.nav).toMatchObject({ title: "Audit", path: "/s/audit" });
+		// Everything the manifest carries beyond the nav entry is deployment
+		// topology: where the solution's code is served from, which backend
+		// fronts it, and its dashboard declaration. This response is readable by
+		// every signed-in browser, so it must carry none of it.
+		expect(Object.keys(audit ?? {}).sort()).toEqual(["id", "nav"]);
+	});
+
+	it("keeps a mutated nav projection out of the stored manifest", async () => {
+		// The projection copies the nav object rather than aliasing it, so a
+		// caller that mutates a response value cannot reach the registry.
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
+
+		const first = (await GET().then((r) => r.json())) as {
+			solutions: Array<{ id: string; nav: { title: string } }>;
+		};
+		const audit = first.solutions.find((s) => s.id === "audit");
+		expect(audit).toBeDefined();
+		if (audit) {
+			audit.nav.title = "Tampered";
+		}
+
+		const second = (await GET().then((r) => r.json())) as {
+			solutions: Array<{ id: string; nav: { title: string } }>;
+		};
+		expect(second.solutions.find((s) => s.id === "audit")?.nav.title).toBe(
+			"Audit",
+		);
 	});
 });

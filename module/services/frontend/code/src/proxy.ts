@@ -83,9 +83,11 @@ const PUBLIC_PATHS = [
 	"/favicon.ico",
 ];
 
-// The runtime solutions listing, served by THIS server (see
-// src/app/api/solutions/register/route.ts).
-const SOLUTION_LISTING_PATH = "/api/solutions/register";
+// The internal solution detail lookup, served by THIS server (see
+// src/app/api/internal/solutions/route.ts). The public listing beside it
+// carries only nav entries, so the manifest origins this derives a CSP from
+// come from the token-gated route rather than from anything a browser can read.
+const SOLUTION_LISTING_PATH = "/api/internal/solutions";
 // The listing fetch is bounded so a wedged listener cannot stall a page.
 const SOLUTION_LISTING_TIMEOUT_MS = 2_000;
 // How long a listing result (including an empty one from a failed lookup) is
@@ -217,6 +219,7 @@ function manifestOrigin(value: unknown): string | null {
 // 500 on every page rather than on one solution page.
 async function loadRegisteredSolutionOrigins(
 	pathname: string,
+	internalToken: string,
 ): Promise<string[]> {
 	// Mirror Next's standalone server: parseInt(PORT, 10) || 3000, so an unset,
 	// empty, or non-numeric PORT resolves to the same port the server bound.
@@ -225,7 +228,10 @@ async function loadRegisteredSolutionOrigins(
 	let payload: unknown;
 	try {
 		const listing = await fetch(listingUrl, {
-			headers: { accept: "application/json" },
+			headers: {
+				accept: "application/json",
+				[INTERNAL_TOKEN_HEADER]: internalToken,
+			},
 			signal: AbortSignal.timeout(SOLUTION_LISTING_TIMEOUT_MS),
 		});
 		if (!listing.ok) {
@@ -280,10 +286,10 @@ async function loadRegisteredSolutionOrigins(
 // globals are NOT shared with route handlers or pages (see the Next "proxy"
 // docs: "you should not attempt relying on shared modules or globals"), so it
 // cannot read the in-process registry the register endpoint and solution page
-// share. Instead it asks the host over the local solutions listing — which does
-// run in that shared context — and admits every registered remote's origin,
-// letting a freshly registered cross-origin remote load with no rebuild and no
-// FRONTEND_SOLUTION_ORIGINS entry.
+// share. Instead it asks the host over the local internal detail lookup — which
+// does run in that shared context — and admits every registered remote's
+// origin, letting a freshly registered cross-origin remote load with no rebuild
+// and no FRONTEND_SOLUTION_ORIGINS entry.
 //
 // Every document gets the full registered set, not only /s/:id. A CSP is
 // document-scoped, and the sidebar reaches a solution through client-side
@@ -300,10 +306,10 @@ async function loadRegisteredSolutionOrigins(
 // router.push (src/features/auth/ui/login-page.tsx), a soft navigation that
 // keeps that cookieless document's policy. Gating on the cookie would leave
 // exactly those two flows self-only — the original bug, one document further
-// along. Nor is there anything to protect: the listing's GET is deliberately
-// unauthenticated (see the register route), so the origins are already public,
-// and the policy this widens is `connect-src`, alongside an `img-src` that
-// already permits any https origin.
+// along. Nor would it protect anything: the origins it admits are already
+// visible to the browser as the `script-src` and `connect-src` it enforces, and
+// they reach this server over a token-gated internal lookup that the browser
+// cannot read (app/api/internal/solutions).
 //
 // The listing is fetched over loopback at the port THIS server binds — read
 // from PORT with the same fallback Next's standalone server uses, so it always
@@ -317,11 +323,24 @@ async function loadRegisteredSolutionOrigins(
 async function registeredSolutionOrigins(
 	req: NextRequest,
 	pathname: string,
+	internalToken: string | undefined,
 ): Promise<string[]> {
 	if (!isDocumentRequest(req)) {
 		return [];
 	}
-	// The listing is served by this same server, so the loopback fetch runs back
+	// No cluster-internal token means the detail lookup would 401 — and means
+	// registration itself is failing closed, so there is no registered remote to
+	// admit. Self-only is the correct policy here, not a degradation, but it is
+	// still reported: silently serving it would hide a missing secret behind a
+	// policy that merely looks conservative.
+	if (!internalToken) {
+		reportListingFailure(
+			"no-internal-token",
+			`solution CSP: no cluster-internal token; solution detail lookup unavailable path=${pathname}`,
+		);
+		return [];
+	}
+	// The lookup is served by this same server, so the loopback fetch runs back
 	// through this proxy. It carries `accept: application/json` and no
 	// Sec-Fetch-Dest, so the document gate above already stops it from fetching
 	// again — but name the path outright so the absence of recursion is a stated
@@ -334,7 +353,7 @@ async function registeredSolutionOrigins(
 		return cached.origins;
 	}
 	if (listingInFlight === null) {
-		listingInFlight = loadRegisteredSolutionOrigins(pathname)
+		listingInFlight = loadRegisteredSolutionOrigins(pathname, internalToken)
 			.catch((err) => {
 				// loadRegisteredSolutionOrigins is total, so this is unreachable
 				// short of a defect in it. Report and degrade rather than letting a
@@ -365,11 +384,12 @@ async function contentSecurityPolicyFor(
 	req: NextRequest,
 	pathname: string,
 	nonce: string,
+	internalToken: string | undefined,
 ): Promise<string> {
 	const inputs = baselineCspInputs();
 	const csp = contentSecurityPolicyFromInputs(
 		inputs,
-		await registeredSolutionOrigins(req, pathname),
+		await registeredSolutionOrigins(req, pathname, internalToken),
 		nonce,
 	);
 	if (csp.length > SOLUTION_CSP_WARN_BYTES) {
@@ -429,10 +449,8 @@ function isPublic(pathname: string): boolean {
 
 export async function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
-	const gatewayHeaders = trustedGatewayRequestHeaders(
-		req,
-		resolveCodeflyGatewayContext(publicRequestOrigin(req)),
-	);
+	const gatewayContext = resolveCodeflyGatewayContext(publicRequestOrigin(req));
+	const gatewayHeaders = trustedGatewayRequestHeaders(req, gatewayContext);
 	const nonce = mintNonce();
 
 	const secretReturn =
@@ -460,7 +478,12 @@ export async function proxy(req: NextRequest) {
 	}
 
 	if (isPublic(pathname)) {
-		const csp = await contentSecurityPolicyFor(req, pathname, nonce);
+		const csp = await contentSecurityPolicyFor(
+			req,
+			pathname,
+			nonce,
+			gatewayContext?.internalToken,
+		);
 		const response = withNoncedCSP(req, gatewayHeaders, nonce, csp);
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
 			response.headers.set("Referrer-Policy", "no-referrer");
@@ -482,7 +505,12 @@ export async function proxy(req: NextRequest) {
 		return NextResponse.redirect(loginURL);
 	}
 
-	const csp = await contentSecurityPolicyFor(req, pathname, nonce);
+	const csp = await contentSecurityPolicyFor(
+		req,
+		pathname,
+		nonce,
+		gatewayContext?.internalToken,
+	);
 	return withNoncedCSP(req, gatewayHeaders, nonce, csp);
 }
 
