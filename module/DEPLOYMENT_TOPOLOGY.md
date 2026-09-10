@@ -17,7 +17,7 @@ deployment ports, and public egress. The runtime `module.codefly.yaml` and every
 | `module.codefly.yaml` | Generated Codefly module interface and service list. |
 | `services/*/service.codefly.yaml` | Generated agents, endpoint-scoped dependencies, endpoints, workspace configuration dependencies, and specs. |
 | `services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml` | Test-only topology-policy golden; installed GitOps policies are rendered structurally per environment. |
-| `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + internal-authority AuthorizationPolicy); mirrors the Istio policy the GitOps renderer installs per environment. |
+| `services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml` | Test-only mesh-policy golden (STRICT mTLS + internal-authority AuthorizationPolicy + waypoint); mirrors those resources from the per-environment GitOps mesh baseline, not the whole of it — the namespace `default-deny` and the L4 internal policies are rendered there only. |
 | `services/accounts/code/pkg/cataloggen/deployment_topology.go` | Strict compiler, semantic validator, and renderers. |
 
 The normalized inventory currently contains eleven services, 16 endpoints,
@@ -120,20 +120,26 @@ namespace `waypoint` Gateway (`gateway.networking.k8s.io/v1`,
 That reach gate is derived from `authz-methods.json`, so it covers exactly the
 catalog owner's `EXPOSURE_INTERNAL` **gRPC procedures**. It renders no policy for
 any other service and has no notion of HTTP paths.
-`TestMeshPolicyGatesOnlyOwnerGRPCProcedures` holds the generated policy to that.
+`TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity` holds the golden
+to that shape — one workload selector, and every gated path a gRPC procedure.
+What it pins is the golden, which carries that policy alone; the namespace
+`default-deny` and the L4 internal policies exist only in the GitOps baseline.
 
-The frontend's cluster-internal HTTP routes (`POST`/`DELETE
-/api/solutions/register`) are therefore gated by the shared internal token
-alone, and no NetworkPolicy can narrow them: `frontend/http` is a public module
-export, so those paths share TCP 3000 with every browser-facing page, and a
-NetworkPolicy selects pods and ports, never paths. `allow-istio-ingress-to-frontend`
-is also the only ingress rule for `app: frontend`, so an in-mesh solution pod
-cannot reach registration directly — it registers through the public ingress.
-"Cluster-internal" names the credential, not the reachability.
+The frontend's cluster-internal HTTP routes — `POST`/`DELETE
+/api/solutions/register`, and the token-gated `GET /api/internal/solutions` the
+proxy reads its CSP origins from — are therefore gated by the shared internal
+token alone, and no NetworkPolicy can narrow them: `frontend/http` is a public
+module export, so those paths share TCP 3000 with every browser-facing page, and
+a NetworkPolicy selects pods and ports, never paths. In the generated base
+topology `allow-istio-ingress-to-frontend` is also the only ingress rule for
+`app: frontend`, so an in-mesh solution pod cannot reach registration directly —
+it registers through the public ingress. "Cluster-internal" names the
+credential, not the reachability.
 
 Gating those paths by caller identity would mean emitting an HTTP-path
 `AuthorizationPolicy` for a non-owner service, which the renderer does not do
-today. Until it does, the token is the boundary and must be treated as one.
+today (#579). Until it does, the token is the boundary and must be treated as
+one.
 
 ## Generation and validation
 

@@ -428,6 +428,16 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			require.Equal(t, "ALLOW", document.Spec["action"])
 			allowFound = true
 
+			// The gate selects one workload. A selector-less policy is a
+			// namespace-wide rule (the GitOps baseline's empty-ALLOW default-deny
+			// takes that shape) and is not this.
+			selector, ok := document.Spec["selector"].(map[string]any)
+			require.True(t, ok, "the reach gate must select a workload, not the namespace")
+			selectorLabels, ok := selector["matchLabels"].(map[string]any)
+			require.True(t, ok, "the reach gate must select by label")
+			require.Equal(t, "accounts", selectorLabels["app"],
+				"only the catalog owner carries a generated reach gate")
+
 			rule := document.Spec["rules"].([]any)[0].(map[string]any)
 			source := rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
 			principals := source["principals"].([]any)
@@ -441,6 +451,15 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			paths := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
 			require.Contains(t, paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey")
 			require.Contains(t, paths, "/saas.accounts.v1.UsageService/ConsumeUsage")
+			// EVERY gated path is a gRPC procedure, not only the two named above.
+			// The frontend's token-gated HTTP routes cannot be gated here: this
+			// policy is derived from authz-methods.json, and those paths sit on
+			// the public ingress port. See DEPLOYMENT_TOPOLOGY.md, "HTTP internal
+			// surfaces are not mesh-gated".
+			for _, path := range paths {
+				require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+					"the gate lists gRPC procedures, not HTTP routes: %q", path)
+			}
 		case "Gateway":
 			// The waypoint that makes the L7 allow enforceable in the ambient mesh.
 			require.Equal(t, "gateway.networking.k8s.io/v1", document.APIVersion)
@@ -454,47 +473,6 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 	require.True(t, strictMTLS, "namespace mTLS must be STRICT")
 	require.True(t, allowFound, "internal-authority AuthorizationPolicy must be present")
 	require.True(t, waypointFound, "L7 allow requires a waypoint to be enforced in the ambient mesh")
-}
-
-// TestMeshPolicyGatesOnlyOwnerGRPCProcedures pins the reach boundary
-// DEPLOYMENT_TOPOLOGY.md states under "HTTP internal surfaces are not
-// mesh-gated": the gate is derived from the catalog owner's authz-methods.json,
-// so it selects that one service and lists gRPC procedures. A service whose
-// internal surface is an HTTP path on the public ingress port — the frontend's
-// solution registration — gets no policy here and cannot, since a path is not
-// something the renderer emits. Widening either half means revisiting that
-// claim, so fail rather than let the document drift.
-func TestMeshPolicyGatesOnlyOwnerGRPCProcedures(t *testing.T) {
-	decoder := yaml.NewDecoder(strings.NewReader(string(readFixture(t, "testdata/mesh-policy.golden.yaml"))))
-	policies := 0
-	for {
-		var document struct {
-			Kind string         `yaml:"kind"`
-			Spec map[string]any `yaml:"spec"`
-		}
-		err := decoder.Decode(&document)
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		if document.Kind != "AuthorizationPolicy" {
-			continue
-		}
-		policies++
-
-		selector := document.Spec["selector"].(map[string]any)["matchLabels"].(map[string]any)
-		require.Equal(t, "accounts", selector["app"],
-			"only the catalog owner carries a generated reach gate")
-
-		for _, rule := range document.Spec["rules"].([]any) {
-			operation := rule.(map[string]any)["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
-			for _, path := range operation["paths"].([]any) {
-				require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
-					"the gate lists gRPC procedures, not HTTP routes: %q", path)
-			}
-		}
-	}
-	require.Equal(t, 1, policies, "exactly one internal-authority policy, for the catalog owner")
 }
 
 func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
