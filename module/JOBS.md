@@ -419,10 +419,16 @@ plane, never under the subject's own identity — a deletion workflow may have
 removed that identity before it reports what it did — and no transition failure
 is discarded: the job retries instead.
 
-The job's lease token is carried onto the request row, and the attempt number
-fences the claim itself. A worker whose lease expired therefore cannot take the
-request back from the attempt that replaced it, cannot record a receipt, and
-cannot finalize it; it stops before reaching the adapter. `app_tenant` holds
+The job's lease token is carried onto the request row. Within one job the
+attempt number fences the claim; across jobs — an operator replay produces a new
+one, so attempts restart — the claim instead requires that no attempt currently
+holds the row, which every ending transition guarantees by clearing the lease.
+A worker whose lease expired therefore cannot take the request back from the
+attempt that replaced it, cannot record a receipt, and cannot finalize it; it
+stops before reaching the adapter. The claim deliberately never consults the
+worker's own copy of its job lease expiry: that copy is captured once at claim
+time while the heartbeat keeps extending the real lease, so testing against it
+would refuse attempts whose lease is very much alive. `app_tenant` holds
 select and insert on `gdpr_requests` and no update at all, so request traffic
 cannot reach execution state.
 
@@ -452,17 +458,34 @@ privacy request. An adapter is responsible for:
 - **Partial failure.** `NewPrivacyFailure(code, message, permanent)` classifies
   the outcome: a permanent failure spends no further attempts, anything else is
   retried on the bounded eight-attempt schedule and ends `failed` when the
-  budget runs out.
+  budget runs out. That budget is deliberately short — under
+  `PrivacyWorkflowMaxRetryBudget` — because requests are ordered per subject, so
+  a request stuck in retry blocks every later request from the same person. A
+  schedule long enough to outlast a multi-hour outage would park an erasure
+  request behind an unrelated export for that whole span, invisibly. Spending
+  the budget quickly and dead-lettering into operator replay keeps that window
+  bounded.
 - **Bounded diagnostics.** Only a declared `PrivacyFailure` reaches durable
   history; every other error becomes a generic retryable diagnostic, because a
   provider error can contain credentials or the personal data being exported.
   Raw provider errors must never be passed through as a failure message.
 - **Private artifacts.** An export artifact must live in private storage behind
   authorization bound to the requesting subject, with an expiry the adapter
-  returns alongside the reference. A lapsed reference is never handed to a
-  caller, and the daily sweep asks the optional `PrivacyArtifactCleaner` to
+  supplies alongside the reference. The adapter registers it with
+  `RecordArtifact` the moment the object exists and before any further step,
+  because that stored reference is the only handle the platform has on it: an
+  attempt that dies between creating an artifact and recording it leaves
+  personal data nothing will ever delete. The reference therefore survives a
+  failed attempt — a `failed` request keeps it so the sweep can still reach the
+  object — while remaining pure bookkeeping: only a completed request inside its
+  window ever hands a caller a download. `Artifact()` returns what an earlier
+  attempt registered so a retry reuses the object instead of producing a second
+  copy, and a completed export with no durable artifact is a failure rather than
+  a completion. The daily sweep is single-flight across replicas and asks the
+  optional `PrivacyArtifactCleaner` — whose deletion must be idempotent — to
   delete the stored object before dropping the reference. A refused cleanup
-  leaves the reference in place so the next sweep retries.
+  leaves that one reference in place for the next sweep without stopping the
+  rows behind it, and the sweep reports that it could not finish.
 
 ### Recovering pre-durable requests
 

@@ -72,12 +72,11 @@ func TestGDPRRequestTransitionsRequireTheCurrentLease(t *testing.T) {
 	}))
 
 	jobID := req.JobID
-	live := time.Now().Add(time.Hour)
 	first := business.GDPRLease{
-		JobID: jobID, Owner: "worker-a", Token: business.NewIDString(), Attempt: 1, ExpiresAt: live,
+		JobID: jobID, Owner: "worker-a", Token: business.NewIDString(), Attempt: 1,
 	}
 	second := business.GDPRLease{
-		JobID: jobID, Owner: "worker-b", Token: business.NewIDString(), Attempt: 2, ExpiresAt: live,
+		JobID: jobID, Owner: "worker-b", Token: business.NewIDString(), Attempt: 2,
 	}
 
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
@@ -131,7 +130,6 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 	userID := seedUser(t)
 	lease := business.GDPRLease{
 		Owner: "worker-a", Token: business.NewIDString(), Attempt: 1,
-		ExpiresAt: time.Now().Add(time.Hour),
 	}
 	lapsed := &business.GDPRRequest{
 		ID: business.NewIDString(), UserID: userID, Type: business.GDPRExport,
@@ -170,7 +168,7 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 		require.Len(t, expired, 1)
 		require.Equal(t, lapsed.ID, expired[0].ID)
 
-		require.NoError(t, testStore.ClearGDPRExportArtifact(ctx, lapsed.ID))
+		require.NoError(t, testStore.ClearGDPRExportArtifacts(ctx, []string{lapsed.ID}))
 		expired, err = testStore.ListExpiredGDPRExports(ctx, time.Now(), 10)
 		require.NoError(t, err)
 		require.Empty(t, expired, "a cleared artifact is not swept again")
@@ -213,6 +211,58 @@ func TestGetUserGDPRRequests_Empty(t *testing.T) {
 		requests, err := testStore.GetUserGDPRRequests(ctx, userID)
 		require.NoError(t, err)
 		require.Empty(t, requests)
+		return nil
+	}))
+}
+
+// An operator replaying a dead-lettered request produces a new job whose
+// attempts restart at one, so the attempt number cannot fence it. What fences
+// it is whether any attempt currently holds the row: every transition that ends
+// an attempt clears the lease, so a replay may take over a released request and
+// may not touch one still being worked.
+//
+// The claim deliberately does not consult the worker's copy of its job lease
+// expiry: that copy is captured once and never refreshed while the heartbeat
+// keeps extending the real lease, so testing against it would refuse attempts
+// whose lease is alive.
+func TestReplayedPrivacyJobClaimsOnlyAReleasedRequest(t *testing.T) {
+	userID := seedUser(t)
+	req := &business.GDPRRequest{
+		ID:     business.NewIDString(),
+		UserID: userID,
+		Type:   business.GDPRExport,
+		Status: business.GDPRPending,
+		JobID:  business.NewIDString(),
+	}
+	require.NoError(t, testStore.As(business.Identity{UserID: userID}).Within(testCtx, func(ctx context.Context) error {
+		return testStore.CreateGDPRRequest(ctx, req)
+	}))
+
+	working := business.GDPRLease{
+		JobID: req.JobID, Owner: "worker-a", Token: business.NewIDString(), Attempt: 3,
+	}
+	replay := business.GDPRLease{
+		JobID: business.NewIDString(), Owner: "worker-b", Token: business.NewIDString(), Attempt: 1,
+	}
+
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		_, err := testStore.ClaimGDPRRequest(ctx, req.ID, working)
+		require.NoError(t, err)
+
+		_, err = testStore.ClaimGDPRRequest(ctx, req.ID, replay)
+		require.ErrorIs(t, err, business.ErrPrivacyLeaseLost,
+			"a replayed job cannot take a request another attempt is still working")
+
+		// The working attempt ends, releasing the lease.
+		require.NoError(t, testStore.FinishGDPRRequest(ctx, req.ID, working, business.GDPROutcome{
+			Status: business.GDPRFailed, FailureCode: "privacy.provider_unavailable", Error: "down",
+		}))
+
+		claimed, err := testStore.ClaimGDPRRequest(ctx, req.ID, replay)
+		require.NoError(t, err, "a released request is claimable by the replayed job")
+		require.Equal(t, business.GDPRProcessing, claimed.Status)
+		require.EqualValues(t, 1, claimed.Attempt,
+			"the replayed job restarts attempts without the claim refusing it")
 		return nil
 	}))
 }

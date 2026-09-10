@@ -3,7 +3,17 @@ GRANT UPDATE ON gdpr_requests TO app_tenant;
 DROP INDEX IF EXISTS uq_gdpr_requests_job;
 
 -- Restoring the referencing key means restoring what it asserted: a request
--- whose subject row is already gone could not exist under the old schema.
+-- whose subject row is already gone could not exist under the old schema. Those
+-- rows are exactly the completed-deletion records — the durable evidence that
+-- an erasure happened — so they are preserved verbatim before the constraint
+-- forces them out, rather than destroyed by a rollback.
+CREATE TABLE IF NOT EXISTS gdpr_requests_preserved_on_rollback
+    (LIKE gdpr_requests INCLUDING DEFAULTS);
+
+INSERT INTO gdpr_requests_preserved_on_rollback
+SELECT * FROM gdpr_requests
+WHERE NOT EXISTS (SELECT 1 FROM users WHERE users.uuid = gdpr_requests.user_id);
+
 DELETE FROM gdpr_requests
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE users.uuid = gdpr_requests.user_id);
 

@@ -486,8 +486,8 @@ PR (they need no approval infrastructure), not bundled into the primitive.
 - `store/migrations/38_create_delegation_grants.up.sql`,
   `store/migrations/45_rls_delegation_grants.up.sql`
 - `store/migrations/99_actor_chain_journal.up.sql:42,77-93` (FK + immutability)
-- `store/migrations/15_platform_features.up.sql:77`, `business/gdpr.go:167,238`,
-  `connect_handlers.go:951-954` (GDPR precedent)
+- `store/migrations/15_platform_features.up.sql:77`, `business/gdpr.go`,
+  `business/privacy_jobs.go`, `connect_handlers.go:951-954` (GDPR precedent)
 - `module/JOBS.md`, `store/migrations/72_job_platform_contract.up.sql`,
   `pkg/infra/postgres_job_producer.go:53`, `pkg/infra/postgres_jobs.go:375`
 - `pkg/adapters/auth.go:685` (`requireMFA`), `:712` (`requireRecentMFA`)

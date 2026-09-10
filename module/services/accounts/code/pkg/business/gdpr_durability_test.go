@@ -26,6 +26,7 @@ type fakePrivacyWorkflow struct {
 	remove   func(ctx context.Context, op *business.PrivacyOperation) error
 	cleaned  []string
 	cleanErr error
+	refuse   map[string]bool
 }
 
 func (f *fakePrivacyWorkflow) RequiredSteps(business.GDPRRequestType) []string { return f.steps }
@@ -42,23 +43,31 @@ func (f *fakePrivacyWorkflow) Delete(ctx context.Context, op *business.PrivacyOp
 }
 
 func (f *fakePrivacyWorkflow) DeleteExportArtifact(_ context.Context, requestID string) error {
-	if f.cleanErr != nil {
-		return f.cleanErr
+	if f.cleanErr != nil || f.refuse[requestID] {
+		if f.cleanErr != nil {
+			return f.cleanErr
+		}
+		return errors.New("object store refused this artifact")
 	}
 	f.cleaned = append(f.cleaned, requestID)
 	return nil
 }
 
-// exportingWorkflow completes in one step, recording its receipt the way an
-// adapter is expected to: the effect first, then the evidence for it.
+// exportingWorkflow completes in one step, behaving the way an adapter is
+// expected to: produce the artifact, register its reference durably before
+// anything else can fail, then record the receipt for the step.
 func exportingWorkflow(url string, expiresAt time.Time) *fakePrivacyWorkflow {
 	return &fakePrivacyWorkflow{
 		steps: []string{"package"},
 		export: func(ctx context.Context, op *business.PrivacyOperation) (business.PrivacyExportArtifact, error) {
+			artifact := business.PrivacyExportArtifact{DownloadURL: url, ExpiresAt: expiresAt}
+			if err := op.RecordArtifact(ctx, artifact); err != nil {
+				return business.PrivacyExportArtifact{}, err
+			}
 			if err := op.RecordReceipt(ctx, "package", op.IdempotencyKey("package")); err != nil {
 				return business.PrivacyExportArtifact{}, err
 			}
-			return business.PrivacyExportArtifact{DownloadURL: url, ExpiresAt: expiresAt}, nil
+			return artifact, nil
 		},
 		remove: func(context.Context, *business.PrivacyOperation) error { return nil },
 	}
@@ -301,11 +310,13 @@ func TestPrivacyCompletionRequiresEveryDeclaredReceipt(t *testing.T) {
 	usePrivacyWorkflow(t, &fakePrivacyWorkflow{
 		steps: []string{"package", "publish"},
 		export: func(ctx context.Context, op *business.PrivacyOperation) (business.PrivacyExportArtifact, error) {
-			require.NoError(t, op.RecordReceipt(ctx, "package", "packaged"))
-			return business.PrivacyExportArtifact{
+			artifact := business.PrivacyExportArtifact{
 				DownloadURL: "https://storage.example.com/partial.zip",
 				ExpiresAt:   time.Now().Add(time.Hour),
-			}, nil
+			}
+			require.NoError(t, op.RecordArtifact(ctx, artifact))
+			require.NoError(t, op.RecordReceipt(ctx, "package", "packaged"))
+			return artifact, nil
 		},
 		remove: func(context.Context, *business.PrivacyOperation) error { return nil },
 	})
@@ -318,9 +329,19 @@ func TestPrivacyCompletionRequiresEveryDeclaredReceipt(t *testing.T) {
 	stored := privacyRequest(t, userID, accepted.ID)
 	require.Equal(t, business.GDPRFailed, stored.Status)
 	require.Equal(t, "privacy.incomplete_receipts", stored.FailureCode)
-	require.Empty(t, stored.DownloadURL, "an incomplete export publishes no artifact")
 	require.Equal(t, "dead_letter", harness.jobState(t, accepted.JobID),
 		"an adapter that under-reports needs attention, not another attempt")
+
+	// The artifact the failed attempt already produced keeps its stored
+	// reference, because that reference is the only thing that will let the
+	// expiry sweep delete the personal data sitting in storage.
+	require.Equal(t, "https://storage.example.com/partial.zip", stored.DownloadURL)
+
+	// It is bookkeeping, not a download: a request that did not complete hands
+	// the caller no reference.
+	status, err := testService.GetExportStatus(testCtx, userID, accepted.ID)
+	require.NoError(t, err)
+	require.Empty(t, status.DownloadURL, "an incomplete export publishes no artifact")
 }
 
 // A permanent failure spends no further attempts, leaves an operator-visible
@@ -521,10 +542,11 @@ func TestLapsedExportArtifactIsHiddenThenDeleted(t *testing.T) {
 	require.Empty(t, status.DownloadURL, "a lapsed window hands out no reference")
 
 	// A refused cleanup leaves the reference in place so the next sweep retries
-	// rather than losing track of an artifact that still exists.
+	// rather than losing track of an artifact that still exists, and the sweep
+	// reports that it could not finish rather than claiming a clean pass.
 	workflow.cleanErr = errors.New("object store unreachable")
 	purged, err := testService.PurgeExpiredPrivacyArtifacts(testCtx)
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.Zero(t, purged)
 	require.NotEmpty(t, privacyRequest(t, userID, accepted.ID).DownloadURL)
 
@@ -597,4 +619,121 @@ func TestPrivacyDeletionFinalizesAfterTheSubjectsCredentialsAreRemoved(t *testin
 	}
 	require.Equal(t, 1, recorded,
 		"completion is recorded exactly once, in the transaction that completes it")
+}
+
+// A job this runtime cannot decode can never execute. Dead-lettering it without
+// touching the request would leave that request pending forever with nothing
+// left to advance it — the very state migration 124 exists to clean up.
+func TestPrivacyJobThatCannotBeDecodedParksItsRequest(t *testing.T) {
+	clearData(t)
+	userID, _ := mustUserAndOrg(t, testCtx, "privacy-undecodable@test.com", "privacy-undecodable", "Privacy undecodable")
+	usePrivacyWorkflow(t, exportingWorkflow("https://storage.example.com/export.zip", time.Now().Add(time.Hour)))
+	harness := newPrivacyWorkerHarness(t, "worker-undecodable")
+
+	accepted, err := testService.RequestExport(testCtx, userID)
+	require.NoError(t, err)
+
+	claimed := harness.claim(t, "worker-undecodable")
+	require.Len(t, claimed, 1)
+	// A schema version this runtime does not speak is what a version bump with
+	// in-flight jobs looks like.
+	claimed[0].SchemaVersion = business.PrivacyWorkflowSchemaVersion + 1
+
+	require.Error(t, testService.NewPrivacyJobHandler()(testCtx, claimed[0]))
+
+	stored := privacyRequest(t, userID, accepted.ID)
+	require.Equal(t, business.GDPRFailed, stored.Status,
+		"an unexecutable job must leave its request terminal, not pending")
+	require.Equal(t, "privacy.invalid_job", stored.FailureCode)
+	require.Empty(t, stored.LeaseToken,
+		"the lease is released so an operator replay can take the request over")
+}
+
+// An attempt that produced an artifact and then failed still has personal data
+// sitting in storage. The stored reference is the only handle on it, so it must
+// survive the failure and the sweep must still delete the object.
+func TestFailedExportArtifactIsStillSweptFromStorage(t *testing.T) {
+	clearData(t)
+	userID, _ := mustUserAndOrg(t, testCtx, "privacy-orphan@test.com", "privacy-orphan", "Privacy orphan")
+	workflow := &fakePrivacyWorkflow{
+		steps: []string{"package", "publish"},
+		export: func(ctx context.Context, op *business.PrivacyOperation) (business.PrivacyExportArtifact, error) {
+			// The object exists and its reference is registered; the step that
+			// would have finished the export then fails permanently.
+			require.NoError(t, op.RecordArtifact(ctx, business.PrivacyExportArtifact{
+				DownloadURL: "https://storage.example.com/orphan.zip",
+				ExpiresAt:   time.Now().Add(-time.Minute),
+			}))
+			return business.PrivacyExportArtifact{}, business.NewPrivacyFailure(
+				"privacy.dataset_inventory_incomplete", "a required dataset has no adapter", true)
+		},
+		remove: func(context.Context, *business.PrivacyOperation) error { return nil },
+	}
+	usePrivacyWorkflow(t, workflow)
+	harness := newPrivacyWorkerHarness(t, "worker-orphan")
+
+	accepted, err := testService.RequestExport(testCtx, userID)
+	require.NoError(t, err)
+	harness.runOnce(t)
+
+	failed := privacyRequest(t, userID, accepted.ID)
+	require.Equal(t, business.GDPRFailed, failed.Status)
+	require.Equal(t, "https://storage.example.com/orphan.zip", failed.DownloadURL,
+		"a failed attempt must not drop the only reference to stored personal data")
+
+	purged, err := testService.PurgeExpiredPrivacyArtifacts(testCtx)
+	require.NoError(t, err)
+	require.Equal(t, 1, purged)
+	require.Equal(t, []string{accepted.ID}, workflow.cleaned,
+		"the sweep deletes the object a failed export left behind")
+	require.Empty(t, privacyRequest(t, userID, accepted.ID).DownloadURL)
+}
+
+// The sweep is ordered by expiry, so a row whose cleanup keeps failing sits at
+// the front of every pass. It must not stop the rows behind it from ever being
+// cleaned.
+func TestRefusedArtifactCleanupDoesNotBlockOtherArtifacts(t *testing.T) {
+	clearData(t)
+	stuckUser, _ := mustUserAndOrg(t, testCtx, "privacy-stuck@test.com", "privacy-stuck", "Privacy stuck")
+	freshUser, _ := mustUserAndOrg(t, testCtx, "privacy-fresh@test.com", "privacy-fresh", "Privacy fresh")
+
+	workflow := exportingWorkflow("https://storage.example.com/stuck.zip", time.Now().Add(-time.Hour))
+	usePrivacyWorkflow(t, workflow)
+	harness := newPrivacyWorkerHarness(t, "worker-blocked")
+
+	stuck, err := testService.RequestExport(testCtx, stuckUser)
+	require.NoError(t, err)
+	harness.runOnce(t)
+
+	// The second artifact expires later, so it is always behind the first.
+	workflow.export = exportingWorkflow("https://storage.example.com/fresh.zip",
+		time.Now().Add(-time.Minute)).export
+	fresh, err := testService.RequestExport(testCtx, freshUser)
+	require.NoError(t, err)
+	harness.runOnce(t)
+
+	workflow.refuse = map[string]bool{stuck.ID: true}
+	purged, err := testService.PurgeExpiredPrivacyArtifacts(testCtx)
+	require.Error(t, err, "a sweep that could not clean everything says so")
+	require.Equal(t, 1, purged)
+	require.Equal(t, []string{fresh.ID}, workflow.cleaned,
+		"the row behind the stuck one is still cleaned")
+	require.NotEmpty(t, privacyRequest(t, stuckUser, stuck.ID).DownloadURL,
+		"the refused artifact keeps its reference for the next pass")
+	require.Empty(t, privacyRequest(t, freshUser, fresh.ID).DownloadURL)
+}
+
+// Requests are ordered per subject, so a request stuck in retry blocks every
+// later request from the same person — including an erasure request queued
+// behind an unrelated export. The whole attempt budget therefore has to stay
+// inside a window short enough to keep that block bounded and visible.
+func TestPrivacyRetryBudgetIsBounded(t *testing.T) {
+	var total time.Duration
+	for attempt := range uint32(business.PrivacyWorkflowMaxAttempts) {
+		delay := business.PrivacyWorkflowRetryDelay(attempt)
+		require.Positive(t, delay)
+		total += delay
+	}
+	require.LessOrEqual(t, total, business.PrivacyWorkflowMaxRetryBudget,
+		"a longer budget parks a deletion behind a failing export for that whole span")
 }

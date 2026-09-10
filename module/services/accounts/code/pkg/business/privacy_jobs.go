@@ -121,17 +121,36 @@ func (s *Service) NewPrivacyJobHandler() jobs.Handler {
 	return func(ctx context.Context, envelope *jobsv1.JobEnvelope) error {
 		payload, err := decodePrivacyWorkflowEnvelope(envelope)
 		if err != nil {
-			return jobs.NewProcessingError(
-				"privacy.invalid_job", "unexpected privacy workflow job", false)
+			// This job can never execute, so dead-lettering it would otherwise
+			// leave its request pending with nothing left to advance it. The
+			// job id identifies the request even when the payload does not.
+			return errors.Join(
+				s.parkUnexecutablePrivacyJob(ctx, envelope.GetId()),
+				jobs.NewProcessingError(
+					"privacy.invalid_job", "unexpected privacy workflow job", false),
+			)
 		}
 		return s.runPrivacyWorkflow(ctx, payload, GDPRLease{
-			JobID:     envelope.GetId(),
-			Owner:     envelope.GetLease().GetOwner(),
-			Token:     envelope.GetLease().GetToken(),
-			Attempt:   envelope.GetAttemptCount(),
-			ExpiresAt: envelope.GetLease().GetExpiresAt().AsTime(),
+			JobID:   envelope.GetId(),
+			Owner:   envelope.GetLease().GetOwner(),
+			Token:   envelope.GetLease().GetToken(),
+			Attempt: envelope.GetAttemptCount(),
 		}, envelope.GetAttemptCount() >= envelope.GetMaxAttempts())
 	}
+}
+
+// parkUnexecutablePrivacyJob gives a request whose job cannot run a terminal,
+// operator-visible state instead of leaving it pending forever.
+func (s *Service) parkUnexecutablePrivacyJob(ctx context.Context, jobID string) error {
+	gdprStore, ok := s.store.(GDPRStore)
+	if !ok {
+		return nil
+	}
+	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return gdprStore.FailGDPRRequestByJob(ctx, jobID,
+			"privacy.invalid_job",
+			"the durable job for this request cannot be executed by this runtime")
+	})
 }
 
 func (s *Service) runPrivacyWorkflow(
@@ -185,11 +204,18 @@ func (s *Service) runPrivacyWorkflow(
 			"privacy.workflow_unavailable", "privacy workflow is not configured", false))
 	}
 
-	operation := newPrivacyOperation(request, func(ctx context.Context, step, receipt string) error {
-		return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			return gdprStore.RecordGDPRStepReceipt(ctx, request.ID, lease, step, receipt)
-		})
-	})
+	operation := newPrivacyOperation(request,
+		func(ctx context.Context, step, receipt string) error {
+			return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+				return gdprStore.RecordGDPRStepReceipt(ctx, request.ID, lease, step, receipt)
+			})
+		},
+		func(ctx context.Context, artifact PrivacyExportArtifact) error {
+			return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+				return gdprStore.RecordGDPRExportArtifact(ctx, request.ID, lease, artifact)
+			})
+		},
+	)
 
 	var artifact PrivacyExportArtifact
 	var runErr error
@@ -211,14 +237,30 @@ func (s *Service) runPrivacyWorkflow(
 			)
 		}
 	}
+	// An adapter that returns an artifact it never registered still has to have
+	// its reference durably stored before the request completes, or nothing
+	// would ever be able to delete the object it points at.
+	if runErr == nil && request.Type == GDPRExport && artifact.DownloadURL != "" {
+		if _, recorded := operation.Artifact(); !recorded {
+			runErr = operation.RecordArtifact(ctx, artifact)
+		}
+	}
 	if runErr != nil {
 		return s.failPrivacyWorkflow(ctx, gdprStore, request, lease, runErr, lastAttempt)
 	}
 
 	outcome := GDPROutcome{Status: GDPRCompleted}
 	if request.Type == GDPRExport {
-		outcome.DownloadURL = artifact.DownloadURL
-		expiresAt := artifact.ExpiresAt
+		stored, recorded := operation.Artifact()
+		if !recorded {
+			return s.failPrivacyWorkflow(ctx, gdprStore, request, lease, NewPrivacyFailure(
+				"privacy.missing_artifact",
+				"the workflow reported a completed export with no durable artifact",
+				true,
+			), lastAttempt)
+		}
+		outcome.DownloadURL = stored.DownloadURL
+		expiresAt := stored.ExpiresAt
 		outcome.ExpiresAt = &expiresAt
 	}
 	return s.finishPrivacyWorkflow(ctx, gdprStore, request, lease, outcome, nil)
@@ -316,18 +358,30 @@ func missingPrivacyReceipts(required []string, operation *PrivacyOperation) []st
 	return missing
 }
 
-// PrivacyWorkflowRetryDelay backs a failed attempt off far enough to outlast a
-// provider outage before the attempt budget is spent.
+// PrivacyWorkflowMaxRetryBudget bounds how long a failing request may hold its
+// subject's ordering key before reaching a terminal, operator-visible state.
+const PrivacyWorkflowMaxRetryBudget = 90 * time.Minute
+
+// PrivacyWorkflowRetryDelay rides out a transient provider outage while keeping
+// the whole attempt budget inside PrivacyWorkflowMaxRetryBudget.
+//
+// The budget is short on purpose. Requests are ordered per subject so that a
+// deletion cannot interleave with an export of the same person's data, which
+// means a request stuck in retry blocks every later request from that subject.
+// A schedule long enough to outlast a multi-hour outage would therefore park an
+// erasure request behind an unrelated export for the same span, invisibly.
+// Spending the budget quickly and dead-lettering into operator replay keeps
+// that window bounded and visible.
 func PrivacyWorkflowRetryDelay(attempt uint32) time.Duration {
 	schedule := [...]time.Duration{
 		5 * time.Second,
 		30 * time.Second,
 		2 * time.Minute,
+		5 * time.Minute,
 		10 * time.Minute,
-		30 * time.Minute,
-		2 * time.Hour,
-		6 * time.Hour,
-		12 * time.Hour,
+		15 * time.Minute,
+		20 * time.Minute,
+		20 * time.Minute,
 	}
 	if attempt == 0 {
 		return schedule[0]

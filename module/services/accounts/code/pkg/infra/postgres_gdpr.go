@@ -80,8 +80,16 @@ func (s *PostgresStore) GetUserGDPRRequests(ctx context.Context, userID string) 
 // attempts only ever increase, so a stale attempt carries a lower number than
 // the attempt that replaced it. Across jobs — an operator replaying a
 // dead-lettered request produces a new one — the attempt number restarts, so
-// the claim instead requires a lease the database still considers live; a stale
-// worker of the previous job has none.
+// the claim instead requires that no attempt currently holds the row. Every
+// transition that ends an attempt clears the lease, so a request a replay may
+// legitimately take over always has a null token, while one still being worked
+// does not.
+//
+// The row's own lease state is what fences this, deliberately: the worker's
+// copy of its job lease expiry is captured once at claim time and never
+// refreshed, while the heartbeat keeps extending the real lease, so comparing
+// against that copy would refuse legitimate attempts whose lease is very much
+// alive.
 func (s *PostgresStore) ClaimGDPRRequest(
 	ctx context.Context,
 	id string,
@@ -100,11 +108,13 @@ func (s *PostgresStore) ClaimGDPRRequest(
 		    error = '',
 		    updated_at = CURRENT_TIMESTAMP
 		WHERE id = $1 AND status <> 'completed'
-		  AND (job_id IS DISTINCT FROM $5 OR attempt_count <= $4)
-		  AND $6::timestamptz > CURRENT_TIMESTAMP
+		  AND (
+		      (job_id IS NOT DISTINCT FROM $5 AND attempt_count <= $4)
+		      OR (job_id IS DISTINCT FROM $5 AND lease_token IS NULL)
+		  )
 		RETURNING`+gdprRequestColumns,
 		id, lease.Owner, lease.Token, int(lease.Attempt),
-		nullableUUID(lease.JobID), lease.ExpiresAt))
+		nullableUUID(lease.JobID)))
 	if err == nil {
 		return req, nil
 	}
@@ -181,6 +191,69 @@ func (s *PostgresStore) gdprLeaseOutcome(
 	return business.ErrPrivacyLeaseLost
 }
 
+// RecordGDPRExportArtifact stores the reference to a produced export artifact
+// under lease. It is written as soon as the object exists, independently of
+// whether the request later completes, because the reference is the only thing
+// that lets the expiry sweep delete stored personal data.
+func (s *PostgresStore) RecordGDPRExportArtifact(
+	ctx context.Context,
+	id string,
+	lease business.GDPRLease,
+	artifact business.PrivacyExportArtifact,
+) error {
+	q := s.getQueryExecutor(ctx)
+
+	tag, err := q.Exec(ctx, `
+		UPDATE gdpr_requests
+		SET download_url = $4,
+		    expires_at = $5,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $1 AND lease_token = $2 AND lease_owner = $3`,
+		id, lease.Token, lease.Owner, artifact.DownloadURL, artifact.ExpiresAt)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return business.ErrPrivacyLeaseLost
+	}
+	return nil
+}
+
+// FailGDPRRequestByJob parks the request a job owns when that job can never
+// execute — an envelope this runtime cannot decode, for instance. It is fenced
+// on job_id, which uq_gdpr_requests_job makes unique, because the caller has
+// neither a usable payload nor a lease. The lease is cleared so a later
+// operator replay can take the request over.
+func (s *PostgresStore) FailGDPRRequestByJob(
+	ctx context.Context,
+	jobID, failureCode, message string,
+) error {
+	q := s.getQueryExecutor(ctx)
+
+	_, err := q.Exec(ctx, `
+		UPDATE gdpr_requests
+		SET status = 'failed',
+		    failure_code = $2,
+		    error = $3,
+		    lease_owner = NULL,
+		    lease_token = NULL,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE job_id = $1 AND status <> 'completed'`,
+		nullableUUID(jobID), failureCode, message)
+	return err
+}
+
+// LockPrivacyArtifactSweep serializes the expiry sweep across replicas for the
+// remainder of the transaction.
+func (s *PostgresStore) LockPrivacyArtifactSweep(ctx context.Context) error {
+	q := s.getQueryExecutor(ctx)
+
+	_, err := q.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"privacy:artifact_sweep")
+	return err
+}
+
 func (s *PostgresStore) FinishGDPRRequest(
 	ctx context.Context,
 	id string,
@@ -194,11 +267,15 @@ func (s *PostgresStore) FinishGDPRRequest(
 		now := time.Now()
 		completedAt = &now
 	}
+	// An outcome that carries no artifact leaves any already-recorded one in
+	// place. Clearing it would strand the stored object: the expiry sweep finds
+	// artifacts by their reference, so dropping the reference on a failed
+	// attempt means nothing ever deletes the personal data it points at.
 	tag, err := q.Exec(ctx, `
 		UPDATE gdpr_requests
 		SET status = $4,
-		    download_url = NULLIF($5::text, ''),
-		    expires_at = $6,
+		    download_url = COALESCE(NULLIF($5::text, ''), download_url),
+		    expires_at = COALESCE($6, expires_at),
 		    failure_code = NULLIF($7::text, ''),
 		    error = $8,
 		    completed_at = $9,
@@ -250,13 +327,16 @@ func (s *PostgresStore) ListExpiredGDPRExports(
 	return requests, rows.Err()
 }
 
-func (s *PostgresStore) ClearGDPRExportArtifact(ctx context.Context, id string) error {
+// ClearGDPRExportArtifacts drops the references to artifacts the sweep has just
+// deleted from storage. One statement covers the batch so a single row cannot
+// fail mid-loop and abort the surrounding sweep transaction.
+func (s *PostgresStore) ClearGDPRExportArtifacts(ctx context.Context, ids []string) error {
 	q := s.getQueryExecutor(ctx)
 
 	_, err := q.Exec(ctx, `
 		UPDATE gdpr_requests
 		SET download_url = NULL, updated_at = CURRENT_TIMESTAMP
-		WHERE id = $1`, id)
+		WHERE id = ANY($1::uuid[])`, ids)
 	return err
 }
 
@@ -291,11 +371,4 @@ func scanGDPRRequest(row rowScanner) (*business.GDPRRequest, error) {
 		}
 	}
 	return &req, nil
-}
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
 }

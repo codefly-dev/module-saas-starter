@@ -58,14 +58,13 @@ type GDPRRequest struct {
 // GDPRLease is the fencing token one worker attempt holds. It is the job lease
 // carried onto the product row: a transition applies only while the row still
 // records this exact token, so a worker whose lease expired cannot finalize the
-// attempt that replaced it. JobID and ExpiresAt fence the claim itself — see
+// attempt that replaced it. JobID and Attempt fence the claim itself — see
 // ClaimGDPRRequest.
 type GDPRLease struct {
-	JobID     string
-	Owner     string
-	Token     string
-	Attempt   uint32
-	ExpiresAt time.Time
+	JobID   string
+	Owner   string
+	Token   string
+	Attempt uint32
 }
 
 // GDPROutcome is one terminal-or-retryable transition of a leased request.
@@ -92,11 +91,23 @@ type GDPRStore interface {
 	ClaimGDPRRequest(ctx context.Context, id string, lease GDPRLease) (*GDPRRequest, error)
 	// RecordGDPRStepReceipt durably records one completed provider effect.
 	RecordGDPRStepReceipt(ctx context.Context, id string, lease GDPRLease, step, receipt string) error
+	// RecordGDPRExportArtifact durably registers an export artifact the moment
+	// it exists, so a reference to stored personal data survives an attempt
+	// that later fails and the sweep can still find it.
+	RecordGDPRExportArtifact(ctx context.Context, id string, lease GDPRLease, artifact PrivacyExportArtifact) error
 	// FinishGDPRRequest applies a terminal or retryable transition under lease.
 	FinishGDPRRequest(ctx context.Context, id string, lease GDPRLease, outcome GDPROutcome) error
+	// FailGDPRRequestByJob parks the request owned by a job that can never
+	// execute. It is fenced on the job id alone — which is unique per request —
+	// because the caller reaches it without a usable payload or lease.
+	FailGDPRRequestByJob(ctx context.Context, jobID, failureCode, message string) error
 
+	// LockPrivacyArtifactSweep makes the expiry sweep single-flight across
+	// replicas for the rest of the transaction, so two of them cannot delete
+	// the same stored object.
+	LockPrivacyArtifactSweep(ctx context.Context) error
 	ListExpiredGDPRExports(ctx context.Context, before time.Time, limit int) ([]*GDPRRequest, error)
-	ClearGDPRExportArtifact(ctx context.Context, id string) error
+	ClearGDPRExportArtifacts(ctx context.Context, ids []string) error
 }
 
 var (
@@ -130,6 +141,10 @@ type PrivacyWorkflow interface {
 // PrivacyArtifactCleaner is the optional half of PrivacyWorkflow that deletes a
 // stored export artifact once its download window has lapsed. A workflow that
 // does not implement it leaves artifact lifetime entirely to its storage.
+//
+// Deletion must be idempotent: the sweep is single-flight but a cleanup that
+// succeeds and then fails to drop its reference is retried on the next pass, so
+// an already-deleted object must report success rather than an error.
 type PrivacyArtifactCleaner interface {
 	DeleteExportArtifact(ctx context.Context, requestID string) error
 }
@@ -173,8 +188,10 @@ type PrivacyOperation struct {
 	UserID    string
 	Attempt   uint32
 
-	receipts map[string]string
-	record   func(ctx context.Context, step, receipt string) error
+	receipts       map[string]string
+	record         func(ctx context.Context, step, receipt string) error
+	artifact       *PrivacyExportArtifact
+	recordArtifact func(ctx context.Context, artifact PrivacyExportArtifact) error
 }
 
 // IdempotencyKey is the deterministic key for one step of this operation.
@@ -203,18 +220,60 @@ func (o *PrivacyOperation) RecordReceipt(ctx context.Context, step, receipt stri
 func newPrivacyOperation(
 	request *GDPRRequest,
 	record func(ctx context.Context, step, receipt string) error,
+	recordArtifact func(ctx context.Context, artifact PrivacyExportArtifact) error,
 ) *PrivacyOperation {
 	receipts := make(map[string]string, len(request.StepReceipts))
 	for step, receipt := range request.StepReceipts {
 		receipts[step] = receipt
 	}
-	return &PrivacyOperation{
-		RequestID: request.ID,
-		UserID:    request.UserID,
-		Attempt:   request.Attempt,
-		receipts:  receipts,
-		record:    record,
+	operation := &PrivacyOperation{
+		RequestID:      request.ID,
+		UserID:         request.UserID,
+		Attempt:        request.Attempt,
+		receipts:       receipts,
+		record:         record,
+		recordArtifact: recordArtifact,
 	}
+	// An artifact an earlier attempt registered is part of the operation's
+	// durable state, so a retry reuses the stored object instead of producing a
+	// second copy of the same person's data.
+	if request.DownloadURL != "" && request.ExpiresAt != nil {
+		operation.artifact = &PrivacyExportArtifact{
+			DownloadURL: request.DownloadURL,
+			ExpiresAt:   *request.ExpiresAt,
+		}
+	}
+	return operation
+}
+
+// Artifact returns the export artifact an earlier attempt durably registered,
+// if any. An adapter that finds one has already produced the object and must
+// reuse it rather than uploading a second copy.
+func (o *PrivacyOperation) Artifact() (PrivacyExportArtifact, bool) {
+	if o.artifact == nil {
+		return PrivacyExportArtifact{}, false
+	}
+	return *o.artifact, true
+}
+
+// RecordArtifact durably registers an export artifact. An adapter must call it
+// immediately after the object exists in storage and before any further step:
+// the reference is what lets the expiry sweep delete the object later, so an
+// attempt that dies between creating the artifact and recording it leaves
+// personal data in storage that nothing will ever clean up.
+func (o *PrivacyOperation) RecordArtifact(ctx context.Context, artifact PrivacyExportArtifact) error {
+	if artifact.DownloadURL == "" || artifact.ExpiresAt.IsZero() {
+		return NewPrivacyFailure(
+			"privacy.invalid_artifact",
+			"an export artifact needs both a reference and an expiry",
+			true,
+		)
+	}
+	if err := o.recordArtifact(ctx, artifact); err != nil {
+		return err
+	}
+	o.artifact = &artifact
+	return nil
 }
 
 // ── Business logic ─────────────────────────────────────────────
@@ -310,10 +369,12 @@ func (s *Service) getGDPRStatus(ctx context.Context, userID, requestID string, e
 	if req == nil || req.UserID != userID || req.Type != expectedType {
 		return nil, w.NewError("GDPR request not found")
 	}
-	// A lapsed download window closes here as well as in storage: the artifact
-	// sweep runs on a cycle, and the caller must not receive a reference to an
-	// artifact whose authorized window has already ended.
-	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
+	// A reference is handed out only by a completed request inside its
+	// authorized window. A request that failed after producing an artifact keeps
+	// the reference stored so the sweep can still delete the object, but that
+	// reference is bookkeeping and is never a download the caller may follow.
+	if req.Status != GDPRCompleted ||
+		(req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now())) {
 		req.DownloadURL = ""
 	}
 	return req, nil
@@ -330,33 +391,54 @@ func (s *Service) PurgeExpiredPrivacyArtifacts(ctx context.Context) (int, error)
 	if !ok || s.privacy == nil {
 		return 0, nil
 	}
-	var expired []*GDPRRequest
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		var e error
-		expired, e = gdprStore.ListExpiredGDPRExports(ctx, time.Now(), privacyArtifactSweepLimit)
-		return e
-	}); err != nil {
-		return 0, w.Wrapf(err, "cannot list expired export artifacts")
-	}
-
 	cleaner, _ := s.privacy.(PrivacyArtifactCleaner)
-	purged := 0
-	for _, request := range expired {
-		if cleaner != nil {
-			if err := cleaner.DeleteExportArtifact(ctx, request.ID); err != nil {
-				w.Warn("expired export artifact was not deleted",
-					wool.Field("request_id", request.ID),
-					wool.Field("failure", privacyFailureCode(err)),
-				)
-				continue
+	purged, stalled := 0, 0
+
+	// Every replica runs this sweep on the same tick. Without a single-flight
+	// guard two of them delete the same stored object and the loser's error
+	// leaves the reference behind, so the artifact is retried forever. The lock
+	// spans the pass — including the provider calls — because the alternative
+	// is duplicate deletes against a live object store.
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		if err := gdprStore.LockPrivacyArtifactSweep(ctx); err != nil {
+			return err
+		}
+		expired, err := gdprStore.ListExpiredGDPRExports(ctx, time.Now(), privacyArtifactSweepLimit)
+		if err != nil {
+			return err
+		}
+		// A refused cleanup skips only its own row: the sweep is ordered by
+		// expiry, so letting one failure end the pass would put the same row
+		// first on every subsequent pass and nothing would ever be cleaned
+		// again. References are then dropped in one statement, so no single row
+		// can poison the transaction and strand the rest.
+		cleaned := make([]string, 0, len(expired))
+		for _, request := range expired {
+			if cleaner != nil {
+				if err := cleaner.DeleteExportArtifact(ctx, request.ID); err != nil {
+					w.Warn("expired export artifact was not deleted",
+						wool.Field("request_id", request.ID),
+						wool.Field("failure", privacyFailureCode(err)),
+					)
+					stalled++
+					continue
+				}
 			}
+			cleaned = append(cleaned, request.ID)
 		}
-		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			return gdprStore.ClearGDPRExportArtifact(ctx, request.ID)
-		}); err != nil {
-			return purged, w.Wrapf(err, "cannot clear expired export artifact")
+		if len(cleaned) == 0 {
+			return nil
 		}
-		purged++
+		if err := gdprStore.ClearGDPRExportArtifacts(ctx, cleaned); err != nil {
+			return err
+		}
+		purged = len(cleaned)
+		return nil
+	}); err != nil {
+		return purged, w.Wrapf(err, "cannot sweep expired export artifacts")
+	}
+	if stalled > 0 {
+		return purged, w.NewError("could not clean every expired export artifact")
 	}
 	return purged, nil
 }
