@@ -15,6 +15,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
@@ -170,6 +171,23 @@ func callerID(ctx context.Context) (string, error) {
 		return "", status.Error(codes.Unauthenticated, "caller identity not found")
 	}
 	return id, nil
+}
+
+// verifiedActor resolves the audit identity of an already-authenticated caller.
+// actorID is the verified caller id the handler authorized; the credential kind
+// follows the credential actually presented — an API-key request carries the
+// scope ceiling, an interactive session does not (see requireScope) — and the
+// delegation chain comes from the trusted `act` claim or gateway-forwarded X-Act
+// header, never from a caller-controlled one.
+func verifiedActor(ctx context.Context, actorID string) business.AuditActor {
+	actor := business.AuditActor{ID: actorID, Type: business.ActorTypeUser}
+	if len(scopesFromContext(ctx)) > 0 {
+		actor.Type = business.ActorTypeAPIKey
+	}
+	if delegate, ok := auth.VerifiedActorFromContext(ctx); ok {
+		actor.DelegatedBy = delegate.Subject
+	}
+	return actor
 }
 
 // callerOrg extracts the caller's org id from context, empty string if absent.
@@ -604,7 +622,7 @@ func (h *webhookConnectHandler) CreateSubscription(ctx context.Context, req *con
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	sub, err := h.svc.CreateSubscription(ctx, req.Msg.OrgId, req.Msg.Url, req.Msg.Events, req.Msg.Description)
+	sub, err := h.svc.CreateSubscription(ctx, verifiedActor(ctx, actorID), req.Msg.OrgId, req.Msg.Url, req.Msg.Events, req.Msg.Description)
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +642,7 @@ func (h *webhookConnectHandler) DeleteSubscription(ctx context.Context, req *con
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	if err := h.svc.DeleteSubscription(ctx, orgID, req.Msg.Id); err != nil {
+	if err := h.svc.DeleteSubscription(ctx, verifiedActor(ctx, actorID), orgID, req.Msg.Id); err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
@@ -742,7 +760,7 @@ func (h *webhookConnectHandler) ReplayDelivery(ctx context.Context, req *connect
 	if err := requireOrgAdmin(ctx, actorID, orgID); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	d, err := h.svc.ReplayWebhookDelivery(ctx, orgID, req.Msg.Id)
+	d, err := h.svc.ReplayWebhookDelivery(ctx, verifiedActor(ctx, actorID), orgID, req.Msg.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -773,7 +791,7 @@ func (h *webhookConnectHandler) RotateSecret(ctx context.Context, req *connect.R
 		return nil, translateGRPCError(err)
 	}
 	gracePeriod := time.Duration(req.Msg.GracePeriodSeconds) * time.Second
-	secret, oldSecretExpiresAt, err := h.svc.RotateWebhookSecret(ctx, orgID, req.Msg.Id, gracePeriod)
+	secret, oldSecretExpiresAt, err := h.svc.RotateWebhookSecret(ctx, verifiedActor(ctx, actorID), orgID, req.Msg.Id, gracePeriod)
 	if err != nil {
 		return nil, err
 	}

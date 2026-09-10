@@ -38,6 +38,53 @@ type AuditEntry struct {
 	IdempotencyKey string
 }
 
+// Audit actor types. They are the values audit_events.actor_type admits, and
+// name what kind of credential the mutation was made with.
+const (
+	ActorTypeUser   = "user"
+	ActorTypeAPIKey = "api_key"
+	ActorTypeSystem = "system"
+	ActorTypeAgent  = "agent"
+)
+
+// AuditActor is the verified initiator of a privileged mutation. A transport
+// adapter resolves it from the authenticated request context after it has
+// authorized the call, never from fields the caller supplies in the request
+// body. ActorTypeSystem belongs to genuinely automated work: a caller with no
+// human behind it.
+type AuditActor struct {
+	ID   string
+	Type string
+	// DelegatedBy names the immediate party acting on the actor's behalf
+	// (RFC 8693 `act`), when the request arrived through a delegation chain.
+	// It answers a different question than impersonation: who is acting *for*
+	// this actor, not which subject the actor is acting *as*.
+	DelegatedBy string
+}
+
+func (a AuditActor) validate() error {
+	if a.ID == "" {
+		return errors.New("audit actor id is required")
+	}
+	switch a.Type {
+	case ActorTypeUser, ActorTypeAPIKey, ActorTypeSystem, ActorTypeAgent:
+		return nil
+	default:
+		return fmt.Errorf("audit actor type %q is not one of %q, %q, %q, %q",
+			a.Type, ActorTypeUser, ActorTypeAPIKey, ActorTypeSystem, ActorTypeAgent)
+	}
+}
+
+// provenance is the payload the actor contributes to every event it initiates.
+// A direct call contributes nothing, so the stored payload stays empty rather
+// than carrying an empty delegation.
+func (a AuditActor) provenance() map[string]any {
+	if a.DelegatedBy == "" {
+		return nil
+	}
+	return map[string]any{"delegated_by": a.DelegatedBy}
+}
+
 // AuditEmitter writes audit events on a transaction it opens itself. It is the
 // path for observations a domain transaction does not own — authentication
 // outcomes, denials, reads, outcomes produced by an external provider — which

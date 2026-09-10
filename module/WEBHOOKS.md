@@ -113,3 +113,35 @@ delivery row plus a generated outbox job; they never perform inline HTTP.
 Replay preserves the stable event ID and exact body instead of mutating prior
 history, while the worker resolves the subscription's current endpoint and
 signing key at execution time.
+
+## Administration audit trail
+
+Creating a subscription, deleting one, replaying a delivery, and rotating a
+signing secret each commit a `saas.webhook.*` audit event in the mutation's own
+transaction. The event names the caller who ran it:
+
+- `actor_id` is the verified initiator resolved from the authenticated request,
+  never the organization the change was made in.
+- `actor_type` is the credential the caller presented — `user` for an
+  interactive session, `api_key` for a scoped key. `system` is reserved for
+  genuinely automated work; no caller of these four operations claims it today.
+- `delegated_by` (payload) names the immediate party that called on the
+  initiator's behalf (the RFC 8693 `act` chain), and is absent on a direct call.
+  It is delegation, not impersonation: the initiator stays the subject.
+
+Nothing about the endpoint travels in the payload — not the signing secret, not
+the one-time reveal, not the endpoint's query string.
+
+A subscriber to one of these types reads the same values from the delivery
+payload's `data.actor_id` and `data.actor_type`, so a consumer that treated
+`actor_id` as an organization id now sees a user id. The event type names and
+schema version are unchanged, so the subscription itself keeps firing. Events
+written before this behaviour landed carry the organization id and `system`, and
+are left as they were recorded: an append-only trail is not rewritten with a
+guessed actor. Attribution is complete for events written from the release
+containing this change onward.
+
+Impersonation is not yet part of this record. The accounts service does not
+resolve an effective subject from the forwarded impersonation assertion at all,
+so no webhook event can carry one; closing that is the shared identity work in
+issue #533, and these events pick it up from the same contract when it lands.

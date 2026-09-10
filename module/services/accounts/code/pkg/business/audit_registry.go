@@ -405,9 +405,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventGDPRDeletionReq, CategoryLifecycle, "A GDPR deletion was requested."),
 	mutation(EventGDPRDeletionDone, CategoryLifecycle, "A GDPR deletion completed."),
 
-	mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created."),
-	mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted."),
-	mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed."),
+	mutation(EventWebhookCreated, CategorySystem, "A webhook subscription was created.", webhookAdminFields...),
+	mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted.", webhookAdminFields...),
+	mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...),
 	mutation(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested."),
 	mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
@@ -423,7 +423,7 @@ var auditEventCatalog = []AuditEventDefinition{
 		str("head"), str("delivery_id")),
 	observation(EventDatasourceBlobFetched, CategorySystem, "A module fetched a datasource blob's bytes over FetchDatasourceBlob.",
 		str("repo"), str("blob_sha"), PayloadField{Name: "bytes", Kind: FieldInt}),
-	mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated."),
+	mutation(EventWebhookSecretRotated, CategorySystem, "A webhook signing secret was rotated.", webhookAdminFields...),
 	observation(EventJobReplayed, CategorySystem, "A background job was replayed."),
 	mutation(EventFeatureFlagUpdated, CategorySystem, "A legacy feature flag was updated."),
 	mutation(EventEventSubscriptionCreated, CategorySystem, "A domain-event subscription was created.",
@@ -439,6 +439,14 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventDocumentQuarantineReleased, CategoryLifecycle, "A document was released from quarantine.", documentFields...),
 	mutation(EventDocumentSubscribed, CategoryLifecycle, "A subscription to a document was created.", documentFields...),
 	mutation(EventDocumentUnsubscribed, CategoryLifecycle, "A subscription to a document was removed.", documentFields...),
+}
+
+// webhookAdminFields is the shared payload of the webhook administration
+// events. The initiator itself is the row's actor_id/actor_type; `delegated_by`
+// records the RFC 8693 `act` party that called on the initiator's behalf, and is
+// absent on a direct call.
+var webhookAdminFields = []PayloadField{
+	str("delegated_by"),
 }
 
 // documentFields is the shared payload of every document.* event. `solution`

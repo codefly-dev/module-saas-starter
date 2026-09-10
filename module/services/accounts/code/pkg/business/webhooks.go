@@ -95,10 +95,15 @@ func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelive
 	}, payload, nil
 }
 
-// CreateSubscription validates and stores a new webhook subscription.
-func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, events []string, description string) (*WebhookSubscription, error) {
+// CreateSubscription validates and stores a new webhook subscription. actor is
+// the verified caller the audit trail records as having configured the
+// destination.
+func (s *Service) CreateSubscription(ctx context.Context, actor AuditActor, orgID, rawURL string, events []string, description string) (*WebhookSubscription, error) {
 	w := wool.Get(ctx).In("CreateSubscription")
 
+	if err := actor.validate(); err != nil {
+		return nil, w.Wrapf(err, "cannot attribute webhook subscription")
+	}
 	if s.webhookCipher == nil {
 		return nil, w.NewError("webhook secret cipher is not configured")
 	}
@@ -147,7 +152,7 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, 
 		if err := s.store.CreateWebhookSubscription(ctx, sub); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, orgID, "system", EventWebhookCreated, "webhook_subscription", sub.ID, orgID)
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookCreated, "webhook_subscription", sub.ID, orgID, actor.provenance())
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot create webhook subscription")
 	}
@@ -161,9 +166,12 @@ func (s *Service) CreateSubscription(ctx context.Context, orgID, rawURL string, 
 // only finds rows belonging to this org. If the id is from a
 // different tenant, the DELETE simply affects 0 rows and we report
 // "not found" without leaking the existence of cross-tenant data.
-func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) error {
+func (s *Service) DeleteSubscription(ctx context.Context, actor AuditActor, orgID, id string) error {
 	w := wool.Get(ctx).In("DeleteSubscription")
 
+	if err := actor.validate(); err != nil {
+		return w.Wrapf(err, "cannot attribute webhook subscription deletion")
+	}
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		// Confirm row exists in THIS org first — RLS makes the lookup
 		// safe; a cross-tenant id returns nil, not the other org's row.
@@ -177,7 +185,7 @@ func (s *Service) DeleteSubscription(ctx context.Context, orgID, id string) erro
 		if err := s.store.DeleteWebhookSubscription(ctx, id); err != nil {
 			return w.Wrapf(err, "cannot delete webhook subscription")
 		}
-		return s.emitTx(ctx, orgID, "system", EventWebhookDeleted, "webhook_subscription", id, orgID)
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookDeleted, "webhook_subscription", id, orgID, actor.provenance())
 	}); err != nil {
 		return err
 	}
@@ -294,9 +302,12 @@ func (s *Service) GetWebhookDelivery(ctx context.Context, orgID, deliveryID stri
 //
 // Authz expectation: caller must already be org-admin on the
 // subscription's org — enforced at the adapter layer.
-func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID string) (*WebhookDelivery, error) {
+func (s *Service) ReplayWebhookDelivery(ctx context.Context, actor AuditActor, orgID, originalID string) (*WebhookDelivery, error) {
 	w := wool.Get(ctx).In("ReplayWebhookDelivery")
 
+	if err := actor.validate(); err != nil {
+		return nil, w.Wrapf(err, "cannot attribute webhook delivery replay")
+	}
 	var sub *WebhookSubscription
 	replay := &WebhookDelivery{
 		ID:           NewIDString(),
@@ -333,7 +344,7 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID s
 		); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, sub.OrgID, "system", EventWebhookReplayed, "webhook_delivery", replay.ID, sub.OrgID)
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookReplayed, "webhook_delivery", replay.ID, sub.OrgID, actor.provenance())
 	}); err != nil {
 		return nil, err
 	}
@@ -343,8 +354,11 @@ func (s *Service) ReplayWebhookDelivery(ctx context.Context, orgID, originalID s
 // RotateWebhookSecret generates and encrypts a new signing secret. During the
 // requested overlap, deliveries carry signatures from both the new and prior
 // keys so consumers can deploy the new verifier without an outage.
-func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID string, gracePeriod time.Duration) (string, *time.Time, error) {
+func (s *Service) RotateWebhookSecret(ctx context.Context, actor AuditActor, orgID, subscriptionID string, gracePeriod time.Duration) (string, *time.Time, error) {
 	w := wool.Get(ctx).In("RotateWebhookSecret")
+	if err := actor.validate(); err != nil {
+		return "", nil, w.Wrapf(err, "cannot attribute webhook secret rotation")
+	}
 	if s.webhookCipher == nil {
 		return "", nil, w.NewError("webhook secret cipher is not configured")
 	}
@@ -383,7 +397,7 @@ func (s *Service) RotateWebhookSecret(ctx context.Context, orgID, subscriptionID
 		if err := s.store.UpdateWebhookSubscription(ctx, sub); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, orgID, "system", EventWebhookSecretRotated, "webhook_subscription", subscriptionID, orgID)
+		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookSecretRotated, "webhook_subscription", subscriptionID, orgID, actor.provenance())
 	}); err != nil {
 		return "", nil, err
 	}
