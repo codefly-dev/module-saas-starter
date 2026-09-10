@@ -23,7 +23,7 @@ const (
 )
 
 var (
-	eventTypePattern   = regexp.MustCompile(`^[a-z][a-z0-9]*(?:\.[a-z0-9]+)+$`)
+	eventTypePattern   = regexp.MustCompile(`^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$`)
 	eventQueuePattern  = regexp.MustCompile(`^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$`)
 	versionDirPattern  = regexp.MustCompile(`^v([0-9]+)$`)
 	eventVisibilitySet = map[string]struct{}{"internal": {}, "tenant": {}, "external": {}}
@@ -71,6 +71,9 @@ type EventsContribution struct {
 	Publishes []PublishedEvent `yaml:"publishes"`
 	Consumes  []ConsumedEvent  `yaml:"consumes"`
 	Owner     string           `yaml:"-"`
+	// BaseOwned marks a contribution shipped by the module that owns the
+	// reserved-namespace list, which is what lets it publish under one.
+	BaseOwned bool `yaml:"-"`
 }
 
 type PublishedEvent struct {
@@ -150,7 +153,8 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 		if contribution.Schema != eventsContributionSchema {
 			return eventCatalog{}, fmt.Errorf("events contribution schema must be %s", eventsContributionSchema)
 		}
-		if !logicalIDPattern.MatchString(contribution.Namespace) || isReserved(manifest.ReservedNamespaces, contribution.Namespace) {
+		if !logicalIDPattern.MatchString(contribution.Namespace) ||
+			(!contribution.BaseOwned && isReserved(manifest.ReservedNamespaces, contribution.Namespace)) {
 			return eventCatalog{}, fmt.Errorf("events namespace %q is invalid or reserved", contribution.Namespace)
 		}
 		if _, duplicate := namespaces[contribution.Namespace]; duplicate {

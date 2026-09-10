@@ -62,6 +62,7 @@ type Options struct {
 	Fixtures    []string
 	Topology    []string
 	Events      []string
+	BaseEvents  []string
 }
 
 type FrontendContribution struct {
@@ -357,13 +358,26 @@ func generateCoreComposition(options Options) error {
 // the visibility flags the relay reads to decide what may never reach a
 // subscriber.
 func composeEvents(options Options, manifest modulepackage.Manifest, moduleRoot, outputRoot string, files map[string][]byte) error {
-	if len(options.Events) == 0 {
+	if len(options.Events) == 0 && len(options.BaseEvents) == 0 {
 		return nil
 	}
 	contributions, err := readDocuments[EventsContribution](options.Events)
 	if err != nil {
 		return err
 	}
+	// A base-owned contribution is named by a different flag rather than a field
+	// in the document, because the document is what a downstream module writes
+	// and the reservation exists to bind that document. The invocation lives in
+	// the module's own package manifest, so only the module that owns the
+	// reserved namespace can waive it.
+	baseContributions, err := readDocuments[EventsContribution](options.BaseEvents)
+	if err != nil {
+		return err
+	}
+	for index := range baseContributions {
+		baseContributions[index].BaseOwned = true
+	}
+	contributions = append(contributions, baseContributions...)
 	prior, err := readEventCatalog(outputRoot)
 	if err != nil {
 		return err
