@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:7141277e346b9021e40b675577bf9afd927fbf91f662e895340ded48878c9642",
+      "digest": "sha256:143cbbe69cdbc0d8ad437377e865e3694018849a709b866851640fd66fd6d4ba",
       "services": [
         {
           "name": "APIKeyService",
@@ -287,6 +287,15 @@
             "/saas.accounts.v1.SSOAdminService/Disable",
             "/saas.accounts.v1.SSOAdminService/GetSSO",
             "/saas.accounts.v1.SSOAdminService/StartSetup"
+          ]
+        },
+        {
+          "name": "SolutionRegistryService",
+          "fullName": "saas.accounts.v1.SolutionRegistryService",
+          "procedures": [
+            "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+            "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
+            "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
           ]
         },
         {
