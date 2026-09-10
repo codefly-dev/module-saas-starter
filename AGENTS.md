@@ -101,39 +101,47 @@ on-demand refresh on a cache miss; frontend a 5s snapshot TTL).
 
 - **Frontend registration** — `POST /api/solutions/register` (and `DELETE
   ?id=…`) at
-  `module/services/frontend/code/src/app/api/solutions/register/route.ts`,
-  gated by the cluster-internal token in the `x-codefly-internal-token` header
-  (read via the codefly SDK `getWorkspaceSecret("internal-auth",
-  "CODEFLY_INTERNAL_TOKEN")`; fails closed when unset). The POST body is the
-  solution manifest (`id`, `nav`, `frontend.manifestUrl` + `exposedModule`,
-  optional `backend.serviceAlias`), validated in `src/solutions/registry.ts`,
-  which then writes the frontend half through the gateway
-  (`POST /solutions/_frontend`). The route relays the registry's own answer:
-  `409` for a revision conflict, `403` when the id belongs to another
-  publisher, `503` when the registry cannot be reached — a registrant is never
-  told it is serving when it is not. Re-registering a deregistered solution
-  requires an explicit `reactivate: true`. `GET` on that route is
-  unauthenticated and returns exactly the public navigation projection —
-  `{id, nav}` per solution and nothing else — which is what the sidebar polls,
-  answering `503` (never an empty list) when this replica cannot read the
-  registry. Everything else a manifest carries (`frontend`, `backend`) is
-  deployment topology and is served instead by `GET
+  `module/services/frontend/code/src/app/api/solutions/register/route.ts`. The
+  POST body is the solution manifest (`id`, `nav`, `frontend.manifestUrl` +
+  `exposedModule`, optional `backend.serviceAlias`, optional compatibility
+  requirements), validated in `src/solutions/registry.ts`, which then writes the
+  frontend half through the gateway (`POST /solutions/_frontend`). The route
+  relays the registry's own answer: `409` for a revision conflict, `403` when
+  the id belongs to another publisher, `503` when the registry cannot be
+  reached — a registrant is never told it is serving when it is not.
+  Re-registering a deregistered solution requires an explicit
+  `reactivate: true`. `GET` on that route is unauthenticated and returns exactly
+  the public navigation projection — `{id, nav}` per solution and nothing
+  else — which is what the sidebar polls, answering `503` (never an empty list)
+  when this replica cannot read the registry. Everything else a manifest carries
+  (`frontend`, `backend`) is deployment topology and is served instead by `GET
   /api/internal/solutions`
-  (`src/app/api/internal/solutions/route.ts`), gated on the same
-  cluster-internal token. The dashboard graph is on neither: the solution page
-  reads it in-process through `findSolution`.
+  (`src/app/api/internal/solutions/route.ts`), gated on the cluster-internal
+  token. The dashboard graph is on neither: the solution page reads it
+  in-process through `findSolution`.
 - **Gateway upstream registration** — `POST /solutions/_register` on the
-  auth-gateway (`module/services/auth-gateway/code/gateway_solutions.go`),
-  gated by the same credential in the `X-Codefly-Internal-Token` header, with a
-  `{id, upstream}` JSON payload (unchanged; the gateway supplies the
-  compare-and-swap revision it last saw). `GET /solutions/_registry` returns
-  this replica's snapshot — id, publisher, revision, and status
-  (`active` / `pending` / `expired` / `incompatible` / `tombstoned`), never an
-  upstream — which is both what the frontend rebuilds from and what an operator
-  reads to tell those states apart. The gateway then proxies `/solutions/{id}/…`
+  auth-gateway (`module/services/auth-gateway/code/gateway_solutions.go`), with
+  a `{id, upstream}` JSON payload (the gateway supplies the compare-and-swap
+  revision it last saw). `GET /solutions/_registry` returns this replica's
+  snapshot — id, publisher, revision, and status (`active` / `pending` /
+  `expired` / `incompatible` / `tombstoned`), never an upstream — which is both
+  what the frontend rebuilds from and what an operator reads to tell those
+  states apart. The gateway then proxies `/solutions/{id}/…`
   to the registered upstream, running the same ext_authz Check and
   identity-header discipline as catalog routes; only the public `/assets` and
   `/.well-known` sub-paths are served unauthenticated (GET/HEAD).
+- **Both halves take the same owner-bound credential.** Neither is gated on the
+  shared cluster-internal token: the caller presents a signed, solution-bound
+  registration token in `X-Codefly-Solution-Registration`, obtained from `POST
+  /solutions/_registration-token` against the solution's own secret
+  (`SOLUTION_REGISTRATION_SECRETS` in the `federation` group, declared
+  separately from the module secrets). The credential names one solution id and
+  one publisher, so a holder can neither claim nor re-point another solution.
+  The frontend additionally enforces the declared runtime compatibility
+  requirements before activating a remote. A solution remote executes in the
+  host origin with the viewer's credentials — the trust model, the full
+  authority contract, and the registration/installation/entitlement boundary are
+  in [module/SOLUTION_REGISTRATION.md](./module/SOLUTION_REGISTRATION.md).
 - **Composed-module REST federation** — a composed module that serves its own
   `/v1/<module>/*` surface registers it with `POST /modules/_register`
   (`gateway_modules.go`), and the gateway proxies that prefix once the generated

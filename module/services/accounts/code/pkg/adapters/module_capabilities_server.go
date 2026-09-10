@@ -64,6 +64,28 @@ func (s *ModuleCapabilitiesServer) MintModuleRegistration(ctx context.Context, r
 	}, nil
 }
 
+// MintSolutionRegistration issues the credential a solution presents to the
+// gateway and to the frontend to register, update, or delete its upstream and
+// its Module-Federation remote. Like MintModuleRegistration it takes no Work
+// Context and authorizes on the solution's own registration secret, declared
+// separately from the module secrets.
+func (s *ModuleCapabilitiesServer) MintSolutionRegistration(ctx context.Context, req *gen.SolutionMintRegistrationRequest) (*gen.SolutionMintRegistrationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	token, expiresAt, err := service.SolutionMintRegistration(ctx, req.GetSolutionId(), req.GetSecret())
+	if err != nil {
+		if errors.Is(err, business.ErrSolutionRegistrationDenied) {
+			return nil, status.Error(codes.PermissionDenied, "solution registration denied")
+		}
+		return nil, err
+	}
+	return &gen.SolutionMintRegistrationResponse{
+		Token:     token,
+		ExpiresAt: timestamppb.New(expiresAt),
+	}, nil
+}
+
 func (s *ModuleCapabilitiesServer) EnqueueJob(ctx context.Context, req *gen.ModuleEnqueueJobRequest) (*gen.ModuleEnqueueJobResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

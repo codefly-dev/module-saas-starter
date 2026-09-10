@@ -72,6 +72,9 @@ const (
 	// ModuleCapabilitiesServiceMintModuleRegistrationProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's MintModuleRegistration RPC.
 	ModuleCapabilitiesServiceMintModuleRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+	// ModuleCapabilitiesServiceMintSolutionRegistrationProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's MintSolutionRegistration RPC.
+	ModuleCapabilitiesServiceMintSolutionRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
 	// ModuleCapabilitiesServicePublishEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's PublishEvent RPC.
 	ModuleCapabilitiesServicePublishEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
@@ -121,6 +124,12 @@ type ModuleCapabilitiesServiceClient interface {
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
 	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -216,6 +225,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
 			connect.WithClientOptions(opts...),
 		),
+		mintSolutionRegistration: connect.NewClient[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
+			connect.WithClientOptions(opts...),
+		),
 		publishEvent: connect.NewClient[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServicePublishEventProcedure,
@@ -251,23 +266,24 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
-	enqueueJob             *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
-	claimJobs              *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
-	heartbeatJob           *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
-	ackJob                 *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
-	nackJob                *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
-	notifyUser             *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
-	requestApproval        *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
-	getApproval            *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
-	cancelApproval         *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
-	emitAuditEvent         *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
-	fetchDatasourceBlob    *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
-	mintModuleRegistration *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
-	publishEvent           *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
-	subscribe              *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
-	unsubscribe            *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
-	listSubscriptions      *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
-	replayEvents           *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+	enqueueJob               *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
+	claimJobs                *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
+	heartbeatJob             *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
+	ackJob                   *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
+	nackJob                  *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
+	notifyUser               *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
+	requestApproval          *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
+	getApproval              *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
+	cancelApproval           *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
+	emitAuditEvent           *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	fetchDatasourceBlob      *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
+	mintModuleRegistration   *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
+	mintSolutionRegistration *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
+	publishEvent             *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
+	subscribe                *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
+	unsubscribe              *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
+	listSubscriptions        *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
+	replayEvents             *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
 }
 
 // EnqueueJob calls saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob.
@@ -330,6 +346,12 @@ func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Con
 	return c.mintModuleRegistration.CallUnary(ctx, req)
 }
 
+// MintSolutionRegistration calls
+// saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration.
+func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, req *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
+	return c.mintSolutionRegistration.CallUnary(ctx, req)
+}
+
 // PublishEvent calls saas.accounts.v1.ModuleCapabilitiesService.PublishEvent.
 func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, req *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {
 	return c.publishEvent.CallUnary(ctx, req)
@@ -387,6 +409,12 @@ type ModuleCapabilitiesServiceHandler interface {
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
 	MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -478,6 +506,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleRegistration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceMintSolutionRegistrationHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceMintSolutionRegistrationProcedure,
+		svc.MintSolutionRegistration,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServicePublishEventHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServicePublishEventProcedure,
 		svc.PublishEvent,
@@ -534,6 +568,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
 			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceMintSolutionRegistrationProcedure:
+			moduleCapabilitiesServiceMintSolutionRegistrationHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServicePublishEventProcedure:
 			moduleCapabilitiesServicePublishEventHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceSubscribeProcedure:
@@ -599,6 +635,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context
 
 func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(context.Context, *connect.Request[v1.ModuleMintRegistrationRequest]) (*connect.Response[v1.ModuleMintRegistrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {

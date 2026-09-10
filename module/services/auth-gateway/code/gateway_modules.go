@@ -184,7 +184,7 @@ func (g *Gateway) handleModuleRegister(w http.ResponseWriter, r *http.Request) b
 		httpError(w, http.StatusBadRequest, "invalid upstream")
 		return true
 	}
-	if isDisallowedModuleUpstreamHost(upstream.Hostname()) {
+	if isDisallowedRegisteredUpstreamHost(upstream.Hostname()) {
 		httpError(w, http.StatusBadRequest, "forbidden upstream host")
 		return true
 	}
@@ -266,11 +266,16 @@ func (g *Gateway) handleFederatedModule(w http.ResponseWriter, r *http.Request) 
 // moduleServicePrefix marks the RouteEntry.Service of a federated module route.
 const moduleServicePrefix = "module:"
 
-// isFederatedModuleRoute reports whether entry describes a runtime-registered
-// module upstream (as opposed to a static catalog or solution route). Only these
-// get the resolve-time-validating transport in proxyTo.
-func isFederatedModuleRoute(entry *RouteEntry) bool {
-	return entry != nil && strings.HasPrefix(entry.Service, moduleServicePrefix)
+// isRuntimeRegisteredRoute reports whether entry describes an upstream a
+// registrant named at runtime — a federated module prefix or a solution — as
+// opposed to a static catalog route. Only these get the resolve-time-validating
+// transport in proxyTo.
+func isRuntimeRegisteredRoute(entry *RouteEntry) bool {
+	if entry == nil {
+		return false
+	}
+	return strings.HasPrefix(entry.Service, moduleServicePrefix) ||
+		strings.HasPrefix(entry.Service, solutionServicePrefix)
 }
 
 // meshHostSuffixes are the DNS suffixes that denote a composition-local
@@ -286,13 +291,15 @@ var meshHostSuffixes = []string{
 	".local", ".internal", ".svc", ".cluster.local",
 }
 
-// isDisallowedModuleUpstreamHost reports whether a module upstream host must be
-// rejected. It is STRICTER than the solution guard (isForbiddenUpstreamHost):
-// beyond the SSRF sinks that guard blocks, a module upstream must be
+// isDisallowedRegisteredUpstreamHost reports whether the upstream host a
+// registrant named must be rejected. It governs BOTH runtime-registered kinds —
+// federated module prefixes and solutions — because both forward user bearers to
+// a host the registrant chose. It is STRICTER than isForbiddenUpstreamHost,
+// which it composes: beyond those SSRF sinks, a registered upstream must be
 // composition-local, so a public IP or an external dotted FQDN is also rejected.
 // Allowed: loopback, RFC1918/ULA private IPs, bare single-label service names
 // (including "localhost"), and cluster-suffixed names.
-func isDisallowedModuleUpstreamHost(host string) bool {
+func isDisallowedRegisteredUpstreamHost(host string) bool {
 	h := strings.ToLower(strings.TrimSpace(host))
 	// Credential-theft SSRF sinks (unspecified/link-local/metadata) and empty.
 	if isForbiddenUpstreamHost(h) {
@@ -502,7 +509,7 @@ type moduleResolver interface {
 
 // newModuleUpstreamTransport returns a reverse-proxy transport that re-validates
 // a module upstream's RESOLVED address at dial time. A registrant names only a
-// mesh host string, checked at register time (isDisallowedModuleUpstreamHost);
+// mesh host string, checked at register time (isDisallowedRegisteredUpstreamHost);
 // but a name it controls can resolve off-mesh at proxy time (DNS rebinding). This
 // transport resolves the host, rejects the dial unless every resolved address is
 // mesh-local, then connects to a validated IP directly — never re-resolving — so
@@ -559,14 +566,14 @@ func validateResolvedModuleAddrs(addrs []net.IPAddr) error {
 	}
 	for _, a := range addrs {
 		if !isAllowedResolvedModuleIP(a.IP) {
-			return fmt.Errorf("forbidden module upstream address: %s", a.IP)
+			return fmt.Errorf("forbidden upstream address: %s", a.IP)
 		}
 	}
 	return nil
 }
 
 // isAllowedResolvedModuleIP is the resolve-time counterpart to the register-time
-// host-string guard (isDisallowedModuleUpstreamHost): it re-checks the ACTUAL
+// host-string guard (isDisallowedRegisteredUpstreamHost): it re-checks the ACTUAL
 // address a module hostname resolved to. Only loopback and private (RFC1918 /
 // ULA) ranges are composition-local; the unspecified, link-local (covering the
 // 169.254.169.254 cloud-metadata IP), and every globally routable address are

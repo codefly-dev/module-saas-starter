@@ -138,6 +138,12 @@ func fileImports(t *testing.T, path string) []string {
 var httpAllowedPerimeterFiles = map[string]bool{
 	"gateway.go":           true,
 	"gateway_solutions.go": true,
+	// gateway_solution_credential.go serves the solution registration-token
+	// exchange and verifies the resulting credential with local Ed25519 crypto
+	// against this cluster's own published key set. Its only network call is the
+	// internal gRPC hop to accounts that mints the credential; it reaches no
+	// external IdP.
+	"gateway_solution_credential.go": true,
 	// gateway_modules.go proxies runtime-registered composed-module REST
 	// upstreams. It runs the same ext_authz Check as any protected route and
 	// reaches no external IdP — the ext_authz check remains the token authority.

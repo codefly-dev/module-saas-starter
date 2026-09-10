@@ -46,12 +46,16 @@ type Gateway struct {
 	// authority is accounts, and the cache converges on it (#534).
 	solutions *solutionRegistryCache
 	modules   *upstreamRegistry // runtime-registered composed-module REST upstreams
-	// moduleTransport re-validates a federated module upstream's resolved address
-	// at dial time (SSRF / DNS-rebinding defense). Only federated module routes
-	// use it; catalog and solution upstreams are static trusted config and keep
-	// the default transport.
-	moduleTransport http.RoundTripper
-	workContext     *workContextVerifier
+	// registeredTransport re-validates a runtime-registered upstream's resolved
+	// address at dial time (SSRF / DNS-rebinding defense). Both federated module
+	// and solution routes use it: a solution upstream is durable now (#534) but
+	// still names a host its registrant chose, and it receives forwarded user
+	// bearers. Catalog upstreams are static trusted config and keep the default
+	// transport.
+	registeredTransport http.RoundTripper
+	// registrationReplay makes each solution-registration credential single-use.
+	registrationReplay *registrationReplayGuard
+	workContext        *workContextVerifier
 }
 
 // NewGateway constructs a gateway with explicit route matching.
@@ -67,14 +71,15 @@ func NewGateway(
 	solutionRegistry solutionRegistryClient,
 ) *Gateway {
 	g := &Gateway{
-		authz:             authz,
-		matcher:           matcher,
-		upstreams:         upstreams,
-		rateLimiter:       rateLimiter,
-		requiredUpstreams: matcher.RequiredServices(),
-		solutions:         newSolutionRegistryCache(solutionRegistry),
-		modules:           newUpstreamRegistry(),
-		moduleTransport:   newModuleUpstreamTransport(net.DefaultResolver),
+		authz:               authz,
+		matcher:             matcher,
+		upstreams:           upstreams,
+		rateLimiter:         rateLimiter,
+		requiredUpstreams:   matcher.RequiredServices(),
+		solutions:           newSolutionRegistryCache(solutionRegistry),
+		modules:             newUpstreamRegistry(),
+		registeredTransport: newModuleUpstreamTransport(net.DefaultResolver),
+		registrationReplay:  newRegistrationReplayGuard(),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", g.healthHandler)
@@ -369,11 +374,12 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		r.URL.RawPath = ""
 	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
-	if isFederatedModuleRoute(entry) && g.moduleTransport != nil {
-		// Federated module upstreams are runtime-registered and merely name a mesh
-		// host; re-validate the resolved address at dial time (SSRF / DNS-rebinding
-		// defense). Catalog and solution upstreams keep the default transport.
-		proxy.Transport = g.moduleTransport
+	if isRuntimeRegisteredRoute(entry) && g.registeredTransport != nil {
+		// A runtime-registered upstream — module or solution — merely names a mesh
+		// host that its registrant chose; re-validate the resolved address at dial
+		// time (SSRF / DNS-rebinding defense). Catalog upstreams keep the default
+		// transport.
+		proxy.Transport = g.registeredTransport
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
 		httpError(w, http.StatusBadGateway, "upstream error: "+err.Error())
@@ -495,7 +501,7 @@ var untrustedAuthHeaders = []string{
 	"x-acting-as-user-id", "x-act", "x-scopes", "x-credential-kind", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
-	"x-codefly-module-secret",
+	"x-codefly-module-secret", "x-codefly-solution-secret", "x-codefly-solution-registration",
 }
 
 // httpError writes a plain-text error response. Bodies are short,

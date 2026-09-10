@@ -18,7 +18,7 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:143cbbe69cdbc0d8ad437377e865e3694018849a709b866851640fd66fd6d4ba
+        digest: sha256:3ebdec14a75abee3ec5367ea3a5c7322c7ef3c9c2178b79516afd7daab545c96
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:
@@ -26,7 +26,7 @@ services:
         kind: protobuf
         package: saas.gateway.auth.v1
         path: contracts/api/auth-gateway/grpc/contract.binpb
-        digest: sha256:56f4ab35cb69d276536ccc1cbfb01828c97349eff720112741302959a923c4fe
+        digest: sha256:dfefce35d2f288560954b5fb4129b685bd83e1685a21ab344c337834e74dae90
   - name: cache
     endpoints: [read, write]
   - name: frontend

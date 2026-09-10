@@ -325,12 +325,23 @@ func doWork(ctx context.Context) (Clean, error) {
 	// Composed-module REST federation: the gateway admits a registration only
 	// against a token signed here, so a module exchanges its composition-declared
 	// registration secret for one. Unset means no module may federate.
-	moduleRegistrationSecrets, err := business.ParseModuleRegistrationSecrets(
+	moduleRegistrationSecrets, err := business.ParseRegistrationSecrets(
 		workspaceEnv("federation", "MODULE_REGISTRATION_SECRETS"))
 	if err != nil {
 		return nil, fmt.Errorf("read module registration secrets: %w", err)
 	}
 	service.SetModuleRegistrar(minter, moduleRegistrationSecrets)
+
+	// Solution registration: the same issuer, a separate declaration. A solution
+	// remote executes in the host origin with the viewer's credentials, so who
+	// may publish one is stated on its own key rather than inherited from the
+	// module list. Unset means no solution may register.
+	solutionRegistrationSecrets, err := business.ParseRegistrationSecrets(
+		workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS"))
+	if err != nil {
+		return nil, fmt.Errorf("read solution registration secrets: %w", err)
+	}
+	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
 
 	// Permissions plugin: configure signing keys before NewServer builds the
 	// generated gRPC registrations. The ed25519 key is

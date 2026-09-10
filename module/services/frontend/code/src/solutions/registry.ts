@@ -27,12 +27,26 @@ import { getEndpoints, getWorkspaceSecret } from "codefly";
 
 export interface SolutionManifest {
 	id: string;
+	/**
+	 * Major of the registration manifest wire shape this solution was built
+	 * against. Defaulted rather than required, so an existing registrant keeps
+	 * working; see `checkRuntimeCompatibility`.
+	 */
+	schemaVersion: number;
 	nav: { title: string; path: string; order?: number };
 	frontend: {
 		type: "module-federation";
 		manifestUrl: string;
 		exposedModule: string;
+		/** Major of the host↔remote runtime contract the remote expects. */
+		hostContract: number;
+		/** Semver range the remote requires of the host's React instance. */
 		reactRange?: string;
+		/**
+		 * Semver ranges the remote requires of the host's other sealed shared
+		 * packages, keyed by package name.
+		 */
+		shared?: Record<string, string>;
 	};
 	backend: {
 		/**
@@ -389,6 +403,11 @@ export type SolutionWriteResult =
 async function writeToGateway(
 	path: string,
 	init: RequestInit,
+	// The registrant's own signed, solution-bound credential. The gateway
+	// verifies it again and takes the record's publisher from it, so the write
+	// carries the proof rather than this host vouching for a caller it cannot
+	// name.
+	credential?: string,
 ): Promise<SolutionWriteResult> {
 	const origin = gatewayOrigin();
 	const token = internalToken();
@@ -405,6 +424,9 @@ async function writeToGateway(
 			headers: {
 				...(init.headers ?? {}),
 				[INTERNAL_TOKEN_HEADER]: token,
+				...(credential
+					? { "X-Codefly-Solution-Registration": credential }
+					: {}),
 				"content-type": "application/json",
 			},
 			cache: "no-store",
@@ -442,16 +464,20 @@ async function writeToGateway(
  */
 export function registerSolution(
 	manifest: SolutionManifest,
-	options: { reactivate?: boolean } = {},
+	options: { reactivate?: boolean; credential?: string } = {},
 ): Promise<SolutionWriteResult> {
-	return writeToGateway(GATEWAY_FRONTEND_REGISTER_PATH, {
-		method: "POST",
-		body: JSON.stringify({
-			id: manifest.id,
-			manifest: JSON.stringify(manifest),
-			reactivate: options.reactivate === true,
-		}),
-	});
+	return writeToGateway(
+		GATEWAY_FRONTEND_REGISTER_PATH,
+		{
+			method: "POST",
+			body: JSON.stringify({
+				id: manifest.id,
+				manifest: JSON.stringify(manifest),
+				reactivate: options.reactivate === true,
+			}),
+		},
+		options.credential,
+	);
 }
 
 /**
@@ -459,10 +485,14 @@ export function registerSolution(
  * remains, so a retiring deployment's delayed heartbeat cannot recreate what an
  * operator removed.
  */
-export function unregisterSolution(id: string): Promise<SolutionWriteResult> {
+export function unregisterSolution(
+	id: string,
+	credential?: string,
+): Promise<SolutionWriteResult> {
 	return writeToGateway(
 		`${GATEWAY_REGISTER_PATH}?id=${encodeURIComponent(id)}`,
 		{ method: "DELETE" },
+		credential,
 	);
 }
 
@@ -507,10 +537,44 @@ export function navProjection(manifest: SolutionManifest): SolutionNav {
 export function detailProjection(manifest: SolutionManifest): SolutionDetail {
 	return {
 		id: manifest.id,
+		schemaVersion: manifest.schemaVersion,
 		nav: { ...manifest.nav },
 		frontend: { ...manifest.frontend },
 		backend: { ...manifest.backend },
 	};
+}
+
+// What a manifest asserts by saying nothing: the major that was in force when
+// these fields were introduced. FROZEN at 1 on purpose — deriving it from the
+// host's CURRENT major would default every silent manifest to the value it is
+// then compared against, so the check could never fail for the one population it
+// exists for: a solution built against an older contract meeting an upgraded
+// host. Bumping a host major must never move these.
+const UNDECLARED_MANIFEST_SCHEMA_MAJOR = 1;
+const UNDECLARED_HOST_CONTRACT_MAJOR = 1;
+
+/** A flat map of package name → semver range, or null when the value is not one. */
+function parseSharedRanges(
+	value: unknown,
+): Record<string, string> | null | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return null;
+	}
+	// Null-prototype: on a plain object literal, assigning "__proto__" a string is
+	// a spec no-op, so a requirement declared under that key would vanish before
+	// anything checked it — accepted and silently ignored, the exact failure this
+	// gate exists to remove.
+	const shared: Record<string, string> = Object.create(null);
+	for (const [pkg, range] of Object.entries(value)) {
+		if (typeof range !== "string" || range === "") {
+			return null;
+		}
+		shared[pkg] = range;
+	}
+	return shared;
 }
 
 /** Minimal structural validation of a self-registration payload. */
@@ -559,8 +623,33 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 			return null;
 		}
 	}
+	// A declared major must be a real major; an ABSENT one means "built against
+	// the contract that existed when the field appeared", which is the only claim
+	// the host can act on.
+	const schemaVersion =
+		candidate.schemaVersion ?? UNDECLARED_MANIFEST_SCHEMA_MAJOR;
+	const hostContract = frontend.hostContract ?? UNDECLARED_HOST_CONTRACT_MAJOR;
+	if (
+		!Number.isInteger(schemaVersion) ||
+		(schemaVersion as number) < 1 ||
+		!Number.isInteger(hostContract) ||
+		(hostContract as number) < 1
+	) {
+		return null;
+	}
+	const shared = parseSharedRanges(frontend.shared);
+	if (shared === null) {
+		return null;
+	}
+	if (
+		frontend.reactRange !== undefined &&
+		(typeof frontend.reactRange !== "string" || frontend.reactRange === "")
+	) {
+		return null;
+	}
 	return {
 		id: candidate.id,
+		schemaVersion: schemaVersion as number,
 		nav: {
 			title: nav.title,
 			path: nav.path,
@@ -570,10 +659,9 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 			type: "module-federation",
 			manifestUrl: frontend.manifestUrl,
 			exposedModule: frontend.exposedModule,
-			reactRange:
-				typeof frontend.reactRange === "string"
-					? frontend.reactRange
-					: undefined,
+			hostContract: hostContract as number,
+			reactRange: frontend.reactRange as string | undefined,
+			shared,
 		},
 		backend: {
 			serviceAlias,

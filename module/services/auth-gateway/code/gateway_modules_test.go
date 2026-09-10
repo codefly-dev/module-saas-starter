@@ -395,7 +395,7 @@ func TestGateway_ModuleRegister_RejectsNonMeshUpstream(t *testing.T) {
 	}
 }
 
-// isDisallowedModuleUpstreamHost draws the mesh-local line: loopback, private
+// isDisallowedRegisteredUpstreamHost draws the mesh-local line: loopback, private
 // ranges, bare service names, and cluster suffixes are allowed; public IPs,
 // external FQDNs, and SSRF sinks are not.
 func TestIsDisallowedModuleUpstreamHost(t *testing.T) {
@@ -408,7 +408,7 @@ func TestIsDisallowedModuleUpstreamHost(t *testing.T) {
 		"pod.namespace.svc.cluster.local",
 	}
 	for _, h := range allowed {
-		require.Falsef(t, isDisallowedModuleUpstreamHost(h), "%q should be allowed (mesh-local)", h)
+		require.Falsef(t, isDisallowedRegisteredUpstreamHost(h), "%q should be allowed (mesh-local)", h)
 	}
 
 	disallowed := []string{
@@ -420,7 +420,7 @@ func TestIsDisallowedModuleUpstreamHost(t *testing.T) {
 		"evil.localhost",           // multi-label *.localhost is NOT loopback: real DNS lookup
 	}
 	for _, h := range disallowed {
-		require.Truef(t, isDisallowedModuleUpstreamHost(h), "%q should be rejected", h)
+		require.Truef(t, isDisallowedRegisteredUpstreamHost(h), "%q should be rejected", h)
 	}
 }
 
@@ -511,7 +511,7 @@ func TestGateway_Module_ResolveTimeRebindingBlocked(t *testing.T) {
 	moduleFake, realURL := newModuleUpstream(t) // http://127.0.0.1:PORT
 	port := mustPort(t, realURL)
 
-	// Register a mesh-looking host (documents.svc passes isDisallowedModuleUpstreamHost).
+	// Register a mesh-looking host (documents.svc passes isDisallowedRegisteredUpstreamHost).
 	meshUpstream := "http://documents.svc:" + port
 	require.Equal(t, http.StatusOK, registerModule(t, gw, priv, "documents", meshUpstream).Code)
 
@@ -524,16 +524,16 @@ func TestGateway_Module_ResolveTimeRebindingBlocked(t *testing.T) {
 	}
 
 	// Rebinding: the mesh name resolves to a public IP at dial time -> refused.
-	gw.moduleTransport = newModuleUpstreamTransport(stubResolver{
+	gw.registeredTransport = newModuleUpstreamTransport(stubResolver{
 		"documents.svc": {net.ParseIP("8.8.8.8")},
 	})
 	w := proxy()
 	require.Equal(t, http.StatusBadGateway, w.Code)
-	require.Contains(t, w.Body.String(), "forbidden module upstream address")
+	require.Contains(t, w.Body.String(), "forbidden upstream address")
 	require.Nil(t, moduleFake.lastHeaders, "a rebound public address must never be dialed")
 
 	// The same name resolving to loopback still proxies (mesh dev / tests).
-	gw.moduleTransport = newModuleUpstreamTransport(stubResolver{
+	gw.registeredTransport = newModuleUpstreamTransport(stubResolver{
 		"documents.svc": {net.ParseIP("127.0.0.1")},
 	})
 	w = proxy()

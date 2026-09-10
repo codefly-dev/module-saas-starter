@@ -21,23 +21,24 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ModuleCapabilitiesService_EnqueueJob_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
-	ModuleCapabilitiesService_ClaimJobs_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
-	ModuleCapabilitiesService_HeartbeatJob_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
-	ModuleCapabilitiesService_AckJob_FullMethodName                 = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
-	ModuleCapabilitiesService_NackJob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
-	ModuleCapabilitiesService_NotifyUser_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
-	ModuleCapabilitiesService_RequestApproval_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
-	ModuleCapabilitiesService_GetApproval_FullMethodName            = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
-	ModuleCapabilitiesService_CancelApproval_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
-	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
-	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName    = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
-	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
-	ModuleCapabilitiesService_PublishEvent_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
-	ModuleCapabilitiesService_Subscribe_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
-	ModuleCapabilitiesService_Unsubscribe_FullMethodName            = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
-	ModuleCapabilitiesService_ListSubscriptions_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
-	ModuleCapabilitiesService_ReplayEvents_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
+	ModuleCapabilitiesService_EnqueueJob_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
+	ModuleCapabilitiesService_ClaimJobs_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
+	ModuleCapabilitiesService_HeartbeatJob_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
+	ModuleCapabilitiesService_AckJob_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
+	ModuleCapabilitiesService_NackJob_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
+	ModuleCapabilitiesService_NotifyUser_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	ModuleCapabilitiesService_RequestApproval_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+	ModuleCapabilitiesService_GetApproval_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
+	ModuleCapabilitiesService_CancelApproval_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
+	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName   = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
+	ModuleCapabilitiesService_PublishEvent_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
+	ModuleCapabilitiesService_Subscribe_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
+	ModuleCapabilitiesService_Unsubscribe_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+	ModuleCapabilitiesService_ListSubscriptions_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
+	ModuleCapabilitiesService_ReplayEvents_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
 )
 
 // ModuleCapabilitiesServiceClient is the client API for ModuleCapabilitiesService service.
@@ -46,8 +47,9 @@ const (
 //
 // ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
 // internal-tier and identifies its caller from the forwarded Work Context —
-// except MintModuleRegistration, which a module calls at startup, before any
-// user request exists, and which authorizes on its own registration secret.
+// except MintModuleRegistration and MintSolutionRegistration, which a registrant
+// calls at startup, before any user request exists, and which authorize on the
+// registrant's own registration secret.
 type ModuleCapabilitiesServiceClient interface {
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(ctx context.Context, in *ModuleEnqueueJobRequest, opts ...grpc.CallOption) (*ModuleEnqueueJobResponse, error)
@@ -78,6 +80,12 @@ type ModuleCapabilitiesServiceClient interface {
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
 	MintModuleRegistration(ctx context.Context, in *ModuleMintRegistrationRequest, opts ...grpc.CallOption) (*ModuleMintRegistrationResponse, error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -227,6 +235,16 @@ func (c *moduleCapabilitiesServiceClient) MintModuleRegistration(ctx context.Con
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SolutionMintRegistrationResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModulePublishEventResponse)
@@ -283,8 +301,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 //
 // ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
 // internal-tier and identifies its caller from the forwarded Work Context —
-// except MintModuleRegistration, which a module calls at startup, before any
-// user request exists, and which authorizes on its own registration secret.
+// except MintModuleRegistration and MintSolutionRegistration, which a registrant
+// calls at startup, before any user request exists, and which authorize on the
+// registrant's own registration secret.
 type ModuleCapabilitiesServiceServer interface {
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *ModuleEnqueueJobRequest) (*ModuleEnqueueJobResponse, error)
@@ -315,6 +334,12 @@ type ModuleCapabilitiesServiceServer interface {
 	// module presents to the gateway to federate its REST surface. Authorized by
 	// the module's own registration secret, not the shared cluster token.
 	MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error)
+	// MintSolutionRegistration issues the signed, solution-bound credential a
+	// solution presents to the gateway and to the frontend to register, update, or
+	// delete its upstream and its Module-Federation remote. Authorized by the
+	// solution's own registration secret, declared separately from the module
+	// secrets because a solution remote executes in the host origin.
+	MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -370,6 +395,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceBlob(*FetchDa
 }
 func (UnimplementedModuleCapabilitiesServiceServer) MintModuleRegistration(context.Context, *ModuleMintRegistrationRequest) (*ModuleMintRegistrationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintModuleRegistration not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintSolutionRegistration not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
@@ -617,6 +645,24 @@ func _ModuleCapabilitiesService_MintModuleRegistration_Handler(srv interface{}, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_MintSolutionRegistration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SolutionMintRegistrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).MintSolutionRegistration(ctx, req.(*SolutionMintRegistrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModulePublishEventRequest)
 	if err := dec(in); err != nil {
@@ -757,6 +803,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MintModuleRegistration",
 			Handler:    _ModuleCapabilitiesService_MintModuleRegistration_Handler,
+		},
+		{
+			MethodName: "MintSolutionRegistration",
+			Handler:    _ModuleCapabilitiesService_MintSolutionRegistration_Handler,
 		},
 		{
 			MethodName: "PublishEvent",

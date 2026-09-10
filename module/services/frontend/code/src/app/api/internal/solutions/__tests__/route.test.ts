@@ -1,3 +1,5 @@
+import { generateKeyPairSync, sign } from "node:crypto";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -26,6 +28,9 @@ function fakeGateway() {
 		});
 	return vi.fn(async (input: string | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
+		if (url.pathname === "/v1/auth/.well-known/jwks.json") {
+			return new Response(CRED_JWKS, { status: 200 });
+		}
 		if (url.pathname === "/solutions/_frontend") {
 			const body = JSON.parse(String(init?.body ?? "{}"));
 			stored.set(body.id, body.manifest);
@@ -106,6 +111,40 @@ function internalRequest(token?: string): Request {
 	return new Request("http://frontend/api/internal/solutions", { headers });
 }
 
+
+const { publicKey: credPublicKey, privateKey: credPrivateKey } =
+	generateKeyPairSync("ed25519");
+const CRED_KEY_ID = "test-key";
+const CRED_JWKS = JSON.stringify({
+	keys: [
+		{
+			...credPublicKey.export({ format: "jwk" }),
+			alg: "EdDSA",
+			use: "sig",
+			kid: CRED_KEY_ID,
+		},
+	],
+});
+let credCounter = 0;
+
+/** Registration is credential-bound now; this file only needs a valid one. */
+function solutionCredential(solution = "audit"): string {
+	const b64 = (v: object) =>
+		Buffer.from(JSON.stringify(v), "utf8").toString("base64url");
+	const now = Math.floor(Date.now() / 1000);
+	const head = b64({ alg: "EdDSA", typ: "JWT", kid: CRED_KEY_ID });
+	const payload = b64({
+		iss: "saas-starter",
+		sub: `solution:${solution}`,
+		aud: ["solution-registration"],
+		solution,
+		iat: now,
+		exp: now + 300,
+		jti: `internal-jti-${credCounter++}`,
+	});
+	return `${head}.${payload}.${sign(null, Buffer.from(`${head}.${payload}`, "utf8"), credPrivateKey).toString("base64url")}`;
+}
+
 async function register(): Promise<void> {
 	getWorkspaceSecret.mockReturnValue(TOKEN);
 	const response = await POST(
@@ -114,6 +153,7 @@ async function register(): Promise<void> {
 			headers: {
 				"content-type": "application/json",
 				"x-codefly-internal-token": TOKEN,
+				"x-codefly-solution-registration": solutionCredential(),
 			},
 			body: JSON.stringify(MANIFEST),
 		}),
@@ -127,6 +167,9 @@ describe("internal solution detail lookup", () => {
 		getEndpoints.mockReturnValue([
 			{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
 		]);
+		const g = globalThis as Record<string, unknown>;
+		g.__solutionRegistrationJwks = undefined;
+		g.__solutionRegistrationJtis = undefined;
 		vi.stubGlobal("fetch", fakeGateway());
 	});
 
@@ -135,7 +178,10 @@ describe("internal solution detail lookup", () => {
 		await DELETE(
 			new Request("http://frontend/api/solutions/register?id=audit", {
 				method: "DELETE",
-				headers: { "x-codefly-internal-token": TOKEN },
+				headers: {
+					"x-codefly-internal-token": TOKEN,
+					"x-codefly-solution-registration": solutionCredential(),
+				},
 			}),
 		);
 		getWorkspaceSecret.mockReset();
