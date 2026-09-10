@@ -126,6 +126,24 @@ jobs:
         # only that.
         run: node module/tools/story-trace-gate.mjs tests
 
+  kit-version:
+    name: Frontend kit version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The gate reads the newest release tag as the baseline of what the
+      # registry serves, so it needs the tags and the history between them.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test the kit-version gate
+        run: node --test scripts/ci/kit-version.test.mjs
+      - name: Require a version bump when the published kit changes
+        run: node scripts/ci/kit-version.mjs check
+
   provider-shim:
     name: Provider setup shims
     runs-on: ubuntu-latest
@@ -598,6 +616,7 @@ jobs:
       - codefly-quality
       - codefly-supply-chain
       - docs-sync
+      - kit-version
       - marketing
       - module-package
       - provider-shim

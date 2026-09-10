@@ -33,6 +33,7 @@ base-integrity ───────┐
 authz-coverage ───────┤
 release-contract ─────┤
 docs-sync ────────────┤
+kit-version ──────────┤
 provider-shim ────────┤                     ┌─▶ publish-module-package  (module-package/v*)
 marketing ────────────┼─▶ release-gates ────┼─▶ publish-frontend-kit    (v*)
 sdk-boundary ─────────┤   (!cancelled() +   └─▶ handbook-surface-bump   (v*)
@@ -64,7 +65,7 @@ forces `--all` from the ref, not from the push payload: `github.event.before` is
 the zero sha only for a *new* tag, so force-moving an existing tag would otherwise
 scope the mandatory gates to a delta and publish services that were never rebuilt
 or re-audited for that release. The aggregate re-checks `codefly-plan`'s `all`
-output on every release ref, so a scoped release fails even with all twelve gates
+output on every release ref, so a scoped release fails even with all thirteen gates
 green.
 
 ### Mandatory gates per tag track
@@ -78,6 +79,7 @@ no per-track exemption.
 | `authz-coverage` | required | required | RBAC, audit, and no-broadening |
 | `release-contract` | required | required | this gating graph itself |
 | `docs-sync` | required | required | interface docs and story tests |
+| `kit-version` | required | required | published frontend kit version vs. content |
 | `provider-shim` | required | required | non-writing provider shims |
 | `marketing` | required | required | marketing isolation build |
 | `sdk-boundary` | required | required | Codefly SDK boundary and contracts |
@@ -199,6 +201,36 @@ header-lockstep test (`TestUntrustedHeaders_SupersetOfStampedHeaders`), which
 keeps the gateway's stamped identity headers a subset of the headers it strips;
 the accounts-side companion (`TestUntrustedHeaders_SupersetOfTrustedHeaders`)
 runs with the accounts service test suite.
+
+## Published frontend kit version
+
+A registry version is immutable, so the frontend kit's version has to move
+whenever its content does. `publish-frontend-kit.mjs` enforces that at the
+registry — it compares the built tarball's integrity against the version already
+published and refuses to contradict it — but on its own it only reports the
+problem at release time, after the tag is cut, which is where v0.0.58 stopped
+with the kit's content several releases ahead of the version the registry serves
+(#550). Meanwhile a consuming solution that installs the kit resolves the older
+published bytes while the host serves its newer workspace copy, and the two
+share one Module-Federation singleton slot keyed by version, so nothing shows
+until an export disappears at runtime.
+
+`kit-version` moves that verdict onto the pull request. It takes the newest
+deploy-counter tag as the baseline of what the registry serves and fails when a
+published kit package's content changed since that tag under an unchanged
+version:
+
+```sh
+node scripts/ci/kit-version.mjs check
+```
+
+It reads git history rather than the registry on purpose — a registry read needs
+a publish-capable token, which no branch build should hold. The registry
+comparison in the publish step stays as the exact authority at release time.
+
+The kit is co-versioned: `@codefly-dev/ui`, `@codefly/saas-ui`, and
+`CODEFLY_KIT_VERSION` in `services/frontend/code/src/solutions/SolutionOutlet.tsx`
+bump together, which the `kit-shared-version` test pins.
 
 ## Evidence
 

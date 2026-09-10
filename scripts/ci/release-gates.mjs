@@ -49,6 +49,7 @@ export const REQUIRED_GATES = [
   "codefly-quality",
   "codefly-supply-chain",
   "docs-sync",
+  "kit-version",
   "marketing",
   "module-package",
   "provider-shim",
