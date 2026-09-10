@@ -141,6 +141,16 @@ to the wrong dependency, and cross-checks the bundled workflow reader against an
 independent scan of the raw text so a job the reader silently drops fails the
 suite rather than vanishing from the graph.
 
+The same job also enforces that every action the workflows call is pinned to a
+40-character commit digest, with the human-readable version in a trailing
+comment. A mutable tag is a standing write into this repository's build by
+whoever can move it upstream — including into `release-gates` itself, the one
+job whose verdict authorizes publication. Only a `./`-prefixed action from this
+repository is exempt, since it is already as trustworthy as the tree calling it.
+The scan covers a job's own `uses:` as well as its steps', so a reusable
+workflow cannot enter unpinned either. Pin a new action to the digest its tag
+resolves to — `gh api repos/OWNER/REPO/git/ref/tags/TAG --jq .object.sha`.
+
 Two limits are worth stating plainly. The contract **cannot protect its own job**:
 delete `release-contract` from the workflow and both the check and its tests stop
 running, with nothing in-repo left to notice — branch protection is the only

@@ -20,7 +20,10 @@
 // mandatory gate actually succeeded. `check` is the static half: it parses the
 // workflow dependency graph and fails unless every artifact-writing job — in
 // any workflow, including one added later — is transitively dominated by the
-// aggregate, and the aggregate by every mandatory gate.
+// aggregate, and the aggregate by every mandatory gate. It also fails unless
+// every action the workflows call is pinned to a commit digest, since a
+// mutable tag lets whoever can move it rewrite any gate, the aggregate
+// included.
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -329,6 +332,49 @@ export function releaseGateContractErrors(path, text) {
   return errors;
 }
 
+// ---------------------------------------------------------------------------
+// the action-pinning contract
+// ---------------------------------------------------------------------------
+
+// A `uses:` ref that names anything but a commit digest resolves at run time to
+// whatever the tag or branch points at then. That is a standing write into
+// every gate in this file — including the aggregate that authorizes
+// publication — by whoever can move it upstream.
+const DIGEST_REF = /@[0-9a-f]{40}$/;
+
+// An action from this repository is already as trustworthy as the tree that
+// calls it, so a `./` path needs no digest.
+const isPinned = (ref) => ref.startsWith("./") || DIGEST_REF.test(ref);
+
+// Every `uses:` in one workflow, as [job, ref]. A job carries one directly when
+// it calls a reusable workflow, which is as capable as any step it would run.
+function usedActionRefs(jobs) {
+  const refs = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    const uses = [job?.uses, ...(job?.steps ?? []).map((step) => step?.uses)];
+    for (const ref of uses) if (typeof ref === "string") refs.push([name, ref]);
+  }
+  return refs;
+}
+
+export function actionPinErrors(path, text) {
+  let document;
+  try {
+    document = parseWorkflowYaml(text);
+  } catch (error) {
+    return [`${path}: could not be parsed: ${error.message}`];
+  }
+  const errors = [];
+  for (const [name, ref] of usedActionRefs(document?.jobs ?? {})) {
+    if (isPinned(ref)) continue;
+    errors.push(
+      `${path}: job ${name} uses ${ref}, whose ref is mutable; pin it to the 40-character ` +
+        "commit digest the tag resolves to and keep the version in a trailing comment",
+    );
+  }
+  return errors;
+}
+
 export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
   const workflows = join(repositoryRoot, ".github", "workflows");
   if (!existsSync(workflows)) return [`.github/workflows is missing under ${repositoryRoot}`];
@@ -336,7 +382,8 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
   for (const file of readdirSync(workflows).sort()) {
     if (!/\.ya?ml$/.test(file)) continue;
     const path = `.github/workflows/${file}`;
-    errors.push(...releaseGateContractErrors(path, readFileSync(join(workflows, file), "utf8")));
+    const text = readFileSync(join(workflows, file), "utf8");
+    errors.push(...releaseGateContractErrors(path, text), ...actionPinErrors(path, text));
   }
   return errors;
 }
@@ -344,17 +391,18 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
 function check() {
   const errors = releaseGateGraphErrors();
   if (errors.length) {
-    console.error("release-gates: the workflow graph does not gate every publication:");
+    console.error("release-gates: the workflows do not satisfy the release contract:");
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(
       `\nFAIL: ${errors.length} release-orchestration defect(s). Every artifact-writing job must ` +
-        `depend on ${AGGREGATE_JOB}, and ${AGGREGATE_JOB} on every mandatory gate.`,
+        `depend on ${AGGREGATE_JOB}, ${AGGREGATE_JOB} on every mandatory gate, and every action ` +
+        "on a commit digest.",
     );
     process.exit(1);
   }
   console.log(
     `✓ every artifact-writing job is dominated by ${AGGREGATE_JOB}, which requires all ` +
-      `${REQUIRED_GATES.length} mandatory gates.`,
+      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a digest.`,
   );
 }
 

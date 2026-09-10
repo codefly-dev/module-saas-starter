@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  actionPinErrors,
   AFFECTED_SCOPED_GATES,
   AGGREGATE_JOB,
   exemptedGates,
@@ -415,6 +417,111 @@ test("no action already pinned in this repository is misread as a publisher", ()
 test("a job inherits the workflow's publication permissions", () => {
   assert.ok(publicationReasons({ steps: [] }, { packages: "write" }).length > 0);
   assert.deepEqual(publicationReasons({ permissions: { contents: "read" }, steps: [] }, { packages: "write" }), []);
+});
+
+// ---------------------------------------------------------------------------
+// check — the action-pinning contract
+// ---------------------------------------------------------------------------
+
+const NODE_DIGEST = "49933ea5288caeca8642d1e84afbd3f7d6820020";
+
+// One job, one step, whatever `uses:` a test wants to put in it.
+const usingWorkflow = (ref) =>
+  `jobs:\n  a:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: ${ref}\n`;
+
+test("every action the shipped workflows call is pinned to a digest", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  for (const file of readdirSync(workflows).filter((f) => /\.ya?ml$/.test(f))) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    assert.deepEqual(actionPinErrors(`.github/workflows/${file}`, text), []);
+  }
+});
+
+test("a digest ref passes, with or without a version comment or a subpath", () => {
+  for (const ref of [
+    `actions/setup-node@${NODE_DIGEST}`,
+    `actions/setup-node@${NODE_DIGEST} # v4`,
+    `anchore/sbom-action/download-syft@${NODE_DIGEST} # v0.24.0`,
+  ]) {
+    assert.deepEqual(actionPinErrors("w.yml", usingWorkflow(ref)), [], ref);
+  }
+});
+
+test("an action in this repository needs no digest", () => {
+  assert.deepEqual(actionPinErrors("w.yml", usingWorkflow("./.github/actions/setup")), []);
+});
+
+test("every way of naming a movable ref is rejected", () => {
+  for (const ref of [
+    "actions/setup-node@v4",
+    "actions/setup-go@v6.5.0",
+    "actions/checkout@main",
+    "actions/checkout@49933ea",
+    `actions/checkout@${NODE_DIGEST.toUpperCase()}`,
+    "actions/checkout",
+    "docker://alpine:3.19",
+  ]) {
+    const errors = actionPinErrors("w.yml", usingWorkflow(ref));
+    assert.equal(errors.length, 1, ref);
+    assert.match(errors[0], /job a uses .*, whose ref is mutable/);
+  }
+});
+
+test("a reusable-workflow call on the job itself must be pinned too", () => {
+  const text = "jobs:\n  a:\n    uses: owner/repo/.github/workflows/ci.yml@v1\n";
+  assert.equal(actionPinErrors("w.yml", text).length, 1);
+  assert.deepEqual(
+    actionPinErrors("w.yml", `jobs:\n  a:\n    uses: owner/repo/.github/workflows/ci.yml@${NODE_DIGEST}\n`),
+    [],
+  );
+});
+
+test("an unparsable workflow fails the pin check instead of passing empty", () => {
+  const errors = actionPinErrors("w.yml", "jobs: {a: b}\n");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not be parsed/);
+});
+
+test("the pin check reaches a workflow the publication contract exits early on", () => {
+  // `releaseGateContractErrors` returns as soon as it finds no publisher, which
+  // is every gate-only workflow. A mutable ref there must still fail `check`.
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  const text = usingWorkflow("actions/setup-node@v4");
+  writeFileSync(join(root, ".github", "workflows", "audit.yml"), text);
+  assert.deepEqual(releaseGateContractErrors("audit.yml", text), []);
+  const errors = releaseGateGraphErrors(root);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /audit\.yml: job a uses actions\/setup-node@v4/);
+});
+
+// An independent oracle over the raw text, in the same spirit as the job-set
+// scan below: the gate can only pin what the reader hands it, so a `uses:` the
+// parser drops is an unpinned ref nothing would ever flag.
+test("the reader and an independent text scan agree on every uses: ref", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  const files = readdirSync(workflows).filter((file) => /\.ya?ml$/.test(file));
+  let total = 0;
+  for (const file of files) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    const scanned = text
+      .split("\n")
+      .map((line) => /^\s*(?:- )?uses:\s*(\S+)/.exec(line))
+      .filter(Boolean)
+      .map((match) => match[1]);
+    const document = parseWorkflowYaml(text);
+    const read = Object.values(document.jobs).flatMap((job) => [
+      ...(typeof job.uses === "string" ? [job.uses] : []),
+      ...(job.steps ?? []).map((step) => step.uses).filter((ref) => typeof ref === "string"),
+    ]);
+    assert.deepEqual(
+      read.sort(),
+      scanned.sort(),
+      `${file}: the reader and the raw scan disagree on the uses: refs`,
+    );
+    total += scanned.length;
+  }
+  assert.ok(total > 40, `expected the full toolchain, saw ${total} refs`);
 });
 
 // ---------------------------------------------------------------------------
