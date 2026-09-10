@@ -761,5 +761,9 @@ func TestGateway_Solution_RegistrySnapshot(t *testing.T) {
 	require.Equal(t, "active", snapshot.Solutions[0].Status)
 	require.Equal(t, "reports", snapshot.Solutions[1].ID)
 	require.Equal(t, "pending", snapshot.Solutions[1].Status)
+	// A consumer bounds its own cache staleness with this, so it has to travel
+	// with the snapshot rather than being mirrored in the consumer.
+	require.Equal(t, uint32(solutionLease.Seconds()), snapshot.LeaseSeconds,
+		"the snapshot carries the lease window this gateway grants")
 	require.NotContains(t, w.Body.String(), "upstream")
 }

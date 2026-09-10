@@ -122,9 +122,13 @@ const SNAPSHOT_TTL_MS = 5_000;
  * this registry exists to prevent. Past the lease this replica reports
  * "unavailable" rather than guessing.
  *
- * Matches solutionLease in the auth-gateway (gateway_solution_registry.go).
+ * The window belongs to the gateway — it is the lease it grants registrants —
+ * and now travels with every snapshot as `leaseSeconds`. This literal is only
+ * the fallback for a rolling upgrade in which a newer frontend reads an older
+ * gateway; it is deliberately not a second source of truth, because a mirrored
+ * copy goes silently wrong the moment the gateway's lease changes.
  */
-const SNAPSHOT_MAX_AGE_MS = 120_000;
+const FALLBACK_SNAPSHOT_MAX_AGE_MS = 120_000;
 
 interface RegistrySnapshot {
 	revision: number;
@@ -133,6 +137,8 @@ interface RegistrySnapshot {
 	expiresAt: number;
 	/** When the gateway last answered; the staleness ceiling is measured from here. */
 	fetchedAt: number;
+	/** The gateway's lease window: how long this may outlive a failed refetch. */
+	maxAgeMs: number;
 }
 
 /**
@@ -199,12 +205,14 @@ interface GatewayRegistryEntry {
  */
 function manifestsFromSnapshot(payload: unknown): {
 	revision: number;
+	maxAgeMs: number;
 	solutions: SolutionManifest[];
 } | null {
 	if (typeof payload !== "object" || payload === null) return null;
-	const { revision, solutions } = payload as {
+	const { revision, solutions, leaseSeconds } = payload as {
 		revision?: unknown;
 		solutions?: unknown;
+		leaseSeconds?: unknown;
 	};
 	if (!Array.isArray(solutions)) return null;
 	const manifests: SolutionManifest[] = [];
@@ -229,6 +237,10 @@ function manifestsFromSnapshot(payload: unknown): {
 	manifests.sort((a, b) => (a.nav.order ?? 0) - (b.nav.order ?? 0));
 	return {
 		revision: typeof revision === "number" ? revision : 0,
+		maxAgeMs:
+			typeof leaseSeconds === "number" && leaseSeconds > 0
+				? leaseSeconds * 1_000
+				: FALLBACK_SNAPSHOT_MAX_AGE_MS,
 		solutions: manifests,
 	};
 }
@@ -267,6 +279,7 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
 		byId: new Map(parsed.solutions.map((solution) => [solution.id, solution])),
 		expiresAt: Date.now() + SNAPSHOT_TTL_MS,
 		fetchedAt: Date.now(),
+		maxAgeMs: parsed.maxAgeMs,
 	};
 }
 
@@ -291,7 +304,7 @@ async function snapshot(): Promise<RegistrySnapshot | null> {
 				const stale = globalForRegistry.__solutionSnapshot ?? null;
 				if (
 					stale !== null &&
-					Date.now() - stale.fetchedAt >= SNAPSHOT_MAX_AGE_MS
+					Date.now() - stale.fetchedAt >= stale.maxAgeMs
 				) {
 					globalForRegistry.__solutionSnapshot = null;
 					return null;

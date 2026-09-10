@@ -166,10 +166,13 @@ describe("registry snapshot", () => {
   function snapshotResponse(
     solutions: Array<{ id: string; status: string; manifest?: string }>,
   ) {
-    return new Response(JSON.stringify({ revision: 7, solutions }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ revision: 7, leaseSeconds: 120, solutions }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
   }
 
   beforeEach(() => {
@@ -293,6 +296,40 @@ describe("registry snapshot", () => {
 
     expect(await loadSolutions()).toBe("unavailable");
     expect(await findSolution("a")).toBe("unavailable");
+  });
+
+  // The ceiling must come from the gateway's own lease, not a copy of it: a
+  // mirrored literal keeps the old bound when the gateway's lease changes.
+  it("bounds staleness by the lease the gateway reported, not a local copy", async () => {
+    const shortLease = new Response(
+      JSON.stringify({
+        revision: 7,
+        leaseSeconds: 10,
+        solutions: [
+          { id: "a", status: "active", manifest: manifestFor("a", 1) },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(shortLease)
+        .mockRejectedValue(new Error("unreachable")),
+    );
+
+    expect(await loadSolutions()).toHaveLength(1);
+
+    // Older than the gateway's 10s lease, far younger than the 120s fallback.
+    const g = globalThis as Record<string, unknown>;
+    g.__solutionSnapshot = {
+      ...(g.__solutionSnapshot as object),
+      expiresAt: 0,
+      fetchedAt: Date.now() - 11_000,
+    };
+
+    expect(await loadSolutions()).toBe("unavailable");
   });
 
   it("drops a stored manifest that no longer validates", async () => {

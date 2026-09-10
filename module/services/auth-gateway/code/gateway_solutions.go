@@ -428,8 +428,15 @@ func (g *Gateway) handleSolutionDeregister(w http.ResponseWriter, r *http.Reques
 // It is a deliberate projection, not the record: the upstream URL stays inside
 // this process, because the only component that routes to it is this one.
 type solutionRegistryProjection struct {
-	Revision  int64                            `json:"revision"`
-	Solutions []solutionRegistrationProjection `json:"solutions"`
+	Revision int64 `json:"revision"`
+	// LeaseSeconds is the liveness window this gateway grants a registrant. A
+	// consumer that caches this snapshot needs it to bound its own staleness
+	// the way this process does — past the lease nothing in the snapshot is
+	// provably still registered. Publishing it keeps that bound derived from
+	// the one place the lease is defined, instead of mirrored in a second
+	// literal that goes silently wrong the moment this one changes.
+	LeaseSeconds uint32                           `json:"leaseSeconds"`
+	Solutions    []solutionRegistrationProjection `json:"solutions"`
 }
 
 type solutionRegistrationProjection struct {
@@ -462,8 +469,9 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 	}
 	now := g.solutions.now()
 	out := solutionRegistryProjection{
-		Revision:  revision,
-		Solutions: make([]solutionRegistrationProjection, 0, len(records)),
+		Revision:     revision,
+		LeaseSeconds: uint32(solutionLease.Seconds()),
+		Solutions:    make([]solutionRegistrationProjection, 0, len(records)),
 	}
 	for _, record := range records {
 		projection := solutionRegistrationProjection{
