@@ -25,8 +25,15 @@ vi.mock("codefly", () => ({
 	getWorkspaceSecret,
 }));
 
+// The registry is a durable, gateway-brokered record rather than a map in this
+// process, so the fixtures stub the one read the route makes instead of
+// performing a real registration over the mocked fetch.
+const { findSolution } = vi.hoisted(() => ({
+	findSolution: vi.fn<(id: string) => Promise<unknown>>(),
+}));
+vi.mock("@/solutions/registry", () => ({ findSolution }));
+
 import { GET, POST } from "@/app/api/solutions/[id]/proxy/[...path]/route";
-import { registerSolution, unregisterSolution } from "@/solutions/registry";
 
 const GATEWAY = "http://gateway.internal:8080";
 const INTERNAL_TOKEN = "trusted-internal-token";
@@ -51,16 +58,20 @@ function withTrustContext() {
 }
 
 function registerAudit(serviceAlias = "audit-backend") {
-	registerSolution({
-		id: "audit",
-		nav: { title: "Audit", path: "/s/audit" },
-		frontend: {
-			type: "module-federation",
-			manifestUrl: "https://audit.internal/mf-manifest.json",
-			exposedModule: "./Page",
-		},
-		backend: { serviceAlias },
-	});
+	findSolution.mockImplementation(async (id: string) =>
+		id === "audit"
+			? {
+					id: "audit",
+					nav: { title: "Audit", path: "/s/audit" },
+					frontend: {
+						type: "module-federation",
+						manifestUrl: "https://audit.internal/mf-manifest.json",
+						exposedModule: "./Page",
+					},
+					backend: { serviceAlias },
+				}
+			: null,
+	);
 }
 
 function context(id: string, path?: string[]) {
@@ -93,6 +104,7 @@ beforeEach(() => {
 	getCurrentModule.mockReturnValue("");
 	getCurrentService.mockReturnValue("");
 	getWorkspaceSecret.mockReturnValue(undefined);
+	findSolution.mockResolvedValue(null);
 	fetchMock = vi.fn(
 		async () =>
 			new Response("upstream-body", {
@@ -104,7 +116,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-	unregisterSolution("audit");
+	findSolution.mockReset();
 	getEndpoints.mockReset();
 	getCurrentModule.mockReset();
 	getCurrentService.mockReset();

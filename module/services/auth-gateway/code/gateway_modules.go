@@ -52,6 +52,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
@@ -61,6 +62,52 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
+
+// upstreamRegistry is a process-local map of a routing key → upstream URL,
+// populated at runtime by self-registration rather than at build time. It
+// backs composed-module REST federation: a composed module the saas has no
+// build-time knowledge of POSTs its upstream on startup, and the gateway then
+// proxies matching /v1/<prefix>/* requests to it.
+//
+// The store is process-local, so with more than one auth-gateway replica a
+// registration lands on one replica only and requests load-balanced to the
+// others 404 until the module re-registers there. Solution registration used
+// to share this limitation and no longer does (see
+// gateway_solution_registry.go); module federation has not been given the same
+// durable treatment.
+type upstreamRegistry struct {
+	mu        sync.RWMutex
+	upstreams map[string]*url.URL
+}
+
+func newUpstreamRegistry() *upstreamRegistry {
+	return &upstreamRegistry{upstreams: make(map[string]*url.URL)}
+}
+
+func (s *upstreamRegistry) get(id string) (*url.URL, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	upstream, ok := s.upstreams[id]
+	return upstream, ok
+}
+
+// claim registers key→upstream when the key is free, or when it already points
+// at the same upstream (idempotent re-registration on restart). It returns
+// (existing, false) without mutating when the key is already held by a DIFFERENT
+// upstream: first-claim-wins, so a later caller sharing the cluster-internal
+// token cannot silently take over a key another component already registered.
+func (s *upstreamRegistry) claim(id string, upstream *url.URL) (*url.URL, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if existing, ok := s.upstreams[id]; ok {
+		if existing.String() != upstream.String() {
+			return existing, false
+		}
+		return existing, true
+	}
+	s.upstreams[id] = upstream
+	return upstream, true
+}
 
 const moduleRegisterPath = "/modules/_register"
 

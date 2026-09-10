@@ -53,7 +53,7 @@ func newTestGateway(t *testing.T) (baseURL string, teardown func()) {
 		"accounts": apiURL,
 	}
 
-	gateway := NewGateway(testExtAuthz, matcher, upstreams, nil)
+	gateway := NewGateway(testExtAuthz, matcher, upstreams, nil, newFakeSolutionRegistry())
 
 	// Bind to :0 so we get an ephemeral port that can't clash with
 	// anything else the daemon allocated.

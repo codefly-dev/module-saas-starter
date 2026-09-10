@@ -106,6 +106,7 @@ func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed
 		matcher,
 		upstreams,
 		nil,
+		newFakeSolutionRegistry(),
 	)
 
 	return gateway, apiFake, frontendFake, priv
@@ -454,7 +455,7 @@ func TestGateway_HealthCheck_Self(t *testing.T) {
 
 func TestGateway_LivenessDoesNotDependOnExtAuthzOrUpstreams(t *testing.T) {
 	matcher := NewRouteMatcher([]*RouteEntry{{Service: "accounts", Method: "GET", Path: "/v1/users", Protected: true}, {Service: "self", Method: "GET", Path: "/health"}}, nil)
-	gateway := NewGateway(nil, matcher, nil, nil)
+	gateway := NewGateway(nil, matcher, nil, nil, newFakeSolutionRegistry())
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
@@ -481,14 +482,14 @@ func TestGateway_ReadinessRequiresEveryRoutedUpstream(t *testing.T) {
 	require.NoError(t, err)
 	ready := &ExtAuthz{keys: staticAccessKeys(pub)}
 
-	gateway := NewGateway(ready, matcher, map[string]*url.URL{"accounts": unavailableURL}, nil)
+	gateway := NewGateway(ready, matcher, map[string]*url.URL{"accounts": unavailableURL}, nil, newFakeSolutionRegistry())
 	req := httptest.NewRequest(http.MethodGet, "/ready", nil)
 	w := httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
 	require.Equal(t, http.StatusServiceUnavailable, w.Code)
 	require.Contains(t, w.Body.String(), "accounts")
 
-	gateway = NewGateway(ready, matcher, map[string]*url.URL{"accounts": availableURL}, nil)
+	gateway = NewGateway(ready, matcher, map[string]*url.URL{"accounts": availableURL}, nil, newFakeSolutionRegistry())
 	w = httptest.NewRecorder()
 	gateway.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -579,7 +580,7 @@ func TestGateway_NoRoute_404(t *testing.T) {
 
 	// Empty route config — nothing is whitelisted.
 	matcher := NewRouteMatcher([]*RouteEntry{}, nil)
-	gateway := NewGateway(authz, matcher, map[string]*url.URL{}, nil)
+	gateway := NewGateway(authz, matcher, map[string]*url.URL{}, nil, newFakeSolutionRegistry())
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()
@@ -647,7 +648,7 @@ func TestGateway_ConnectProtocol_AuthenticatedEndToEnd(t *testing.T) {
 	matcher := NewRouteMatcher(nil, []*RouteEntry{{
 		Service: "accounts_connect", Method: http.MethodPost, Path: procedure, Protected: true,
 	}})
-	gateway := NewGateway(authz, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil)
+	gateway := NewGateway(authz, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil, newFakeSolutionRegistry())
 
 	req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
@@ -690,7 +691,7 @@ func TestGateway_LegacyConnectProcedureRewritesToV1(t *testing.T) {
 		UpstreamPath: canonical,
 		Protected:    true,
 	}})
-	gateway := NewGateway(authz, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil)
+	gateway := NewGateway(authz, matcher, map[string]*url.URL{"accounts_connect": upstreamURL}, nil, newFakeSolutionRegistry())
 
 	req := httptest.NewRequest(http.MethodPost, legacy, strings.NewReader(`{}`))
 	req.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))

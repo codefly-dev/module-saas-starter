@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **191 RPCs** across **29 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **194 RPCs** across **30 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -153,6 +153,9 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.SSOAdminService/Disable` | unary | `POST /v1/sso/disable` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.sso.disabled | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Pause SSO; preserves WorkOS state for re-enable. |
 | `/saas.accounts.v1.SSOAdminService/GetSSO` | unary | `GET /v1/sso/{org_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read org SSO state. |
 | `/saas.accounts.v1.SSOAdminService/StartSetup` | unary | `POST /v1/sso/setup` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.sso.setup.started | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Mint WorkOS portal link. |
+| `/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.solution.registration_deleted | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Deregister a solution and leave a tombstone that blocks resurrection. |
+| `/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read the solution registry snapshot a replica rebuilds its cache from. |
+| `/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | SUCCESS: saas.solution.registration_updated | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Write or renew one half of a solution's durable runtime registration. |
 | `/saas.accounts.v1.TeamService/AddMember` | unary | `POST /v1/teams/{team_id}/members` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | team_id → TEAM/TEAM_TO_ORGANIZATION | SUCCESS: saas.team.member_added | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Add a user to a team. |
 | `/saas.accounts.v1.TeamService/CreateTeam` | unary | `POST /v1/organizations/{org_id}/teams` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.team.created | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Create a team within an org. |
 | `/saas.accounts.v1.TeamService/DeleteTeam` | unary | `DELETE /v1/teams/{team_id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | team_id → TEAM/TEAM_TO_ORGANIZATION | SUCCESS: saas.team.deleted | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Delete a team and its memberships. |
@@ -203,7 +206,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 39
-- `internal`: 32
+- `internal`: 35
 - `mfa`: 3
 - `org_admin`: 40
 - `org_member`: 37

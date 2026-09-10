@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package saas.accounts.v1;
+
+import "saas/accounts/v1/solution_registry.proto";
+import "saas/policy/v1/options.proto";
+
+// The durable solution registry's service surface (issue #534). It is split
+// from the messages in solution_registry.proto so the auth-gateway — the only
+// client — can generate those messages without also vendoring the policy
+// options this file needs.
+//
+// Every method is EXPOSURE_INTERNAL: the gateway reaches them over the accounts
+// internal listener, and it brokers the frontend's half as well as its own, so
+// the frontend holds no second connection to accounts.
+
+// SolutionRegistryService is the durable authority behind both self-registration
+// surfaces. Every method is internal: the gateway is the only client, and it
+// brokers the frontend's half as well as its own.
+service SolutionRegistryService {
+  // PutSolutionRegistration writes or renews one half of a solution's
+  // registration under compare-and-swap revision semantics.
+  rpc PutSolutionRegistration(PutSolutionRegistrationRequest) returns (SolutionRegistration) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.solution.registration_updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // DeleteSolutionRegistration deregisters a solution, leaving a tombstone that
+  // a later heartbeat from the retired deployment cannot resurrect.
+  rpc DeleteSolutionRegistration(DeleteSolutionRegistrationRequest) returns (SolutionRegistration) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.solution.registration_deleted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSolutionRegistrations returns the whole registry so a restarted or
+  // lagging replica can rebuild its routing cache from authoritative state.
+  rpc ListSolutionRegistrations(ListSolutionRegistrationsRequest) returns (ListSolutionRegistrationsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+}
