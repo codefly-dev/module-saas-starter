@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 
 export function ImpersonationBanner() {
@@ -49,7 +50,18 @@ export function ImpersonationBanner() {
 					<button
 						onClick={() => {
 							setExiting(true);
-							void exitImpersonation().finally(() => setExiting(false));
+							void exitImpersonation()
+								// Exiting fails loudly rather than silently stranding the
+								// operator in the target's session: a transient restore
+								// failure leaves impersonation active and retryable.
+								.catch((error: unknown) =>
+									toast.error(
+										error instanceof Error
+											? error.message
+											: "Could not stop impersonating.",
+									),
+								)
+								.finally(() => setExiting(false));
 						}}
 						disabled={exiting}
 						className="bg-amber-900 text-amber-100 px-3 py-1 rounded text-sm font-medium hover:bg-amber-800 transition-colors disabled:opacity-60"

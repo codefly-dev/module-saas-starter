@@ -254,3 +254,44 @@ func TestAuditStorePersistsImpersonationIdentity(t *testing.T) {
 	require.True(t, entries[0].IsImpersonated)
 	require.Equal(t, fixture.supportID, entries[0].ImpersonatedBy)
 }
+
+// The completeness constraint is declared NOT VALID, which skips the scan of
+// pre-existing rows but must still reject new ones. A row claiming impersonation
+// without naming the actor would be an audit record that says "someone acted as
+// this user" and cannot say who — the precise gap this column pair closes — so
+// the database, not just the emitter, has to refuse it.
+func TestAuditStoreRejectsIncompleteImpersonationIdentity(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "incomplete")
+
+	incomplete := []struct {
+		name  string
+		entry business.AuditEntry
+	}{
+		{"impersonated without an actor", business.AuditEntry{
+			IsImpersonated: true,
+			ImpersonatedBy: "",
+		}},
+		{"actor without the impersonation flag", business.AuditEntry{
+			IsImpersonated: false,
+			ImpersonatedBy: fixture.supportID,
+		}},
+	}
+
+	for _, tc := range incomplete {
+		t.Run(tc.name, func(t *testing.T) {
+			entry := tc.entry
+			entry.ActorID = fixture.ownerID
+			entry.ActorType = "user"
+			entry.EventType = business.EventTeamCreated
+			entry.Resource = "team"
+			entry.OrgID = fixture.orgID
+
+			err := testStore.WithOrgTx(testCtx, fixture.orgID, func(ctx context.Context) error {
+				return testStore.InsertAuditEvent(ctx, entry)
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "audit_events_impersonation_identity_complete")
+		})
+	}
+}

@@ -98,3 +98,31 @@ func TestVerifiedRequestIdentityRoundTrip(t *testing.T) {
 	require.Equal(t, identityTarget.String(), got.EffectiveSubjectID())
 	require.True(t, ImpersonatedRequest(ctx))
 }
+
+// An acting-as value over an actor that is not a canonical uuid must be refused
+// outright. Admitting it would leave the target as the only usable id, and an
+// identity naming one user is by definition not impersonating — so the target's
+// own platform authority would resolve for a request the gateway said was a
+// support session acting as them.
+func TestParseRequestIdentityRefusesActingAsWithoutUsableActor(t *testing.T) {
+	for _, actor := range []string{"not-a-uuid", "", uuid.Nil.String()} {
+		_, err := ParseRequestIdentity(actor, identityTarget.String(), identityOrg.String(), "")
+		require.ErrorIs(t, err, ErrRequestIdentityMalformed, actor)
+	}
+}
+
+// The install point is the last line of defence for the same class: an identity
+// carrying only one of the two ids never reaches a request context, so
+// Impersonated() cannot be asked a question it would answer misleadingly.
+func TestWithVerifiedRequestIdentityRefusesHalfFormedIdentity(t *testing.T) {
+	halfFormed := []RequestIdentity{
+		{EffectiveSubject: identityTarget},
+		{RealActor: identityActor},
+	}
+	for _, identity := range halfFormed {
+		ctx := WithVerifiedRequestIdentity(context.Background(), identity)
+		_, ok := VerifiedRequestIdentity(ctx)
+		require.False(t, ok, "half-formed identity must not install: %+v", identity)
+		require.False(t, ImpersonatedRequest(ctx))
+	}
+}

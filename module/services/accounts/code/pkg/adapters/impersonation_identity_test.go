@@ -391,3 +391,32 @@ func TestImpersonatedSessionSatisfiesMFAAsTheTarget(t *testing.T) {
 	require.Equal(t, []string{targetMemberID}, store.mfaProbedFor,
 		"the enrolment probed must be the effective subject's")
 }
+
+// The transport half of the same defect: a trusted gateway assertion naming an
+// unusable actor alongside a real acting-as target must be denied on every
+// transport. Before this was refused, the request installed the target as its
+// sole principal, which reads as an ordinary session — so the target's platform
+// role resolved and audit recorded the action as un-impersonated.
+func TestForwardedActingAsWithoutUsableActorIsRefused(t *testing.T) {
+	previousGateway := gatewayToken
+	SetGatewayToken("test-gateway-token")
+	t.Cleanup(func() { SetGatewayToken(previousGateway) })
+
+	connectHeaders := http.Header{
+		"X-Codefly-Gateway-Token": []string{"test-gateway-token"},
+		"X-User-Id":               []string{"not-a-uuid"},
+		"X-Acting-As-User-Id":     []string{targetMemberID},
+	}
+	_, err := (&connectPolicyInterceptor{getMinter: nil}).authorize(
+		context.Background(), "/saas.accounts.v1.UserService/GetSelf", connectHeaders)
+	require.Error(t, err)
+
+	grpcMD := metadata.Pairs(
+		"x-codefly-gateway-token", "test-gateway-token",
+		"x-user-id", "not-a-uuid",
+		"x-acting-as-user-id", targetMemberID,
+	)
+	_, err = (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
+		metadata.NewIncomingContext(context.Background(), grpcMD), "/saas.accounts.v1.UserService/GetSelf")
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}

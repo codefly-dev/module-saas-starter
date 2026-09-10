@@ -16,10 +16,31 @@ ALTER TABLE audit_events
     ADD COLUMN IF NOT EXISTS is_impersonated BOOLEAN NOT NULL DEFAULT false;
 
 -- An impersonated row must name who did it, and a row naming an impersonator
--- must be marked as one. Historical rows are all (false, NULL) and satisfy it.
-ALTER TABLE audit_events
-    ADD CONSTRAINT audit_events_impersonation_identity_complete
-    CHECK ((is_impersonated AND impersonated_by IS NOT NULL) OR (NOT is_impersonated AND impersonated_by IS NULL));
+-- must be marked as one.
+--
+-- NOT VALID skips the validation scan. audit_events is the highest-volume table
+-- here, and ADD CONSTRAINT would otherwise hold ACCESS EXCLUSIVE while it reads
+-- every existing row — a write stall on the audit path for the length of the
+-- scan. The scan buys nothing: the columns are new, so every pre-existing row
+-- is exactly (false, NULL), which the predicate already accepts. NOT VALID
+-- still enforces the constraint on every INSERT and UPDATE from here on, which
+-- is the whole point of declaring it.
+--
+-- Guarded by a lookup because ADD CONSTRAINT, unlike ADD COLUMN above, has no
+-- IF NOT EXISTS form and would otherwise make this file non-re-runnable.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'audit_events'::regclass
+          AND conname = 'audit_events_impersonation_identity_complete'
+    ) THEN
+        ALTER TABLE audit_events
+            ADD CONSTRAINT audit_events_impersonation_identity_complete
+            CHECK ((is_impersonated AND impersonated_by IS NOT NULL) OR (NOT is_impersonated AND impersonated_by IS NULL))
+            NOT VALID;
+    END IF;
+END $$;
 
 -- Compliance review asks "what did this admin do while impersonating", which is
 -- an actor-centric scan across tenants rather than a tenant-scoped one.

@@ -99,6 +99,13 @@ func ParseRequestIdentity(userID, actingAsUserID, orgID, sessionID string) (Requ
 		if err != nil || actingAs == uuid.Nil {
 			return RequestIdentity{}, ErrRequestIdentityMalformed
 		}
+		// An acting-as value is only meaningful next to the actor it is
+		// attributed to. Accepting one over an unusable actor would leave the
+		// target as the sole principal, which reads as an ordinary session and
+		// so resolves the target's own platform authority.
+		if projected.RealActor == uuid.Nil {
+			return RequestIdentity{}, ErrRequestIdentityMalformed
+		}
 		projected.EffectiveSubject = actingAs
 	}
 	return projected, nil
@@ -119,10 +126,16 @@ func parseIDOrNil(raw string) uuid.UUID {
 type verifiedRequestIdentityKey struct{}
 
 // WithVerifiedRequestIdentity binds the projected identity to ctx. An identity
-// with no effective subject is not installed, so a malformed principal fails
-// closed to "unauthenticated" rather than to a blank subject.
+// missing either id is not installed, so a malformed principal fails closed to
+// "unauthenticated" rather than to a blank subject.
+//
+// Both ids are required because Impersonated() answers "are these two different
+// users", and a half-formed identity carrying only a subject answers that with
+// "no" — indistinguishable from an ordinary session, and therefore able to
+// resolve that subject's platform authority. Refusing it here keeps the
+// impersonation predicate meaningful for every caller.
 func WithVerifiedRequestIdentity(ctx context.Context, identity RequestIdentity) context.Context {
-	if ctx == nil || identity.EffectiveSubject == uuid.Nil {
+	if ctx == nil || identity.EffectiveSubject == uuid.Nil || identity.RealActor == uuid.Nil {
 		return ctx
 	}
 	return context.WithValue(ctx, verifiedRequestIdentityKey{}, identity)
