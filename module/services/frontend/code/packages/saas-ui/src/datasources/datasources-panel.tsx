@@ -210,10 +210,6 @@ function DatasourcesPanelView({
 				<SourcesTable
 					sources={sources}
 					boundaries={boundaries}
-					// A boundary missing from a resolved lookup means the viewer holds no
-					// grant on it; missing because the lookup never ran means unknown.
-					// Only the first may be reported as such.
-					boundariesResolved={scopes.isSuccess}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
 					onSync={handleSync}
@@ -272,7 +268,6 @@ const cellClass = "px-3 py-2 align-middle";
 function SourcesTable({
 	sources,
 	boundaries,
-	boundariesResolved,
 	syncingIds,
 	deletingIds,
 	onSync,
@@ -280,7 +275,6 @@ function SourcesTable({
 }: {
 	sources: DatasourceView[];
 	boundaries: ReadonlyMap<string, AccessibleScopeView>;
-	boundariesResolved: boolean;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
@@ -316,7 +310,6 @@ function SourcesTable({
 								<BoundaryCell
 									nodeId={source.boundaryNodeId}
 									scope={boundaries.get(source.boundaryNodeId)}
-									resolved={boundariesResolved}
 								/>
 							</td>
 							<td className={cellClass}>
@@ -355,18 +348,22 @@ function SourcesTable({
 
 /**
  * A source's data boundary: the collection its Entries land in, named where the
- * caller could resolve it, plus the grants the caller holds on it. Falls back to
- * the node id — never to nothing — so the boundary is always identifiable even
- * when the accessible-scopes RPC is unavailable.
+ * caller could resolve it, plus the grants it holds there. Falls back to the node
+ * id so the boundary is always identifiable.
+ *
+ * Absence is deliberately never rendered as denial. The lookup reports scope
+ * grants only, and a scope grant is one of several paths to authority — flat
+ * RBAC (an org admin's `*:*`) authorizes the datasource RPCs without ever
+ * creating a scope-grant row, so an empty result is the normal state for a
+ * tenant that grants no boundaries. "No access" here would therefore be false
+ * for the very admin who connected the source.
  */
 function BoundaryCell({
 	nodeId,
 	scope,
-	resolved,
 }: {
 	nodeId: string;
 	scope: AccessibleScopeView | undefined;
-	resolved: boolean;
 }) {
 	if (scope) {
 		return (
@@ -378,12 +375,5 @@ function BoundaryCell({
 			</div>
 		);
 	}
-	return (
-		<div className="space-y-0.5">
-			<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
-			{resolved && (
-				<div className="text-xs text-muted-foreground">No access</div>
-			)}
-		</div>
-	);
+	return <div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>;
 }

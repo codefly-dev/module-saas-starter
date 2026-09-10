@@ -31,11 +31,19 @@ export function shortBoundaryId(nodeId: string): string {
 	return nodeId.split("-")[0] || nodeId;
 }
 
-/** "read" + "write" -> "Read · Write", in a stable order. */
+/**
+ * "read" + "write" -> "Read · Write", in a stable order. An action outside the
+ * known order sorts last rather than first: `indexOf` returns -1 for it, which
+ * would otherwise rank an unrecognized grant ahead of `read`.
+ */
 export function formatGrants(actions: string[]): string {
 	const order = ["read", "write"];
+	const rank = (action: string) => {
+		const at = order.indexOf(action);
+		return at === -1 ? order.length : at;
+	};
 	return [...actions]
-		.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+		.sort((a, b) => rank(a) - rank(b))
 		.map((action) => action.charAt(0).toUpperCase() + action.slice(1))
 		.join(" · ");
 }

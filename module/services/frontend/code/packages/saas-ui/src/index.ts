@@ -27,4 +27,4 @@ export type {
 	DatasourceStatusName,
 	DatasourceView,
 } from "./datasources/types.js";
-export { formatGrants, parsePaths } from "./datasources/util.js";
+export { parsePaths } from "./datasources/util.js";
