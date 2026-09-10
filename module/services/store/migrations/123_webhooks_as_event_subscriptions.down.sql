@@ -2,6 +2,8 @@
 -- that violate the constraints being restored, and the audit emitter's inline
 -- fan-out is what delivers webhooks again once this migration is off.
 
+DROP FUNCTION IF EXISTS public.sync_webhook_event_subscriptions(UUID, UUID, TEXT[]);
+
 DELETE FROM public.event_subscriptions WHERE delivery = 'webhook';
 
 REVOKE SELECT, INSERT ON public.webhook_deliveries FROM app_job_worker;

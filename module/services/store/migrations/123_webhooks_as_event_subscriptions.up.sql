@@ -212,3 +212,67 @@ BEGIN
     END IF;
 END
 $function$;
+
+-- event_subscriptions is control-plane owned and has no RLS, so request traffic
+-- cannot write it directly — but an endpoint's subscriptions have to be derived
+-- inside the registration's own transaction, or a crash between the two leaves an
+-- endpoint that is registered and never delivered to. This is the same shape
+-- publish_domain_event uses for the same reason: SECURITY DEFINER, with the
+-- caller's role and signed org scope checked explicitly because DEFINER bypasses
+-- the grants above.
+CREATE FUNCTION public.sync_webhook_event_subscriptions(
+    p_org_id                  UUID,
+    p_webhook_subscription_id UUID,
+    p_type_patterns           TEXT[]
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+    caller_role TEXT;
+    owner_org   UUID;
+BEGIN
+    caller_role := COALESCE(
+        NULLIF(current_setting('role', true), 'none'),
+        session_user::text
+    );
+
+    IF caller_role = 'app_tenant' THEN
+        IF p_org_id IS NULL
+           OR p_org_id <> NULLIF(current_setting('app.current_org_id', true), '')::uuid THEN
+            RAISE EXCEPTION 'webhook subscription org does not match the signed request scope'
+                USING ERRCODE = 'insufficient_privilege';
+        END IF;
+    ELSIF caller_role NOT IN ('app_control_plane', 'app_job_worker') THEN
+        RAISE EXCEPTION 'role % cannot manage webhook event subscriptions', caller_role
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+
+    -- The endpoint must belong to the org the subscriptions are being bound to,
+    -- so a caller holding one org's scope cannot attach a subscription to another
+    -- org's endpoint by naming its id.
+    SELECT org_id INTO owner_org
+    FROM public.webhook_subscriptions
+    WHERE id = p_webhook_subscription_id;
+    IF owner_org IS NULL OR owner_org <> p_org_id THEN
+        RAISE EXCEPTION 'webhook subscription does not belong to this organization'
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+
+    DELETE FROM public.event_subscriptions
+    WHERE webhook_subscription_id = p_webhook_subscription_id
+      AND type_pattern <> ALL(COALESCE(p_type_patterns, ARRAY[]::text[]));
+
+    INSERT INTO public.event_subscriptions
+        (subscriber_principal_id, type_pattern, queue, delivery, org_id, webhook_subscription_id)
+    SELECT NULL::uuid, pattern, 'webhooks', 'webhook', p_org_id, p_webhook_subscription_id
+    FROM unnest(COALESCE(p_type_patterns, ARRAY[]::text[])) AS pattern
+    ON CONFLICT DO NOTHING;
+END
+$function$;
+
+REVOKE ALL ON FUNCTION public.sync_webhook_event_subscriptions(UUID, UUID, TEXT[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.sync_webhook_event_subscriptions(UUID, UUID, TEXT[])
+    TO app_tenant, app_control_plane, app_job_worker;

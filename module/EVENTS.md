@@ -218,6 +218,14 @@ behind the [Transport port](#transport-port).
   `event_subscriptions` row with `delivery = webhook` and the existing
   [WEBHOOKS.md](./WEBHOOKS.md) dispatcher as its consumer. `visibility: external`
   on the catalog is what makes a type eligible. One model instead of two.
+  Such a row carries an `org_id` and the endpoint registration it belongs to
+  instead of a subscriber principal, and it is derived from that registration
+  rather than granted: registering an endpoint for a set of event names creates
+  the rows in the same transaction, and deleting it cascades them away. The relay
+  confines delivery to the subscription's own organization, because a type
+  pattern says nothing about ownership and the relay resolves subscriptions with
+  RLS bypassed. Every audit event type is declared `external` and published beside
+  its audit record, which is what an endpoint subscribes to.
 
 ## Transport port
 
@@ -313,8 +321,8 @@ No big bang. The existing string topics are reclassified, not rewritten:
    `installation.created / revoked`, `scope.granted / revoked`,
    `datasource.source.changed`. Per-file datasource operations stay commands on
    the `datasource` queue.
-2. Move the outbound webhook dispatcher onto subscriptions with
-   `delivery = webhook` ([WEBHOOKS.md](./WEBHOOKS.md)).
+2. ~~Move the outbound webhook dispatcher onto subscriptions with
+   `delivery = webhook`~~ ([WEBHOOKS.md](./WEBHOOKS.md)) — done.
 3. The command-vs-event rule is recorded in [JOBS.md](./JOBS.md).
 
 ## Phasing

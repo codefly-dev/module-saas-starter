@@ -339,10 +339,22 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 		Events: []string{eventType}, Active: true,
 	}
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		return testStore.CreateWebhookSubscription(ctx, sub)
+		if err := testStore.CreateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		return testStore.SyncWebhookEventSubscriptions(ctx, orgID, sub.ID, sub.Events)
 	}))
 
-	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	relayPool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(relayPool.Close)
+	transport := infra.NewPostgresEventTransport(
+		infra.NewPostgresJobStore(relayPool), relayPool, "audit-webhook-"+business.NewIDString(), time.Second,
+		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(testStore)),
+	)
+
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(transport))
 	require.NoError(t, err)
 	emitter.Emit(testCtx, business.AuditEntry{
 		ID: eventID, ActorID: userID, ActorType: "user",
@@ -350,6 +362,11 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 		Payload:   map[string]any{"source": "integration-test"},
 		CreatedAt: time.Now().UTC(),
 	})
+	// The audit record and its event commit together; fan-out is the relay's
+	// work afterwards, which is what the emitter no longer does itself.
+	relayed, err := transport.RelayOnce(testCtx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, relayed, 1)
 
 	var deliveries []*business.WebhookDelivery
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {

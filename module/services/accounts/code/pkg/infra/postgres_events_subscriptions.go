@@ -178,6 +178,13 @@ func (s *PostgresStore) CountLiveEventSubscriptions(ctx context.Context) (int, e
 // record of a grant that was withdrawn, but a webhook subscription is derived
 // from a registration whose own lifecycle is already audited, and the endpoint's
 // deletion cascades these away regardless.
+//
+// event_subscriptions is control-plane owned, so the write goes through a
+// SECURITY DEFINER function rather than a direct statement. That is what lets it
+// join the registration's own tenant transaction — an endpoint is never
+// registered without the rows the relay delivers over — while the tenant
+// boundary is still checked, against the caller's signed org scope and the
+// endpoint's owner.
 func (s *PostgresStore) SyncWebhookEventSubscriptions(ctx context.Context, orgID, webhookSubscriptionID string, eventNames []string) error {
 	q := s.getQueryExecutor(ctx)
 	publishable := make([]string, 0, len(eventNames))
@@ -186,23 +193,8 @@ func (s *PostgresStore) SyncWebhookEventSubscriptions(ctx context.Context, orgID
 			publishable = append(publishable, name)
 		}
 	}
-	if _, err := q.Exec(ctx, `
-		DELETE FROM public.event_subscriptions
-		WHERE webhook_subscription_id = $1 AND type_pattern <> ALL($2)`,
-		webhookSubscriptionID, publishable,
-	); err != nil {
-		return err
-	}
-	if len(publishable) == 0 {
-		return nil
-	}
-	_, err := q.Exec(ctx, `
-		INSERT INTO public.event_subscriptions
-			(subscriber_principal_id, type_pattern, queue, delivery, org_id, webhook_subscription_id)
-		SELECT NULL::uuid, event_name, $1, 'webhook', $2::uuid, $3::uuid
-		FROM unnest($4::text[]) AS event_name
-		ON CONFLICT DO NOTHING`,
-		business.OutboundWebhookQueue, orgID, webhookSubscriptionID, publishable,
-	)
+	_, err := q.Exec(ctx,
+		`SELECT public.sync_webhook_event_subscriptions($1::uuid, $2::uuid, $3::text[])`,
+		orgID, webhookSubscriptionID, publishable)
 	return err
 }
