@@ -2,8 +2,12 @@
 # Used with: codefly run service --fixture dev-admin
 # This file is shared across all services in the module.
 
+# User ids are pinned so a reseed keeps the same principal uuid: committed
+# configuration (grants, e2e specs, runbooks) can quote a fixture principal
+# without re-deriving it after every fresh seed.
 users:
-  - email: admin@acme.com
+  - id: 00000000-0000-7000-8000-0000000000a1
+    email: admin@acme.com
     name: Sarah Chen
     role: super_admin
     provider: email
@@ -13,25 +17,29 @@ users:
     # operations without weakening their runtime policy.
     mfa_verified: true
 
-  - email: alice@acme.com
+  - id: 00000000-0000-7000-8000-0000000000a2
+    email: alice@acme.com
     name: Alice Johnson
     role: admin
     provider: email
     provider_id: dev-alice
 
-  - email: bob@acme.com
+  - id: 00000000-0000-7000-8000-0000000000a3
+    email: bob@acme.com
     name: Bob Williams
     role: member
     provider: email
     provider_id: dev-bob
 
-  - email: carol@acme.com
+  - id: 00000000-0000-7000-8000-0000000000a4
+    email: carol@acme.com
     name: Carol Davis
     role: member
     provider: email
     provider_id: dev-carol
 
-  - email: dana@example.com
+  - id: 00000000-0000-7000-8000-0000000000a5
+    email: dana@example.com
     name: Dana Lee
     role: member
     provider: email

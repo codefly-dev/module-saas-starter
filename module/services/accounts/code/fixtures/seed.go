@@ -41,6 +41,7 @@ type fixtureFile struct {
 }
 
 type fixtureUser struct {
+	ID           string `yaml:"id"`
 	Email        string `yaml:"email"`
 	Name         string `yaml:"name"`
 	Role         string `yaml:"role"`
@@ -288,6 +289,7 @@ func loadFixtureFile(path string) (*fixtureFile, error) {
 }
 
 func validateFixture(f *fixtureFile) error {
+	userIDIndexes := make(map[string]int, len(f.Users))
 	for i, u := range f.Users {
 		if u.Email == "" {
 			return fmt.Errorf("user[%d]: email is required", i)
@@ -298,6 +300,20 @@ func validateFixture(f *fixtureFile) error {
 		if u.ProviderID == "" {
 			return fmt.Errorf("user[%d] (%s): provider_id is required", i, u.Email)
 		}
+		if u.ID == "" {
+			continue
+		}
+		id, err := business.ParseID(u.ID)
+		if err != nil {
+			return fmt.Errorf("user[%d] (%s): %w", i, u.Email, err)
+		}
+		if previous, exists := userIDIndexes[id.String()]; exists {
+			return fmt.Errorf("user[%d] (%s): id %s collides with user[%d]", i, u.Email, id, previous)
+		}
+		userIDIndexes[id.String()] = i
+		// Store the canonical form so the drift check in seedUsers compares
+		// against the store's rendering of the same uuid.
+		f.Users[i].ID = id.String()
 	}
 	organizationSlugIndexes := make(map[string]int, len(f.Organizations))
 	for i, org := range f.Organizations {
@@ -405,6 +421,13 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			return nil, w.Wrapf(err, "cannot look up fixture user %s", u.Email)
 		}
 		if existing != nil {
+			if u.ID != "" && existing.Uuid != u.ID {
+				return nil, fmt.Errorf(
+					"fixture user %s declares id %s but identity (%s, %s) already resolves to %s: "+
+						"configuration naming the declared id would not match the seeded principal; "+
+						"reseed against a fresh database",
+					u.Email, u.ID, u.Provider, u.ProviderID, existing.Uuid)
+			}
 			userIDs[u.Email] = existing.Uuid
 			// Fixtures are desired state, not create-only samples. Converge the
 			// platform role on every activation so authentication and admin
@@ -427,7 +450,12 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			continue
 		}
 
-		userID := business.NewIDString()
+		// A declared id makes the principal quotable in committed
+		// configuration; without one every reseed mints a fresh uuid.
+		userID := u.ID
+		if userID == "" {
+			userID = business.NewIDString()
+		}
 		identityID := business.NewIDString()
 		user := &gen.User{
 			Uuid:         userID,
