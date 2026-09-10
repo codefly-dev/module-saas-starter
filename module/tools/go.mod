@@ -7,6 +7,7 @@ require (
 	github.com/codefly-dev/core v0.3.20
 	github.com/yoheimuta/go-protoparser/v4 v4.14.2
 	golang.org/x/tools v0.49.0
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -23,5 +24,4 @@ require (
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 )

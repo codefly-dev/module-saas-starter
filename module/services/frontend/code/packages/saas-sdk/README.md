@@ -141,7 +141,7 @@ the published accounts/connect API contract via codefly — the same contract
 exported into the module package (`module/contracts/api`):
 
 ```bash
-npm run generate -- --force   # --force is required once the contract has moved on
+npm run generate
 ```
 
 This runs `codefly generate client --from contracts:… --endpoint accounts/connect
@@ -171,25 +171,34 @@ across CLI versions the bindings, the facade and the vendored contract come out
 byte-identical and only the `generated-by.companion` line of
 `library.codefly.yaml` moves. Pinning keeps that line from churning.
 
-`--force` cleans the output directory, and the generator then re-emits `saas/**`
-only. It rewrites `google/protobuf/*` imports to `@bufbuild/protobuf/wkt`, but
-still emits *relative* imports to `buf/validate/validate_pb` and
-`google/api/annotations_pb` — files it no longer writes. The seven third-party
-descriptor files those imports reach are therefore kept in the tree by hand and
-have to be restored after every regeneration:
+Once the contract has moved on, the generator refuses to overwrite a library
+built from a different digest and asks for `--force`. That flag **cleans the
+output directory first**, and what comes back is not everything it removed: the
+generator re-emits `saas/**` only. It rewrites `google/protobuf/*` imports to
+`@bufbuild/protobuf/wkt`, but still emits *relative* imports to
+`buf/validate/validate_pb` and `google/api/annotations_pb` — files it no longer
+writes. The seven third-party descriptor files those imports reach are kept in
+the tree by hand, so a regeneration is two commands, not one:
 
 ```bash
+npm run generate -- --force
 git checkout -- generated/typescript/src/gen/buf generated/typescript/src/gen/google
 ```
 
-Skip it and `tsc` fails with TS2307, which fails `published-surface` with it —
-that test builds before it asserts.
+Skip the second and the tree is broken: `tsc` fails with TS2307 for the
+generated files the public API reaches, and `published-surface` fails with it
+because it builds before it asserts. For the ones the public API *does not*
+reach, `tsconfig.json` never opens them and tsc stays silent — the
+`generated tree integrity` test in the same file is what catches those, by
+resolving every relative import across the whole generated tree.
 
-`library.codefly.yaml`'s `contract-digest` is gated:
-`TestGeneratedLibraryContractDigestsMatchThePackage` in `module/tools/composition`
-fails when it drifts from the digest `module.package.codefly.yaml` publishes for
-accounts/connect. Regenerating clears it — the digest is written by the
-generator, never by hand.
+`TestGeneratedLibraryContractDigestsMatchThePackage` in
+`module/tools/composition` gates the result. It fails when
+`library.codefly.yaml`'s `contract-digest` drifts from the digest
+`module.package.codefly.yaml` publishes for accounts/connect, when the contract
+the library actually vendors does not hash to the digest it records, and when
+the vendored contract names a proto the tree has no `_pb.ts` for. Regenerating
+clears all three; editing the digest clears none of them.
 
 ## Building and testing
 
@@ -208,7 +217,7 @@ Module-Federation singleton, the bytes a solution installs from the registry are
 the bytes the host serves.
 
 The frontend app pins this package at an **exact** version
-(`"@codefly-dev/saas-sdk": "0.2.0"` in `module/services/frontend/code/package.json`),
+(`"@codefly-dev/saas-sdk": "0.2.1"` in `module/services/frontend/code/package.json`),
 and `npm ci` refuses to install if the workspace version no longer satisfies that
 pin. So a `version` bump is not self-contained: bump it only together with the
 matching pin bump in the app's `package.json`, the `@codefly-dev/saas-sdk` peer/dev

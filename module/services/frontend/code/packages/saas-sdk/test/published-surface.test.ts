@@ -134,6 +134,29 @@ const FORBIDDEN_MODULES = [
 	"saas/accounts/v1/invitations_pb",
 ];
 
+// The generated tree is assembled from two sources: `codefly generate client`
+// writes `saas/**` and deletes everything else, while the third-party
+// descriptors those bindings still import relatively — `buf/validate`,
+// `google/api`, and the `google/protobuf` files those two reach — are kept in
+// the tree by hand and restored after each regeneration (see README). Nothing
+// else proves that restore happened: `tsconfig.json` compiles from `src` only,
+// so tsc never opens a generated file the public API does not reach, and a
+// dangling import in one of those is invisible until a consumer imports it.
+describe("@codefly-dev/saas-sdk generated tree integrity", () => {
+	it("resolves every relative import in the generated bindings", () => {
+		const dangling: string[] = [];
+		for (const file of listFiles(generatedGenRoot)) {
+			if (!file.endsWith(".ts")) continue;
+			for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+				if (!specifier.startsWith(".")) continue;
+				if (existsSync(resolveRelative(file, specifier))) continue;
+				dangling.push(`${relative(generatedGenRoot, file)} -> ${specifier}`);
+			}
+		}
+		expect(dangling).toEqual([]);
+	});
+});
+
 describe("@codefly-dev/saas-sdk published proto surface", () => {
 	// The published tarball is `dist` (`files: ["dist"]`), so the guard checks the
 	// real build output. Build it here so the assertions run against a fresh

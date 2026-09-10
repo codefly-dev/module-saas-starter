@@ -4,9 +4,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	corecomposition "github.com/codefly-dev/core/composition"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/descriptorpb"
 	"gopkg.in/yaml.v3"
 )
 
@@ -129,15 +133,49 @@ func TestPackageAPIContractCatalogDigestsRecomputeFromContractBytes(t *testing.T
 }
 
 // generatedLibraryDocument is the minimal view of a `library.codefly.yaml` this
-// test needs: which package contract each generated library was built from, and
-// the digest of the contract bytes it was built against.
+// test needs: where each language's bindings were written, which package
+// contract the library was built from, and the digest of the contract bytes it
+// was built against.
 type generatedLibraryDocument struct {
+	Languages []struct {
+		Name string `yaml:"name"`
+		Path string `yaml:"path"`
+	} `yaml:"languages"`
 	Sources []struct {
 		Package        string `yaml:"package"`
 		Service        string `yaml:"service"`
 		Endpoint       string `yaml:"endpoint"`
 		ContractDigest string `yaml:"contract-digest"`
 	} `yaml:"sources"`
+}
+
+// declaredPackages renders the package ids a library claims to be generated
+// from, for the diagnostic on a library this gate cannot match.
+func (d generatedLibraryDocument) declaredPackages() string {
+	if len(d.Sources) == 0 {
+		return "none"
+	}
+	seen := make([]string, 0, len(d.Sources))
+	for _, source := range d.Sources {
+		if !slices.Contains(seen, source.Package) {
+			seen = append(seen, source.Package)
+		}
+	}
+	return strings.Join(seen, ", ")
+}
+
+// contractProtoFiles lists the proto file names inside a serialized
+// FileDescriptorSet, in declaration order.
+func contractProtoFiles(data []byte) ([]string, error) {
+	var set descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(data, &set); err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(set.GetFile()))
+	for _, file := range set.GetFile() {
+		names = append(names, file.GetName())
+	}
+	return names, nil
 }
 
 // findGeneratedLibraries walks the module for every `library.codefly.yaml`.
@@ -210,10 +248,12 @@ func TestGeneratedLibraryContractDigestsMatchThePackage(t *testing.T) {
 		if err != nil {
 			t.Fatalf("relativize %q: %v", path, err)
 		}
+		matched := 0
 		for _, source := range document.Sources {
 			if source.Package != manifest.ID {
 				continue
 			}
+			matched++
 			checked++
 			key := source.Service + "\x00" + source.Endpoint
 			digest, exported := published[key]
@@ -223,10 +263,83 @@ func TestGeneratedLibraryContractDigestsMatchThePackage(t *testing.T) {
 			}
 			if source.ContractDigest != digest {
 				t.Errorf("%s is stale: generated from %s/%s at %s, the package publishes %s — regenerate the library", relative, source.Service, source.Endpoint, source.ContractDigest, digest)
+				continue
 			}
+			assertLibraryBindingsMatchContract(t, moduleRoot, path, relative, document, digest)
+		}
+		// A library this gate silently skips is a library that can rot. The one
+		// in the tree matches, so this cannot fire today; it fires the first time
+		// someone adds a library whose provenance does not name this package —
+		// either the package id drifted, or the library is genuinely foreign and
+		// this gate has to learn how to check it. Both want a human.
+		if matched == 0 {
+			t.Errorf("%s records no source from %s (declares: %s); this gate cannot check it", relative, manifest.ID, document.declaredPackages())
 		}
 	}
 	if checked == 0 {
 		t.Fatalf("no generated library records a source from %s; expected at least the saas-sdk accounts/connect client", manifest.ID)
 	}
+}
+
+// assertLibraryBindingsMatchContract checks the two things the recorded digest
+// cannot: that the contract the library actually vendors is the published one,
+// and that the bindings on disk cover every proto in it.
+//
+// The recorded `contract-digest` is one string in one YAML file. Clearing this
+// gate by editing that string is a one-line change, and the regeneration it
+// stands in for is not one line — so the string alone is an invitation, not a
+// guarantee. These two checks are what make the gate about the artifact.
+func assertLibraryBindingsMatchContract(t *testing.T, moduleRoot, libraryPath, relative string, document generatedLibraryDocument, digest string) {
+	t.Helper()
+
+	libraryDir := filepath.Dir(libraryPath)
+	vendored := filepath.Join(libraryDir, "contract", "contract.binpb")
+	data, err := os.ReadFile(vendored)
+	if err != nil {
+		t.Errorf("%s records a contract digest but its vendored contract is unreadable: %v", relative, err)
+		return
+	}
+	if vendoredDigest := corecomposition.APIContractDigest(data); vendoredDigest != digest {
+		t.Errorf("%s records %s but the contract it vendors hashes to %s — the digest was edited without regenerating", relative, digest, vendoredDigest)
+		return
+	}
+
+	files, err := contractProtoFiles(data)
+	if err != nil {
+		t.Errorf("%s: decode vendored contract: %v", relative, err)
+		return
+	}
+	bindings, ok := typescriptBindingsRoot(libraryDir, document)
+	if !ok {
+		return
+	}
+	for _, file := range files {
+		// Well-known types are not generated into the tree: the bindings import
+		// them from `@bufbuild/protobuf/wkt`. Everything else the contract names
+		// has to be on disk, or the library serves a contract it cannot describe.
+		if strings.HasPrefix(file, "google/protobuf/") {
+			continue
+		}
+		binding := filepath.Join(bindings, filepath.FromSlash(strings.TrimSuffix(file, ".proto")+"_pb.ts"))
+		if _, err := os.Stat(binding); err != nil {
+			missing, relErr := filepath.Rel(moduleRoot, binding)
+			if relErr != nil {
+				missing = binding
+			}
+			t.Errorf("%s vendors %s but has no bindings for it (%s missing) — regenerate the library", relative, file, missing)
+		}
+	}
+}
+
+// typescriptBindingsRoot resolves where a library's TypeScript bindings live.
+// The language path comes from the manifest; `src/gen` under it is the layout
+// `codefly generate client` writes. Reports false for a library that generates
+// no TypeScript, which has no bindings for this check to look at.
+func typescriptBindingsRoot(libraryDir string, document generatedLibraryDocument) (string, bool) {
+	for _, language := range document.Languages {
+		if language.Name == "typescript" {
+			return filepath.Join(libraryDir, filepath.FromSlash(language.Path), "src", "gen"), true
+		}
+	}
+	return "", false
 }
