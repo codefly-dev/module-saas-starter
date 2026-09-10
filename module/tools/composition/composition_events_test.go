@@ -120,6 +120,37 @@ func TestBuildEventCatalogAcceptsNoPartition(t *testing.T) {
 	}
 }
 
+// A reserved namespace belongs to the module that declared the reservation. It
+// is refused on the publish side already; refusing it on the consume side is
+// what stops a downstream contribution from subscribing itself to a
+// platform-owned stream by declaring it.
+func TestBuildEventCatalogRejectsReservedNamespaceConsume(t *testing.T) {
+	manifest := modulepackage.Manifest{ReservedNamespaces: []string{"saas"}}
+	platform := documentsContribution()
+	platform.Namespace = "saas"
+	platform.Publishes[0].Type = "saas.session.revoked"
+	platform.Consumes = nil
+	platform.BaseOwned = true
+
+	consumer := documentsContribution()
+	consumer.Consumes = []ConsumedEvent{{
+		Type: "saas.session.revoked", Queue: "documents.ingest", Delivery: "unordered",
+	}}
+
+	_, err := buildEventCatalog([]EventsContribution{platform, consumer}, manifest, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "reserved namespace") {
+		t.Fatalf("expected reserved-namespace consume error, got %v", err)
+	}
+
+	// The module that owns the reservation may still consume its own namespace.
+	platform.Consumes = []ConsumedEvent{{
+		Type: "saas.session.revoked", Queue: "documents.ingest", Delivery: "unordered",
+	}}
+	if _, err := buildEventCatalog([]EventsContribution{platform}, manifest, eventsProtoRoot(t), eventCatalog{}); err != nil {
+		t.Fatalf("base-owned contribution must consume its own namespace: %v", err)
+	}
+}
+
 func TestBuildEventCatalogRejectsUnresolvedSchema(t *testing.T) {
 	contribution := documentsContribution()
 	contribution.Publishes[0].Schema = "documents/events/v1/entry.proto#Missing"

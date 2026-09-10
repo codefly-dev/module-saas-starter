@@ -211,6 +211,14 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 			if _, exists := eventDeliverySet[consume.Delivery]; !exists {
 				return eventCatalog{}, fmt.Errorf("consumed event %q has invalid delivery %q", consume.Type, consume.Delivery)
 			}
+			// A reserved namespace is refused to a contribution that does not own
+			// it on the publish side; refusing it here too keeps the runtime
+			// Subscribe gate from being the only thing standing between a declared
+			// consume and a platform-owned stream.
+			consumedNamespace, _, _ := strings.Cut(consume.Type, ".")
+			if !contribution.BaseOwned && isReserved(manifest.ReservedNamespaces, consumedNamespace) {
+				return eventCatalog{}, fmt.Errorf("consumed event %q is in reserved namespace %q", consume.Type, consumedNamespace)
+			}
 			if _, declared := declaredQueues[consume.Queue]; !declared {
 				return eventCatalog{}, fmt.Errorf("consumed event %q names queue %q that namespace %q did not declare", consume.Type, consume.Queue, contribution.Namespace)
 			}

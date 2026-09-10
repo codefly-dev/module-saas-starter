@@ -256,6 +256,21 @@ func TestModuleSubscribeInternalVisibilityDenied(t *testing.T) {
 	requireCode(t, err, codes.PermissionDenied)
 }
 
+// TestModuleSubscribePlatformNamespaceDenied proves the audit spine is not
+// reachable by declaring a queue. Its types are external so an organization's
+// own endpoints may receive them over a webhook it configured; that is the
+// tenant's grant over its own records, and a module principal never inherits it.
+func TestModuleSubscribePlatformNamespaceDenied(t *testing.T) {
+	svc := newEventService(t, &fakeSubStore{}, events.NewFakeTransport(nil, time.Second))
+	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: moduleTenantA}
+
+	_, err := svc.ModuleSubscribe(context.Background(), caller, "saas.session.revoked", "reference.ingest", "unordered")
+	requireCode(t, err, codes.PermissionDenied)
+
+	_, err = svc.ModuleSubscribe(context.Background(), caller, "saas.*", "reference.ingest", "unordered")
+	requireCode(t, err, codes.PermissionDenied)
+}
+
 // TestModuleSubscribeQueueNotGranted proves the queue grant gates Subscribe: a
 // principal may only bind a subscription to a queue it holds.
 func TestModuleSubscribeQueueNotGranted(t *testing.T) {

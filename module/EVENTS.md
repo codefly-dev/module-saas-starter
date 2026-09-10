@@ -265,7 +265,12 @@ type Transport interface {
   a `consumes` entry (admin-consented, like a permission) or at runtime by a
   caller holding `events:subscribe` on the type's namespace. A `visibility:
   internal` type can never be subscribed by a solution principal; only `external`
-  types are eligible for webhook delivery.
+  types are eligible for webhook delivery. `external` is eligibility to leave the
+  platform, not a licence for a module to read the stream: the platform's own
+  `saas.*` namespace — the audit spine, published so an organization's endpoints
+  can receive it — is refused to a module principal outright. That is the tenant's
+  grant over its own records, made through an endpoint it configured, and a module
+  does not inherit it by declaring a queue.
 - **Deliver.** Every delivered job carries `tenant_id`, `boundary_id`, and
   `actor_principal_id`. A consumer that writes must mint its own authority (an
   installation Work Context at lease time) — the event is a trigger, never a
