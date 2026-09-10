@@ -213,7 +213,14 @@ behind the [Transport port](#transport-port).
   on `event.id`.
 - **Replay.** `ReplayEvents(type, tenant, since)` re-fans-out from `domain_events`
   so a consumer that attaches later gets history up to `retention`. It reuses the
-  `replay_job_message` semantics and its MFA gate for operators.
+  `replay_job_message` semantics and its MFA gate for operators. A webhook
+  subscriber that already holds delivery history for an event is **not** sent a
+  second copy: the delivery is deduplicated on (subscription, event), which is
+  what makes a replay safe to run twice, and the relay reports how many were
+  dropped that way. Re-sending to an endpoint that already received one is the
+  `ReplayDelivery` RPC ([WEBHOOKS.md](./WEBHOOKS.md)), which mints a new delivery
+  for the same event id — so replaying a window re-delivers to module queues and
+  to endpoints that had never seen the event, and nothing else.
 - **Webhooks are a subscriber kind.** An outbound webhook is an
   `event_subscriptions` row with `delivery = webhook` and the existing
   [WEBHOOKS.md](./WEBHOOKS.md) dispatcher as its consumer. `visibility: external`

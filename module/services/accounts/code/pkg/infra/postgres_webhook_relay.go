@@ -3,12 +3,15 @@ package infra
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"accounts/pkg/business"
 	"accounts/pkg/events"
 	eventsv1 "accounts/pkg/gen/saas/events/v1"
+	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // PostgresWebhookRelay turns one matching webhook subscription into one durable
@@ -28,7 +31,7 @@ func NewPostgresWebhookRelay(store *PostgresStore) *PostgresWebhookRelay {
 var _ WebhookRelay = (*PostgresWebhookRelay)(nil)
 
 // Deliver writes the pending delivery and its dispatch job on the relay's
-// transaction.
+// transaction, reporting whether an outbound delivery was actually created.
 //
 // The delivery row must be written through the store rather than by raw SQL
 // here, because the store owns the projection's column authority; the relay's
@@ -44,7 +47,7 @@ func (r *PostgresWebhookRelay) Deliver(
 	tx pgx.Tx,
 	e *eventsv1.EventEnvelope,
 	subscription events.Subscription,
-) error {
+) (bool, error) {
 	delivery, body, err := business.NewDomainEventWebhookDelivery(
 		e.GetId(),
 		e.GetType(),
@@ -53,22 +56,55 @@ func (r *PostgresWebhookRelay) Deliver(
 		e.GetData(),
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 	request, err := business.NewOutboundWebhookJobRequest(subscription.OrgID, delivery, body)
 	if err != nil {
-		return err
+		return false, err
+	}
+	// Both writes go inside a savepoint of their own. The endpoint can be deleted
+	// between the scan that resolved this subscription and this insert, and the
+	// resulting foreign-key violation aborts whatever (sub)transaction issued it
+	// — so without a savepoint here, discarding that error in Go would leave the
+	// event's savepoint poisoned and take every other subscriber of the same
+	// event down with it.
+	sp, err := tx.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("webhooks: open delivery savepoint: %w", err)
 	}
 	//nolint:staticcheck // the string key is the shared ctx-tx contract WithOrgTx defines
-	txCtx := context.WithValue(ctx, "tx", tx)
-	if err := r.store.CreateWebhookDelivery(txCtx, delivery); err != nil {
-		// A replay re-fans out an event this endpoint already has history for.
-		// At-least-once means the endpoint was already told, so the duplicate is
-		// dropped here rather than failing the whole fan-out.
-		if errors.Is(err, business.ErrWebhookDeliveryExists) {
-			return nil
+	spCtx := context.WithValue(ctx, "tx", sp)
+	if err := r.deliverOn(spCtx, sp, delivery, request); err != nil {
+		if rbErr := sp.Rollback(ctx); rbErr != nil {
+			return false, fmt.Errorf("webhooks: roll back delivery: %w", rbErr)
 		}
+		// The endpoint was deleted while this event was being fanned out, or it
+		// already has history for this event. Neither is a transport fault and
+		// neither leaves anything to deliver, so the rest of the fan-out proceeds.
+		if errors.Is(err, business.ErrWebhookDeliveryExists) || isForeignKeyViolation(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, sp.Commit(ctx)
+}
+
+func (r *PostgresWebhookRelay) deliverOn(
+	spCtx context.Context,
+	sp pgx.Tx,
+	delivery *business.WebhookDelivery,
+	request *jobsv1.EnqueueJobRequest,
+) error {
+	if err := r.store.CreateWebhookDelivery(spCtx, delivery); err != nil {
 		return err
 	}
-	return enqueueOne(ctx, tx, request)
+	return enqueueOne(spCtx, sp, request)
+}
+
+// isForeignKeyViolation reports whether err is SQLSTATE 23503, which on the
+// delivery insert means the endpoint registration this subscription belonged to
+// is already gone.
+func isForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }

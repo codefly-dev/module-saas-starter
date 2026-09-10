@@ -245,3 +245,104 @@ func TestAuditPublishTakesNoPartitionLock(t *testing.T) {
 	require.Empty(t, partitionKey,
 		"an audit-derived event must not take a per-organization advisory lock on the mutation path")
 }
+
+// TestPostgresRelaySurvivesEndpointDeletedMidFanOut is the race the subscription
+// scan cannot lock away: it reads live subscriptions without a row lock, so an
+// endpoint can be deleted between that read and the delivery insert. The insert
+// then violates webhook_deliveries' foreign key, and a foreign-key violation
+// aborts whatever subtransaction issued it — so the delivery must be written on
+// a savepoint of its own, or the event's other subscribers are dragged down with
+// an endpoint that no longer exists.
+func TestPostgresRelaySurvivesEndpointDeletedMidFanOut(t *testing.T) {
+	transport, pool := newWebhookRelayTransport(t)
+	orgID := seedOrg(t, seedUser(t))
+	doomed := seedWebhookEndpoint(t, orgID, true, externalEventType)
+	survivor := seedWebhookEndpoint(t, orgID, true, externalEventType)
+
+	// Publish inside a caller transaction so the event is committed but not yet
+	// relayed, then delete one endpoint before draining. The subscription row
+	// cascades away with it, reproducing the state the scan-then-insert race
+	// lands in.
+	event := &events.EventEnvelope{
+		Id: uuid.NewString(), Type: externalEventType, Source: "saas.accounts",
+		Specversion: "1.0", Datacontenttype: "application/json",
+		Time: timestamppb.New(time.Now().UTC()), TenantId: orgID, Data: []byte(`{}`),
+	}
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return transport.Publish(ctx, ctx.Value("tx"), event) //nolint:staticcheck // shared "tx" key
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.DeleteWebhookSubscription(ctx, doomed)
+	}))
+
+	relayed, err := transport.RelayOnce(testCtx)
+	require.NoError(t, err, "a deleted endpoint must not fail the relay")
+	require.GreaterOrEqual(t, relayed, 1)
+
+	require.Len(t, webhookDeliveries(t, pool, survivor), 1,
+		"the surviving endpoint still receives the event")
+	var published bool
+	require.NoError(t, pool.QueryRow(testCtx,
+		`SELECT published_at IS NOT NULL FROM public.domain_events WHERE id = $1::uuid`,
+		event.GetId()).Scan(&published))
+	require.True(t, published, "the event is fanned out, not parked behind a deleted endpoint")
+}
+
+// TestPostgresRelayDoesNotRedeliverToAnEndpointWithHistory pins the dedupe that
+// makes ReplayEvents safe to run twice: a second fan-out of the same event
+// creates no second delivery, and the event still completes.
+func TestPostgresRelayDoesNotRedeliverToAnEndpointWithHistory(t *testing.T) {
+	transport, pool := newWebhookRelayTransport(t)
+	orgID := seedOrg(t, seedUser(t))
+	endpointID := seedWebhookEndpoint(t, orgID, true, externalEventType)
+
+	event := publishExternal(t, transport, externalEventType, orgID, []byte(`{}`))
+	require.Len(t, webhookDeliveries(t, pool, endpointID), 1)
+
+	replayed, err := transport.Replay(testCtx, events.ReplaySelector{
+		Type: externalEventType, TenantID: orgID,
+	})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, replayed, 1, "replay walks the event")
+	require.Len(t, webhookDeliveries(t, pool, endpointID), 1,
+		"an endpoint that already has history for this event gets no second delivery")
+	require.NotEmpty(t, event.GetId())
+}
+
+// TestWebhookSubscriptionQueueIsPinnedToTheDispatcher guards the column against
+// lying. The relay does not route a webhook row by its queue — the dispatcher
+// owns that — so a row naming any other queue would display a route it never
+// takes.
+func TestWebhookSubscriptionQueueIsPinnedToTheDispatcher(t *testing.T) {
+	orgID := seedOrg(t, seedUser(t))
+	endpointID := seedWebhookEndpoint(t, orgID, true, externalEventType)
+
+	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		_, e := tx.Exec(ctx, `
+			INSERT INTO public.event_subscriptions
+				(subscriber_principal_id, type_pattern, queue, delivery, org_id, webhook_subscription_id)
+			VALUES (NULL, $1, 'not.the.dispatcher', 'webhook', $2::uuid, $3::uuid)`,
+			"saas.org.created", orgID, endpointID)
+		return e
+	})
+	require.Error(t, err, "a webhook subscription may not name a queue the dispatcher does not serve")
+}
+
+// TestRequireWebhookRelayRefusesATransportWithNoDispatcher is the startup guard.
+// A transport that can resolve webhook subscriptions but cannot deliver to them
+// fans out to module queues and silently never to endpoints; the assertion turns
+// that mis-wiring into a boot failure instead of invisible loss.
+func TestRequireWebhookRelayRefusesATransportWithNoDispatcher(t *testing.T) {
+	pool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	store := infra.NewPostgresJobStore(pool)
+
+	bare := infra.NewPostgresEventTransport(store, pool, "relay-bare-"+uuid.NewString(), time.Second)
+	require.Error(t, bare.RequireWebhookRelay())
+
+	wired := infra.NewPostgresEventTransport(store, pool, "relay-wired-"+uuid.NewString(), time.Second,
+		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(testStore)))
+	require.NoError(t, wired.RequireWebhookRelay())
+}

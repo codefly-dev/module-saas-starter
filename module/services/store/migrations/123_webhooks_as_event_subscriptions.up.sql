@@ -80,7 +80,11 @@ ALTER TABLE public.event_subscriptions
             (delivery = 'webhook'
                 AND webhook_subscription_id IS NOT NULL
                 AND org_id IS NOT NULL
-                AND subscriber_principal_id IS NULL)
+                AND subscriber_principal_id IS NULL
+                -- The relay does not route a webhook row by this column: the
+                -- dispatcher owns its queue. Pinning it to that queue keeps the
+                -- column from displaying a route it does not take.
+                AND queue = 'webhooks')
             OR
             (delivery <> 'webhook'
                 AND webhook_subscription_id IS NULL
@@ -92,12 +96,32 @@ CREATE UNIQUE INDEX idx_event_subscriptions_webhook_active
     ON public.event_subscriptions (webhook_subscription_id, type_pattern)
     WHERE revoked_at IS NULL AND webhook_subscription_id IS NOT NULL;
 
+-- The relay resolves subscriptions by the types in the batch it is fanning out.
+-- An exact pattern is found through idx_event_subscriptions_live, but a wildcard
+-- cannot be matched by equality and its predicate (a leading-% LIKE) is not
+-- sargable, so without this the disjunction degrades to a scan of every live
+-- subscription on every batch — and converging webhooks onto this relation makes
+-- that one row per endpoint and event name across every tenant. A partial index
+-- whose predicate is exactly that branch lets the planner combine the two.
+CREATE INDEX idx_event_subscriptions_wildcard
+    ON public.event_subscriptions (type_pattern)
+    WHERE revoked_at IS NULL AND type_pattern LIKE '%.*';
+
 -- The relay resolves the endpoint and writes delivery history inside its own
 -- fan-out transaction, so it needs the same reads the dispatcher has plus the
 -- insert the audit emitter used to perform. Attempt outcomes stay with
 -- app_webhook_worker: the relay creates a delivery, it never reports on one.
 GRANT SELECT ON public.webhook_subscriptions TO app_job_worker;
 GRANT SELECT, INSERT ON public.webhook_deliveries TO app_job_worker;
+
+-- Note for anyone adding a tenant-facing read of domain_events: from this
+-- migration on, data carries the redacted payload of every audit event, because
+-- an audit record publishes one so its subscribers can be told. The relation
+-- keeps its 119 grants — app_tenant SELECT confined by the domain_events_tenant
+-- policy — and no statement in the tree reads it that way today; the relay,
+-- replay, and the operations surface all run on app_job_worker. A future
+-- tenant-facing read would therefore be exposing the compliance trail, which
+-- audit_events only ever exposes through an authorized RPC.
 
 INSERT INTO public.event_subscriptions (
     subscriber_principal_id, type_pattern, queue, delivery, org_id, webhook_subscription_id

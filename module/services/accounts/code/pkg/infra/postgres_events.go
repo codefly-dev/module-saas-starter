@@ -95,13 +95,29 @@ type PostgresEventTransport struct {
 // knowing only about envelopes and subscriptions, and a deployment with no
 // webhook dispatcher wired simply relays nothing to endpoints.
 type WebhookRelay interface {
-	Deliver(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, subscription events.Subscription) error
+	// Deliver reports whether an outbound delivery was created. False with a nil
+	// error means there was nothing to deliver — the endpoint already has history
+	// for this event, or its registration is gone.
+	Deliver(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, subscription events.Subscription) (bool, error)
 }
 
 // WithWebhookRelay wires the outbound dispatcher into the relay, which is what
 // makes a delivery = webhook subscription deliver.
 func WithWebhookRelay(relay WebhookRelay) func(*PostgresEventTransport) {
 	return func(p *PostgresEventTransport) { p.webhooks = relay }
+}
+
+// RequireWebhookRelay fails when no outbound dispatcher is wired. A process that
+// serves webhook registrations must be able to deliver to them, and the relay is
+// the only thing that does; without this, dropping WithWebhookRelay would surface
+// far downstream as events that fan out to module queues and never to endpoints.
+// Startup asserts it so the mis-wiring cannot reach a fan-out at all. Tests that
+// publish no external type never need a dispatcher and so never call it.
+func (p *PostgresEventTransport) RequireWebhookRelay() error {
+	if p.webhooks == nil {
+		return errors.New("events: no outbound webhook dispatcher is wired; webhook subscriptions would never be delivered")
+	}
+	return nil
 }
 
 func NewPostgresEventTransport(
@@ -445,13 +461,19 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 		}
 		return nil
 	}
+	skipped := 0
 	for _, subscription := range subscriptions {
 		if !events.Matches(subscription.TypePattern, e.GetType()) {
 			continue
 		}
 		if subscription.Delivery == events.DeliveryWebhook {
-			if err := p.relayToWebhook(ctx, tx, e, subscription); err != nil {
+			delivered, err := p.relayToWebhook(ctx, tx, e, subscription)
+			if err != nil {
 				return err
+			}
+			if !delivered && subscription.OrgID == e.GetTenantId() &&
+				eventcatalog.IsExternalPublished(e.GetType()) {
+				skipped++
 			}
 			continue
 		}
@@ -459,6 +481,16 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 		if err := enqueueOne(ctx, tx, request); err != nil {
 			return mapEnqueueError(err)
 		}
+	}
+	// A replay re-fans out events endpoints already hold history for, and the
+	// dedupe drops every one of them. Reporting the count is what keeps a replay
+	// from looking like it re-delivered to endpoints when it delivered to none:
+	// ReplayDelivery is the RPC that actually re-sends one.
+	if skipped > 0 {
+		wool.Get(ctx).In("events.relay").Info("webhook deliveries skipped as already present",
+			wool.Field("event_id", e.GetId()),
+			wool.Field("event_type", e.GetType()),
+			wool.Field("skipped", skipped))
 	}
 	if _, err := tx.Exec(ctx, relayMarkPublishedSQL, e.GetId()); err != nil {
 		return fmt.Errorf("events: mark published: %w", err)
@@ -484,21 +516,21 @@ func (p *PostgresEventTransport) relayToWebhook(
 	tx pgx.Tx,
 	e *eventsv1.EventEnvelope,
 	subscription events.Subscription,
-) error {
+) (bool, error) {
 	if !eventcatalog.IsExternalPublished(e.GetType()) {
-		return nil
-	}
-	// A matching webhook subscription with no dispatcher wired is a
-	// misconfiguration, not an empty result: returning nil here would mark the
-	// event published and discard the delivery permanently, with nothing to
-	// distinguish it from an event nobody subscribed to. Failing charges the
-	// event a relay attempt and leaves it unpublished, so the delivery survives
-	// until the process is wired correctly.
-	if p.webhooks == nil {
-		return errors.New("events: webhook subscription matched but no dispatcher is wired")
+		return false, nil
 	}
 	if subscription.OrgID == "" || subscription.OrgID != e.GetTenantId() {
-		return nil
+		return false, nil
+	}
+	// Only a subscription past both gates owes a delivery, so only here is a
+	// missing dispatcher a misconfiguration rather than an empty result — before
+	// the tenant gate it would also fire for another tenant's endpoint. Returning
+	// nil would mark the event published and discard the delivery with nothing to
+	// distinguish it from an event nobody subscribed to. Production cannot reach
+	// it: work.go asserts the dispatcher at startup.
+	if p.webhooks == nil {
+		return false, errors.New("events: webhook subscription matched but no dispatcher is wired")
 	}
 	return p.webhooks.Deliver(ctx, tx, e, subscription)
 }

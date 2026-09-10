@@ -101,6 +101,12 @@ Verification order:
 Manual replay creates a new delivery ID but preserves the event ID. Consumers
 that already completed that event should return `2xx` without applying it again.
 
+`ReplayDelivery` is the only path that re-sends an event an endpoint already
+received. An operator replaying a window of domain events
+([EVENTS.md](./EVENTS.md)) reaches module queues and endpoints that never saw the
+event; an endpoint that already holds history for it is deduplicated and skipped,
+because the delivery is keyed on (subscription, event).
+
 ## Delivery lifecycle
 
 Audit event insertion and the domain event that carries it commit in one

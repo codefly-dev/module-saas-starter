@@ -9,6 +9,7 @@ DELETE FROM public.event_subscriptions WHERE delivery = 'webhook';
 REVOKE SELECT, INSERT ON public.webhook_deliveries FROM app_job_worker;
 REVOKE SELECT ON public.webhook_subscriptions FROM app_job_worker;
 
+DROP INDEX IF EXISTS public.idx_event_subscriptions_wildcard;
 DROP INDEX IF EXISTS public.idx_event_subscriptions_webhook_active;
 
 ALTER TABLE public.event_subscriptions

@@ -207,6 +207,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	if err := service.VerifyEventWiring(ctx); err != nil {
 		return nil, err
 	}
+	// The symmetric guard for the other half of fan-out: a transport with no
+	// outbound dispatcher relays to module queues and silently never to webhook
+	// endpoints, which is the same invisible loss one layer over.
+	if err := eventTransport.RequireWebhookRelay(); err != nil {
+		return nil, err
+	}
 
 	eventRegistry, err := analytics.DefaultRegistry()
 	if err != nil {
