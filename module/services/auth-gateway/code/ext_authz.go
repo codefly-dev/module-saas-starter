@@ -43,31 +43,31 @@ type accessClaims struct {
 }
 
 // actorClaim is the RFC 8693 `act` on-behalf-of chain (see pkg/auth Actor). The
-// sidecar re-emits it verbatim as the x-act header so a downstream service that
+// ext_authz check re-emits it verbatim as the x-act header so a downstream service that
 // authorizes from forwarded headers still sees who is acting for the user.
 type actorClaim struct {
 	Subject string      `json:"sub"`
 	Act     *actorClaim `json:"act,omitempty"`
 }
 
-// Sidecar implements Envoy ext_authz with two auth paths:
+// ExtAuthz implements Envoy ext_authz with two auth paths:
 //
 //  1. Our own Ed25519-signed access token -> local crypto verify, no network.
 //  2. API key (cfly_sk_ prefix) -> backend RPC.
 //
 // Auth requirements (public/required/mfa_pending) are determined by the
-// gateway from the route config — the sidecar no longer maintains its own
+// gateway from the route config — the ext_authz check no longer maintains its own
 // public-path allowlist.
 //
-// On success, the sidecar forwards canonical internal identity headers:
+// On success, the ext_authz check forwards canonical internal identity headers:
 //
 //	x-user-id, x-org-id, x-org-role, x-platform-role, x-session-id,
 //	x-scoped-roles (JSON scope->roles, only when the caller has scoped grants),
 //	x-acting-as-user-id (only during impersonation)
 //
 // Provider-specific values (WorkOS sub, WorkOS org id, tokens) NEVER leave
-// the sidecar — downstream services see only canonical UUIDs.
-type Sidecar struct {
+// the ext_authz check — downstream services see only canonical UUIDs.
+type ExtAuthz struct {
 	apiKey apigen.APIKeyServiceClient
 	// backendConn is the internal-listener connection used for accounts RPCs
 	// that have no vendored client stub, invoked by full method name.
@@ -86,7 +86,7 @@ type Sidecar struct {
 	previousInternalToken string
 	gatewayToken          string
 	// revoker enforces access-token revocation on the gateway hot path — the
-	// path where accounts trusts the sidecar-stamped identity headers and so
+	// path where accounts trusts the ext_authz-stamped identity headers and so
 	// never runs its own VerifyAccess revocation check. Always non-nil.
 	revoker revoker
 	// revocationFailOpen selects the behaviour when the revocation store errors:
@@ -97,7 +97,7 @@ type Sidecar struct {
 // acceptsInternalToken reports whether candidate is the current or a
 // still-valid previous internal credential, compared without a timing signal.
 // An unset (empty) credential never matches.
-func (s *Sidecar) acceptsInternalToken(candidate string) bool {
+func (s *ExtAuthz) acceptsInternalToken(candidate string) bool {
 	if candidate == "" {
 		return false
 	}
@@ -112,11 +112,11 @@ func constantTimeMatch(candidate, expected string) bool {
 	return subtle.ConstantTimeCompare([]byte(candidate), []byte(expected)) == 1
 }
 
-// NewSidecar constructs a Sidecar. keys resolves the Ed25519 public keys the
+// NewExtAuthz constructs an ExtAuthz. keys resolves the Ed25519 public keys the
 // backend minter signs access tokens with; issuer/audience must match the
 // backend minter config.
-func NewSidecar(backendConn *grpc.ClientConn, keys accessKeys) *Sidecar {
-	return &Sidecar{
+func NewExtAuthz(backendConn *grpc.ClientConn, keys accessKeys) *ExtAuthz {
+	return &ExtAuthz{
 		apiKey:                apigen.NewAPIKeyServiceClient(backendConn),
 		backendConn:           backendConn,
 		keys:                  keys,
@@ -132,17 +132,17 @@ func NewSidecar(backendConn *grpc.ClientConn, keys accessKeys) *Sidecar {
 
 // SetRevoker wires the access-token revocation list consulted by checkJWT.
 // main wires the Redis-backed revoker once the cache connection is resolved;
-// left unset the sidecar uses noopRevoker (revocation disabled, dev parity).
-func (s *Sidecar) SetRevoker(r revoker) {
+// left unset the ext_authz check uses noopRevoker (revocation disabled, dev parity).
+func (s *ExtAuthz) SetRevoker(r revoker) {
 	if r != nil {
 		s.revoker = r
 	}
 }
 
 // Check is the Envoy ext_authz hot path.
-// The gateway calls this after route matching. The sidecar validates
+// The gateway calls this after route matching. The ext_authz check validates
 // credentials and returns identity headers on success.
-func (s *Sidecar) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
+func (s *ExtAuthz) Check(ctx context.Context, req *authv3.CheckRequest) (*authv3.CheckResponse, error) {
 	httpReq := req.GetAttributes().GetRequest().GetHttp()
 	headers := httpReq.GetHeaders()
 
@@ -186,7 +186,7 @@ const tokenClockSkewLeeway = 60 * time.Second
 
 // checkJWT runs full alg-locked Ed25519 validation plus iss/aud/exp, consults
 // the revocation list, then projects the claims onto forwarded headers.
-func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*authv3.CheckResponse, error) {
+func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*authv3.CheckResponse, error) {
 	if s.keys == nil {
 		recordJWTRejection(ctx, jwtRejectionKeysUnavailable)
 		return deny(503, "JWT validation not configured"), nil
@@ -235,7 +235,7 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*auth
 	// Revocation is checked AFTER signature/claim validation so a forged or
 	// expired token never reaches the store. This closes the gateway-path gap:
 	// accounts only runs its own revocation check on the direct fallback path,
-	// trusting the sidecar-stamped identity headers here.
+	// trusting the ext_authz-stamped identity headers here.
 	if claims.ID != "" {
 		revoked, err := s.revoker.Revoked(ctx, claims.ID)
 		switch {
@@ -328,7 +328,7 @@ func (s *Sidecar) checkJWT(ctx context.Context, tokenString, path string) (*auth
 // checkAPIKey delegates to the backend for api-key validation.
 // We send the plaintext key over TLS; the backend hashes (Vault transit HMAC)
 // and verifies, and we just thread the result.
-func (s *Sidecar) checkAPIKey(ctx context.Context, key string) (*authv3.CheckResponse, error) {
+func (s *ExtAuthz) checkAPIKey(ctx context.Context, key string) (*authv3.CheckResponse, error) {
 	if s.gatewayToken == "" {
 		return deny(503, "gateway identity signing is not configured"), nil
 	}
@@ -352,7 +352,7 @@ func (s *Sidecar) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRes
 
 // --- envoy helpers ---
 
-func (s *Sidecar) allow(headers []*corev3.HeaderValueOption) *authv3.CheckResponse {
+func (s *ExtAuthz) allow(headers []*corev3.HeaderValueOption) *authv3.CheckResponse {
 	// Return every canonical identity header, including empty values, so Envoy
 	// replaces any caller-supplied value even when the authenticated principal
 	// has no value for that field.
@@ -369,7 +369,7 @@ func (s *Sidecar) allow(headers []*corev3.HeaderValueOption) *authv3.CheckRespon
 	}
 	// Every untrusted trust header we did NOT just restamp must be stripped
 	// from the upstream request, so a client-spoofed value cannot survive an
-	// allow decision. This is the sidecar half of the header-lockstep
+	// allow decision. This is the ext_authz check half of the header-lockstep
 	// invariant: the strip set is a superset of the stamped set.
 	stamped := make(map[string]struct{}, len(headers))
 	for _, header := range headers {
@@ -417,7 +417,7 @@ func hdr(key, value string) *corev3.HeaderValueOption {
 	}
 }
 
-// hasLoadedAccessTokenKeys reports whether the sidecar has ever acquired an
+// hasLoadedAccessTokenKeys reports whether the ext_authz check has ever acquired an
 // access-token key set. The readiness probe reads it; it never fetches, so a
 // probe cannot become a way to drive JWKS traffic.
 //
@@ -427,6 +427,6 @@ func hdr(key, value string) *corev3.HeaderValueOption {
 // token (the billing and email webhooks, /assets, /.well-known). Withdrawing
 // the whole listener because the key set aged would take those down too, which
 // is a larger outage than the one it reports.
-func (s *Sidecar) hasLoadedAccessTokenKeys() bool {
+func (s *ExtAuthz) hasLoadedAccessTokenKeys() bool {
 	return s != nil && s.keys != nil && s.keys.loaded()
 }

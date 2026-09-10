@@ -251,7 +251,7 @@ const (
 const authenticationAttemptLimitPerMinute = 10
 
 // Middleware returns an http.Handler that enforces rate limiting. It reads the
-// X-Org-Id header (set by the sidecar after auth) to determine the rate limit
+// X-Org-Id header (set by the ext_authz check after auth) to determine the rate limit
 // key. If no org ID is present, it falls back to the client IP.
 //
 // On 429 Too Many Requests it sets standard rate limit headers:

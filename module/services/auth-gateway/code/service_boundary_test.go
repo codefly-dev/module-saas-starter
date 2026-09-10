@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Auth-sidecar is independently buildable and may depend on Accounts only
+// Auth-gateway is independently buildable and may depend on Accounts only
 // through the generated Codefly dependency client. A local Go-module replace
 // makes native workspace tests pass while breaking isolated/container builds.
 func TestAccountsDependencyUsesGeneratedClientOnly(t *testing.T) {

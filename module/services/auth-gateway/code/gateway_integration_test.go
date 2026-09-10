@@ -6,11 +6,11 @@ package main
 // Full-stack gateway integration test.
 //
 // Brings up real store (postgres), vault, and api via codefly
-// WithDependencies (see TestMain in sidecar_integration_test.go),
-// constructs the sidecar + HTTP gateway in the test process, then
+// WithDependencies (see TestMain in ext_authz_integration_test.go),
+// constructs the ext_authz check + HTTP gateway in the test process, then
 // sends real HTTP requests through the gateway chain:
 //
-//	curl -> Gateway.ServeHTTP -> Sidecar.Check -> httputil.ReverseProxy -> api REST
+//	curl -> Gateway.ServeHTTP -> ExtAuthz.Check -> httputil.ReverseProxy -> api REST
 //
 // Covers the exact hot path a production Envoy deployment would
 // exercise on every request, minus the Envoy container itself.
@@ -33,7 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// newTestGateway wires the test sidecar into a Gateway pointed at the
+// newTestGateway wires the test ext_authz check into a Gateway pointed at the
 // real api REST endpoint resolved through the codefly SDK, then binds
 // the gateway to an ephemeral localhost port.
 func newTestGateway(t *testing.T) (baseURL string, teardown func()) {
@@ -53,7 +53,7 @@ func newTestGateway(t *testing.T) (baseURL string, teardown func()) {
 		"accounts": apiURL,
 	}
 
-	gateway := NewGateway(testSidecar, matcher, upstreams, nil)
+	gateway := NewGateway(testExtAuthz, matcher, upstreams, nil)
 
 	// Bind to :0 so we get an ephemeral port that can't clash with
 	// anything else the daemon allocated.
@@ -175,7 +175,7 @@ func TestIntegration_Gateway_AuthenticatedRequest_Allowed(t *testing.T) {
 }
 
 // ============================================================================
-// Sidecar strips forged identity headers when caller has no token
+// ExtAuthz strips forged identity headers when caller has no token
 // ============================================================================
 
 func TestIntegration_Gateway_StripsForgedIdentityHeaders(t *testing.T) {

@@ -51,7 +51,7 @@ var allowedPerimeterConfigDeps = map[string]bool{
 	"security":      true,
 }
 
-// TestPerimeter_WorkspaceConfigExcludesIdentity asserts the sidecar's
+// TestPerimeter_WorkspaceConfigExcludesIdentity asserts the ext_authz check's
 // workspace-configuration-dependencies stay within the allowlist of
 // external-IdP-free config groups, and in particular never pull in `identity` —
 // the group that carries WorkOS/authkit credentials. internal-auth (the Ed25519
@@ -81,15 +81,15 @@ func TestPerimeter_WorkspaceConfigExcludesIdentity(t *testing.T) {
 // TestPerimeter_VerifierIsLocalOwnTokenOnly asserts the request-path token
 // verifier is anchored on our own issuer + a local Ed25519 public key, and
 // that verification needs no network — a valid own-token is accepted with a
-// sidecar that has no backend connection, and a token minted by a WorkOS-style
+// ext_authz check that has no backend connection, and a token minted by a WorkOS-style
 // issuer is rejected.
 func TestPerimeter_VerifierIsLocalOwnTokenOnly(t *testing.T) {
 	t.Parallel()
 
-	s, priv := newTestSidecar(t)
-	// A sidecar constructed via the real constructor is anchored on our own
+	s, priv := newTestExtAuthz(t)
+	// An ext_authz check constructed via the real constructor is anchored on our own
 	// issuer/audience — not a provider's.
-	real := NewSidecar(nil, s.keys)
+	real := NewExtAuthz(nil, s.keys)
 	require.Equal(t, "saas-starter", real.issuer)
 	require.Equal(t, "saas-starter", real.audience)
 
@@ -128,9 +128,9 @@ func fileImports(t *testing.T, path string) []string {
 }
 
 // httpAllowedPerimeterFiles is the allowlist of package-main source files
-// permitted to import net/http. The sidecar hosts an HTTP gateway plus its
+// permitted to import net/http. The auth-gateway hosts an HTTP gateway plus its
 // rate-limit and telemetry surfaces, which legitimately speak HTTP. The request
-// verifier — sidecar.go and any NEW same-package helper checkJWT reaches — is
+// verifier — ext_authz.go and any NEW same-package helper checkJWT reaches — is
 // deliberately absent: it verifies own tokens with local Ed25519 crypto and its
 // only permitted network call is the api-key backend gRPC. Adding a file here
 // forces a human to justify a new HTTP surface in the perimeter and confirm it
@@ -140,14 +140,14 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	"gateway_solutions.go": true,
 	// gateway_modules.go proxies runtime-registered composed-module REST
 	// upstreams. It runs the same ext_authz Check as any protected route and
-	// reaches no external IdP — the sidecar remains the token authority.
+	// reaches no external IdP — the ext_authz check remains the token authority.
 	"gateway_modules.go":   true,
 	"main.go":              true,
 	"ratelimit.go":         true,
 	"telemetry_metrics.go": true,
 	// work_context.go and access_keys.go verify against the cluster's own
 	// published key set, never an external IdP: both read the same accounts
-	// JWKS the sidecar has always loaded, through jwks_cache.go, whose origin
+	// JWKS the ext_authz check has always loaded, through jwks_cache.go, whose origin
 	// comes from Codefly service discovery and never from a presented token.
 	"work_context.go": true,
 	"access_keys.go":  true,
@@ -157,7 +157,7 @@ var httpAllowedPerimeterFiles = map[string]bool{
 // TestPerimeter_NoExternalIdPImports guards ask #2 of issue #313 structurally.
 //
 // net/http scan: every package-main production file EXCEPT the allowlisted HTTP
-// surfaces must not import net/http. Scoping to sidecar.go alone would miss the
+// surfaces must not import net/http. Scoping to ext_authz.go alone would miss the
 // real regression this closes: a JWKS/HTTP key-fetch added in a NEW file (e.g. a
 // jwks.go that pulls the verification key from an external IdP endpoint) reached
 // from checkJWT — such a file leaves issuer and emitted headers unchanged, so no
@@ -236,7 +236,7 @@ var wantEmittedHeaders = []string{
 func TestPerimeter_SuccessPathEmitsCanonicalHeadersOnly(t *testing.T) {
 	t.Parallel()
 
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	claims := validClaims(time.Now())

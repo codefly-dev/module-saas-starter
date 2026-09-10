@@ -84,7 +84,7 @@ func bearer(token string) map[string]string {
 // ============================================================================
 
 func TestUnit_RevokedJWT_Denied(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	s.revoker = &fakeRevoker{revoked: map[string]bool{c.ID: true}}
 	token := signClaims(t, priv, c)
@@ -96,7 +96,7 @@ func TestUnit_RevokedJWT_Denied(t *testing.T) {
 }
 
 func TestUnit_NotRevokedJWT_Allowed(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	s.revoker = &fakeRevoker{revoked: map[string]bool{"some-other-jti": true}}
 	token := signClaims(t, priv, c)
@@ -118,7 +118,7 @@ func TestUnit_Revocation_GatewayPath_LogoutThenReuseRejected(t *testing.T) {
 		"/customers.AuthService/Logout",
 	} {
 		t.Run(logoutPath, func(t *testing.T) {
-			s, priv := newTestSidecar(t)
+			s, priv := newTestExtAuthz(t)
 			c := validClaims(time.Now())
 			token := signClaims(t, priv, c)
 
@@ -146,7 +146,7 @@ func TestUnit_Revocation_GatewayPath_LogoutThenReuseRejected(t *testing.T) {
 // A non-logout request leaves the cache intact — the replay is served from the
 // documented ≤TTL window, not a store round-trip per request.
 func TestUnit_Revocation_NonLogoutPathKeepsCache(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	token := signClaims(t, priv, c)
 
@@ -169,7 +169,7 @@ func TestUnit_Revocation_NonLogoutPathKeepsCache(t *testing.T) {
 // ============================================================================
 
 func TestUnit_Revocation_StoreError_FailClosedByDefault(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	s.revocationFailOpen = false
 	s.revoker = &fakeRevoker{err: errors.New("redis unreachable")}
 	token := signClaims(t, priv, validClaims(time.Now()))
@@ -181,7 +181,7 @@ func TestUnit_Revocation_StoreError_FailClosedByDefault(t *testing.T) {
 }
 
 func TestUnit_Revocation_StoreError_FailOpenWhenConfigured(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	s.revocationFailOpen = true
 	s.revoker = &fakeRevoker{err: errors.New("redis unreachable")}
 	token := signClaims(t, priv, validClaims(time.Now()))
@@ -195,7 +195,7 @@ func TestUnit_Revocation_StoreError_FailOpenWhenConfigured(t *testing.T) {
 // and must still pass once signature/claims are valid — the revoker is never
 // consulted on either path.
 func TestUnit_Revocation_NoJTI_Allowed(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	s.revoker = &fakeRevoker{err: errors.New("must not be called")}
 	c := validClaims(time.Now())
 	c.ID = ""
@@ -211,7 +211,7 @@ func TestUnit_Revocation_NoJTI_Allowed(t *testing.T) {
 // jti, but its `sid` is marked. checkJWT must deny on the session marker alone,
 // covering the gateway path where the admin never held the token.
 func TestUnit_SessionRevokedJWT_Denied(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	s.revoker = &fakeRevoker{sessionRevoked: map[string]bool{c.SessionID: true}}
 	token := signClaims(t, priv, c)
@@ -226,7 +226,7 @@ func TestUnit_SessionRevokedJWT_Denied(t *testing.T) {
 // still be accepted — the bare literal WithLeeway(60) was 60 NANOSECONDS and
 // would reject it, spuriously 401-ing clock-skewed tokens near expiry.
 func TestUnit_ClockSkewLeeway_AcceptsRecentlyExpiredWithinWindow(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-30 * time.Second))
 	s.revoker = &fakeRevoker{}
@@ -240,7 +240,7 @@ func TestUnit_ClockSkewLeeway_AcceptsRecentlyExpiredWithinWindow(t *testing.T) {
 // The revocation marker outlives the leeway window (accounts writes exp+leeway),
 // so a token revoked while still inside [exp, exp+60s] is denied, not admitted.
 func TestUnit_ClockSkewLeeway_RevokedWithinWindowStillDenied(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-30 * time.Second))
 	s.revoker = &fakeRevoker{revoked: map[string]bool{c.ID: true}}
@@ -255,7 +255,7 @@ func TestUnit_ClockSkewLeeway_RevokedWithinWindowStillDenied(t *testing.T) {
 // The session-kill failure mode matches the jti path: a store error denies in
 // strict mode rather than admitting a possibly-killed session.
 func TestUnit_SessionRevocation_StoreError_FailClosedByDefault(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	s.revocationFailOpen = false
 	// jti path clean, session path errors — isolates the session check's stance.
 	store := newFakeStore()

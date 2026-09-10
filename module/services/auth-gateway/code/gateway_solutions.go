@@ -29,7 +29,7 @@ import (
 //
 // The store is process-local, exactly like the frontend's solution registry.
 // For a single dev/runtime instance that is sufficient; with more than one
-// sidecar replica a registration lands on one replica only, so proxy requests
+// auth-gateway replica a registration lands on one replica only, so proxy requests
 // load-balanced to the others 502 until the component re-registers there. A
 // shared store (Postgres/redis), coordinated with the frontend registry, is the
 // multi-replica fix and is tracked as the same follow-up.
@@ -144,7 +144,7 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// Same identity discipline as every protected route: drop caller-supplied
 	// identity, run ext_authz, and require a valid credential.
 	stripAllIdentityHeaders(r)
-	checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "auth check failed")
 		return true
@@ -236,7 +236,7 @@ func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request)
 	// edge caller cannot register an attacker-controlled upstream and harvest
 	// forwarded bearers. acceptsInternalToken fails closed on an empty/unset
 	// credential.
-	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}

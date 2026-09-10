@@ -4,7 +4,7 @@ package main
 //
 // The browser talks only to the frontend origin. Next.js forwards exact API
 // routes here and authenticates the observed browser origin with Codefly's
-// internal service token. In production, Envoy may also use the sidecar's gRPC
+// internal service token. In production, Envoy may also use the ext_authz check's gRPC
 // ext_authz endpoint.
 //
 // Routing is WHITELIST-ONLY: backend endpoints come from generated and
@@ -32,11 +32,11 @@ import (
 )
 
 // Gateway is an HTTP reverse proxy that delegates auth decisions to a
-// Sidecar (in-process) and forwards allowed requests to upstream services.
+// ExtAuthz (in-process) and forwards allowed requests to upstream services.
 // Route matching is driven entirely by the static RouteMatcher — no prefix
 // matching, no implicit exposure.
 type Gateway struct {
-	sidecar           *Sidecar
+	authz             *ExtAuthz
 	matcher           *RouteMatcher
 	upstreams         map[string]*url.URL // service name → upstream URL
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
@@ -55,9 +55,9 @@ type Gateway struct {
 // NewGateway constructs a gateway with explicit route matching.
 // upstreams maps service names (from routes.codefly.yaml) to their URLs.
 // rateLimiter may be nil to disable rate limiting.
-func NewGateway(sidecar *Sidecar, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
+func NewGateway(authz *ExtAuthz, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
 	g := &Gateway{
-		sidecar:           sidecar,
+		authz:             authz,
 		matcher:           matcher,
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
@@ -86,15 +86,15 @@ func (g *Gateway) healthHandler(w http.ResponseWriter, _ *http.Request) {
 	_, _ = io.WriteString(w, `{"status":"ok"}`)
 }
 
-// readyHandler returns 200 when the sidecar is ready to serve traffic.
+// readyHandler returns 200 when the ext_authz check is ready to serve traffic.
 // Every service referenced by the exact route catalog must be configured and
 // reachable; a partial deployment must not receive traffic.
 func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if g.sidecar == nil {
+	if g.authz == nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_, _ = io.WriteString(w, `{"status":"not ready","reason":"sidecar not initialized"}`)
+		_, _ = io.WriteString(w, `{"status":"not ready","reason":"ext_authz not initialized"}`)
 		return
 	}
 
@@ -132,8 +132,8 @@ func (g *Gateway) readyHandler(w http.ResponseWriter, _ *http.Request) {
 	// on its own once the published key set loads. Checked after the upstreams
 	// because the key set is published by one of them — an unreachable accounts
 	// is the more actionable reason. Staleness deliberately does not fail this
-	// probe (see Sidecar.hasLoadedAccessTokenKeys).
-	if !g.sidecar.hasLoadedAccessTokenKeys() {
+	// probe (see ExtAuthz.hasLoadedAccessTokenKeys).
+	if !g.authz.hasLoadedAccessTokenKeys() {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = io.WriteString(w, `{"status":"not ready","reason":"access-token verification keys never loaded"}`)
 		return
@@ -206,7 +206,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Identity and trust credentials are never accepted from the public side
-	// of the gateway. Sidecar.Check only sees the caller's real credential
+	// of the gateway. ExtAuthz.Check only sees the caller's real credential
 	// (Authorization); successful checks re-stamp canonical headers below.
 	stripAllIdentityHeaders(r)
 
@@ -223,7 +223,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "public":
 		// Public route: call Check to get identity headers if a token is present,
 		// but don't reject if no token.
-		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 		if err != nil {
 			httpError(w, http.StatusInternalServerError, "auth check failed")
 			return
@@ -263,7 +263,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	case "required":
 		// Protected route: must have valid auth.
-		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 		if err != nil {
 			httpError(w, http.StatusInternalServerError, "auth check failed")
 			return
@@ -287,10 +287,10 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.rateLimitThenProxy(w, r, upstream, entry)
 
 	case "mfa_pending":
-		// MFA pending route: sidecar handles mfa_token validation.
-		// For now, delegate to the same Check flow — the sidecar accepts
+		// MFA pending route: ext_authz check handles mfa_token validation.
+		// For now, delegate to the same Check flow — the ext_authz check accepts
 		// mfa_token on these paths.
-		checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+		checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 		if err != nil {
 			httpError(w, http.StatusInternalServerError, "auth check failed")
 			return
@@ -348,8 +348,8 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	r.Header.Del("X-Codefly-Gateway-Token")
 	r.Header.Del("X-Codefly-Internal-Token")
 	r.Header.Del("X-Codefly-Public-Origin")
-	if isAccountsRoute(entry) && g.sidecar != nil && g.sidecar.gatewayToken != "" {
-		r.Header.Set("X-Codefly-Gateway-Token", g.sidecar.gatewayToken)
+	if isAccountsRoute(entry) && g.authz != nil && g.authz.gatewayToken != "" {
+		r.Header.Set("X-Codefly-Gateway-Token", g.authz.gatewayToken)
 		if publicOrigin, ok := trustedFrontendOrigin(r.Context()); ok {
 			r.Header.Set("X-Codefly-Public-Origin", publicOrigin)
 		}
@@ -379,7 +379,7 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	r.Header.Del("X-Codefly-Public-Origin")
 	r.Header.Del("X-Codefly-Internal-Token")
 
-	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(presentedToken) {
+	if g.authz == nil || !g.authz.acceptsInternalToken(presentedToken) {
 		return r
 	}
 	origin, err := canonicalPublicOrigin(claimedOrigin)
@@ -429,7 +429,7 @@ func buildCheckRequest(r *http.Request) *authv3.CheckRequest {
 
 // injectHeaders writes the ext_authz OkResponse headers onto the incoming
 // request before forwarding to the upstream. Existing header values are
-// replaced — the sidecar is authoritative for identity.
+// replaced — the ext_authz check is authoritative for identity.
 func injectHeaders(r *http.Request, headers []*corev3.HeaderValueOption) {
 	stripAllIdentityHeaders(r)
 	for _, h := range headers {

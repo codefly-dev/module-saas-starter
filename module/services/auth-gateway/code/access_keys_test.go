@@ -143,16 +143,16 @@ func TestAccessJWKS_AcceptsBothKeysDuringOverlapWithoutRestart(t *testing.T) {
 	secondPub, secondPriv := mustEd25519(t)
 
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, firstPub))
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
 
-	requireAdmitted(t, sidecar, signAccessToken(t, firstPriv, accessKeyID(firstPub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, firstPriv, accessKeyID(firstPub), validClaims(time.Now())))
 
 	// accounts publishes the incoming key alongside the outgoing one and starts
 	// signing with it. The gateway is not restarted.
 	publisher.publish(accessJWKSFor(t, secondPub, firstPub))
 
-	requireAdmitted(t, sidecar, signAccessToken(t, secondPriv, accessKeyID(secondPub), validClaims(time.Now())))
-	requireAdmitted(t, sidecar, signAccessToken(t, firstPriv, accessKeyID(firstPub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, secondPriv, accessKeyID(secondPub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, firstPriv, accessKeyID(firstPub), validClaims(time.Now())))
 }
 
 func TestAccessJWKS_RestartMidOverlapAcceptsBothOrderings(t *testing.T) {
@@ -166,10 +166,10 @@ func TestAccessJWKS_RestartMidOverlapAcceptsBothOrderings(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			publisher := newRotatingJWKSServer(t, document)
 			// A freshly started gateway: nothing cached, both keys must work.
-			sidecar := newJWKSSidecar(t, publisher.server.URL)
+			authz := newJWKSExtAuthz(t, publisher.server.URL)
 
-			requireAdmitted(t, sidecar, signAccessToken(t, currentPriv, accessKeyID(currentPub), validClaims(time.Now())))
-			requireAdmitted(t, sidecar, signAccessToken(t, retiringPriv, accessKeyID(retiringPub), validClaims(time.Now())))
+			requireAdmitted(t, authz, signAccessToken(t, currentPriv, accessKeyID(currentPub), validClaims(time.Now())))
+			requireAdmitted(t, authz, signAccessToken(t, retiringPriv, accessKeyID(retiringPub), validClaims(time.Now())))
 		})
 	}
 }
@@ -179,18 +179,18 @@ func TestAccessJWKS_RetiredKeyIsRejectedAfterConvergence(t *testing.T) {
 	retiredPub, retiredPriv := mustEd25519(t)
 
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, currentPub, retiredPub))
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
-	clock := newTestClock(t, sidecar)
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
+	clock := newTestClock(t, authz)
 
 	retiredToken := signAccessToken(t, retiredPriv, accessKeyID(retiredPub), validClaims(time.Now()))
-	requireAdmitted(t, sidecar, retiredToken)
+	requireAdmitted(t, authz, retiredToken)
 
 	// accounts drops the retired key. The gateway converges within one cache
 	// TTL; the stale grace only applies while the publisher is unreachable.
 	publisher.publish(accessJWKSFor(t, currentPub))
 	clock.advance(accessJWKSCacheTTL + time.Second)
 
-	requireDenied(t, sidecar, retiredToken, 401)
+	requireDenied(t, authz, retiredToken, 401)
 }
 
 // ---------------------------------------------------------------------------
@@ -212,44 +212,44 @@ func TestAccessJWKS_StartupOutageRecoversWithoutRestart(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	sidecar := newJWKSSidecar(t, server.URL)
-	clock := newTestClock(t, sidecar)
-	gateway := NewGateway(sidecar, NewRouteMatcher(testRouteEntries(), nil),
+	authz := newJWKSExtAuthz(t, server.URL)
+	clock := newTestClock(t, authz)
+	gateway := NewGateway(authz, NewRouteMatcher(testRouteEntries(), nil),
 		map[string]*url.URL{"accounts": MustURL(server.URL), "frontend": MustURL(server.URL)}, nil)
 
 	token := signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now()))
-	requireDenied(t, sidecar, token, 503)
-	require.False(t, sidecar.hasLoadedAccessTokenKeys())
+	requireDenied(t, authz, token, 503)
+	require.False(t, authz.hasLoadedAccessTokenKeys())
 	require.Equal(t, http.StatusServiceUnavailable, readyStatus(t, gateway))
 
 	// accounts finishes starting. No gateway restart, no operator action.
 	reachable.Store(true)
 	clock.advance(jwksFailureBackoff)
 
-	requireAdmitted(t, sidecar, token)
-	require.True(t, sidecar.hasLoadedAccessTokenKeys())
+	requireAdmitted(t, authz, token)
+	require.True(t, authz.hasLoadedAccessTokenKeys())
 	require.Equal(t, http.StatusOK, readyStatus(t, gateway))
 }
 
 func TestAccessJWKS_CachedKeysSurviveAPublisherOutage(t *testing.T) {
 	pub, priv := mustEd25519(t)
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
-	clock := newTestClock(t, sidecar)
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
+	clock := newTestClock(t, authz)
 
-	requireAdmitted(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
 	publisher.server.Close()
 
 	// Within the documented grace the cached key set still verifies, so an
 	// accounts restart does not take authentication down with it.
 	clock.advance(accessJWKSCacheTTL + time.Minute)
-	requireAdmitted(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
-	require.True(t, sidecar.hasLoadedAccessTokenKeys())
+	requireAdmitted(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
+	require.True(t, authz.hasLoadedAccessTokenKeys())
 
 	// Past it the gateway fails closed: an unreachable publisher must not keep
 	// a withdrawn key alive indefinitely.
 	clock.advance(accessJWKSStaleGrace)
-	requireDenied(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
+	requireDenied(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
 }
 
 // TestAccessJWKS_StaleKeysDoNotWithdrawTheListener pins the scope of the
@@ -260,20 +260,20 @@ func TestAccessJWKS_CachedKeysSurviveAPublisherOutage(t *testing.T) {
 func TestAccessJWKS_StaleKeysDoNotWithdrawTheListener(t *testing.T) {
 	pub, priv := mustEd25519(t)
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
-	clock := newTestClock(t, sidecar)
-	gateway := NewGateway(sidecar, NewRouteMatcher(testRouteEntries(), nil),
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
+	clock := newTestClock(t, authz)
+	gateway := NewGateway(authz, NewRouteMatcher(testRouteEntries(), nil),
 		map[string]*url.URL{
 			"accounts": MustURL(publisher.server.URL),
 			"frontend": MustURL(publisher.server.URL),
 		}, nil)
 
-	requireAdmitted(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
 	publisher.server.Close()
 	clock.advance(accessJWKSCacheTTL + accessJWKSStaleGrace + time.Minute)
 
-	requireDenied(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
-	require.True(t, sidecar.hasLoadedAccessTokenKeys(),
+	requireDenied(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
+	require.True(t, authz.hasLoadedAccessTokenKeys(),
 		"a gateway that loaded keys once must not report itself unconfigured because they aged")
 
 	// The upstream is unreachable here too, so readiness fails on that — the
@@ -294,7 +294,7 @@ func TestAccessJWKS_ConcurrentUnknownKeyIDsAreBounded(t *testing.T) {
 	pub, _ := mustEd25519(t)
 	_, attacker := mustEd25519(t)
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
 
 	const callers = 32
 	var wg sync.WaitGroup
@@ -303,7 +303,7 @@ func TestAccessJWKS_ConcurrentUnknownKeyIDsAreBounded(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			token := signAccessToken(t, attacker, fmt.Sprintf("attacker-chosen-%d", i), validClaims(time.Now()))
-			requireDenied(t, sidecar, token, 401)
+			requireDenied(t, authz, token, 401)
 		}(i)
 	}
 	wg.Wait()
@@ -326,7 +326,7 @@ func TestAccessJWKS_ConcurrentColdRequestsShareOneFetch(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	sidecar := newJWKSSidecar(t, server.URL)
+	authz := newJWKSExtAuthz(t, server.URL)
 	token := signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now()))
 
 	var wg sync.WaitGroup
@@ -334,7 +334,7 @@ func TestAccessJWKS_ConcurrentColdRequestsShareOneFetch(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			requireAdmitted(t, sidecar, token)
+			requireAdmitted(t, authz, token)
 		}()
 	}
 	wg.Wait()
@@ -385,8 +385,8 @@ func TestAccessJWKS_OversizedResponseIsRefused(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	sidecar := newJWKSSidecar(t, server.URL)
-	requireDenied(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
+	authz := newJWKSExtAuthz(t, server.URL)
+	requireDenied(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
 }
 
 func TestAccessJWKS_RedirectIsNotFollowed(t *testing.T) {
@@ -397,8 +397,8 @@ func TestAccessJWKS_RedirectIsNotFollowed(t *testing.T) {
 	}))
 	t.Cleanup(redirector.Close)
 
-	sidecar := newJWKSSidecar(t, redirector.URL)
-	requireDenied(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
+	authz := newJWKSExtAuthz(t, redirector.URL)
+	requireDenied(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
 	require.Zero(t, elsewhere.fetches(), "the configured origin is the only origin")
 }
 
@@ -416,10 +416,10 @@ func TestAccessJWKS_SlowPublisherTimesOut(t *testing.T) {
 
 	keys := newAccessJWKS(server.URL)
 	keys.cache.timeout = 100 * time.Millisecond
-	sidecar := sidecarWithKeys(keys)
+	authz := extAuthzWithKeys(keys)
 
 	started := time.Now()
-	requireDenied(t, sidecar, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
+	requireDenied(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())), 503)
 	require.Less(t, time.Since(started), 5*time.Second, "a stalled publisher must not stall the hot path")
 }
 
@@ -430,37 +430,37 @@ func TestAccessJWKS_SlowPublisherTimesOut(t *testing.T) {
 func TestAccessJWKS_ClaimPolicyStillApplies(t *testing.T) {
 	pub, priv := mustEd25519(t)
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
 	keyID := accessKeyID(pub)
 
 	wrongIssuer := validClaims(time.Now())
 	wrongIssuer.Issuer = "https://example.com/other-issuer"
-	requireDenied(t, sidecar, signAccessToken(t, priv, keyID, wrongIssuer), 401)
+	requireDenied(t, authz, signAccessToken(t, priv, keyID, wrongIssuer), 401)
 
 	wrongAudience := validClaims(time.Now())
 	wrongAudience.Audience = jwt.ClaimStrings{"someone-else"}
-	requireDenied(t, sidecar, signAccessToken(t, priv, keyID, wrongAudience), 401)
+	requireDenied(t, authz, signAccessToken(t, priv, keyID, wrongAudience), 401)
 
 	expired := validClaims(time.Now().Add(-time.Hour))
 	expired.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-30 * time.Minute))
-	requireDenied(t, sidecar, signAccessToken(t, priv, keyID, expired), 401)
+	requireDenied(t, authz, signAccessToken(t, priv, keyID, expired), 401)
 
 	// A published key id with a signature from a key that is not it.
 	_, forger := mustEd25519(t)
-	requireDenied(t, sidecar, signAccessToken(t, forger, keyID, validClaims(time.Now())), 401)
+	requireDenied(t, authz, signAccessToken(t, forger, keyID, validClaims(time.Now())), 401)
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-func newJWKSSidecar(t *testing.T, jwksBaseURL string) *Sidecar {
+func newJWKSExtAuthz(t *testing.T, jwksBaseURL string) *ExtAuthz {
 	t.Helper()
-	return sidecarWithKeys(newAccessJWKS(jwksBaseURL))
+	return extAuthzWithKeys(newAccessJWKS(jwksBaseURL))
 }
 
-func sidecarWithKeys(keys accessKeys) *Sidecar {
-	return &Sidecar{
+func extAuthzWithKeys(keys accessKeys) *ExtAuthz {
+	return &ExtAuthz{
 		keys:         keys,
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
@@ -477,9 +477,9 @@ type testClock struct {
 	keys   *accessJWKS
 }
 
-func newTestClock(t *testing.T, sidecar *Sidecar) *testClock {
+func newTestClock(t *testing.T, authz *ExtAuthz) *testClock {
 	t.Helper()
-	keys, ok := sidecar.keys.(*accessJWKS)
+	keys, ok := authz.keys.(*accessJWKS)
 	require.True(t, ok)
 	clock := &testClock{keys: keys}
 	keys.cache.now = func() time.Time {
@@ -496,18 +496,18 @@ func (c *testClock) advance(d time.Duration) {
 	c.mu.Unlock()
 }
 
-func requireAdmitted(t *testing.T, sidecar *Sidecar, token string) {
+func requireAdmitted(t *testing.T, authz *ExtAuthz, token string) {
 	t.Helper()
-	resp, err := sidecar.Check(context.Background(), checkReq("/v1/users", map[string]string{
+	resp, err := authz.Check(context.Background(), checkReq("/v1/users", map[string]string{
 		"authorization": "Bearer " + token,
 	}))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetOkResponse(), "token should have been admitted")
 }
 
-func requireDenied(t *testing.T, sidecar *Sidecar, token string, status int32) {
+func requireDenied(t *testing.T, authz *ExtAuthz, token string, status int32) {
 	t.Helper()
-	resp, err := sidecar.Check(context.Background(), checkReq("/v1/users", map[string]string{
+	resp, err := authz.Check(context.Background(), checkReq("/v1/users", map[string]string{
 		"authorization": "Bearer " + token,
 	}))
 	require.NoError(t, err)
@@ -533,8 +533,8 @@ func TestAccessJWKS_RevocationAppliesToEitherOverlapKey(t *testing.T) {
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, currentPub, retiringPub))
 
 	revoker := &fakeRevoker{revoked: map[string]bool{}, sessionRevoked: map[string]bool{}}
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
-	sidecar.revoker = revoker
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
+	authz.revoker = revoker
 
 	for name, signer := range map[string]ed25519.PrivateKey{
 		"current key":  currentPriv,
@@ -547,14 +547,14 @@ func TestAccessJWKS_RevocationAppliesToEitherOverlapKey(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			claims := validClaims(time.Now())
 			token := signAccessToken(t, signer, keyID, claims)
-			requireAdmitted(t, sidecar, token)
+			requireAdmitted(t, authz, token)
 
 			revoker.revoked[claims.ID] = true
-			requireDenied(t, sidecar, token, 401)
+			requireDenied(t, authz, token, 401)
 			delete(revoker.revoked, claims.ID)
 
 			revoker.sessionRevoked[claims.SessionID] = true
-			requireDenied(t, sidecar, token, 401)
+			requireDenied(t, authz, token, 401)
 			delete(revoker.sessionRevoked, claims.SessionID)
 		})
 	}
@@ -572,10 +572,10 @@ func TestAccessJWKS_OutageDoesNotFetchPerRequest(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	sidecar := newJWKSSidecar(t, server.URL)
+	authz := newJWKSExtAuthz(t, server.URL)
 	token := signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now()))
 	for i := 0; i < 25; i++ {
-		requireDenied(t, sidecar, token, 503)
+		requireDenied(t, authz, token, 503)
 	}
 	require.Equal(t, int64(1), atomic.LoadInt64(&hits),
 		"a failed fetch must suppress the next one for the backoff window")
@@ -592,15 +592,15 @@ func TestAccessJWKS_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
 	k2pub, k2priv := mustEd25519(t)
 
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, k1pub))
-	sidecar := newJWKSSidecar(t, publisher.server.URL)
-	clock := newTestClock(t, sidecar)
+	authz := newJWKSExtAuthz(t, publisher.server.URL)
+	clock := newTestClock(t, authz)
 
 	// Ordinary traffic warms the cache.
-	requireAdmitted(t, sidecar, signAccessToken(t, k1priv, accessKeyID(k1pub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, k1priv, accessKeyID(k1pub), validClaims(time.Now())))
 
 	// One request names a key id nobody publishes. It costs exactly one probe.
 	_, attacker := mustEd25519(t)
-	requireDenied(t, sidecar, signAccessToken(t, attacker, "made-up-key-id", validClaims(time.Now())), 401)
+	requireDenied(t, authz, signAccessToken(t, attacker, "made-up-key-id", validClaims(time.Now())), 401)
 	fetchesAfterProbe := publisher.fetches()
 
 	// The rotation lands: K2 is published alongside K1 and starts signing.
@@ -608,13 +608,13 @@ func TestAccessJWKS_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
 
 	// Within the probe interval the refetch is still rate-limited — that is the
 	// bound that keeps untrusted key ids from driving a fetch per request.
-	requireDenied(t, sidecar, signAccessToken(t, k2priv, accessKeyID(k2pub), validClaims(time.Now())), 401)
+	requireDenied(t, authz, signAccessToken(t, k2priv, accessKeyID(k2pub), validClaims(time.Now())), 401)
 	require.Equal(t, fetchesAfterProbe, publisher.fetches(),
 		"a second unrecognised key id inside the interval must not refetch")
 
 	// Once it passes, the rotated-in key is discovered by the token that names
 	// it. The cache has not expired: this is the probe, not a TTL refresh.
 	clock.advance(jwksProbeInterval)
-	requireAdmitted(t, sidecar, signAccessToken(t, k2priv, accessKeyID(k2pub), validClaims(time.Now())))
-	requireAdmitted(t, sidecar, signAccessToken(t, k1priv, accessKeyID(k1pub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, k2priv, accessKeyID(k2pub), validClaims(time.Now())))
+	requireAdmitted(t, authz, signAccessToken(t, k1priv, accessKeyID(k1pub), validClaims(time.Now())))
 }

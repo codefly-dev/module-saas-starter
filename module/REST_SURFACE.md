@@ -33,7 +33,7 @@ for a protobuf procedure or inherit policy by path similarity.
 | `services/accounts/code/pkg/adapters/rest_bindings.yaml` | Strict service-to-generated/plugin implementation binding. |
 | `services/accounts/generated/rest-surface.json` | Typed target-neutral REST catalog. |
 | `services/accounts/code/pkg/adapters/rest_registration_catalog_gen.go` | Accounts registration and exact/template allowlist. |
-| `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-sidecar descriptor REST inventory. |
+| `services/auth-gateway/code/routing_rest_catalog_gen.go` | Auth-gateway descriptor REST inventory. |
 | `services/auth-gateway/routing/rest/saas-starter/accounts/non-protobuf-extensions.rest.codefly.yaml` | Seven explicit routes without protobuf ownership. |
 | `services/accounts/openapi/api.swagger.json` | Checked-in public OpenAPI document. |
 
@@ -53,7 +53,7 @@ transcoder dials the generated Connect port, whose Connect-Go handler serves
 Connect, gRPC, and gRPC-Web for all 24 services; it no longer depends on the
 incomplete legacy raw-gRPC registration set.
 
-Auth-sidecar loads the 120 descriptor routes from generated Go and joins each
+Auth-gateway loads the 120 descriptor routes from generated Go and joins each
 one to generated authorization metadata by canonical procedure. One
 extension-only YAML file owns the seven routes without protobuf procedures.
 Startup rejects disabled extension entries and any method/path collision with a

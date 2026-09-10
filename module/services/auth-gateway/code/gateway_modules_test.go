@@ -37,7 +37,7 @@ func newModuleUpstream(t *testing.T) (*fakeUpstream, string) {
 
 // signModuleRegistrationToken mints a per-module registration token binding the
 // module identity to a single prefix, signed with the same Ed25519 key the
-// harness configures as the sidecar's public key.
+// harness configures as the ext_authz check's public key.
 func signModuleRegistrationToken(t *testing.T, priv ed25519.PrivateKey, prefix string) string {
 	t.Helper()
 	c := moduleRegistrationClaims{
@@ -92,7 +92,7 @@ func TestGateway_Module_Federated_ValidJWT_Proxied(t *testing.T) {
 	// The module owns and serves its own /v1/<module> surface — the path is
 	// forwarded unchanged.
 	require.Equal(t, "/v1/documents/collection", moduleFake.lastPath)
-	// Sidecar-stamped canonical identity reaches the module.
+	// ext_authz-stamped canonical identity reaches the module.
 	require.NotEmpty(t, moduleFake.lastHeaders.Get("x-user-id"))
 	require.NotEmpty(t, moduleFake.lastHeaders.Get("x-org-id"))
 	// A federated upstream is NOT accounts, so the gateway credential is never
@@ -576,7 +576,7 @@ func mustHost(t *testing.T, rawURL string) string {
 // fakeAccountsMint stands in for accounts' MintModuleRegistration RPC. It is
 // registered under the real service name and method, so the test exercises the
 // exact procedure string the generated mesh policy admits, and it signs with the
-// key the harness publishes as the sidecar's public key, as accounts does.
+// key the harness publishes as the ext_authz check's public key, as accounts does.
 type fakeAccountsMint struct {
 	priv         ed25519.PrivateKey
 	code         codes.Code
@@ -623,7 +623,7 @@ func (f *fakeAccountsMint) handle(ctx context.Context, dec func(any) error) (any
 }
 
 // newExchangeHarness starts a gRPC server serving the mint procedure and points
-// the sidecar's accounts connection at it.
+// the ext_authz check's accounts connection at it.
 func newExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsMint, ed25519.PrivateKey) {
 	t.Helper()
 	gw, _, _, priv := newGatewayHarness(t)
@@ -650,7 +650,7 @@ func newExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsMint, ed25519.Priv
 	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
-	gw.sidecar.backendConn = conn
+	gw.authz.backendConn = conn
 	return gw, mint, priv
 }
 
