@@ -294,6 +294,10 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
   updatedAt?: Timestamp;
 
   /**
+   * When the leased sync worker last completed a pull for an api, crawler, or
+   * upload source. Never set for a github source, whose ingest is tracked by
+   * last_ingested_at instead.
+   *
    * @generated from field: google.protobuf.Timestamp last_synced_at = 10;
    */
   lastSyncedAt?: Timestamp;
@@ -322,10 +326,12 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
   boundaryNodeId: string;
 
   /**
-   * When the ingest cursor last advanced: the leased worker durably enqueued a
-   * change set for a webhook delivery or a periodic reconcile. Distinct from
-   * last_synced_at, which the tenant-triggered SyncSource stamps — this is live
-   * ingest, that one is a manual pull. Unset until the first delivery lands.
+   * When the change-set compiler last durably enqueued a change set: a webhook
+   * delivery, the periodic reconcile, or a tenant pressing "Sync now", which for
+   * this provider dispatches a forced reconcile rather than a pull. Set only for
+   * a github source — the other providers advance last_synced_at instead, so at
+   * most one of the two clocks ever ticks for a given source. Unset until the
+   * first delivery lands.
    *
    * @generated from field: google.protobuf.Timestamp last_ingested_at = 15;
    */
@@ -334,7 +340,7 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
   /**
    * Head commit fully enqueued as a change set at last_ingested_at; the compiler
    * diffs the next delivery from it. Empty until the first delivery lands, and
-   * only ever set for a GitHub-driven source.
+   * like last_ingested_at set only for a github source.
    *
    * @generated from field: string last_ingested_commit = 16;
    */

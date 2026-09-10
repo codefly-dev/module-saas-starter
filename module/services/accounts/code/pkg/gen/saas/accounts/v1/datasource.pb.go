@@ -607,24 +607,29 @@ type Datasource struct {
 	Status   DatasourceStatus        `protobuf:"varint,6,opt,name=status,proto3,enum=saas.accounts.v1.DatasourceStatus" json:"status,omitempty"`
 	// True once a webhook signing secret has been stored for the datasource, so
 	// clients can reflect whether live updates are wired without exposing it.
-	WebhookConfigured bool                     `protobuf:"varint,7,opt,name=webhook_configured,json=webhookConfigured,proto3" json:"webhook_configured,omitempty"`
-	CreatedAt         *timestamppb.Timestamp   `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt         *timestamppb.Timestamp   `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	LastSyncedAt      *timestamppb.Timestamp   `protobuf:"bytes,10,opt,name=last_synced_at,json=lastSyncedAt,proto3" json:"last_synced_at,omitempty"`
-	Api               *ApiDatasourceConfig     `protobuf:"bytes,11,opt,name=api,proto3" json:"api,omitempty"`
-	Crawler           *CrawlerDatasourceConfig `protobuf:"bytes,12,opt,name=crawler,proto3" json:"crawler,omitempty"`
-	Upload            *UploadDatasourceConfig  `protobuf:"bytes,13,opt,name=upload,proto3" json:"upload,omitempty"`
+	WebhookConfigured bool                   `protobuf:"varint,7,opt,name=webhook_configured,json=webhookConfigured,proto3" json:"webhook_configured,omitempty"`
+	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// When the leased sync worker last completed a pull for an api, crawler, or
+	// upload source. Never set for a github source, whose ingest is tracked by
+	// last_ingested_at instead.
+	LastSyncedAt *timestamppb.Timestamp   `protobuf:"bytes,10,opt,name=last_synced_at,json=lastSyncedAt,proto3" json:"last_synced_at,omitempty"`
+	Api          *ApiDatasourceConfig     `protobuf:"bytes,11,opt,name=api,proto3" json:"api,omitempty"`
+	Crawler      *CrawlerDatasourceConfig `protobuf:"bytes,12,opt,name=crawler,proto3" json:"crawler,omitempty"`
+	Upload       *UploadDatasourceConfig  `protobuf:"bytes,13,opt,name=upload,proto3" json:"upload,omitempty"`
 	// The scope node whose subtree the pulled Entries land in — the data boundary
 	// this source writes into (issue #473). Grantable like any scope node.
 	BoundaryNodeId string `protobuf:"bytes,14,opt,name=boundary_node_id,json=boundaryNodeId,proto3" json:"boundary_node_id,omitempty"`
-	// When the ingest cursor last advanced: the leased worker durably enqueued a
-	// change set for a webhook delivery or a periodic reconcile. Distinct from
-	// last_synced_at, which the tenant-triggered SyncSource stamps — this is live
-	// ingest, that one is a manual pull. Unset until the first delivery lands.
+	// When the change-set compiler last durably enqueued a change set: a webhook
+	// delivery, the periodic reconcile, or a tenant pressing "Sync now", which for
+	// this provider dispatches a forced reconcile rather than a pull. Set only for
+	// a github source — the other providers advance last_synced_at instead, so at
+	// most one of the two clocks ever ticks for a given source. Unset until the
+	// first delivery lands.
 	LastIngestedAt *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=last_ingested_at,json=lastIngestedAt,proto3" json:"last_ingested_at,omitempty"`
 	// Head commit fully enqueued as a change set at last_ingested_at; the compiler
 	// diffs the next delivery from it. Empty until the first delivery lands, and
-	// only ever set for a GitHub-driven source.
+	// like last_ingested_at set only for a github source.
 	LastIngestedCommit string `protobuf:"bytes,16,opt,name=last_ingested_commit,json=lastIngestedCommit,proto3" json:"last_ingested_commit,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache

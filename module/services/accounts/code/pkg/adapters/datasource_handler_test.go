@@ -69,18 +69,16 @@ func TestDatasourceCatalog_DeclaresAPICredentialKinds(t *testing.T) {
 }
 
 // TestDatasourceSourceToProto_ProjectsIngestProvenance proves the ingest cursor
-// reaches the wire alongside, and independently of, the manual-pull timestamp: a
-// client has to be able to tell "the ingest worker enqueued a change set at T on
-// commit C" from "a tenant pressed sync at T'".
+// reaches the wire for a github source, whose deliveries the change-set compiler
+// tracks. Its last_synced_at stays unset: no github path writes that column, so
+// a client that reads only last_synced_at sees a repo source as never ingested.
 func TestDatasourceSourceToProto_ProjectsIngestProvenance(t *testing.T) {
-	synced := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
 	ingested := time.Date(2026, 3, 2, 11, 30, 0, 0, time.UTC)
 	out := datasourceSourceToProto(&business.DatasourceSource{
 		ID:                 "11111111-1111-1111-1111-111111111111",
 		OrgID:              "22222222-2222-2222-2222-222222222222",
 		Provider:           business.DatasourceProviderGitHub,
 		Status:             business.DatasourceStatusActive,
-		LastSyncedAt:       &synced,
 		LastIngestedAt:     &ingested,
 		LastIngestedCommit: "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736",
 	})
@@ -88,11 +86,36 @@ func TestDatasourceSourceToProto_ProjectsIngestProvenance(t *testing.T) {
 	if got := out.GetLastIngestedAt().AsTime(); !got.Equal(ingested) {
 		t.Errorf("last_ingested_at = %s, want %s", got, ingested)
 	}
+	if got := out.GetLastIngestedCommit(); got != "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736" {
+		t.Errorf("last_ingested_commit = %q", got)
+	}
+	if out.GetLastSyncedAt() != nil {
+		t.Errorf("last_synced_at = %v, want unset for a github source", out.GetLastSyncedAt())
+	}
+}
+
+// TestDatasourceSourceToProto_PullProviderKeepsSyncClock is the other half of the
+// exclusivity the wire documents: a pulled provider advances last_synced_at and
+// never enters the change-set compiler, so its ingest cursor must stay absent
+// rather than project a zero instant a client would render as an ingest.
+func TestDatasourceSourceToProto_PullProviderKeepsSyncClock(t *testing.T) {
+	synced := time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	out := datasourceSourceToProto(&business.DatasourceSource{
+		ID:           "11111111-1111-1111-1111-111111111111",
+		OrgID:        "22222222-2222-2222-2222-222222222222",
+		Provider:     business.DatasourceProviderAPI,
+		Status:       business.DatasourceStatusActive,
+		LastSyncedAt: &synced,
+	})
+
 	if got := out.GetLastSyncedAt().AsTime(); !got.Equal(synced) {
 		t.Errorf("last_synced_at = %s, want %s", got, synced)
 	}
-	if got := out.GetLastIngestedCommit(); got != "0f1e2d3c4b5a69788796a5b4c3d2e1f009182736" {
-		t.Errorf("last_ingested_commit = %q", got)
+	if out.GetLastIngestedAt() != nil {
+		t.Errorf("last_ingested_at = %v, want unset for a pulled provider", out.GetLastIngestedAt())
+	}
+	if out.GetLastIngestedCommit() != "" {
+		t.Errorf("last_ingested_commit = %q, want empty for a pulled provider", out.GetLastIngestedCommit())
 	}
 }
 
