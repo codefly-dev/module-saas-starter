@@ -97,6 +97,16 @@ func TestValidateFixtureRejectsUnusableUserIDs(t *testing.T) {
 		"nil sentinel": {
 			{ID: "00000000-0000-0000-0000-000000000000", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
 		},
+		// Spellings uuid.Parse accepts but the frontend's fixture schema does not.
+		"urn spelling": {
+			{ID: "urn:uuid:00000000-0000-7000-8000-0000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"unhyphenated spelling": {
+			{ID: "000000000000700080000000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"braced spelling": {
+			{ID: "{00000000-0000-7000-8000-0000000000a1}", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
 	}
 	for name, users := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -52,6 +52,19 @@ func (s *PostgresStore) GetUser(ctx context.Context, id string) (*gen.User, erro
 	return &u, nil
 }
 
+func (s *PostgresStore) UserIDExists(ctx context.Context, id string) (bool, error) {
+	w := wool.Get(ctx).In("UserIDExists")
+	executor := s.getQueryExecutor(ctx)
+
+	var exists bool
+	if err := executor.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM users WHERE uuid = $1)`, id,
+	).Scan(&exists); err != nil {
+		return false, w.Wrapf(err, "failed to check user id")
+	}
+	return exists, nil
+}
+
 // GetUserByEmail returns a user by email (case-insensitive).
 func (s *PostgresStore) GetUserByEmail(ctx context.Context, email string) (*gen.User, error) {
 	w := wool.Get(ctx).In("GetUserByEmail")

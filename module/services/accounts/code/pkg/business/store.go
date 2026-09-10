@@ -40,6 +40,9 @@ type Store interface {
 	RegisterUser(ctx context.Context, user *gen.User, identity *gen.UserIdentity) error
 	GetUserByIdentity(ctx context.Context, id *gen.UserIdentity) (*gen.User, error)
 	GetUser(ctx context.Context, id string) (*gen.User, error)
+	// UserIDExists reports whether any users row already holds this uuid.
+	// A deleted user keeps its row, so its primary key stays taken.
+	UserIDExists(ctx context.Context, id string) (bool, error)
 	GetUserByEmail(ctx context.Context, email string) (*gen.User, error)
 	GetOrganizationMemberPrimaryEmail(ctx context.Context, userID string) (string, error)
 	ListUsers(ctx context.Context, orgID string, statusFilter string, pageSize int32, pageToken string) ([]*gen.User, string, error)

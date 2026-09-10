@@ -11,8 +11,11 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/fixtures"
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
@@ -38,29 +41,15 @@ func TestFixtureSeedHonoursDeclaredUserID(t *testing.T) {
 		require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
 	}
 
-	seededUUID := func(providerID string) string {
-		t.Helper()
-		var user *gen.User
-		require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
-			var err error
-			user, err = testStore.GetUserByIdentity(ctx, &gen.UserIdentity{
-				Provider: "email", ProviderId: providerID,
-			})
-			return err
-		}))
-		require.NotNil(t, user)
-		return user.Uuid
-	}
-
 	writeFixture(pinnedID)
 	require.NoError(t, fixtures.Seed(ctx, testService, "stable-ids"))
-	require.Equal(t, pinnedID, seededUUID("fixture-pinned"))
-	unpinned := seededUUID("fixture-unpinned")
+	require.Equal(t, pinnedID, seededUUIDFor(t, ctx, "fixture-pinned"))
+	unpinned := seededUUIDFor(t, ctx, "fixture-unpinned")
 	require.NotEmpty(t, unpinned)
 
 	require.NoError(t, fixtures.Seed(ctx, testService, "stable-ids"))
-	require.Equal(t, pinnedID, seededUUID("fixture-pinned"))
-	require.Equal(t, unpinned, seededUUID("fixture-unpinned"))
+	require.Equal(t, pinnedID, seededUUIDFor(t, ctx, "fixture-pinned"))
+	require.Equal(t, unpinned, seededUUIDFor(t, ctx, "fixture-unpinned"))
 
 	// A database seeded before the id was declared keeps its own uuid. The
 	// seeder runs at service startup, so refusing here would stop the whole
@@ -68,7 +57,7 @@ func TestFixtureSeedHonoursDeclaredUserID(t *testing.T) {
 	drifted := captureWoolLogs(t)
 	writeFixture("00000000-0000-7000-8000-00000000f002")
 	require.NoError(t, fixtures.Seed(ctx, testService, "stable-ids"))
-	require.Equal(t, pinnedID, seededUUID("fixture-pinned"))
+	require.Equal(t, pinnedID, seededUUIDFor(t, ctx, "fixture-pinned"))
 
 	logged := drifted()
 	require.Contains(t, logged, pinnedID)
@@ -77,37 +66,86 @@ func TestFixtureSeedHonoursDeclaredUserID(t *testing.T) {
 }
 
 // A fixture copied from another one keeps its pinned ids, so seeding both into
-// one database claims a uuid that is already taken. RegisterUser inserts the
-// caller's uuid, so without its own check the collision surfaces as a raw
-// users_pkey violation — the opaque failure this pinning exists to remove.
-func TestFixtureSeedNamesAConflictingUserID(t *testing.T) {
+// one database claims a uuid that is already taken. So does reseeding after a
+// privacy erasure: deleting the identities leaves the users row, and with it
+// the id. The seeder runs during service startup, so it seeds a fresh uuid and
+// reports rather than stopping the graph from booting.
+func TestFixtureSeedFallsBackWhenDeclaredIDIsTaken(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
 	fixturePath := filepath.Join(t.TempDir(), "conflicting-ids.yaml")
 	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
 
 	const sharedID = "00000000-0000-7000-8000-00000000f003"
-	contents := fmt.Sprintf(`users:
+	writeUser := func(email, providerID string) {
+		t.Helper()
+		contents := fmt.Sprintf(`users:
   - id: %s
-    email: first@fixture.test
+    email: %s
     provider: email
-    provider_id: fixture-first
-`, sharedID)
-	require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
+    provider_id: %s
+`, sharedID, email, providerID)
+		require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
+	}
+
+	writeUser("first@fixture.test", "fixture-first")
+	require.NoError(t, fixtures.Seed(ctx, testService, "conflicting-ids"))
+	require.Equal(t, sharedID, seededUUIDFor(t, ctx, "fixture-first"))
+
+	reported := captureWoolLogs(t)
+	writeUser("second@fixture.test", "fixture-second")
 	require.NoError(t, fixtures.Seed(ctx, testService, "conflicting-ids"))
 
-	contents = fmt.Sprintf(`users:
-  - id: %s
-    email: second@fixture.test
-    provider: email
-    provider_id: fixture-second
-`, sharedID)
-	require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
+	second := seededUUIDFor(t, ctx, "fixture-second")
+	require.NotEqual(t, sharedID, second)
+	require.NotEmpty(t, second)
 
-	err := fixtures.Seed(ctx, testService, "conflicting-ids")
+	logged := reported()
+	require.Contains(t, logged, sharedID)
+	require.Contains(t, logged, "already holds")
+}
+
+// RegisterUser inserts a caller-supplied uuid, so it owns the guard against
+// claiming one that is taken; without it the collision escapes as a raw
+// users_pkey violation. The fixture seeder avoids the collision itself, so this
+// covers the store contract every other caller relies on.
+func TestRegisterUserRejectsATakenUserID(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	const takenID = "00000000-0000-7000-8000-00000000f004"
+	register := func(id, email, providerID string) error {
+		return testStore.RegisterUser(ctx,
+			&gen.User{Uuid: id, PrimaryEmail: email, Status: gen.UserStatus_USER_STATUS_ACTIVE},
+			&gen.UserIdentity{
+				Uuid:     business.NewIDString(),
+				UserUuid: id,
+				Provider: "email", ProviderId: providerID, ProviderEmail: email,
+			})
+	}
+
+	require.NoError(t, register(takenID, "holder@fixture.test", "fixture-holder"))
+
+	err := register(takenID, "other@fixture.test", "fixture-other")
 	require.Error(t, err)
-	require.Contains(t, err.Error(), sharedID)
+	require.Equal(t, codes.AlreadyExists, status.Code(err))
+	require.Contains(t, err.Error(), takenID)
 	require.NotContains(t, err.Error(), "users_pkey")
+}
+
+// seededUUIDFor returns the uuid the store holds for a fixture identity.
+func seededUUIDFor(t *testing.T, ctx context.Context, providerID string) string {
+	t.Helper()
+	var user *gen.User
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		user, err = testStore.GetUserByIdentity(ctx, &gen.UserIdentity{
+			Provider: "email", ProviderId: providerID,
+		})
+		return err
+	}))
+	require.NotNil(t, user)
+	return user.Uuid
 }
 
 // captureWoolLogs redirects wool's fallback logger — the one Get() uses for a
