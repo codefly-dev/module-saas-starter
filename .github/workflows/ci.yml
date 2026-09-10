@@ -99,6 +99,8 @@ jobs:
           node-version: 24
       - name: Test the release-gate contract
         run: node --test scripts/ci/release-gates.test.mjs
+      - name: Test the release announcement
+        run: node --test scripts/ci/announce-release.test.mjs
       - name: Require every artifact-writing job to depend on the release gates
         run: node scripts/ci/release-gates.mjs check
 
@@ -807,24 +809,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
       - name: Dispatch surface-bump
-        shell: bash
         env:
           HANDBOOK_REPOSITORY: ${{ vars.HANDBOOK_REPOSITORY }}
           GH_TOKEN: ${{ secrets.HANDBOOK_DISPATCH_TOKEN }}
-        run: |
-          if [[ -z "${HANDBOOK_REPOSITORY}" || -z "${GH_TOKEN}" ]]; then
-            echo "::error::the release was not announced. Set the HANDBOOK_REPOSITORY repository variable (owner/repo) and the HANDBOOK_DISPATCH_TOKEN secret."
-            exit 1
-          fi
-          # The payload names the exact commit, and the consumer must render
-          # from it. Resolving "the latest release" instead would read a stale
-          # interface: this track publishes tags, and a tag does not create a
-          # GitHub Release, so the newest release object here can be many
-          # releases behind the tag being announced.
-          gh api "repos/${HANDBOOK_REPOSITORY}/dispatches" \
-            -f event_type=surface-bump \
-            -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
-            -f "client_payload[release]=${GITHUB_REF_NAME}" \
-            -f "client_payload[commit]=${GITHUB_SHA}" \
-            -f "client_payload[artifact]=module/services/accounts/generated/service-catalog.json"
+        run: node scripts/ci/announce-release.mjs

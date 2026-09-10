@@ -102,6 +102,18 @@ retire the three heaviest gates while this one stays green.
 dispatches the release to a downstream repository, an outward-facing write with
 the same "cannot be retracted" property.
 
+Its dispatch is not, however, a publication of the release itself: nothing is
+retracted when it does not happen. `scripts/ci/announce-release.mjs` reads that
+distinction off the configuration. A repository with neither the
+`HANDBOOK_REPOSITORY` variable nor the `HANDBOOK_DISPATCH_TOKEN` secret has no
+handbook to announce to, so the job records a `::notice::` and succeeds — an
+unconfigured docs announcement must not mark a correct release red beside a real
+publication failure. Exactly one of the two present is the reverse: someone meant
+it to work, and staying quiet would leave every later release silently
+unannounced, so that fails the job. A dispatch that the handbook rejects fails
+too. `node --test scripts/ci/announce-release.test.mjs` covers all four, and runs
+in `release-contract`.
+
 ### The contract test
 
 `release-contract` runs `scripts/ci/release-gates.mjs check`, which parses every

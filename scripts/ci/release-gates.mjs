@@ -175,6 +175,7 @@ const PUBLICATION_STEP_PATTERNS = [
   { on: "run", pattern: /\bpublish-[\w-]+\.mjs\b/, why: "runs a package publish script" },
   { on: "run", pattern: /\bdocker\s+push\b/, why: "pushes a container image" },
   { on: "run", pattern: /\bgh\s+api\b[\s\S]*?\/dispatches\b/, why: "dispatches a release event downstream" },
+  { on: "run", pattern: /\bannounce-[\w-]+\.mjs\b/, why: "runs a release announcement script" },
   { on: "uses", pattern: /^actions\/attest-build-provenance/, why: "attests artifact provenance" },
   // Actions that publish authenticate with a secret in `with:`, not with the
   // job's `permissions`, so neither check above sees them.

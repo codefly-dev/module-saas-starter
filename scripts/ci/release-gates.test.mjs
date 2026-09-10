@@ -362,6 +362,7 @@ test("each artifact-writing signal marks a job as a publisher", () => {
     { steps: [{ run: "node scripts/publish-frontend-kit.mjs" }] },
     { steps: [{ run: "docker push ghcr.io/example/app:1" }] },
     { steps: [{ run: 'gh api "repos/${OWNER}/${REPO}/dispatches" \\\n  -f event_type=surface-bump' }] },
+    { steps: [{ run: "node scripts/ci/announce-release.mjs" }] },
     { steps: [{ uses: "actions/attest-build-provenance@v4" }] },
     { permissions: { packages: "write" }, steps: [] },
     { permissions: { "id-token": "write" }, steps: [] },
