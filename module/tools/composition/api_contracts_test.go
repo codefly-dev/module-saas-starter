@@ -314,9 +314,11 @@ func assertLibraryBindingsMatchContract(t *testing.T, moduleRoot, libraryPath, r
 		return
 	}
 	for _, file := range files {
-		// Well-known types are not generated into the tree: the bindings import
-		// them from `@bufbuild/protobuf/wkt`. Everything else the contract names
-		// has to be on disk, or the library serves a contract it cannot describe.
+		// A well-known type can legitimately arrive either way — generated into
+		// the tree, or imported from `@bufbuild/protobuf/wkt` — and the generator
+		// has been seen doing both, so requiring it would fail on a tree that is
+		// correct. Everything else the contract names has to be on disk, or the
+		// library serves a contract it cannot describe.
 		if strings.HasPrefix(file, "google/protobuf/") {
 			continue
 		}

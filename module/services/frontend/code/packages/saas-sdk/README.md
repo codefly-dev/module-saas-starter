@@ -172,25 +172,28 @@ byte-identical and only the `generated-by.companion` line of
 `library.codefly.yaml` moves. Pinning keeps that line from churning.
 
 Once the contract has moved on, the generator refuses to overwrite a library
-built from a different digest and asks for `--force`. That flag **cleans the
-output directory first**, and what comes back is not everything it removed: the
-generator re-emits `saas/**` only. It rewrites `google/protobuf/*` imports to
-`@bufbuild/protobuf/wkt`, but still emits *relative* imports to
-`buf/validate/validate_pb` and `google/api/annotations_pb` — files it no longer
-writes. The seven third-party descriptor files those imports reach are kept in
-the tree by hand, so a regeneration is two commands, not one:
+built from a different digest and asks for `--force`, which cleans the output
+directory before rewriting it:
 
 ```bash
 npm run generate -- --force
-git checkout -- generated/typescript/src/gen/buf generated/typescript/src/gen/google
 ```
 
-Skip the second and the tree is broken: `tsc` fails with TS2307 for the
-generated files the public API reaches, and `published-surface` fails with it
-because it builds before it asserts. For the ones the public API *does not*
-reach, `tsconfig.json` never opens them and tsc stays silent — the
-`generated tree integrity` test in the same file is what catches those, by
-resolving every relative import across the whole generated tree.
+That is the whole procedure. The generator emits the third-party descriptors
+the bindings import — `buf/validate`, `google/api`, and the `google/protobuf`
+well-known types — alongside `saas/**`, so nothing has to be restored by hand.
+
+**Check the output rather than assuming it.** One run during #585 produced a
+tree that did not compile: it externalized the well-known types to
+`@bufbuild/protobuf/wkt` and deleted the third-party descriptors, while still
+emitting *relative* imports to `buf/validate/validate_pb` and
+`google/api/annotations_pb`, giving five `TS2307`s. Repeated clean runs
+afterwards — both CLI versions, with and without `node_modules` — emit the
+complete tree every time, so what selects the other behaviour is not known. The
+`generated tree integrity` test is the guard either way: it resolves every
+relative import across the whole generated tree, including the generated files
+`tsconfig.json` never opens because the public API does not reach them, and
+those are the ones `tsc` cannot see.
 
 `TestGeneratedLibraryContractDigestsMatchThePackage` in
 `module/tools/composition` gates the result. It fails when
