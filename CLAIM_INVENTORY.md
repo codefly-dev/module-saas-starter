@@ -65,7 +65,8 @@ must not be inferred from a row here. See
 | Claim | Source | Executable evidence | Status | Owner |
 | --- | --- | --- | --- | --- |
 | `codefly ci run` is the canonical **service** gate and provider YAML reimplements none of it | RELEASE_GATES.md; AGENTS.md | `.github/workflows/ci.yml` `codefly-quality` / `codefly-supply-chain` / `codefly-build` | implemented | Codefly |
-| ~~"GitHub Actions ... does not encode Go, Rust, Next.js, protobuf, dependency, container, or service-specific commands"~~ and ~~base integrity is "the one repository-specific gate"~~ | RELEASE_GATES.md, AGENTS.md, before this change | eight repository-specific jobs run `node --test`, `go test`, `buf breaking` and `npm` directly | **corrected** | #541 |
+| ~~"GitHub Actions ... does not encode Go, Rust, Next.js, protobuf, dependency, container, or service-specific commands"~~ and ~~base integrity is "the one repository-specific gate"~~ | RELEASE_GATES.md, AGENTS.md, before this change | nine repository-specific jobs run `node --test`, `go test`, `buf breaking` and `npm` directly | **corrected** | #541 |
+| The documented repository-specific gate list is the enforced one | RELEASE_GATES.md § Repository-specific gates; AGENTS.md | `release-gates.test.mjs` compares the table and both prose counts against `REQUIRED_GATES` | implemented | #541 |
 | The complete audit runs `--fail-on-vuln=false`; a separate step enforces first-party findings fail-closed | RELEASE_GATES.md § Vulnerability policy | `.github/workflows/ci.yml` `codefly-supply-chain` | configured | Codefly + this repo |
 | No artifact-writing job runs unless every mandatory gate actually succeeded | RELEASE_GATES.md § Publication gating | `scripts/ci/release-gates.mjs check` + `decide`, `release-gates.test.mjs` | implemented (#535) | this repo |
 | Root `go test ./...` does not cover nested service modules | RELEASE_GATES.md, AGENTS.md | six independent `go.mod` files; there is no `go.work` | implemented (documented) | #541 |
@@ -79,6 +80,7 @@ must not be inferred from a row here. See
 | Remote and backend detail is served only to a caller holding the cluster-internal token | `app/api/internal/solutions/route.ts` | `internal/solutions/__tests__/route.test.ts` | implemented | #541 |
 | A freshly registered cross-origin remote loads with no rebuild | `src/proxy.ts` | `proxy-solution-csp.test.ts` — admitted origin, and self-only on an absent, malformed, unreachable, or token-rejected lookup | implemented | #541 |
 | Solution registration is durable across replicas | `src/solutions/registry.ts` | **not implemented**: the registry is process-local | planned | #534 |
+| The solution CSP depends on a reachable, token-gated loopback lookup | `src/proxy.ts`; `app/api/internal/solutions/route.ts` | `proxy-solution-csp.test.ts` covers all three degradations (secret unset, 401, unreachable), each to a self-only policy. The new route arrived under a documentation issue and has not been reviewed as a deployed surface — NetworkPolicy scope and the loopback shape are open | known drift, filed | #570 |
 
 ## Handbook and interface surfaces
 
@@ -104,12 +106,21 @@ means concretely:
 - Every document, comment and test this change touches was reviewed against the
   rule, and the two violations found in them — one in MODULE.md, one in
   RELEASE_GATES.md — were replaced with generic descriptions.
-- **The repository-wide scrub is not done here.** A mechanical check over the
-  whole tree reports on the order of 390 further violating lines across dozens of
-  files. That is a separate, self-contained change with its own gate
-  (`tools/naming-gate.mjs`, forbidden terms stored as digests rather than
-  literals), and doing it inside this change would bury the audit corrections in
-  a rename.
+- **The repository-wide scrub is not done here**, and the rule is therefore
+  violated today — see the row below, which is the register's own record of it.
+  Doing the scrub inside this change would bury the audit corrections in a
+  rename.
+
+| Claim | Source | Executable evidence | Status | Owner |
+| --- | --- | --- | --- | --- |
+| The repository names no real customer, partner, employer, or downstream consumer | AGENTS.md § Naming and confidentiality | **none — no gate exists in this tree.** A mechanical scan reports on the order of 390 violating lines across dozens of files. Do not read the rule as enforced | known drift, filed | #569 |
+
+  The gate for it is written but unmerged: it lives on the local branch
+  `chore/naming-gate-generic-placeholders` (commit `8481d1b0` — a
+  `module/tools/naming-gate.mjs` holding its forbidden terms as digests rather
+  than literals, plus ~68 files already scrubbed) with no pull request open.
+  Nothing under `module/tools/` in this tree provides it. That branch needs a PR
+  rather than a second gate.
 - No public denylist of real names is introduced by this file or by anything in
   this change, and no functional or operational identifier was renamed — a
   configuration key such as `SIDECAR_REVOCATION_FAIL_OPEN` keeps its name until a

@@ -1,18 +1,32 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The proxy reads the cluster-internal secret through @/lib/internal-token,
+// which carries the `server-only` marker. Next resolves that to its no-op under
+// the `react-server` condition when it bundles the proxy; vitest's resolver has
+// no such condition and would load the throwing entry.
+vi.mock("server-only", () => ({}));
+
 // The proxy resolves the cluster-internal token through the Codefly SDK and
 // presents it on the internal detail lookup. vi.mock is hoisted above module
 // init, so the stub must be created with vi.hoisted.
-const { getWorkspaceSecret } = vi.hoisted(() => ({
+const {
+	getWorkspaceSecret,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+} = vi.hoisted(() => ({
 	getWorkspaceSecret:
 		vi.fn<(name: string, key: string) => string | undefined>(),
+	getCurrentModule: vi.fn<() => string>(),
+	getCurrentService: vi.fn<() => string>(),
+	getEndpoints: vi.fn<() => unknown[]>(),
 }));
 vi.mock("codefly", () => ({
 	getWorkspaceSecret,
-	getCurrentModule: () => "",
-	getCurrentService: () => "",
-	getEndpoints: () => [],
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
 }));
 
 const INTERNAL_TOKEN = "internal-test-token";
@@ -125,6 +139,10 @@ describe("proxy solution CSP", () => {
 	beforeEach(async () => {
 		now = 1_700_000_000_000;
 		getWorkspaceSecret.mockReturnValue(INTERNAL_TOKEN);
+		// Isolated-component default: no Codefly runtime identity to discover.
+		getCurrentModule.mockReturnValue("");
+		getCurrentService.mockReturnValue("");
+		getEndpoints.mockReturnValue([]);
 		vi.spyOn(Date, "now").mockImplementation(() => now);
 		vi.stubEnv("SOLUTION_CSP_INPUTS", SELF_ONLY_SNAPSHOT);
 		// A distinctive non-default port proves the listing target is read from
@@ -141,6 +159,9 @@ describe("proxy solution CSP", () => {
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
 		getWorkspaceSecret.mockReset();
+		getCurrentModule.mockReset();
+		getCurrentService.mockReset();
+		getEndpoints.mockReset();
 	});
 
 	it("allows a registered cross-origin remote without a build-time env", async () => {
@@ -233,6 +254,44 @@ describe("proxy solution CSP", () => {
 		// The failure is surfaced, not swallowed — a silent fallback is
 		// indistinguishable from the bug this fix addresses.
 		expect(console.error).toHaveBeenCalledOnce();
+	});
+
+	it("admits a registered origin when the public origin cannot be resolved", async () => {
+		// The internal secret is the only thing this lookup needs. Reading it off
+		// the gateway context also made it depend on PUBLIC ORIGIN resolution,
+		// which fails on a malformed `x-forwarded-host` — silently narrowing the
+		// policy to self-only and reporting a missing secret that was present.
+		getCurrentModule.mockReturnValue("saas-starter");
+		getCurrentService.mockReturnValue("frontend");
+		// The render bakes the own HTTP endpoint as a loopback placeholder, so
+		// the public origin comes from the request's forwarded host.
+		getEndpoints.mockReturnValue([
+			{
+				module: "saas-starter",
+				service: "frontend",
+				name: "http",
+				protocol: "HTTP",
+				address: "http://localhost:8080",
+			},
+		]);
+		const fetchMock = stubListing([AUDIT]);
+
+		const request = new NextRequest("http://10.0.0.5/s/audit", {
+			headers: {
+				"sec-fetch-dest": "document",
+				accept: "text/html",
+				"x-forwarded-proto": "https",
+				"x-forwarded-host": "app example",
+			},
+		});
+		request.cookies.set("codefly_session", "token");
+
+		const response = await proxy(request);
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			`connect-src 'self' ${new URL(AUDIT_MANIFEST).origin}`,
+		);
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(console.error).not.toHaveBeenCalled();
 	});
 
 	it("stays self-only and reports when no internal token is configured", async () => {

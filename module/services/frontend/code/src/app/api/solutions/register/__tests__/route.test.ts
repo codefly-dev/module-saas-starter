@@ -11,6 +11,11 @@ const { getWorkspaceSecret } = vi.hoisted(() => ({
 vi.mock("codefly", () => ({ getWorkspaceSecret }));
 
 import { DELETE, GET, POST } from "@/app/api/solutions/register/route";
+import {
+	findSolution,
+	navProjection,
+	type SolutionManifest,
+} from "@/solutions/registry";
 
 const TOKEN = "internal-test-token";
 
@@ -135,23 +140,25 @@ describe("solutions register route auth", () => {
 
 	it("keeps a mutated nav projection out of the stored manifest", async () => {
 		// The projection copies the nav object rather than aliasing it, so a
-		// caller that mutates a response value cannot reach the registry.
+		// caller that mutates a projected value cannot reach the registry.
+		//
+		// This asserts against navProjection's own return value, NOT against a
+		// parsed GET body: `await response.json()` is a fresh object, so mutating
+		// it could never reach the registry however navProjection was written,
+		// and a test framed that way passes with the aliasing bug in place.
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
 
-		const first = (await GET().then((r) => r.json())) as {
-			solutions: Array<{ id: string; nav: { title: string } }>;
-		};
-		const audit = first.solutions.find((s) => s.id === "audit");
-		expect(audit).toBeDefined();
-		if (audit) {
-			audit.nav.title = "Tampered";
-		}
+		const stored = findSolution("audit");
+		expect(stored).not.toBeNull();
+		const projected = navProjection(stored as SolutionManifest);
+		projected.nav.title = "Tampered";
 
-		const second = (await GET().then((r) => r.json())) as {
+		expect(findSolution("audit")?.nav.title).toBe("Audit");
+		const listed = (await GET().then((r) => r.json())) as {
 			solutions: Array<{ id: string; nav: { title: string } }>;
 		};
-		expect(second.solutions.find((s) => s.id === "audit")?.nav.title).toBe(
+		expect(listed.solutions.find((s) => s.id === "audit")?.nav.title).toBe(
 			"Audit",
 		);
 	});

@@ -162,8 +162,8 @@ Gated by tenant-admin or platform role (`src/components/auth/role-gate.tsx`).
 
 - The Next.js same-origin proxy strips caller-supplied trust headers, stamps the
   real origin with `CODEFLY_INTERNAL_TOKEN`, and forwards only API routes to the
-  private `auth-gateway`; accounts is never publicly reachable. The gateway/
-  the gateway strips all client-supplied identity/org/role/scope/MFA headers before
+  private `auth-gateway`; accounts is never publicly reachable. The gateway
+  strips all client-supplied identity/org/role/scope/MFA headers before
   auth, then emits canonical `X-User-ID` / `X-Org-ID` / `X-Org-Role` /
   `X-Platform-Role` / `X-Session-ID` (+ signed `amr`/`auth_time`/`acr`) plus a
   gateway token that accounts validates constant-time.

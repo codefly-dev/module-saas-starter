@@ -11,8 +11,9 @@ same gate as this repository.
 `.github/workflows/ci.yml` runs a set of **repository-specific gates** that
 guard artifacts and contracts no single service owns: the canonical base
 manifest that seeds every consumer, the authorization catalog, the release
-gating graph itself, the interface docs, the provider shims, the marketing
-isolation build, the SDK boundary, and the immutable module package. They run
+gating graph itself, the interface docs, the published frontend kit's version,
+the provider shims, the marketing isolation build, the SDK boundary, and the
+immutable module package. They run
 `node --test`, `go test`, `buf breaking`, and `npm` commands directly — see
 [Repository-specific gates](#repository-specific-gates) for the full list and
 why each one lives here rather than in a plugin.
@@ -191,7 +192,10 @@ applicable plugin; never add a service-specific implementation to provider YAML.
 
 These jobs are not service gates and have no plugin to live in: each guards an
 artifact or a cross-service contract that belongs to the repository as a whole.
-Every one of them is mandatory on both release tracks (see the table above).
+Every one of them is mandatory on both release tracks (see the table above), and
+this list is held to `REQUIRED_GATES` in `scripts/ci/release-gates.mjs` by
+`release-gates.test.mjs` — a gate added there and not documented here, or the
+reverse, fails the `release-contract` job.
 
 | Job | What it guards | What it runs |
 | --- | --- | --- |
@@ -199,6 +203,7 @@ Every one of them is mandatory on both release tracks (see the table above).
 | `authz-coverage` | the generated authorization catalog: RBAC coverage, audit coverage, and permission no-broadening against `main` | `node module/tools/authz-coverage-gate.mjs`, plus `go test` for the gateway header-lockstep and adapter enforcement tests |
 | `release-contract` | this gating graph itself | `node --test scripts/ci/release-gates.test.mjs`, `node scripts/ci/release-gates.mjs check` |
 | `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
+| `kit-version` | the published frontend kit's version moves whenever its content does, since a registry version is immutable once served | `node --test scripts/ci/kit-version.test.mjs`, `node scripts/ci/kit-version.mjs check` |
 | `provider-shim` | provider setup scripts stay non-writing shims | `node --test scripts/setup/*.test.mjs` |
 | `marketing` | the marketing runtime builds in isolation from the app, and the public config is current | `node module/tools/generate-public-config.mjs --check`, `node module/tools/marketing-extraction.mjs` |
 | `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, and the exported API contract | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check` |

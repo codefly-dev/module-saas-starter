@@ -105,7 +105,10 @@ decides the required database boundary. This table is the documented copy of the
 executable inventory `relationsByScope` in
 `services/accounts/code/pkg/infra/postgres_role_hardening_test.go`; the two are
 compared relation-by-relation by `TestDatabaseAuthorityScopeInventoryMatchesCode`
-in `tools`, which fails on any drift in either direction. Add a relation to the
+in `tools`, which fails on any drift in either direction. The third column is
+held to the same source by `TestDatabaseAuthorityBoundaryMatchesCode`, which
+reads the RLS verdict out of that suite's own per-scope predicate — so a row
+cannot claim a boundary the database is not held to. Add a relation to the
 executable inventory and this table in the same change.
 
 | Scope | Relations | Required database boundary |
@@ -114,8 +117,8 @@ executable inventory and this table in the same change.
 | `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `installations`, `invitations`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
-| `job` | `job_messages` | No request relation grant; function-only scoped enqueue plus exact job-worker grants |
-| `worker` | `analytics_deliveries`, `email_delivery_events`, `event_subscriptions`, `job_attempts`, `job_state_transitions` | No request relation grant; exact grants to one named worker role |
+| `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
+| `worker` | `analytics_deliveries`, `email_delivery_events`, `event_subscriptions`, `job_attempts`, `job_state_transitions` | No RLS; no request relation grant, exact grants to one named worker role |
 
 The executable inventory checks scope, `ENABLE ROW LEVEL SECURITY`, `FORCE ROW
 LEVEL SECURITY`, and policy presence for every public application table against

@@ -160,12 +160,14 @@ SDK. See the solution repo for its own instructions.
 - Canonical **service** gate: `codefly ci run`. It owns lint,
   compile/typecheck, tests, dependency/vuln audit, SBOM, and container build for
   every service in the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
-- Beside it, CI runs eight repository-specific gates that no service owns —
+- Beside it, CI runs nine repository-specific gates that no service owns —
   base-file integrity (below), authorization coverage, the release-gate
-  contract, interface docs and story tests, provider shims, marketing isolation,
-  the SDK boundary, and the immutable module package. They are listed with what
-  each runs in [RELEASE_GATES.md § Repository-specific
-  gates](./RELEASE_GATES.md#repository-specific-gates).
+  contract, interface docs and story tests, the published frontend kit's
+  version, provider shims, marketing isolation, the SDK boundary, and the
+  immutable module package. They are listed with what each runs in
+  [RELEASE_GATES.md § Repository-specific
+  gates](./RELEASE_GATES.md#repository-specific-gates), which
+  `release-gates.test.mjs` holds to the enforced set.
 - Go checks: this repository holds **six independent Go modules** — the root
   module, `module/tools`, and one per Go service (`accounts`, `auth-gateway`,
   `store`, `telemetry`) — and there is no `go.work`, so `go test ./...` covers

@@ -1,5 +1,12 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The proxy reads the cluster-internal secret through @/lib/internal-token,
+// which carries the `server-only` marker. Next resolves that to its no-op under
+// the `react-server` condition when it bundles the proxy; vitest's resolver has
+// no such condition and would load the throwing entry.
+vi.mock("server-only", () => ({}));
+
 import { proxy, trustedGatewayRequestHeaders } from "@/proxy";
 
 describe("secret return handling", () => {

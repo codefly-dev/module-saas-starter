@@ -18,10 +18,13 @@ import {
 	type CodeflyGatewayContext,
 	resolveCodeflyGatewayContext,
 } from "@/lib/codefly-gateway-context";
+import {
+	expectedInternalToken,
+	INTERNAL_TOKEN_HEADER,
+} from "@/lib/internal-token";
 import { contentSecurityPolicyFromInputs } from "../server/security-headers.mjs";
 
 const PRODUCT_API_PREFIXES = ["/v1/", "/saas.accounts.v1."] as const;
-const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
 const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 
 function isProductAPI(pathname: string): boolean {
@@ -323,20 +326,27 @@ async function loadRegisteredSolutionOrigins(
 async function registeredSolutionOrigins(
 	req: NextRequest,
 	pathname: string,
-	internalToken: string | undefined,
+	internalToken: string | null,
 ): Promise<string[]> {
 	if (!isDocumentRequest(req)) {
 		return [];
 	}
-	// No cluster-internal token means the detail lookup would 401 — and means
-	// registration itself is failing closed, so there is no registered remote to
-	// admit. Self-only is the correct policy here, not a degradation, but it is
-	// still reported: silently serving it would hide a missing secret behind a
-	// policy that merely looks conservative.
+	// An unset internal-auth secret means the detail lookup would 401 — and
+	// means registration itself is failing closed, so there is no registered
+	// remote to admit. Self-only is the correct policy here, not a degradation,
+	// but it is still reported: silently serving it would hide a missing secret
+	// behind a policy that merely looks conservative.
+	//
+	// The secret is read directly (see `proxy` below) rather than taken off the
+	// gateway context. That context also resolves the PUBLIC ORIGIN and returns
+	// undefined when that fails — an unparseable `x-forwarded-host`, or an own
+	// HTTP endpoint the SDK cannot resolve to exactly one address. Threading
+	// the token through it made an origin failure narrow this policy to
+	// self-only and report a missing secret that was in fact present.
 	if (!internalToken) {
 		reportListingFailure(
 			"no-internal-token",
-			`solution CSP: no cluster-internal token; solution detail lookup unavailable path=${pathname}`,
+			`solution CSP: the internal-auth secret is unset; solution detail lookup unavailable path=${pathname}`,
 		);
 		return [];
 	}
@@ -384,7 +394,7 @@ async function contentSecurityPolicyFor(
 	req: NextRequest,
 	pathname: string,
 	nonce: string,
-	internalToken: string | undefined,
+	internalToken: string | null,
 ): Promise<string> {
 	const inputs = baselineCspInputs();
 	const csp = contentSecurityPolicyFromInputs(
@@ -449,8 +459,14 @@ function isPublic(pathname: string): boolean {
 
 export async function proxy(req: NextRequest) {
 	const { pathname, search } = req.nextUrl;
-	const gatewayContext = resolveCodeflyGatewayContext(publicRequestOrigin(req));
-	const gatewayHeaders = trustedGatewayRequestHeaders(req, gatewayContext);
+	const gatewayHeaders = trustedGatewayRequestHeaders(
+		req,
+		resolveCodeflyGatewayContext(publicRequestOrigin(req)),
+	);
+	// The CSP lookup needs the cluster-internal secret and nothing else, so it
+	// reads that secret rather than the gateway context, whose resolution also
+	// depends on the public origin (see registeredSolutionOrigins).
+	const internalToken = expectedInternalToken();
 	const nonce = mintNonce();
 
 	const secretReturn =
@@ -482,7 +498,7 @@ export async function proxy(req: NextRequest) {
 			req,
 			pathname,
 			nonce,
-			gatewayContext?.internalToken,
+			internalToken,
 		);
 		const response = withNoncedCSP(req, gatewayHeaders, nonce, csp);
 		if (pathname === "/invitations/accept" || pathname === "/waitlist/verify") {
@@ -509,7 +525,7 @@ export async function proxy(req: NextRequest) {
 		req,
 		pathname,
 		nonce,
-		gatewayContext?.internalToken,
+		internalToken,
 	);
 	return withNoncedCSP(req, gatewayHeaders, nonce, csp);
 }
