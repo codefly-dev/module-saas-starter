@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { withSentryConfig } from "@sentry/nextjs";
 import { getCurrentFixture } from "codefly";
-import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
+import { resolveProductAPIRewrites } from "./server/accounts-bindings.mjs";
 import {
 	baselineSecurityHeaders,
 	resolveCspInputs,
@@ -85,26 +85,26 @@ const nextConfig = {
 	// enforces the generated route/auth policy before Accounts. This keeps auth
 	// cookies first-party while preserving the backend trust boundary.
 	//
-	// Complete Codefly runs resolve auth-gateway through the SDK. Isolated
-	// Playwright runs may provide direct API_* fallbacks because they
-	// intentionally do not start the module graph.
+	// auth-gateway is the only destination this can ever name — there is no
+	// direct-Accounts rewrite to fall back to. Next bakes these destinations
+	// into the build manifest and a container image is built outside the module
+	// graph, so an unresolved gateway yields no product rewrite here; the running
+	// server then rejects that composition (instrumentation.ts at startup,
+	// /api/healthz on the readiness probe) rather than serving without one.
 	async rewrites() {
-		const { rest: apiRest, connect: apiConnect } = resolveAccountsBindings();
-		const rules = [];
-		if (apiRest) {
-			rules.push({ source: "/v1/:path*", destination: `${apiRest}/v1/:path*` });
-		}
-		if (apiConnect) {
+		const bindings = resolveProductAPIRewrites();
+		if (!bindings) return [];
+		return [
+			{ source: "/v1/:path*", destination: `${bindings.rest}/v1/:path*` },
 			// Connect-ES service paths, e.g. /saas.accounts.v1.UserService/ListUsers.
 			// Keep the generated service and method as separate path segments. A
 			// single `:path*` after the package dot does not match the following `/`
 			// under Next 16, so the request falls through to the frontend as a 404.
-			rules.push({
+			{
 				source: "/saas.accounts.v1.:service/:method",
-				destination: `${apiConnect}/saas.accounts.v1.:service/:method`,
-			});
-		}
-		return rules;
+				destination: `${bindings.connect}/saas.accounts.v1.:service/:method`,
+			},
+		];
 	},
 };
 

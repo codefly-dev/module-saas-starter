@@ -139,6 +139,9 @@ process.exit(0);`,
 					ERROR_TRACKING_MODE: "sentry",
 					NEXT_RUNTIME: "nodejs",
 					SENTRY_DSN: "https://public@example.invalid/1",
+					// register() gates server startup on the product API gateway, and
+					// this runtime is outside the module graph.
+					PRODUCT_GATEWAY_INTERNAL: "http://auth-gateway.example.invalid",
 				},
 			},
 		);

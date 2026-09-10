@@ -1,5 +1,10 @@
 import { defineConfig } from "@playwright/test";
-import { resolveServiceAddressSync } from "codefly";
+import {
+	type EndpointProtocol,
+	getCurrentModule,
+	getEndpoints,
+	resolveServiceAddressSync,
+} from "codefly";
 
 // Resolve EVERY address from codefly — NEVER hardcode a port. Ports are
 // workspace+module+service hashes, so they differ per consumer (the canonical
@@ -7,11 +12,28 @@ import { resolveServiceAddressSync } from "codefly";
 // workspace it was authored in. The e2e requires codefly (globalSetup brings
 // the stack up via withDependencies), so if resolution fails we THROW rather
 // than fall back to a wrong guess.
+//
+// Under `codefly test service frontend --suite e2e` Codefly owns this process
+// and injects the endpoints, so those win: a deterministic CLI lookup would
+// answer for the default naming scope, not the one Codefly actually started.
 function mustResolve(
 	service: string,
-	type: "http" | "rest" | "connect",
+	type: EndpointProtocol,
+	protocol: "HTTP" | "REST",
 ): string {
-	const url = resolveServiceAddressSync(service, type);
+	const currentModule = getCurrentModule();
+	const injected = getEndpoints().filter(
+		(endpoint) =>
+			endpoint.service === service &&
+			endpoint.protocol === protocol &&
+			(!currentModule || endpoint.module === currentModule),
+	);
+	if (injected.length > 1) {
+		throw new Error(
+			`playwright.config: codefly injected multiple ${service}/${type} endpoints.`,
+		);
+	}
+	const url = injected[0]?.address ?? resolveServiceAddressSync(service, type);
 	if (!url) {
 		throw new Error(
 			`playwright.config: codefly could not resolve ${service}/${type}. ` +
@@ -21,10 +43,13 @@ function mustResolve(
 	return url;
 }
 
-const frontendUrl = mustResolve("frontend", "http"); // the FE's own codefly address
+const frontendUrl = mustResolve("frontend", "http", "HTTP"); // the FE's own codefly address
 const frontendPort = new URL(frontendUrl).port;
-const apiRest = mustResolve("accounts", "rest"); // rewrite destination (server-side)
-const apiConnect = mustResolve("accounts", "connect"); // rewrite destination (server-side)
+// The browser suite exercises the product path, so its server addresses the
+// same auth-gateway every other runtime does. Accounts is never a rewrite
+// destination here — a direct-backend run would prove nothing about the
+// gateway's route allow-list, limiter, or identity headers.
+const productGateway = mustResolve("auth-gateway", "rest", "REST");
 
 export default defineConfig({
 	testDir: "./tests/e2e",
@@ -32,12 +57,22 @@ export default defineConfig({
 	// Two-step bring-up:
 	//  1. globalSetup → withDependencies (codefly JS SDK) spawns
 	//     `codefly run service frontend --exclude-root` to start the
-	//     dependency graph: postgres + vault + redis + api. (--exclude-root
-	//     because the FE itself runs in step 2.)
+	//     dependency graph: postgres + vault + redis + auth-gateway + accounts.
+	//     (--exclude-root because the FE itself runs in step 2.)
 	//  2. webServer → playwright runs a production build of the FE on the FE's
 	//     codefly-resolved port. The browser talks SAME-ORIGIN to it; the Next
-	//     server proxies /v1/* + /saas.accounts.v1.* to the api (next.config rewrites),
-	//     so auth cookies are first-party and survive full-page loads.
+	//     server proxies /v1/* + /saas.accounts.v1.* to the auth-gateway
+	//     (next.config rewrites), so auth cookies are first-party and survive
+	//     full-page loads.
+	//
+	// Run it as `codefly test service frontend --suite e2e`. Codefly then owns
+	// the process, skips step 1 (its graph is already up), and carries the
+	// frontend's own Codefly configuration into the web server — which is what
+	// lets the gateway verify the browser origin, so origin-derived journeys
+	// (invitations, OAuth handoff) behave as they do in a real deploy. A bare
+	// `npx playwright test` still traverses the same gateway, but its server
+	// holds no internal-auth configuration, so the gateway forwards those
+	// requests with no verified origin.
 	//
 	// Set CODEFLY_TEST_KEEP_ALIVE=1 in your shell to skip the codefly
 	// cold start on subsequent runs — the container-level deps persist.
@@ -61,13 +96,13 @@ export default defineConfig({
 			// Fixture dev-login mode (no real WorkOS); without it the login page
 			// renders no user picker and every spec times out at "Sarah Chen".
 			CODEFLY__FIXTURE: "dev-admin",
-			// Browser talks same-origin to the frontend; the Next
-			// server proxies API traffic to the api (next.config rewrites). Keeps
-			// auth cookies first-party so full-page loads re-auth instead of
-			// bouncing to login.
-			// Rewrite destinations — the api's real, codefly-resolved ports.
-			API_REST_INTERNAL: apiRest,
-			API_CONNECT_INTERNAL: apiConnect,
+			// Browser talks same-origin to the frontend; the Next server proxies
+			// API traffic to the auth-gateway (next.config rewrites). Keeps auth
+			// cookies first-party so full-page loads re-auth instead of bouncing to
+			// login. This server runs outside the module graph, so it needs the
+			// gateway named explicitly — it is the same single product API path,
+			// not an alternate one.
+			PRODUCT_GATEWAY_INTERNAL: productGateway,
 			// Force the Codefly fixture identity adapter for this browser suite.
 			NEXT_PUBLIC_IDENTITY_PROVIDER: "fixture",
 			NEXT_PUBLIC_IDENTITY_AUTHORIZE_URL: "",

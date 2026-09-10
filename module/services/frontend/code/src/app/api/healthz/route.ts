@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
+import { resolveAccountsBindings } from "../../../../server/accounts-bindings.mjs";
 
-// force-static keeps the probe dependency-free and lets it prerender under
-// both `output: standalone` and `output: export` (static export rejects a
-// route handler that is neither force-static nor revalidating).
-export const dynamic = "force-static";
+// Readiness, not liveness: the probe resolves the single product API path, so a
+// composition that reaches no auth-gateway/rest never takes traffic. The
+// resolver reads the SDK's already-injected environment, so this stays a local
+// check with no outbound call. force-dynamic because a prerendered answer would
+// report the build's configuration rather than the running server's.
+export const dynamic = "force-dynamic";
 
 export function GET() {
-  return NextResponse.json({ status: "ok" });
+	try {
+		resolveAccountsBindings();
+	} catch (error) {
+		return NextResponse.json(
+			{
+				status: "misconfigured",
+				reason: error instanceof Error ? error.message : String(error),
+			},
+			{ status: 503 },
+		);
+	}
+	return NextResponse.json({ status: "ok" });
 }

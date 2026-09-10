@@ -21,9 +21,23 @@
 
 import {
 	type Dependencies,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
 	resolveServiceAddressSync,
 	withDependencies,
 } from "codefly";
+
+/**
+ * True when Codefly owns this process — `codefly test service frontend --suite
+ * e2e` — and has already started the dependency graph. That run is the one that
+ * carries the frontend's own configuration into the web server, so the gateway
+ * treats its origin as verified; starting a second graph underneath it would
+ * only fight the first for ports and the database.
+ */
+function codeflyInjectedRuntime(): boolean {
+	return Boolean(getCurrentModule() && getCurrentService());
+}
 
 // Shared handle: globalSetup stashes it here, globalTeardown reads it.
 // Playwright runs setup/teardown in the SAME Node process so a module
@@ -31,6 +45,17 @@ import {
 let deps: Dependencies | null = null;
 
 async function globalSetup(): Promise<void> {
+	if (codeflyInjectedRuntime()) {
+		const injected = getEndpoints().find(
+			(endpoint) =>
+				endpoint.module === getCurrentModule() &&
+				endpoint.service === getCurrentService() &&
+				endpoint.protocol === "HTTP",
+		);
+		if (injected?.address) process.env.PLAYWRIGHT_BASE_URL = injected.address;
+		return;
+	}
+
 	// Default: NO scope. That keeps codefly's derived ports at the
 	// deterministic defaults (frontend=21931) which matches the
 	// playwright baseURL fallback. Set CODEFLY_TEST_SCOPE=<name> in the
