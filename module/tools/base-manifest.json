@@ -1012,7 +1012,7 @@
     "services/accounts/proto/saas/webhooks/v1/jobs.proto": "7f0ec2d019daa2563fcb73df045c254c8a83fa773eb61423586a1815f511a15a",
     "services/auth-gateway/buf.gen.local.yaml": "7cd6f950a870753e6c4605c088e5f8a4bf5c4a02af7f84ef43b3b81c0c504a65",
     "services/auth-gateway/code/access_keys.go": "2b2d9cf334c785782d69d53acbee75ada297b2935a225cc473c3d946d7e1a952",
-    "services/auth-gateway/code/access_keys_test.go": "bb3dc06c3af8a0e66f0817969e47c8d28ee07d902b99daea710b0790537792fd",
+    "services/auth-gateway/code/access_keys_test.go": "acc9c6713e521ae51a06d027568250e8964a0af7f640f4d07082543235c76b8b",
     "services/auth-gateway/code/auth_metrics.go": "977840c9e4f910a7e445dc04bba89b81a51c8f76fbfb4cbdab6e831dec412969",
     "services/auth-gateway/code/authorization_metadata.go": "02168095fad22992f9608b48ea856fceaa1f570760e728de42f1425b8c0329d4",
     "services/auth-gateway/code/authorization_metadata_test.go": "7627b93a1e41494dd71a98ec65002953cd704dde61a86fbbfda9619e0a8bea59",

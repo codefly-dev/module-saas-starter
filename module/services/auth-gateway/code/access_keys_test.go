@@ -296,22 +296,36 @@ func TestAccessJWKS_ConcurrentUnknownKeyIDsAreBounded(t *testing.T) {
 	_, attacker := mustEd25519(t)
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
 	authz := newJWKSExtAuthz(t, publisher.server.URL)
+	// The bound is one probe per interval, so the window has to be held still
+	// for the count to mean anything.
+	clock := newTestClock(t, authz)
 
-	const callers = 32
-	var wg sync.WaitGroup
-	for i := 0; i < callers; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			token := signAccessToken(t, attacker, fmt.Sprintf("attacker-chosen-%d", i), validClaims(time.Now()))
-			requireDenied(t, authz, token, 401)
-		}(i)
+	storm := func(round int) {
+		const callers = 32
+		var wg sync.WaitGroup
+		for i := 0; i < callers; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				token := signAccessToken(t, attacker, fmt.Sprintf("attacker-chosen-%d-%d", round, i), validClaims(time.Now()))
+				requireDenied(t, authz, token, 401)
+			}(i)
+		}
+		wg.Wait()
 	}
-	wg.Wait()
 
+	storm(1)
 	// One cold fetch plus at most one unknown-key probe for the whole window,
 	// however many distinct key ids the traffic invents.
 	require.LessOrEqual(t, publisher.fetches(), int64(2))
+
+	// The next window buys the traffic exactly one more probe: the guarantee is
+	// a rate, so sustained invented key ids cost one fetch per interval rather
+	// than one per request.
+	afterFirstWindow := publisher.fetches()
+	clock.advance(jwksProbeInterval)
+	storm(2)
+	require.LessOrEqual(t, publisher.fetches(), afterFirstWindow+1)
 }
 
 func TestAccessJWKS_ConcurrentColdRequestsShareOneFetch(t *testing.T) {
@@ -470,30 +484,32 @@ func extAuthzWithKeys(keys accessKeys) *ExtAuthz {
 	}
 }
 
-// testClock replaces the key cache's clock so TTL and grace boundaries are
-// exercised without sleeping.
+// testClock replaces the key cache's clock so TTL, probe, and grace boundaries
+// are exercised without sleeping. It stands still until advance is called: a
+// clock that still tracked wall time would let a slow runner cross a boundary
+// the test did not ask it to cross.
 type testClock struct {
-	mu     sync.Mutex
-	offset time.Duration
-	keys   *accessJWKS
+	mu   sync.Mutex
+	at   time.Time
+	keys *accessJWKS
 }
 
 func newTestClock(t *testing.T, authz *ExtAuthz) *testClock {
 	t.Helper()
 	keys, ok := authz.keys.(*accessJWKS)
 	require.True(t, ok)
-	clock := &testClock{keys: keys}
+	clock := &testClock{at: time.Now(), keys: keys}
 	keys.cache.now = func() time.Time {
 		clock.mu.Lock()
 		defer clock.mu.Unlock()
-		return time.Now().Add(clock.offset)
+		return clock.at
 	}
 	return clock
 }
 
 func (c *testClock) advance(d time.Duration) {
 	c.mu.Lock()
-	c.offset += d
+	c.at = c.at.Add(d)
 	c.mu.Unlock()
 }
 
