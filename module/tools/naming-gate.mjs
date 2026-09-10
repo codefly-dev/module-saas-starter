@@ -38,10 +38,12 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
 
-// Mirrors base-integrity's prune set: build output, dependencies, VCS.
+// Mirrors base-integrity's prune set: build output, dependencies, VCS. `test-results` is
+// deliberately NOT pruned even though base-integrity prunes it: it holds a tracked file here,
+// and pruning a directory that carries tracked content is a silent hole in the scan.
 const PRUNE_DIRS = new Set([
   "node_modules", ".next", ".turbo", "dist", "build", "coverage",
-  ".git", "vendor", "__pycache__", ".codefly", ".cache", ".nix-cache", "test-results", "playwright-report",
+  ".git", "vendor", "__pycache__", ".codefly", ".cache", ".nix-cache", "playwright-report",
 ]);
 
 // Generated output is deliberately NOT skipped — a checked-in generated Go file carried a
@@ -56,7 +58,7 @@ const SKIP_FILE = (rel) =>
   /(?:^|\/)tools\/base-manifest\.json$/.test(rel) ||
   /(?:^|\/)tools\/naming-terms\.json$/.test(rel) || // digests only, by construction
   /(?:^|\/)package-lock\.json$/.test(rel) ||
-  /\.(?:png|jpe?g|gif|webp|avif|ico|icns|pdf|zip|gz|tgz|bz2|xz|woff2?|ttf|otf|eot|mp4|webm|wasm|so|dylib|dll|exe|bin|node)$/i.test(rel) ||
+  /\.(?:png|jpe?g|gif|webp|avif|ico|icns|pdf|zip|gz|tgz|bz2|xz|woff2?|ttf|otf|eot|mp4|webm|wasm|so|dylib|dll|exe|bin|binpb|node)$/i.test(rel) ||
   rel.endsWith(".tsbuildinfo") ||
   rel.endsWith(".DS_Store");
 
@@ -127,15 +129,32 @@ function loadAllowlist(root = MODULE_ROOT) {
   return allowed;
 }
 
+// Case-boundary units of one separator part: `ZorpcoClient` -> Zorpco, Client;
+// `obIngressPolicy` -> ob, Ingress, Policy; `zorpcoAPIKey` -> zorpco, API, Key. The
+// acronym branch is ordered first and guarded so `APIKey` yields API + Key, not APIK + ey.
+const CASE_UNIT_RE = /[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|[0-9]+/g;
+
 // Every (mode, digest) a single slug occurrence can satisfy.
 function slugHits(raw, terms) {
   const hits = [];
   const lower = raw.toLowerCase();
   if (terms.slug.has(digest(lower))) hits.push(raw);
 
+  // Each separator part contributes itself AND, when it is a camelCase/PascalCase identifier,
+  // its case units. Splitting on separators alone never saw a name fused into an identifier —
+  // `ZorpcoClient` and `zorpcoTimeout` passed while the prose form failed — which is the
+  // commonest way a name reaches code. The whole part is still tested, so a term that itself
+  // spans a case boundary (`ZorpCo`) keeps matching.
   const parts = raw.split(/[._@-]+/).filter(Boolean);
-  const compound = parts.length > 1;
+  const units = [];
   for (const part of parts) {
+    units.push(part);
+    const cased = part.match(CASE_UNIT_RE) ?? [];
+    if (cased.length > 1) units.push(...cased);
+  }
+  // A name fused into an identifier is as compound as one joined by a hyphen.
+  const compound = units.length > 1;
+  for (const part of units) {
     const h = digest(part.toLowerCase());
     if (terms.word.has(h)) hits.push(part);
     else if (compound && terms.compound.has(h)) hits.push(part);
@@ -204,7 +223,16 @@ export function namingErrors(moduleRoot = MODULE_ROOT, scanRoot = canonicalScanR
     }
 
     const abs = join(scanRoot, rel);
-    if (statSync(abs).size > MAX_BYTES) continue;
+    // Reported, never skipped silently: coverage must not shrink just because a file grew past
+    // the cap. Binaries are already excluded by extension, so whatever reaches this is text the
+    // gate is declining to read, and a reader of a green run has to be able to see that.
+    if (statSync(abs).size > MAX_BYTES) {
+      errors.push(
+        `${rel}: too large to scan (over ${MAX_BYTES} bytes) — split it, or allowlist it in ` +
+          "tools/naming-allowlist.json with a reason and a ticket",
+      );
+      continue;
+    }
     let source;
     try {
       source = readFileSync(abs, "utf8");

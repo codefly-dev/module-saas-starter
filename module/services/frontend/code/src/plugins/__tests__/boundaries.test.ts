@@ -90,12 +90,12 @@ describe("frontend convergence boundaries", () => {
 	it("keeps product branding, routes, and endpoints out of starter source", () => {
 		const violations = sourceFiles(join(codeDir, "src")).flatMap((path) => {
 			const source = readFileSync(path, "utf8");
-			return [
-				"Acme",
-				"NEXT_PUBLIC_ACME",
-				"/admin/acme",
-				"/api/v1/plugins/console",
-			]
+			// Brand *names* are enforced repo-wide by module/tools/naming-gate.mjs, which holds
+			// them as digests: this list may not spell the real one without reintroducing the
+			// leak, and spelling the generic placeholder instead matches the legitimate Acme
+			// fixtures across src/ rather than any product branding. The endpoint shape below
+			// is not a name, so no digest gate covers it and it stays here.
+			return ["/api/v1/plugins/console"]
 				.filter((term) => source.includes(term))
 				.map((term) => `${relative(codeDir, path)}: ${term}`);
 		});
@@ -422,7 +422,9 @@ process.stdout.write(JSON.stringify({
 		const nextConfig = readFileSync(join(codeDir, "next.config.mjs"), "utf8");
 		expect(nextConfig).toContain("workspacePackageNames");
 		expect(nextConfig).toContain('new URL("./packages"');
-		expect(nextConfig).not.toContain("@acme/");
+		// The consumer-scoped package this used to exclude is now caught anywhere in the tree
+		// by naming-gate.mjs; asserting the absence of the generic placeholder scope instead
+		// would assert nothing while reading like a guarantee.
 
 		const dockerfile = readFileSync(
 			join(codeDir, "../builder/Dockerfile"),

@@ -15,6 +15,12 @@ import type {
  * extensions, needs, permissions, and lifecycle. This declaration is the contract the projection
  * targets; it is intentionally the shared shape only, never a second copy of
  * the starter's manifest.
+ *
+ * This string is emitted into every projected manifest and validated by the
+ * consuming platform, so it is a wire format, not an implementation detail:
+ * changing it breaks projection until that platform accepts the new value, and
+ * nothing in this repository can detect that break. `example.test.ts` pins the
+ * literal so a change fails here first and has to be coordinated deliberately.
  */
 export const SOLUTION_SPEC_API_VERSION = "solution.codefly.dev/v1" as const;
 

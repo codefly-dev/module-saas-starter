@@ -97,6 +97,31 @@ test("proper-only terms do not leak through compound slugs", () => {
   assert.deepEqual(run({ "a.go": 'x := "round-pike-policy"\n' }), []);
 });
 
+test("a name fused into a camelCase or PascalCase identifier is caught", () => {
+  // Splitting on separators alone saw none of these: a name reaches code as an identifier far
+  // more often than as prose, so every one of them used to pass while the prose form failed.
+  const out = joined({
+    "a.go": "type ZorpcoClient struct{}\nfunc NewZorpcoHandler() {}\n",
+    "b.ts": 'const zorpcoTimeout = 5;\nconst zorpcoAPIKey = "x";\n',
+  });
+  for (const at of ["a\\.go:1", "a\\.go:2", "b\\.ts:1", "b\\.ts:2"]) {
+    assert.match(out, new RegExp(`${at}: forbidden name`));
+  }
+});
+
+test("case splitting does not fire on identifiers that merely embed the letters", () => {
+  // The real-tree analogues that make case splitting risky: `obIngressPolicy` must not trip a
+  // four-letter org name, a longer word containing the term is still not the term, and an
+  // all-caps constant is not a proper noun.
+  assert.deepEqual(
+    run({
+      "a.go": "func obIngressPolicy() {}\nvar zorpcoreHandler = 1\ntype Zorpcology struct{}\n",
+      "b.go": 'LBPolicy: "ROUND_PIKE"\nremindUser(ctx)\n',
+    }),
+    [],
+  );
+});
+
 test("phrase mode matches a spaced multi-word name", () => {
   const out = joined({ "a.md": "Sold to North Star Mutual in March.\n" });
   assert.match(out, /a\.md:1: forbidden name \(North Star Mutual\)/);
@@ -172,6 +197,39 @@ test("canonicalScanRoot widens to the repository root only in canonical", () => 
   writeFileSync(join(consumer, "workspace.codefly.yaml"), "name: consumer\n");
   assert.equal(canonicalScanRoot(composed), composed, "consumer copy: stay in the module");
   rmSync(consumer, { recursive: true, force: true });
+});
+
+test("a file too large to scan is reported, never skipped silently", () => {
+  const big = "clean line\n".repeat(60000); // comfortably over the 512 KiB cap
+  assert.match(joined({ "big.md": big }), /big\.md: too large to scan/);
+  // The allowlist is the escape hatch the message names, so it must actually silence it.
+  assert.deepEqual(
+    run({ "big.md": big }, { allowlist: [{ path: "big.md", reason: "generated", ticket: "#1" }] }),
+    [],
+  );
+});
+
+test("a directory carrying tracked content is not pruned", () => {
+  const out = joined({ "test-results/.last-run.json": '{"failedTests":["ZorpCo"]}\n' });
+  assert.match(out, /test-results\/\.last-run\.json:1: forbidden name \(ZorpCo\)/);
+});
+
+test("machine-generated skips apply in canonical, where paths carry a module/ prefix", () => {
+  const repo = mkdtempSync(join(tmpdir(), "naming-gate-"));
+  const moduleRoot = join(repo, "module");
+  mkdirSync(join(moduleRoot, "tools"), { recursive: true });
+  writeFileSync(
+    join(moduleRoot, "tools", "naming-terms.json"),
+    JSON.stringify({ terms: TERMS.map(({ term, modes }) => ({ h: digest(term), modes })) }),
+  );
+  // Matched as whole paths these skips never fired in canonical, so the manifest was scanned
+  // and its recorded paths reported as violations in their own right.
+  writeFileSync(join(moduleRoot, "tools", "base-manifest.json"), '{"zorpco/a.md":"deadbeef"}\n');
+  try {
+    assert.deepEqual(namingErrors(moduleRoot, repo), []);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
 });
 
 test("the shipped tree is clean", () => {

@@ -25,7 +25,13 @@ describe("reference plugin.codefly.yaml", () => {
 		const manifest = loadPluginManifest(example);
 		const spec = toSolutionSpec(manifest);
 
-		expect(spec.apiVersion).toBe(SOLUTION_SPEC_API_VERSION);
+		// Pinned to the literal, not to the constant: comparing the projection's apiVersion
+		// against the constant it is built from can never fail, so it left the one value a
+		// consuming platform validates on the wire with no test at all. Changing this string
+		// is a wire-format break that needs a coordinated bump on the consuming side, so it
+		// must fail here first.
+		expect(spec.apiVersion).toBe("solution.codefly.dev/v1");
+		expect(SOLUTION_SPEC_API_VERSION).toBe("solution.codefly.dev/v1");
 		expect(spec.kind).toBe("Solution");
 		expect(spec.metadata).toBe(manifest.metadata);
 		expect(spec.services).toBe(manifest.services);

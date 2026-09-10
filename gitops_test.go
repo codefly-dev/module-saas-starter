@@ -1241,11 +1241,11 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	}
 }
 
-func TestMindRenderUsesExactServiceGraphRoutesAndPolicies(t *testing.T) {
+func TestExampleRenderUsesExactServiceGraphRoutesAndPolicies(t *testing.T) {
 	t.Parallel()
 	services := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
 	root, moduleDir := writeModuleFixture(t, "example-control", "users", services)
-	writeMindTopology(t, moduleDir)
+	writeExampleTopology(t, moduleDir)
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
@@ -1256,14 +1256,14 @@ func TestMindRenderUsesExactServiceGraphRoutesAndPolicies(t *testing.T) {
 	}}
 	workspace.Environments[1].Ingress = []environmentIngressRoute{{
 		Name: "product", Service: "forge-edge", Endpoint: "rest",
-		Hosts: []string{"app.acme.example.com"},
+		Hosts: []string{"app.example.com"},
 	}}
 
 	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
 		t.Fatal(err)
 	}
 	assertExampleRouteAndPolicies(t, moduleDir, "local", "app.example.localhost", false)
-	assertExampleRouteAndPolicies(t, moduleDir, "aws", "app.acme.example.com", true)
+	assertExampleRouteAndPolicies(t, moduleDir, "aws", "app.example.com", true)
 }
 
 func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
@@ -1892,7 +1892,7 @@ func appendWorkspace(t *testing.T, root, extra string) {
 	}
 }
 
-func writeMindTopology(t *testing.T, moduleDir string) {
+func writeExampleTopology(t *testing.T, moduleDir string) {
 	t.Helper()
 	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
 module:

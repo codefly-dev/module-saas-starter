@@ -49,6 +49,24 @@ alongside its own hardening roadmap, and are not tracked in this module.
 
 ---
 
+## The bar
+
+The principles every finding below is judged against. They are the module's own
+security bar and hold independently of who composes it.
+
+1. **Fail closed, everywhere.** No fallback-to-broken, no fail-open on a
+   backing-store error where strictness matters.
+2. **Short blast radius.** Small TTLs plus `jti`; isolate the internal surface.
+3. **Strip everything you stamp.** Unconditionally, at every edge — the strip
+   set is a proven superset of the stamp set.
+4. **Coverage is a CI gate, not a hope.** Un-gated or un-audited routes and
+   un-covered internal mesh paths are un-mergeable.
+5. **Defense-in-depth stays independent.** App authz, the interceptor, RLS, and
+   mesh reachability are separately sufficient, never load-bearing on one
+   another.
+
+---
+
 ## HIGH
 
 ### H1 — Access-token revocation is not enforced on the browser (gateway) path
