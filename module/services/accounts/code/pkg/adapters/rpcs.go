@@ -430,6 +430,9 @@ func (s *TeamServer) AddMember(ctx context.Context, req *gen.AddTeamMemberReques
 	// WithControlPlane lookup. 4 transactions/request → 3.
 	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	if err := service.AddTeamMember(ctx, actorID, req); err != nil {
+		if errors.Is(err, business.ErrTeamMemberNotInParentOrganization) {
+			return nil, status.Error(codes.FailedPrecondition, business.ErrTeamMemberNotInParentOrganization.Error())
+		}
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil

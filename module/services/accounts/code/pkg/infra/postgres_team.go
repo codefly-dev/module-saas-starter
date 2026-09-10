@@ -5,10 +5,12 @@ import (
 	"errors"
 	"time"
 
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -84,18 +86,37 @@ func (s *PostgresStore) GetTeamPath(ctx context.Context, teamID string) (string,
 	return orgID, path, nil
 }
 
+// AddTeamMember inserts or re-roles a membership. org_id is taken from the team
+// row rather than from an argument, and the join to organization_members makes
+// the parent membership a precondition of the write itself: an ineligible
+// target writes no row instead of relying on an earlier check in some caller.
+// The composite foreign keys behind it (migration 123) hold the same line for
+// writers that never come through here at all.
 func (s *PostgresStore) AddTeamMember(ctx context.Context, teamID string, userID string, role string) error {
 	w := wool.Get(ctx).In("AddTeamMember")
 	executor := s.getQueryExecutor(ctx)
 
-	_, err := executor.Exec(ctx, `
-		INSERT INTO team_members (team_id, user_id, role)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (team_id, user_id) DO UPDATE SET role = $3`,
+	tag, err := executor.Exec(ctx, `
+		INSERT INTO team_members (team_id, org_id, user_id, role)
+		SELECT t.id, t.org_id, o.user_id, $3::text
+		FROM teams t
+		JOIN organization_members o
+		  ON o.org_id = t.org_id AND o.user_id = $2
+		WHERE t.id = $1
+		ON CONFLICT (team_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
 		teamID, userID, role,
 	)
 	if err != nil {
+		// A parent membership retired between this statement's snapshot and its
+		// referential check reports the same ineligibility, not an internal fault.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.ConstraintName == "team_members_parent_org_membership_fkey" {
+			return business.ErrTeamMemberNotInParentOrganization
+		}
 		return w.Wrapf(err, "failed to add team member")
+	}
+	if tag.RowsAffected() == 0 {
+		return business.ErrTeamMemberNotInParentOrganization
 	}
 	return nil
 }
@@ -117,9 +138,8 @@ func (s *PostgresStore) RemoveTeamMember(ctx context.Context, teamID string, use
 // RemoveOrgTeamMemberships deletes every team membership one user holds in one
 // organization as a single statement, on the caller's transaction, and reports
 // how many rows went. The JOIN to teams is what scopes the delete to the
-// organization — team_members carries no org_id of its own — and it is also
-// what team_members' RLS policy checks, so the statement is confined to the
-// tenant the surrounding WithOrgTx opened.
+// organization, and it is also what team_members' RLS policy checks, so the
+// statement is confined to the tenant the surrounding WithOrgTx opened.
 //
 // Row-level rather than statement-level: migration 78's
 // team_members_bump_authorization_revision fires FOR EACH ROW, so every removed
