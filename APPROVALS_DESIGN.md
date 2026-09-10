@@ -64,18 +64,19 @@ build on (all paths verified against the tree; migrations live under
   open** for non-enrolled) vs `requireRecentMFA` (`:712`, strict step-up in a
   15-minute window, no enrollment escape hatch). Pick per risk tier.
 
-### The GDPR precedent — and its one flaw we must not copy
+### The GDPR precedent
 
 GDPR request→completion is the flow most like what we want: an MFA-gated
-request RPC (`connect_handlers.go:951-954`), a background worker that finishes
-the action and emits `gdpr.deletion_completed` (`business/gdpr.go:238`). But
-its resume is a **fire-and-forget goroutine** — `go s.processDeletion(...)`
-(`business/gdpr.go:167`), not a durable job. A crash between the insert and
-completion strands a `pending`/`processing` row with nothing to resume it.
+request RPC (`connect_handlers.go:951-954`) and a worker that finishes the
+action and emits `gdpr.deletion_completed`. Its resume used to be a
+fire-and-forget goroutine, so a crash between the insert and completion
+stranded a `pending`/`processing` row with nothing to resume it; it now enqueues
+a durable job in the same transaction that accepts the request and executes it
+under lease (`module/JOBS.md`, privacy workflow adapter).
 
-**The approval primitive must resume through the durable jobs/outbox
-(item above), not the GDPR goroutine.** GDPR shows the shape (request now,
-resume the action later, emit on completion); jobs give it the durability.
+**The approval primitive must resume the same way** — request now, resume the
+action later, emit on completion, with the jobs platform providing the
+durability.
 
 ---
 
@@ -486,7 +487,7 @@ PR (they need no approval infrastructure), not bundled into the primitive.
   `store/migrations/45_rls_delegation_grants.up.sql`
 - `store/migrations/99_actor_chain_journal.up.sql:42,77-93` (FK + immutability)
 - `store/migrations/15_platform_features.up.sql:77`, `business/gdpr.go:167,238`,
-  `connect_handlers.go:951-954` (GDPR precedent — and its goroutine flaw)
+  `connect_handlers.go:951-954` (GDPR precedent)
 - `module/JOBS.md`, `store/migrations/72_job_platform_contract.up.sql`,
   `pkg/infra/postgres_job_producer.go:53`, `pkg/infra/postgres_jobs.go:375`
 - `pkg/adapters/auth.go:685` (`requireMFA`), `:712` (`requireRecentMFA`)

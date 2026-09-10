@@ -93,7 +93,9 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"work_context_replay":                  {selectRows: true, insertRows: true}, // claim-once; GC deletes run under app_control_plane
 
 	// User-scoped and pre-auth relations.
-	"gdpr_requests":          {selectRows: true, insertRows: true, updateRows: true},
+	// A privacy request is accepted and read by request traffic; only the leased
+	// worker transitions it, under the control plane.
+	"gdpr_requests":          {selectRows: true, insertRows: true},
 	"magic_links":            {},
 	"mfa_backup_codes":       {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"mfa_devices":            {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},

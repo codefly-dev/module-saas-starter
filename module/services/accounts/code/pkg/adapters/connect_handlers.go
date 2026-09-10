@@ -1376,7 +1376,9 @@ func gdprStatusToProto(s business.GDPRRequestStatus) gen.GDPRRequestStatus {
 	switch string(s) {
 	case "pending":
 		return gen.GDPRRequestStatus_GDPR_REQUEST_STATUS_PENDING
-	case "processing":
+	// A retryable failure is still in flight for the subject: the durable job
+	// is scheduled for another attempt, so the request has not failed.
+	case "processing", "retrying":
 		return gen.GDPRRequestStatus_GDPR_REQUEST_STATUS_PROCESSING
 	case "completed":
 		return gen.GDPRRequestStatus_GDPR_REQUEST_STATUS_COMPLETED

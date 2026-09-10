@@ -396,3 +396,80 @@ The worker exports `saas.jobs.polls`, `saas.jobs.claimed`,
 OpenTelemetry. Queue and bounded result/outcome are the only labels. Durable
 queue depth, oldest age, retries, terminal failures, and replay lineage remain
 in the generic Postgres operations projection.
+
+## Privacy workflow adapter
+
+Privacy export and deletion run on this platform instead of a detached
+goroutine. The workload uses queue `privacy`, topics `privacy.export.run` and
+`privacy.deletion.run`, source `saas.privacy`, schema version `1`, the request
+UUID as its idempotency key, and a per-subject ordering key so a deletion
+cannot interleave with an export of the same person's data. `RequestExport` and
+`RequestDeletion` write the `gdpr_requests` row and enqueue its job in the same
+subject transaction: an accepted request always has an owner, and a request
+whose job cannot be enqueued is not accepted at all. The schema carries that
+invariant — a request that can still progress must name a job.
+
+The request row is the product-visible projection of durable execution:
+`pending`, `processing`, `retrying` (a retryable failure the platform will
+re-lease), `completed`, or `failed` (terminal until an operator replays the
+dead-lettered job). Request cancellation is not offered. The API surface
+reports `retrying` as processing, because a scheduled retry has not failed
+from the subject's point of view. Every transition runs under the control
+plane, never under the subject's own identity — a deletion workflow may have
+removed that identity before it reports what it did — and no transition failure
+is discarded: the job retries instead.
+
+The job's lease token is carried onto the request row, and the attempt number
+fences the claim itself. A worker whose lease expired therefore cannot take the
+request back from the attempt that replaced it, cannot record a receipt, and
+cannot finalize it; it stops before reaching the adapter. `app_tenant` holds
+select and insert on `gdpr_requests` and no update at all, so request traffic
+cannot reach execution state.
+
+### Adapter requirements
+
+`SetPrivacyWorkflow` takes the transactional producer and the adapter together;
+leaving either unset keeps the capability unavailable rather than partially
+implemented. The starter ships no adapter, so the default runtime accepts no
+privacy request. An adapter is responsible for:
+
+- **Dataset and provider inventory.** `RequiredSteps` declares the effects a
+  request type must complete. Completion is only reported once every declared
+  step carries a durable receipt; an adapter that returns success without them
+  is a permanent failure, not a completed request. A dataset or provider with
+  no adapter is a missing step, not a silent omission.
+- **Replay-safe external effects.** `PrivacyOperation` carries the stable
+  logical operation ID (the request UUID) across every attempt.
+  `IdempotencyKey(step)` derives a deterministic per-step key to hand the
+  provider; `RecordReceipt` durably records what the step produced. An attempt
+  that dies between the effect and its receipt repeats the call under the same
+  key; one that dies after it skips the step. Receipts are written once and
+  survive a lease handover, so a later attempt cannot overwrite the evidence an
+  earlier one reported.
+- **Retention and legal-hold decisions.** A hold that forbids erasure is a
+  permanent `PrivacyFailure`, which parks the request for operator action
+  rather than reporting a deletion that did not happen.
+- **Partial failure.** `NewPrivacyFailure(code, message, permanent)` classifies
+  the outcome: a permanent failure spends no further attempts, anything else is
+  retried on the bounded eight-attempt schedule and ends `failed` when the
+  budget runs out.
+- **Bounded diagnostics.** Only a declared `PrivacyFailure` reaches durable
+  history; every other error becomes a generic retryable diagnostic, because a
+  provider error can contain credentials or the personal data being exported.
+  Raw provider errors must never be passed through as a failure message.
+- **Private artifacts.** An export artifact must live in private storage behind
+  authorization bound to the requesting subject, with an expiry the adapter
+  returns alongside the reference. A lapsed reference is never handed to a
+  caller, and the daily sweep asks the optional `PrivacyArtifactCleaner` to
+  delete the stored object before dropping the reference. A refused cleanup
+  leaves the reference in place so the next sweep retries.
+
+### Recovering pre-durable requests
+
+Migration `124_privacy_durable_execution` moves any `pending` or `processing`
+request accepted by the previous implementation to `failed` with failure code
+`privacy.pre_durable_request`. Those requests have no job, so no worker would
+ever claim them, and whether their adapter already produced an external effect
+is unknown. They are deliberately **not** replayed: an operator reviews each
+one — against the adapter's own provider records for the deletion case — and
+has the subject submit a fresh request where re-running is the right answer.

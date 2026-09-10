@@ -266,8 +266,8 @@ their next owning change.
 | Find by identity         | ✅    | `FindUserByIdentity` — platform-admin only (security fix 2026-04-25)           |
 | List identities          | ✅    | `ListUserIdentities` — gated to self or platform-admin (security fix 2026-04-25) |
 | Account deletion request | ❌    | Request/status scaffolding fails closed until a complete deletion, retention, provider-cleanup, and legal-hold workflow is wired |
-| Privacy export           | ❌    | Request/status scaffolding fails closed until a complete secure-artifact workflow is wired |
-| Verified privacy delete  | ❌    | No complete dataset/provider inventory, retention authority, legal-hold handling, or completion receipt |
+| Privacy export           | ❌    | Requests and their execution are durable, leased, and receipt-gated ([JOBS.md](./JOBS.md#privacy-workflow-adapter)); fails closed until a complete secure-artifact adapter is wired |
+| Verified privacy delete  | ❌    | Durable execution and per-step receipts are in place; no adapter ships, so dataset/provider inventory, retention authority, and legal-hold handling stay adopter work |
 
 ### Multi-tenancy (orgs / teams)
 
@@ -409,7 +409,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 
 | Feature                  | Status | Notes                                                            |
 |--------------------------|--------|------------------------------------------------------------------|
-| Privacy export artifact  | ❌    | UI disabled until secure storage, subject binding, expiry, deletion, and completeness are verified |
+| Privacy export artifact  | ❌    | Expiry is enforced on read and swept from storage, but the UI stays disabled until secure storage, subject binding, and completeness are verified |
 | Verified data deletion   | ❌    | UI disabled until dataset rules, blockers, provider cleanup, retained records, and receipts are complete |
 | Audit purge configuration| 🟡    | Starter database policy only; deployment retention is adopter-owned and must be evidenced |
 | Terms acceptance         | ✅    | Versioned authenticated evidence, separate from optional tracking choices |
