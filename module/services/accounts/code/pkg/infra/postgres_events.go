@@ -324,7 +324,7 @@ func (p *PostgresEventTransport) relayBatch(ctx context.Context, drain *relayDra
 		if len(pending) == 0 {
 			return nil
 		}
-		subscriptions, err := liveSubscriptions(ctx, tx)
+		subscriptions, err := liveSubscriptions(ctx, tx, eventTypesOf(pending))
 		if err != nil {
 			return err
 		}
@@ -485,8 +485,17 @@ func (p *PostgresEventTransport) relayToWebhook(
 	e *eventsv1.EventEnvelope,
 	subscription events.Subscription,
 ) error {
-	if p.webhooks == nil || !eventcatalog.IsExternalPublished(e.GetType()) {
+	if !eventcatalog.IsExternalPublished(e.GetType()) {
 		return nil
+	}
+	// A matching webhook subscription with no dispatcher wired is a
+	// misconfiguration, not an empty result: returning nil here would mark the
+	// event published and discard the delivery permanently, with nothing to
+	// distinguish it from an event nobody subscribed to. Failing charges the
+	// event a relay attempt and leaves it unpublished, so the delivery survives
+	// until the process is wired correctly.
+	if p.webhooks == nil {
+		return errors.New("events: webhook subscription matched but no dispatcher is wired")
 	}
 	if subscription.OrgID == "" || subscription.OrgID != e.GetTenantId() {
 		return nil
@@ -514,6 +523,15 @@ func mapEnqueueError(err error) error {
 // which is the same predicate the audit emitter's inline fan-out applied before
 // webhooks moved onto subscriptions. Deactivating an endpoint therefore stops
 // delivery without rewriting any subscription row.
+//
+// The scan is confined to the types actually being fanned out. It has to be:
+// with outbound webhooks converged onto this relation it holds one row per
+// (endpoint, subscribed event name) across every tenant, and this query runs
+// once per relay batch. Loading all of it to match in Go would make each tick
+// cost the whole table. An exact pattern is selected by equality; a wildcard
+// pattern cannot be, so those rows are always loaded and matched in Go — they
+// are only ever created by a runtime module Subscribe, and a webhook
+// subscription is always an exact type.
 const liveSubscriptionsSQL = `
 	SELECT subscription.id, subscription.subscriber_principal_id, subscription.type_pattern,
 	       subscription.queue, subscription.delivery, subscription.org_id,
@@ -522,10 +540,27 @@ const liveSubscriptionsSQL = `
 	LEFT JOIN public.webhook_subscriptions AS endpoint
 	       ON endpoint.id = subscription.webhook_subscription_id
 	WHERE subscription.revoked_at IS NULL
-	  AND (subscription.webhook_subscription_id IS NULL OR endpoint.active)`
+	  AND (subscription.webhook_subscription_id IS NULL OR endpoint.active)
+	  AND (subscription.type_pattern = ANY($1::text[])
+	       OR subscription.type_pattern LIKE '%.*')`
 
-func liveSubscriptions(ctx context.Context, tx pgx.Tx) ([]events.Subscription, error) {
-	rows, err := tx.Query(ctx, liveSubscriptionsSQL)
+// eventTypesOf is the distinct type set of one fan-out batch, the selector that
+// bounds the subscription scan above.
+func eventTypesOf(events []*eventsv1.EventEnvelope) []string {
+	seen := make(map[string]struct{}, len(events))
+	types := make([]string, 0, len(events))
+	for _, e := range events {
+		if _, duplicate := seen[e.GetType()]; duplicate {
+			continue
+		}
+		seen[e.GetType()] = struct{}{}
+		types = append(types, e.GetType())
+	}
+	return types
+}
+
+func liveSubscriptions(ctx context.Context, tx pgx.Tx, types []string) ([]events.Subscription, error) {
+	rows, err := tx.Query(ctx, liveSubscriptionsSQL, types)
 	if err != nil {
 		return nil, fmt.Errorf("events: load subscriptions: %w", err)
 	}
@@ -702,7 +737,7 @@ func (p *PostgresEventTransport) Replay(ctx context.Context, sel events.ReplaySe
 // replayPage fans one page of replay history out inside a single transaction.
 func (p *PostgresEventTransport) replayPage(ctx context.Context, sel events.ReplaySelector, page []*eventsv1.EventEnvelope) error {
 	return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
-		subscriptions, err := liveSubscriptions(ctx, tx)
+		subscriptions, err := liveSubscriptions(ctx, tx, eventTypesOf(page))
 		if err != nil {
 			return err
 		}

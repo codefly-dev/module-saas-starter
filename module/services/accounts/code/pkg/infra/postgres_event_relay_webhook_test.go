@@ -210,3 +210,38 @@ func webhookSubscriptionPatterns(t *testing.T, endpointID string) []string {
 	}))
 	return patterns
 }
+
+// TestAuditPublishTakesNoPartitionLock pins the reason the audit envelope
+// carries no partition key. publish_domain_event takes a per-partition advisory
+// lock, held until the producer's transaction commits, for any event that names
+// one. Keying the audit event on its organization would therefore serialize
+// every audited mutation in that organization against every other one, for an
+// ordering nothing consumes — an outbound webhook is dispatched in
+// subscription-id order, and a module cannot subscribe the platform namespace.
+//
+// The assertion is on the stored partition key rather than on timing, because
+// the lock does not fail a mutation, it only queues it: a timing test would be
+// flaky in exactly the conditions that matter.
+func TestAuditPublishTakesNoPartitionLock(t *testing.T) {
+	transport := auditRelayTransport(t)
+	orgID := seedOrg(t, seedUser(t))
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(transport))
+	require.NoError(t, err)
+
+	entryID := business.NewIDString()
+	emitter.Emit(testCtx, business.AuditEntry{
+		ID: entryID, OrgID: orgID, ActorID: business.NewIDString(), ActorType: "user",
+		EventType: business.EventSessionRevoked, Resource: "session", ResourceID: entryID,
+		CreatedAt: time.Now().UTC(),
+	})
+
+	var partitionKey string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared key with WithControlPlane
+		return tx.QueryRow(ctx,
+			`SELECT partition_key FROM public.domain_events WHERE id = $1::uuid`, entryID).Scan(&partitionKey)
+	}))
+	require.Empty(t, partitionKey,
+		"an audit-derived event must not take a per-organization advisory lock on the mutation path")
+}

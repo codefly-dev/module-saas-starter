@@ -526,7 +526,16 @@ func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
 // Only a type the catalog declares external is published: eligibility to leave
 // the platform is granted by declaration. A platform-scope record never reaches
 // here — the caller returns early when the entry has no organization — so an
-// event is always tenant-scoped and partitioned on its tenant.
+// event is always tenant-scoped.
+//
+// No partition key is set, and that is deliberate rather than an omission. A
+// partition key is a promise of FIFO within it, and publish_domain_event buys
+// that promise with a per-partition advisory lock held until the producer's
+// transaction commits. Keying it on the organization would serialize every
+// audited mutation in that organization against every other one — for an
+// ordering nothing consumes: an outbound webhook is dispatched in
+// subscription-id order, and the platform namespace is not subscribable by a
+// module, so no ordered subscriber can exist for these types.
 func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry AuditEntry) error {
 	if e.transport == nil || !eventcatalog.IsExternalPublished(string(entry.EventType)) {
 		return nil
@@ -545,7 +554,6 @@ func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry Audi
 		Time:             timestamppb.New(entry.CreatedAt.UTC()),
 		Data:             data,
 		TenantId:         entry.OrgID,
-		PartitionKey:     entry.OrgID,
 		ActorPrincipalId: entry.ActorID,
 	})
 }

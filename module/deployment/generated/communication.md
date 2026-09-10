@@ -37,7 +37,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -46,7 +45,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -55,7 +53,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -64,7 +61,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -73,7 +69,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -82,7 +77,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -91,7 +85,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -100,7 +93,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -109,7 +101,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -118,7 +109,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -127,7 +117,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -136,7 +125,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -145,7 +133,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -154,7 +141,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -163,7 +149,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -172,7 +157,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -181,7 +165,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -190,7 +173,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -199,7 +181,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -208,7 +189,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -217,7 +197,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -226,7 +205,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -235,7 +213,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -244,7 +221,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -253,7 +229,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -262,7 +237,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -271,7 +245,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -280,7 +253,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -289,7 +261,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -298,7 +269,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -307,7 +277,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -316,7 +285,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -325,7 +293,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -334,7 +301,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -343,7 +309,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -352,7 +317,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -361,7 +325,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -370,7 +333,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -379,7 +341,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -388,7 +349,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -397,7 +357,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -406,7 +365,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -415,7 +373,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -424,7 +381,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -433,7 +389,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -442,7 +397,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -451,7 +405,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -460,7 +413,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -469,7 +421,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -478,7 +429,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -487,7 +437,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -496,7 +445,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -505,7 +453,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -514,7 +461,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -523,7 +469,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -532,7 +477,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -541,7 +485,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -550,7 +493,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -559,7 +501,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -568,7 +509,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -577,7 +517,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -586,7 +525,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -595,7 +533,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -604,7 +541,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -613,7 +549,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -622,7 +557,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -631,7 +565,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -640,7 +573,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -649,7 +581,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -658,7 +589,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -667,7 +597,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -676,7 +605,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -685,7 +613,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -694,7 +621,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -703,7 +629,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -712,7 +637,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -721,7 +645,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -730,7 +653,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -739,7 +661,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -748,7 +669,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -757,7 +677,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -766,7 +685,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -775,7 +693,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -784,7 +701,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -793,7 +709,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -802,7 +717,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -811,7 +725,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -820,7 +733,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -829,7 +741,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -838,7 +749,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -847,7 +757,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -856,7 +765,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -865,7 +773,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -874,7 +781,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -883,7 +789,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -892,7 +797,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -901,7 +805,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -910,7 +813,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -919,7 +821,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -928,7 +829,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -937,7 +837,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -946,7 +845,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -955,7 +853,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -964,7 +861,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -973,7 +869,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -982,7 +877,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -991,7 +885,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1000,7 +893,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1009,7 +901,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1018,7 +909,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1027,7 +917,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1036,7 +925,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1045,7 +933,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1054,7 +941,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1063,7 +949,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1072,7 +957,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1081,7 +965,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1090,7 +973,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1099,7 +981,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1108,7 +989,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1117,7 +997,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1126,7 +1005,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1135,7 +1013,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1144,7 +1021,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1153,7 +1029,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1162,7 +1037,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 
@@ -1171,7 +1045,6 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Publisher:** saas
 - **Visibility:** external
 - **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
-- **Partition:** `{tenant_id}`
 - **Retention:** 30d
 - **Consumers:** _none_
 

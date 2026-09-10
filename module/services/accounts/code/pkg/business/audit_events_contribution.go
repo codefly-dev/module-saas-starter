@@ -49,9 +49,14 @@ func RenderAuditEventsContribution() []byte {
 # reservation may publish under it.
 #
 # Every audit event type is an external domain event so an outbound webhook can
-# subscribe to it (EVENTS.md, "Webhooks are a subscriber kind"). Partitioning per
-# tenant keeps one organization's records in publish order for an ordered
-# subscriber.
+# subscribe to it (EVENTS.md, "Webhooks are a subscriber kind").
+#
+# No partition is declared. A partition is a promise of FIFO within it, and the
+# publish path buys that promise with a per-partition advisory lock held until
+# the producing mutation commits — which on a per-tenant partition would
+# serialize every audited mutation in an organization. Nothing consumes the
+# ordering: an outbound webhook is dispatched in subscription-id order, and the
+# platform namespace is not subscribable by a module.
 `)
 	fmt.Fprintf(&out, "schema: %s\n", "codefly/saas/events-contribution/v1")
 	fmt.Fprintf(&out, "namespace: %s\n", auditEventsNamespace)
@@ -61,7 +66,6 @@ func RenderAuditEventsContribution() []byte {
 		fmt.Fprintf(&out, "  - type: %s\n", def.Type)
 		fmt.Fprintf(&out, "    schema: %s\n", auditEventsSchemaRef)
 		out.WriteString("    visibility: external\n")
-		out.WriteString("    partition: \"{tenant_id}\"\n")
 		out.WriteString("    retention: 30d\n")
 	}
 	return out.Bytes()

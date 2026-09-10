@@ -145,8 +145,13 @@ BEGIN
     );
 
     IF caller_role = 'app_tenant' THEN
+        -- IS DISTINCT FROM, not <>: a transaction that never set app.current_org_id
+        -- (a user-scoped one, which runs as app_tenant and sets only
+        -- app.current_user_id) leaves the setting NULL, and `p_tenant_id <> NULL`
+        -- is NULL, not TRUE — so a plain comparison lets that transaction publish
+        -- for any tenant it names. The guard has to fail closed on an absent scope.
         IF p_tenant_id IS NULL
-           OR p_tenant_id <> NULLIF(current_setting('app.current_org_id', true), '')::uuid THEN
+           OR p_tenant_id IS DISTINCT FROM NULLIF(current_setting('app.current_org_id', true), '')::uuid THEN
             RAISE EXCEPTION 'event tenant does not match the signed request scope'
                 USING ERRCODE = 'insufficient_privilege';
         END IF;
