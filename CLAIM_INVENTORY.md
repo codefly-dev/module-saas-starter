@@ -20,6 +20,9 @@ best available evidence.
 | **operationally verified** | evidence exists from a running deployment, not only from tests |
 | **planned** | designed and owned, not built |
 | **historical** | was true; kept as a record of how something came to be, not as current state |
+| **reviewed narrative** | a statement about trust, lifecycle, or failure semantics that no test can carry; its evidence is that a person reasoned about it and named the reasoning |
+| **corrected** | the row records a claim this repository *used* to make and no longer does. Struck through, kept so a reader who remembers the old text can see it was retired deliberately rather than lost |
+| **known drift, filed** | a claim that is wrong today, with an issue open against it. Do not rely on it |
 
 Nothing here is marked **operationally verified**. Every row below is evidenced
 by source, tests, or CI configuration in this repository, all of which run
