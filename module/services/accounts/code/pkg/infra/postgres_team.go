@@ -114,6 +114,34 @@ func (s *PostgresStore) RemoveTeamMember(ctx context.Context, teamID string, use
 	return nil
 }
 
+// RemoveOrgTeamMemberships deletes every team membership one user holds in one
+// organization as a single statement, on the caller's transaction, and reports
+// how many rows went. The JOIN to teams is what scopes the delete to the
+// organization — team_members carries no org_id of its own — and it is also
+// what team_members' RLS policy checks, so the statement is confined to the
+// tenant the surrounding WithOrgTx opened.
+//
+// Row-level rather than statement-level: migration 78's
+// team_members_bump_authorization_revision fires FOR EACH ROW, so every removed
+// membership still bumps the user's authorization revision and invalidates
+// their sessions.
+func (s *PostgresStore) RemoveOrgTeamMemberships(ctx context.Context, orgID string, userID string) (int64, error) {
+	w := wool.Get(ctx).In("RemoveOrgTeamMemberships")
+
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		DELETE FROM team_members tm
+		USING teams t
+		WHERE tm.team_id = t.id
+		  AND t.org_id = $1
+		  AND tm.user_id = $2`,
+		orgID, userID,
+	)
+	if err != nil {
+		return 0, w.Wrapf(err, "failed to remove org team memberships")
+	}
+	return tag.RowsAffected(), nil
+}
+
 func (s *PostgresStore) GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error) {
 	w := wool.Get(ctx).In("GetTeamMembership")
 	var membership *gen.TeamMembership

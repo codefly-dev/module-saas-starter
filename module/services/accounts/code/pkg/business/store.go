@@ -154,6 +154,11 @@ type Store interface {
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
 	OrgMemberExists(ctx context.Context, orgID string, userID string) (bool, error)
 	RemoveOrgMember(ctx context.Context, orgID string, userID string) error
+	// LockOrgMembership serializes every mutation of one (organization, user)
+	// authority pair. Callers hold it for the whole transaction that writes
+	// the membership row and the team memberships that depend on it, so an
+	// organization removal and a concurrent team insert cannot interleave.
+	LockOrgMembership(ctx context.Context, orgID string, userID string) error
 	// GetOrgMembership is the authorization hot path. It must be an indexed
 	// point lookup, never an org-roster scan. Nil means the user is not a member.
 	GetOrgMembership(ctx context.Context, orgID string, userID string) (*gen.OrgMembership, error)
@@ -188,6 +193,12 @@ type Store interface {
 	DeleteTeam(ctx context.Context, teamID string) error
 	AddTeamMember(ctx context.Context, teamID string, userID string, role string) error
 	RemoveTeamMember(ctx context.Context, teamID string, userID string) error
+	// RemoveOrgTeamMemberships deletes, in one statement on the caller's
+	// transaction, every team membership the user holds in the organization,
+	// and returns the number of rows removed. This is the dependent-access
+	// half of removing an organization member: it commits with the membership
+	// deletion or not at all.
+	RemoveOrgTeamMemberships(ctx context.Context, orgID string, userID string) (int64, error)
 	// GetTeamMembership is the authorization hot path. Nil means the user is
 	// not a member; list access remains a separate, explicitly authorized API.
 	GetTeamMembership(ctx context.Context, orgID string, teamID string, userID string) (*gen.TeamMembership, error)
