@@ -22,3 +22,20 @@ export function formatSyncedAt(iso: string | undefined): string {
 	const date = new Date(iso);
 	return Number.isNaN(date.getTime()) ? "Never" : date.toLocaleDateString();
 }
+
+/**
+ * Boundary node ids are UUIDs; the leading group is enough to tell two
+ * boundaries apart in a table cell when no name could be resolved.
+ */
+export function shortBoundaryId(nodeId: string): string {
+	return nodeId.split("-")[0] || nodeId;
+}
+
+/** "read" + "write" -> "Read · Write", in a stable order. */
+export function formatGrants(actions: string[]): string {
+	const order = ["read", "write"];
+	return [...actions]
+		.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+		.map((action) => action.charAt(0).toUpperCase() + action.slice(1))
+		.join(" · ");
+}

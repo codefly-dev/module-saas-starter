@@ -9,6 +9,7 @@ export {
 	type GatewayBinding,
 } from "./datasources/gateway.js";
 export {
+	useAccessibleScopes,
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
@@ -19,10 +20,11 @@ export {
 	connectGitHubSchema,
 } from "./datasources/schema.js";
 export type {
+	AccessibleScopeView,
 	ConnectGitHubInput,
 	DatasourceClient,
 	DatasourceProviderName,
 	DatasourceStatusName,
 	DatasourceView,
 } from "./datasources/types.js";
-export { parsePaths } from "./datasources/util.js";
+export { formatGrants, parsePaths } from "./datasources/util.js";

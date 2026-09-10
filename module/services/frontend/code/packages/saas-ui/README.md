@@ -25,8 +25,9 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
-  (repo · paths · branch · webhook · last sync) with per-row **Sync**/**Delete** and
-  a **Connect GitHub** action. Loading/error/empty are first-class.
+  (repo · paths · branch · boundary · webhook · last sync) with per-row
+  **Sync**/**Delete** and a **Connect GitHub** action. Loading/error/empty are
+  first-class.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
   target collection, access token, webhook secret).
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
@@ -34,7 +35,22 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
   transport you already own.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
-  `useSyncSource`, `useDeleteSource`.
+  `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+
+### Data boundaries
+
+Each source ingests into a **data boundary** — the scope node its Entries land in
+— so two teams in one org can see different collections through a grant change
+rather than a code change. The **Boundary** column names that node and summarizes
+the viewer's grants on it (`Read · Write`).
+
+Naming a boundary needs the caller-scoped accessible-scopes RPC, which is *not*
+part of the published `@codefly-dev/saas-sdk` surface (the SDK deliberately
+excludes the authorization surface), so `DatasourceClient.listAccessibleScopes`
+is **optional** and supplied by the consumer — see the portal's
+`src/features/datasources/datasource-client.ts`. Without it the column falls back
+to the boundary id and never claims anything about access, because a boundary
+that could not be looked up is unknown, not ungranted.
 
 ## Installing from a solution
 

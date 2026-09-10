@@ -295,6 +295,9 @@ message AccessibleScope {
   string node_id = 1;
   string scope_path = 2;
   string kind = 3;
+  // Human-readable node name. scope_path is an ltree of encoded UUIDs for a
+  // machine-minted boundary, so it never renders as a name on its own.
+  string label = 4;
 }
 
 message ListAccessibleScopesRequest {

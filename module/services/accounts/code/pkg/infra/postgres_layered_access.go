@@ -171,8 +171,8 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	// a colliding (resource_type, resource_id) across tenants can never surface
 	// another org's node even if the RLS floor is ever bypassed.
 	query := `
-		SELECT node_id, scope_path, kind FROM (
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.scope_path AS path
+		SELECT node_id, scope_path, kind, label FROM (
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.scope_path AS path
 			FROM scope_nodes n
 			JOIN scope_grants g ON g.scope_path @> n.scope_path
 			JOIN role_permissions rp ON rp.role_id = g.role_id
@@ -184,7 +184,7 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 			  AND (rp.action   = '*' OR rp.action   = $3)
 			  AND ($4::ltree IS NULL OR n.scope_path > $4::ltree)
 			UNION
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.scope_path AS path
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.scope_path AS path
 			FROM scope_nodes n
 			JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
 			JOIN role_permissions rp ON rp.role_id = sh.role_id
@@ -213,7 +213,7 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	var out []*gen.AccessibleScope
 	for rows.Next() {
 		var node gen.AccessibleScope
-		if err := rows.Scan(&node.NodeId, &node.ScopePath, &node.Kind); err != nil {
+		if err := rows.Scan(&node.NodeId, &node.ScopePath, &node.Kind, &node.Label); err != nil {
 			return nil, w.Wrapf(err, "failed to scan accessible scope")
 		}
 		out = append(out, &node)

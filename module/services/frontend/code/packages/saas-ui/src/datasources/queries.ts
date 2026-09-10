@@ -3,6 +3,25 @@ import type { ConnectGitHubInput, DatasourceClient } from "./types.js";
 
 const sourcesKey = (orgId: string) => ["datasources", orgId] as const;
 
+const scopesKey = (orgId: string) =>
+	["datasource-boundaries", orgId] as const;
+
+/**
+ * The org's data boundaries the caller may act on. Stays disabled when the
+ * client cannot reach the accessible-scopes RPC, and never retries: an
+ * unresolved boundary degrades to its id, so a failed lookup must not turn into
+ * a failed panel.
+ */
+export function useAccessibleScopes(client: DatasourceClient, orgId: string) {
+	const listAccessibleScopes = client.listAccessibleScopes?.bind(client);
+	return useQuery({
+		queryKey: scopesKey(orgId),
+		queryFn: () => listAccessibleScopes?.(orgId) ?? [],
+		enabled: !!orgId && !!listAccessibleScopes,
+		retry: false,
+	});
+}
+
 export function useListSources(client: DatasourceClient, orgId: string) {
 	return useQuery({
 		queryKey: sourcesKey(orgId),

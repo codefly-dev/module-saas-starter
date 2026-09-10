@@ -5,14 +5,25 @@ import { type ReactNode, useMemo, useState } from "react";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import {
+	useAccessibleScopes,
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
 	useSyncSource,
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
-import type { DatasourceClient, DatasourceView } from "./types.js";
-import { cn, formatSyncedAt, parsePaths } from "./util.js";
+import type {
+	AccessibleScopeView,
+	DatasourceClient,
+	DatasourceView,
+} from "./types.js";
+import {
+	cn,
+	formatGrants,
+	formatSyncedAt,
+	parsePaths,
+	shortBoundaryId,
+} from "./util.js";
 
 interface DatasourcesPanelBaseProps {
 	orgId: string;
@@ -96,6 +107,7 @@ function DatasourcesPanelView({
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
+	const scopes = useAccessibleScopes(client, orgId);
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -148,6 +160,11 @@ function DatasourcesPanelView({
 	};
 
 	const sources = list.data ?? [];
+	const boundaries = useMemo(() => {
+		const byNode = new Map<string, AccessibleScopeView>();
+		for (const scope of scopes.data ?? []) byNode.set(scope.nodeId, scope);
+		return byNode;
+	}, [scopes.data]);
 
 	return (
 		<div className={cn("space-y-4", className)}>
@@ -192,6 +209,11 @@ function DatasourcesPanelView({
 			) : (
 				<SourcesTable
 					sources={sources}
+					boundaries={boundaries}
+					// A boundary missing from a resolved lookup means the viewer holds no
+					// grant on it; missing because the lookup never ran means unknown.
+					// Only the first may be reported as such.
+					boundariesResolved={scopes.isSuccess}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
 					onSync={handleSync}
@@ -249,12 +271,16 @@ const cellClass = "px-3 py-2 align-middle";
 
 function SourcesTable({
 	sources,
+	boundaries,
+	boundariesResolved,
 	syncingIds,
 	deletingIds,
 	onSync,
 	onDelete,
 }: {
 	sources: DatasourceView[];
+	boundaries: ReadonlyMap<string, AccessibleScopeView>;
+	boundariesResolved: boolean;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
@@ -268,6 +294,7 @@ function SourcesTable({
 						<th className={headerClass}>Repository</th>
 						<th className={headerClass}>Paths</th>
 						<th className={headerClass}>Branch</th>
+						<th className={headerClass}>Boundary</th>
 						<th className={headerClass}>Webhook</th>
 						<th className={headerClass}>Last sync</th>
 						<th className={cn(headerClass, "text-right")}>Actions</th>
@@ -285,6 +312,13 @@ function SourcesTable({
 								)}
 							</td>
 							<td className={cellClass}>{source.branch || "default"}</td>
+							<td className={cellClass}>
+								<BoundaryCell
+									nodeId={source.boundaryNodeId}
+									scope={boundaries.get(source.boundaryNodeId)}
+									resolved={boundariesResolved}
+								/>
+							</td>
 							<td className={cellClass}>
 								{source.webhookConfigured ? "Configured" : "None"}
 							</td>
@@ -315,6 +349,41 @@ function SourcesTable({
 					))}
 				</tbody>
 			</table>
+		</div>
+	);
+}
+
+/**
+ * A source's data boundary: the collection its Entries land in, named where the
+ * caller could resolve it, plus the grants the caller holds on it. Falls back to
+ * the node id — never to nothing — so the boundary is always identifiable even
+ * when the accessible-scopes RPC is unavailable.
+ */
+function BoundaryCell({
+	nodeId,
+	scope,
+	resolved,
+}: {
+	nodeId: string;
+	scope: AccessibleScopeView | undefined;
+	resolved: boolean;
+}) {
+	if (scope) {
+		return (
+			<div className="space-y-0.5">
+				<div>{scope.label || shortBoundaryId(nodeId)}</div>
+				<div className="text-xs text-muted-foreground">
+					{formatGrants(scope.actions)}
+				</div>
+			</div>
+		);
+	}
+	return (
+		<div className="space-y-0.5">
+			<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
+			{resolved && (
+				<div className="text-xs text-muted-foreground">No access</div>
+			)}
 		</div>
 	);
 }

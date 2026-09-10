@@ -364,6 +364,10 @@
         "kind": {
           "type": "string"
         },
+        "label": {
+          "description": "Human-readable node name. scope_path is an ltree of encoded UUIDs for a\nmachine-minted boundary, so it never renders as a name on its own.",
+          "type": "string"
+        },
         "nodeId": {
           "type": "string"
         },

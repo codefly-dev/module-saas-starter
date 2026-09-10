@@ -2048,10 +2048,13 @@ func (x *CheckAccessResponse) GetReason() string {
 }
 
 type AccessibleScope struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	ScopePath     string                 `protobuf:"bytes,2,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
-	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	NodeId    string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	ScopePath string                 `protobuf:"bytes,2,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
+	Kind      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	// Human-readable node name. scope_path is an ltree of encoded UUIDs for a
+	// machine-minted boundary, so it never renders as a name on its own.
+	Label         string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2103,6 +2106,13 @@ func (x *AccessibleScope) GetScopePath() string {
 func (x *AccessibleScope) GetKind() string {
 	if x != nil {
 		return x.Kind
+	}
+	return ""
+}
+
+func (x *AccessibleScope) GetLabel() string {
+	if x != nil {
+		return x.Label
 	}
 	return ""
 }
@@ -2970,12 +2980,13 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\x06org_id\x18\x06 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"G\n" +
 	"\x13CheckAccessResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"]\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"s\n" +
 	"\x0fAccessibleScope\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
 	"\n" +
 	"scope_path\x18\x02 \x01(\tR\tscopePath\x12\x12\n" +
-	"\x04kind\x18\x03 \x01(\tR\x04kind\"\xc0\x02\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x14\n" +
+	"\x05label\x18\x04 \x01(\tR\x05label\"\xc0\x02\n" +
 	"\x1bListAccessibleScopesRequest\x12'\n" +
 	"\n" +
 	"subject_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsubjectId\x12@\n" +
