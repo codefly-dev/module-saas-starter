@@ -55,3 +55,31 @@ func InternalPublishedTypes() []string {
 	}
 	return out
 }
+
+// PartitionKey resolves the ordering domain a published event type declares in
+// the composed catalog, substituting the envelope's scope fields into the
+// declared template ("{tenant_id}", "{tenant_id}/{boundary_id}"). A type that
+// declares no partition — or that the catalog does not carry at all — is
+// unordered and resolves to the empty key.
+//
+// The empty key is load-bearing, not a fallback: publish_domain_event takes a
+// transaction-scoped advisory lock on any non-empty partition, held until the
+// producing transaction commits, so inventing a partition an event never
+// declared serializes every publish sharing it for an ordering nobody consumes.
+func PartitionKey(eventType, tenantID, boundaryID string) string {
+	e, ok := publishedIndex[eventType]
+	if !ok {
+		return ""
+	}
+	return resolvePartition(e.Partition, tenantID, boundaryID)
+}
+
+// resolvePartition substitutes the scope fields of one envelope into a declared
+// partition template. An absent declaration stays absent — the template is the
+// only thing that can name a partition.
+func resolvePartition(template, tenantID, boundaryID string) string {
+	if template == "" {
+		return ""
+	}
+	return strings.NewReplacer("{tenant_id}", tenantID, "{boundary_id}", boundaryID).Replace(template)
+}

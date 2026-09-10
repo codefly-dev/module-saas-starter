@@ -777,14 +777,15 @@ func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, t
 	// envelope: a caller cannot smuggle another tenant's scope past the namespace
 	// gate. The DB gate re-checks it under the app_tenant role regardless.
 	envelope.TenantId = tenant
-	// Ordered delivery partitions on the envelope's partition key; an empty key
-	// makes eventOrdering return nil, so an ordered subscription would silently
-	// lose per-partition ordering. A module caller that omits the key must still
-	// get tenant-ordered delivery, so default it to the tenant — the same
-	// partition first-party producers use — while preserving a finer-grained key
-	// the caller set deliberately (e.g. per-aggregate ordering within a tenant).
+	// The catalog entry's partition template is the ordering domain the event
+	// type declares, and it is what a caller that omits the key gets. Ordering
+	// is not free — publish_domain_event holds a transaction-scoped advisory
+	// lock on the partition until the producing transaction commits — so a type
+	// that declares no partition publishes unordered rather than inheriting one
+	// it never promised. A key the caller set deliberately (e.g. per-aggregate
+	// ordering within a tenant) wins over the declaration.
 	if envelope.GetPartitionKey() == "" {
-		envelope.PartitionKey = tenant
+		envelope.PartitionKey = eventcatalog.PartitionKey(envelope.GetType(), tenant, envelope.GetBoundaryId())
 	}
 
 	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {

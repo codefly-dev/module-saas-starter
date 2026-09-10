@@ -145,6 +145,70 @@ func TestPostgresPublishOrdersConcurrentSamePartitionCommits(t *testing.T) {
 		"concurrent same-partition publishes must be delivered in commit order")
 }
 
+// TestPostgresPublishDoesNotSerializeUnpartitionedTenantWrites is the other half
+// of the ordering guarantee above, and the reason a partition has to be opt-in.
+// pg_advisory_xact_lock is transaction-scoped: it is held until the producing
+// transaction commits, not until the insert returns. So a partition every event
+// of a tenant shares would queue that tenant's publishes behind whatever long
+// mutation each producer happens to be inside — and two producers each holding a
+// row the other wants would deadlock on the publish itself.
+//
+// An event that declares no partition takes no lock. The test drives the exact
+// interleave the partitioned test asserts blocking on, and requires the opposite:
+// the second producer runs to commit while the first's transaction is still open.
+func TestPostgresPublishDoesNotSerializeUnpartitionedTenantWrites(t *testing.T) {
+	pool, transport := newRelayTransport(t, "relay-unpartitioned")
+
+	const source = "urn:codefly:test/relay"
+	eventType := "relay.unpartitioned." + relayToken()
+
+	tenant := uuid.NewString()
+	first := relayTestEvent(eventType, source, tenant, 1)
+	first.PartitionKey = ""
+	second := relayTestEvent(eventType, source, tenant, 2)
+	second.PartitionKey = ""
+
+	// Producer A publishes and stays open, standing in for a publish inside a
+	// long-running mutation.
+	txA, err := pool.Begin(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = txA.Rollback(testCtx) })
+	require.NoError(t, transport.Publish(testCtx, txA, first))
+
+	secondDone := make(chan error, 1)
+	go func() {
+		txB, beginErr := pool.Begin(testCtx)
+		if beginErr != nil {
+			secondDone <- beginErr
+			return
+		}
+		if publishErr := transport.Publish(testCtx, txB, second); publishErr != nil {
+			_ = txB.Rollback(testCtx)
+			secondDone <- publishErr
+			return
+		}
+		secondDone <- txB.Commit(testCtx)
+	}()
+
+	select {
+	case err := <-secondDone:
+		require.NoError(t, err, "the unpartitioned publish must succeed on its own")
+	case <-time.After(10 * time.Second):
+		t.Fatal("an unpartitioned publish blocked behind another producer's open transaction in the same tenant: it took a partition lock its event never declared")
+	}
+
+	require.NoError(t, txA.Commit(testCtx))
+
+	// Both rows are stored unpartitioned, so nothing downstream advertises an
+	// ordering the producer did not provide.
+	for _, e := range []*events.EventEnvelope{first, second} {
+		var partition string
+		require.NoError(t, pool.QueryRow(testCtx,
+			`SELECT partition_key FROM public.domain_events WHERE id = $1`, e.GetId()).Scan(&partition))
+		require.Empty(t, partition, "an event published with no partition key must be stored with none")
+	}
+}
+
 // TestPostgresRelayDeadLettersPoisonEventAndReleasesItsPartition is the
 // permanent-stall regression. A deterministically-failing event was rolled back
 // and left unpublished on every tick forever, and because a failed event holds

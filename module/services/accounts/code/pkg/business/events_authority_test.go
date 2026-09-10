@@ -173,21 +173,37 @@ func TestModulePublishEventNamespaceAndTenantAuthority(t *testing.T) {
 	}
 }
 
-// TestModulePublishEventDefaultsPartitionKeyToTenant guards ordered delivery: a
-// caller that omits the partition key must still get tenant-partitioned events
-// (an empty key disables ordering downstream), while a deliberately-set finer
-// key is left untouched.
-func TestModulePublishEventDefaultsPartitionKeyToTenant(t *testing.T) {
+// TestModulePublishEventPartitionKeyFollowsTheCatalog pins where a publish's
+// ordering domain comes from when the caller does not name one: the event
+// type's declared partition template, not the tenant. A partition is paid for
+// with an advisory lock held for the producing transaction, so a type that
+// declares none must publish unordered rather than serialize the tenant's
+// publishes behind an ordering nobody asked for. A key the caller set
+// deliberately still wins over the declaration.
+func TestModulePublishEventPartitionKeyFollowsTheCatalog(t *testing.T) {
 	svc := newEventService(t, fakeTxStore{}, events.NewFakeTransport(nil, time.Second))
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: moduleTenantA}
 
-	env := demoEnvelope("scope.granted")
-	env.PartitionKey = ""
-	if _, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, env); err != nil {
+	// scope.granted declares partition "{tenant_id}", which resolves to the
+	// publishing tenant.
+	declared := demoEnvelope("scope.granted")
+	declared.PartitionKey = ""
+	if _, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, declared); err != nil {
 		t.Fatalf("publish with empty partition key: %v", err)
 	}
-	if env.GetPartitionKey() != moduleTenantA {
-		t.Fatalf("empty partition key must default to tenant, got %q", env.GetPartitionKey())
+	if declared.GetPartitionKey() != moduleTenantA {
+		t.Fatalf("declared {tenant_id} partition must resolve to the tenant, got %q", declared.GetPartitionKey())
+	}
+
+	// scope.unregistered is inside the caller's namespace but carries no catalog
+	// declaration, so it promises no ordering and must take no partition.
+	undeclared := demoEnvelope("scope.unregistered")
+	undeclared.PartitionKey = ""
+	if _, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, undeclared); err != nil {
+		t.Fatalf("publish of an undeclared-partition type: %v", err)
+	}
+	if undeclared.GetPartitionKey() != "" {
+		t.Fatalf("an event declaring no partition must publish unpartitioned, got %q", undeclared.GetPartitionKey())
 	}
 
 	fine := demoEnvelope("scope.granted")
