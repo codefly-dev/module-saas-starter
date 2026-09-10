@@ -1006,8 +1006,15 @@ services:
 	if spec["action"] != "ALLOW" {
 		t.Errorf("internal-authority policy action = %v, want ALLOW", spec["action"])
 	}
-	if app := spec["selector"].(map[string]any)["matchLabels"].(map[string]any)["app"]; app != "accounts" {
-		t.Errorf("internal-authority policy selects app %v, want accounts", app)
+	// A selector sends the policy to ztunnel, which cannot evaluate L7 rules and
+	// fails safe by turning the whole policy into a blanket DENY on the selected
+	// workload. L7 must be attached to the waypoint, by targetRef to the Service.
+	if _, scoped := spec["selector"]; scoped {
+		t.Error("L7 internal-authority policy uses a workload selector; ztunnel would turn it into a blanket deny")
+	}
+	targetRef := spec["targetRefs"].([]any)[0].(map[string]any)
+	if targetRef["kind"] != "Service" || targetRef["name"] != "accounts" {
+		t.Errorf("internal-authority targetRef = %v, want the accounts Service", targetRef)
 	}
 	rule := spec["rules"].([]any)[0].(map[string]any)
 	principals := anyToStrings(rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
@@ -1036,8 +1043,159 @@ services:
 		t.Fatalf("istio bundle is missing the accounts port allow:\n%s", mustReadFile(t, istioPath))
 	}
 	portPrincipals := anyToStrings(portAllow["spec"].(map[string]any)["rules"].([]any)[0].(map[string]any)["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["principals"].([]any))
-	if !slices.Equal(portPrincipals, []string{callerSA}) {
-		t.Errorf("accounts port-allow principals = %v, want only the caller SA [%s]", portPrincipals, callerSA)
+	// With a waypoint fronting the namespace, the destination ztunnel sees the
+	// waypoint's identity rather than the caller's, so the L4 allowlist must
+	// admit it or every east-west request is dropped before the L7 gate runs.
+	waypointSA := "cluster.local/ns/identity-local/sa/" + meshWaypointName
+	if !slices.Contains(portPrincipals, waypointSA) {
+		t.Errorf("port-allow principals = %v, missing the waypoint identity %s that relays east-west traffic", portPrincipals, waypointSA)
+	}
+	if !slices.Equal(portPrincipals, []string{callerSA, waypointSA}) {
+		t.Errorf("accounts port-allow principals = %v, want only the caller SA [%s] and the waypoint", portPrincipals, callerSA)
+	}
+}
+
+// TestGeneratedMeshPolicyDeniesInternalHTTPRoutesToUndeclaredCallers covers the
+// half of the internal surface no service catalog describes: HTTP routes that
+// carry cluster-internal authority on the same port the ingress gateway is
+// allowed to reach for every browser-facing page. The port-wide ALLOW cannot
+// exclude them, so only a DENY can, and it must survive the caller having an
+// identity (the publisher edge) and not having one (the internet).
+func TestGeneratedMeshPolicyDeniesInternalHTTPRoutesToUndeclaredCallers(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "internal-http", "identity", []string{"frontend", "telemetry"})
+	// frontend publishes an internal HTTP surface on its public port; telemetry is
+	// its one declared in-mesh caller, so it is the only exempt principal. The
+	// fixture ships no authorization catalog, so the DENY is the only L7 policy
+	// and must pull in the waypoint on its own.
+	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
+module:
+  name: identity
+  namespace: identity
+  service_entry: frontend
+  description: test
+interface:
+  - service: frontend
+    endpoint: http
+    visibility: public
+services:
+  - name: frontend
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: public
+        port: 3000
+    internal_http_routes:
+      - path: /api/solutions/register
+        methods:
+          - DELETE
+          - POST
+    public_egress_ports:
+      - 443
+  - name: telemetry
+    version: 0.0.0
+    endpoints:
+      - name: http
+        api: http
+        visibility: private
+        port: 8080
+    dependencies:
+      - service: frontend
+        endpoints:
+          - http
+    spec:
+      service-account:
+        name: telemetry
+`)
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	istioPath := filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "base", "istio-mtls.yaml")
+	objects, err := decodeYAMLDocuments(istioPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var deny, ingressAllow, waypoint map[string]any
+	for _, object := range objects {
+		name := object["metadata"].(map[string]any)["name"]
+		switch object["kind"] {
+		case "AuthorizationPolicy":
+			switch name {
+			case "deny-frontend-internal-http":
+				deny = object
+			case "allow-istio-ingress-to-frontend":
+				ingressAllow = object
+			}
+		case "Gateway":
+			waypoint = object
+		}
+	}
+	if deny == nil {
+		t.Fatalf("istio bundle is missing the internal-HTTP deny policy:\n%s", mustReadFile(t, istioPath))
+	}
+	if ingressAllow == nil {
+		t.Fatal("fixture no longer grants the ingress gateway the port-wide allow this deny subtracts from")
+	}
+	if waypoint == nil {
+		t.Fatalf("an L7 deny with no waypoint to enforce it is inert:\n%s", mustReadFile(t, istioPath))
+	}
+	namespaceObjects, err := decodeYAMLDocuments(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "overlays", "local", "namespace.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	nsLabels := namespaceObjects[0]["metadata"].(map[string]any)["labels"].(map[string]any)
+	if nsLabels["istio.io/use-waypoint"] != waypoint["metadata"].(map[string]any)["name"] {
+		t.Errorf("namespace use-waypoint = %v, want %v", nsLabels["istio.io/use-waypoint"], waypoint["metadata"].(map[string]any)["name"])
+	}
+
+	spec := deny["spec"].(map[string]any)
+	if spec["action"] != "DENY" {
+		t.Errorf("internal-HTTP policy action = %v, want DENY (an ALLOW cannot subtract from another ALLOW)", spec["action"])
+	}
+	// A selector sends an L7 policy to ztunnel, which cannot evaluate paths and
+	// fails safe by denying everything to the selected workload — here, every
+	// page the product serves. L7 belongs on the waypoint, via targetRef.
+	if _, scoped := spec["selector"]; scoped {
+		t.Error("L7 internal-HTTP policy uses a workload selector; ztunnel would turn it into a blanket deny on the frontend")
+	}
+	targetRef := spec["targetRefs"].([]any)[0].(map[string]any)
+	if targetRef["kind"] != "Service" || targetRef["name"] != "frontend" {
+		t.Errorf("internal-HTTP targetRef = %v, want the frontend Service", targetRef)
+	}
+	rules := spec["rules"].([]any)
+	if len(rules) != 1 {
+		t.Fatalf("internal-HTTP policy has %d rules, want one per declared route", len(rules))
+	}
+	rule := rules[0].(map[string]any)
+	exempt := anyToStrings(rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)["notPrincipals"].([]any))
+	// The waypoint never sees ingress-originated traffic, so the ingress gateway
+	// is exempt by construction rather than by omission: a rule that named it
+	// would read as a north-south boundary and enforce nothing.
+	if !slices.Equal(exempt, []string{
+		"cluster.local/ns/identity-local/sa/telemetry",
+		"cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account",
+	}) {
+		t.Errorf("internal-HTTP exempt principals = %v, want the declared caller and the ingress gateway", exempt)
+	}
+	operation := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)
+	paths := anyToStrings(operation["paths"].([]any))
+	// Istio does not merge duplicate slashes by default, so an exact match alone
+	// lets //api/solutions/register through to a handler that still serves it.
+	if !slices.Equal(paths, []string{"*/api/solutions/register", "/api/solutions/register"}) {
+		t.Errorf("internal-HTTP denied paths = %v, want the suffix form alongside the exact route", paths)
+	}
+	methods := anyToStrings(operation["methods"].([]any))
+	if !slices.Equal(methods, []string{"DELETE", "POST"}) {
+		t.Errorf("internal-HTTP denied methods = %v, want only the declared mutations", methods)
+	}
+	if slices.Contains(methods, "GET") {
+		t.Error("denying GET on the same path would break the unauthenticated nav listing")
 	}
 }
 

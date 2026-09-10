@@ -244,8 +244,17 @@ type topologyService struct {
 	Endpoints                          []topologyEndpoint                   `yaml:"endpoints"`
 	BootstrapJobEndpoints              []string                             `yaml:"bootstrap_job_endpoints,omitempty"`
 	Dependencies                       []topologyDependency                 `yaml:"dependencies,omitempty"`
+	InternalHTTPRoutes                 []topologyInternalHTTPRoute          `yaml:"internal_http_routes,omitempty"`
 	PublicEgressPorts                  []uint32                             `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+}
+
+// topologyInternalHTTPRoute is an HTTP route carrying cluster-internal
+// authority on a port that also serves browser-facing traffic. Path and method
+// are the only thing separating the two, so it is authored rather than derived.
+type topologyInternalHTTPRoute struct {
+	Path    string   `yaml:"path"`
+	Methods []string `yaml:"methods"`
 }
 
 type topologyKubernetesIdentity struct {
@@ -1063,11 +1072,12 @@ func topologyIstioResources(
 	}
 	istio = append(istio, topologyInternalAuthorizationPolicies(topology, plan, namespace, labels)...)
 	istio = append(istio, topologyInternalAuthorityAllowPolicies(topology, plan, namespace, labels)...)
+	istio = append(istio, topologyInternalHTTPDenyPolicies(topology, plan, namespace, labels)...)
 	if topologyRequiresWaypoint(topology, plan) {
-		// The internal-authority deny is an L7 (method-path) policy. In the
-		// ambient data plane ztunnel enforces L4 only, so a waypoint proxy must
-		// front the namespace for the path match to be evaluated. The namespace
-		// opts in via istio.io/use-waypoint (see renderEnvironment).
+		// The internal-authority allow and the internal-HTTP deny both match on
+		// request path. In the ambient data plane ztunnel enforces L4 only, so a
+		// waypoint proxy must front the namespace for that match to be evaluated.
+		// The namespace opts in via istio.io/use-waypoint (see renderEnvironment).
 		istio = append(istio, kubeObject{
 			APIVersion: "gateway.networking.k8s.io/v1",
 			Kind:       "Gateway",
@@ -1356,6 +1366,16 @@ func topologyInternalAuthorizationPolicies(
 	slices.Sort(targets)
 	policies := make([]kubeObject, 0, len(targets))
 	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
+	// Once a waypoint fronts the namespace, east-west traffic reaches the
+	// destination's ztunnel from the waypoint, not from the caller, so the
+	// caller-scoped allowlist below would drop every in-mesh request unless the
+	// waypoint's own identity is admitted too. It runs under the ServiceAccount
+	// named after its Gateway. Caller identity is still enforced above it, by the
+	// L7 policies the waypoint evaluates.
+	waypointPrincipal := ""
+	if topologyRequiresWaypoint(topology, plan) {
+		waypointPrincipal = meshPrincipal(namespace, meshWaypointName)
+	}
 	for _, target := range targets {
 		service, _ := topologyServiceByName(topology, target)
 		ports := make([]uint32, 0, len(targetPorts[target]))
@@ -1379,7 +1399,7 @@ func topologyInternalAuthorizationPolicies(
 				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
-						"principals": callerPrincipals[target],
+						"principals": portAllowPrincipals(callerPrincipals[target], waypointPrincipal),
 					}}},
 					"to": []any{map[string]any{"operation": map[string]any{
 						"ports": renderedPorts,
@@ -1391,13 +1411,110 @@ func topologyInternalAuthorizationPolicies(
 	return policies
 }
 
+// portAllowPrincipals returns the L4 allowlist for a target: its declared
+// callers plus, when one fronts the namespace, the waypoint that relays their
+// traffic.
+func portAllowPrincipals(callers []string, waypointPrincipal string) []string {
+	if waypointPrincipal == "" {
+		return callers
+	}
+	principals := append(slices.Clone(callers), waypointPrincipal)
+	slices.Sort(principals)
+	return slices.Compact(principals)
+}
+
+// topologyInternalHTTPDenyPolicies gates a service's cluster-internal HTTP
+// routes by caller workload identity. Those routes are multiplexed on a public
+// endpoint's port with browser-facing traffic, so no NetworkPolicy and no L4
+// mesh rule can separate them — only a path-and-method match can, and only a
+// DENY can subtract them from the port-wide ALLOW that admits the ingress
+// gateway. Every principal outside the target's declared callers is refused, so
+// the routes are reachable from inside the mesh and from nowhere else; a
+// service with no declared callers denies them outright rather than leaving
+// them on the public front door.
+func topologyInternalHTTPDenyPolicies(
+	topology deploymentTopology,
+	plan environmentPlan,
+	namespace string,
+	labels map[string]string,
+) []kubeObject {
+	inCluster := make(map[string]struct{}, len(plan.services))
+	for _, service := range plan.services {
+		inCluster[service] = struct{}{}
+	}
+	callerPrincipals := topologyTargetCallerPrincipals(topology, plan, namespace)
+	services := make([]topologyService, 0, len(topology.Services))
+	for _, service := range topology.Services {
+		if _, ok := inCluster[service.Name]; ok && len(service.InternalHTTPRoutes) > 0 {
+			services = append(services, service)
+		}
+	}
+	slices.SortFunc(services, func(a, b topologyService) int { return strings.Compare(a.Name, b.Name) })
+	policies := make([]kubeObject, 0, len(services))
+	for _, service := range services {
+		exempt := append(slices.Clone(callerPrincipals[service.Name]), meshIngressPrincipal)
+		slices.Sort(exempt)
+		rules := make([]any, 0, len(service.InternalHTTPRoutes))
+		for _, route := range service.InternalHTTPRoutes {
+			rules = append(rules, map[string]any{
+				"from": []any{map[string]any{"source": map[string]any{
+					"notPrincipals": exempt,
+				}}},
+				"to": []any{map[string]any{"operation": map[string]any{
+					"paths":   internalHTTPPathPatterns(route.Path),
+					"methods": route.Methods,
+				}}},
+			})
+		}
+		policies = append(policies, kubeObject{
+			APIVersion: "security.istio.io/v1",
+			Kind:       "AuthorizationPolicy",
+			Metadata: objectMeta{
+				Name:      "deny-" + service.Name + "-internal-http",
+				Namespace: namespace,
+				Labels:    labels,
+			},
+			Spec: map[string]any{
+				"targetRefs": []any{map[string]any{
+					"kind":  "Service",
+					"group": "",
+					"name":  topologyKubernetesServiceName(service),
+				}},
+				"action": "DENY",
+				"rules":  rules,
+			},
+		})
+	}
+	return policies
+}
+
+// internalHTTPPathPatterns expands an authored route into the Istio path
+// patterns that match it. The suffix form is what closes the gap between what
+// Envoy matches and what the application routes: Istio's default path
+// normalization does not merge duplicate slashes, so an exact match alone lets
+// //api/... through while the application still serves it. Istio allows one
+// wildcard, at the start or the end, so a suffix pattern is the widest single
+// form available; percent-encoded separators are matchable by neither, which is
+// why the route's own credential check remains the gate rather than a backstop.
+func internalHTTPPathPatterns(path string) []string {
+	return []string{"*" + path, path}
+}
+
+// meshIngressPrincipal is the identity Istio's ingress gateway presents. It is
+// exempt from the internal-HTTP deny because a waypoint never sees
+// ingress-originated traffic: Istio routes it straight to the workload unless
+// the install sets istio.io/ingress-use-waypoint AND istiod's
+// ENABLE_INGRESS_WAYPOINT_ROUTING, neither of which a module can render. Naming
+// it in the deny would read as a boundary while enforcing nothing.
+const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+
 // meshWaypointName is the namespace waypoint that fronts the ambient data plane
 // so L7 (method-path) AuthorizationPolicies are enforced; ztunnel alone is L4.
 const meshWaypointName = "waypoint"
 
-// topologyRequiresWaypoint reports whether any in-cluster service exposes
-// internal-authority method paths, which are gated by an L7 AuthorizationPolicy
-// that only a waypoint can evaluate.
+// topologyRequiresWaypoint reports whether any in-cluster service exposes an
+// internal surface — gRPC authority methods or authored HTTP routes — gated by
+// an L7 AuthorizationPolicy that only a waypoint can evaluate.
 func topologyRequiresWaypoint(topology deploymentTopology, plan environmentPlan) bool {
 	inCluster := make(map[string]struct{}, len(plan.services))
 	for _, service := range plan.services {
@@ -1405,6 +1522,14 @@ func topologyRequiresWaypoint(topology deploymentTopology, plan environmentPlan)
 	}
 	for target := range topology.internalMethodPaths {
 		if _, ok := inCluster[target]; ok {
+			return true
+		}
+	}
+	for _, service := range topology.Services {
+		if _, ok := inCluster[service.Name]; !ok {
+			continue
+		}
+		if len(service.InternalHTTPRoutes) > 0 {
 			return true
 		}
 	}
@@ -1454,8 +1579,12 @@ func topologyInternalAuthorityAllowPolicies(
 				Labels:    labels,
 			},
 			Spec: map[string]any{
-				"selector": map[string]any{"matchLabels": map[string]string{"app": topologyKubernetesAppLabel(service)}},
-				"action":   "ALLOW",
+				"targetRefs": []any{map[string]any{
+					"kind":  "Service",
+					"group": "",
+					"name":  topologyKubernetesServiceName(service),
+				}},
+				"action": "ALLOW",
 				"rules": []any{map[string]any{
 					"from": []any{map[string]any{"source": map[string]any{
 						"principals": callerPrincipals[target],

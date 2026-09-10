@@ -20,6 +20,18 @@ const deploymentTopologySchemaVersion = "saas.deployment.topology.v1"
 
 var configurationKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
+var internalHTTPPathPattern = regexp.MustCompile(`^/[a-z0-9/_.-]*[a-z0-9]$`)
+
+// internalHTTPMethods is the set an internal HTTP route may name. A method the
+// mesh cannot match would render a policy that silently gates nothing.
+var internalHTTPMethods = map[string]bool{
+	"DELETE": true,
+	"GET":    true,
+	"PATCH":  true,
+	"POST":   true,
+	"PUT":    true,
+}
+
 type deploymentBindings struct {
 	Version   string                       `yaml:"version"`
 	Module    deploymentModuleBinding      `yaml:"module"`
@@ -73,8 +85,18 @@ type deploymentServiceBinding struct {
 	Endpoints                          []deploymentEndpointBinding   `yaml:"endpoints"`
 	BootstrapJobEndpoints              []string                      `yaml:"bootstrap_job_endpoints,omitempty"`
 	Dependencies                       []deploymentDependencyBinding `yaml:"dependencies,omitempty"`
+	InternalHTTPRoutes                 []deploymentInternalHTTPRoute `yaml:"internal_http_routes,omitempty"`
 	PublicEgressPorts                  []uint32                      `yaml:"public_egress_ports,omitempty"`
 	Spec                               map[string]any                `yaml:"spec,omitempty"`
+}
+
+// deploymentInternalHTTPRoute is an HTTP route that carries cluster-internal
+// authority while sharing a public endpoint's port with browser-facing traffic.
+// The path and method are the only thing that separates it from the rest of the
+// surface, so it cannot be expressed as a port and must be authored here.
+type deploymentInternalHTTPRoute struct {
+	Path    string   `yaml:"path"`
+	Methods []string `yaml:"methods"`
 }
 
 type kubernetesIdentityBinding struct {
@@ -317,6 +339,27 @@ func validateDeploymentBindings(serviceCatalog *catalogv1.ServiceCatalog, bindin
 					return fmt.Errorf("service %q dependency %q endpoints are invalid or unsorted", service.Name, dependency.Service)
 				}
 				previousReference = endpoint
+			}
+		}
+
+		previousRoute := ""
+		for _, route := range service.InternalHTTPRoutes {
+			if !serviceServesHTTP(service) {
+				return fmt.Errorf("service %q declares internal HTTP routes without an HTTP endpoint", service.Name)
+			}
+			if !internalHTTPPathPattern.MatchString(route.Path) || (previousRoute != "" && route.Path <= previousRoute) {
+				return fmt.Errorf("service %q internal HTTP routes are invalid or unsorted at %q", service.Name, route.Path)
+			}
+			previousRoute = route.Path
+			previousMethod := ""
+			for _, method := range route.Methods {
+				if !internalHTTPMethods[method] || (previousMethod != "" && method <= previousMethod) {
+					return fmt.Errorf("service %q internal HTTP route %q methods are invalid or unsorted", service.Name, route.Path)
+				}
+				previousMethod = method
+			}
+			if previousMethod == "" {
+				return fmt.Errorf("service %q internal HTTP route %q declares no methods", service.Name, route.Path)
 			}
 		}
 
@@ -758,6 +801,18 @@ func marshalGeneratedYAML(source string, value any) ([]byte, error) {
 	return append([]byte(header), document...), nil
 }
 
+// serviceServesHTTP reports whether a service exposes an endpoint an HTTP path
+// policy can be matched against. A route on a service that speaks TCP renders a
+// path match nothing will ever evaluate.
+func serviceServesHTTP(service deploymentServiceBinding) bool {
+	for _, endpoint := range service.Endpoints {
+		if endpoint.API == "http" || endpoint.API == "rest" {
+			return true
+		}
+	}
+	return false
+}
+
 func kubernetesServiceName(service deploymentServiceBinding) string {
 	if service.Kubernetes == nil {
 		return service.Name
@@ -817,6 +872,14 @@ func deploymentNetworkEdges(bindings deploymentBindings) []networkEdge {
 // therefore outside the internal allowlist and denied by the policy below.
 const meshTrustDomain = "cluster.local"
 
+// meshIngressPrincipal is the identity Istio's ingress gateway presents. It is
+// exempt from the internal-HTTP deny because a waypoint never sees
+// ingress-originated traffic: Istio routes it straight to the workload unless
+// the install sets istio.io/ingress-use-waypoint AND istiod's
+// ENABLE_INGRESS_WAYPOINT_ROUTING, neither of which a module can render. Naming
+// it in the deny would read as a boundary while enforcing nothing.
+const meshIngressPrincipal = "cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"
+
 // renderMeshPolicy projects the identity half of the reach-vs-identity split as
 // a topology golden mirroring the mesh policy the GitOps renderer installs
 // (see gitops.go). PeerAuthentication STRICT makes every source principal a
@@ -825,8 +888,10 @@ const meshTrustDomain = "cluster.local"
 // their per-service ServiceAccount — deny-by-default for every other principal,
 // the ingress gateway included. Istio matches by request path, so this gates
 // the internal surface by caller workload identity even while it stays
-// multiplexed on the shared HTTP port. The app-layer internal credential
-// remains the identity gate (which caller vs which tenant).
+// multiplexed on the shared HTTP port. HTTP routes carrying the same authority
+// are authored rather than derived and are subtracted from the port-wide
+// ingress allow by a DENY. The app-layer internal credential remains the
+// identity gate (which caller vs which tenant).
 func renderMeshPolicy(bindings deploymentBindings, serviceCatalog *catalogv1.ServiceCatalog) []byte {
 	namespace := bindings.Module.Namespace
 	var source strings.Builder
@@ -842,18 +907,38 @@ spec:
     mode: STRICT
 `, bindings.Module.Name, namespace)
 
+	layer7 := false
 	procedures := internalMethodProcedures(serviceCatalog)
 	if len(procedures) > 0 {
 		owner := serviceCatalog.GetOwner().GetService()
-		var ownerApp string
+		var ownerService string
 		for _, service := range bindings.Services {
 			if service.Name == owner {
-				ownerApp = kubernetesAppLabel(service)
+				ownerService = kubernetesServiceName(service)
 			}
 		}
-		principals := ownerCallerPrincipals(bindings, namespace, owner)
-		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerApp, principals, procedures)
-		// The allow above is an L7 (method-path) policy. In the ambient data plane
+		principals := declaredCallerPrincipals(bindings, namespace, owner)
+		writeInternalAuthorityAuthorizationPolicy(&source, namespace, owner, ownerService, principals, procedures)
+		layer7 = true
+	}
+	for _, service := range bindings.Services {
+		if len(service.InternalHTTPRoutes) == 0 {
+			continue
+		}
+		exempt := append(declaredCallerPrincipals(bindings, namespace, service.Name), meshIngressPrincipal)
+		sort.Strings(exempt)
+		writeInternalHTTPAuthorizationPolicy(
+			&source,
+			namespace,
+			service.Name,
+			kubernetesServiceName(service),
+			exempt,
+			service.InternalHTTPRoutes,
+		)
+		layer7 = true
+	}
+	if layer7 {
+		// The policies above match on request path. In the ambient data plane
 		// ztunnel enforces L4 only, so a waypoint must front the namespace for the
 		// path match to be evaluated; the namespace opts in via
 		// istio.io/use-waypoint (set on the Namespace by the GitOps renderer).
@@ -890,11 +975,11 @@ func serviceAccountBindingName(service deploymentServiceBinding) string {
 	return "default"
 }
 
-// ownerCallerPrincipals returns the sorted, de-duplicated SPIFFE principals of
-// the owner's declared callers — each caller's per-service SA (or sa/default) —
-// plus the owner itself when it runs bootstrap jobs. This is the positive
-// allowlist the internal-authority AuthorizationPolicy gates on.
-func ownerCallerPrincipals(bindings deploymentBindings, namespace, owner string) []string {
+// declaredCallerPrincipals returns the sorted, de-duplicated SPIFFE principals
+// of a target's declared callers — each caller's per-service SA (or sa/default)
+// — plus the target itself when it runs bootstrap jobs. This is the allowlist
+// the internal-authority AuthorizationPolicies gate on.
+func declaredCallerPrincipals(bindings deploymentBindings, namespace, target string) []string {
 	seen := make(map[string]struct{})
 	var principals []string
 	add := func(service deploymentServiceBinding) {
@@ -907,11 +992,11 @@ func ownerCallerPrincipals(bindings deploymentBindings, namespace, owner string)
 	}
 	for _, service := range bindings.Services {
 		for _, dependency := range service.Dependencies {
-			if dependency.Service == owner {
+			if dependency.Service == target {
 				add(service)
 			}
 		}
-		if service.Name == owner && len(service.BootstrapJobEndpoints) > 0 {
+		if service.Name == target && len(service.BootstrapJobEndpoints) > 0 {
 			add(service)
 		}
 	}
@@ -919,7 +1004,66 @@ func ownerCallerPrincipals(bindings deploymentBindings, namespace, owner string)
 	return principals
 }
 
-func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, serviceApp string, principals, procedures []string) {
+// writeInternalHTTPAuthorizationPolicy gates a service's cluster-internal HTTP
+// routes by caller workload identity. Those routes are multiplexed on a public
+// endpoint's port with browser-facing traffic, so neither a NetworkPolicy nor
+// an L4 mesh rule can separate them — only a path-and-method match can, and
+// only a DENY can subtract them from the port-wide ALLOW that admits the
+// ingress gateway. Every principal outside the target's declared callers is
+// refused, so the routes are reachable from inside the mesh and from nowhere
+// else; a service with no declared callers denies them outright rather than
+// leaving them on the public front door.
+func writeInternalHTTPAuthorizationPolicy(
+	source *strings.Builder,
+	namespace, service, kubernetesService string,
+	principals []string,
+	routes []deploymentInternalHTTPRoute,
+) {
+	fmt.Fprintf(source, `---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-%s-internal-http
+  namespace: %s
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: %s
+  action: DENY
+  rules:
+`, service, namespace, kubernetesService)
+	for _, route := range routes {
+		source.WriteString("    - from:\n        - source:\n            notPrincipals:\n")
+		for _, principal := range principals {
+			fmt.Fprintf(source, "              - %s\n", principal)
+		}
+		source.WriteString("      to:\n        - operation:\n            paths:\n")
+		for _, path := range internalHTTPPathPatterns(route.Path) {
+			// Quoted: a leading "*" is a YAML alias token, so the suffix pattern
+			// would not survive a round trip unquoted.
+			fmt.Fprintf(source, "              - %q\n", path)
+		}
+		source.WriteString("            methods:\n")
+		for _, method := range route.Methods {
+			fmt.Fprintf(source, "              - %s\n", method)
+		}
+	}
+}
+
+// internalHTTPPathPatterns expands an authored route into the Istio path
+// patterns that match it. The suffix form is what closes the gap between what
+// Envoy matches and what the application routes: Istio's default path
+// normalization does not merge duplicate slashes, so an exact match alone lets
+// //api/... through while the application still serves it. Istio allows one
+// wildcard, at the start or the end, so a suffix pattern is the widest single
+// form available; percent-encoded separators are matchable by neither, which is
+// why the route's own credential check remains the gate rather than a backstop.
+func internalHTTPPathPatterns(path string) []string {
+	return []string{"*" + path, path}
+}
+
+func writeInternalAuthorityAuthorizationPolicy(source *strings.Builder, namespace, service, kubernetesService string, principals, procedures []string) {
 	fmt.Fprintf(source, `---
 apiVersion: security.istio.io/v1
 kind: AuthorizationPolicy
@@ -927,15 +1071,16 @@ metadata:
   name: allow-%s-internal-authority
   namespace: %s
 spec:
-  selector:
-    matchLabels:
-      app: %s
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: %s
   action: ALLOW
   rules:
     - from:
         - source:
             principals:
-`, service, namespace, serviceApp)
+`, service, namespace, kubernetesService)
 	for _, principal := range principals {
 		fmt.Fprintf(source, "              - %s\n", principal)
 	}

@@ -21,13 +21,15 @@ export const runtime = "nodejs";
  * could register an attacker-controlled MF remote (arbitrary in-origin script
  * execution) or nav entry. Fails closed when the secret is unset.
  *
- * That token is the ONLY gate, and a NetworkPolicy cannot add a second one:
- * `frontend/http` is a public module export, so this path shares TCP 3000 with
- * every browser-facing page, and a NetworkPolicy selects pods and ports, never
- * paths. In the generated base topology the only ingress rule for the frontend
- * admits the Istio ingress gateway, so a solution registers through the public
- * front door rather than from inside the mesh. See
- * module/DEPLOYMENT_TOPOLOGY.md, "HTTP internal surfaces are not mesh-gated".
+ * That token is the whole boundary on the public front door, and nothing below
+ * the application can narrow it: `frontend/http` is a public module export, so
+ * this path shares TCP 3000 with every browser-facing page, a NetworkPolicy
+ * selects pods and ports rather than paths, and the mesh's L7 policy is
+ * enforced by a waypoint that never sees ingress-originated traffic. POST/DELETE
+ * here are declared as `internal_http_routes` in the topology binding and denied
+ * in the mesh from every in-mesh principal outside the frontend's declared
+ * callers, which contains lateral use of a leaked token but does not gate the
+ * front door. See module/DEPLOYMENT_TOPOLOGY.md, "Cluster-internal HTTP routes".
  */
 export async function POST(request: Request): Promise<Response> {
 	if (!isTrustedInternalCall(request)) {
