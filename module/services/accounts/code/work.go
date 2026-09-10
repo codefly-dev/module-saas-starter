@@ -297,10 +297,10 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 	// Default fail-closed: a token whose revocation status can't be read is
-	// denied. Operators fronting accounts directly (no sidecar) can opt into
+	// denied. Operators fronting accounts directly (no auth-gateway) can opt into
 	// fail-open to keep the direct verify path serving through a revocation-store
 	// outage, trading a revoked token's remaining-TTL exposure for availability —
-	// the same choice the sidecar exposes via SIDECAR_REVOCATION_FAIL_OPEN.
+	// the same choice the auth-gateway ext_authz check exposes via SIDECAR_REVOCATION_FAIL_OPEN.
 	revocationFailOpen := strings.EqualFold(strings.TrimSpace(workspaceEnv("security", "ACCOUNTS_REVOCATION_FAIL_OPEN")), "true")
 	if revocationFailOpen {
 		wool.Get(ctx).Warn("ACCOUNTS_REVOCATION_FAIL_OPEN enabled: a revocation-store outage will admit possibly-revoked access tokens on the direct verify path until they expire")
@@ -625,7 +625,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	adapters.RegisterHTTPRoute("/v1/billing/free-plan", billingHTTPHandler)
 
 	// Billing: when Stripe is configured, wire its webhook plus the
-	// authenticated checkout and portal endpoints. The sidecar's public-path
+	// authenticated checkout and portal endpoints. The auth-gateway's public-path
 	// allowlist covers the webhook; user-facing actions are authenticated via
 	// forwarded identity headers.
 	var stripeWebhookWorker *jobs.Worker
@@ -1644,8 +1644,8 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // refresh tokens.
 //
 // The key must persist across restarts and be identical across replicas: it
-// signs JWTs, seeds the OAuth-state signer, and is the public key the sidecar
-// and permissions plugin pin. Production loads it from Vault KV v2 and refuses
+// signs JWTs, seeds the OAuth-state signer, and is the public key the gateway's
+// ext_authz check and permissions plugin pin. Production loads it from Vault KV v2 and refuses
 // to boot if that load fails — an ephemeral key would make each replica sign
 // differently, break existing sessions, and desynchronise the pinned key. This
 // fails closed rather than fail-open-to-broken.

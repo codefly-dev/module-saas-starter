@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestUntrustedHeaders_SupersetOfStampedHeaders is the sidecar half of the
+// TestUntrustedHeaders_SupersetOfStampedHeaders is the ext_authz check half of the
 // header-lockstep gate. The gateway strips untrustedAuthHeaders from every
 // inbound request and then stamps canonicalUpstreamAuthHeaders from the verified
 // principal. If a header the gateway stamps is not also stripped, a caller could

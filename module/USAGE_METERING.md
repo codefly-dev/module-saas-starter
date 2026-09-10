@@ -129,7 +129,7 @@ principal except the allowlisted in-mesh caller — the ingress gateway included
 listener is not exported as a module interface. Product modules must depend on
 the generated named internal endpoint once `P1-NET-007` adds multiple same-API
 endpoint support to the Codefly Go runtime. Do not export the mixed REST
-listener or route `ConsumeUsage` through the public auth sidecar as a
+listener or route `ConsumeUsage` through the public auth-gateway as a
 workaround.
 
 This deployment limitation does not change the protobuf or database contract;

@@ -85,7 +85,7 @@ func (g *Gateway) handleModuleRegister(w http.ResponseWriter, r *http.Request) b
 	// a prefix at an attacker-controlled upstream and harvest forwarded bearers.
 	// The prefix→identity binding itself is enforced below, once the payload prefix
 	// is known.
-	claims, ok := g.sidecar.verifyModuleRegistration(r.Context(), r.Header.Get(moduleRegistrationHeader))
+	claims, ok := g.authz.verifyModuleRegistration(r.Context(), r.Header.Get(moduleRegistrationHeader))
 	if !ok {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
@@ -181,7 +181,7 @@ func (g *Gateway) handleFederatedModule(w http.ResponseWriter, r *http.Request) 
 	// call is denied here, so federation only adds a proxy target — it never
 	// widens the authenticated surface, and it does not open an unmetered one.
 	stripAllIdentityHeaders(r)
-	checkResp, err := g.sidecar.Check(r.Context(), buildCheckRequest(r))
+	checkResp, err := g.authz.Check(r.Context(), buildCheckRequest(r))
 	if err != nil {
 		httpError(w, http.StatusInternalServerError, "auth check failed")
 		return true
@@ -300,9 +300,9 @@ type moduleRegistrationClaims struct {
 // the same alg-locked Ed25519 discipline as an access token — same published key
 // set selected by the token's kid, plus issuer, expiry, and this
 // module-registration audience. It returns the verified claims. It fails closed:
-// a nil sidecar, an unreachable or unrecognised key, an empty/bad token, a wrong
+// a nil ext_authz check, an unreachable or unrecognised key, an empty/bad token, a wrong
 // or absent audience, or an expired token all yield ok=false.
-func (s *Sidecar) verifyModuleRegistration(ctx context.Context, tokenString string) (*moduleRegistrationClaims, bool) {
+func (s *ExtAuthz) verifyModuleRegistration(ctx context.Context, tokenString string) (*moduleRegistrationClaims, bool) {
 	if s == nil || s.keys == nil || tokenString == "" {
 		return nil, false
 	}
@@ -375,7 +375,7 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 	// is required too: guessing a module secret then costs an attacker the shared
 	// credential first, rather than being free from anywhere that can reach the
 	// gateway.
-	if g.sidecar == nil || !g.sidecar.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return true
 	}
@@ -399,7 +399,7 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 
 	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
 	defer cancel()
-	issued, err := g.sidecar.mintModuleRegistration(ctx, payload.Prefix, secret)
+	issued, err := g.authz.mintModuleRegistration(ctx, payload.Prefix, secret)
 	if err != nil {
 		// accounts answers unknown-prefix and wrong-secret identically, so
 		// relaying its refusal reveals nothing about what a composition declared.
@@ -430,7 +430,7 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 // connection, presenting the gateway's own cluster-internal credential. There is
 // no vendored client stub for ModuleCapabilitiesService, so the method is
 // invoked by name against generated message types shared with accounts.
-func (s *Sidecar) mintModuleRegistration(
+func (s *ExtAuthz) mintModuleRegistration(
 	ctx context.Context, prefix, secret string,
 ) (*accountsv1.ModuleMintRegistrationResponse, error) {
 	if s.backendConn == nil {

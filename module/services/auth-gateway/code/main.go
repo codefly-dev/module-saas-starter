@@ -112,7 +112,7 @@ func main() {
 	accessKeySet := newAccessJWKS(apiHTTPURL)
 	go keepAccessKeysWarm(ctx, accessKeySet)
 
-	sidecar := NewSidecar(internalAPIConn, accessKeySet)
+	authz := NewExtAuthz(internalAPIConn, accessKeySet)
 
 	redisURL, redisErr := codefly.For(ctx).Service("cache").Secret("redis", "connection")
 	if redisErr != nil || redisURL == "" {
@@ -130,14 +130,14 @@ func main() {
 	if err != nil {
 		panic(fmt.Sprintf("configure access-token revocation: %v", err))
 	}
-	sidecar.SetRevoker(rev)
+	authz.SetRevoker(rev)
 
 	var grpcOptions []grpc.ServerOption
 	if otelMetricProvider != nil {
 		grpcOptions = append(grpcOptions, wooltel.GRPCServerOptions()...)
 	}
 	grpcServer := grpc.NewServer(grpcOptions...)
-	authv3.RegisterAuthorizationServer(grpcServer, sidecar)
+	authv3.RegisterAuthorizationServer(grpcServer, authz)
 	// Server reflection enumerates every registered service and message for any
 	// unauthenticated caller — a discovery aid in dev, needless attack surface
 	// in a deployed environment. Register it only when running locally.
@@ -221,7 +221,7 @@ func main() {
 			WithRedisURL(redisURL),
 			WithAuthenticationAttemptLimit(authenticationAttemptLimit),
 		) // 1000 req/min per org/IP; stricter MFA budget is configured separately.
-		gateway := NewGateway(sidecar, matcher, upstreams, rateLimiter)
+		gateway := NewGateway(authz, matcher, upstreams, rateLimiter)
 		if apiHTTPURL != "" {
 			gateway.workContext = newWorkContextVerifier(apiHTTPURL)
 			// Warm in the background: per-request verification lazily refreshes

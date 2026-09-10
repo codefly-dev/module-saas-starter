@@ -201,9 +201,9 @@ org-governed config table.
 | Edit / unshare an org board | org | `dashboards:share` |
 | Render (compile spec → query) | any | org-scoped, read-only audit query only (#367 / #374 invariant) |
 
-Enforcement lives in the accounts **handler layer**, not the sidecar
+Enforcement lives in the accounts **handler layer**, not the auth-gateway ext_authz check
 (`requireScope` / owner checks), consistent with the platform's
-"sidecar stamps identity, handler enforces permission" split. The concrete
+"ext_authz stamps identity, handler enforces permission" split. The concrete
 scope wiring and rate limits are #367's to implement; this ADR fixes the
 *mapping* they implement against.
 

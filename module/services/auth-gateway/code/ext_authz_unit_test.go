@@ -18,16 +18,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests exercise the sidecar in isolation. They don't require the
-// full codefly stack — the sidecar is constructed with a generated Ed25519
+// These tests exercise the ext_authz check in isolation. They don't require the
+// full codefly stack — the ext_authz check is constructed with a generated Ed25519
 // key, and the api-key path is stubbed out (nil client — api-key requests
 // panic, which is fine: we don't exercise them here).
 
-func newTestSidecar(t *testing.T) (*Sidecar, ed25519.PrivateKey) {
+func newTestExtAuthz(t *testing.T) (*ExtAuthz, ed25519.PrivateKey) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	return &Sidecar{
+	return &ExtAuthz{
 		keys:         staticAccessKeys(pub),
 		issuer:       "saas-starter",
 		audience:     "saas-starter",
@@ -96,14 +96,14 @@ func checkReq(path string, headers map[string]string) *authv3.CheckRequest {
 }
 
 // ============================================================================
-// No credentials — sidecar denies (gateway decides whether to enforce)
+// No credentials — ext_authz check denies (gateway decides whether to enforce)
 // ============================================================================
 
 func TestUnit_NoCredentials_Denied(t *testing.T) {
-	s, _ := newTestSidecar(t)
+	s, _ := newTestExtAuthz(t)
 	ctx := context.Background()
 
-	// The sidecar no longer has a public-path allowlist. It always
+	// The ext_authz check no longer has a public-path allowlist. It always
 	// denies when no credentials are provided. The gateway is
 	// responsible for checking the route's auth requirement and
 	// deciding whether to forward or reject.
@@ -117,7 +117,7 @@ func TestUnit_NoCredentials_Denied(t *testing.T) {
 			resp, err := s.Check(ctx, checkReq(path, map[string]string{}))
 			require.NoError(t, err)
 			require.NotNil(t, resp.GetDeniedResponse(),
-				"sidecar must deny when no credentials are provided")
+				"authz must deny when no credentials are provided")
 		})
 	}
 }
@@ -127,7 +127,7 @@ func TestUnit_NoCredentials_Denied(t *testing.T) {
 // ============================================================================
 
 func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	c := validClaims(time.Now())
@@ -150,12 +150,12 @@ func TestUnit_ValidJWT_ForwardsHeaders(t *testing.T) {
 }
 
 // TestUnit_Allow_RemovesUnstampedTrustHeaders locks the H4 fix: on an allow
-// decision the sidecar must instruct Envoy to strip every untrusted trust
+// decision the ext_authz check must instruct Envoy to strip every untrusted trust
 // header it does not restamp, so a client-spoofed header cannot survive to the
-// upstream. This is the sidecar half of the header-lockstep invariant paired
+// upstream. This is the ext_authz check half of the header-lockstep invariant paired
 // with M6 (the strip set is a superset of the stamped set).
 func TestUnit_Allow_RemovesUnstampedTrustHeaders(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 
 	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
 		"authorization": "Bearer " + signClaims(t, priv, validClaims(time.Now())),
@@ -182,7 +182,7 @@ func TestUnit_Allow_RemovesUnstampedTrustHeaders(t *testing.T) {
 		require.Falsef(t, isStamped && isRemoved, "untrusted header %q is both restamped and removed", k)
 	}
 
-	// Trust headers the sidecar never stamps on an allow must be removed.
+	// Trust headers the ext_authz check never stamps on an allow must be removed.
 	require.Contains(t, removed, "x-codefly-internal-token")
 	require.Contains(t, removed, "x-codefly-public-origin")
 
@@ -192,12 +192,12 @@ func TestUnit_Allow_RemovesUnstampedTrustHeaders(t *testing.T) {
 }
 
 func TestUnit_ValidJWT_ForwardsActorChainAndOverwritesSpoofedHeader(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	c.Act = &actorClaim{Subject: "svc:billing-worker", Act: &actorClaim{Subject: "svc:gateway"}}
 	token := signClaims(t, priv, c)
 
-	// The caller supplies a forged x-act; the sidecar must emit the verified
+	// The caller supplies a forged x-act; the ext_authz check must emit the verified
 	// chain, replacing it.
 	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
 		"authorization": "Bearer " + token,
@@ -208,7 +208,7 @@ func TestUnit_ValidJWT_ForwardsActorChainAndOverwritesSpoofedHeader(t *testing.T
 }
 
 func TestUnit_ValidJWT_EmitsEmptyActorHeaderForDirectSession(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	token := signClaims(t, priv, validClaims(time.Now()))
 
 	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
@@ -222,7 +222,7 @@ func TestUnit_ValidJWT_EmitsEmptyActorHeaderForDirectSession(t *testing.T) {
 }
 
 func TestUnit_ValidJWT_ForwardsScopedRoles(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	c.ScopedRoles = map[string][]string{"module-a": {"analyst"}, "module-b": {"admin"}}
 	token := signClaims(t, priv, c)
@@ -240,7 +240,7 @@ func TestUnit_ValidJWT_ForwardsScopedRoles(t *testing.T) {
 }
 
 func TestUnit_ValidJWT_ForwardsScopedRolesTruncated(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	c.ScopedRoles = map[string][]string{"module-a": {"analyst"}}
 	c.ScopedRolesTruncated = true
@@ -264,7 +264,7 @@ func TestUnit_ValidJWT_ForwardsScopedRolesTruncated(t *testing.T) {
 }
 
 func TestUnit_ValidJWT_NoScopedRolesOmitsHeader(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	token := signClaims(t, priv, validClaims(time.Now()))
 
 	resp, err := s.Check(context.Background(), checkReq("/v1/users", map[string]string{
@@ -278,7 +278,7 @@ func TestUnit_ValidJWT_NoScopedRolesOmitsHeader(t *testing.T) {
 }
 
 func TestUnit_ValidJWT_ForwardsMFAState(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	c := validClaims(time.Now())
 	c.MFASatisfied = true
 	c.AuthenticationMethods = []string{"oauth", "otp"}
@@ -300,7 +300,7 @@ func TestUnit_ValidJWT_ForwardsMFAState(t *testing.T) {
 }
 
 func TestUnit_ValidJWT_Impersonation_ForwardsActingHeader(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	c := validClaims(time.Now())
@@ -321,7 +321,7 @@ func TestUnit_ValidJWT_Impersonation_ForwardsActingHeader(t *testing.T) {
 }
 
 func TestUnit_ExpiredJWT_Denied(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	c := validClaims(time.Now().Add(-20 * time.Minute))
@@ -336,7 +336,7 @@ func TestUnit_ExpiredJWT_Denied(t *testing.T) {
 }
 
 func TestUnit_WrongIssuer_Denied(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	c := validClaims(time.Now())
@@ -351,7 +351,7 @@ func TestUnit_WrongIssuer_Denied(t *testing.T) {
 }
 
 func TestUnit_WrongAudience_Denied(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	c := validClaims(time.Now())
@@ -366,7 +366,7 @@ func TestUnit_WrongAudience_Denied(t *testing.T) {
 }
 
 func TestUnit_ForgedSignature_Denied(t *testing.T) {
-	s, priv := newTestSidecar(t)
+	s, priv := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	c := validClaims(time.Now())
@@ -388,7 +388,7 @@ func TestUnit_ForgedSignature_Denied(t *testing.T) {
 }
 
 func TestUnit_AlgNone_Denied(t *testing.T) {
-	s, _ := newTestSidecar(t)
+	s, _ := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	// Manually build an alg:none token — no signature.
@@ -409,7 +409,7 @@ func TestUnit_AlgNone_Denied(t *testing.T) {
 }
 
 func TestUnit_MalformedJWT_Denied(t *testing.T) {
-	s, _ := newTestSidecar(t)
+	s, _ := newTestExtAuthz(t)
 	ctx := context.Background()
 
 	resp, err := s.Check(ctx, checkReq("/v1/users", map[string]string{
@@ -420,12 +420,12 @@ func TestUnit_MalformedJWT_Denied(t *testing.T) {
 }
 
 func TestUnit_NoKey_Denied(t *testing.T) {
-	// Simulates a sidecar that has not managed to fetch the JWKS. An otherwise
+	// Simulates an ext_authz check that has not managed to fetch the JWKS. An otherwise
 	// valid token must read as an availability failure (503), not as a bad
 	// credential (401) — the caller should retry, not re-authenticate.
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	s := &Sidecar{keys: unavailableAccessKeys{}, issuer: "saas-starter", audience: "saas-starter"}
+	s := &ExtAuthz{keys: unavailableAccessKeys{}, issuer: "saas-starter", audience: "saas-starter"}
 	ctx := context.Background()
 
 	resp, err := s.Check(ctx, checkReq("/v1/users", map[string]string{

@@ -27,16 +27,16 @@ import (
 
 // Global test fixtures — initialized once in TestMain.
 var (
-	testSidecar    *Sidecar
+	testExtAuthz   *ExtAuthz
 	testAuthClient apigen.AuthServiceClient
 	testCtx        context.Context
 )
 
 func TestMain(m *testing.M) {
-	os.Exit(runSidecarIntegrationTests(m))
+	os.Exit(runExtAuthzIntegrationTests(m))
 }
 
-func runSidecarIntegrationTests(m *testing.M) int {
+func runExtAuthzIntegrationTests(m *testing.M) int {
 	// The accounts transport deliberately fails closed for internal RPCs.
 	// WithDependencies inherits this process environment, so both services use
 	// the same integration-only credential.
@@ -46,7 +46,7 @@ func runSidecarIntegrationTests(m *testing.M) int {
 
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithNamingScope("sidecar-test"),
+		sdk.WithNamingScope("ext-authz-test"),
 		sdk.WithTimeout(90*time.Second),
 		sdk.WithSilence("store"),
 	)
@@ -104,7 +104,7 @@ func runSidecarIntegrationTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "access-token JWKS never became available\n")
 		return 1
 	}
-	testSidecar = NewSidecar(internalConn, accessKeySet)
+	testExtAuthz = NewExtAuthz(internalConn, accessKeySet)
 
 	// Same wiring as main: the revoker reads the Redis revocation set accounts
 	// writes on logout. The cache service is a declared dependency, so a
@@ -122,7 +122,7 @@ func runSidecarIntegrationTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "cannot build revoker: %v\n", err)
 		return 1
 	}
-	testSidecar.SetRevoker(revoker)
+	testExtAuthz.SetRevoker(revoker)
 
 	testAuthClient = apigen.NewAuthServiceClient(apiConn)
 	testCtx = ctx
@@ -160,21 +160,21 @@ func makeCheckRequestWithPath(path string, headers map[string]string) *authv3.Ch
 }
 
 func TestCheck_PublicPath_AuthEndpoint(t *testing.T) {
-	resp, err := testSidecar.Check(testCtx,
+	resp, err := testExtAuthz.Check(testCtx,
 		makeCheckRequestWithPath("/v1/auth/authenticate", map[string]string{}))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetOkResponse(), "login must be publicly reachable")
 }
 
 func TestCheck_PublicPath_Health(t *testing.T) {
-	resp, err := testSidecar.Check(testCtx,
+	resp, err := testExtAuthz.Check(testCtx,
 		makeCheckRequestWithPath("/health", map[string]string{}))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetOkResponse())
 }
 
 func TestCheck_NoAuth_ProtectedRoute_Denied(t *testing.T) {
-	resp, err := testSidecar.Check(testCtx,
+	resp, err := testExtAuthz.Check(testCtx,
 		makeCheckRequestWithPath("/v1/users", map[string]string{}))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetDeniedResponse(), "protected routes must reject missing auth")
@@ -199,8 +199,8 @@ func TestCheck_JWTAuth(t *testing.T) {
 	require.Equal(t, int64(180), authResp.ExpiresIn)
 	require.NotEmpty(t, authResp.User.Uuid)
 
-	// Use the JWT against the sidecar on a protected path.
-	resp, err := testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", map[string]string{
+	// Use the JWT against the ext_authz check on a protected path.
+	resp, err := testExtAuthz.Check(testCtx, makeCheckRequestWithPath("/v1/users", map[string]string{
 		"authorization": "Bearer " + authResp.AccessToken,
 	}))
 	require.NoError(t, err)
@@ -220,7 +220,7 @@ func TestCheck_JWTAuth(t *testing.T) {
 
 func TestCheck_ExpiredJWT(t *testing.T) {
 	// Send a clearly invalid/expired JWT
-	resp, err := testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", map[string]string{
+	resp, err := testExtAuthz.Check(testCtx, makeCheckRequestWithPath("/v1/users", map[string]string{
 		"authorization": "Bearer eyJhbGciOiJFZERTQSJ9.eyJzdWIiOiJ0ZXN0IiwiZXhwIjoxfQ.invalid",
 	}))
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestCheck_ExpiredJWT(t *testing.T) {
 }
 
 func TestCheck_InvalidJWT(t *testing.T) {
-	resp, err := testSidecar.Check(testCtx, makeCheckRequest(map[string]string{
+	resp, err := testExtAuthz.Check(testCtx, makeCheckRequest(map[string]string{
 		"authorization": "Bearer not.a.jwt",
 	}))
 	require.NoError(t, err)
@@ -288,10 +288,10 @@ func TestAuth_Logout(t *testing.T) {
 
 // End-to-end revocation across the real accounts + Redis stack, in the exact
 // gateway sequence: protected RPC authorized → logout request authorized (the
-// sidecar drops its cached answer for the jti here) → accounts revokes the
+// ext_authz check drops its cached answer for the jti here) → accounts revokes the
 // jti in the shared Redis set → immediate reuse of the old access token is
 // rejected. Pins the cross-service "revoked-jti:" key contract between
-// accounts' cache.TokenRevoker and the sidecar's revoker.
+// accounts' cache.TokenRevoker and the ext_authz check's revoker.
 func TestCheck_RevokedAccessToken_RejectedOnGatewayPath(t *testing.T) {
 	// The integration graph runs IDENTITY_PROVIDER=fixture with the dev-admin
 	// fixture seeded; "dev-bob" is one of its allowlisted login tokens.
@@ -305,12 +305,12 @@ func TestCheck_RevokedAccessToken_RejectedOnGatewayPath(t *testing.T) {
 
 	bearer := map[string]string{"authorization": "Bearer " + authResp.AccessToken}
 
-	resp, err := testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", bearer))
+	resp, err := testExtAuthz.Check(testCtx, makeCheckRequestWithPath("/v1/users", bearer))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetOkResponse(), "protected RPC succeeds before logout")
 
 	// The gateway authorizes the logout request before proxying it upstream.
-	resp, err = testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/auth/logout", bearer))
+	resp, err = testExtAuthz.Check(testCtx, makeCheckRequestWithPath("/v1/auth/logout", bearer))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetOkResponse(), "logout request is authorized")
 
@@ -323,7 +323,7 @@ func TestCheck_RevokedAccessToken_RejectedOnGatewayPath(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	resp, err = testSidecar.Check(testCtx, makeCheckRequestWithPath("/v1/users", bearer))
+	resp, err = testExtAuthz.Check(testCtx, makeCheckRequestWithPath("/v1/users", bearer))
 	require.NoError(t, err)
 	require.NotNil(t, resp.GetDeniedResponse(), "revoked access token must be rejected immediately")
 	require.Equal(t, int32(401), int32(resp.GetDeniedResponse().Status.Code))

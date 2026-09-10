@@ -23,13 +23,13 @@ browser → auth-gateway → api           browser → api
 ```
 
 Defense-in-depth: the api validates the bearer JWT itself even when the
-sidecar is in front. A misconfigured sidecar / a direct port-hit cannot
+auth-gateway ext_authz check is in front. A misconfigured ext_authz check / a direct port-hit cannot
 bypass auth. Implemented as `connect_auth_interceptor.go` and
 `grpc_auth_interceptor.go`.
 
-CORS lives on the api (not the sidecar) because Connect-Web preflights
+CORS lives on the api (not the auth-gateway) because Connect-Web preflights
 every POST. Permissive in dev (any localhost origin); production puts
-the sidecar in front so this code path isn't reached.
+the auth-gateway in front so this code path isn't reached.
 
 ### Stack
 
@@ -478,7 +478,7 @@ extraction contracts.
 | Layer       | Coverage                                                                |
 |-------------|-------------------------------------------------------------------------|
 | Unit (Go)   | Auth/identity/business — `*_test.go` per package                        |
-| Integration | Sidecar↔backend gateway, audit retention, billing handler               |
+| Integration | ext_authz↔backend gateway, audit retention, billing handler             |
 | e2e (Playwright) | 32 specs across 8 files (login, navigation, admin-flow, webhooks, auth-boundary, revocation, command-palette, sdk-smoke), full stack via `withDependencies` (~54s warm, ~2min cold) |
 | Coverage gates | None enforced today                                                  |
 
@@ -593,17 +593,17 @@ _All previously-open gaps closed 2026-04-25._
 - ✅ **s3 plugin now actually runs MinIO** — was a redis-template scaffold (port 6379, redis ping readiness); now real (port 9000, /minio/health/live, structured conn keys, agent v0.0.2).
 - ✅ **User settings API** — JSONB-backed (`users.settings`) + UserSettingsService + /settings hub (theme / locale / timezone / date-time format / email opt-ins).
 - ✅ **Theme toggle** — next-themes wired with system / light / dark, persists per user via the settings API, syncs across devices.
-- ✅ **Stripe billing portal in /admin/billing** — Connect-RPC `BillingService.OpenPortal` works without sidecar.
+- ✅ **Stripe billing portal in /admin/billing** — Connect-RPC `BillingService.OpenPortal` works without the auth-gateway.
 - ✅ **Stripe invoices list** — last 12 invoices on /admin/billing with hosted-detail link + PDF download.
 - ✅ **Rate-limit visibility** — X-RateLimit-* exposed via CORS; FE captures every response, banner appears at <10% remaining.
 
 ### Resolved 2026-04-25
 
 - ✅ **User identity endpoints unauthenticated** — `AddIdentity`, `FindUserByIdentity`, `ListUserIdentities` would let any authenticated caller enumerate provider identities or attach attacker-controlled identities to any user. Now gated by `requireSelfOrPlatformAdmin` / `requirePlatformAdmin`.
-- ✅ **gRPC server had no in-process auth interceptor** — handlers assumed sidecar presence; direct port hits bypassed auth. Added `grpcAuthInterceptor` mirroring the Connect interceptor (defense in depth: api validates the bearer regardless of upstream).
+- ✅ **gRPC server had no in-process auth interceptor** — handlers assumed the auth-gateway ext_authz check was in front; direct port hits bypassed auth. Added `grpcAuthInterceptor` mirroring the Connect interceptor (defense in depth: api validates the bearer regardless of upstream).
 - ✅ **Connect server had no CORS** — browser preflight returned 405; every Connect-Web request from the FE failed in production-style architectures. Added `rs/cors` middleware.
 - ✅ **MFA is enforced and refresh-safe** — enrolled users receive no normal session until a durable one-use challenge succeeds. JWT/session evidence carries `amr`, `auth_time`, `acr`, and `mfa_at`; refresh preserves rather than renews that evidence. Refresh re-resolves verified enrollment: newly enrolled MFA terminates AAL1 refresh families and requires login, while removed MFA strips factor methods and downgrades the successor to AAL1. General sensitive operations apply the configured recent-AAL2 policy to enrolled users; money-moving billing checkout/portal is stricter and always requires fresh AAL2, so lack of enrollment is not a bypass. Passkeys require WebAuthn user verification with exact Codefly-configured RP/origin policy; complete credentials and ceremony state use Vault Transit envelopes. TOTP seeds are encrypted and recovery codes are one-use bcrypt hashes.
-- ✅ **API key scopes forwarded but not enforced** — sidecar set `X-Scopes`; handlers ignored. New `requireScope(ctx, "resource:action")` gate with wildcard support (`*`, `users:*`, `*:read`). Applied to `ListUsers`, `UpdateUser`, `DeleteUser` as a starter set; extend to other resources per business needs (JWT-authenticated callers bypass — RBAC handles them).
+- ✅ **API key scopes forwarded but not enforced** — the auth-gateway ext_authz check set `X-Scopes`; handlers ignored. New `requireScope(ctx, "resource:action")` gate with wildcard support (`*`, `users:*`, `*:read`). Applied to `ListUsers`, `UpdateUser`, `DeleteUser` as a starter set; extend to other resources per business needs (JWT-authenticated callers bypass — RBAC handles them).
 - ✅ **Access tokens not individually revocable** — Logout only killed the refresh chain; old access tokens stayed valid up to 15 min. New `auth.TokenRevoker` interface + `cache.NewTokenRevoker` Redis impl. `Logout(refresh, accessToken)` now calls `JWTMinter.RevokeAccess` which adds the jti to the revocation list with TTL = remaining `exp`. `VerifyAccess` consults the list. Falls back to `NoopTokenRevoker` (no Redis) → original behavior.
 - ✅ **Impersonation had no time limit** — admin "view-as" sessions inherited the normal 15-min TTL. New `Config.ImpersonationTokenTTL` (default 5 min) auto-applied when minting tokens with `acting` claim set.
 - ✅ **Cache invalidation on member-remove** — confirmed correct on a closer read. `CacheInvalidator.InvalidateMembership` calls `cache.Delete` against shared Redis, so all api instances see the change immediately. The 30s TTL is safety net, not staleness window.
@@ -679,9 +679,9 @@ Environment variables consumed by the api:
 | `TURNSTILE_ALLOWED_HOSTNAMES`  | Exact accepted Turnstile response hostnames                  |
 | `CODEFLY__FIXTURE`             | Loads fixture YAML (e.g. `dev-admin`); FE login picker too |
 
-When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and auth
-sidecar export unsampled request and Go runtime metrics through the in-graph
-OpenTelemetry collector. The auth sidecar covers both its HTTP gateway and gRPC
+When `OTEL_EXPORTER_OTLP_ENDPOINT` is configured, the accounts service and the
+auth-gateway export unsampled request and Go runtime metrics through the in-graph
+OpenTelemetry collector. The auth-gateway covers both its HTTP gateway and gRPC ext_authz
 authorization service. Prometheus can alternatively scrape `/metrics` on each
 service's private REST endpoint; neither route is a module or public interface
 endpoint.

@@ -44,7 +44,7 @@ internal methods such as `ConsumeUsage`.
 
 The frontend removes caller-supplied origin trust headers, stamps the actual
 browser origin with `CODEFLY_INTERNAL_TOKEN`, and forwards only API routes to
-auth-gateway. Auth-sidecar accepts that origin only after constant-time token
+auth-gateway. The auth-gateway ext_authz check accepts that origin only after constant-time token
 validation.
 
 The gateway removes all caller-supplied identity, organization, role, scope,
@@ -79,7 +79,7 @@ cookies are always `Secure`, including local development.
 
 ## Gateway rate-limit storage
 
-Auth-sidecar resolves the Codefly `cache/write` endpoint directly. `REDIS_URL`
+Auth-gateway resolves the Codefly `cache/write` endpoint directly. `REDIS_URL`
 can override it for hosted Redis and supports both `redis://` and `rediss://`
 URLs, authentication, and database selection. The client uses a bounded pool,
 connection/read/write/pool timeouts, TLS 1.2 or newer for `rediss://`, and an
