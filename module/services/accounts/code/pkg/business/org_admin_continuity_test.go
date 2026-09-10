@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -12,39 +13,24 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// The rule itself, away from the database. Every row is a proposed change:
-// role is what the named user would hold afterwards, "" a removal.
+// The rule itself, away from the database: current is how many eligible
+// administrators the organization has, projected how many would remain.
 func TestOrgAdminContinuityRule(t *testing.T) {
-	soleOwner := map[string]string{"owner": "owner"}
-	twoAdmins := map[string]string{"owner": "owner", "second": "admin"}
-	adminAndMembers := map[string]string{"owner": "admin", "a": "member", "b": "member"}
-	noAdmins := map[string]string{"a": "member", "b": "member"}
-
 	for _, tc := range []struct {
-		name   string
-		roster map[string]string
-		user   string
-		role   string
-		reject bool
+		name               string
+		current, projected int
+		reject             bool
 	}{
-		{"sole owner removed", soleOwner, "owner", "", true},
-		{"sole owner demoted to member", soleOwner, "owner", "member", true},
-		{"sole owner kept as owner", soleOwner, "owner", "owner", false},
-		{"sole owner moved to admin", soleOwner, "owner", "admin", false},
-		{"one of two admins removed", twoAdmins, "second", "", false},
-		{"one of two admins demoted", twoAdmins, "second", "member", false},
-		{"both-are-one: last admin of two after the other went", soleOwner, "owner", "member", true},
-		{"ordinary member removed", adminAndMembers, "a", "", false},
-		{"ordinary member promoted", adminAndMembers, "a", "admin", false},
-		{"non-member added as member", adminAndMembers, "new", "member", false},
-		{"sole admin removed", adminAndMembers, "owner", "", true},
-		// An organization that never had an administrator is exempt, so
-		// historical data stays repairable rather than frozen.
-		{"member removed from an admin-less organization", noAdmins, "a", "", false},
-		{"admin added to an admin-less organization", noAdmins, "a", "admin", false},
+		{"the sole administrator would go", 1, 0, true},
+		{"one of two would go", 2, 1, false},
+		{"nothing changes", 1, 1, false},
+		{"an administrator is added", 1, 2, false},
+		// An organization that already has none stays repairable — otherwise
+		// even an operator adding an administrator back would be refused.
+		{"already none", 0, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := business.OrgAdminContinuity(tc.roster, tc.user, tc.role)
+			err := business.OrgAdminContinuity(tc.current, tc.projected)
 			if tc.reject {
 				require.ErrorIs(t, err, business.ErrOrgAdminContinuity)
 				return
@@ -52,6 +38,15 @@ func TestOrgAdminContinuityRule(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+// A role that keeps the target administrative can never reduce the count, so
+// the guard settles it from the argument alone and never takes the lock.
+func TestIsOrgAdminRole(t *testing.T) {
+	require.True(t, business.IsOrgAdminRole("owner"))
+	require.True(t, business.IsOrgAdminRole("admin"))
+	require.False(t, business.IsOrgAdminRole("member"))
+	require.False(t, business.IsOrgAdminRole(""))
 }
 
 // auditBarrierStore holds both contenders at the decision boundary until each
@@ -65,13 +60,50 @@ func TestOrgAdminContinuityRule(t *testing.T) {
 // and about to decide, and nothing about the ordering after that is arranged.
 type auditBarrierStore struct {
 	business.Store
-	barrier sync.WaitGroup
+	mu        sync.Mutex
+	remaining int
+	barrier   sync.WaitGroup
 }
 
+// Releasing at most `remaining` times keeps an extra guard call — a retry, or a
+// future mutation that checks twice — from driving the WaitGroup negative. A
+// miscounted barrier should fail the assertion it was set up for, not panic the
+// suite out from under every other test.
 func (s *auditBarrierStore) LockOrgAdministration(ctx context.Context, orgID string) error {
-	s.barrier.Done()
+	s.mu.Lock()
+	if s.remaining > 0 {
+		s.remaining--
+		s.barrier.Done()
+	}
+	s.mu.Unlock()
 	s.barrier.Wait()
 	return s.Store.LockOrgAdministration(ctx, orgID)
+}
+
+// sequencedStore runs a hook after the guard has counted administrators but
+// before it decides, so a contender can commit underneath a known-stale count.
+type sequencedStore struct {
+	business.Store
+	afterCount func()
+}
+
+func (s *sequencedStore) CountOrgAdministrators(ctx context.Context, orgID string, excludeUserID string) (int, int, error) {
+	total, others, err := s.Store.CountOrgAdministrators(ctx, orgID, excludeUserID)
+	if s.afterCount != nil {
+		s.afterCount()
+	}
+	return total, others, err
+}
+
+// setUserStatus writes a user status directly. DeleteUser is a soft delete, so
+// this is the same state a deleted or suspended identity is left in.
+func setUserStatus(t *testing.T, userID string, status string) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `UPDATE users SET status = $2 WHERE uuid = $1`, userID, status)
+		return err
+	}))
 }
 
 func continuityService(t *testing.T, store business.Store) *business.Service {
@@ -86,7 +118,7 @@ func continuityService(t *testing.T, store business.Store) *business.Service {
 // two-party barrier at the decision boundary.
 func barrieredService(t *testing.T, contenders int) *business.Service {
 	t.Helper()
-	store := &auditBarrierStore{Store: testStore}
+	store := &auditBarrierStore{Store: testStore, remaining: contenders}
 	store.barrier.Add(contenders)
 	return continuityService(t, store)
 }
@@ -235,9 +267,14 @@ func TestConcurrentDemotionAndRemovalKeepAnAdministrator(t *testing.T) {
 }
 
 // Ownership transfer is promotion followed by the old owner's departure, so the
-// interesting race is the promotion against that departure. Either order is
-// safe — the promotion first makes the removal admissible, the removal first
-// makes it inadmissible — but neither may leave the organization unadministered.
+// interesting race is the promotion against that departure.
+//
+// A promotion can only raise the administrator count, so it settles from its
+// argument and never takes the administration lock — which makes this
+// interleaving reachable rather than hypothetical: the removal counts one
+// administrator, the promotion commits a second underneath it, and the removal
+// then decides. It must decide on what it counted and refuse, leaving both
+// administrators standing, rather than act on a count it no longer believes.
 func TestOwnerTransferRacingRemovalKeepsAnAdministrator(t *testing.T) {
 	clearData(t)
 	owner, org := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
@@ -246,22 +283,21 @@ func TestOwnerTransferRacingRemovalKeepsAnAdministrator(t *testing.T) {
 		OrgId: org, UserId: successor, Role: gen.OrgRole_ORG_ROLE_MEMBER,
 	}))
 
-	service := barrieredService(t, 2)
-	results := make(chan error, 2)
-	go func() {
-		results <- service.AddOrgMember(testCtx, owner, &gen.AddOrgMemberRequest{
+	var promotion error
+	store := &sequencedStore{Store: testStore, afterCount: func() {
+		promotion = testService.AddOrgMember(testCtx, owner, &gen.AddOrgMemberRequest{
 			OrgId: org, UserId: successor, Role: gen.OrgRole_ORG_ROLE_OWNER,
 		})
-	}()
-	go func() {
-		results <- service.RemoveOrgMember(testCtx, owner, &gen.RemoveOrgMemberRequest{
-			OrgId: org, UserId: owner,
-		})
-	}()
-	succeeded, _ := countErrors(<-results, <-results)
+	}}
+	removal := continuityService(t, store).RemoveOrgMember(testCtx, owner, &gen.RemoveOrgMemberRequest{
+		OrgId: org, UserId: owner,
+	})
 
-	require.GreaterOrEqual(t, succeeded, 1, "the promotion must not be blocked by the removal")
-	requireSurvivingAdministrator(t, testCtx, org)
+	require.NoError(t, promotion, "a promotion must not queue behind an in-flight removal")
+	require.ErrorIs(t, removal, business.ErrOrgAdminContinuity)
+	roles := requireSurvivingAdministrator(t, testCtx, org)
+	require.Equal(t, gen.OrgRole_ORG_ROLE_OWNER, roles[owner])
+	require.Equal(t, gen.OrgRole_ORG_ROLE_OWNER, roles[successor])
 }
 
 // One administrator plus ordinary members: churn among the members is
@@ -380,49 +416,76 @@ func TestOwnerOfRecordIsProvenanceNotAuthority(t *testing.T) {
 		requireSurvivingAdministrator(t, testCtx, org)[successor])
 }
 
-// Deleting a whole organization is not a membership mutation and does not pass
-// through the guard: the memberships go with the organization row by cascade.
-// The invariant constrains who may be removed from a live organization, not
-// whether an organization may cease to exist.
+// Deleting a whole organization is not a membership mutation and never reaches
+// the guard: the memberships go with the organization row by cascade. The
+// invariant constrains who may be removed from a live organization, not whether
+// an organization may cease to exist.
 func TestWholeOrganizationDeletionIsNotBlocked(t *testing.T) {
 	clearData(t)
 	_, org := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
 	require.Len(t, orgRosterRoles(t, testCtx, org), 1)
 
-	require.NoError(t, testStore.ClearAll(testCtx),
-		"a sole-administrator organization must still be deletable as a whole")
-	require.Empty(t, orgRosterRoles(t, testCtx, org))
-}
-
-// Invitation redemption is a membership upsert whose role is authoritative and
-// overwrites whatever the accepting user already holds, so an invitation
-// addressed to the only administrator at a lower role is a demotion reached
-// through a different verb. Nothing about CreateInvitation prevents addressing
-// an existing member, so the rule has to hold at redemption.
-func TestInvitationRedemptionCannotDemoteTheLastAdministrator(t *testing.T) {
-	clearData(t)
-	owner, org := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
-
-	created, err := testService.CreateInvitation(testCtx, owner, &gen.CreateInvitationRequest{
-		OrgId: org,
-		Email: "owner@example.com",
-		Role:  gen.InvitationRole_INVITATION_ROLE_MEMBER,
-	})
-	require.NoError(t, err)
-
-	// Acceptance authorizes on verified email equality, which is a separate
-	// precondition; verify the address so the continuity rule is what the
-	// request actually reaches.
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
 		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
-		_, err := tx.Exec(ctx, `UPDATE users SET email_verified = true WHERE uuid = $1`, owner)
+		_, err := tx.Exec(ctx, `DELETE FROM organizations WHERE id = $1`, org)
 		return err
-	}))
+	}), "a sole-administrator organization must still be deletable as a whole")
 
-	_, err = testService.AcceptInvitation(testCtx, owner, &gen.AcceptInvitationRequest{
-		Credential: &gen.AcceptInvitationRequest_InvitationId{
-			InvitationId: created.GetInvitation().GetId(),
-		},
+	var remaining int
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		return tx.QueryRow(ctx,
+			`SELECT count(*) FROM organization_members WHERE org_id = $1`, org).Scan(&remaining)
+	}))
+	require.Zero(t, remaining, "the administrator's membership must go with the organization")
+}
+
+// An administrator who cannot sign in administers nothing: findIdentity refuses
+// any identity that is not active, and DeleteUser is a soft delete that leaves
+// the membership row standing. Counting those memberships would let the last
+// usable administrator be removed while the invariant reported the organization
+// healthy.
+func TestIneligibleAdministratorDoesNotSatisfyTheInvariant(t *testing.T) {
+	clearData(t)
+	owner, org := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
+	ghost, _ := mustUserAndOrg(t, testCtx, "ghost@example.com", "example-ghost", "ExampleCorp")
+	require.NoError(t, testService.AddOrgMember(testCtx, owner, &gen.AddOrgMemberRequest{
+		OrgId: org, UserId: ghost, Role: gen.OrgRole_ORG_ROLE_ADMIN,
+	}))
+	setUserStatus(t, ghost, "deleted")
+
+	require.ErrorIs(t, testService.RemoveOrgMember(testCtx, owner, &gen.RemoveOrgMemberRequest{
+		OrgId: org, UserId: owner,
+	}), business.ErrOrgAdminContinuity,
+		"the last administrator who can still sign in must not be removable")
+
+	require.ErrorIs(t, testService.AddOrgMember(testCtx, owner, &gen.AddOrgMemberRequest{
+		OrgId: org, UserId: owner, Role: gen.OrgRole_ORG_ROLE_MEMBER,
+	}), business.ErrOrgAdminContinuity,
+		"nor demotable")
+
+	// Restoring the ghost makes the organization administrable again, so the
+	// rule tracks eligibility rather than freezing on a stale verdict.
+	setUserStatus(t, ghost, "active")
+	require.NoError(t, testService.RemoveOrgMember(testCtx, owner, &gen.RemoveOrgMemberRequest{
+		OrgId: org, UserId: owner,
+	}))
+}
+
+// The pre-authentication resolver upserts membership itself, outside the
+// business layer, so the invariant has to hold on that path too. Redeeming a
+// member-role invitation addressed to the only administrator is a demotion.
+func TestResolverInviteRedemptionCannotDemoteTheLastAdministrator(t *testing.T) {
+	clearData(t)
+	owner, org := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
+	token := seedPendingInvitation(t, org, owner, "owner@example.com", "member",
+		time.Now().Add(24*time.Hour))
+
+	_, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
+		Provider:      "email",
+		ProviderId:    "example-owner",
+		ProviderEmail: "owner@example.com",
+		Profile:       map[string]string{"invitation_token": token},
 	})
 	require.ErrorIs(t, err, business.ErrOrgAdminContinuity)
 	require.Equal(t, gen.OrgRole_ORG_ROLE_OWNER, orgRosterRoles(t, testCtx, org)[owner],

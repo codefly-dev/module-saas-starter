@@ -33,18 +33,16 @@ import { orgQueries } from "../service/queries";
 const col = createColumnHelper<OrgMembership>();
 
 // A membership change the server refuses on principle — the organization would
-// be left with no owner or admin, or the seat quota is full — carries a reason
-// the admin can act on. A generic "Failed to remove member" would send them
-// looking for an outage instead of at the rule they hit. Anything else stays
-// generic: transport and server faults have no message meant for a user.
+// be left with no owner or admin — carries a reason the admin can act on. A
+// generic "Failed to remove member" would send them looking for an outage
+// instead of at the rule they hit.
+//
+// Deliberately only FailedPrecondition. Other codes carry wrapped internal
+// messages (a quota rejection reads "AddOrgMember: cannot add member: …"), and
+// a call path is not something to render to a user.
 function memberErrorMessage(error: unknown, fallback: string): string {
 	if (!(error instanceof ConnectError)) return fallback;
-	if (
-		error.code !== Code.FailedPrecondition &&
-		error.code !== Code.ResourceExhausted
-	) {
-		return fallback;
-	}
+	if (error.code !== Code.FailedPrecondition) return fallback;
 	return error.rawMessage || fallback;
 }
 

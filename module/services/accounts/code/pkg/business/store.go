@@ -157,6 +157,15 @@ type Store interface {
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
 	OrgMemberExists(ctx context.Context, orgID string, userID string) (bool, error)
 	RemoveOrgMember(ctx context.Context, orgID string, userID string) error
+	// CountOrgAdministrators returns how many eligible administrative
+	// memberships the organization has, and how many of those are held by
+	// somebody other than excludeUserID. Eligible means the membership carries
+	// an administrative role AND the identity behind it can still authenticate:
+	// a soft-deleted or suspended user administers nothing, so counting their
+	// membership would let the last usable administrator be removed.
+	//
+	// Call it under LockOrgAdministration — on its own it is only a read.
+	CountOrgAdministrators(ctx context.Context, orgID string, excludeUserID string) (int, int, error)
 	// LockOrgAdministration serializes every change to one organization's
 	// administrative standing, whichever member it names: a role upsert, a
 	// demotion, or a removal. Callers take it before reading the roster the

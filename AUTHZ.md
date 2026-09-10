@@ -362,10 +362,40 @@ evaluates it:
 | `Service.RemoveOrgMember` | `pkg/business/organizations.go` | Yes |
 | `Service.ConvergeFixtureOrgMember` | `pkg/business/organizations.go` | Yes. Seeding only adds, so a well-formed fixture never sees the rule; one that would demote an organization's last administrator fails the boot rather than converging an organization nobody can administer. |
 | `Service.AcceptInvitation` | `pkg/business/invitations.go` | Yes — the invitation's role is authoritative and overwrites a membership the accepting user already holds. |
-| `Resolver.acceptInvitation` | `pkg/auth/pg/resolver.go` | Yes, and it is the one outside the service layer: a raw membership upsert at *authentication* time. An invariant enforced only in `pkg/business` would not exist here. |
+| `Resolver.acceptInvitation` | `pkg/auth/pg/resolver.go` | Yes, and it is the one outside the service layer: a raw membership upsert at *authentication* time. An invariant enforced only in `pkg/business` would not exist here. It reads `FOR UPDATE` — see below. |
 | Whole-organization deletion | none in the application | No path in the service deletes an organization. A `DELETE FROM organizations` removes the memberships by `ON DELETE CASCADE` without passing through any of the above, so the invariant does not stand in the way of deleting an organization — it constrains membership mutation on a live one. |
 
-An organization that has **no** administrator to begin with is exempt. The rule
+### Eligible means the identity can still act
+
+An administrator who cannot authenticate administers nothing. `findIdentity`
+admits only `status = 'active'` and returns `ErrAccountInactive` otherwise, and
+`DeleteUser` is a *soft* delete that leaves the `organization_members` row
+standing. Counting every administrative row would therefore let the last usable
+administrator be removed while the invariant reported the organization healthy,
+so eligibility is `role IN ('owner','admin') AND users.status = 'active'`.
+
+Request traffic cannot read a co-member's `users` row (migration 69), so tenant
+code resolves that through `organization_eligible_administrators`, a
+`SECURITY DEFINER` function owned by `app_control_plane` and scoped to the
+caller's own organization (migration 130). This is not a convenience: a direct
+join under `app_tenant` returns **zero** rows, and zero administrators reads as
+"this organization never had one", which the rule exempts — the failure mode
+silently disables the invariant instead of tightening it. Control-plane
+transactions set no tenant org and hold `BYPASSRLS`, so they evaluate the same
+predicate directly.
+
+### A change that keeps the target administrative skips the lock
+
+`OrgAdminContinuity` can only reject when the target ends up non-administrative,
+so a promotion or an administrator-role invitation is settled from the argument
+alone and never touches the organization-wide lock. That is a property of the
+input, not of concurrently mutable state, which is what makes it safe: not
+holding the lock can only make a concurrent check miss the new administrator and
+be *more* conservative, never less. The corollary is that a demotion or removal
+in a busy organization does serialize org-wide — that is the cost of the
+invariant being an organization-wide fact.
+
+An organization that has **no** eligible administrator to begin with is exempt. The rule
 refuses to remove the last administrator; it does not refuse to operate on an
 organization that already has none. Enforcing the stronger form would make
 historical zero-administrator rows unrepairable — including by an operator
@@ -404,9 +434,24 @@ cycle to deadlock on.
 
 The pre-authentication resolver takes the same `administration:<org>` key
 directly on its own transaction, so it serializes against the service layer
-rather than only against itself. It runs `SERIALIZABLE` with a retry loop, so a
-roster read that its snapshot made stale aborts and retries rather than
-committing on stale information.
+rather than only against itself — but the lock alone is **not** sufficient
+there, and this is the subtle part.
+
+That transaction is `SERIALIZABLE`, and its snapshot is fixed by the invitation
+lookup *before* the advisory lock is taken. Acquiring a lock does not refresh a
+snapshot. So a plain read, having waited politely for the lock, still reports
+the administrators as of before the contender that has since committed — and
+admits exactly the demotion the guard exists to refuse. SSI does not cover it
+either: PostgreSQL tracks rw-conflicts only between `SERIALIZABLE`
+transactions, and the service layer's writers are `READ COMMITTED`, so no
+serialization failure is ever raised.
+
+The resolver therefore reads its administrators `FOR UPDATE`. A concurrently
+removed or demoted administrator then raises `serialization_failure` on the
+locked row, which `WithAuthBootstrapTx` retries on a fresh snapshot. Only the
+membership rows are locked, not `users`: this is the authentication path, and
+locking identities would put invitation redemption in contention with every
+concurrent write to the same users.
 
 ### `organizations.owner_id` is provenance, not authority
 
