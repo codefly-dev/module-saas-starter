@@ -211,14 +211,15 @@ func (h *datasourceConnectHandler) DeleteSource(
 // mapped — the wire type has no field for them.
 func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource {
 	out := &gen.Datasource{
-		Id:                source.ID,
-		OrgId:             source.OrgID,
-		Provider:          datasourceProviderToProto(source.Provider),
-		BoundaryNodeId:    source.BoundaryNodeID,
-		Status:            datasourceStatusToProto(source.Status),
-		WebhookConfigured: source.WebhookConfigured(),
-		CreatedAt:         timestamppb.New(source.CreatedAt),
-		UpdatedAt:         timestamppb.New(source.UpdatedAt),
+		Id:                 source.ID,
+		OrgId:              source.OrgID,
+		Provider:           datasourceProviderToProto(source.Provider),
+		BoundaryNodeId:     source.BoundaryNodeID,
+		Status:             datasourceStatusToProto(source.Status),
+		WebhookConfigured:  source.WebhookConfigured(),
+		CreatedAt:          timestamppb.New(source.CreatedAt),
+		UpdatedAt:          timestamppb.New(source.UpdatedAt),
+		LastIngestedCommit: source.LastIngestedCommit,
 	}
 	if source.Provider == business.DatasourceProviderGitHub {
 		out.Github = &gen.GitHubDatasourceConfig{
@@ -261,6 +262,9 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 	}
 	if source.LastSyncedAt != nil {
 		out.LastSyncedAt = timestamppb.New(*source.LastSyncedAt)
+	}
+	if source.LastIngestedAt != nil {
+		out.LastIngestedAt = timestamppb.New(*source.LastIngestedAt)
 	}
 	return out
 }

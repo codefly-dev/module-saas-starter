@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Test the base-integrity guard
@@ -56,7 +56,7 @@ jobs:
         with:
           # no-broadening diffs the catalog against main.
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Test the authz-coverage gate
@@ -94,11 +94,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Test the release-gate contract
         run: node --test scripts/ci/release-gates.test.mjs
+      - name: Test the release announcement
+        run: node --test scripts/ci/announce-release.test.mjs
       - name: Require every artifact-writing job to depend on the release gates
         run: node scripts/ci/release-gates.mjs check
 
@@ -108,7 +110,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Test the interface-docs gate
@@ -136,7 +138,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Test the kit-version gate
@@ -150,7 +152,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Statically test the Stripe non-writing shim
@@ -162,7 +164,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -225,7 +227,7 @@ jobs:
       - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
         with:
           version: 1.72.0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
       - name: Install the Python settings runtime
@@ -301,7 +303,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
       - name: Install Codefly
@@ -378,7 +380,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
       - name: Install Codefly
@@ -459,7 +461,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
       - name: Install Codefly
@@ -531,7 +533,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
       - name: Install Codefly
@@ -626,7 +628,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Require every mandatory gate to have succeeded
@@ -826,24 +828,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
       - name: Dispatch surface-bump
-        shell: bash
         env:
           HANDBOOK_REPOSITORY: ${{ vars.HANDBOOK_REPOSITORY }}
           GH_TOKEN: ${{ secrets.HANDBOOK_DISPATCH_TOKEN }}
-        run: |
-          if [[ -z "${HANDBOOK_REPOSITORY}" || -z "${GH_TOKEN}" ]]; then
-            echo "::error::the release was not announced. Set the HANDBOOK_REPOSITORY repository variable (owner/repo) and the HANDBOOK_DISPATCH_TOKEN secret."
-            exit 1
-          fi
-          # The payload names the exact commit, and the consumer must render
-          # from it. Resolving "the latest release" instead would read a stale
-          # interface: this track publishes tags, and a tag does not create a
-          # GitHub Release, so the newest release object here can be many
-          # releases behind the tag being announced.
-          gh api "repos/${HANDBOOK_REPOSITORY}/dispatches" \
-            -f event_type=surface-bump \
-            -f "client_payload[repository]=${GITHUB_REPOSITORY}" \
-            -f "client_payload[release]=${GITHUB_REF_NAME}" \
-            -f "client_payload[commit]=${GITHUB_SHA}" \
-            -f "client_payload[artifact]=module/services/accounts/generated/service-catalog.json"
+        run: node scripts/ci/announce-release.mjs

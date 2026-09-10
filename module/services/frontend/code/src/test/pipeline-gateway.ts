@@ -15,9 +15,10 @@ import {
 } from "codefly";
 import { NextRequest } from "next/server";
 import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
+import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
 import { trustedGatewayRequestHeaders } from "@/proxy";
 
-export const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
+export { INTERNAL_TOKEN_HEADER };
 export const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 
 /** Naming scope the harness started the graph under, when it started one. */

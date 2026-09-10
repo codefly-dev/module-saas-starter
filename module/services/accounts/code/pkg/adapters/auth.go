@@ -135,11 +135,11 @@ type CacheInvalidator struct{}
 // the call will just be a no-op.
 func NewCacheInvalidator() *CacheInvalidator { return &CacheInvalidator{} }
 
-func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID string) {
+func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID string) error {
 	if orgMembershipCache == nil {
-		return
+		return nil
 	}
-	_ = orgMembershipCache.Invalidate(ctx, orgID, userID)
+	return orgMembershipCache.Invalidate(ctx, orgID, userID)
 }
 
 // requireAuth extracts and validates the caller's user id from gRPC
@@ -316,6 +316,14 @@ func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, erro
 	if role == gen.OrgRole_ORG_ROLE_ADMIN.String() || role == gen.OrgRole_ORG_ROLE_OWNER.String() {
 		return orgID, nil
 	}
+	// An empty role is a verified answer — "not a member of this organization" —
+	// not a missing one. Team authority is derived from organization membership,
+	// so a nonmember is denied here rather than being tested against a team row
+	// that should no longer exist. That keeps a legacy orphan inert instead of
+	// making it sufficient on its own.
+	if role == "" {
+		return "", status.Error(codes.PermissionDenied, "not a member of this organization")
+	}
 	membership, err := service.Store().GetTeamMembership(ctx, orgID, teamID, actorID)
 	if err != nil {
 		return "", status.Errorf(codes.Internal, "cannot verify team membership: %v", err)
@@ -470,6 +478,50 @@ func withScopes(ctx context.Context, scopes []string) context.Context {
 func scopesFromContext(ctx context.Context) []string {
 	v, _ := ctx.Value(scopesCtxKey).([]string)
 	return v
+}
+
+// Credential kinds the perimeter reports in X-Credential-Kind. They name the
+// credential a request actually presented, which is knowledge only the
+// authenticating perimeter has: a handler sees the resulting identity, never
+// the credential behind it.
+const (
+	credentialKindSession = "session"
+	credentialKindAPIKey  = "api_key"
+)
+
+// credentialKindCtxKey holds the credential kind the auth perimeter
+// authenticated this request with — the gateway-forwarded `X-Credential-Kind`
+// header, or `session` stamped locally when this service verified an access
+// token itself (an API key never reaches VerifyAccess; the gateway exchanges it
+// through ValidateAPIKey).
+//
+// It is deliberately NOT derived from the scope set: scopes are an API key's
+// authorization ceiling, and a key created with none — which CreateAPIKey
+// permits — carries no scopes at all, so scope presence answers "was this
+// constrained", never "was this a machine credential".
+type credentialKindCtxKeyType struct{}
+
+var credentialKindCtxKey = credentialKindCtxKeyType{}
+
+// withCredentialKind stamps the authenticated credential kind on the context.
+// An unrecognized or empty value is not stamped, so a consumer sees "unknown"
+// rather than a wrong-but-plausible kind.
+func withCredentialKind(ctx context.Context, kind string) context.Context {
+	switch kind {
+	case credentialKindSession, credentialKindAPIKey:
+		return context.WithValue(ctx, credentialKindCtxKey, kind)
+	default:
+		return ctx
+	}
+}
+
+// credentialKindFromContext returns the authenticated credential kind, or ""
+// when the perimeter did not report one. Callers that record the kind must
+// treat "" as unattributable rather than assuming a default — see
+// verifiedActor.
+func credentialKindFromContext(ctx context.Context) string {
+	kind, _ := ctx.Value(credentialKindCtxKey).(string)
+	return kind
 }
 
 // scopedRolesCtxKey holds the caller's per-scope role grants, forwarded by the

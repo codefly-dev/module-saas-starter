@@ -132,6 +132,26 @@ func (s *PostgresStore) OrgMemberExists(ctx context.Context, orgID string, userI
 	return exists, err
 }
 
+// LockOrgMembership serializes every mutation of one (organization, user)
+// authority pair — the organization membership row itself and the team
+// memberships that depend on it. It must be taken in the same transaction as
+// both the membership write and the dependent-access write; otherwise a team
+// insert and an organization removal can interleave and leave a durable team
+// row behind a departed member.
+func (s *PostgresStore) LockOrgMembership(ctx context.Context, orgID string, userID string) error {
+	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+		return errors.New("org membership lock requires a tenant transaction")
+	}
+	_, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		"membership:"+orgID+":"+userID,
+	)
+	if err != nil {
+		return wool.Get(ctx).In("LockOrgMembership").Wrapf(err, "failed to lock org membership")
+	}
+	return nil
+}
+
 func (s *PostgresStore) RemoveOrgMember(ctx context.Context, orgID string, userID string) error {
 	w := wool.Get(ctx).In("RemoveOrgMember")
 	executor := s.getQueryExecutor(ctx)

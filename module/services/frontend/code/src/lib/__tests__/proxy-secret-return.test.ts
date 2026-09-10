@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
 import { proxy, trustedGatewayRequestHeaders } from "@/proxy";
 
 describe("secret return handling", () => {

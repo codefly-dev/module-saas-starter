@@ -20,7 +20,10 @@
 // mandatory gate actually succeeded. `check` is the static half: it parses the
 // workflow dependency graph and fails unless every artifact-writing job — in
 // any workflow, including one added later — is transitively dominated by the
-// aggregate, and the aggregate by every mandatory gate.
+// aggregate, and the aggregate by every mandatory gate. It also fails unless
+// every action the workflows call is pinned to a commit digest, since a
+// mutable tag lets whoever can move it rewrite any gate, the aggregate
+// included.
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -176,6 +179,7 @@ const PUBLICATION_STEP_PATTERNS = [
   { on: "run", pattern: /\bpublish-[\w-]+\.mjs\b/, why: "runs a package publish script" },
   { on: "run", pattern: /\bdocker\s+push\b/, why: "pushes a container image" },
   { on: "run", pattern: /\bgh\s+api\b[\s\S]*?\/dispatches\b/, why: "dispatches a release event downstream" },
+  { on: "run", pattern: /\bannounce-[\w-]+\.mjs\b/, why: "runs a release announcement script" },
   { on: "uses", pattern: /^actions\/attest-build-provenance/, why: "attests artifact provenance" },
   // Actions that publish authenticate with a secret in `with:`, not with the
   // job's `permissions`, so neither check above sees them.
@@ -240,15 +244,24 @@ export function needsClosure(start, jobs) {
   return seen;
 }
 
+// One parse, reported once. An unreadable workflow is a single defect however
+// many contracts would have gone on to read it.
+function parseWorkflow(path, text) {
+  try {
+    return { document: parseWorkflowYaml(text) };
+  } catch (error) {
+    return { error: `${path}: could not be parsed: ${error.message}` };
+  }
+}
+
 // The contract for one workflow file. `errors` are ordered by job so a failure
 // names the publisher, not just the graph.
 export function releaseGateContractErrors(path, text) {
-  let document;
-  try {
-    document = parseWorkflowYaml(text);
-  } catch (error) {
-    return [`${path}: could not be parsed: ${error.message}`];
-  }
+  const { document, error } = parseWorkflow(path, text);
+  return error ? [error] : contractErrors(path, document);
+}
+
+function contractErrors(path, document) {
   const jobs = document?.jobs ?? {};
   const errors = [];
 
@@ -328,6 +341,62 @@ export function releaseGateContractErrors(path, text) {
   return errors;
 }
 
+// ---------------------------------------------------------------------------
+// the action-pinning contract
+// ---------------------------------------------------------------------------
+
+// A `uses:` ref that names anything but a digest resolves at run time to
+// whatever the tag or branch points at then. That is a standing write into
+// every gate in this file — including the aggregate that authorizes
+// publication — by whoever can move it upstream.
+//
+// GitHub resolves a ref in one of two vocabularies and each has its own
+// immutable spelling: a git ref pins to a full commit digest, a container
+// image to an image digest. Checking only the first would reject a correctly
+// pinned `docker://` step and demand a commit digest that does not exist for
+// it. Case is not the property under test — an uppercase digest names exactly
+// one commit — so only immutability is enforced here.
+const COMMIT_DIGEST = /@[0-9a-fA-F]{40}$/;
+const IMAGE_DIGEST = /@sha256:[0-9a-fA-F]{64}$/;
+
+// How to pin `ref`, or null when it already is. An action from this repository
+// is as trustworthy as the tree that calls it, so a `./` path needs no digest.
+function unpinnedRemedy(ref) {
+  if (ref.startsWith("./")) return null;
+  if (ref.startsWith("docker://")) {
+    return IMAGE_DIGEST.test(ref) ? null : "pin it to an image digest (@sha256: and 64 hex characters)";
+  }
+  return COMMIT_DIGEST.test(ref)
+    ? null
+    : "pin it to the 40-character commit digest the ref resolves to and keep the version in a trailing comment";
+}
+
+// Every `uses:` in one workflow, as [job, ref]. A job carries one directly when
+// it calls a reusable workflow, which is as capable as any step it would run.
+function usedActionRefs(jobs) {
+  const refs = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    const uses = [job?.uses, ...(job?.steps ?? []).map((step) => step?.uses)];
+    for (const ref of uses) if (typeof ref === "string") refs.push([name, ref]);
+  }
+  return refs;
+}
+
+export function actionPinErrors(path, text) {
+  const { document, error } = parseWorkflow(path, text);
+  return error ? [error] : pinErrors(path, document);
+}
+
+function pinErrors(path, document) {
+  const errors = [];
+  for (const [name, ref] of usedActionRefs(document?.jobs ?? {})) {
+    const remedy = unpinnedRemedy(ref);
+    if (remedy === null) continue;
+    errors.push(`${path}: job ${name} uses ${ref}, whose ref is mutable; ${remedy}`);
+  }
+  return errors;
+}
+
 export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
   const workflows = join(repositoryRoot, ".github", "workflows");
   if (!existsSync(workflows)) return [`.github/workflows is missing under ${repositoryRoot}`];
@@ -335,7 +404,13 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
   for (const file of readdirSync(workflows).sort()) {
     if (!/\.ya?ml$/.test(file)) continue;
     const path = `.github/workflows/${file}`;
-    errors.push(...releaseGateContractErrors(path, readFileSync(join(workflows, file), "utf8")));
+    const text = readFileSync(join(workflows, file), "utf8");
+    const { document, error } = parseWorkflow(path, text);
+    if (error) {
+      errors.push(error);
+      continue;
+    }
+    errors.push(...contractErrors(path, document), ...pinErrors(path, document));
   }
   return errors;
 }
@@ -343,17 +418,18 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
 function check() {
   const errors = releaseGateGraphErrors();
   if (errors.length) {
-    console.error("release-gates: the workflow graph does not gate every publication:");
+    console.error("release-gates: the workflows do not satisfy the release contract:");
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(
-      `\nFAIL: ${errors.length} release-orchestration defect(s). Every artifact-writing job must ` +
-        `depend on ${AGGREGATE_JOB}, and ${AGGREGATE_JOB} on every mandatory gate.`,
+      `\nFAIL: ${errors.length} workflow-contract defect(s). Every artifact-writing job must ` +
+        `depend on ${AGGREGATE_JOB}, ${AGGREGATE_JOB} on every mandatory gate, and every action ` +
+        "on a digest.",
     );
     process.exit(1);
   }
   console.log(
     `✓ every artifact-writing job is dominated by ${AGGREGATE_JOB}, which requires all ` +
-      `${REQUIRED_GATES.length} mandatory gates.`,
+      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a digest.`,
   );
 }
 

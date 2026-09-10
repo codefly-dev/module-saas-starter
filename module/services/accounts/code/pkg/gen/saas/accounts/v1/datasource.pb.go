@@ -607,18 +607,32 @@ type Datasource struct {
 	Status   DatasourceStatus        `protobuf:"varint,6,opt,name=status,proto3,enum=saas.accounts.v1.DatasourceStatus" json:"status,omitempty"`
 	// True once a webhook signing secret has been stored for the datasource, so
 	// clients can reflect whether live updates are wired without exposing it.
-	WebhookConfigured bool                     `protobuf:"varint,7,opt,name=webhook_configured,json=webhookConfigured,proto3" json:"webhook_configured,omitempty"`
-	CreatedAt         *timestamppb.Timestamp   `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt         *timestamppb.Timestamp   `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	LastSyncedAt      *timestamppb.Timestamp   `protobuf:"bytes,10,opt,name=last_synced_at,json=lastSyncedAt,proto3" json:"last_synced_at,omitempty"`
-	Api               *ApiDatasourceConfig     `protobuf:"bytes,11,opt,name=api,proto3" json:"api,omitempty"`
-	Crawler           *CrawlerDatasourceConfig `protobuf:"bytes,12,opt,name=crawler,proto3" json:"crawler,omitempty"`
-	Upload            *UploadDatasourceConfig  `protobuf:"bytes,13,opt,name=upload,proto3" json:"upload,omitempty"`
+	WebhookConfigured bool                   `protobuf:"varint,7,opt,name=webhook_configured,json=webhookConfigured,proto3" json:"webhook_configured,omitempty"`
+	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// When the leased sync worker last completed a pull for an api, crawler, or
+	// upload source. Never set for a github source, whose ingest is tracked by
+	// last_ingested_at instead.
+	LastSyncedAt *timestamppb.Timestamp   `protobuf:"bytes,10,opt,name=last_synced_at,json=lastSyncedAt,proto3" json:"last_synced_at,omitempty"`
+	Api          *ApiDatasourceConfig     `protobuf:"bytes,11,opt,name=api,proto3" json:"api,omitempty"`
+	Crawler      *CrawlerDatasourceConfig `protobuf:"bytes,12,opt,name=crawler,proto3" json:"crawler,omitempty"`
+	Upload       *UploadDatasourceConfig  `protobuf:"bytes,13,opt,name=upload,proto3" json:"upload,omitempty"`
 	// The scope node whose subtree the pulled Entries land in — the data boundary
 	// this source writes into (issue #473). Grantable like any scope node.
 	BoundaryNodeId string `protobuf:"bytes,14,opt,name=boundary_node_id,json=boundaryNodeId,proto3" json:"boundary_node_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// When the change-set compiler last durably enqueued a change set: a webhook
+	// delivery, the periodic reconcile, or a tenant pressing "Sync now", which for
+	// this provider dispatches a forced reconcile rather than a pull. Set only for
+	// a github source — the other providers advance last_synced_at instead, so at
+	// most one of the two clocks ever ticks for a given source. Unset until the
+	// first delivery lands.
+	LastIngestedAt *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=last_ingested_at,json=lastIngestedAt,proto3" json:"last_ingested_at,omitempty"`
+	// Head commit fully enqueued as a change set at last_ingested_at; the compiler
+	// diffs the next delivery from it. Empty until the first delivery lands, and
+	// like last_ingested_at set only for a github source.
+	LastIngestedCommit string `protobuf:"bytes,16,opt,name=last_ingested_commit,json=lastIngestedCommit,proto3" json:"last_ingested_commit,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Datasource) Reset() {
@@ -738,6 +752,20 @@ func (x *Datasource) GetUpload() *UploadDatasourceConfig {
 func (x *Datasource) GetBoundaryNodeId() string {
 	if x != nil {
 		return x.BoundaryNodeId
+	}
+	return ""
+}
+
+func (x *Datasource) GetLastIngestedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastIngestedAt
+	}
+	return nil
+}
+
+func (x *Datasource) GetLastIngestedCommit() string {
+	if x != nil {
+		return x.LastIngestedCommit
 	}
 	return ""
 }
@@ -1834,7 +1862,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12\x1f\n" +
 	"\vmax_objects\x18\x06 \x01(\rR\n" +
-	"maxObjects\"\xdd\x05\n" +
+	"maxObjects\"\xd5\x06\n" +
 	"\n" +
 	"Datasource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -1852,7 +1880,9 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x03api\x18\v \x01(\v2%.saas.accounts.v1.ApiDatasourceConfigR\x03api\x12C\n" +
 	"\acrawler\x18\f \x01(\v2).saas.accounts.v1.CrawlerDatasourceConfigR\acrawler\x12@\n" +
 	"\x06upload\x18\r \x01(\v2(.saas.accounts.v1.UploadDatasourceConfigR\x06upload\x12(\n" +
-	"\x10boundary_node_id\x18\x0e \x01(\tR\x0eboundaryNodeIdJ\x04\b\x04\x10\x05R\x11target_collection\"\xc2\x03\n" +
+	"\x10boundary_node_id\x18\x0e \x01(\tR\x0eboundaryNodeId\x12D\n" +
+	"\x10last_ingested_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0elastIngestedAt\x120\n" +
+	"\x14last_ingested_commit\x18\x10 \x01(\tR\x12lastIngestedCommitJ\x04\b\x04\x10\x05R\x11target_collection\"\xc2\x03\n" +
 	"\x16AddGitHubSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12A\n" +
 	"\x04repo\x18\x02 \x01(\tB-\xbaH*r(\x10\x03\x18\xff\x012!^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$R\x04repo\x12'\n" +
@@ -2019,38 +2049,39 @@ var file_saas_accounts_v1_datasource_proto_depIdxs = []int32{
 	5,  // 8: saas.accounts.v1.Datasource.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
 	6,  // 9: saas.accounts.v1.Datasource.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
 	7,  // 10: saas.accounts.v1.Datasource.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
-	8,  // 11: saas.accounts.v1.AddGitHubSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	0,  // 12: saas.accounts.v1.AddSourceRequest.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	3,  // 13: saas.accounts.v1.AddSourceRequest.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
-	5,  // 14: saas.accounts.v1.AddSourceRequest.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
-	6,  // 15: saas.accounts.v1.AddSourceRequest.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
-	7,  // 16: saas.accounts.v1.AddSourceRequest.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
-	8,  // 17: saas.accounts.v1.AddSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	0,  // 18: saas.accounts.v1.DatasourceProviderDescriptor.provider:type_name -> saas.accounts.v1.DatasourceProvider
-	13, // 19: saas.accounts.v1.DatasourceProviderDescriptor.config_fields:type_name -> saas.accounts.v1.DatasourceConfigField
-	2,  // 20: saas.accounts.v1.DatasourceProviderDescriptor.supported_credential_kinds:type_name -> saas.accounts.v1.ApiCredentialKind
-	14, // 21: saas.accounts.v1.GetDatasourceCatalogResponse.providers:type_name -> saas.accounts.v1.DatasourceProviderDescriptor
-	8,  // 22: saas.accounts.v1.ListSourcesResponse.datasources:type_name -> saas.accounts.v1.Datasource
-	8,  // 23: saas.accounts.v1.GetSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
-	9,  // 24: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
-	11, // 25: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
-	15, // 26: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
-	17, // 27: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
-	19, // 28: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
-	21, // 29: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
-	23, // 30: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
-	10, // 31: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
-	12, // 32: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
-	16, // 33: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
-	18, // 34: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
-	20, // 35: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
-	22, // 36: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
-	24, // 37: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
-	31, // [31:38] is the sub-list for method output_type
-	24, // [24:31] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	25, // 11: saas.accounts.v1.Datasource.last_ingested_at:type_name -> google.protobuf.Timestamp
+	8,  // 12: saas.accounts.v1.AddGitHubSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	0,  // 13: saas.accounts.v1.AddSourceRequest.provider:type_name -> saas.accounts.v1.DatasourceProvider
+	3,  // 14: saas.accounts.v1.AddSourceRequest.github:type_name -> saas.accounts.v1.GitHubDatasourceConfig
+	5,  // 15: saas.accounts.v1.AddSourceRequest.api:type_name -> saas.accounts.v1.ApiDatasourceConfig
+	6,  // 16: saas.accounts.v1.AddSourceRequest.crawler:type_name -> saas.accounts.v1.CrawlerDatasourceConfig
+	7,  // 17: saas.accounts.v1.AddSourceRequest.upload:type_name -> saas.accounts.v1.UploadDatasourceConfig
+	8,  // 18: saas.accounts.v1.AddSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	0,  // 19: saas.accounts.v1.DatasourceProviderDescriptor.provider:type_name -> saas.accounts.v1.DatasourceProvider
+	13, // 20: saas.accounts.v1.DatasourceProviderDescriptor.config_fields:type_name -> saas.accounts.v1.DatasourceConfigField
+	2,  // 21: saas.accounts.v1.DatasourceProviderDescriptor.supported_credential_kinds:type_name -> saas.accounts.v1.ApiCredentialKind
+	14, // 22: saas.accounts.v1.GetDatasourceCatalogResponse.providers:type_name -> saas.accounts.v1.DatasourceProviderDescriptor
+	8,  // 23: saas.accounts.v1.ListSourcesResponse.datasources:type_name -> saas.accounts.v1.Datasource
+	8,  // 24: saas.accounts.v1.GetSourceResponse.datasource:type_name -> saas.accounts.v1.Datasource
+	9,  // 25: saas.accounts.v1.DatasourceService.AddGitHubSource:input_type -> saas.accounts.v1.AddGitHubSourceRequest
+	11, // 26: saas.accounts.v1.DatasourceService.AddSource:input_type -> saas.accounts.v1.AddSourceRequest
+	15, // 27: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:input_type -> saas.accounts.v1.GetDatasourceCatalogRequest
+	17, // 28: saas.accounts.v1.DatasourceService.ListSources:input_type -> saas.accounts.v1.ListSourcesRequest
+	19, // 29: saas.accounts.v1.DatasourceService.GetSource:input_type -> saas.accounts.v1.GetSourceRequest
+	21, // 30: saas.accounts.v1.DatasourceService.SyncSource:input_type -> saas.accounts.v1.SyncSourceRequest
+	23, // 31: saas.accounts.v1.DatasourceService.DeleteSource:input_type -> saas.accounts.v1.DeleteSourceRequest
+	10, // 32: saas.accounts.v1.DatasourceService.AddGitHubSource:output_type -> saas.accounts.v1.AddGitHubSourceResponse
+	12, // 33: saas.accounts.v1.DatasourceService.AddSource:output_type -> saas.accounts.v1.AddSourceResponse
+	16, // 34: saas.accounts.v1.DatasourceService.GetDatasourceCatalog:output_type -> saas.accounts.v1.GetDatasourceCatalogResponse
+	18, // 35: saas.accounts.v1.DatasourceService.ListSources:output_type -> saas.accounts.v1.ListSourcesResponse
+	20, // 36: saas.accounts.v1.DatasourceService.GetSource:output_type -> saas.accounts.v1.GetSourceResponse
+	22, // 37: saas.accounts.v1.DatasourceService.SyncSource:output_type -> saas.accounts.v1.SyncSourceResponse
+	24, // 38: saas.accounts.v1.DatasourceService.DeleteSource:output_type -> saas.accounts.v1.DeleteSourceResponse
+	32, // [32:39] is the sub-list for method output_type
+	25, // [25:32] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_datasource_proto_init() }

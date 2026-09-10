@@ -4,7 +4,7 @@ Multi-tenant SaaS backend with three-layer authorization (handler gates + RBAC
 + Postgres RLS), a Next.js authenticated product, a separately deployable
 public marketing site, and per-service introspection endpoints.
 
-A codefly **module** is a collection of **services**; each service owns its own proto. The accounts service of saas-starter exposes a self-describing catalog of its OWN RPCs / RBAC vocabulary / RLS-protected tables / scopes. A "module-level" view = aggregation across every service's catalog and is a separate concern (CLI / gateway / Mind aggregator) — not encoded in any single proto.
+A codefly **module** is a collection of **services**; each service owns its own proto. The accounts service of saas-starter exposes a self-describing catalog of its OWN RPCs / RBAC vocabulary / RLS-protected tables / scopes. A "module-level" view = aggregation across every service's catalog and is a separate concern (CLI / gateway / a downstream aggregator) — not encoded in any single proto.
 
 ## Quick links
 
@@ -27,6 +27,8 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Generated frontend plugin routes/navigation: `module/FRONTEND_PLUGINS.md`
 - Generic event meters, quota semantics, and product integration: `module/USAGE_METERING.md`
 - Evidence-bound trust claims and adopter responsibilities: `module/TRUST_CAPABILITIES.md`
+- Which claim in the root architecture documents is backed by what, and which
+  are kept only as history: [CLAIM_INVENTORY.md](./CLAIM_INVENTORY.md)
 - Postgres roles, grant rules, and RLS authority: `module/DATABASE_AUTHORITY.md`
 - Generated Codefly topology and NetworkPolicies: `module/DEPLOYMENT_TOPOLOGY.md`
 - Marketing runtime, deployment, and extraction contract: `module/services/marketing/README.md`
@@ -153,34 +155,58 @@ product path checks its entitlement independently from its flag evaluation.
 |---|---|---|
 | **L1** Handler gates | `adapters/auth.go`, `adapters/connect_auth_interceptor.go`, `adapters/rpcs.go` | "Should this caller be ALLOWED to invoke this RPC?" — `requireAuth` / `requireOrgMember` / `requireOrgAdmin` / `requirePlatformAdmin` / `requireMFA` / `requireScope`, plus rate-limiting. |
 | **L2** RBAC | `business/service.go:CheckPermission` (+ Postgres `roles` / `role_permissions` / `role_assignments`) | "Does this caller have THIS capability for THIS resource?" — wildcard support (`*:*`, `users:*`, `*:read`), team inheritance. |
-| **L3** RLS | Postgres `ROW LEVEL SECURITY` + `WithOrgTx` / `WithBypass` | "Even if L1+L2 said yes, does the row physically belong to the caller's tenant?" — fail-closed via `BeforeAcquire SET ROLE app_tenant`. |
+| **L3** RLS | Postgres `ROW LEVEL SECURITY` + `WithOrgTx` / `WithUserTx` / `WithControlPlane` | "Even if L1+L2 said yes, does the row physically belong to the scope this transaction selected?" — fail-closed via `BeforeAcquire SET ROLE app_tenant`. |
 
-A bug in any one layer is caught by the others. See `AUTHZ.md` for the deep dive.
+The three guarantees are complementary, not interchangeable: each answers a
+question the others do not ask, so none of them is a backstop for a bug in
+another.
 
-## RLS — protected tables
+- RLS constrains a statement to the scope its transaction selected. It does not
+  decide whether the caller may select that scope, and it cannot tell a
+  correctly-scoped write that should not have been allowed from one that should
+  — a proposed team member who does not belong to the parent organization is a
+  well-scoped row.
+- L2 answers whether this caller holds this capability, having been told which
+  organization the caller is acting in. It does not verify that the subject of
+  the operation belongs to that organization.
+- L1 answers whether this RPC admits this caller at all. It reads identity
+  headers stamped by the gateway and does not see rows.
 
-The runtime introspection catalog is the current protected-table inventory.
-Important direct-tenant tables include:
+What each layer does catch is the failure to *use* the next one: an unwrapped
+Store call returns zero rows rather than every tenant's, because the pooled
+connection is downgraded to `app_tenant` before the query runs. See `AUTHZ.md`
+for the deep dive.
 
-| Table | Policy | Notes |
-|---|---|---|
-| `audit_export_configs` | direct `org_id` | Phase 1 |
-| `webhook_subscriptions` | direct `org_id` | Phase 2A |
-| `webhook_deliveries` | JOIN via `subscription_id` | Phase 2A |
-| `api_keys` | direct `organization_id` | Phase 2A |
-| `org_settings`, `invitations`, `organization_members`, `subscriptions`, `entitlement_overrides` | direct `org_id` | Phase 2B |
-| `usage_events`, `usage_totals` | direct `org_id` | Immutable attempts + monthly read model; no application bypass branch |
-| `teams` | direct `org_id` | Phase 2C |
-| `team_members` | JOIN via `team_id` → teams.org_id | Phase 2C |
-| `audit_events` | polymorphic; NULL `org_id` rows visible only via bypass | Phase 2D |
-| `roles`, `role_assignments` | polymorphic; built-ins (NULL) globally readable | Phase 2E |
-| `organizations` | self-referential (`id` matches setting) | Phase 2F |
+## RLS — scope inventory
 
-**Skip-list** (intentionally NOT RLS-protected):
+Every public application relation carries exactly one scope, and the scope
+decides its required database boundary. The inventory itself is **not repeated
+here**: it lives once as the executable map `relationsByScope`
+(`services/accounts/code/pkg/infra/postgres_role_hardening_test.go`), which a
+live database is checked against, and once as the table in
+[module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md), which
+`TestDatabaseAuthorityScopeInventoryMatchesCode` (`module/tools`) holds to it.
+Read the inventory there; a third hand-maintained copy would only drift.
 
-- `users`, `plans`, `plan_entitlements`, `feature_flags` — global lookup tables.
-- `oauth_state`, `refresh_tokens`, `mfa_devices`, `notifications` — user-scoped (the `WHERE user_id = $1` SQL filter is the safety property; symmetric `WithUserTx` is a future improvement).
-- `role_permissions` — child of `roles` via FK; resource:action pairs are not tenant-secret.
+What is worth knowing here is the shape:
+
+- **tenant** relations enter through `WithOrgTx(orgID)`. Policies are direct
+  (`org_id` on the row), JOIN (`team_members` → `teams.org_id`), polymorphic
+  (`audit_events`, `roles` — built-ins carry a NULL `org_id` and are globally
+  readable), or self-referential (`organizations`).
+- **user** relations enter through `WithUserTx(userID)` and are RLS-forced in
+  the same way tenant relations are. The `WHERE user_id = $1` predicate is no
+  longer the safety property — it was, before `34_rls_user_scoped`,
+  `35_rls_sessions` and their successors brought these relations under forced
+  policies.
+- **global** catalogs carry no RLS; exact grants are their whole boundary.
+- **pre-auth**, **job**, and **worker** relations are reachable only from the
+  control-plane role or one named worker role, never from request traffic.
+
+There is no application-settable RLS bypass. Cross-scope work runs under
+`WithControlPlane`, which is a distinct database role
+(`app_control_plane`) with `BYPASSRLS` and its own grants — not a flag a request
+transaction can set.
 
 ## RBAC vocabulary
 
@@ -252,7 +278,7 @@ tenant-scoped pages do not maintain independent organization filters.
 
 ### TeamService
 
-`CreateTeam`, `ListTeams`, `AddMember`, `RemoveMember`, `ListMembers` — team_id-scoped operations resolve team→org via `WithBypass` first, then enter `WithOrgTx` for the actual write.
+`CreateTeam`, `ListTeams`, `AddMember`, `RemoveMember`, `ListMembers` — team_id-scoped operations resolve team→org via `WithControlPlane` first, then enter `WithOrgTx` for the actual write. A caller that already carries a verified org claim skips the resolve.
 
 ### BillingService public catalog
 
@@ -430,7 +456,7 @@ generated projections, and gates — see
 1. Add the message + RPC to its bounded-context file under `proto/saas/accounts/v1`. Add a complete `option (saas.policy.v1.method_policy)`; missing or `UNSPECIFIED` policy is denied and fails tests. Annotate `google.api.http` only when REST exposure is intended.
 2. From the accounts service directory, run `codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml` (NEVER run `buf generate` directly). The local template invokes exact-version Go plugins and the lockfile-pinned TypeScript plugin, regenerating Go, gRPC, Connect, gateway, OpenAPI, and modular TypeScript outputs together without depending on BSR plugin availability.
 3. Import browser types from their bounded module, for example `@/gen/saas/accounts/v1/teams_pb`; do not restore the former monolithic TypeScript barrel.
-4. Implement: `pkg/business/<feature>.go` (the Service method, with `WithOrgTx`/`WithBypass` wrap), `pkg/infra/postgres_<feature>.go` (raw SQL), `pkg/adapters/rpcs.go` or a new `<feature>_rpcs.go` (handler authz + Validate + Service call), and a Connect adapter. Keep any still-manual gRPC/REST implementation wiring current.
+4. Implement: `pkg/business/<feature>.go` (the Service method, with a `WithOrgTx`/`WithUserTx`/`WithControlPlane` wrap), `pkg/infra/postgres_<feature>.go` (raw SQL), `pkg/adapters/rpcs.go` or a new `<feature>_rpcs.go` (handler authz + Validate + Service call), and a Connect adapter. Keep any still-manual gRPC/REST implementation wiring current.
 5. For a new service only, add its finite implementation source to `pkg/adapters/connect_bindings.yaml`; never hand-register a Connect service or procedure. If it opts into REST, also classify the service as `generated` or `plugin` in `pkg/adapters/rest_bindings.yaml`. Existing services need no binding change when an RPC is added.
 6. Add only the editorial summary to `pkg/business/introspection.go:rpcDescriptions`, then run `go generate ./pkg/business`, `go generate ./pkg/adapters`, and `go generate ./pkg/cataloggen`. This refreshes the normalized catalog, authorization catalog/matrix, auth-gateway policy lookup, Connect registration, REST registration/allowlists, filtered OpenAPI, and target-neutral gateway route artifacts. HTTP, authz, scopes, resource bindings, MFA, audit, rate, and sensitivity must come from descriptors; do not introduce another policy map or service list.
 7. Frontend: a `useX` hook in `src/features/<feature>/service/{queries,mutations}.ts`, called from a UI in `src/features/<feature>/ui/`.
@@ -445,7 +471,7 @@ generated projections, and gates — see
 
 - **Forgetting `WithOrgTx`** on a per-tenant table → fail-closed (zero rows). Loud test failures, not silent leaks. The `BeforeAcquire SET ROLE app_tenant` hook makes this fail-closed by default.
 - **Using `pgx.BeginTxFunc` inside a Store method** → opens a fresh pool tx that ignores the WithOrgTx context. Always use `s.getQueryExecutor(ctx)` instead. See `postgres_org.go:CreateOrganization` and `postgres_permissions.go:CreateRole` for the context-tx-reuse pattern.
-- **Test fakes that embed `business.Store` but don't override `WithOrgTx`/`WithBypass`** → nil panic. Add pass-through implementations (see `sso_admin_test.go`).
+- **Test fakes that embed `business.Store` but don't override `WithOrgTx`/`WithUserTx`/`WithControlPlane`** → nil panic. Add pass-through implementations (see `sso_admin_test.go`).
 - **Custom-role assignment without UI** — Use the `<ManageMemberRolesDialog>` shipped at `src/features/roles/ui/manage-member-roles-dialog.tsx`. Don't bypass via direct SQL.
 - **Assigning a built-in role to a user in a NEW org** — `RegisterUser` only auto-assigns to the resolver-bootstrapped personal org. Explicit orgs need an explicit `AssignRole` call.
 

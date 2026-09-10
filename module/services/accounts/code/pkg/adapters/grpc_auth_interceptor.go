@@ -286,6 +286,8 @@ func (i *grpcPolicyAuthorizer) authorize(ctx context.Context, fullMethod string)
 	if values := md.Get("x-scopes"); len(values) > 0 && values[0] != "" {
 		ctx = withScopes(ctx, parseScopes(values[0]))
 	}
+	// See the Connect interceptor: a locally verified access token is a session.
+	ctx = withCredentialKind(ctx, credentialKindSession)
 	return ctx, nil
 }
 
@@ -306,6 +308,7 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) context.Con
 	if scopes := firstMetadataValue(md, "x-scopes"); scopes != "" {
 		ctx = withScopes(ctx, parseScopes(scopes))
 	}
+	ctx = withCredentialKind(ctx, firstMetadataValue(md, "x-credential-kind"))
 	if scopedRoles := firstMetadataValue(md, "x-scoped-roles"); scopedRoles != "" {
 		ctx = withScopedRoles(ctx, parseScopedRoles(scopedRoles))
 	}

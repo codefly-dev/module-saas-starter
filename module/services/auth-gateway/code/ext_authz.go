@@ -286,6 +286,11 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 		hdr("x-org-role", claims.OrgRole),
 		hdr("x-platform-role", claims.PlatformRole),
 		hdr("x-session-id", claims.SessionID),
+		// The credential this request actually presented. Upstream audit
+		// attribution reads this rather than inferring the kind from an
+		// authorization artifact: scopes are an API key's ceiling, and a key
+		// carrying none would otherwise be indistinguishable from a session.
+		hdr("x-credential-kind", credentialKindSession),
 	}
 	if claims.MFASatisfied {
 		hdrs = append(hdrs, hdr("x-mfa-satisfied", "true"))
@@ -347,6 +352,10 @@ func (s *ExtAuthz) checkAPIKey(ctx context.Context, key string) (*authv3.CheckRe
 		hdr("x-user-id", resp.UserId),
 		hdr("x-org-id", resp.OrganizationId),
 		hdr("x-scopes", strings.Join(resp.Scopes, ",")),
+		// Stamped unconditionally, including for a key that carries no scopes:
+		// x-scopes is empty for such a key, so it is not a usable signal for
+		// "this was a machine credential".
+		hdr("x-credential-kind", credentialKindAPIKey),
 	}), nil
 }
 
@@ -395,9 +404,17 @@ func (s *ExtAuthz) allow(headers []*corev3.HeaderValueOption) *authv3.CheckRespo
 var canonicalUpstreamAuthHeaders = []string{
 	"x-user-id", "x-org-id", "x-org-role", "x-platform-role", "x-roles",
 	"x-scoped-roles", "x-scoped-roles-truncated", "x-auth-id", "x-user-email", "x-user-name", "x-session-id",
-	"x-acting-as-user-id", "x-act", "x-scopes", "x-mfa-satisfied",
+	"x-acting-as-user-id", "x-act", "x-scopes", "x-credential-kind", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 }
+
+// The credential kinds x-credential-kind carries. They name what the perimeter
+// authenticated, which is a fact only the perimeter holds: upstream sees the
+// resulting identity, not the credential that produced it.
+const (
+	credentialKindSession = "session"
+	credentialKindAPIKey  = "api_key"
+)
 
 func deny(httpCode int, body string) *authv3.CheckResponse {
 	return &authv3.CheckResponse{

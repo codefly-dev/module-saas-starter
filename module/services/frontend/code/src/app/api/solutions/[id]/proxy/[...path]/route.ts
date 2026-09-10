@@ -1,12 +1,12 @@
 import { getEndpoints } from "codefly";
 
 import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
+import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
 import { findSolution } from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const INTERNAL_TOKEN_HEADER = "X-Codefly-Internal-Token";
 const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 
 interface RouteContext {
