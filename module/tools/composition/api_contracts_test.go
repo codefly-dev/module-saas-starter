@@ -1,6 +1,7 @@
 package composition
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -124,5 +125,108 @@ func TestPackageAPIContractCatalogDigestsRecomputeFromContractBytes(t *testing.T
 	}
 	if corecomposition.APIContractDigest(first) != corecomposition.APIContractDigest(second) {
 		t.Fatal("catalog canonical digest is not deterministic")
+	}
+}
+
+// generatedLibraryDocument is the minimal view of a `library.codefly.yaml` this
+// test needs: which package contract each generated library was built from, and
+// the digest of the contract bytes it was built against.
+type generatedLibraryDocument struct {
+	Sources []struct {
+		Package        string `yaml:"package"`
+		Service        string `yaml:"service"`
+		Endpoint       string `yaml:"endpoint"`
+		ContractDigest string `yaml:"contract-digest"`
+	} `yaml:"sources"`
+}
+
+// findGeneratedLibraries walks the module for every `library.codefly.yaml`.
+// Installed dependencies and build output can contain copies of a library
+// manifest that no one in this repository regenerates, so both are skipped.
+func findGeneratedLibraries(t *testing.T, moduleRoot string) []string {
+	t.Helper()
+	var manifests []string
+	err := filepath.WalkDir(moduleRoot, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case "node_modules", "dist", ".next":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == "library.codefly.yaml" {
+			manifests = append(manifests, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk module for generated libraries: %v", err)
+	}
+	return manifests
+}
+
+// TestGeneratedLibraryContractDigestsMatchThePackage proves no generated client
+// library has fallen behind the contract it is generated from. A library vendors
+// its own copy of the contract and records that copy's digest; nothing in the
+// existing pipeline reads it back. `codefly generate contracts --check` compares
+// the exported contract against the service protos and stops there, and
+// `module-package run-generators` never enters a library directory — so a
+// library's bindings can lag the wire indefinitely, silently, and a consumer
+// generated against them will not see fields the API already serves. That is
+// exactly what happened to @codefly-dev/saas-sdk between #515 and #585.
+func TestGeneratedLibraryContractDigestsMatchThePackage(t *testing.T) {
+	moduleRoot := findModuleRoot(t)
+
+	manifest, err := corecomposition.LoadPackageManifest(moduleRoot)
+	if err != nil {
+		t.Fatalf("load package manifest: %v", err)
+	}
+	published := make(map[string]string)
+	for _, service := range manifest.Services {
+		for _, contract := range service.APIContracts {
+			published[service.Name+"\x00"+contract.Endpoint] = contract.Digest
+		}
+	}
+
+	libraries := findGeneratedLibraries(t, moduleRoot)
+	if len(libraries) == 0 {
+		t.Fatal("no library.codefly.yaml found; expected at least the saas-sdk client library")
+	}
+
+	checked := 0
+	for _, path := range libraries {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %q: %v", path, err)
+		}
+		var document generatedLibraryDocument
+		if err := yaml.Unmarshal(data, &document); err != nil {
+			t.Fatalf("decode %q: %v", path, err)
+		}
+		relative, err := filepath.Rel(moduleRoot, path)
+		if err != nil {
+			t.Fatalf("relativize %q: %v", path, err)
+		}
+		for _, source := range document.Sources {
+			if source.Package != manifest.ID {
+				continue
+			}
+			checked++
+			key := source.Service + "\x00" + source.Endpoint
+			digest, exported := published[key]
+			if !exported {
+				t.Errorf("%s is generated from %s/%s, which this package publishes no API contract for", relative, source.Service, source.Endpoint)
+				continue
+			}
+			if source.ContractDigest != digest {
+				t.Errorf("%s is stale: generated from %s/%s at %s, the package publishes %s — regenerate the library", relative, source.Service, source.Endpoint, source.ContractDigest, digest)
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatalf("no generated library records a source from %s; expected at least the saas-sdk accounts/connect client", manifest.ID)
 	}
 }

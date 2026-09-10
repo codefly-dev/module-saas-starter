@@ -2,16 +2,15 @@
 // @generated from file saas/accounts/v1/module_capabilities.proto (package saas.accounts.v1, syntax proto3)
 /* eslint-disable */
 
-import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv1";
-import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv1";
+import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv1";
+import { enumDesc, fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv1";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
-import type { EmptySchema } from "../../../google/protobuf/empty_pb";
-import { file_google_protobuf_empty } from "../../../google/protobuf/empty_pb";
-import type { Duration } from "../../../google/protobuf/duration_pb";
-import { file_google_protobuf_duration } from "../../../google/protobuf/duration_pb";
-import { file_google_protobuf_struct } from "../../../google/protobuf/struct_pb";
-import type { Timestamp } from "../../../google/protobuf/timestamp_pb";
-import { file_google_protobuf_timestamp } from "../../../google/protobuf/timestamp_pb";
+import type { Duration, EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_duration, file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
+import type { ModuleMintRegistrationRequestSchema, ModuleMintRegistrationResponseSchema } from "./module_registration_pb";
+import { file_saas_accounts_v1_module_registration } from "./module_registration_pb";
+import type { EventEnvelope } from "../../events/v1/events_pb";
+import { file_saas_events_v1_events } from "../../events/v1/events_pb";
 import type { JobEnqueueDisposition, JobEnvelope, JobFailure, JobLease, JobLeaseReference, NewJob } from "../../jobs/v1/jobs_pb";
 import { file_saas_jobs_v1_jobs } from "../../jobs/v1/jobs_pb";
 import { file_saas_policy_v1_options } from "../../policy/v1/options_pb";
@@ -21,7 +20,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/module_capabilities.proto.
  */
 export const file_saas_accounts_v1_module_capabilities: GenFile = /*@__PURE__*/
-  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9jYXBhYmlsaXRpZXMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiXgoXTW9kdWxlRW5xdWV1ZUpvYlJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIpCgNqb2IYAiABKAsyFC5zYWFzLmpvYnMudjEuTmV3Sm9iQga6SAPIAQEidgoYTW9kdWxlRW5xdWV1ZUpvYlJlc3BvbnNlEhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQESQAoLZGlzcG9zaXRpb24YAiABKA4yIy5zYWFzLmpvYnMudjEuSm9iRW5xdWV1ZURpc3Bvc2l0aW9uQga6SAPIAQEiygEKFk1vZHVsZUNsYWltSm9ic1JlcXVlc3QSLgoFcXVldWUYASABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSHQoJd29ya2VyX2lkGAIgASgJQgq6SAdyBRABGP8BEhgKBWxpbWl0GAMgASgNQgm6SAYqBBhkKAESRwoObGVhc2VfZHVyYXRpb24YBCABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IkIKF01vZHVsZUNsYWltSm9ic1Jlc3BvbnNlEicKBGpvYnMYASADKAsyGS5zYWFzLmpvYnMudjEuSm9iRW52ZWxvcGUilwEKGU1vZHVsZUhlYXJ0YmVhdEpvYlJlcXVlc3QSNgoFbGVhc2UYASABKAsyHy5zYWFzLmpvYnMudjEuSm9iTGVhc2VSZWZlcmVuY2VCBrpIA8gBARJCCglleHRlbnNpb24YAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IksKGk1vZHVsZUhlYXJ0YmVhdEpvYlJlc3BvbnNlEi0KBWxlYXNlGAEgASgLMhYuc2Fhcy5qb2JzLnYxLkpvYkxlYXNlQga6SAPIAQEiTQoTTW9kdWxlQWNrSm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBIsIBChRNb2R1bGVOYWNrSm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBEjEKB2ZhaWx1cmUYAiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZUIGukgDyAEBEhEKCXJldHJ5YWJsZRgDIAEoCBIsCghyZXRyeV9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi9gEKF01vZHVsZU5vdGlmeVVzZXJSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESGQoFdGl0bGUYAyABKAlCCrpIB3IFEAEY5gcSFgoEYm9keRgEIAEoCUIIukgFcgMYgEASFQoEdHlwZRgFIAEoCUIHukgEcgIYQBIcCgphY3Rpb25fdXJsGAYgASgJQgi6SAVyAxiAEBIbCghjYXRlZ29yeRgHIAEoCUIJukgGcgQQARggEiEKD2lkZW1wb3RlbmN5X2tleRgIIAEoCUIIukgFcgMY/wEiRgoYTW9kdWxlTm90aWZ5VXNlclJlc3BvbnNlEhcKD25vdGlmaWNhdGlvbl9pZBgBIAEoCRIRCglkZWxpdmVyZWQYAiABKAgiYwoUTW9kdWxlQXBwcm92YWxQb2xpY3kSFwoGcXVvcnVtGAEgASgNQge6SAQqAhhkEh4KDGFwcHJvdmVyX3NldBgCIAMoCUIIukgFkgECEGQSEgoKYWxsb3dfc2VsZhgDIAEoCCKbAQoPTW9kdWxlUmVzdW1lUmVmEi4KBXF1ZXVlGAEgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEi4KBXRvcGljGAIgASgJQh+6SBxyGhABGP8BMhNeW2Etel1bYS16MC05Xy4tXSokEigKB3BheWxvYWQYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IpYDChxNb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHAoIcmVzb3VyY2UYAiABKAlCCrpIB3IFEAEYgAESGgoGYWN0aW9uGAMgASgJQgq6SAdyBRABGIABEigKB3N1YmplY3QYBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiAKDHJlcXVlc3RlZF9ieRgFIAEoCUIKukgHcgUQARj/ARI2CgZwb2xpY3kYBiABKAsyJi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFwcHJvdmFsUG9saWN5Ej0KCnJlc3VtZV9yZWYYByABKAsyIS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlc3VtZVJlZkIGukgDyAEBEi4KCmV4cGlyZXNfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI+Ch1Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXNwb25zZRIdCgthcHByb3ZhbF9pZBgBIAEoCUIIukgFcgOwAQEiUwoYTW9kdWxlR2V0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHQoLYXBwcm92YWxfaWQYAiABKAlCCLpIBXIDsAEBIvUCCg5Nb2R1bGVBcHByb3ZhbBIKCgJpZBgBIAEoCRIOCgZ0ZW5hbnQYAiABKAkSEAoIcmVzb3VyY2UYAyABKAkSDgoGYWN0aW9uGAQgASgJEigKB3N1YmplY3QYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhQKDHJlcXVlc3RlZF9ieRgGIAEoCRIOCgZxdW9ydW0YByABKA0SDQoFc3RhdGUYCCABKAkSNQoKcmVzdW1lX3JlZhgJIAEoCzIhLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUmVzdW1lUmVmEi4KCmV4cGlyZXNfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJwChtNb2R1bGVDYW5jZWxBcHByb3ZhbFJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIdCgthcHByb3ZhbF9pZBgCIAEoCUIIukgFcgOwAQESGAoGcmVhc29uGAMgASgJQgi6SAVyAxiACCLLAQobTW9kdWxlRW1pdEF1ZGl0RXZlbnRSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIeCgpldmVudF90eXBlGAIgASgJQgq6SAdyBRABGIABEhkKBWFjdG9yGAMgASgJQgq6SAdyBRABGP8BEhwKCHNvbHV0aW9uGAQgASgJQgq6SAdyBRABGIABEhoKCGVudHJ5X2lkGAUgASgJQgi6SAVyAxj/ARInCgZmaWVsZHMYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IlcKGkZldGNoRGF0YXNvdXJjZUJsb2JSZXF1ZXN0EhsKCXNvdXJjZV9pZBgBIAEoCUIIukgFcgOwAQESHAoIYmxvYl9zaGEYAiABKAlCCrpIB3IFEAEY/wEiUgoYRmV0Y2hEYXRhc291cmNlQmxvYkNodW5rEgwKBGRhdGEYASABKAwSEgoKdG90YWxfc2l6ZRgCIAEoAxIUCgxjb250ZW50X3R5cGUYAyABKAky3QoKGU1vZHVsZUNhcGFiaWxpdGllc1NlcnZpY2USfQoKRW5xdWV1ZUpvYhIpLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlRW5xdWV1ZUpvYlJlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUVucXVldWVKb2JSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEnoKCUNsYWltSm9icxIoLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQ2xhaW1Kb2JzUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQ2xhaW1Kb2JzUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKDAQoMSGVhcnRiZWF0Sm9iEisuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVIZWFydGJlYXRKb2JSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVIZWFydGJlYXRKb2JSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEmEKBkFja0pvYhIlLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQWNrSm9iUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEmMKB05hY2tKb2ISJi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU5hY2tKb2JSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESfQoKTm90aWZ5VXNlchIpLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlTm90aWZ5VXNlclJlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU5vdGlmeVVzZXJSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEowBCg9SZXF1ZXN0QXBwcm92YWwSLi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlcXVlc3RBcHByb3ZhbFJlcXVlc3QaLy5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlcXVlc3RBcHByb3ZhbFJlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESdQoLR2V0QXBwcm92YWwSKi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUdldEFwcHJvdmFsUmVxdWVzdBogLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQXBwcm92YWwiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJxCg5DYW5jZWxBcHByb3ZhbBItLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlQ2FuY2VsQXBwcm92YWxSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAEScQoORW1pdEF1ZGl0RXZlbnQSLS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUVtaXRBdWRpdEV2ZW50UmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEosBChNGZXRjaERhdGFzb3VyY2VCbG9iEiwuc2Fhcy5hY2NvdW50cy52MS5GZXRjaERhdGFzb3VyY2VCbG9iUmVxdWVzdBoqLnNhYXMuYWNjb3VudHMudjEuRmV0Y2hEYXRhc291cmNlQmxvYkNodW5rIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAEwAWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_empty, file_google_protobuf_duration, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
+  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9jYXBhYmlsaXRpZXMucHJvdG8SEHNhYXMuYWNjb3VudHMudjEiXgoXTW9kdWxlRW5xdWV1ZUpvYlJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIpCgNqb2IYAiABKAsyFC5zYWFzLmpvYnMudjEuTmV3Sm9iQga6SAPIAQEidgoYTW9kdWxlRW5xdWV1ZUpvYlJlc3BvbnNlEhgKBmpvYl9pZBgBIAEoCUIIukgFcgOwAQESQAoLZGlzcG9zaXRpb24YAiABKA4yIy5zYWFzLmpvYnMudjEuSm9iRW5xdWV1ZURpc3Bvc2l0aW9uQga6SAPIAQEiygEKFk1vZHVsZUNsYWltSm9ic1JlcXVlc3QSLgoFcXVldWUYASABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSHQoJd29ya2VyX2lkGAIgASgJQgq6SAdyBRABGP8BEhgKBWxpbWl0GAMgASgNQgm6SAYqBBhkKAESRwoObGVhc2VfZHVyYXRpb24YBCABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IkIKF01vZHVsZUNsYWltSm9ic1Jlc3BvbnNlEicKBGpvYnMYASADKAsyGS5zYWFzLmpvYnMudjEuSm9iRW52ZWxvcGUilwEKGU1vZHVsZUhlYXJ0YmVhdEpvYlJlcXVlc3QSNgoFbGVhc2UYASABKAsyHy5zYWFzLmpvYnMudjEuSm9iTGVhc2VSZWZlcmVuY2VCBrpIA8gBARJCCglleHRlbnNpb24YAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb25CFLpIEcgBAaoBCyIDCJAcMgQQwIQ9IksKGk1vZHVsZUhlYXJ0YmVhdEpvYlJlc3BvbnNlEi0KBWxlYXNlGAEgASgLMhYuc2Fhcy5qb2JzLnYxLkpvYkxlYXNlQga6SAPIAQEiTQoTTW9kdWxlQWNrSm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBIsIBChRNb2R1bGVOYWNrSm9iUmVxdWVzdBI2CgVsZWFzZRgBIAEoCzIfLnNhYXMuam9icy52MS5Kb2JMZWFzZVJlZmVyZW5jZUIGukgDyAEBEjEKB2ZhaWx1cmUYAiABKAsyGC5zYWFzLmpvYnMudjEuSm9iRmFpbHVyZUIGukgDyAEBEhEKCXJldHJ5YWJsZRgDIAEoCBIsCghyZXRyeV9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAi9gEKF01vZHVsZU5vdGlmeVVzZXJSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESGQoHdXNlcl9pZBgCIAEoCUIIukgFcgOwAQESGQoFdGl0bGUYAyABKAlCCrpIB3IFEAEY5gcSFgoEYm9keRgEIAEoCUIIukgFcgMYgEASFQoEdHlwZRgFIAEoCUIHukgEcgIYQBIcCgphY3Rpb25fdXJsGAYgASgJQgi6SAVyAxiAEBIbCghjYXRlZ29yeRgHIAEoCUIJukgGcgQQARggEiEKD2lkZW1wb3RlbmN5X2tleRgIIAEoCUIIukgFcgMY/wEiRgoYTW9kdWxlTm90aWZ5VXNlclJlc3BvbnNlEhcKD25vdGlmaWNhdGlvbl9pZBgBIAEoCRIRCglkZWxpdmVyZWQYAiABKAgiYwoUTW9kdWxlQXBwcm92YWxQb2xpY3kSFwoGcXVvcnVtGAEgASgNQge6SAQqAhhkEh4KDGFwcHJvdmVyX3NldBgCIAMoCUIIukgFkgECEGQSEgoKYWxsb3dfc2VsZhgDIAEoCCKbAQoPTW9kdWxlUmVzdW1lUmVmEi4KBXF1ZXVlGAEgASgJQh+6SBxyGhABGIABMhNeW2Etel1bYS16MC05Xy4tXSokEi4KBXRvcGljGAIgASgJQh+6SBxyGhABGP8BMhNeW2Etel1bYS16MC05Xy4tXSokEigKB3BheWxvYWQYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IpYDChxNb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHAoIcmVzb3VyY2UYAiABKAlCCrpIB3IFEAEYgAESGgoGYWN0aW9uGAMgASgJQgq6SAdyBRABGIABEigKB3N1YmplY3QYBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiAKDHJlcXVlc3RlZF9ieRgFIAEoCUIKukgHcgUQARj/ARI2CgZwb2xpY3kYBiABKAsyJi5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFwcHJvdmFsUG9saWN5Ej0KCnJlc3VtZV9yZWYYByABKAsyIS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZVJlc3VtZVJlZkIGukgDyAEBEi4KCmV4cGlyZXNfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI+Ch1Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXNwb25zZRIdCgthcHByb3ZhbF9pZBgBIAEoCUIIukgFcgOwAQEiUwoYTW9kdWxlR2V0QXBwcm92YWxSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESHQoLYXBwcm92YWxfaWQYAiABKAlCCLpIBXIDsAEBIvUCCg5Nb2R1bGVBcHByb3ZhbBIKCgJpZBgBIAEoCRIOCgZ0ZW5hbnQYAiABKAkSEAoIcmVzb3VyY2UYAyABKAkSDgoGYWN0aW9uGAQgASgJEigKB3N1YmplY3QYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhQKDHJlcXVlc3RlZF9ieRgGIAEoCRIOCgZxdW9ydW0YByABKA0SDQoFc3RhdGUYCCABKAkSNQoKcmVzdW1lX3JlZhgJIAEoCzIhLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlUmVzdW1lUmVmEi4KCmV4cGlyZXNfYXQYCiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi8KC2VzY2FsYXRlX2F0GAsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GAwgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJwChtNb2R1bGVDYW5jZWxBcHByb3ZhbFJlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIdCgthcHByb3ZhbF9pZBgCIAEoCUIIukgFcgOwAQESGAoGcmVhc29uGAMgASgJQgi6SAVyAxiACCLuAQobTW9kdWxlRW1pdEF1ZGl0RXZlbnRSZXF1ZXN0Eg4KBnRlbmFudBgBIAEoCRIeCgpldmVudF90eXBlGAIgASgJQgq6SAdyBRABGIABEhkKBWFjdG9yGAMgASgJQgq6SAdyBRABGP8BEhwKCHNvbHV0aW9uGAQgASgJQgq6SAdyBRABGIABEhoKCGVudHJ5X2lkGAUgASgJQgi6SAVyAxj/ARInCgZmaWVsZHMYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiEKD2lkZW1wb3RlbmN5X2tleRgHIAEoCUIIukgFcgMY/wEiVwoaRmV0Y2hEYXRhc291cmNlQmxvYlJlcXVlc3QSGwoJc291cmNlX2lkGAEgASgJQgi6SAVyA7ABARIcCghibG9iX3NoYRgCIAEoCUIKukgHcgUQARj/ASJSChhGZXRjaERhdGFzb3VyY2VCbG9iQ2h1bmsSDAoEZGF0YRgBIAEoDBISCgp0b3RhbF9zaXplGAIgASgDEhQKDGNvbnRlbnRfdHlwZRgDIAEoCSJuChlNb2R1bGVQdWJsaXNoRXZlbnRSZXF1ZXN0EhgKBnRlbmFudBgBIAEoCUIIukgFcgOwAQESNwoIZW52ZWxvcGUYAiABKAsyHS5zYWFzLmV2ZW50cy52MS5FdmVudEVudmVsb3BlQga6SAPIAQEiOAoaTW9kdWxlUHVibGlzaEV2ZW50UmVzcG9uc2USGgoIZXZlbnRfaWQYASABKAlCCLpIBXIDsAEBIsgBChZNb2R1bGVTdWJzY3JpYmVSZXF1ZXN0EksKDHR5cGVfcGF0dGVybhgBIAEoCUI1ukgycjAQARiAATIpXlthLXpdW2EtejAtOV0qKD86XC5bYS16MC05XSspKig/OlwuXCopPyQSLgoFcXVldWUYAiABKAlCH7pIHHIaEAEYgAEyE15bYS16XVthLXowLTlfLi1dKiQSMQoIZGVsaXZlcnkYAyABKA4yHy5zYWFzLmFjY291bnRzLnYxLkV2ZW50RGVsaXZlcnkiyQEKEk1vZHVsZVN1YnNjcmlwdGlvbhIKCgJpZBgBIAEoCRIfChdzdWJzY3JpYmVyX3ByaW5jaXBhbF9pZBgCIAEoCRIUCgx0eXBlX3BhdHRlcm4YAyABKAkSDQoFcXVldWUYBCABKAkSMQoIZGVsaXZlcnkYBSABKA4yHy5zYWFzLmFjY291bnRzLnYxLkV2ZW50RGVsaXZlcnkSLgoKY3JlYXRlZF9hdBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiVQoXTW9kdWxlU3Vic2NyaWJlUmVzcG9uc2USOgoMc3Vic2NyaXB0aW9uGAEgASgLMiQuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVTdWJzY3JpcHRpb24iPQoYTW9kdWxlVW5zdWJzY3JpYmVSZXF1ZXN0EiEKD3N1YnNjcmlwdGlvbl9pZBgBIAEoCUIIukgFcgOwAQEiIAoeTW9kdWxlTGlzdFN1YnNjcmlwdGlvbnNSZXF1ZXN0Il4KH01vZHVsZUxpc3RTdWJzY3JpcHRpb25zUmVzcG9uc2USOwoNc3Vic2NyaXB0aW9ucxgBIAMoCzIkLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlU3Vic2NyaXB0aW9uInoKGU1vZHVsZVJlcGxheUV2ZW50c1JlcXVlc3QSGAoGdGVuYW50GAEgASgJQgi6SAVyA7ABARIYCgR0eXBlGAIgASgJQgq6SAdyBRABGIABEikKBXNpbmNlGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCIxChpNb2R1bGVSZXBsYXlFdmVudHNSZXNwb25zZRITCgtyZWRlbGl2ZXJlZBgBIAEoBSppCg1FdmVudERlbGl2ZXJ5Eh4KGkVWRU5UX0RFTElWRVJZX1VOU1BFQ0lGSUVEEAASHAoYRVZFTlRfREVMSVZFUllfVU5PUkRFUkVEEAESGgoWRVZFTlRfREVMSVZFUllfT1JERVJFRBACMqARChlNb2R1bGVDYXBhYmlsaXRpZXNTZXJ2aWNlEn0KCkVucXVldWVKb2ISKS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUVucXVldWVKb2JSZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVFbnF1ZXVlSm9iUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJ6CglDbGFpbUpvYnMSKC5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUNsYWltSm9ic1JlcXVlc3QaKS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUNsYWltSm9ic1Jlc3BvbnNlIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESgwEKDEhlYXJ0YmVhdEpvYhIrLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlSGVhcnRiZWF0Sm9iUmVxdWVzdBosLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlSGVhcnRiZWF0Sm9iUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJhCgZBY2tKb2ISJS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFja0pvYlJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJjCgdOYWNrSm9iEiYuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVOYWNrSm9iUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEn0KCk5vdGlmeVVzZXISKS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU5vdGlmeVVzZXJSZXF1ZXN0Giouc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVOb3RpZnlVc2VyUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKMAQoPUmVxdWVzdEFwcHJvdmFsEi4uc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXF1ZXN0Gi8uc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVSZXF1ZXN0QXBwcm92YWxSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEnUKC0dldEFwcHJvdmFsEiouc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVHZXRBcHByb3ZhbFJlcXVlc3QaIC5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUFwcHJvdmFsIhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAEScQoOQ2FuY2VsQXBwcm92YWwSLS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUNhbmNlbEFwcHJvdmFsUmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEnEKDkVtaXRBdWRpdEV2ZW50Ei0uc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVFbWl0QXVkaXRFdmVudFJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKLAQoTRmV0Y2hEYXRhc291cmNlQmxvYhIsLnNhYXMuYWNjb3VudHMudjEuRmV0Y2hEYXRhc291cmNlQmxvYlJlcXVlc3QaKi5zYWFzLmFjY291bnRzLnYxLkZldGNoRGF0YXNvdXJjZUJsb2JDaHVuayIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABMAEStgEKFk1pbnRNb2R1bGVSZWdpc3RyYXRpb24SLy5zYWFzLmFjY291bnRzLnYxLk1vZHVsZU1pbnRSZWdpc3RyYXRpb25SZXF1ZXN0GjAuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVNaW50UmVnaXN0cmF0aW9uUmVzcG9uc2UiOcLzGDUIAxABMAE6Iwofc2Fhcy5tb2R1bGUucmVnaXN0cmF0aW9uX21pbnRlZBACQAFIB1AEWARgARKDAQoMUHVibGlzaEV2ZW50Eisuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVQdWJsaXNoRXZlbnRSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVQdWJsaXNoRXZlbnRSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABEnoKCVN1YnNjcmliZRIoLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlU3Vic2NyaWJlUmVxdWVzdBopLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlU3Vic2NyaWJlUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARJrCgtVbnN1YnNjcmliZRIqLnNhYXMuYWNjb3VudHMudjEuTW9kdWxlVW5zdWJzY3JpYmVSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IhjC8xgUCAMQATABOgIQAUABSAdQA1gDYAESkgEKEUxpc3RTdWJzY3JpcHRpb25zEjAuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVMaXN0U3Vic2NyaXB0aW9uc1JlcXVlc3QaMS5zYWFzLmFjY291bnRzLnYxLk1vZHVsZUxpc3RTdWJzY3JpcHRpb25zUmVzcG9uc2UiGMLzGBQIAxABMAE6AhABQAFIB1ADWANgARKDAQoMUmVwbGF5RXZlbnRzEisuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVSZXBsYXlFdmVudHNSZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5Nb2R1bGVSZXBsYXlFdmVudHNSZXNwb25zZSIYwvMYFAgDEAEwAToCEAFAAUgHUANYA2ABYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_empty, file_google_protobuf_duration, file_google_protobuf_struct, file_google_protobuf_timestamp, file_saas_accounts_v1_module_registration, file_saas_events_v1_events, file_saas_jobs_v1_jobs, file_saas_policy_v1_options]);
 
 /**
  * ModuleEnqueueJobRequest names the tenant the work belongs to and carries the
@@ -601,6 +600,17 @@ export type ModuleEmitAuditEventRequest = Message<"saas.accounts.v1.ModuleEmitAu
    * @generated from field: google.protobuf.Struct fields = 6;
    */
   fields?: JsonObject;
+
+  /**
+   * idempotency_key deduplicates retried emits: two emits with the same
+   * (tenant, event_type, idempotency_key) collapse to a single audit row, and
+   * the duplicate returns success without writing again. Empty disables
+   * deduplication (every emit is a distinct event). Scoped by tenant so one
+   * tenant's keys can never suppress another's events.
+   *
+   * @generated from field: string idempotency_key = 7;
+   */
+  idempotencyKey: string;
 };
 
 /**
@@ -674,8 +684,288 @@ export const FetchDatasourceBlobChunkSchema: GenMessage<FetchDatasourceBlobChunk
   messageDesc(file_saas_accounts_v1_module_capabilities, 19);
 
 /**
- * ModuleCapabilitiesService is the module-facing platform surface. Every RPC
- * is internal-tier and identifies its caller from the forwarded Work Context.
+ * ModulePublishEventRequest publishes one domain event for the caller's bound
+ * tenant. The event type's namespace (the segment before the first dot) must be
+ * one the caller's principal declares. The envelope id is the idempotency key:
+ * republishing the same id with the identical fact is a no-op, and reusing an
+ * id for a different fact is rejected.
+ *
+ * @generated from message saas.accounts.v1.ModulePublishEventRequest
+ */
+export type ModulePublishEventRequest = Message<"saas.accounts.v1.ModulePublishEventRequest"> & {
+  /**
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * @generated from field: saas.events.v1.EventEnvelope envelope = 2;
+   */
+  envelope?: EventEnvelope;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModulePublishEventRequest.
+ * Use `create(ModulePublishEventRequestSchema)` to create a new message.
+ */
+export const ModulePublishEventRequestSchema: GenMessage<ModulePublishEventRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 20);
+
+/**
+ * @generated from message saas.accounts.v1.ModulePublishEventResponse
+ */
+export type ModulePublishEventResponse = Message<"saas.accounts.v1.ModulePublishEventResponse"> & {
+  /**
+   * event_id echoes the accepted envelope id — the idempotency key the outbox
+   * stored the event of record under. A republish of the same id carrying the
+   * identical fact returns the same id and is an accepted no-op; reusing the id
+   * for a different fact is rejected with FailedPrecondition.
+   *
+   * @generated from field: string event_id = 1;
+   */
+  eventId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModulePublishEventResponse.
+ * Use `create(ModulePublishEventResponseSchema)` to create a new message.
+ */
+export const ModulePublishEventResponseSchema: GenMessage<ModulePublishEventResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 21);
+
+/**
+ * ModuleSubscribeRequest creates, or idempotently re-affirms, a durable
+ * subscription that delivers events matching type_pattern onto queue for the
+ * calling principal. type_pattern is an exact type or a single trailing ".*"
+ * prefix. An event type declared with internal visibility is not subscribable
+ * by a solution principal.
+ *
+ * @generated from message saas.accounts.v1.ModuleSubscribeRequest
+ */
+export type ModuleSubscribeRequest = Message<"saas.accounts.v1.ModuleSubscribeRequest"> & {
+  /**
+   * @generated from field: string type_pattern = 1;
+   */
+  typePattern: string;
+
+  /**
+   * @generated from field: string queue = 2;
+   */
+  queue: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.EventDelivery delivery = 3;
+   */
+  delivery: EventDelivery;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleSubscribeRequest.
+ * Use `create(ModuleSubscribeRequestSchema)` to create a new message.
+ */
+export const ModuleSubscribeRequestSchema: GenMessage<ModuleSubscribeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 22);
+
+/**
+ * ModuleSubscription is one durable subscription row as the module sees it.
+ *
+ * @generated from message saas.accounts.v1.ModuleSubscription
+ */
+export type ModuleSubscription = Message<"saas.accounts.v1.ModuleSubscription"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string subscriber_principal_id = 2;
+   */
+  subscriberPrincipalId: string;
+
+  /**
+   * @generated from field: string type_pattern = 3;
+   */
+  typePattern: string;
+
+  /**
+   * @generated from field: string queue = 4;
+   */
+  queue: string;
+
+  /**
+   * @generated from field: saas.accounts.v1.EventDelivery delivery = 5;
+   */
+  delivery: EventDelivery;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp created_at = 6;
+   */
+  createdAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleSubscription.
+ * Use `create(ModuleSubscriptionSchema)` to create a new message.
+ */
+export const ModuleSubscriptionSchema: GenMessage<ModuleSubscription> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 23);
+
+/**
+ * @generated from message saas.accounts.v1.ModuleSubscribeResponse
+ */
+export type ModuleSubscribeResponse = Message<"saas.accounts.v1.ModuleSubscribeResponse"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ModuleSubscription subscription = 1;
+   */
+  subscription?: ModuleSubscription;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleSubscribeResponse.
+ * Use `create(ModuleSubscribeResponseSchema)` to create a new message.
+ */
+export const ModuleSubscribeResponseSchema: GenMessage<ModuleSubscribeResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 24);
+
+/**
+ * ModuleUnsubscribeRequest revokes one of the caller's own subscriptions.
+ *
+ * @generated from message saas.accounts.v1.ModuleUnsubscribeRequest
+ */
+export type ModuleUnsubscribeRequest = Message<"saas.accounts.v1.ModuleUnsubscribeRequest"> & {
+  /**
+   * @generated from field: string subscription_id = 1;
+   */
+  subscriptionId: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleUnsubscribeRequest.
+ * Use `create(ModuleUnsubscribeRequestSchema)` to create a new message.
+ */
+export const ModuleUnsubscribeRequestSchema: GenMessage<ModuleUnsubscribeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 25);
+
+/**
+ * ModuleListSubscriptionsRequest lists the calling principal's live
+ * subscriptions. It carries no filter today.
+ *
+ * @generated from message saas.accounts.v1.ModuleListSubscriptionsRequest
+ */
+export type ModuleListSubscriptionsRequest = Message<"saas.accounts.v1.ModuleListSubscriptionsRequest"> & {
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleListSubscriptionsRequest.
+ * Use `create(ModuleListSubscriptionsRequestSchema)` to create a new message.
+ */
+export const ModuleListSubscriptionsRequestSchema: GenMessage<ModuleListSubscriptionsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 26);
+
+/**
+ * @generated from message saas.accounts.v1.ModuleListSubscriptionsResponse
+ */
+export type ModuleListSubscriptionsResponse = Message<"saas.accounts.v1.ModuleListSubscriptionsResponse"> & {
+  /**
+   * @generated from field: repeated saas.accounts.v1.ModuleSubscription subscriptions = 1;
+   */
+  subscriptions: ModuleSubscription[];
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleListSubscriptionsResponse.
+ * Use `create(ModuleListSubscriptionsResponseSchema)` to create a new message.
+ */
+export const ModuleListSubscriptionsResponseSchema: GenMessage<ModuleListSubscriptionsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 27);
+
+/**
+ * ModuleReplayEventsRequest re-delivers durable events of one type for the
+ * caller's tenant, created at or after since, only to the calling principal's
+ * own subscriptions. Each redelivery carries a fresh idempotency key so a
+ * consumer that already acknowledged the event still receives the replay.
+ *
+ * @generated from message saas.accounts.v1.ModuleReplayEventsRequest
+ */
+export type ModuleReplayEventsRequest = Message<"saas.accounts.v1.ModuleReplayEventsRequest"> & {
+  /**
+   * @generated from field: string tenant = 1;
+   */
+  tenant: string;
+
+  /**
+   * @generated from field: string type = 2;
+   */
+  type: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp since = 3;
+   */
+  since?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleReplayEventsRequest.
+ * Use `create(ModuleReplayEventsRequestSchema)` to create a new message.
+ */
+export const ModuleReplayEventsRequestSchema: GenMessage<ModuleReplayEventsRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 28);
+
+/**
+ * @generated from message saas.accounts.v1.ModuleReplayEventsResponse
+ */
+export type ModuleReplayEventsResponse = Message<"saas.accounts.v1.ModuleReplayEventsResponse"> & {
+  /**
+   * redelivered is the number of durable events re-fanned to the caller's
+   * subscriptions.
+   *
+   * @generated from field: int32 redelivered = 1;
+   */
+  redelivered: number;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleReplayEventsResponse.
+ * Use `create(ModuleReplayEventsResponseSchema)` to create a new message.
+ */
+export const ModuleReplayEventsResponseSchema: GenMessage<ModuleReplayEventsResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_capabilities, 29);
+
+/**
+ * EventDelivery is the ordering guarantee a subscription requests, mirroring
+ * events.Delivery in the SDK: UNORDERED fans out with no per-key ordering;
+ * ORDERED preserves FIFO within an event's partition key.
+ *
+ * @generated from enum saas.accounts.v1.EventDelivery
+ */
+export enum EventDelivery {
+  /**
+   * @generated from enum value: EVENT_DELIVERY_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: EVENT_DELIVERY_UNORDERED = 1;
+   */
+  UNORDERED = 1,
+
+  /**
+   * @generated from enum value: EVENT_DELIVERY_ORDERED = 2;
+   */
+  ORDERED = 2,
+}
+
+/**
+ * Describes the enum saas.accounts.v1.EventDelivery.
+ */
+export const EventDeliverySchema: GenEnum<EventDelivery> = /*@__PURE__*/
+  enumDesc(file_saas_accounts_v1_module_capabilities, 0);
+
+/**
+ * ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
+ * internal-tier and identifies its caller from the forwarded Work Context —
+ * except MintModuleRegistration, which a module calls at startup, before any
+ * user request exists, and which authorizes on its own registration secret.
  *
  * @generated from service saas.accounts.v1.ModuleCapabilitiesService
  */
@@ -792,6 +1082,68 @@ export const ModuleCapabilitiesService: GenService<{
     methodKind: "server_streaming";
     input: typeof FetchDatasourceBlobRequestSchema;
     output: typeof FetchDatasourceBlobChunkSchema;
+  },
+  /**
+   * MintModuleRegistration issues the signed, prefix-bound credential a composed
+   * module presents to the gateway to federate its REST surface. Authorized by
+   * the module's own registration secret, not the shared cluster token.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration
+   */
+  mintModuleRegistration: {
+    methodKind: "unary";
+    input: typeof ModuleMintRegistrationRequestSchema;
+    output: typeof ModuleMintRegistrationResponseSchema;
+  },
+  /**
+   * PublishEvent appends one domain event to the outbox for the caller's tenant.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.PublishEvent
+   */
+  publishEvent: {
+    methodKind: "unary";
+    input: typeof ModulePublishEventRequestSchema;
+    output: typeof ModulePublishEventResponseSchema;
+  },
+  /**
+   * Subscribe creates or re-affirms a durable subscription for the caller.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.Subscribe
+   */
+  subscribe: {
+    methodKind: "unary";
+    input: typeof ModuleSubscribeRequestSchema;
+    output: typeof ModuleSubscribeResponseSchema;
+  },
+  /**
+   * Unsubscribe revokes one of the caller's own subscriptions.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe
+   */
+  unsubscribe: {
+    methodKind: "unary";
+    input: typeof ModuleUnsubscribeRequestSchema;
+    output: typeof EmptySchema;
+  },
+  /**
+   * ListSubscriptions returns the calling principal's live subscriptions.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions
+   */
+  listSubscriptions: {
+    methodKind: "unary";
+    input: typeof ModuleListSubscriptionsRequestSchema;
+    output: typeof ModuleListSubscriptionsResponseSchema;
+  },
+  /**
+   * ReplayEvents re-delivers durable events to the caller's own subscriptions.
+   *
+   * @generated from rpc saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents
+   */
+  replayEvents: {
+    methodKind: "unary";
+    input: typeof ModuleReplayEventsRequestSchema;
+    output: typeof ModuleReplayEventsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_module_capabilities, 0);
