@@ -1,9 +1,7 @@
-import { timingSafeEqual } from "node:crypto";
-
-import { getWorkspaceSecret } from "codefly";
-
+import { isTrustedInternalCall } from "@/lib/internal-token";
 import {
 	loadSolutions,
+	navProjection,
 	parseManifest,
 	registerSolution,
 	unregisterSolution,
@@ -12,50 +10,18 @@ import {
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const INTERNAL_TOKEN_HEADER = "x-codefly-internal-token";
-
-/**
- * The cluster-internal credential the solution must present to register or
- * unregister. Same secret the frontend uses to prove a trusted origin to the
- * gateway. Returns null when unset so mutations fail closed.
- */
-function expectedInternalToken(): string | null {
-	const token = getWorkspaceSecret(
-		"internal-auth",
-		"CODEFLY_INTERNAL_TOKEN",
-	)?.trim();
-	return token ? token : null;
-}
-
-/**
- * Registration mutates what the nav renders and what the solution route loads
- * as a Module Federation remote, so it is NOT public: it requires the
- * cluster-internal token. Without this, any caller that can reach the frontend
- * could register an attacker-controlled MF remote (arbitrary in-origin script
- * execution) or nav entry. Fails closed when the secret is unset.
- */
-function isTrustedInternalCall(request: Request): boolean {
-	const expected = expectedInternalToken();
-	if (!expected) {
-		return false;
-	}
-	const presented = request.headers.get(INTERNAL_TOKEN_HEADER) ?? "";
-	const presentedBytes = Buffer.from(presented, "utf8");
-	const expectedBytes = Buffer.from(expected, "utf8");
-	if (presentedBytes.length !== expectedBytes.length) {
-		return false;
-	}
-	return timingSafeEqual(presentedBytes, expectedBytes);
-}
-
 /**
  * Self-registration endpoint. A solution POSTs its manifest here on startup so
  * the host learns about it at runtime. This is generic: the host validates the
  * shape and stores it, never referencing any specific solution.
  *
- * NOTE: cluster-internal only. The POST/DELETE mutations require the internal
- * token above; in a deployed environment this should additionally be reachable
- * solely from inside the mesh (NetworkPolicy).
+ * Registration mutates what the nav renders and what the solution route loads
+ * as a Module Federation remote, so it is NOT public: it requires the
+ * cluster-internal token. Without this, any caller that can reach the frontend
+ * could register an attacker-controlled MF remote (arbitrary in-origin script
+ * execution) or nav entry. Fails closed when the secret is unset; in a deployed
+ * environment this should additionally be reachable solely from inside the mesh
+ * (NetworkPolicy).
  */
 export async function POST(request: Request): Promise<Response> {
 	if (!isTrustedInternalCall(request)) {
@@ -87,16 +53,13 @@ export async function DELETE(request: Request): Promise<Response> {
 	return Response.json({ ok: true });
 }
 
-// GET is a read of nav-only metadata (titles/paths) that the browser polls to
-// render the Solutions nav. It is intentionally not gated on the internal
-// token — it exposes no secrets and no upstreams. The dashboard data graph is
-// dropped here: only the solution page reads it (server-side, via findSolution),
-// so broadcasting it on every 10s nav poll would ship bytes no consumer reads.
+// GET is the public navigation projection: the id and the nav entry the browser
+// polls to render the Solutions menu, and nothing else. It is deliberately not
+// gated on the internal token — every signed-in browser needs it — so it must
+// carry no field a browser does not render. Where a solution's code is served
+// from, which backend service fronts it, and its dashboard declaration are
+// deployment topology; they are served by the internal detail lookup
+// (app/api/internal/solutions) to callers holding the cluster-internal token.
 export async function GET(): Promise<Response> {
-	const solutions = loadSolutions().map((solution) => {
-		const nav = { ...solution };
-		delete nav.dashboard;
-		return nav;
-	});
-	return Response.json({ solutions });
+	return Response.json({ solutions: loadSolutions().map(navProjection) });
 }

@@ -1,6 +1,30 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The proxy resolves the cluster-internal token through the Codefly SDK and
+// presents it on the internal detail lookup. vi.mock is hoisted above module
+// init, so the stub must be created with vi.hoisted.
+const {
+	getWorkspaceSecret,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+} = vi.hoisted(() => ({
+	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
+	getCurrentModule: vi.fn<() => string>(),
+	getCurrentService: vi.fn<() => string>(),
+	getEndpoints: vi.fn<() => unknown[]>(),
+}));
+vi.mock("codefly", () => ({
+	getWorkspaceSecret,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+}));
+
+const INTERNAL_TOKEN = "internal-test-token";
+
 // The proxy keeps module-level state — a short-lived cache of the solutions
 // listing and the dedup key for failure logging — so each test imports a fresh
 // module graph rather than inheriting the previous test's cache or log state.
@@ -67,9 +91,10 @@ function cspOf(response: Response): string {
 }
 
 // The registry lives in the route-handler context the proxy cannot share, so
-// the proxy reads registered remotes over the local solutions listing. Stub
-// that boundary and assert the proxy queries loopback at the server's own PORT
-// — never a host or port taken from the (client-controlled) request.
+// the proxy reads registered remotes over the local internal detail lookup.
+// Stub that boundary and assert the proxy queries loopback at the server's own
+// PORT — never a host or port taken from the (client-controlled) request — and
+// authenticates with the cluster-internal token the lookup requires.
 function stubListing(
 	solutions: unknown[],
 	expectedPort = "4711",
@@ -81,12 +106,17 @@ function stubListingBody(
 	body: unknown,
 	expectedPort = "4711",
 ): ReturnType<typeof vi.fn> {
-	const fetchMock = vi.fn(async (input: URL | RequestInfo) => {
-		expect(input.toString()).toBe(
-			`http://127.0.0.1:${expectedPort}/api/solutions/register`,
-		);
-		return { ok: true, json: async () => body } as Response;
-	});
+	const fetchMock = vi.fn(
+		async (input: URL | RequestInfo, init?: RequestInit) => {
+			expect(input.toString()).toBe(
+				`http://127.0.0.1:${expectedPort}/api/internal/solutions`,
+			);
+			expect(new Headers(init?.headers).get("x-codefly-internal-token")).toBe(
+				INTERNAL_TOKEN,
+			);
+			return { ok: true, json: async () => body } as Response;
+		},
+	);
 	vi.stubGlobal("fetch", fetchMock);
 	return fetchMock;
 }
@@ -102,6 +132,11 @@ describe("proxy solution CSP", () => {
 
 	beforeEach(async () => {
 		now = 1_700_000_000_000;
+		getWorkspaceSecret.mockReturnValue(INTERNAL_TOKEN);
+		// Isolated-component default: no Codefly runtime identity to discover.
+		getCurrentModule.mockReturnValue("");
+		getCurrentService.mockReturnValue("");
+		getEndpoints.mockReturnValue([]);
 		vi.spyOn(Date, "now").mockImplementation(() => now);
 		vi.stubEnv("SOLUTION_CSP_INPUTS", SELF_ONLY_SNAPSHOT);
 		// A distinctive non-default port proves the listing target is read from
@@ -117,6 +152,10 @@ describe("proxy solution CSP", () => {
 		vi.unstubAllEnvs();
 		vi.unstubAllGlobals();
 		vi.restoreAllMocks();
+		getWorkspaceSecret.mockReset();
+		getCurrentModule.mockReset();
+		getCurrentService.mockReset();
+		getEndpoints.mockReset();
 	});
 
 	it("allows a registered cross-origin remote without a build-time env", async () => {
@@ -208,6 +247,83 @@ describe("proxy solution CSP", () => {
 		expect(directive(csp, "script-src")).not.toContain("localhost");
 		// The failure is surfaced, not swallowed — a silent fallback is
 		// indistinguishable from the bug this fix addresses.
+		expect(console.error).toHaveBeenCalledOnce();
+	});
+
+	it("admits a registered origin when the public origin cannot be resolved", async () => {
+		// The internal secret is the only thing this lookup needs. Reading it off
+		// the gateway context also made it depend on PUBLIC ORIGIN resolution,
+		// which fails on a malformed `x-forwarded-host` — silently narrowing the
+		// policy to self-only and reporting a missing secret that was present.
+		getCurrentModule.mockReturnValue("saas-starter");
+		getCurrentService.mockReturnValue("frontend");
+		// The render bakes the own HTTP endpoint as a loopback placeholder, so
+		// the public origin comes from the request's forwarded host.
+		getEndpoints.mockReturnValue([
+			{
+				module: "saas-starter",
+				service: "frontend",
+				name: "http",
+				protocol: "HTTP",
+				address: "http://localhost:8080",
+			},
+		]);
+		const fetchMock = stubListing([AUDIT]);
+
+		const request = new NextRequest("http://10.0.0.5/s/audit", {
+			headers: {
+				"sec-fetch-dest": "document",
+				accept: "text/html",
+				"x-forwarded-proto": "https",
+				"x-forwarded-host": "app example",
+			},
+		});
+		request.cookies.set("codefly_session", "token");
+
+		const response = await proxy(request);
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			`connect-src 'self' ${new URL(AUDIT_MANIFEST).origin}`,
+		);
+		expect(fetchMock).toHaveBeenCalledOnce();
+		expect(console.error).not.toHaveBeenCalled();
+	});
+
+	it("stays self-only and reports when no internal token is configured", async () => {
+		// Without the secret the detail lookup would 401 — and registration
+		// itself fails closed, so there is no registered remote to admit. The
+		// self-only policy is correct, but the missing secret is still reported
+		// rather than hidden behind a policy that merely looks conservative.
+		getWorkspaceSecret.mockReturnValue(undefined);
+		const fetchMock = stubListing([AUDIT]);
+
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(console.error).toHaveBeenCalledOnce();
+	});
+
+	it("logs and stays self-only when the lookup rejects the token", async () => {
+		// A rotated or mismatched internal token reads as a 401 here. It must
+		// narrow the policy, never widen it from a body the lookup did not
+		// authorize.
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					({
+						ok: false,
+						status: 401,
+						json: async () => ({ error: "unauthorized" }),
+					}) as Response,
+			),
+		);
+
+		const response = await proxy(authedDocument("https://app.example/s/audit"));
+		expect(directive(cspOf(response), "connect-src")).toBe(
+			"connect-src 'self'",
+		);
 		expect(console.error).toHaveBeenCalledOnce();
 	});
 
@@ -397,13 +513,13 @@ describe("proxy solution CSP", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 	});
 
-	it("never re-enters the lookup for the listing path itself", async () => {
-		// The listing is served by this same server, so its fetch runs back
-		// through this proxy. Nothing may make that request query the listing
+	it("never re-enters the lookup for the lookup path itself", async () => {
+		// The lookup is served by this same server, so its fetch runs back
+		// through this proxy. Nothing may make that request query the lookup
 		// again, at any depth.
 		const fetchMock = stubListing([AUDIT]);
 
-		await proxy(authedDocument("https://app.example/api/solutions/register"));
+		await proxy(authedDocument("https://app.example/api/internal/solutions"));
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 

@@ -91,7 +91,14 @@ names a specific solution; the seam is generic.
   "CODEFLY_INTERNAL_TOKEN")`; fails closed when unset). The POST body is the
   solution manifest (`id`, `nav`, `frontend.manifestUrl` + `exposedModule`,
   optional `backend.serviceAlias`), validated in `src/solutions/registry.ts`.
-  `GET` is unauthenticated and returns nav-only metadata the sidebar polls.
+  `GET` on that route is unauthenticated and returns exactly the public
+  navigation projection — `{id, nav}` per solution and nothing else — which is
+  what the sidebar polls. Everything else a manifest carries (`frontend`,
+  `backend`) is deployment topology and is served instead by `GET
+  /api/internal/solutions`
+  (`src/app/api/internal/solutions/route.ts`), gated on the same
+  cluster-internal token. The dashboard graph is on neither: the solution page
+  reads it in-process through `findSolution`.
 - **Gateway upstream registration** — `POST /solutions/_register` on the
   auth-gateway (`module/services/auth-gateway/code/gateway_solutions.go`),
   gated by the same credential in the `X-Codefly-Internal-Token` header, with a
@@ -128,10 +135,14 @@ names a specific solution; the seam is generic.
   every proxied `/v1/<module>/*` request still runs the full ext_authz check.
 - **Host page** — `/s/[solutionId]`
   (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the remote via
-  `SolutionOutlet` from the registered `manifestUrl` + `exposedModule`. The
-  middleware `src/proxy.ts` derives the manifestUrl origin from the live
-  registration and adds it to that page's CSP, so a freshly registered
-  cross-origin remote loads with no rebuild.
+  `SolutionOutlet` from the registered `manifestUrl` + `exposedModule`, read
+  in-process from the registry. `src/proxy.ts` cannot read that registry (Next
+  runs the proxy in a context that shares no module singletons with route
+  handlers), so it asks the internal detail lookup over loopback with the
+  cluster-internal token, and adds every registered manifest origin to the CSP
+  of every signed-in document — so a freshly registered cross-origin remote
+  loads with no rebuild, including after a client-side navigation. Without that
+  token the policy stays self-only and says so in the log.
 
 To run a solution against this host locally, drive it from the **solution's own**
 codefly workspace, which composes this repo as a module by path (`codefly add
@@ -146,11 +157,34 @@ SDK. See the solution repo for its own instructions.
 
 ## Building, testing, and CI
 
-- Canonical gate — everything CI enforces: `codefly ci run`. It owns lint,
-  compile/typecheck, tests, dependency/vuln audit, SBOM, and container build.
-  See [RELEASE_GATES.md](./RELEASE_GATES.md).
-- Go module checks: `go build ./...` and `go test ./...`.
-- The one repo-specific CI gate is base-file integrity (below).
+- Canonical **service** gate: `codefly ci run`. It owns lint,
+  compile/typecheck, tests, dependency/vuln audit, SBOM, and container build for
+  every service in the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
+- Beside it, CI runs nine repository-specific gates that no service owns —
+  base-file integrity (below), authorization coverage, the release-gate
+  contract, interface docs and story tests, the published frontend kit's
+  version, provider shims, marketing isolation, the SDK boundary, and the
+  immutable module package. They are listed with what each runs in
+  [RELEASE_GATES.md § Repository-specific
+  gates](./RELEASE_GATES.md#repository-specific-gates), which
+  `release-gates.test.mjs` holds to the enforced set.
+- Go checks: this repository holds **six independent Go modules** — the root
+  module, `module/tools`, and one per Go service (`accounts`, `auth-gateway`,
+  `store`, `telemetry`) — and there is no `go.work`, so `go test ./...` covers
+  only the module you run it in. From the root that is the module agent, the
+  host, and the generated reference composition; every service's own module is
+  outside it, because each has its own `go.mod`. To exercise a service, run its
+  suite from its own directory (its DB-backed suites need Codefly and Docker),
+  or let `codefly ci run` do it.
+- Vulnerability policy: the complete audit runs non-blocking
+  (`--fail-on-vuln=false`) so vendor-image findings stay in the evidence report,
+  and a separate fail-closed step enforces first-party services and production
+  frontend dependencies. Details and the exact commands are in
+  [RELEASE_GATES.md § Vulnerability policy](./RELEASE_GATES.md#vulnerability-policy-and-its-one-exemption).
+- Publication of any artifact additionally requires the aggregate
+  `release-gates` job to have seen every mandatory gate actually succeed, plus
+  three release-only secrets. See [RELEASE_GATES.md §
+  Publication gating](./RELEASE_GATES.md#publication-gating).
 
 ## Agent version pins
 
@@ -230,5 +264,7 @@ hardening ([SECURITY_REVIEW.md](./SECURITY_REVIEW.md),
 readiness ([PRODUCTION_READY.md](./PRODUCTION_READY.md)), and a cross-domain
 platform-functionality reference mapping an external multi-tenant-platform audit
 to what this starter ships, partially ships, or lacks
-([PLATFORM_REFERENCE.md](./PLATFORM_REFERENCE.md)). Start from
+([PLATFORM_REFERENCE.md](./PLATFORM_REFERENCE.md)). Which claim in those
+documents is backed by what, and which are kept only as history, is registered in
+[CLAIM_INVENTORY.md](./CLAIM_INVENTORY.md). Start from
 [MODULE.md](./MODULE.md), whose "Quick links" section indexes the full set.

@@ -523,3 +523,77 @@ test("every job in the shipped workflows reads back with usable steps", () => {
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// the documented gate list vs. the enforced one
+//
+// RELEASE_GATES.md § Repository-specific gates and AGENTS.md both enumerate the
+// gates that are not service gates, and both were hand-maintained. `kit-version`
+// became mandatory in REQUIRED_GATES and neither list learned about it, so the
+// document that exists to say what CI enforces disagreed with CI — and with the
+// mandatory-gates table nine lines above it in the same file. Derive the
+// repository-specific set from REQUIRED_GATES and hold the prose to it.
+
+const RELEASE_GATES_DOC = join(REPOSITORY_ROOT, "RELEASE_GATES.md");
+const AGENTS_DOC = join(REPOSITORY_ROOT, "AGENTS.md");
+const CLAIM_INVENTORY_DOC = join(REPOSITORY_ROOT, "CLAIM_INVENTORY.md");
+
+// Everything mandatory that `codefly ci run` does not own. The `codefly-` prefix
+// is the service-gate namespace; anything else is this repository's own.
+const REPOSITORY_SPECIFIC_GATES = REQUIRED_GATES.filter(
+  (gate) => !gate.startsWith("codefly-"),
+).sort();
+
+const NUMBER_WORDS = {
+  six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+};
+
+/** The job ids in the first column of the § Repository-specific gates table. */
+function documentedRepositorySpecificGates(markdown) {
+  const section = markdown.split("\n## Repository-specific gates\n")[1];
+  assert.ok(section, "RELEASE_GATES.md has no § Repository-specific gates");
+  const ids = [];
+  for (const line of section.split("\n")) {
+    if (line.startsWith("## ")) break;
+    const row = /^\|\s*`([a-z0-9-]+)`\s*\|/.exec(line.trim());
+    if (row) ids.push(row[1]);
+  }
+  return ids;
+}
+
+test("RELEASE_GATES.md documents exactly the mandatory repository-specific gates", () => {
+  assert.deepEqual(
+    documentedRepositorySpecificGates(readFileSync(RELEASE_GATES_DOC, "utf8")).sort(),
+    REPOSITORY_SPECIFIC_GATES,
+    "§ Repository-specific gates and REQUIRED_GATES disagree; document the gate or drop it",
+  );
+});
+
+test("every documented repository-specific gate names what it runs", () => {
+  const section = readFileSync(RELEASE_GATES_DOC, "utf8")
+    .split("\n## Repository-specific gates\n")[1]
+    .split("\n## ")[0];
+  for (const gate of REPOSITORY_SPECIFIC_GATES) {
+    const row = section.split("\n").find((line) => line.trim().startsWith(`| \`${gate}\``));
+    const cells = row.split("|").map((cell) => cell.trim()).filter(Boolean);
+    assert.equal(cells.length, 3, `${gate}: expected a job / guards / runs row`);
+    assert.ok(cells[2].includes("`"), `${gate}: the "what it runs" cell names no command`);
+  }
+});
+
+test("the prose counts of repository-specific gates match the enforced set", () => {
+  const expected = REPOSITORY_SPECIFIC_GATES.length;
+  const prose = [
+    [AGENTS_DOC, /CI runs (\w+) repository-specific gates/],
+    [CLAIM_INVENTORY_DOC, /(\w+) repository-specific jobs/],
+  ];
+  for (const [file, pattern] of prose) {
+    const match = pattern.exec(readFileSync(file, "utf8"));
+    assert.ok(match, `${file}: no repository-specific gate count to check`);
+    assert.equal(
+      NUMBER_WORDS[match[1]],
+      expected,
+      `${file}: says "${match[1]}" repository-specific gates; REQUIRED_GATES has ${expected}`,
+    );
+  }
+});

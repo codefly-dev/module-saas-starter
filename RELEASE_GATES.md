@@ -1,11 +1,26 @@
 # Release gates
 
-The SaaS Starter has one canonical release gate: `codefly ci run`.
+The SaaS Starter has one canonical **service** gate: `codefly ci run`. It owns
+every language-, framework- and container-specific command — lint, compile,
+tests, dependency and vulnerability audit, SBOM, artifact build — for every
+service in the graph, and provider YAML never reimplements any of it. That
+ownership is what keeps a consumer's CI and a maintainer's laptop running the
+same gate as this repository.
 
-GitHub Actions is only a provider adapter. It checks out the repository,
-installs the pinned Codefly CLI, supplies the base and head revisions, and
-invokes the gate. It does not encode Go, Rust, Next.js, protobuf, dependency,
-container, or service-specific commands.
+`codefly ci run` is not, however, the whole workflow. Alongside it,
+`.github/workflows/ci.yml` runs a set of **repository-specific gates** that
+guard artifacts and contracts no single service owns: the canonical base
+manifest that seeds every consumer, the authorization catalog, the release
+gating graph itself, the interface docs, the published frontend kit's version,
+the provider shims, the marketing isolation build, the SDK boundary, and the
+immutable module package. They run
+`node --test`, `go test`, `buf breaking`, and `npm` commands directly — see
+[Repository-specific gates](#repository-specific-gates) for the full list and
+why each one lives here rather than in a plugin.
+
+For a service concern, the rule is unchanged: extend the generic Codefly/Core
+contract and the applicable plugin; never add a service-specific implementation
+to provider YAML.
 
 For version tags, successful completion of this gate — together with every other
 mandatory check, through the aggregate described in [Publication
@@ -170,8 +185,69 @@ base revision; manual runs and first pushes fall back to `--all`.
 
 Language commands, protobuf toolchains, dependency lifecycle, container build
 logic, and evidence normalization belong to the service plugins. If a required
-gate is missing, extend the generic Codefly/Core contract and the applicable
-plugin; never add a repository-specific implementation to provider YAML.
+*service* gate is missing, extend the generic Codefly/Core contract and the
+applicable plugin; never add a service-specific implementation to provider YAML.
+
+## Repository-specific gates
+
+These jobs are not service gates and have no plugin to live in: each guards an
+artifact or a cross-service contract that belongs to the repository as a whole.
+Every one of them is mandatory on both release tracks (see the table above), and
+this list is held to `REQUIRED_GATES` in `scripts/ci/release-gates.mjs` by
+`release-gates.test.mjs` — a gate added there and not documented here, or the
+reverse, fails the `release-contract` job.
+
+| Job | What it guards | What it runs |
+| --- | --- | --- |
+| `base-integrity` | the canonical base manifest that seeds every consumer sync, plus the RLS-migration, migration-pairing and generated-pin gates | `node --test` for each gate's own suite, then `node module/tools/<gate>.mjs check` |
+| `authz-coverage` | the generated authorization catalog: RBAC coverage, audit coverage, and permission no-broadening against `main` | `node module/tools/authz-coverage-gate.mjs`, plus `go test` for the gateway header-lockstep and adapter enforcement tests |
+| `release-contract` | this gating graph itself | `node --test scripts/ci/release-gates.test.mjs`, `node scripts/ci/release-gates.mjs check` |
+| `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
+| `kit-version` | the published frontend kit's version moves whenever its content does, since a registry version is immutable once served | `node --test scripts/ci/kit-version.test.mjs`, `node scripts/ci/kit-version.mjs check` |
+| `provider-shim` | provider setup scripts stay non-writing shims | `node --test scripts/setup/*.test.mjs` |
+| `marketing` | the marketing runtime builds in isolation from the app, and the public config is current | `node module/tools/generate-public-config.mjs --check`, `node module/tools/marketing-extraction.mjs` |
+| `sdk-boundary` | the root module's own tests, the Codefly SDK boundary, single-invocation protocol generation, and the exported API contract | `go test ./...` **in the root module only**, `go test codefly_sdk_boundary_test.go`, `codefly generate contracts saas-starter --check` |
+| `module-package` | the package contract, protobuf compatibility, generator determinism, published conformance suites, and byte-identical archive builds | `go test ./...` **in `module/tools` only**, `go run ./cmd/module-package …`, `buf breaking`, `npm run test:published-plugin-contract` |
+
+Two of those `go test ./...` invocations are worth reading carefully. This
+repository holds **six independent Go modules** — root, `module/tools`, and one
+per Go service — with no `go.work`, so `go test ./...` covers only the module it
+is run in. The `sdk-boundary` invocation runs in the root module (the module
+agent, the host, the generated reference composition) and the `module-package`
+one runs in `module/tools`; neither compiles, let alone tests,
+`services/accounts/code` or `services/auth-gateway/code`. Those are tested by
+`codefly-quality` and `codefly-build` through their service plugins. Nothing in
+this repository presents a root `go test ./...` as service coverage.
+
+## Vulnerability policy and its one exemption
+
+`codefly-supply-chain` runs the audit twice over, and the two runs have
+deliberately different policies.
+
+1. **Complete evidence, non-blocking.** The `audit` phase runs across the whole
+   affected selection with `--fail-on-vuln=false` (and `--jobs=1`, because
+   several published vendor-image agents predate Core's shared Trivy cache
+   lock). This keeps every finding — including ones in vendor runtime images
+   that have their own release cadence and that this repository cannot patch —
+   in the Codefly evidence report rather than making the first unpatchable
+   vendor CVE block the release.
+2. **First-party enforcement, fail-closed.** A separate step then re-audits only
+   what this repository owns and fails on any finding:
+
+   ```sh
+   codefly audit service accounts --outdated=false --fail-on-vuln
+   codefly audit service auth-gateway --outdated=false --fail-on-vuln
+   npm --prefix module/services/frontend/code audit --omit=dev --audit-level=high
+   npm --prefix module/services/marketing/code audit --omit=dev --audit-level=high
+   ```
+
+   `--outdated=false` keeps this step about vulnerabilities, not staleness. The
+   two npm audits are production-dependency-only at high severity.
+
+So `--fail-on-vuln=false` narrows *what blocks*, never *what is looked at*: the
+evidence report is the wider of the two, and the enforcement step is the
+narrower. A finding in a first-party dependency is un-mergeable; a finding in a
+vendor runtime image is recorded and triaged.
 
 ## Canonical manifest freshness
 
@@ -184,9 +260,9 @@ sync then aborts on an unreconcilable source-path mismatch (v0.0.32).
 
 Provider CI closes that gap with `base-integrity.mjs verify`, which re-derives
 the manifest from the tree and fails on any changed, unrecorded, or removed base
-file. This is the one repository-specific gate in provider YAML: it guards the
-canonical artifact that seeds every other consumer, so it must run here rather
-than in a consumer copy.
+file. It guards the canonical artifact that seeds every other consumer, so it
+must run here rather than in a consumer copy — the same reason every job in
+[Repository-specific gates](#repository-specific-gates) lives in provider YAML.
 
 ## Authorization coverage
 
@@ -210,7 +286,7 @@ rather than merely discouraged. `tools/authz-coverage-gate.mjs` runs, in order:
 
 Both coverage gates read ticketed exemptions from
 `tools/authz-coverage-allowlist.json`; every entry needs a reason and a ticket,
-and removing one re-arms the gate. The same job also runs the sidecar
+and removing one re-arms the gate. The same job also runs the gateway
 header-lockstep test (`TestUntrustedHeaders_SupersetOfStampedHeaders`), which
 keeps the gateway's stamped identity headers a subset of the headers it strips;
 the accounts-side companion (`TestUntrustedHeaders_SupersetOfTrustedHeaders`)
@@ -259,8 +335,9 @@ provider may retain it without interpreting or reconstructing its contents.
 
 ## Staying ahead of newly-published advisories
 
-The vulnerability audit (phase 6, and the first-party gate in `ci.yml`) fails
-closed on every high-severity finding in the production dependency tree. Because
+The first-party vulnerability gate (see [Vulnerability policy and its one
+exemption](#vulnerability-policy-and-its-one-exemption)) fails closed on every
+high-severity finding in the production dependency tree. Because
 that check reads the live advisory database, a freshly published advisory on an
 already-pinned transitive can redden an otherwise-clean release at tag time even
 though the lockfile never changed (browserslist did exactly this before #400).
@@ -302,8 +379,9 @@ rather than pin an untagged revision.
 Two independent tag tracks share this repository, on two different version
 axes. They are not interchangeable:
 
-- **Deploy counter** — the `v0.0.x` tag series lodestar and the per-environment
-  deploy jobs adopt via `codefly sync module --to <tag>`. The tag itself is the
+- **Deploy counter** — the `v0.0.x` tag series a downstream deployment
+  repository and its per-environment deploy jobs adopt via `codefly sync module
+  --to <tag>`. The tag itself is the
   counter; `agent.codefly.yaml`'s `version:` is the module agent's own version
   and may lag the tags (it is bumped when the agent changes, not on every tag).
 - **Immutable module package** — `module-package/vX.Y.Z`, sourced from
