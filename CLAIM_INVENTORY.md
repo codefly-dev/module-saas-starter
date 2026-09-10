@@ -106,21 +106,20 @@ means concretely:
 - Every document, comment and test this change touches was reviewed against the
   rule, and the two violations found in them — one in MODULE.md, one in
   RELEASE_GATES.md — were replaced with generic descriptions.
-- **The repository-wide scrub is not done here**, and the rule is therefore
-  violated today — see the row below, which is the register's own record of it.
-  Doing the scrub inside this change would bury the audit corrections in a
-  rename.
+- **The repository-wide scrub was not done here.** Doing it inside this change
+  would have buried the audit corrections in a rename, so it landed separately
+  as #569, which added the gate and scrubbed the tree. The row below records the
+  state now, not the state as of this change.
 
 | Claim | Source | Executable evidence | Status | Owner |
 | --- | --- | --- | --- | --- |
-| The repository names no real customer, partner, employer, or downstream consumer | AGENTS.md § Naming and confidentiality | **none — no gate exists in this tree.** A mechanical scan reports on the order of 390 violating lines across dozens of files. Do not read the rule as enforced | known drift, filed | #569 |
+| The repository names no real customer, partner, employer, or downstream consumer | AGENTS.md § Naming and confidentiality | `node module/tools/naming-gate.mjs check` scans every file's contents *and* its path, holding its forbidden terms as digests rather than literals; `naming-gate.test.mjs` covers the matcher and asserts the shipped tree is clean. Both run in the `base-integrity` job | **implemented** | #569 |
 
-  The gate for it is written but unmerged: it lives on the local branch
-  `chore/naming-gate-generic-placeholders` (commit `8481d1b0` — a
-  `module/tools/naming-gate.mjs` holding its forbidden terms as digests rather
-  than literals, plus ~68 files already scrubbed) with no pull request open.
-  Nothing under `module/tools/` in this tree provides it. That branch needs a PR
-  rather than a second gate.
+  The gate runs as a step of the `base-integrity` job rather than as a job of
+  its own, so it is mandatory through that job and adds no row to
+  § Repository-specific gates. Note the limit of what it establishes: it scans
+  the working tree, so it does not un-publish the names already in this
+  repository's git history or in its public issues. Both remain open.
 - No public denylist of real names is introduced by this file or by anything in
   this change, and no functional or operational identifier was renamed — a
   configuration key such as `SIDECAR_REVOCATION_FAIL_OPEN` keeps its name until a
