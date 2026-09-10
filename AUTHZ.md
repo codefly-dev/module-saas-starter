@@ -345,6 +345,90 @@ invalidated. Do not fold this into application startup or into the removal path:
 a background sweep that deletes authority rows on its own is a larger hazard
 than the orphans it collects.
 
+## Administrative continuity, and what `organizations.owner_id` is not
+
+An organization that has an administrative membership keeps one. That is the
+whole invariant, and it is one rule rather than one rule per verb: removing the
+last owner/admin and demoting the last owner/admin are the same violation and
+return the same error, `business.ErrOrgAdminContinuity`.
+
+`business.OrgAdminContinuity` states it once, over a roster and a proposed
+change (`""` projects a removal). Every writer of `organization_members`
+evaluates it:
+
+| Entry point | Where | Can change administrative eligibility |
+| --- | --- | --- |
+| `Service.AddOrgMember` | `pkg/business/organizations.go` | Yes — it is an upsert. `ON CONFLICT DO UPDATE SET role` makes it the demotion path, and its seat check deliberately admits an update on a full organization, so nothing else was stopping it. |
+| `Service.RemoveOrgMember` | `pkg/business/organizations.go` | Yes |
+| `Service.ConvergeFixtureOrgMember` | `pkg/business/organizations.go` | Yes. Seeding only adds, so a well-formed fixture never sees the rule; one that would demote an organization's last administrator fails the boot rather than converging an organization nobody can administer. |
+| `Service.AcceptInvitation` | `pkg/business/invitations.go` | Yes — the invitation's role is authoritative and overwrites a membership the accepting user already holds. |
+| `Resolver.acceptInvitation` | `pkg/auth/pg/resolver.go` | Yes, and it is the one outside the service layer: a raw membership upsert at *authentication* time. An invariant enforced only in `pkg/business` would not exist here. |
+| Whole-organization deletion | none in the application | No path in the service deletes an organization. A `DELETE FROM organizations` removes the memberships by `ON DELETE CASCADE` without passing through any of the above, so the invariant does not stand in the way of deleting an organization — it constrains membership mutation on a live one. |
+
+An organization that has **no** administrator to begin with is exempt. The rule
+refuses to remove the last administrator; it does not refuse to operate on an
+organization that already has none. Enforcing the stronger form would make
+historical zero-administrator rows unrepairable — including by an operator
+adding an administrator back. Those rows are reported, not invented: see the
+membership integrity diagnostic rather than granting anyone authority from a
+migration.
+
+### The lock is the load-bearing part
+
+Reading the roster inside a transaction does not serialize it. Two transactions
+in `READ COMMITTED` — what `WithOrgTx` opens — can each observe the same two
+administrators and each remove one, and both commit. The guard has to run under
+a lock that both contenders take, on a key that both contenders name.
+
+`Store.LockOrgAdministration(ctx, orgID)` is that key
+(`pg_advisory_xact_lock` over `administration:<org>`). It is deliberately
+coarser than `LockOrgMembership(ctx, orgID, userID)`: the invariant is a
+property of the organization, so a per-member key puts the two transactions
+that violate it on *different* keys and serializes nothing. The per-member lock
+still exists and still does its own job — excluding a concurrent team write for
+the same pair — so a path may hold both.
+
+**Lock order, for anything that takes more than one:**
+
+```
+LockOrgAdministration   ("administration:<org>")
+  -> LockOrgMembership  ("membership:<org>:<user>")
+    -> LockEntitlementQuota  ("cardinality:<org>:<feature>")
+```
+
+`AddOrgMember` holds the first and third; `RemoveOrgMember` holds the first and
+second. All three are `pg_advisory_xact_lock(hashtextextended(...))` in
+PostgreSQL's single-`bigint` advisory space, distinct from the `(int, int)`
+space scope-node registration uses. Take them in that order and there is no
+cycle to deadlock on.
+
+The pre-authentication resolver takes the same `administration:<org>` key
+directly on its own transaction, so it serializes against the service layer
+rather than only against itself. It runs `SERIALIZABLE` with a retry loop, so a
+roster read that its snapshot made stale aborts and retries rather than
+committing on stale information.
+
+### `organizations.owner_id` is provenance, not authority
+
+`owner_id` is the owner of record. It is written exactly once, when the
+organization is created, and it is read for display and to address the billing
+contact. **No authorization decision anywhere derives from it** — every one
+resolves against `organization_members`. Installation ownership eligibility,
+organization permission checks, and the admin gates all read the live
+membership row.
+
+So: **ownership transfer is not required before the owner of record is removed
+or demoted**, and the two are deliberately not reconciled. Demoting the owner of
+record strips their authority immediately, because their authority was never in
+`owner_id` to begin with; `owner_id` keeps recording who created the
+organization, which is a fact about the past that a role change does not make
+untrue. Silently repointing it at another member would move a record of
+accountability to someone who never accepted it, and doing the reverse — making
+`owner_id` confer authority — would grant a permission no one granted.
+
+The two can therefore disagree on live data, and that disagreement is reported
+by the membership integrity diagnostic rather than repaired in place.
+
 ## Scoped roles downstream: two paths, and when to use which
 
 A product is many backend services, each with per-module roles. A downstream

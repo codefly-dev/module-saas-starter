@@ -157,6 +157,19 @@ type Store interface {
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
 	OrgMemberExists(ctx context.Context, orgID string, userID string) (bool, error)
 	RemoveOrgMember(ctx context.Context, orgID string, userID string) error
+	// LockOrgAdministration serializes every change to one organization's
+	// administrative standing, whichever member it names: a role upsert, a
+	// demotion, or a removal. Callers take it before reading the roster the
+	// decision depends on and hold it for the rest of the transaction, so two
+	// requests cannot each observe the same two administrators and each
+	// remove one.
+	//
+	// Deliberately coarser than LockOrgMembership: the invariant is a property
+	// of the organization, not of one member, so a per-pair lock does not
+	// serialize the contenders that violate it. Lock order when a path takes
+	// more than one: LockOrgAdministration -> LockOrgMembership ->
+	// LockEntitlementQuota.
+	LockOrgAdministration(ctx context.Context, orgID string) error
 	// LockOrgMembership serializes every mutation of one (organization, user)
 	// authority pair. Callers hold it for the whole transaction that writes
 	// the membership row and the team memberships that depend on it, so an

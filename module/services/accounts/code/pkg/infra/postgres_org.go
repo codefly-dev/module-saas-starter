@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"time"
@@ -130,6 +131,28 @@ func (s *PostgresStore) OrgMemberExists(ctx context.Context, orgID string, userI
 		)`, orgID, userID,
 	).Scan(&exists)
 	return exists, err
+}
+
+// LockOrgAdministration serializes every change to one organization's
+// administrative standing — a role upsert, a demotion, or a removal, whichever
+// member it names. It must be taken in the same transaction as the roster read
+// the decision rests on and the membership write that follows; otherwise two
+// transactions each observe the same administrators and each remove one.
+//
+// Lock order when a path takes more than one: LockOrgAdministration ->
+// LockOrgMembership -> LockEntitlementQuota.
+func (s *PostgresStore) LockOrgAdministration(ctx context.Context, orgID string) error {
+	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+		return errors.New("org administration lock requires a tenant transaction")
+	}
+	_, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		business.OrgAdministrationLockKey(orgID),
+	)
+	if err != nil {
+		return wool.Get(ctx).In("LockOrgAdministration").Wrapf(err, "failed to lock org administration")
+	}
+	return nil
 }
 
 // LockOrgMembership serializes every mutation of one (organization, user)

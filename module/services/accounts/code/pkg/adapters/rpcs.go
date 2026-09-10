@@ -34,10 +34,25 @@ func quotaStatusError(err error) error {
 	return err
 }
 
+// orgMembershipStatusError maps the administrative-continuity invariant to a
+// precondition failure. A rejected demotion is not a quota problem and not an
+// internal one: the caller asked for a state the organization may not be left
+// in, and the message says which.
+func orgMembershipStatusError(err error) error {
+	if errors.Is(err, business.ErrOrgAdminContinuity) {
+		// The sentinel's own text, not the wrapped chain: the message is shown
+		// to the caller, and the internal call path is not theirs to read.
+		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
+	}
+	return quotaStatusError(err)
+}
+
 func invitationStatusError(err error) error {
 	switch {
 	case err == nil:
 		return nil
+	case errors.Is(err, business.ErrOrgAdminContinuity):
+		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
 	case errors.Is(err, business.ErrInvitationUnavailable):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, business.ErrInvitationEmailMismatch):
@@ -345,7 +360,7 @@ func (s *OrgServer) AddMember(ctx context.Context, req *gen.AddOrgMemberRequest)
 		return nil, err
 	}
 	if err := service.AddOrgMember(ctx, actorID, req); err != nil {
-		return nil, quotaStatusError(err)
+		return nil, orgMembershipStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -362,7 +377,7 @@ func (s *OrgServer) RemoveMember(ctx context.Context, req *gen.RemoveOrgMemberRe
 		return nil, err
 	}
 	if err := service.RemoveOrgMember(ctx, actorID, req); err != nil {
-		return nil, err
+		return nil, orgMembershipStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }

@@ -555,6 +555,43 @@ func (r *Resolver) requireApprovedWaitlist(ctx context.Context, tx pgx.Tx, c *au
 	return nil
 }
 
+// requireOrgAdminContinuity applies the organization's administrative-continuity
+// invariant to a membership upsert this resolver performs itself. The rule lives
+// in business.OrgAdminContinuity; what is repeated here is only the roster read,
+// because pre-authentication resolution holds a raw transaction rather than the
+// tenant store the service layer writes through.
+//
+// The advisory lock is the same one the service takes, so the two writers
+// serialize against each other rather than each against itself.
+func requireOrgAdminContinuity(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UUID, role string) error {
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		business.OrgAdministrationLockKey(orgID.String()),
+	); err != nil {
+		return fmt.Errorf("pgauth: lock org administration: %w", err)
+	}
+	rows, err := tx.Query(ctx,
+		`SELECT user_id, role FROM organization_members WHERE org_id = $1`, orgID)
+	if err != nil {
+		return fmt.Errorf("pgauth: load org roster: %w", err)
+	}
+	defer rows.Close()
+
+	roster := map[string]string{}
+	for rows.Next() {
+		var member uuid.UUID
+		var held string
+		if err := rows.Scan(&member, &held); err != nil {
+			return fmt.Errorf("pgauth: scan org roster: %w", err)
+		}
+		roster[member.String()] = held
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("pgauth: read org roster: %w", err)
+	}
+	return business.OrgAdminContinuity(roster, userID.String(), role)
+}
+
 // acceptInvitation joins userID to the invitation's org with the invitation's
 // role and marks the invitation accepted. The membership upsert mirrors
 // AddOrgMember: the accepted invitation's role is authoritative, so it wins over
@@ -565,6 +602,9 @@ func (r *Resolver) acceptInvitation(
 	invID, orgID, userID uuid.UUID,
 	role string,
 ) error {
+	if err := requireOrgAdminContinuity(ctx, tx, orgID, userID, role); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO organization_members (org_id, user_id, role)
 		VALUES ($1, $2, $3)
