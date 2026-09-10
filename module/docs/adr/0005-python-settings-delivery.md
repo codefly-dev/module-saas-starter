@@ -102,7 +102,7 @@ set and buy nothing. Rejected.
 ### Q3 — Where do the renderers and runtimes live? The shared SDK (saas-sdk-go#3)
 
 The renderers and runtimes are the same for every module. Leaving them in
-saas-starter forces Warden and any other product to re-implement them, which is
+saas-starter forces every consuming product to re-implement them, which is
 where three-way drift (Go/TS/Python × N modules) would start. Move them into
 the shared SDK (`saas-sdk-go`, whose plan already records "go/python first"),
 version and publish them, and have modules depend on them. Core's

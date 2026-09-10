@@ -121,7 +121,7 @@ to first-class kit components de-duplicates real code rather than speculating.
 ## Decisions
 
 The issue's four open questions. The two the catalog was *gated* on are now
-decided: CSS ownership resolved to host authority (core-solutions#48) and sealing
+decided: CSS ownership resolved to host authority and sealing
 landed (#450) — so they have answers rather than options.
 
 ### D1. Primitive ownership
@@ -140,7 +140,7 @@ keeps zero primitive *definitions*.
 
 ### D2. CSS ownership
 
-**Settled by core-solutions#48: the host is the single CSS authority.** The host
+**Settled: the host is the single CSS authority.** The host
 builds the one compiled stylesheet and owns the `:root` token *values* (the skin);
 the kit and every module/remote ship **no** CSS of their own and are not expected to
 render standalone. (#448 tracked the alternative — the kit shipping its own compiled

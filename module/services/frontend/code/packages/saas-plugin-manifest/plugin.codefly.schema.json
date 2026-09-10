@@ -2,7 +2,7 @@
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"$id": "https://codefly.dev/schema/plugin.codefly.v1.json",
 	"title": "plugin.codefly.yaml",
-	"description": "Unified Codefly plugin manifest spanning backend services, API compatibility, events, frontend contributions, required platform capabilities, permissions, entitlements, configuration, migrations, egress, lifecycle, and integrity. The identity/services/api/events/ui/needs/permissions/lifecycle facts project onto obin's lodestar SolutionSpec.",
+	"description": "Unified Codefly plugin manifest spanning backend services, API compatibility, events, frontend contributions, required platform capabilities, permissions, entitlements, configuration, migrations, egress, lifecycle, and integrity. The identity/services/api/events/ui/needs/permissions/lifecycle facts project onto a consuming platform's SolutionSpec.",
 	"type": "object",
 	"additionalProperties": false,
 	"required": ["apiVersion", "kind", "metadata"],

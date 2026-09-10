@@ -72,9 +72,9 @@ func TestServiceCatalogProceduresAppearInAPIContractCatalog(t *testing.T) {
 // holds module.codefly.yaml. It walks up rather than deriving the module from
 // the repository root, because these tests also run wherever a consumer base-
 // syncs this module to: module/ here, the root in a flat layout, and
-// modules/<name>/ in an aggregator such as lodestar. Resolving "repository root
+// modules/<name>/ in an aggregator workspace. Resolving "repository root
 // + module/" broke the aggregator case by falling back to the workspace root,
-// which holds no contracts/ or services/ tree (lodestar#214).
+// which holds no contracts/ or services/ tree.
 func findModuleDir(t *testing.T) string {
 	t.Helper()
 	directory, err := os.Getwd()

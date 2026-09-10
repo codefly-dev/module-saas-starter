@@ -4,7 +4,7 @@ Status: active (`FP-008`, `FP-030`, `FP-031`, `FP-032`, `FP-033`, `FP-034`, `FP-
 Route: `/api/plugins/{plugin}/{alias}/{relative-path}`
 
 This is the generic same-origin transport for trusted compile-time frontend
-plugins. Warden, Mind, Codefly-owned products, and future consumers use the same
+plugins. Consuming solutions, Codefly-owned products, and future consumers use the same
 route and policy. It is not a general reverse proxy and does not accept a URL,
 host, port, module, service, endpoint, or upstream prefix from a browser.
 

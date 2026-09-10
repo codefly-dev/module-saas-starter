@@ -3,7 +3,7 @@
 The SaaS starter is a generic host application. It supplies identity-aware
 shells, extension outlets, composition, presentation policy, and server-owned
 transport. A product package supplies its domain UI and backend requirements.
-Warden is the first reference consumer, not the platform shape.
+The first consuming solution is a reference consumer, not the platform shape.
 
 ## Ownership
 

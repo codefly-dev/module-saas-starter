@@ -3,7 +3,7 @@
 Status: active. The v1 namespace migration landed on 2026-07-13.
 
 This module uses one stable, product-neutral protobuf namespace family. The
-namespace is intentionally independent of a deployment name (`warden`, `mind`,
+namespace is intentionally independent of a deployment name (`acme`, `example`,
 or a customer application) so generated contracts remain reusable when Codefly
 composes the starter into another workspace.
 

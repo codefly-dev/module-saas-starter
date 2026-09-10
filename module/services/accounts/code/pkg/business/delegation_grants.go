@@ -12,7 +12,7 @@
 //     the pattern auto-issue without per-call human approval.
 //
 // This file is the business-layer surface the codefly host
-// (Mind / CLI / gateway) calls into via the M7 RPCs:
+// (an aggregating host / CLI / gateway) calls into via the M7 RPCs:
 // RequestDelegation, WaitForDelegation, DecideDelegation,
 // ListPendingDelegations.
 //

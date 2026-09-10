@@ -1,0 +1,119 @@
+{
+  "schema": "saas.naming.terms.v1",
+  "comment": "SHA-256 digests of the lowercased terms naming-gate.mjs forbids. Digests, never literals: a plaintext list would itself be the worst violation in the tree, enumerating every private product and the consumer org in a public repository (AGENTS.md line 35 binds this file too). This is not secrecy — short digests are dictionary-attackable — it only avoids STATING the relationship. Add a term with `node tools/naming-gate.mjs hash <term>`. Modes are documented in naming-gate.mjs; `note` must never hint at the term itself. Deliberately NOT forbidden: an ordinary common noun that also happens to name a consumer repository. It carries no identifying power on its own — a reader learns nothing about who the consumer is — while the CI variable and secret named after it are configured in repository settings, so renaming them here would break the release announcement without removing any real signal. Prose that pointed at the specific repository was genericized instead.",
+  "terms": [
+    {
+      "h": "2a11dcb5483e0ac9c4e05ffafe30e02f94a4c5804eb03c0068abccd94417cbd3",
+      "modes": [
+        "word"
+      ],
+      "note": "consumer organisation"
+    },
+    {
+      "h": "210c02b1472d4b8d7d2cf4b57f2e6cf646cc11916ae6ba8c576dbb5143c9b949",
+      "modes": [
+        "word"
+      ],
+      "note": "consumer repository"
+    },
+    {
+      "h": "8bdb247a2a76e166450e193f185f0deeceedee6550589de2cd964e7ce36c9de6",
+      "modes": [
+        "word"
+      ],
+      "note": "private first-party product"
+    },
+    {
+      "h": "141aebd4d7d4874f069ffe0bd79f2d4652823cec43a12b421a86c0164aca922e",
+      "modes": [
+        "slug"
+      ],
+      "note": "consumer repository; parts too generic to forbid alone"
+    },
+    {
+      "h": "0f50542ce3d9480ce6fb0b912faf0d0663c191c521110cfee42b99ae8ca9f08f",
+      "modes": [
+        "slug"
+      ],
+      "note": "consumer repository; parts too generic to forbid alone"
+    },
+    {
+      "h": "b909e72ed5f5522cac0458a815d0b137848494cf2e80ce1966ef8b6b528c63dd",
+      "modes": [
+        "slug"
+      ],
+      "note": "consumer repository"
+    },
+    {
+      "h": "1c48f6310f1c849b4ac338d340ee667bf3b6d59b589348eaa2b8a0698ff73481",
+      "modes": [
+        "proper",
+        "compound"
+      ],
+      "note": "private first-party product; collides with an English word, so proper-noun or in-slug only"
+    },
+    {
+      "h": "287782ef42356ef3d6551590f1ef0117b71d876df0f9b3eb58d088864770c74c",
+      "modes": [
+        "proper"
+      ],
+      "note": "private first-party product; collides with a load-balancer constant, so proper-noun only"
+    },
+    {
+      "h": "c7818404a4bc58d3cb02267b6bc180c7ee53c5240d5d6796462a3fa5553f4b79",
+      "modes": [
+        "word"
+      ],
+      "note": "real person"
+    },
+    {
+      "h": "c840743484adf9c3ebdbaae8adebbfc43af179f74d9f68d9d86d3cc655e2a0ff",
+      "modes": [
+        "word"
+      ],
+      "note": "real person, handle form"
+    },
+    {
+      "h": "845626f50590e6051e200118054c325cb5d1349d1195d9add0379b43e8f6ad1b",
+      "modes": [
+        "word"
+      ],
+      "note": "customer"
+    },
+    {
+      "h": "f2d4c691b79eeb2ec4240a84a092f69bc5c83704dea546c119ef0b6e9d733126",
+      "modes": [
+        "word"
+      ],
+      "note": "customer"
+    },
+    {
+      "h": "4fca037bed22d47218c74311861ae185fd2a0f314d379ac9afcdec541f88d53d",
+      "modes": [
+        "word"
+      ],
+      "note": "customer"
+    },
+    {
+      "h": "7036302c1270a1045e885c662ec3f9e6d3522902cff51bdb2bddf3de2ff7c574",
+      "modes": [
+        "word"
+      ],
+      "note": "customer"
+    },
+    {
+      "h": "d66d4cdb5dc5010c299b22d0e2474f90a0c5e75fb484943ef1f272b1c06078ee",
+      "modes": [
+        "word"
+      ],
+      "note": "customer"
+    },
+    {
+      "h": "0e6ca074e9c82442761f5108f08b282ccb72b70e9ccd3c0ceacea1f0e0fa1464",
+      "modes": [
+        "phrase"
+      ],
+      "note": "customer, spaced form; no single distinctive word"
+    }
+  ]
+}

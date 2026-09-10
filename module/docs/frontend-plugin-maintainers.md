@@ -12,15 +12,16 @@ installing a product does not transfer its domain code to the Starter team.
 
 | Surface | Repository/path | Maintainer | Required responsibility |
 | --- | --- | --- | --- |
-| Contract and composition | `module-saas-starter/module/services/frontend/code/packages/saas-plugin-contract` | `@AntoineToussaint` | Contract major, SemVer, validation, public export map, migration impact. |
-| React composition/runtime | `module-saas-starter/module/services/frontend/code/packages/saas-plugin-react` | `@AntoineToussaint` | Component-registration integrity, React peer line, injected runtime safety, public hooks, package contents. |
-| Generic host boundary | Starter composition, plugin BFF, service dependency compiler, and canonical frontend-plugin docs | `@AntoineToussaint` | Host isolation, auth/tenant transport, install lifecycle, consumer-neutral behavior. |
-| First-party Warden package | `warden-platform/modules/saas/services/frontend/code/packages/warden-frontend-plugin` | `@AntoineToussaint` until the Warden repository records a narrower product team | Warden domain contract, generated client, repository/controller/UI, backend compatibility, product tests. |
+| Contract and composition | `module-saas-starter/module/services/frontend/code/packages/saas-plugin-contract` | Starter maintainers | Contract major, SemVer, validation, public export map, migration impact. |
+| React composition/runtime | `module-saas-starter/module/services/frontend/code/packages/saas-plugin-react` | Starter maintainers | Component-registration integrity, React peer line, injected runtime safety, public hooks, package contents. |
+| Generic host boundary | Starter composition, plugin BFF, service dependency compiler, and canonical frontend-plugin docs | Starter maintainers | Host isolation, auth/tenant transport, install lifecycle, consumer-neutral behavior. |
+| First-party consumer package | The consuming solution's own frontend plugin package, in that consumer's repository | The consumer's product team | Consumer domain contract, generated client, repository/controller/UI, backend compatibility, product tests. |
 
-The Starter repository enforces its rows in `.github/CODEOWNERS`. The Warden
-integration is not complete until the Warden repository protects its product
-package path in its own `.github/CODEOWNERS`; that consumer-side change belongs
-to FP-005/FP-010 and must not be simulated by a Starter rule.
+The named accounts behind these rows live in `.github/CODEOWNERS`, which is the
+enforcing surface; this table names surfaces and responsibilities, not people.
+A consumer integration is not complete until that consumer's repository protects
+its product package path in its own `.github/CODEOWNERS`; that consumer-side
+change belongs to FP-005/FP-010 and must not be simulated by a Starter rule.
 
 Planned packages such as `@codefly/saas-plugin-testkit` remain unpublished and
 have no active ownership surface. Activation requires a named maintainer and a

@@ -83,7 +83,7 @@ describe("frozen public import map", () => {
 			.map((name) => readFileSync(join(packageDir, "src", name), "utf8"))
 			.join("\n");
 		expect(source).not.toMatch(
-			/(?:from\s+["'](?:@\/|react["'/]|next\/)|Warden|Mind)/,
+			/from\s+["'](?:@\/|react["'/]|next\/)/,
 		);
 		const packageJSON = JSON.parse(
 			readFileSync(join(packageDir, "package.json"), "utf8"),

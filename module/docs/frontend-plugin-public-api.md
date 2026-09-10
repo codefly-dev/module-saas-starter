@@ -6,7 +6,7 @@ added in `FP-006`/`FP-007`, `FP-043`, and `FP-047`/`FP-048`
 Machine-readable map: `services/frontend/code/frontend-plugin-public-api.json`
 Ownership: [frontend-plugin-maintainers.md](frontend-plugin-maintainers.md)
 
-This import map is product-neutral. Warden, Mind, Codefly-owned products, and
+This import map is product-neutral. Consuming solutions, Codefly-owned products, and
 other consumers use the same package entry points and are subject to the same
 private-host restrictions.
 
@@ -175,7 +175,7 @@ the Starter host and installed product plugins. It binds a product's generated
 protobuf `Settings` and patch types once, then supplies typed fields, presence
 and default handling, recursive sibling-preserving patch composition, and
 field-mask reset requests. It has no generated-schema, React, Next.js, host, or
-product dependency. A product such as Warden owns its concrete settings proto
+product dependency. A consuming product owns its concrete settings proto
 and generated bindings; changing that schema never forks this runtime.
 
 ## Generic service requirements

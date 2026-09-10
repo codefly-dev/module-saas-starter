@@ -301,7 +301,7 @@ func tokenFileBeforeConnect() beforeConnectHook {
 // be cancelled portably; spawning a goroutine per connection would only return
 // early while leaking blocked readers during a storage failure. The projected
 // file is local, so check cancellation before and after the bounded read instead.
-// The sidecar contract (infra-base #59) is to publish each new token with an
+// The sidecar contract (platform infrastructure) is to publish each new token with an
 // atomic rename; without it a read could observe a partial write, which would
 // surface as an authentication failure.
 func readTokenFile(ctx context.Context, path string) (string, error) {

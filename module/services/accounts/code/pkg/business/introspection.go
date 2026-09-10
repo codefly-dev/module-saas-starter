@@ -23,7 +23,7 @@ const ServiceVersion = "0.4.0"
 //
 // Each codefly service owns its own proto and exposes its own
 // IntrospectionService. A "module-level" view of saas-starter is an
-// AGGREGATION concern: a CLI/gateway/Mind walks every service in
+// AGGREGATION concern: a CLI/gateway/aggregating host walks every service in
 // the module and merges each service's GetServiceInfo response.
 // That aggregator is intentionally out of scope here.
 //

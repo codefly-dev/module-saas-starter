@@ -14,11 +14,11 @@ Settings are a SaaS Starter capability, not a Codefly SDK capability.
 - Generated Go, TypeScript, and Python protobuf files are the concrete
   application model.
 
-A product such as Warden owns the concrete proto at that same module overlay
+A consuming product owns the concrete proto at that same module overlay
 path and generates its Go and TypeScript bindings from the product's actual
 settings. The generic runtimes are copied from SaaS Starter unchanged. They
 accept generated protobuf message types and contain no import of a generated
-Starter or Warden schema. Product-specific fields belong in the product proto
+Starter or consumer schema. Product-specific fields belong in the product proto
 and its typed field catalog; they must never be added to Codefly SDK or to the
 generic runtime.
 

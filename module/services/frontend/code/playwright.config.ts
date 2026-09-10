@@ -3,7 +3,7 @@ import { resolveServiceAddressSync } from "codefly";
 
 // Resolve EVERY address from codefly — NEVER hardcode a port. Ports are
 // workspace+module+service hashes, so they differ per consumer (the canonical
-// starter vs warden vs mind); a hardcoded port only ever works in the one
+// starter vs one consuming solution vs another); a hardcoded port only ever works in the one
 // workspace it was authored in. The e2e requires codefly (globalSetup brings
 // the stack up via withDependencies), so if resolution fails we THROW rather
 // than fall back to a wrong guess.

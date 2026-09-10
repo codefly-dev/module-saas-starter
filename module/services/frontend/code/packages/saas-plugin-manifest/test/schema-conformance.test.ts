@@ -45,7 +45,7 @@ const OWNED_FIELD_VIOLATIONS: Record<
 		rec(m.metadata).version = "1.4";
 	},
 	"bad name": (m) => {
-		rec(m.metadata).name = "Warden Guardrails";
+		rec(m.metadata).name = "Acme Guardrails";
 	},
 	"bad publisher": (m) => {
 		rec(m.metadata).publisher = "not a domain";

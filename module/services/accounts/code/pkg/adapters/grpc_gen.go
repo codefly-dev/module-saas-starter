@@ -107,7 +107,7 @@ type PlatformAdminServer struct {
 // IntrospectionServer handles IntrospectionService RPCs — the
 // service-level catalog (RPCs, RBAC vocab, RLS tables, scopes).
 // Public, no auth. Scoped to THIS service (api); module-level view
-// is an aggregation concern (CLI / gateway / Mind).
+// is an aggregation concern (CLI / gateway / an aggregating host).
 type IntrospectionServer struct {
 	gen.UnsafeIntrospectionServiceServer
 }

@@ -34,18 +34,18 @@ func TestGenerateBundleGoldenShapes(t *testing.T) {
 		golden    string
 	}{
 		{
-			name:      "warden",
-			workspace: "warden-control",
+			name:      "acme",
+			workspace: "acme-control",
 			module:    "identity",
 			services:  []string{"accounts", "auth-gateway", "cache", "frontend", "object-storage", "store", "vault"},
-			golden:    "testdata/warden-bundle.golden.json",
+			golden:    "testdata/acme-bundle.golden.json",
 		},
 		{
-			name:      "mind",
-			workspace: "mind-control",
+			name:      "example",
+			workspace: "example-control",
 			module:    "users",
 			services:  []string{"store", "vault", "accounts", "cache", "frontend", "forge-edge", "object-storage"},
-			golden:    "testdata/mind-bundle.golden.json",
+			golden:    "testdata/example-bundle.golden.json",
 		},
 	}
 
@@ -88,7 +88,7 @@ func TestGenerateBundleGoldenShapes(t *testing.T) {
 
 func TestIdentityNeutralBaseDefersNamespaceAndIstioHost(t *testing.T) {
 	t.Parallel()
-	root, moduleDir := writeModuleFixture(t, "warden-control", "identity", []string{"accounts", "frontend"})
+	root, moduleDir := writeModuleFixture(t, "acme-control", "identity", []string{"accounts", "frontend"})
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
@@ -1241,29 +1241,29 @@ func TestGeneratedMarketingIngressUsesExactEnvironmentRoutes(t *testing.T) {
 	}
 }
 
-func TestMindRenderUsesExactServiceGraphRoutesAndPolicies(t *testing.T) {
+func TestExampleRenderUsesExactServiceGraphRoutesAndPolicies(t *testing.T) {
 	t.Parallel()
 	services := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
-	root, moduleDir := writeModuleFixture(t, "mind-control", "users", services)
-	writeMindTopology(t, moduleDir)
+	root, moduleDir := writeModuleFixture(t, "example-control", "users", services)
+	writeExampleTopology(t, moduleDir)
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
 	}
 	workspace.Environments[0].Ingress = []environmentIngressRoute{{
 		Name: "product", Service: "forge-edge", Endpoint: "rest",
-		Hosts: []string{"app.mind.localhost"},
+		Hosts: []string{"app.example.localhost"},
 	}}
 	workspace.Environments[1].Ingress = []environmentIngressRoute{{
 		Name: "product", Service: "forge-edge", Endpoint: "rest",
-		Hosts: []string{"app.mind.example.com"},
+		Hosts: []string{"app.example.com"},
 	}}
 
 	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
 		t.Fatal(err)
 	}
-	assertMindRouteAndPolicies(t, moduleDir, "local", "app.mind.localhost", false)
-	assertMindRouteAndPolicies(t, moduleDir, "aws", "app.mind.example.com", true)
+	assertExampleRouteAndPolicies(t, moduleDir, "local", "app.example.localhost", false)
+	assertExampleRouteAndPolicies(t, moduleDir, "aws", "app.example.com", true)
 }
 
 func TestManagedHandoffUsesExternalReferencesWithoutSecretValues(t *testing.T) {
@@ -1892,14 +1892,14 @@ func appendWorkspace(t *testing.T, root, extra string) {
 	}
 }
 
-func writeMindTopology(t *testing.T, moduleDir string) {
+func writeExampleTopology(t *testing.T, moduleDir string) {
 	t.Helper()
 	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
 module:
   name: users
   namespace: users
   service_entry: forge-edge
-  description: Mind users boundary
+  description: Example users boundary
 interface:
   - service: forge-edge
     endpoint: rest
@@ -1966,7 +1966,7 @@ services:
 `)
 }
 
-func assertMindRouteAndPolicies(
+func assertExampleRouteAndPolicies(
 	t *testing.T,
 	moduleDir,
 	environment,
@@ -2008,7 +2008,7 @@ func assertMindRouteAndPolicies(
 		destinationRuleHosts = append(destinationRuleHosts, ruleHost)
 	}
 	if route == nil {
-		t.Fatal("Mind bootstrap has no VirtualService")
+		t.Fatal("example bootstrap has no VirtualService")
 	}
 	expectedServices := []string{"accounts", "cache", "forge-edge", "frontend", "object-storage", "store", "vault"}
 	if aws {

@@ -137,4 +137,4 @@ mounted-file source → resolver → contract validator) in
   singleton, host and remotes resolve one shared instance and one shared token
   set, so a skin swap re-themes them together.
 
-Cross-ref: the token-contract decision recorded in obin-ai/core-solutions#49.
+Cross-ref: the token-contract decision recorded by the consuming organization.
