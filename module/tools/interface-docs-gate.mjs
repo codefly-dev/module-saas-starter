@@ -50,6 +50,7 @@ const INTERNAL_EXPOSURE = "EXPOSURE_INTERNAL";
 // service or a new module-facing capability has to be placed before it ships,
 // because an operation nobody has placed is an operation nobody has described.
 const SERVICE_CONTEXTS = {
+  AccessibleScopeService: "authorization",
   APIKeyService: "identity",
   AuditService: "audit",
   AuthService: "identity",

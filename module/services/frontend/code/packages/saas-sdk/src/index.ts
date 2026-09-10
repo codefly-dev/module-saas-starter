@@ -22,6 +22,12 @@ export type {
 //   import { accounts } from "@codefly-dev/saas-sdk";
 //   await accounts.New(gw).datasource().addGitHubSource({ orgId, repo });
 export { accounts } from "../generated/typescript/src/accounts_facade.js";
+export {
+	type AccessibleScope,
+	AccessibleScopeService,
+	type ListAccessibleScopesResponse,
+	type ListMyAccessibleScopesRequest,
+} from "../generated/typescript/src/gen/saas/accounts/v1/accessible_scopes_pb.js";
 export { AuditService } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 export {
 	type Datasource,

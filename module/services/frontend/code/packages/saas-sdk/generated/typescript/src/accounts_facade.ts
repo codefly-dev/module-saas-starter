@@ -1,5 +1,6 @@
 import type { Transport } from "@connectrpc/connect";
 import { createClient } from "@connectrpc/connect";
+import { AccessibleScopeService } from "./gen/saas/accounts/v1/accessible_scopes_pb";
 import { AuditService } from "./gen/saas/accounts/v1/audit_pb";
 import { DatasourceService } from "./gen/saas/accounts/v1/datasource_pb";
 import { WebhookService } from "./gen/saas/accounts/v1/webhooks_pb";
@@ -9,6 +10,7 @@ import { WebhookService } from "./gen/saas/accounts/v1/webhooks_pb";
 export const accounts = {
   New(transport: Transport) {
     return {
+      accessibleScope: () => createClient(AccessibleScopeService, transport),
       audit: () => createClient(AuditService, transport),
       datasource: () => createClient(DatasourceService, transport),
       webhook: () => createClient(WebhookService, transport),

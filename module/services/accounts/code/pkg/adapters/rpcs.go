@@ -673,34 +673,6 @@ func (s *PermServer) ListAccessibleScopes(ctx context.Context, req *gen.ListAcce
 	return service.ListAccessibleScopes(ctx, req)
 }
 
-// ListMyAccessibleScopes is the authenticated, caller-scoped companion to
-// ListAccessibleScopes: the subject is the bearer's own principal, so there is no
-// subject_id in the request and it can never disclose another principal's
-// boundaries. A normal org member reaches it through the gateway. It funnels into
-// the same business method as the internal RPC, so the two resolve the identical
-// grant + share union.
-func (s *PermServer) ListMyAccessibleScopes(ctx context.Context, req *gen.ListMyAccessibleScopesRequest) (*gen.ListAccessibleScopesResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-		return nil, err
-	}
-	return service.ListAccessibleScopes(ctx, &gen.ListAccessibleScopesRequest{
-		SubjectId:    actorID,
-		SubjectKind:  gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
-		ResourceType: req.ResourceType,
-		Action:       req.Action,
-		OrgId:        req.OrgId,
-		PageSize:     req.PageSize,
-		PageToken:    req.PageToken,
-	})
-}
-
 // The scope-tree and share management RPCs below are deliberately org-admin
 // scoped (requireRoleScope). The starter has no per-record ownership model, so
 // "the owner may share their own record" cannot be expressed yet; admin-only is

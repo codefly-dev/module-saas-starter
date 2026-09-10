@@ -131,6 +131,7 @@ const FORBIDDEN_MODULES = [
 	"saas/accounts/v1/billing_pb",
 	"saas/accounts/v1/api_keys_pb",
 	"saas/accounts/v1/introspection_pb",
+	"saas/accounts/v1/module_registration_pb",
 	"saas/accounts/v1/consent_pb",
 	"saas/accounts/v1/organizations_pb",
 	"saas/accounts/v1/teams_pb",
@@ -196,5 +197,17 @@ describe("@codefly-dev/saas-sdk published proto surface", () => {
 		const emitted = emittedPbModules();
 		const leaked = FORBIDDEN_MODULES.filter((module) => emitted.has(module));
 		expect(leaked).toEqual([]);
+	});
+
+	// The caller-scoped accessible-scopes read lives in its own proto file for
+	// exactly this reason: a consumer can name the boundaries the bearer may act
+	// on while `authorization_pb` — role assignment, scope grants, record shares,
+	// the decision oracles — stays out of the tarball. Asserting both halves here
+	// keeps the split from being undone by a facade widened back onto
+	// PermissionService, which would ship the admin shapes again.
+	it("ships the caller-scoped accessible-scopes surface without the admin authz surface", () => {
+		const emitted = emittedPbModules();
+		expect(emitted.has("saas/accounts/v1/accessible_scopes_pb")).toBe(true);
+		expect(emitted.has("saas/accounts/v1/authorization_pb")).toBe(false);
 	});
 });

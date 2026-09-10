@@ -1,10 +1,13 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "saas/accounts/v1/common.proto",
+    "title": "saas/policy/v1/options.proto",
     "version": "version not set"
   },
   "tags": [
+    {
+      "name": "AccessibleScopeService"
+    },
     {
       "name": "APIKeyService"
     },
@@ -127,8 +130,8 @@
     },
     "/v1/accessible-scopes": {
       "get": {
-        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal ListAccessibleScopes: a signed-in org member enumerates the scope\nnodes THEY may act on with (resource_type, action) through the gateway with a\nnormal bearer. The subject is the bearer's own principal — no subject_id in\nthe request — so it can never be an oracle about other principals. Same grant\n+ share union and same pagination as the internal RPC.",
-        "operationId": "PermissionService_ListMyAccessibleScopes",
+        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal PermissionService.ListAccessibleScopes: a signed-in org member\nenumerates the scope nodes THEY may act on with (resource_type, action)\nthrough the gateway with a normal bearer. The subject is the bearer's own\nprincipal — no subject_id in the request — so it can never be an oracle\nabout other principals. Same grant + share union and same pagination as the\ninternal RPC.",
+        "operationId": "AccessibleScopeService_ListMyAccessibleScopes",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -179,7 +182,7 @@
           }
         ],
         "tags": [
-          "PermissionService"
+          "AccessibleScopeService"
         ]
       }
     },

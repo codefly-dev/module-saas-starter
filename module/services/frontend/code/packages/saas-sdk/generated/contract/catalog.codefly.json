@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:fc379d37ba94988a62d960e90281b19d901e4722fc7d26d9381fe5da689145c8",
+      "digest": "sha256:085e801ea107f85647407de38adfbe5e6ed23fff057acf4b0f15c1a9d6b51936",
       "services": [
         {
           "name": "APIKeyService",
@@ -20,6 +20,13 @@
             "/saas.accounts.v1.APIKeyService/ListAPIKeys",
             "/saas.accounts.v1.APIKeyService/RevokeAPIKey",
             "/saas.accounts.v1.APIKeyService/ValidateAPIKey"
+          ]
+        },
+        {
+          "name": "AccessibleScopeService",
+          "fullName": "saas.accounts.v1.AccessibleScopeService",
+          "procedures": [
+            "/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes"
           ]
         },
         {
@@ -233,7 +240,6 @@
             "/saas.accounts.v1.PermissionService/DeleteRole",
             "/saas.accounts.v1.PermissionService/GrantScope",
             "/saas.accounts.v1.PermissionService/ListAccessibleScopes",
-            "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes",
             "/saas.accounts.v1.PermissionService/ListRoleAssignments",
             "/saas.accounts.v1.PermissionService/ListRoles",
             "/saas.accounts.v1.PermissionService/ListShares",
