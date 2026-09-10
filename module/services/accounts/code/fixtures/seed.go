@@ -19,6 +19,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -307,6 +308,12 @@ func validateFixture(f *fixtureFile) error {
 		if err != nil {
 			return fmt.Errorf("user[%d] (%s): %w", i, u.Email, err)
 		}
+		// The all-zero uuid is the absent-principal sentinel: a user seeded
+		// with it can never hold a session, and the failure would surface at
+		// login rather than here.
+		if id == uuid.Nil {
+			return fmt.Errorf("user[%d] (%s): id must not be the nil uuid", i, u.Email)
+		}
 		if previous, exists := userIDIndexes[id.String()]; exists {
 			return fmt.Errorf("user[%d] (%s): id %s collides with user[%d]", i, u.Email, id, previous)
 		}
@@ -421,12 +428,16 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			return nil, w.Wrapf(err, "cannot look up fixture user %s", u.Email)
 		}
 		if existing != nil {
+			// A database seeded before this user declared an id keeps the uuid
+			// it was given, and a seed cannot rewrite a primary key that other
+			// rows reference. Report the drift rather than refusing to run:
+			// configuration naming the declared id silently matches nothing
+			// here, but aborting would strand every such database instead.
 			if u.ID != "" && existing.Uuid != u.ID {
-				return nil, fmt.Errorf(
-					"fixture user %s declares id %s but identity (%s, %s) already resolves to %s: "+
-						"configuration naming the declared id would not match the seeded principal; "+
-						"reseed against a fresh database",
-					u.Email, u.ID, u.Provider, u.ProviderID, existing.Uuid)
+				w.Warn("fixture user id drift: this database keeps its own uuid, so configuration naming the declared id matches no principal here; reseed against an empty store to adopt the declared id",
+					wool.Field("email", u.Email),
+					wool.Field("declared_id", u.ID),
+					wool.Field("stored_id", existing.Uuid))
 			}
 			userIDs[u.Email] = existing.Uuid
 			// Fixtures are desired state, not create-only samples. Converge the

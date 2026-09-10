@@ -3,6 +3,7 @@
 import { z } from "zod";
 
 export const FixtureUserSchema = z.object({
+	id: z.string().uuid().optional(),
 	email: z.string().email(),
 	name: z.string().min(1),
 	role: z.string().min(1),

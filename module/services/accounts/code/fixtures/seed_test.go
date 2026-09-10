@@ -94,6 +94,9 @@ func TestValidateFixtureRejectsUnusableUserIDs(t *testing.T) {
 			{ID: "00000000-0000-7000-8000-0000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
 			{ID: "00000000-0000-7000-8000-0000000000A1", Email: "member@example.com", Provider: "email", ProviderID: "member"},
 		},
+		"nil sentinel": {
+			{ID: "00000000-0000-0000-0000-000000000000", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
 	}
 	for name, users := range tests {
 		t.Run(name, func(t *testing.T) {
