@@ -428,6 +428,16 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			require.Equal(t, "ALLOW", document.Spec["action"])
 			allowFound = true
 
+			// The gate selects one workload. A selector-less policy is a
+			// namespace-wide rule (the GitOps baseline's empty-ALLOW default-deny
+			// takes that shape) and is not this.
+			selector, ok := document.Spec["selector"].(map[string]any)
+			require.True(t, ok, "the reach gate must select a workload, not the namespace")
+			selectorLabels, ok := selector["matchLabels"].(map[string]any)
+			require.True(t, ok, "the reach gate must select by label")
+			require.Equal(t, "accounts", selectorLabels["app"],
+				"only the catalog owner carries a generated reach gate")
+
 			rule := document.Spec["rules"].([]any)[0].(map[string]any)
 			source := rule["from"].([]any)[0].(map[string]any)["source"].(map[string]any)
 			principals := source["principals"].([]any)
@@ -441,6 +451,15 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerIdentity(t *testing.T)
 			paths := rule["to"].([]any)[0].(map[string]any)["operation"].(map[string]any)["paths"].([]any)
 			require.Contains(t, paths, "/saas.accounts.v1.APIKeyService/ValidateAPIKey")
 			require.Contains(t, paths, "/saas.accounts.v1.UsageService/ConsumeUsage")
+			// EVERY gated path is a gRPC procedure, not only the two named above.
+			// The frontend's token-gated HTTP routes cannot be gated here: this
+			// policy is derived from authz-methods.json, and those paths sit on
+			// the public ingress port. See DEPLOYMENT_TOPOLOGY.md, "HTTP internal
+			// surfaces are not mesh-gated".
+			for _, path := range paths {
+				require.True(t, strings.HasPrefix(path.(string), "/saas.accounts.v1."),
+					"the gate lists gRPC procedures, not HTTP routes: %q", path)
+			}
 		case "Gateway":
 			// The waypoint that makes the L7 allow enforceable in the ambient mesh.
 			require.Equal(t, "gateway.networking.k8s.io/v1", document.APIVersion)

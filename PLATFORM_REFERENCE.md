@@ -113,8 +113,10 @@ from the audited platform, so read the mapping carefully.
   of the audit's token-exchange service and its ceiling-snapshot auditor.
 - **System-route declaration, ✅ ↔:** `EXPOSURE_INTERNAL` in the method policy
   is the in-code declaration, enforced by `requireInternalCredential` and by a
-  generated Istio `deny-<service>-internal-authority` policy — the analog of
-  `system_authorized(kind, reason)` plus its boot-time checker.
+  generated Istio `allow-<service>-internal-authority` policy — a positive ALLOW
+  naming the target's declared callers, deny-by-default for every other
+  principal — the analog of `system_authorized(kind, reason)` plus its boot-time
+  checker.
 
 ### 1.4 Tenant model & provisioning
 
