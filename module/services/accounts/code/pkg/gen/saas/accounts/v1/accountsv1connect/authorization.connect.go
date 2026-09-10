@@ -128,7 +128,9 @@ type PermissionServiceClient interface {
 	CheckAccess(context.Context, *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(context.Context, *connect.Request[v1.ListAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
@@ -380,7 +382,9 @@ type PermissionServiceHandler interface {
 	CheckAccess(context.Context, *connect.Request[v1.CheckAccessRequest]) (*connect.Response[v1.CheckAccessResponse], error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(context.Context, *connect.Request[v1.ListAccessibleScopesRequest]) (*connect.Response[v1.ListAccessibleScopesResponse], error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.

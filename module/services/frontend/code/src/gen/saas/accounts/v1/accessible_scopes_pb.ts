@@ -43,6 +43,12 @@ export const AccessibleScopeSchema: GenMessage<AccessibleScope> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_accessible_scopes, 0);
 
 /**
+ * Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal
+ * PermissionService.ListAccessibleScopes in authorization.proto. It lives in this
+ * file, so it ships to every published SDK consumer: a field added here for the
+ * internal RPC's benefit widens the public surface too. Add internal-only detail
+ * to a message in authorization.proto instead.
+ *
  * @generated from message saas.accounts.v1.ListAccessibleScopesResponse
  */
 export type ListAccessibleScopesResponse = Message<"saas.accounts.v1.ListAccessibleScopesResponse"> & {

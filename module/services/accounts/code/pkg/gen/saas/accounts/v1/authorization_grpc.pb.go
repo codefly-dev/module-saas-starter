@@ -63,7 +63,9 @@ type PermissionServiceClient interface {
 	CheckAccess(ctx context.Context, in *CheckAccessRequest, opts ...grpc.CallOption) (*CheckAccessResponse, error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(ctx context.Context, in *ListAccessibleScopesRequest, opts ...grpc.CallOption) (*ListAccessibleScopesResponse, error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
@@ -277,7 +279,9 @@ type PermissionServiceServer interface {
 	CheckAccess(context.Context, *CheckAccessRequest) (*CheckAccessResponse, error)
 	// ListAccessibleScopes enumerates the scope nodes a subject may act on with
 	// (resource_type, action) — the list-objects companion to CheckAccess, same
-	// internal trust boundary. Org-bound; resolved live on the DB path.
+	// internal trust boundary. Org-bound; resolved live on the DB path. Its
+	// response type is declared in accessible_scopes.proto and is published; see
+	// the note there before adding a field to it.
 	ListAccessibleScopes(context.Context, *ListAccessibleScopesRequest) (*ListAccessibleScopesResponse, error)
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.

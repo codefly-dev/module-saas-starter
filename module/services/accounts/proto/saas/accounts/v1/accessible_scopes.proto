@@ -19,6 +19,11 @@ message AccessibleScope {
   string kind = 3;
 }
 
+// Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal
+// PermissionService.ListAccessibleScopes in authorization.proto. It lives in this
+// file, so it ships to every published SDK consumer: a field added here for the
+// internal RPC's benefit widens the public surface too. Add internal-only detail
+// to a message in authorization.proto instead.
 message ListAccessibleScopesResponse {
   repeated AccessibleScope scopes = 1;
   // Set when more scopes remain; pass it back as page_token. Empty on the last page.

@@ -2296,6 +2296,7 @@
       "type": "object"
     },
     "v1ListAccessibleScopesResponse": {
+      "description": "Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal\nPermissionService.ListAccessibleScopes in authorization.proto. It lives in this\nfile, so it ships to every published SDK consumer: a field added here for the\ninternal RPC's benefit widens the public surface too. Add internal-only detail\nto a message in authorization.proto instead.",
       "properties": {
         "nextPageToken": {
           "description": "Set when more scopes remain; pass it back as page_token. Empty on the last page.",

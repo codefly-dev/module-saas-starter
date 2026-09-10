@@ -119,6 +119,13 @@ function emittedPbModules(): Set<string> {
 // the generator emits them because the contract is the full package descriptor,
 // but the build must strip them. Kept as an explicit denylist so the intent —
 // and the security stake — is legible where the guard lives.
+//
+// This list is deliberately not every unshipped module. Most of the rest carry
+// at least one EXPOSURE_AUTHENTICATED RPC, so publishing them is a decision a
+// later change may legitimately make; listing them here would fail that change
+// while claiming a security rule that does not hold. What belongs here is a
+// surface that can never be usefully published — an admin/authz shape, or a
+// module whose every RPC is EXPOSURE_INTERNAL, which the edge rejects outright.
 const FORBIDDEN_MODULES = [
 	"saas/accounts/v1/platform_admin_pb",
 	"saas/accounts/v1/authorization_pb",
@@ -131,7 +138,9 @@ const FORBIDDEN_MODULES = [
 	"saas/accounts/v1/billing_pb",
 	"saas/accounts/v1/api_keys_pb",
 	"saas/accounts/v1/introspection_pb",
+	"saas/accounts/v1/module_capabilities_pb",
 	"saas/accounts/v1/module_registration_pb",
+	"saas/accounts/v1/solution_registry_service_pb",
 	"saas/accounts/v1/consent_pb",
 	"saas/accounts/v1/organizations_pb",
 	"saas/accounts/v1/teams_pb",

@@ -1375,7 +1375,9 @@ export const PermissionService: GenService<{
   /**
    * ListAccessibleScopes enumerates the scope nodes a subject may act on with
    * (resource_type, action) — the list-objects companion to CheckAccess, same
-   * internal trust boundary. Org-bound; resolved live on the DB path.
+   * internal trust boundary. Org-bound; resolved live on the DB path. Its
+   * response type is declared in accessible_scopes.proto and is published; see
+   * the note there before adding a field to it.
    *
    * @generated from rpc saas.accounts.v1.PermissionService.ListAccessibleScopes
    */

@@ -85,6 +85,11 @@ func (x *AccessibleScope) GetKind() string {
 	return ""
 }
 
+// Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal
+// PermissionService.ListAccessibleScopes in authorization.proto. It lives in this
+// file, so it ships to every published SDK consumer: a field added here for the
+// internal RPC's benefit widens the public surface too. Add internal-only detail
+// to a message in authorization.proto instead.
 type ListAccessibleScopesResponse struct {
 	state  protoimpl.MessageState `protogen:"open.v1"`
 	Scopes []*AccessibleScope     `protobuf:"bytes,1,rep,name=scopes,proto3" json:"scopes,omitempty"`
