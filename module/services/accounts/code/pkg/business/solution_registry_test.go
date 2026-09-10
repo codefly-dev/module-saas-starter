@@ -170,6 +170,13 @@ func TestSolutionRegistrationStatus(t *testing.T) {
 			want:   SolutionRegistrationPending,
 		},
 		{
+			// A half that registered once and stopped renewing is dead, not
+			// waiting for its partner.
+			name:   "a lapsed lease on the only half is expired, not pending",
+			record: SolutionRegistration{Frontend: &SolutionFrontendHalf{LeaseExpiresAt: lapsed}},
+			want:   SolutionRegistrationExpired,
+		},
+		{
 			name: "both halves live",
 			record: SolutionRegistration{
 				Frontend: &SolutionFrontendHalf{LeaseExpiresAt: live},

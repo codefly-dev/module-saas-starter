@@ -110,11 +110,29 @@ function isSafeManifestUrl(value: string): boolean {
  */
 const SNAPSHOT_TTL_MS = 5_000;
 
+/**
+ * The oldest a snapshot may be and still be served while a refetch is failing.
+ *
+ * A blip must not empty the navigation, so a failed refetch keeps the previous
+ * snapshot — but only up to the point where the gateway would already have
+ * dropped every record in it. The gateway re-derives liveness from each
+ * registration's lease, so once a snapshot is older than that lease nothing in
+ * it is provably still registered: serving it renders pages whose backend the
+ * gateway has already stopped routing, which is the page/backend disagreement
+ * this registry exists to prevent. Past the lease this replica reports
+ * "unavailable" rather than guessing.
+ *
+ * Matches solutionLease in the auth-gateway (gateway_solution_registry.go).
+ */
+const SNAPSHOT_MAX_AGE_MS = 120_000;
+
 interface RegistrySnapshot {
 	revision: number;
 	solutions: SolutionManifest[];
 	byId: Map<string, SolutionManifest>;
 	expiresAt: number;
+	/** When the gateway last answered; the staleness ceiling is measured from here. */
+	fetchedAt: number;
 }
 
 /**
@@ -248,6 +266,7 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
 		solutions: parsed.solutions,
 		byId: new Map(parsed.solutions.map((solution) => [solution.id, solution])),
 		expiresAt: Date.now() + SNAPSHOT_TTL_MS,
+		fetchedAt: Date.now(),
 	};
 }
 
@@ -255,7 +274,9 @@ async function fetchSnapshot(): Promise<RegistrySnapshot | null> {
  * The current snapshot, refetched when it has aged out. Concurrent readers
  * coalesce onto one fetch, and a failed refetch keeps serving the previous
  * snapshot rather than emptying the navigation on a single blip — a registry
- * outage must degrade, not delete.
+ * outage must degrade, not delete. Degrading is bounded, though: past
+ * SNAPSHOT_MAX_AGE_MS the snapshot is dropped rather than served, because
+ * beyond the gateway's lease nothing in it is provably still registered.
  */
 async function snapshot(): Promise<RegistrySnapshot | null> {
 	const cached = globalForRegistry.__solutionSnapshot ?? null;
@@ -263,8 +284,19 @@ async function snapshot(): Promise<RegistrySnapshot | null> {
 	if (!globalForRegistry.__solutionSnapshotInFlight) {
 		globalForRegistry.__solutionSnapshotInFlight = fetchSnapshot()
 			.then((fresh) => {
-				if (fresh !== null) globalForRegistry.__solutionSnapshot = fresh;
-				return globalForRegistry.__solutionSnapshot ?? null;
+				if (fresh !== null) {
+					globalForRegistry.__solutionSnapshot = fresh;
+					return fresh;
+				}
+				const stale = globalForRegistry.__solutionSnapshot ?? null;
+				if (
+					stale !== null &&
+					Date.now() - stale.fetchedAt >= SNAPSHOT_MAX_AGE_MS
+				) {
+					globalForRegistry.__solutionSnapshot = null;
+					return null;
+				}
+				return stale;
 			})
 			.finally(() => {
 				globalForRegistry.__solutionSnapshotInFlight = null;

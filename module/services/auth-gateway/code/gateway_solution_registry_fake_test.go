@@ -95,7 +95,7 @@ func (f *fakeSolutionRegistry) Put(
 			LeaseExpiresAt:  lease,
 		}
 	}
-	record.Status = fakeSolutionStatus(record)
+	record.Status = fakeSolutionStatus(record, time.Now())
 	return proto.Clone(record).(*accountsv1.SolutionRegistration), nil
 }
 
@@ -135,19 +135,33 @@ func (f *fakeSolutionRegistry) List(
 		if record.GetTombstonedAt() != nil && !req.GetIncludeTombstoned() {
 			continue
 		}
-		out.Registrations = append(out.Registrations, proto.Clone(record).(*accountsv1.SolutionRegistration))
+		listed := proto.Clone(record).(*accountsv1.SolutionRegistration)
+		listed.Status = fakeSolutionStatus(listed, time.Now())
+		out.Registrations = append(out.Registrations, listed)
 	}
 	return out, nil
 }
 
-func fakeSolutionStatus(record *accountsv1.SolutionRegistration) accountsv1.SolutionRegistrationStatus {
+// fakeSolutionStatus mirrors business.(*SolutionRegistration).Status, ordering
+// included: expiry is evaluated over whichever halves are present and outranks
+// pending, so a half that stopped renewing reads as dead rather than waiting.
+// A fake that ranks these differently hands tests a status the real registry
+// would never produce.
+func fakeSolutionStatus(record *accountsv1.SolutionRegistration, now time.Time) accountsv1.SolutionRegistrationStatus {
+	front, backend := record.GetFrontend(), record.GetBackend()
 	switch {
-	case record.GetFrontend() == nil || record.GetBackend() == nil:
-		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
-	case record.GetFrontend().GetContractVersion() != "" &&
-		record.GetBackend().GetContractVersion() != "" &&
-		record.GetFrontend().GetContractVersion() != record.GetBackend().GetContractVersion():
+	case record.GetTombstonedAt() != nil:
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_TOMBSTONED
+	case front != nil && backend != nil &&
+		front.GetContractVersion() != "" && backend.GetContractVersion() != "" &&
+		front.GetContractVersion() != backend.GetContractVersion():
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_INCOMPATIBLE
+	case front != nil && !front.GetLeaseExpiresAt().AsTime().After(now):
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_EXPIRED
+	case backend != nil && !backend.GetLeaseExpiresAt().AsTime().After(now):
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_EXPIRED
+	case front == nil || backend == nil:
+		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_PENDING
 	default:
 		return accountsv1.SolutionRegistrationStatus_SOLUTION_REGISTRATION_STATUS_ACTIVE
 	}

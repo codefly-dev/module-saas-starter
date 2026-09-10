@@ -73,8 +73,8 @@ import (
 // registration lands on one replica only and requests load-balanced to the
 // others 404 until the module re-registers there. Solution registration used
 // to share this limitation and no longer does (see
-// gateway_solution_registry.go); giving module federation the same durable
-// treatment is tracked separately.
+// gateway_solution_registry.go); module federation has not been given the same
+// durable treatment.
 type upstreamRegistry struct {
 	mu        sync.RWMutex
 	upstreams map[string]*url.URL

@@ -267,6 +267,34 @@ describe("registry snapshot", () => {
     expect(await loadSolutions()).toHaveLength(1);
   });
 
+  // Degrading on a blip is right; degrading forever is not. Past the gateway's
+  // lease nothing in the held snapshot is provably still registered, so
+  // continuing to serve it renders pages the gateway has already stopped
+  // routing.
+  it("stops serving a stale snapshot once it outlives the gateway lease", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        snapshotResponse([
+          { id: "a", status: "active", manifest: manifestFor("a", 1) },
+        ]),
+      )
+      .mockRejectedValue(new Error("unreachable"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await loadSolutions()).toHaveLength(1);
+
+    const g = globalThis as Record<string, unknown>;
+    g.__solutionSnapshot = {
+      ...(g.__solutionSnapshot as object),
+      expiresAt: 0,
+      fetchedAt: Date.now() - 120_001,
+    };
+
+    expect(await loadSolutions()).toBe("unavailable");
+    expect(await findSolution("a")).toBe("unavailable");
+  });
+
   it("drops a stored manifest that no longer validates", async () => {
     vi.stubGlobal(
       "fetch",

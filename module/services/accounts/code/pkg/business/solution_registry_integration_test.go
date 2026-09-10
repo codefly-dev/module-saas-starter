@@ -253,3 +253,16 @@ func TestSolutionRegistry_RejectsWriteWithoutExactlyOneHalf(t *testing.T) {
 		t.Fatalf("err = %v, want half missing", err)
 	}
 }
+
+// A write naming no solution id or no publisher is not addressable at all, so
+// it must not be reported as a problem with the halves it does carry.
+func TestSolutionRegistry_RejectsWriteWithoutIdentity(t *testing.T) {
+	noID := frontendWrite("", "acme", `{}`)
+	if _, err := testService.PutSolutionRegistration(testCtx, noID); err != business.ErrSolutionRegistrationIdentityRequired {
+		t.Fatalf("err = %v, want identity required", err)
+	}
+	noPublisher := frontendWrite(testSolutionID(t), "", `{}`)
+	if _, err := testService.PutSolutionRegistration(testCtx, noPublisher); err != business.ErrSolutionRegistrationIdentityRequired {
+		t.Fatalf("err = %v, want identity required", err)
+	}
+}

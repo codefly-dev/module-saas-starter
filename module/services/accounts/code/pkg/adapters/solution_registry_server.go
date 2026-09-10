@@ -44,6 +44,8 @@ func solutionRegistryError(err error) error {
 		return status.Error(codes.PermissionDenied, "solution registration is owned by another publisher")
 	case errors.Is(err, business.ErrSolutionRegistrationHalfMissing):
 		return status.Error(codes.InvalidArgument, "solution registration must carry exactly one half")
+	case errors.Is(err, business.ErrSolutionRegistrationIdentityRequired):
+		return status.Error(codes.InvalidArgument, "solution registration requires a solution id and publisher")
 	default:
 		return err
 	}

@@ -45,6 +45,11 @@ var (
 	// ErrSolutionRegistrationHalfMissing is returned when a write names neither
 	// half.
 	ErrSolutionRegistrationHalfMissing = errors.New("solution registration must carry exactly one half")
+	// ErrSolutionRegistrationIdentityRequired is returned when a write names no
+	// solution id or no publisher. Distinct from the half rules: such a request
+	// is not addressable at all, and reporting it as a half problem sends the
+	// caller to inspect the wrong field.
+	ErrSolutionRegistrationIdentityRequired = errors.New("solution registration requires a solution id and publisher")
 )
 
 // SolutionRegistrationStatus is derived from the record at read time.
@@ -94,17 +99,25 @@ type SolutionRegistration struct {
 // mismatch outranks an expired lease because it is a property of the record
 // itself — renewing the lease would not fix it — whereas expiry is a transient
 // liveness fact that the publisher's next heartbeat clears.
+//
+// Expiry is evaluated over whichever halves are present, and outranks pending.
+// A half that registered once and then stopped renewing is dead, not waiting:
+// reporting it as pending sends an operator hunting the deployment that never
+// arrived, when the one that did arrive is the thing that stopped.
 func (r *SolutionRegistration) Status(now time.Time) SolutionRegistrationStatus {
 	switch {
 	case r.TombstonedAt != nil:
 		return SolutionRegistrationTombstoned
-	case r.Frontend == nil || r.Backend == nil:
-		return SolutionRegistrationPending
-	case r.Frontend.ContractVersion != "" && r.Backend.ContractVersion != "" &&
+	case r.Frontend != nil && r.Backend != nil &&
+		r.Frontend.ContractVersion != "" && r.Backend.ContractVersion != "" &&
 		r.Frontend.ContractVersion != r.Backend.ContractVersion:
 		return SolutionRegistrationIncompatible
-	case !r.Frontend.LeaseExpiresAt.After(now) || !r.Backend.LeaseExpiresAt.After(now):
+	case r.Frontend != nil && !r.Frontend.LeaseExpiresAt.After(now):
 		return SolutionRegistrationExpired
+	case r.Backend != nil && !r.Backend.LeaseExpiresAt.After(now):
+		return SolutionRegistrationExpired
+	case r.Frontend == nil || r.Backend == nil:
+		return SolutionRegistrationPending
 	default:
 		return SolutionRegistrationActive
 	}
@@ -148,7 +161,7 @@ func (s *Service) PutSolutionRegistration(ctx context.Context, write SolutionReg
 		return nil, ErrSolutionRegistrationHalfMissing
 	}
 	if write.SolutionID == "" || write.Publisher == "" {
-		return nil, ErrSolutionRegistrationHalfMissing
+		return nil, ErrSolutionRegistrationIdentityRequired
 	}
 
 	var result *SolutionRegistration
