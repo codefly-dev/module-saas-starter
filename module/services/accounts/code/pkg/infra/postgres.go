@@ -548,6 +548,23 @@ func (s *PostgresStore) RegisterUser(ctx context.Context, user *gen.User, identi
 				user.PrimaryEmail)
 		}
 
+		// The uuid is caller-supplied, so the insert below can collide on the
+		// primary key. Deleted users keep their row, so this deliberately does
+		// not filter on status.
+		var uuidTaken bool
+		err = executor.QueryRow(ctx, `
+            SELECT EXISTS (SELECT 1 FROM users WHERE uuid = $1)`,
+			user.Uuid,
+		).Scan(&uuidTaken)
+		if err != nil {
+			return w.Wrapf(err, "failed to check existing user id")
+		}
+		if uuidTaken {
+			return status.Errorf(codes.AlreadyExists,
+				"user id %s is already registered",
+				user.Uuid)
+		}
+
 		// Create new user
 		profileJSON, err := json.Marshal(user.Profile)
 		if err != nil {

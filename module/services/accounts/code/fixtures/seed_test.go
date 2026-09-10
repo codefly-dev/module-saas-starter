@@ -70,6 +70,76 @@ func TestLoadFixtureAcceptsDevelopmentAssuranceField(t *testing.T) {
 	}
 }
 
+func TestLoadFixtureCanonicalizesDeclaredUserID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	contents := "users:\n  - id: 0000000A-0000-7000-8000-0000000000A1\n    email: owner@example.com\n    provider: email\n    provider_id: owner\n"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := loadFixtureFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fixture.Users[0].ID; got != "0000000a-0000-7000-8000-0000000000a1" {
+		t.Fatalf("loadFixtureFile() user id = %q, want the canonical uuid rendering", got)
+	}
+}
+
+func TestValidateFixtureRejectsUnusableUserIDs(t *testing.T) {
+	tests := map[string][]fixtureUser{
+		"malformed": {
+			{ID: "dev-admin", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"collision": {
+			{ID: "00000000-0000-7000-8000-0000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+			{ID: "00000000-0000-7000-8000-0000000000A1", Email: "member@example.com", Provider: "email", ProviderID: "member"},
+		},
+		"nil sentinel": {
+			{ID: "00000000-0000-0000-0000-000000000000", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		// Spellings uuid.Parse accepts but the frontend's fixture schema does not.
+		"urn spelling": {
+			{ID: "urn:uuid:00000000-0000-7000-8000-0000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"unhyphenated spelling": {
+			{ID: "000000000000700080000000000000a1", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+		"braced spelling": {
+			{ID: "{00000000-0000-7000-8000-0000000000a1}", Email: "owner@example.com", Provider: "email", ProviderID: "owner"},
+		},
+	}
+	for name, users := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateFixture(&fixtureFile{Users: users}); err == nil {
+				t.Fatal("validateFixture() accepted a user id that cannot name a principal")
+			}
+		})
+	}
+}
+
+// Module fixtures are quoted by committed configuration — seeded grants, e2e
+// specs, runbooks — so a user without a declared id silently re-mints its
+// principal on every fresh seed.
+func TestModuleFixtureUsersDeclareStableIDs(t *testing.T) {
+	entries, err := embeddedFixtures.ReadDir("embedded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		t.Run(entry.Name(), func(t *testing.T) {
+			fixture, err := loadFixtureFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, u := range fixture.Users {
+				if u.ID == "" {
+					t.Fatalf("fixture user %s declares no id", u.Email)
+				}
+			}
+		})
+	}
+}
+
 func TestValidateFixtureAcceptsAgentRoleAndAssignment(t *testing.T) {
 	fixture := &fixtureFile{
 		Users: []fixtureUser{{

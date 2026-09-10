@@ -2,7 +2,8 @@
 # Used with: codefly run service --fixture simple
 
 users:
-  - email: admin@example.com
+  - id: 00000000-0000-7000-8000-0000000000b1
+    email: admin@example.com
     name: Local Admin
     role: super_admin
     provider: email
