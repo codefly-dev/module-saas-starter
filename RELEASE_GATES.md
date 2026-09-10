@@ -148,8 +148,13 @@ whoever can move it upstream — including into `release-gates` itself, the one
 job whose verdict authorizes publication. Only a `./`-prefixed action from this
 repository is exempt, since it is already as trustworthy as the tree calling it.
 The scan covers a job's own `uses:` as well as its steps', so a reusable
-workflow cannot enter unpinned either. Pin a new action to the digest its tag
-resolves to — `gh api repos/OWNER/REPO/git/ref/tags/TAG --jq .object.sha`.
+workflow cannot enter unpinned either. A `docker://` step pins to an image
+digest instead, since no commit digest exists for it.
+
+Resolve a new action's tag to its commit with
+`gh api repos/OWNER/REPO/commits/TAG --jq .sha`. Read the tag ref directly
+(`git/ref/tags/TAG`) and you get the *tag object's* SHA whenever the tag is
+annotated, which names no commit and will not resolve in `uses:`.
 
 Two limits are worth stating plainly. The contract **cannot protect its own job**:
 delete `release-contract` from the workflow and both the check and its tests stop

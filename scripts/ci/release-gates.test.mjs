@@ -457,14 +457,33 @@ test("every way of naming a movable ref is rejected", () => {
     "actions/setup-go@v6.5.0",
     "actions/checkout@main",
     "actions/checkout@49933ea",
-    `actions/checkout@${NODE_DIGEST.toUpperCase()}`,
     "actions/checkout",
     "docker://alpine:3.19",
+    `docker://alpine@sha256:${"a".repeat(63)}`,
   ]) {
     const errors = actionPinErrors("w.yml", usingWorkflow(ref));
     assert.equal(errors.length, 1, ref);
     assert.match(errors[0], /job a uses .*, whose ref is mutable/);
   }
+});
+
+test("a container action pins to an image digest, and is told so when it does not", () => {
+  // A `docker://` step has no commit digest to pin to, so demanding one would
+  // be a false positive nothing could act on.
+  const pinned = `docker://alpine@sha256:${"a".repeat(64)}`;
+  assert.deepEqual(actionPinErrors("w.yml", usingWorkflow(pinned)), []);
+  assert.match(
+    actionPinErrors("w.yml", usingWorkflow("docker://alpine:3.19"))[0],
+    /pin it to an image digest/,
+  );
+});
+
+test("an uppercase commit digest names one commit and is accepted", () => {
+  // Immutability is the property under test; letter case is not.
+  assert.deepEqual(
+    actionPinErrors("w.yml", usingWorkflow(`actions/checkout@${NODE_DIGEST.toUpperCase()}`)),
+    [],
+  );
 });
 
 test("a reusable-workflow call on the job itself must be pinned too", () => {
@@ -480,6 +499,17 @@ test("an unparsable workflow fails the pin check instead of passing empty", () =
   const errors = actionPinErrors("w.yml", "jobs: {a: b}\n");
   assert.equal(errors.length, 1);
   assert.match(errors[0], /could not be parsed/);
+});
+
+test("an unreadable workflow is one defect, not one per contract that reads it", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(root, ".github", "workflows", "broken.yml"), "jobs: {a: b}\n");
+  const errors = releaseGateGraphErrors(root);
+  assert.deepEqual(errors, [
+    "broken.yml: could not be parsed: line 1: flow mappings are not supported"
+      .replace("broken.yml", ".github/workflows/broken.yml"),
+  ]);
 });
 
 test("the pin check reaches a workflow the publication contract exits early on", () => {
@@ -498,17 +528,53 @@ test("the pin check reaches a workflow the publication contract exits early on",
 // An independent oracle over the raw text, in the same spirit as the job-set
 // scan below: the gate can only pin what the reader hands it, so a `uses:` the
 // parser drops is an unpinned ref nothing would ever flag.
+//
+// A `run: |` body is data, not YAML — a step that writes a workflow file holds
+// `uses:` lines that are no more actions than a `needs:` inside one is a
+// dependency. The scan tracks block scalars so it disagrees with the reader
+// only when the reader has actually lost a ref.
+function scanUsesRefs(text) {
+  const refs = [];
+  let blockIndent = null;
+  for (const line of text.split("\n")) {
+    if (blockIndent !== null) {
+      if (/^\s*$/.test(line) || /^ */.exec(line)[0].length > blockIndent) continue;
+      blockIndent = null;
+    }
+    const block = /^( *)(?:- )?[\w.-]+:\s*[|>][-+]?\s*$/.exec(line);
+    if (block) {
+      blockIndent = block[1].length;
+      continue;
+    }
+    const match = /^ *(?:- )?uses:\s*(\S+)/.exec(line);
+    if (match) refs.push(match[1]);
+  }
+  return refs;
+}
+
+test("the raw scan reads block-scalar bodies as data, not as steps", () => {
+  const generating = [
+    "jobs:",
+    "  a:",
+    "    steps:",
+    "      - run: |",
+    "          cat > gen.yml <<EOF",
+    "          - uses: actions/setup-node@v4",
+    "          EOF",
+    `      - uses: actions/setup-node@${NODE_DIGEST}`,
+    "",
+  ].join("\n");
+  assert.deepEqual(scanUsesRefs(generating), [`actions/setup-node@${NODE_DIGEST}`]);
+  assert.deepEqual(actionPinErrors("w.yml", generating), []);
+});
+
 test("the reader and an independent text scan agree on every uses: ref", () => {
   const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
   const files = readdirSync(workflows).filter((file) => /\.ya?ml$/.test(file));
   let total = 0;
   for (const file of files) {
     const text = readFileSync(join(workflows, file), "utf8");
-    const scanned = text
-      .split("\n")
-      .map((line) => /^\s*(?:- )?uses:\s*(\S+)/.exec(line))
-      .filter(Boolean)
-      .map((match) => match[1]);
+    const scanned = scanUsesRefs(text);
     const document = parseWorkflowYaml(text);
     const read = Object.values(document.jobs).flatMap((job) => [
       ...(typeof job.uses === "string" ? [job.uses] : []),
