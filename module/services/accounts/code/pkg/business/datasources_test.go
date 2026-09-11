@@ -279,6 +279,16 @@ type recordingProducer struct {
 }
 
 func (p *recordingProducer) EnqueueJob(_ context.Context, req *jobsv1.EnqueueJobRequest) (*jobsv1.EnqueueJobResponse, error) {
+	// Enforce the same command contract the real producer does — PostgresJobStore
+	// validates through jobs.EnqueueFingerprint before a statement is ever sent —
+	// so a job this package builds that violates saas.jobs.v1 fails the test
+	// instead of silently "queuing". Without this, a producer missing a field the
+	// platform requires passes every test here and is refused in production; that
+	// is exactly how the sync and reconcile requests shipped with no content type.
+	// Matches fakeJobProducer in pkg/datasource and pkg/billing.
+	if err := jobs.ValidateCommand(req); err != nil {
+		return nil, err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.jobs = append(p.jobs, req.GetJob())
@@ -496,8 +506,15 @@ func TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot(t *testing.T) {
 	// The job platform validates content_type (min_len 1) on every enqueue; a
 	// request job that carries only attributes still has to declare one, or
 	// Sync now is refused by the platform before the reconcile is ever scheduled.
-	if job.GetContentType() == "" || len(job.GetPayload()) == 0 {
-		t.Fatalf("sync request job declares no content type; the job platform refuses it")
+	if job.GetContentType() != "application/json" || string(job.GetPayload()) != "{}" {
+		t.Fatalf("sync request body = %q/%q, want an empty JSON object; the platform refuses an undeclared content type and job_messages.payload is NOT NULL",
+			job.GetContentType(), job.GetPayload())
+	}
+	// A reconcile request is a control message, not a change set. Advertising the
+	// change-set version over an empty body would describe `{}` as a v2 per-file
+	// payload to anything that decodes on (schema_version, content_type).
+	if job.GetSchemaVersion() != 1 {
+		t.Fatalf("schema version = %d, want the reconcile request's (1), not the change set's (2)", job.GetSchemaVersion())
 	}
 	if job.GetOrdering().GetNamespace() != "datasource.delivery" ||
 		len(job.GetOrdering().GetComponents()) != 1 || job.GetOrdering().GetComponents()[0] != source.ID {
@@ -1264,6 +1281,13 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	reqJob := producer.jobs[len(producer.jobs)-1]
+	// The non-GitHub branch builds its own request job; it is a message on the
+	// same terms as the GitHub one and must declare a body the platform accepts.
+	if reqJob.GetQueue() != business.DatasourceSyncRequestQueue ||
+		reqJob.GetContentType() != "application/json" || string(reqJob.GetPayload()) != "{}" {
+		t.Fatalf("generic sync request = %s %q/%q, want an empty JSON object on the sync queue",
+			reqJob.GetQueue(), reqJob.GetContentType(), reqJob.GetPayload())
+	}
 	env := &jobsv1.JobEnvelope{
 		Queue:      reqJob.GetQueue(),
 		Topic:      reqJob.GetTopic(),

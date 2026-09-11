@@ -113,6 +113,17 @@ func prepareJobEnqueue(request *jobsv1.EnqueueJobRequest) (preparedJobEnqueue, e
 		value := job.GetAvailableAt().AsTime()
 		availableAt = &value
 	}
+	// job_messages.payload is NOT NULL, but saas.jobs.v1 bounds payload only from
+	// above (max_len), so a producer that omits it passes validation and is
+	// rejected by Postgres instead. pgx encodes a nil slice as SQL NULL; an empty
+	// non-nil slice encodes as an empty bytea. Normalising here keeps the refusal
+	// out of the caller's transaction: PostgresStore.EnqueueJob runs on the
+	// caller's tx, so that constraint violation would abort the business mutation
+	// it was appended to, not just the enqueue.
+	payload := job.GetPayload()
+	if payload == nil {
+		payload = []byte{}
+	}
 	return preparedJobEnqueue{
 		direction:          direction,
 		scopeKind:          scopeKind,
@@ -124,7 +135,7 @@ func prepareJobEnqueue(request *jobsv1.EnqueueJobRequest) (preparedJobEnqueue, e
 		idempotencyKey:     job.GetIdempotencyKey(),
 		orderingKey:        orderingKey,
 		schemaVersion:      int(job.GetSchemaVersion()),
-		payload:            job.GetPayload(),
+		payload:            payload,
 		contentType:        job.GetContentType(),
 		attributes:         attributes,
 		priority:           int16(job.GetPriority()),
