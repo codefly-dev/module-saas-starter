@@ -191,15 +191,44 @@ Every required context must therefore report on `merge_group` too. One that does
 not leaves its entry waiting on a check that never arrives until the queue evicts
 it, and entries merge in order, so a single missing context stalls every merge in
 the repository. No pull request run reveals this, because the same job is green
-there. The check fails if a workflow holding any job in `QUEUED_CONTEXTS` (the
-mandatory gates plus `release-gates`) has no `merge_group:` trigger, if
-`concurrency.cancel-in-progress` is unconditionally `true` — a cancelled
-`merge_group` run never reports, which stalls the queue exactly as never running
-would — or if `codefly-plan` stops reading
-`github.event.merge_group.base_sha`, without which an entry has no base and
-verifies the full topology every time. An *expression* for `cancel-in-progress`
-is taken at its word as the author discriminating by event; only the bare literal
-is rejected.
+there.
+
+`REQUIRED_CONTEXTS` names those contexts as the ruleset spells them. The check
+fails if a workflow holding one of the jobs that report them has no
+`merge_group:` trigger; if `cancel-in-progress` is unconditionally `true` at
+either the workflow or the job level, since a cancelled `merge_group` run never
+reports and stalls the queue exactly as never running would; if `codefly-plan`
+stops *reading* `github.event.merge_group.base_sha`, without which an entry has
+no base and verifies the full topology every time; if a job that reports a
+required context is renamed away from it, since the ruleset matches a job by its
+`name:` and a rename leaves it waiting on a context nothing reports; or if a
+declared context has no job reporting it at all. An *expression* for
+`cancel-in-progress` is taken at its word as the author discriminating by event —
+only the bare literal is rejected, because evaluating workflow expressions is not
+something this reader can honestly claim to do. "Reading" the base sha likewise
+means naming it inside a `${{ … }}` interpolation in something other than a
+comment: `run:` bodies reach the reader raw, and the prose in `ci.yml` explaining
+merge-queue base scoping sits three lines under the expression it describes, so a
+plain substring match would go vacuous the moment someone documented it by name.
+
+**The one thing `check` cannot verify is the list itself.** `REQUIRED_CONTEXTS`
+is this tree's copy of a set that really lives in the branch ruleset, and no
+token available to a workflow run can read that — listing rulesets needs
+`Administration: read`, which `GITHUB_TOKEN` cannot hold. A context added to the
+ruleset but not to this list is the dangerous direction: nothing holds it to
+running on `merge_group`, so the first queued pull request waits out
+`check_response_timeout_minutes` and is evicted, with `check` green throughout.
+Reconcile the two from your own credentials, and do it whenever either side
+moves:
+
+```bash
+node scripts/ci/release-gates.mjs contexts        # defaults to this repository
+node scripts/ci/release-gates.mjs contexts owner/repo
+```
+
+It fails naming each context that only one side has, and also fails if the
+repository has no ruleset requiring any check at all — on an unprotected branch a
+merge queue gates nothing.
 
 Two limits are worth stating plainly. The contract **cannot protect its own job**:
 delete `release-contract` from the workflow and both the check and its tests stop

@@ -14,10 +14,13 @@ import {
   needsClosure,
   publicationReasons,
   publicationVerdictErrors,
+  contextDrift,
   mergeQueueContractErrors,
   QUEUED_CONTEXTS,
+  REQUIRED_CONTEXTS,
   releaseGateContractErrors,
   releaseGateGraphErrors,
+  unreportedContextErrors,
 } from "./release-gates.mjs";
 import { parseWorkflowYaml } from "./workflow-yaml.mjs";
 
@@ -427,24 +430,48 @@ test("a job inherits the workflow's publication permissions", () => {
 
 // A workflow that reports one required context, parameterised over the three
 // things a queue entry needs from it.
+// The context each fixture job must report, since the ruleset matches a job by
+// its `name:`. Anything outside REQUIRED_CONTEXTS is a rename, which is its own
+// failure — so fixtures that are not testing renames use the real names.
+const CONTEXT_OF = { [AGGREGATE_JOB]: "Release gates", "codefly-plan": "Codefly CI plan", "base-integrity": "Base manifest integrity" };
+
+const namedGateJob = (id, { name = CONTEXT_OF[id], jobConcurrency = "" } = {}) =>
+  `  ${id}:\n` +
+  (name === null ? "" : `    name: ${name}\n`) +
+  jobConcurrency +
+  "    runs-on: ubuntu-latest\n    steps:\n      - run: echo ${id}\n".replace("${id}", id);
+
 function queued({
   on = "on:\n  pull_request:\n  merge_group:\n",
   concurrency = "",
   planEnv = "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}",
+  planRun = "codefly ci plan",
   gates = [AGGREGATE_JOB],
+  names = {},
+  jobConcurrency = {},
 } = {}) {
   const planJob = gates.includes("codefly-plan")
-    ? "  codefly-plan:\n    runs-on: ubuntu-latest\n    steps:\n" +
+    ? `  codefly-plan:\n    name: ${names["codefly-plan"] ?? CONTEXT_OF["codefly-plan"]}\n` +
+      (jobConcurrency["codefly-plan"] ?? "") +
+      "    runs-on: ubuntu-latest\n    steps:\n" +
       "      - env:\n" +
       `          CODEFLY_BASE: ${planEnv}\n` +
-      "        run: codefly ci plan\n"
+      `        run: |\n          ${planRun}\n`
     : "";
   return [
     "name: ci\n",
     on,
     concurrency,
     "jobs:\n",
-    gates.filter((id) => id !== "codefly-plan").map(gateJob).join(""),
+    gates
+      .filter((id) => id !== "codefly-plan")
+      .map((id) =>
+        namedGateJob(id, {
+          name: Object.hasOwn(names, id) ? names[id] : CONTEXT_OF[id],
+          jobConcurrency: jobConcurrency[id] ?? "",
+        }),
+      )
+      .join(""),
     planJob,
   ].join("");
 }
@@ -511,22 +538,137 @@ test("a plan that never reads the queue entry's base sha fails", () => {
   assert.match(errors[0], /codefly-plan never reads github\.event\.merge_group\.base_sha/);
 });
 
-test("the plan's base sha counts wherever in the job it is written", () => {
-  const inRun =
-    "name: ci\non:\n  merge_group:\njobs:\n" +
-    gateJob(AGGREGATE_JOB) +
-    "  codefly-plan:\n    runs-on: ubuntu-latest\n    steps:\n" +
-    "      - run: codefly ci plan --base ${{ github.event.merge_group.base_sha }}\n";
-  assert.deepEqual(mergeQueueContractErrors("w.yml", inRun), []);
-});
-
-test("a workflow can fail the trigger and the cancellation contracts independently", () => {
+test("the cancellation and plan-base contracts are reported together, not one per run", () => {
   const text = queued({
     gates: [AGGREGATE_JOB, "codefly-plan"],
     concurrency: "concurrency:\n  group: g\n  cancel-in-progress: true\n",
     planEnv: "${{ github.event.pull_request.base.sha }}",
   });
-  assert.equal(mergeQueueContractErrors("w.yml", text).length, 2);
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 2);
+  assert.match(errors[0], /cancel-in-progress/);
+  assert.match(errors[1], /never reads github\.event\.merge_group\.base_sha/);
+});
+
+test("a missing trigger short-circuits the rest, which it makes moot", () => {
+  // Without the trigger there is no entry to cancel and no entry base to scope
+  // a plan against, so reporting three defects for one cause would be noise.
+  const text = queued({
+    on: "on:\n  pull_request:\n",
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    concurrency: "concurrency:\n  group: g\n  cancel-in-progress: true\n",
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /no `merge_group:` trigger/);
+});
+
+// --- the base sha must be read, not merely mentioned (finding 2) ---
+
+test("the base sha named only in a run-body comment does not count as reading it", () => {
+  // Block-scalar `run` bodies reach the reader raw, and prose about the merge
+  // queue naturally names the expression under test — ci.yml has such a
+  // comment three lines under the env this checks.
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+    planRun: "# we no longer read github.event.merge_group.base_sha here\n          codefly ci plan",
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /never reads github\.event\.merge_group\.base_sha in an expression/);
+});
+
+test("a commented-out expression does not count either", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+    planRun: "# formerly ${{ github.event.merge_group.base_sha }}\n          codefly ci plan",
+  });
+  assert.equal(mergeQueueContractErrors("w.yml", text).length, 1);
+});
+
+test("a real interpolation in the run body counts wherever it sits", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+    planRun: "codefly ci plan --base ${{ github.event.merge_group.base_sha }}",
+  });
+  assert.deepEqual(mergeQueueContractErrors("w.yml", text), []);
+});
+
+// --- job-level cancellation (finding 3) ---
+
+test("a required job cancelling its own in-progress runs stalls the queue too", () => {
+  const text = queued({
+    jobConcurrency: { [AGGREGATE_JOB]: "    concurrency:\n      group: g\n      cancel-in-progress: true\n" },
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /job release-gates sets concurrency\.cancel-in-progress/);
+});
+
+test("a job-level expression is the author discriminating by event, as at workflow level", () => {
+  const scoped = "    concurrency:\n      group: g\n      cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ jobConcurrency: { [AGGREGATE_JOB]: scoped } })), []);
+});
+
+// --- the ruleset matches a job by name, so renames drift (finding 1) ---
+
+test("renaming a required job away from its context fails", () => {
+  const text = queued({ names: { [AGGREGATE_JOB]: "Gates" } });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /is named "Gates", which is not a context the ruleset requires/);
+});
+
+test("a required job with no name: has no context for the ruleset to match", () => {
+  const text = queued({ names: { [AGGREGATE_JOB]: null } });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /has no `name:`/);
+});
+
+test("every declared context is reported by a job in the shipped workflows", () => {
+  assert.deepEqual(unreportedContextErrors(REPOSITORY_ROOT), []);
+});
+
+test("a declared context no job reports is a stall the ruleset waits out", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(root, ".github", "workflows", "ci.yml"), queued());
+  const errors = unreportedContextErrors(root);
+  assert.equal(errors.length, REQUIRED_CONTEXTS.length - 1);
+  assert.ok(errors.every((error) => !error.includes('"Release gates"')));
+  assert.match(errors[0], /would wait on it forever/);
+});
+
+test("the completeness claim is about this repo, not about any fixture tree", () => {
+  // A fixture root holding one unrelated workflow must not inherit this
+  // repository's 14 declared contexts as 14 defects.
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(root, ".github", "workflows", "audit.yml"), "name: a\non:\n  schedule:\n    - cron: \"0 3 * * *\"\njobs:\n" + gateJob("audit"));
+  assert.deepEqual(releaseGateGraphErrors(root), []);
+});
+
+// --- reconciling the declared contexts with the live ruleset ---
+
+test("a context the ruleset requires but the tree never declares is the dangerous direction", () => {
+  const [unguarded, stale] = contextDrift(REQUIRED_CONTEXTS, [...REQUIRED_CONTEXTS, "Security scan"]);
+  assert.deepEqual(unguarded, ["Security scan"]);
+  assert.deepEqual(stale, []);
+});
+
+test("a context the tree declares but the ruleset dropped is reported the other way", () => {
+  const [unguarded, stale] = contextDrift([...REQUIRED_CONTEXTS, "Retired gate"], REQUIRED_CONTEXTS);
+  assert.deepEqual(unguarded, []);
+  assert.deepEqual(stale, ["Retired gate"]);
+});
+
+test("agreement between the two sides is no drift in either direction", () => {
+  assert.deepEqual(contextDrift(REQUIRED_CONTEXTS, [...REQUIRED_CONTEXTS].reverse()), [[], []]);
 });
 
 test("the graph walk reddens check when a gate workflow loses its merge_group trigger", () => {
