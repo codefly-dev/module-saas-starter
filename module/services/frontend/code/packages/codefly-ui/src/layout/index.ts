@@ -6,7 +6,7 @@
 // mirroring `@codefly-dev/ui/dashboard`. No host context, no SDK — React only.
 
 // Page containers
-export { Card, type CardProps, Section, type SectionProps } from "./card.js";
+export { Card, type CardProps } from "./card.js";
 export { type TabItem, Tabs, type TabsProps } from "./tabs.js";
 
 // Feedback / state
@@ -108,3 +108,95 @@ export {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "./dropdown-menu.js";
+
+export {
+	CardRoot,
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardFooter,
+	CardHeader,
+	CardTitle,
+} from "./card-root.js";
+
+export {
+	TabsRoot,
+	TabsContent,
+	TabsList,
+	TabsTrigger,
+	tabsListVariants,
+} from "./tabs-root.js";
+
+export {
+	Command,
+	CommandDialog,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+	CommandSeparator,
+	CommandShortcut,
+} from "./command.js";
+
+export {
+	InputGroup,
+	InputGroupAddon,
+	InputGroupButton,
+	InputGroupInput,
+	InputGroupText,
+	InputGroupTextarea,
+} from "./input-group.js";
+
+export {
+	Sheet,
+	SheetClose,
+	SheetContent,
+	SheetDescription,
+	SheetFooter,
+	SheetHeader,
+	SheetTitle,
+	SheetTrigger,
+} from "./sheet.js";
+
+export {
+	Sidebar,
+	SidebarContent,
+	SidebarFooter,
+	SidebarGroup,
+	SidebarGroupAction,
+	SidebarGroupContent,
+	SidebarGroupLabel,
+	SidebarHeader,
+	SidebarInput,
+	SidebarInset,
+	SidebarMenu,
+	SidebarMenuAction,
+	SidebarMenuBadge,
+	SidebarMenuButton,
+	SidebarMenuItem,
+	SidebarMenuSkeleton,
+	SidebarMenuSub,
+	SidebarMenuSubButton,
+	SidebarMenuSubItem,
+	SidebarProvider,
+	SidebarRail,
+	SidebarSeparator,
+	SidebarTrigger,
+	useSidebar,
+} from "./sidebar.js";
+
+export { Toaster } from "./sonner.js";
+
+export { useIsMobile } from "./use-mobile.js";
+
+export {
+	Grid,
+	Layout,
+	Page,
+	PageHeader,
+	Panel,
+	Section,
+	Stack,
+} from "./page.js";
+export type { SectionProps } from "./page.js";

@@ -8,7 +8,8 @@
 // `@codefly-dev/saas-sdk`'s `runDashboard`; use `fromDashboardData` to bridge.
 
 import type * as React from "react";
-import { Card, Section } from "../layout/card.js";
+import { Card } from "../layout/card.js";
+import { Section } from "../layout/page.js";
 import { AreaChart, BarList, LineChart, StatChart } from "./charts.js";
 import { cn } from "./cn.js";
 import type { DashboardView, DashboardWidgetView } from "./types.js";
@@ -33,7 +34,9 @@ const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
 function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 	const { series, visualization } = widget;
 	if (series.points.length === 0) {
-		return <div className="py-6 text-sm text-muted-foreground">No data yet.</div>;
+		return (
+			<div className="py-6 text-sm text-muted-foreground">No data yet.</div>
+		);
 	}
 	switch (visualization) {
 		case "line":
@@ -52,7 +55,9 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 							{series.points.map((p) => (
 								<tr key={p.key} className="border-b last:border-0">
 									<td className="py-1 pr-4 text-muted-foreground">{p.key}</td>
-									<td className="py-1 text-right tabular-nums">{p.value.toLocaleString()}</td>
+									<td className="py-1 text-right tabular-nums">
+										{p.value.toLocaleString()}
+									</td>
 								</tr>
 							))}
 						</tbody>
@@ -64,8 +69,16 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 	}
 }
 
-function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns: 1 | 2 | 3 | 4 }) {
-	const span = widget.span ? (Math.min(widget.span, columns) as 1 | 2 | 3 | 4) : 1;
+function WidgetCard({
+	widget,
+	columns,
+}: {
+	widget: DashboardWidgetView;
+	columns: 1 | 2 | 3 | 4;
+}) {
+	const span = widget.span
+		? (Math.min(widget.span, columns) as 1 | 2 | 3 | 4)
+		: 1;
 	return (
 		<Card title={widget.title} className={COL_SPAN[span]}>
 			<WidgetBody widget={widget} />
@@ -78,14 +91,31 @@ function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns:
  * `fromDashboardData(runDashboard(...))`). `accent` overrides the `--primary`
  * token for this dashboard's subtree only, so every chart picks it up.
  */
-export function Dashboard({ data, className }: { data: DashboardView; className?: string }) {
+export function Dashboard({
+	data,
+	className,
+}: {
+	data: DashboardView;
+	className?: string;
+}) {
 	const columns = data.columns ?? 2;
-	const style = data.accent ? ({ "--primary": data.accent } as React.CSSProperties) : undefined;
+	const style = data.accent
+		? ({ "--primary": data.accent } as React.CSSProperties)
+		: undefined;
 	const isGrid = (data.layout ?? "grid") === "grid";
 
 	return (
-		<Section title={data.title} description={data.description} className={className} style={style}>
-			<div className={isGrid ? cn("grid gap-4", GRID_COLS[columns]) : "flex flex-col gap-4"}>
+		<Section
+			title={data.title}
+			description={data.description}
+			className={className}
+			style={style}
+		>
+			<div
+				className={
+					isGrid ? cn("grid gap-4", GRID_COLS[columns]) : "flex flex-col gap-4"
+				}
+			>
 				{data.widgets.map((widget) => (
 					<WidgetCard key={widget.id} widget={widget} columns={columns} />
 				))}

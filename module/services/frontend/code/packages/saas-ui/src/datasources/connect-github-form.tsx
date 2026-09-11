@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useId } from "react";
 import { useForm } from "react-hook-form";
 import { type ConnectGitHubValues, connectGitHubSchema } from "./schema.js";
-import { cn } from "./util.js";
+import { Button, Input, Label, Textarea } from "@codefly-dev/ui/layout";
 
 interface ConnectGitHubFormProps {
 	onSubmit: (values: ConnectGitHubValues) => void;
@@ -12,11 +12,6 @@ interface ConnectGitHubFormProps {
 	isPending: boolean;
 	errorMessage?: string;
 }
-
-const fieldClass =
-	"flex w-full rounded-md border border-input bg-transparent px-3 py-1.5 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-const labelClass = "text-sm font-medium";
 
 const errorClass = "text-sm text-destructive";
 
@@ -68,25 +63,26 @@ export function ConnectGitHubForm({
 					noValidate
 				>
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor={idFor("repo")}>
-							Repository
-						</label>
-						<input
+						<Label htmlFor={idFor("repo")}>Repository</Label>
+						<Input
 							id={idFor("repo")}
-							className={fieldClass}
+							aria-invalid={!!errors.repo}
+							aria-describedby={errors.repo ? idFor("repo-error") : undefined}
 							placeholder="owner/name"
 							{...form.register("repo")}
 						/>
-						{errors.repo && <p className={errorClass}>{errors.repo.message}</p>}
+						{errors.repo && (
+							<p id={idFor("repo-error")} className={errorClass}>
+								{errors.repo.message}
+							</p>
+						)}
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor={idFor("paths")}>
-							Paths (optional)
-						</label>
-						<textarea
+						<Label htmlFor={idFor("paths")}>Paths (optional)</Label>
+						<Textarea
 							id={idFor("paths")}
-							className={cn(fieldClass, "resize-none font-mono")}
+							className="resize-none font-mono"
 							rows={2}
 							placeholder={"docs/\nsrc/api/"}
 							{...form.register("paths")}
@@ -97,64 +93,75 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor={idFor("branch")}>
-							Branch (optional)
-						</label>
-						<input
+						<Label htmlFor={idFor("branch")}>Branch (optional)</Label>
+						<Input
 							id={idFor("branch")}
-							className={fieldClass}
+							aria-invalid={!!errors.branch}
+							aria-describedby={
+								errors.branch ? idFor("branch-error") : undefined
+							}
 							placeholder="Defaults to the repository default branch"
 							{...form.register("branch")}
 						/>
 						{errors.branch && (
-							<p className={errorClass}>{errors.branch.message}</p>
+							<p id={idFor("branch-error")} className={errorClass}>
+								{errors.branch.message}
+							</p>
 						)}
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor={idFor("collection")}>
-							Target collection
-						</label>
-						<input
+						<Label htmlFor={idFor("collection")}>Target collection</Label>
+						<Input
 							id={idFor("collection")}
-							className={fieldClass}
+							aria-invalid={!!errors.targetCollection}
+							aria-describedby={
+								errors.targetCollection ? idFor("collection-error") : undefined
+							}
 							placeholder="Documents-store collection to land entries in"
 							{...form.register("targetCollection")}
 						/>
 						{errors.targetCollection && (
-							<p className={errorClass}>{errors.targetCollection.message}</p>
+							<p id={idFor("collection-error")} className={errorClass}>
+								{errors.targetCollection.message}
+							</p>
 						)}
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor={idFor("token")}>
-							Access token
-						</label>
-						<input
+						<Label htmlFor={idFor("token")}>Access token</Label>
+						<Input
 							id={idFor("token")}
+							aria-invalid={!!errors.accessToken}
+							aria-describedby={
+								errors.accessToken ? idFor("token-error") : undefined
+							}
 							type="password"
-							className={fieldClass}
 							placeholder="PAT or GitHub App installation token"
 							{...form.register("accessToken")}
 						/>
 						<p className="text-xs text-muted-foreground">
-                            Use a fine-grained PAT restricted to this repository with Contents: Read-only.
-                            Your organization may require approval or SSO authorization.
-                            Repository and branch access are verified before saving.
-                        </p>
+							Use a fine-grained PAT restricted to this repository with
+							Contents: Read-only. Your organization may require approval or SSO
+							authorization. Repository and branch access are verified before
+							saving.
+						</p>
 						{errors.accessToken && (
-							<p className={errorClass}>{errors.accessToken.message}</p>
+							<p id={idFor("token-error")} className={errorClass}>
+								{errors.accessToken.message}
+							</p>
 						)}
 					</div>
 
 					<div className="space-y-2">
-						<label className={labelClass} htmlFor={idFor("secret")}>
-							Webhook secret (optional)
-						</label>
-						<input
+						<Label htmlFor={idFor("secret")}>Webhook secret (optional)</Label>
+						<Input
 							id={idFor("secret")}
+							aria-invalid={!!errors.webhookSecret}
+							aria-describedby={
+								errors.webhookSecret ? idFor("secret-error") : undefined
+							}
 							type="password"
-							className={fieldClass}
 							placeholder="Shared secret GitHub signs push deliveries with"
 							{...form.register("webhookSecret")}
 						/>
@@ -163,7 +170,9 @@ export function ConnectGitHubForm({
 							have it yet.
 						</p>
 						{errors.webhookSecret && (
-							<p className={errorClass}>{errors.webhookSecret.message}</p>
+							<p id={idFor("secret-error")} className={errorClass}>
+								{errors.webhookSecret.message}
+							</p>
 						)}
 					</div>
 
@@ -174,20 +183,12 @@ export function ConnectGitHubForm({
 					)}
 
 					<div className="flex justify-end gap-2 pt-2">
-						<button
-							type="button"
-							onClick={onCancel}
-							className="inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium shadow-sm hover:bg-accent"
-						>
+						<Button type="button" onClick={onCancel} variant="outline">
 							Cancel
-						</button>
-						<button
-							type="submit"
-							disabled={isPending}
-							className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
-						>
+						</Button>
+						<Button type="submit" disabled={isPending} aria-busy={isPending}>
 							{isPending ? "Validating GitHub access…" : "Validate and connect"}
-						</button>
+						</Button>
 					</div>
 				</form>
 			</div>

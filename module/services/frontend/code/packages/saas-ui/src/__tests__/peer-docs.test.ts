@@ -75,3 +75,16 @@ describe("the README install line matches peerDependencies", () => {
 		}
 	});
 });
+
+describe("SaaS presentation composes shared controls", () => {
+	for (const file of ["connect-github-form.tsx", "datasources-panel.tsx"]) {
+		it(file, () => {
+			const source = readFileSync(
+				join(packageRoot, "src/datasources", file),
+				"utf8",
+			);
+			expect(source).toContain('from "@codefly-dev/ui/layout"');
+			expect(source).not.toMatch(/<(?:button|input|textarea|table|label)\b/);
+		});
+	}
+});

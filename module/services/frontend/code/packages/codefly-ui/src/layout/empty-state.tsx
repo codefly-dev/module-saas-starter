@@ -21,6 +21,7 @@ export interface EmptyStateProps {
 	/** Optional trailing content, e.g. a call-to-action button. */
 	children?: ReactNode;
 	className?: string;
+	variant?: "default" | "illustrated";
 }
 
 /** A centered placeholder for "nothing here yet" surfaces. */
@@ -30,22 +31,42 @@ export function EmptyState({
 	description,
 	children,
 	className,
+	variant = "default",
 }: EmptyStateProps) {
 	return (
 		<div
 			data-slot="empty-state"
 			className={cn(
 				"flex flex-col items-center justify-center gap-2 px-6 py-12 text-center",
+				variant === "illustrated" &&
+					"relative overflow-hidden rounded-2xl border border-dashed bg-gradient-to-br from-muted/30 to-muted/0 py-16",
 				className,
 			)}
 		>
 			<div
 				data-slot="empty-state-icon"
-				className="text-muted-foreground [&_svg]:size-10 [&_svg]:[stroke-width:1.5]"
+				className={cn(
+					"text-muted-foreground [&_svg]:size-10 [&_svg]:[stroke-width:1.5]",
+					variant === "illustrated" &&
+						"relative mb-2 flex size-14 items-center justify-center rounded-2xl border bg-background shadow-sm [&_svg]:size-6",
+				)}
 			>
+				{variant === "illustrated" && (
+					<div
+						aria-hidden
+						className="absolute inset-0 -z-10 rounded-full bg-gradient-to-br from-primary/20 via-primary/10 to-accent blur-2xl"
+					/>
+				)}
 				{icon}
 			</div>
-			<h3 className="text-sm font-medium text-foreground">{heading}</h3>
+			<h3
+				className={cn(
+					"text-sm font-medium text-foreground",
+					variant === "illustrated" && "text-lg font-semibold tracking-tight",
+				)}
+			>
+				{heading}
+			</h3>
 			{description && (
 				<p className="max-w-sm text-sm text-muted-foreground">{description}</p>
 			)}

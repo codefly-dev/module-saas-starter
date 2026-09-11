@@ -9,6 +9,7 @@
    generalizes to every consumer the host renders (module UI, solution remotes) as
    they move into the kit. */
 @source "../../packages/codefly-ui/src";
+@source "../../packages/saas-ui/src";
 
 @custom-variant dark (&:is(.dark *));
 

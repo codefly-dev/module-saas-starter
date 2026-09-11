@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -17,10 +17,14 @@ import { describe, expect, it } from "vitest";
 
 const uiDir = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// The primitives promoted into `@codefly-dev/ui/layout`. Their host files MUST be
-// re-exports. (Host-local components that were never promoted — card, command,
-// input-group, sheet, sidebar, sonner, tabs — are intentionally excluded.)
 const PROMOTED_PRIMITIVES = [
+	"card",
+	"tabs",
+	"command",
+	"input-group",
+	"sheet",
+	"sidebar",
+	"sonner",
 	"alert-dialog",
 	"avatar",
 	"badge",
@@ -49,6 +53,8 @@ describe("promoted UI primitives stay kit re-exports", () => {
 		it(`${name}.tsx re-exports from @codefly-dev/ui/layout and is not re-inlined`, () => {
 			const source = readFileSync(join(uiDir, `${name}.tsx`), "utf8");
 			expect(source).toContain('from "@codefly-dev/ui/layout"');
+ expect(source).not.toMatch(/<[a-z][a-z-]*(?:\s|>)/);
+ if (name !== "sidebar" && name !== "sonner") expect(source).not.toMatch(/\bfunction\b|=>/);
 			for (const marker of RE_INLINE_MARKERS) {
 				expect(
 					source.includes(marker),
@@ -57,4 +63,13 @@ describe("promoted UI primitives stay kit re-exports", () => {
 			}
 		});
 	}
+});
+
+it("accounts for every host control file", () => {
+	expect(
+		readdirSync(uiDir)
+			.filter((name) => name.endsWith(".tsx"))
+			.map((name) => name.slice(0, -4))
+			.sort(),
+	).toEqual([...PROMOTED_PRIMITIVES].sort());
 });

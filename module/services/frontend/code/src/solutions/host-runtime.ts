@@ -33,7 +33,7 @@ export const SOLUTION_HOST_CONTRACT_MAJOR = 1;
  * keep single. The `kit-shared-version` test pins this to the packages' actual
  * versions so a bump can't drift it silently.
  */
-export const CODEFLY_KIT_VERSION = "0.2.3";
+export const CODEFLY_KIT_VERSION = "0.3.0";
 
 /**
  * `@codefly-dev/saas-sdk` tracks the published accounts/connect API contract,
@@ -55,6 +55,14 @@ export const HOST_SHARED_VERSIONS: Readonly<Record<string, string>> = {
 	"react-dom": reactVersion,
 	"react/jsx-runtime": reactVersion,
 	"@codefly-dev/ui": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/layout": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/dashboard": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/chat": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/skin": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/table": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/plugin-host": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/plugin-host/runtime": CODEFLY_KIT_VERSION,
+	"@codefly-dev/ui/plugin-host/ui": CODEFLY_KIT_VERSION,
 	"@codefly-dev/saas-ui": CODEFLY_KIT_VERSION,
 	"@codefly-dev/saas-sdk": CODEFLY_SAAS_SDK_VERSION,
 };

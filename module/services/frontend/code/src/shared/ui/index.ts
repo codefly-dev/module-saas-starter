@@ -1,16 +1,15 @@
-// Re-export shadcn/ui components from their canonical location.
-// Feature slices import from "@/shared/ui" rather than "@/components/ui".
+// Host convenience imports; presentation is implemented by the shared kit.
 
 // Metric charts for the template dashboard — take metric `data`, not raw RPC.
 export {
-	AreaChart,
-	BarChart,
+	MetricAreaChart as AreaChart,
+	MetricBarChart as BarChart,
 	type ChartDatum,
 	type ChartSeries,
 	chartSeriesColor,
-	LineChart,
+	MetricLineChart as LineChart,
 	type MetricChartProps,
-} from "@/components/charts";
+} from "@codefly-dev/ui/dashboard";
 export {
 	AlertDialog,
 	AlertDialogAction,
@@ -21,19 +20,19 @@ export {
 	AlertDialogHeader,
 	AlertDialogTitle,
 	AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-export { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-export { Badge, badgeVariants } from "@/components/ui/badge";
-export { Button, buttonVariants } from "@/components/ui/button";
+} from "@codefly-dev/ui/layout";
+export { Avatar, AvatarFallback, AvatarImage } from "@codefly-dev/ui/layout";
+export { Badge, badgeVariants } from "@codefly-dev/ui/layout";
+export { Button, buttonVariants } from "@codefly-dev/ui/layout";
 export {
-	Card,
+	CardRoot as Card,
 	CardContent,
 	CardDescription,
 	CardFooter,
 	CardHeader,
 	CardTitle,
-} from "@/components/ui/card";
-export { Checkbox } from "@/components/ui/checkbox";
+} from "@codefly-dev/ui/layout";
+export { Checkbox } from "@codefly-dev/ui/layout";
 export {
 	Dialog,
 	DialogContent,
@@ -42,7 +41,7 @@ export {
 	DialogHeader,
 	DialogTitle,
 	DialogTrigger,
-} from "@/components/ui/dialog";
+} from "@codefly-dev/ui/layout";
 export {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -51,21 +50,21 @@ export {
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-export { Input } from "@/components/ui/input";
-export { Label } from "@/components/ui/label";
+} from "@codefly-dev/ui/layout";
+export { Input } from "@codefly-dev/ui/layout";
+export { Label } from "@codefly-dev/ui/layout";
 export {
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
-} from "@/components/ui/select";
-export { Separator } from "@/components/ui/separator";
-export { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-export { Skeleton } from "@/components/ui/skeleton";
+} from "@codefly-dev/ui/layout";
+export { Separator } from "@codefly-dev/ui/layout";
+export { Sheet, SheetContent, SheetTrigger } from "@codefly-dev/ui/layout";
+export { Skeleton } from "@codefly-dev/ui/layout";
 export { Toaster } from "@/components/ui/sonner";
-export { Switch } from "@/components/ui/switch";
+export { Switch } from "@codefly-dev/ui/layout";
 export {
 	Table,
 	TableBody,
@@ -73,15 +72,20 @@ export {
 	TableHead,
 	TableHeader,
 	TableRow,
-} from "@/components/ui/table";
-export { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-export { Textarea } from "@/components/ui/textarea";
+} from "@codefly-dev/ui/layout";
+export {
+	TabsRoot as Tabs,
+	TabsContent,
+	TabsList,
+	TabsTrigger,
+} from "@codefly-dev/ui/layout";
+export { Textarea } from "@codefly-dev/ui/layout";
 export {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
 	TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from "@codefly-dev/ui/layout";
 export {
 	Grid,
 	Layout,
@@ -90,7 +94,7 @@ export {
 	Panel,
 	Section,
 	Stack,
-} from "./layout";
+} from "@codefly-dev/ui/layout";
 
 // Dashboard value-display widgets — bound to a metric's presentational data.
 export {
@@ -100,4 +104,4 @@ export {
 	MetricCard,
 	type MetricFormat,
 	StatTile,
-} from "./metric-tiles";
+} from "@codefly-dev/ui/dashboard";

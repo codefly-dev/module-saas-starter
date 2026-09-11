@@ -13,7 +13,10 @@ import {
 	type ReactNode,
 	useState,
 } from "react";
-import { Section } from "../layout/card.js";
+import { Avatar as SharedAvatar, AvatarFallback } from "../layout/avatar.js";
+import { Button } from "../layout/button.js";
+import { Textarea } from "../layout/textarea.js";
+import { Section } from "../layout/page.js";
 import { cn } from "./cn.js";
 import type { ChatMessage, ChatRole } from "./types.js";
 
@@ -32,12 +35,12 @@ function initials(label: string): string {
 
 function Avatar({ label }: { label: string }) {
 	return (
-		<div
+		<SharedAvatar
 			aria-hidden="true"
-			className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-muted text-xs font-medium text-muted-foreground"
+			className="h-8 w-8 shrink-0 select-none text-xs"
 		>
-			{initials(label)}
-		</div>
+			<AvatarFallback>{initials(label)}</AvatarFallback>
+		</SharedAvatar>
 	);
 }
 
@@ -113,22 +116,18 @@ function Composer({
 
 	return (
 		<form onSubmit={onSubmit} className="flex items-end gap-2 border-t p-3">
-			<textarea
+			<Textarea
 				value={value}
 				onChange={(event) => setValue(event.target.value)}
 				onKeyDown={onKeyDown}
 				rows={1}
 				placeholder={placeholder ?? "Send a message…"}
 				aria-label="Message"
-				className="min-h-9 flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+				className="min-h-9 flex-1 resize-none"
 			/>
-			<button
-				type="submit"
-				disabled={busy || value.trim() === ""}
-				className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-			>
+			<Button type="submit" disabled={busy || value.trim() === ""}>
 				Send
-			</button>
+			</Button>
 		</form>
 	);
 }

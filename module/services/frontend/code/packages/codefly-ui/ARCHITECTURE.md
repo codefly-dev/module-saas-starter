@@ -15,7 +15,7 @@ layout      Card · Section · Tabs · Text · Input · Avatar · Button   (atom
 charts      Svg · Scale · Axis · Gridline                            (chart atoms)
 dashboard   composes layout + charts
 chat        composes layout atoms + SDK stream hook
-table/form  composes layout atoms
+table/form  composes layout atoms (DataTable takes an injected TanStack table)
    ↓
 Page.tsx    full freedom: composes any of the above + solution-specific code
 ```

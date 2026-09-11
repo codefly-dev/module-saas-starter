@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PACKAGES } from "../../../scripts/publish-frontend-kit.mjs";
 import { SEALED_SHARED } from "../SolutionOutlet";
@@ -86,7 +87,26 @@ describe("every sealed Codefly package is one the release publishes", () => {
 				PACKAGES,
 				`${pkg} is shared as a singleton but is not published, so no remote can ` +
 					"install it and ask for that share key",
-			).toContain(pkg);
+			).toContain(pkg.split("/").slice(0, 2).join("/"));
+			if (pkg.startsWith("@codefly-dev/ui/")) {
+				const manifest = JSON.parse(
+					readFileSync("packages/codefly-ui/package.json", "utf8"),
+				);
+				expect(manifest.exports).toHaveProperty(
+					`./${pkg.split("/").slice(2).join("/")}`,
+				);
+			}
 		});
+	}
+});
+
+it("shares every exported kit subpath", () => {
+	const manifest = JSON.parse(
+		readFileSync("packages/codefly-ui/package.json", "utf8"),
+	);
+	for (const path of Object.keys(manifest.exports)) {
+		expect(SEALED_PACKAGES).toContain(
+			path === "." ? "@codefly-dev/ui" : `@codefly-dev/ui${path.slice(1)}`,
+		);
 	}
 });
