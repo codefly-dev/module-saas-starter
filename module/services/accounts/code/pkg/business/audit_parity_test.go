@@ -37,6 +37,9 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceSourceRecovered,
 	EventDocumentDeleted,
 	EventDocumentIngested,
+	// Module-authenticated document readers emit these observations.
+	EventDocumentRead,
+	EventDocumentSearch,
 	EventDocumentQuarantineReleased,
 	EventDocumentQuarantined,
 	EventDocumentRenamed,
