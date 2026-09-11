@@ -2,12 +2,18 @@ package business
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/codefly-dev/core/wool"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
+
+// ErrOrgAdminContinuity reports a membership change that would strip an
+// organization of its last administrative membership. Removal and demotion
+// are the same violation and return the same error.
+var ErrOrgAdminContinuity = errors.New("organization must keep at least one owner or admin")
 
 func orgRoleToString(role gen.OrgRole) string {
 	switch role {
@@ -18,6 +24,72 @@ func orgRoleToString(role gen.OrgRole) string {
 	default:
 		return "member"
 	}
+}
+
+// OrgAdministrationLockKey names the transaction-scoped advisory lock that
+// serializes one organization's administrative standing. Every writer of
+// organization_members takes it — the business service through
+// Store.LockOrgAdministration, the pre-authentication identity resolver
+// directly on its own transaction — so the key is stated once here rather than
+// spelled out at each of them.
+func OrgAdministrationLockKey(orgID string) string {
+	return "administration:" + orgID
+}
+
+// IsOrgAdminRole reports whether a role carries organization administrative
+// authority. Both writers of organization_members decide with it, so the set of
+// administrative roles is stated once.
+func IsOrgAdminRole(role string) bool {
+	return role == "owner" || role == "admin"
+}
+
+// OrgAdminContinuity is the administrative-continuity invariant, applied to
+// counted eligible administrators: current is how many the organization has
+// now, projected how many it would have after the change.
+//
+// An organization that has no eligible administrator to begin with is exempt.
+// The rule refuses to remove the last administrator; it does not refuse to
+// operate on an organization that already has none, which would leave such data
+// unrepairable — including by an operator adding an administrator back.
+func OrgAdminContinuity(current int, projected int) error {
+	if projected > 0 || current == 0 {
+		return nil
+	}
+	return ErrOrgAdminContinuity
+}
+
+// requireOrgAdminContinuity takes the organization's administration lock and
+// evaluates the proposed post-change state against it. The lock is the point:
+// the roster read alone is not serialized, so two transactions can each observe
+// two administrators and each remove one. Callers hold it for the rest of their
+// transaction and write the membership row under it.
+//
+// Lock order for anything that takes more than one of these:
+// LockOrgAdministration -> LockOrgMembership -> LockEntitlementQuota.
+func (s *Service) requireOrgAdminContinuity(ctx context.Context, orgID string, userID string, role string) error {
+	w := wool.Get(ctx).In("requireOrgAdminContinuity")
+
+	// A change that leaves the target holding administrative authority cannot
+	// reduce the count, so it can never violate the invariant. This is a
+	// property of the argument, not of concurrently mutable state, so it is safe
+	// to decide before taking the lock — and it keeps promotions and
+	// administrator invitations off the organization-wide serialization point
+	// entirely. Not holding the lock here can only make a concurrent check miss
+	// this new administrator and be more conservative, never less.
+	if IsOrgAdminRole(role) {
+		return nil
+	}
+
+	if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
+		return w.Wrapf(err, "cannot lock organization administration")
+	}
+	// role is non-administrative here, so the administrators that would remain
+	// are exactly those held by somebody other than the target.
+	current, others, err := s.store.CountOrgAdministrators(ctx, orgID, userID)
+	if err != nil {
+		return w.Wrapf(err, "cannot count organization administrators")
+	}
+	return OrgAdminContinuity(current, others)
 }
 
 // GetOrganization returns an organization by ID. organizations is
@@ -59,16 +131,27 @@ func (s *Service) ListOrganizations(ctx context.Context, userID string) (*gen.Li
 	return &gen.ListOrganizationsResponse{Organizations: orgs}, nil
 }
 
-// AddOrgMember adds a member to an organization. The seat decision and
-// membership write share one tenant transaction and one per-org quota lock, so
-// concurrent admin requests cannot consume the same final seat. Updating an
-// existing member remains idempotent even when the organization is full.
+// AddOrgMember adds a member to an organization, or updates the role of one
+// already there. The seat decision and membership write share one tenant
+// transaction and one per-org quota lock, so concurrent admin requests cannot
+// consume the same final seat. Updating an existing member remains idempotent
+// even when the organization is full.
+//
+// The upsert is a role change as much as an addition, so it carries the same
+// administrative-continuity invariant RemoveOrgMember does: an update that
+// demotes the last owner or admin is rejected, not admitted because it happens
+// to reuse the add path.
 func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.AddOrgMemberRequest) error {
 	w := wool.Get(ctx).In("AddOrgMember")
 
 	role := orgRoleToString(req.Role)
 	var orgName string
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		// Administration lock before the quota lock — that order is the one
+		// documented in AUTHZ.md, and this is the only path that holds both.
+		if err := s.requireOrgAdminContinuity(ctx, req.OrgId, req.UserId, role); err != nil {
+			return err
+		}
 		quota, err := s.cardinalityQuotaInTx(ctx, req.OrgId, EntitlementSeats)
 		if err != nil {
 			return w.Wrapf(err, "cannot check seat quota")
@@ -116,10 +199,19 @@ func (s *Service) AddOrgMember(ctx context.Context, actorID string, req *gen.Add
 // ConvergeFixtureOrgMember applies fixture-declared membership as bootstrap
 // state. It bypasses runtime seat admission and user-facing side effects while
 // preserving the cache consistency required by every membership mutation.
+//
+// Administrative continuity is not among the bypasses: seeding only ever adds,
+// so a well-formed fixture never sees the rule, and one that would demote an
+// organization's last administrator should fail the boot rather than converge
+// an organization nobody can administer.
 func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgMemberRequest) error {
 	w := wool.Get(ctx).In("ConvergeFixtureOrgMember")
+	role := orgRoleToString(req.Role)
 	if err := s.store.As(System()).Within(ctx, func(ctx context.Context) error {
-		return s.store.AddOrgMember(ctx, req.OrgId, req.UserId, orgRoleToString(req.Role))
+		if err := s.requireOrgAdminContinuity(ctx, req.OrgId, req.UserId, role); err != nil {
+			return err
+		}
+		return s.store.AddOrgMember(ctx, req.OrgId, req.UserId, role)
 	}); err != nil {
 		return w.Wrapf(err, "cannot converge fixture member")
 	}
@@ -131,8 +223,9 @@ func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgM
 // authority that depends on that membership.
 //
 // Guards:
-//   - Last-owner guard: if the target is the only remaining owner/admin,
-//     reject. Otherwise we'd leave the org with no one who can manage it.
+//   - Administrative continuity: if the target is the only remaining
+//     owner/admin, reject. Otherwise we'd leave the org with no one who can
+//     manage it. Same invariant, same error as a demotion through AddOrgMember.
 //   - Dependent access: team_members is the one relation that still confers
 //     live permissions after the organization membership is gone — permission
 //     resolution matches team-subject role assignments through it — so those
@@ -148,31 +241,18 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 	// + organizations RLS both let the queries through, and the record cannot
 	// commit describing a removal whose dependent access is still standing.
 	//
-	// Lock first, before any read the decision depends on: a concurrent team
-	// insert for the same (org, user) either commits before the guard reads or
-	// waits behind this transaction, so it can neither be missed by the delete
-	// nor land after it.
+	// Two locks, in the order AUTHZ.md fixes. The organization-wide
+	// administration lock is taken first, inside the continuity guard, because
+	// the count it reads is an organization-wide fact. The (org, user) lock is
+	// taken before the writes, so a concurrent team insert for the same pair
+	// either commits before the dependent delete or waits behind this
+	// transaction, and can neither be missed by it nor land after it.
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		if err := s.requireOrgAdminContinuity(ctx, req.OrgId, req.UserId, ""); err != nil {
+			return err
+		}
 		if err := s.store.LockOrgMembership(ctx, req.OrgId, req.UserId); err != nil {
 			return w.Wrapf(err, "cannot lock org membership")
-		}
-		members, err := s.store.ListOrgMembers(ctx, req.OrgId)
-		if err != nil {
-			return w.Wrapf(err, "cannot load org members for guard")
-		}
-		var adminCount int
-		targetIsAdmin := false
-		for _, m := range members {
-			if m.Role != gen.OrgRole_ORG_ROLE_ADMIN && m.Role != gen.OrgRole_ORG_ROLE_OWNER {
-				continue
-			}
-			adminCount++
-			if m.UserId == req.UserId {
-				targetIsAdmin = true
-			}
-		}
-		if targetIsAdmin && adminCount <= 1 {
-			return w.NewError("cannot remove the last admin/owner from the organization")
 		}
 		// Dependent access before the parent row: migration 127 made team_members
 		// a child of organization_members with ON DELETE CASCADE, so deleting the

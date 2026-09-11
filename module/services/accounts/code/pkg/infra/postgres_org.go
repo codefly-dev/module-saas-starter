@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"time"
@@ -146,6 +147,86 @@ func (s *PostgresStore) OrgMemberExists(ctx context.Context, orgID string, userI
 		)`, orgID, userID,
 	).Scan(&exists)
 	return exists, err
+}
+
+// CountOrgAdministrators counts the organization's eligible administrative
+// memberships, and those of them held by somebody other than excludeUserID.
+//
+// Eligibility includes whether the identity can still authenticate, which means
+// reading users. Request transactions cannot read a co-member's users row
+// (migration 69), so they resolve it through the SECURITY DEFINER counter
+// scoped to their own organization. Control-plane transactions set no tenant
+// org and hold BYPASSRLS, so they evaluate the same predicate directly.
+//
+// The branch is on the tenant scope rather than on a fallback, deliberately: a
+// direct join under app_tenant returns zero rows, and zero administrators reads
+// as "this organization never had one", which the invariant exempts. Getting
+// this wrong disables the rule instead of failing loudly.
+func (s *PostgresStore) CountOrgAdministrators(ctx context.Context, orgID string, excludeUserID string) (int, int, error) {
+	w := wool.Get(ctx).In("CountOrgAdministrators")
+	executor := s.getQueryExecutor(ctx)
+
+	var scopedOrg string
+	if err := executor.QueryRow(ctx,
+		`SELECT coalesce(pg_catalog.current_setting('app.current_org_id', true), '')`,
+	).Scan(&scopedOrg); err != nil {
+		return 0, 0, w.Wrapf(err, "failed to read tenant scope")
+	}
+
+	query := `SELECT public.organization_eligible_administrators($1)`
+	if scopedOrg != orgID {
+		query = `
+			SELECT member.user_id
+			FROM organization_members AS member
+			JOIN users AS u ON u.uuid = member.user_id
+			WHERE member.org_id = $1
+			  AND member.role IN ('owner', 'admin')
+			  AND u.status = 'active'`
+	}
+
+	rows, err := executor.Query(ctx, query, orgID)
+	if err != nil {
+		return 0, 0, w.Wrapf(err, "failed to count org administrators")
+	}
+	defer rows.Close()
+
+	total, others := 0, 0
+	for rows.Next() {
+		var administrator string
+		if err := rows.Scan(&administrator); err != nil {
+			return 0, 0, w.Wrapf(err, "failed to scan org administrator")
+		}
+		total++
+		if administrator != excludeUserID {
+			others++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, w.Wrapf(err, "failed to read org administrators")
+	}
+	return total, others, nil
+}
+
+// LockOrgAdministration serializes every change to one organization's
+// administrative standing — a role upsert, a demotion, or a removal, whichever
+// member it names. It must be taken in the same transaction as the roster read
+// the decision rests on and the membership write that follows; otherwise two
+// transactions each observe the same administrators and each remove one.
+//
+// Lock order when a path takes more than one: LockOrgAdministration ->
+// LockOrgMembership -> LockEntitlementQuota.
+func (s *PostgresStore) LockOrgAdministration(ctx context.Context, orgID string) error {
+	if _, ok := ctx.Value("tx").(pgx.Tx); !ok { //nolint:staticcheck // shared transaction context key
+		return errors.New("org administration lock requires a tenant transaction")
+	}
+	_, err := s.getQueryExecutor(ctx).Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		business.OrgAdministrationLockKey(orgID),
+	)
+	if err != nil {
+		return wool.Get(ctx).In("LockOrgAdministration").Wrapf(err, "failed to lock org administration")
+	}
+	return nil
 }
 
 // LockOrgMembership serializes every mutation of one (organization, user)

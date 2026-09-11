@@ -208,6 +208,32 @@ tests pin its owner, security mode, ACL, cross-user isolation, and membership
 filter. User-owned identity deletion is separately granted for atomic GDPR
 deletion and remains constrained by `user_identities_user` RLS.
 
+## Administrative continuity and eligible administrators
+
+Migration `133_organization_administrator_eligibility` adds
+`organization_eligible_administrators(org_id)`, the counter behind the
+administrative-continuity invariant (see `AUTHZ.md`). An administrator counts
+only when the membership carries an administrative role **and** the identity
+behind it is still `active`: `findIdentity` refuses any other status, and user
+deletion is a soft delete that leaves the membership row standing, so counting
+those rows would let the last usable administrator be removed.
+
+Eligibility therefore has to read `users`, which request traffic cannot do for a
+co-member (migration `69`). The remedy is the same one that section describes: a
+`SECURITY DEFINER` function owned by the NOLOGIN `app_control_plane` role,
+public execution revoked, `EXECUTE` granted only to `app_tenant`, and the body
+scoped to `app.current_org_id` so it answers only for the caller's own
+organization. It returns membership ids that caller can already enumerate, and
+no `users` column.
+
+The failure mode this shape avoids is specific: a direct join under `app_tenant`
+returns zero rows rather than an error, and zero administrators reads as "this
+organization never had one" — which the invariant deliberately exempts so
+historical data stays repairable. Getting the read wrong would therefore
+silently disable the rule instead of tightening it. Control-plane transactions
+set no tenant organization and hold `BYPASSRLS`, so they evaluate the same
+predicate directly.
+
 ## Session authorization invalidation
 
 Migration `70_session_authorization_invalidation` makes refresh-session

@@ -555,6 +555,76 @@ func (r *Resolver) requireApprovedWaitlist(ctx context.Context, tx pgx.Tx, c *au
 	return nil
 }
 
+// requireOrgAdminContinuity applies the organization's administrative-continuity
+// invariant to a membership upsert this resolver performs itself. The rule lives
+// in business.OrgAdminContinuity; what is repeated here is only the roster read,
+// because pre-authentication resolution holds a raw transaction rather than the
+// tenant store the service layer writes through.
+//
+// The advisory lock is the same one the service takes, so the two writers
+// serialize against each other rather than each against itself.
+func requireOrgAdminContinuity(ctx context.Context, tx pgx.Tx, orgID, userID uuid.UUID, role string) error {
+	// Same short-circuit as the service layer: a change that leaves the target
+	// administrative cannot reduce the count, so it needs neither the lock nor
+	// the read.
+	if business.IsOrgAdminRole(role) {
+		return nil
+	}
+
+	if _, err := tx.Exec(ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		business.OrgAdministrationLockKey(orgID.String()),
+	); err != nil {
+		return fmt.Errorf("pgauth: lock org administration: %w", err)
+	}
+
+	// FOR UPDATE, not a plain read, and that is the whole point. This runs in a
+	// SERIALIZABLE transaction whose snapshot was fixed by the invitation lookup
+	// before the advisory lock was taken, and acquiring a lock does not refresh
+	// a snapshot. A plain read therefore reports the administrators as of before
+	// a contender that has since committed — so waiting for the lock and then
+	// reading stale rows would admit exactly the demotion this guard exists to
+	// refuse. Locking the rows makes a concurrently removed or demoted
+	// administrator raise serialization_failure instead, which
+	// WithAuthBootstrapTx retries on a fresh snapshot.
+	//
+	// PostgreSQL only tracks rw-conflicts between SERIALIZABLE transactions, and
+	// the service layer's writers are READ COMMITTED, so SSI alone would not
+	// catch this.
+	//
+	// Only the membership rows are locked: this is the authentication path, and
+	// taking row locks on users would put invitation redemption in contention
+	// with every concurrent write to the same identities.
+	rows, err := tx.Query(ctx, `
+		SELECT member.user_id
+		FROM organization_members AS member
+		JOIN users AS u ON u.uuid = member.user_id
+		WHERE member.org_id = $1
+		  AND member.role IN ('owner', 'admin')
+		  AND u.status = 'active'
+		FOR UPDATE OF member`, orgID)
+	if err != nil {
+		return fmt.Errorf("pgauth: load org administrators: %w", err)
+	}
+	defer rows.Close()
+
+	current, others := 0, 0
+	for rows.Next() {
+		var administrator uuid.UUID
+		if err := rows.Scan(&administrator); err != nil {
+			return fmt.Errorf("pgauth: scan org administrator: %w", err)
+		}
+		current++
+		if administrator != userID {
+			others++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("pgauth: read org administrators: %w", err)
+	}
+	return business.OrgAdminContinuity(current, others)
+}
+
 // acceptInvitation joins userID to the invitation's org with the invitation's
 // role and marks the invitation accepted. The membership upsert mirrors
 // AddOrgMember: the accepted invitation's role is authoritative, so it wins over
@@ -565,6 +635,9 @@ func (r *Resolver) acceptInvitation(
 	invID, orgID, userID uuid.UUID,
 	role string,
 ) error {
+	if err := requireOrgAdminContinuity(ctx, tx, orgID, userID, role); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO organization_members (org_id, user_id, role)
 		VALUES ($1, $2, $3)
