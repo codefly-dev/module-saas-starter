@@ -3,8 +3,9 @@
 This candidate adds an opt-in Accounts-owned broker around the canonical Work
 Context issuer. It retains an authenticated owner's exact original delegation
 and returns bounded children to the configured consumer workload after the
-originating HTTP request is gone. It is a composition library, not an enabled
-public route, another issuer, an execution engine, or a deployable hosting claim.
+originating HTTP request is gone. The ordinary Accounts host mounts it only when
+its private deployment projection is configured. Local proof does not establish
+managed hosting acceptance.
 
 ## Served and client contract
 
@@ -158,8 +159,9 @@ a disposable initialized/unsealed persistent Vault; its administrator credential
 never enters the broker configuration. Managed Vault identity, TLS, projection,
 backup/restore and availability are separate deployment gates.
 
-Schedule `PurgeExecutionCustody(ctx, time.Now())` using the existing owner's
-retention execution, at least once per minute. It erases expired ciphertext and
+The ordinary Accounts host calls `PurgeExecutionCustody(ctx, time.Now())` at
+startup and on its existing one-minute retention/reconcile tick, including when
+the listener is disabled. It erases expired ciphertext and
 retains non-authorizing immutable registration tombstones. Expiry denies exchange
 even if cleanup is delayed. Tombstones prevent later registration from renewing
 an old admission identity; they are retained until owner/org deletion, which
@@ -213,7 +215,7 @@ candidate with its actual execution/worker/downstream processes and independent
 effect counts. Native broker tests are not that joined proof. Record exact source
 pins and evidence for both candidates. Public image/package publication, managed
 private route/workload certificate issuance, database/Vault identity and transport,
-retention scheduling, managed restart/restore and signed-in hosted composition
+observed retention execution, managed restart/restore and signed-in hosted composition
 remain reviewed production gates. No hosting readiness follows from this PR.
 
 
@@ -279,3 +281,96 @@ gRPC, registers custody, discards the request/parent, terminates the process,
 launches a replacement and recovers the byte-identical original Task child before
 requesting a bounded lookup child. This supplements the earlier component proof;
 consumer Task/worker/model process counts remain the consumer's joined proof.
+
+
+## Normal Accounts host and projected configuration
+
+`code/execution_custody.go` is called from the ordinary `work.go` bootstrap; no
+fixture executable is used for deployment. The constructor shares the existing
+Accounts JWT minter, stable Vault signing key (`saas-starter` issuer/current key
+ID), PostgreSQL session/authority store and Vault cipher. A private stable
+instance of the canonical WorkContextAuthorityServer avoids concurrent mutation
+by generated server setup. Enabling requires the real Redis revoker to have been
+wired and `ACCOUNTS_REVOCATION_FAIL_OPEN` to be false.
+
+The existing `security` workspace configuration supplies
+`EXECUTION_CUSTODY_CONFIG_FILE`, an absolute private JSON projection. Empty leaves
+both listeners disabled. The JSON shape is:
+
+```json
+{
+  "tls_cert_file": "/var/run/accounts/custody/tls.crt",
+  "tls_key_file": "/var/run/accounts/custody/tls.key",
+  "client_ca_file": "/var/run/accounts/custody/client-ca.crt",
+  "consumers": {
+    "example": {
+      "WorkerURI": "spiffe://example.invalid/ns/example/sa/example-worker",
+      "ParentAudience": "example-admission",
+      "TaskAudience": "example-task",
+      "Audience": "example-model",
+      "Profile": "example-profile@immutable-version",
+      "ResourceKind": "example-model",
+      "ResourceID": "example-resource",
+      "InvokeAction": "invoke",
+      "ReadAction": "read",
+      "TaskResourceKind": "example-task",
+      "TaskActions": ["execute", "read"]
+    }
+  }
+}
+```
+
+These are placeholders; the composing consumer owns the exact policy. JSON and
+all referenced files must be regular private files (0400/0440), at most128KiB.
+Atomic Kubernetes projected-secret symlinks are supported. TLS trust, certificate
+and consumer policy are snapshotted at startup; roll Accounts after changing
+them. Policy changes fence old bindings; certificate replacement retaining the
+same URI can preserve worker access within the original horizon.
+
+The authoritative topology declares two module-facing TCP endpoints, resolved
+by exact endpoint name through the Codefly SDK. No fixed runtime port is embedded
+in the process and no default consumer network edge is granted:
+
+| Endpoint | Topology port | Authentication and surface |
+|---|---:|---|
+| `accounts/custody` |9443| TLS1.3 server identity; real owner JWT for Register/Recover, verified worker URI client certificate for Exchange |
+| `accounts/revision` |9444| TLS1.3 server identity plus the existing separate `x-codefly-internal-token`; canonical internal WorkContext RPC policy, no caller certificate required; tenant issuance/exchange denied |
+
+The revision listener uses the already configured `CODEFLY_INTERNAL_TOKEN`
+(minimum32 characters), including the existing previous-token overlap policy.
+It does not accept that token as owner or worker custody authority. Both listeners
+use the projected server certificate; its DNS SANs must cover their private
+route(s). Compositions declare only required endpoint dependencies and render
+network policy. Preserve TLS through a TCP passthrough; never synthesize client
+identity from mesh/HTTP headers. This listener does not change the generated
+h2c internal transport. Shutdown drains the private listeners before stores close.
+
+For Vault, existing Codefly `vault/address` and `vault/token` projections remain
+compatible. Optional `vault/ca-file=/var/run/accounts/vault/ca.crt` and
+`vault/token-file=/var/run/accounts/vault/token` configuration select private
+mounted CA/token files (same0400/0440 atomic-file rules). Selecting either requires
+HTTPS. The token is reread for every Transit request; missing or malformed files
+fail closed without static-token fallback. Redirects and ambient HTTP proxies
+are disabled. The signing-key KV loader uses the same transport and current token
+at startup. CA changes require restart. The normal service additionally needs its
+existing KV signing-key and Transit hash/HMAC permissions; the custody-only test
+policy is not the full normal Accounts ACL.
+
+## Build, release and deployment gates
+
+From `code/`, `go build -trimpath -o /absolute/output/accounts .` builds the normal
+Accounts executable. The module's existing pinned `go-grpc`0.1.36 service agent
+owns its container build; `.github/workflows/ci.yml` runs the pinned Codefly0.1.145
+`codefly ci run --head <source> --phase build --output <evidence> --jobs2` contract
+(with the selection arguments shown in that workflow). Run the canonical full
+`codefly ci run` gates for release. Do not replace these with the local custody
+fixture or a hand-authored deployment image.
+
+The existing aggregate `release-gates` must pass before publication. The normal
+module/package release owner and consuming deployment owner then record the
+immutable image reference/digest, render actual projections and explicitly approve
+the managed deployment. A locally built executable or CI image build is not an
+image publication. Managed database migration/identity, durable initialized Vault,
+private DNS/network/TLS, workload credential projection and actual signed-in
+consumer join remain required. No cloud, IAM or production credential action is
+performed by this source change.

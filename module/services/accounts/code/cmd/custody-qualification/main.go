@@ -28,6 +28,7 @@ import (
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
+
 	"github.com/google/uuid"
 )
 
@@ -239,7 +240,7 @@ func run(ctx context.Context, file string) error {
 		}
 	}()
 	for i := 0; i < 3; i++ {
-		l, err := net.Listen("tcp", "127.0.0.1:0")
+		l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
 		if err != nil {
 			return err
 		}

@@ -1,10 +1,11 @@
 package executioncustody
 
 import (
+	"testing"
+
 	base "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
-	"testing"
 )
 
 func TestClaimsDigestV1Vector(t *testing.T) {

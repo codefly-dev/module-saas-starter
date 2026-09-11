@@ -3,8 +3,9 @@ package infra
 import (
 	"accounts/pkg/business"
 	"context"
-	"github.com/jackc/pgx/v5"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func scanExecutionCustody(row pgx.Row) (business.ExecutionCustodyRecord, error) {

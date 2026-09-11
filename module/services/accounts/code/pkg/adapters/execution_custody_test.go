@@ -32,6 +32,7 @@ import (
 	wire "accounts/pkg/executioncustody"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+
 	base "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
@@ -484,7 +485,9 @@ path "transit/decrypt/api-keys" { capabilities = ["update"] }`)
 		bounded, err := verify.Verify(tok, codefly.WorkContextExpectations{Issuer: "example.work", Audience: policy.Audience})
 		require.NoError(t, err)
 		require.LessOrEqual(t, bounded.ExpiresAtUnix, recovered.ExpiresAt)
-		revisionConn, err := grpc.NewClient(state["internal_grpc"], grpc.WithTransportCredentials(credentials.NewTLS(workerTLS)))
+		revisionTLS := workerTLS.Clone()
+		revisionTLS.Certificates = nil // revision uses server TLS + internal token, no worker identity
+		revisionConn, err := grpc.NewClient(state["internal_grpc"], grpc.WithTransportCredentials(credentials.NewTLS(revisionTLS)))
 		require.NoError(t, err)
 		defer revisionConn.Close()
 		revisionClient := gen.NewWorkContextServiceClient(revisionConn)

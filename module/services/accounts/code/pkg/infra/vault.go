@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"accounts/pkg/vaultconnection"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -8,9 +9,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	"github.com/codefly-dev/core/wool"
-	codefly "github.com/codefly-dev/sdk-go"
 )
 
 // VaultClient provides transit encryption and hashing via HashiCorp Vault.
@@ -18,22 +16,15 @@ type VaultClient struct {
 	address    string
 	token      string
 	transitKey string
+	connection *vaultconnection.Connection
 }
 
 func NewVaultClient(ctx context.Context) (*VaultClient, error) {
-	w := wool.Get(ctx).In("NewVaultClient")
-
-	address, err := codefly.For(ctx).Service("vault").Configuration("vault", "address")
+	connection, err := vaultconnection.Load(ctx)
 	if err != nil {
-		return nil, w.Wrapf(err, "failed to get vault address")
+		return nil, err
 	}
-
-	token, err := codefly.For(ctx).Service("vault").Secret("vault", "token")
-	if err != nil {
-		return nil, w.Wrapf(err, "failed to get vault token")
-	}
-
-	return NewVaultClientDirect(address, token), nil
+	return &VaultClient{address: connection.Address, transitKey: "api-keys", connection: connection}, nil
 }
 
 // NewVaultClientDirect creates a vault client with explicit address and token (for local/test use).
@@ -54,7 +45,7 @@ func (v *VaultClient) Health(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := v.httpClient().Do(req)
 	if err != nil {
 		return err
 	}
@@ -179,10 +170,17 @@ func (v *VaultClient) request(ctx context.Context, method, path, body string) (m
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("X-Vault-Token", v.token)
+	token := v.token
+	if v.connection != nil {
+		token, err = v.connection.Token()
+		if err != nil {
+			return nil, err
+		}
+	}
+	req.Header.Set("X-Vault-Token", token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := v.httpClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +189,7 @@ func (v *VaultClient) request(ctx context.Context, method, path, body string) (m
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("vault %s %s returned %d: %s", method, path, resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("vault request returned %d", resp.StatusCode)
 	}
 
 	var envelope struct {
@@ -201,4 +199,11 @@ func (v *VaultClient) request(ctx context.Context, method, path, body string) (m
 		return nil, err
 	}
 	return envelope.Data, nil
+}
+
+func (v *VaultClient) httpClient() *http.Client {
+	if v.connection != nil {
+		return v.connection.Client
+	}
+	return http.DefaultClient // explicit local/test constructor
 }
