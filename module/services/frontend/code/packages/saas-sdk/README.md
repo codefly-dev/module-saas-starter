@@ -219,12 +219,25 @@ alongside `@codefly-dev/ui` (see `scripts/publish-frontend-kit.mjs`); as a
 Module-Federation singleton, the bytes a solution installs from the registry are
 the bytes the host serves.
 
-The frontend app pins this package at an **exact** version
-(`"@codefly-dev/saas-sdk": "0.2.1"` in `module/services/frontend/code/package.json`),
-and `npm ci` refuses to install if the workspace version no longer satisfies that
-pin. So a `version` bump is not self-contained: bump it only together with the
-matching pin bump in the app's `package.json`, the `@codefly-dev/saas-sdk` peer/dev
-pins in `packages/saas-ui/package.json`, and a regenerated `package-lock.json`, in
-the same change — otherwise `npm ci` (and the workspace-install-graph CI gate)
-fails. Additive, backward-compatible surface changes therefore stay on the current
+A consumer outside this repo needs the org scope routed to GitHub Packages with
+a read token before `npm i @codefly-dev/saas-sdk` can resolve:
+
+```
+@codefly-dev:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN}
+```
+
+The frontend app pins this package at an **exact** version in
+`module/services/frontend/code/package.json`, and `npm ci` refuses to install if
+the workspace version no longer satisfies that pin — it stops treating the
+dependency as local and goes to the public registry, where this package's older
+versions do not exist. (No version literal is quoted here on purpose: this
+paragraph previously named one and went stale the moment the package was bumped,
+which is exactly the failure it is warning about. `package.json` is the authority.)
+So a `version` bump is not self-contained: bump it only together with the matching
+pin bump in the app's `package.json`, the `@codefly-dev/saas-sdk` peer/dev ranges in
+`packages/saas-ui/package.json`, and a regenerated `package-lock.json`, in the same
+change — otherwise `npm ci` fails. The `workspaceLinkSatisfaction` half of
+`module/tools/base-integrity.mjs` gates exactly this, so a missed pin fails in
+seconds at PR time rather than several minutes into `npm ci`. Additive, backward-compatible surface changes therefore stay on the current
 version until a release actually needs to move it.

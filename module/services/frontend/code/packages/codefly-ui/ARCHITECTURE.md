@@ -67,11 +67,15 @@ sits outside this stack.
    solution. It is distinct from *which* version wins: sealing is that a lower
    layer's component isn't overridden *at all*. *(The mechanism is
    Module-Federation singletons: the host shares every sealed layer package
-   (React + kit + each module UI) as a `singleton` in
+   (React + the kit — `@codefly-dev/ui`, `@codefly-dev/saas-ui`,
+   `@codefly-dev/saas-sdk` — + each module UI) as a `singleton` in
    `src/solutions/SolutionOutlet.tsx`, so one instance is shared across the host
    and every remote. The seal is cooperative — a remote gets that one instance
    because its own build also shares these packages as singletons rather than
-   bundling and registering a competing copy. The `sealed-layers` test asserts
+   bundling and registering a competing copy, and it can only do so because
+   every sealed kit package is published to GitHub Packages under the org's
+   `@codefly-dev` scope (`scripts/publish-frontend-kit.mjs`), so a remote
+   installs the very package the host shares. The `sealed-layers` test asserts
    the singleton flag on every package in the shared set, so a new layer package
    cannot ship shared without it.)*
 

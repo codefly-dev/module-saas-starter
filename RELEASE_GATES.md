@@ -361,7 +361,7 @@ It reads git history rather than the registry on purpose — a registry read nee
 a publish-capable token, which no branch build should hold. The registry
 comparison in the publish step stays as the exact authority at release time.
 
-The kit is co-versioned: `@codefly-dev/ui`, `@codefly/saas-ui`, and
+The kit is co-versioned: `@codefly-dev/ui`, `@codefly-dev/saas-ui`, and
 `CODEFLY_KIT_VERSION` in `services/frontend/code/src/solutions/SolutionOutlet.tsx`
 bump together, which the `kit-shared-version` test pins.
 

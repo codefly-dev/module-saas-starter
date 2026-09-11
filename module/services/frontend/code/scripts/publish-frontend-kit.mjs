@@ -9,14 +9,25 @@ const CODE_ROOT = join(dirname(SCRIPT_PATH), "..");
 
 // The solution-facing kit packages published to GitHub Packages on release.
 // Kept to what a solution fe-remote genuinely consumes: `@codefly-dev/ui` carries
-// the peer-free `/layout` + `/dashboard` surface, and `@codefly-dev/saas-sdk`
-// carries the generated accounts/connect Connect client + data-graph tooling a
-// remote binds to the gateway. Both are Module-Federation singletons the host
-// shares, so a remote resolves the host's instance from the registry version.
-// Their plugin peers are optional (see each manifest), so a solution installs
-// those subpaths without the host-internal plugin packages — no need to publish
-// them here.
-export const PACKAGES = ["@codefly-dev/ui", "@codefly-dev/saas-sdk"];
+// the peer-free `/layout` + `/dashboard` surface, `@codefly-dev/saas-ui` carries
+// the SaaS-domain panels (`<DatasourcesPanel>`: the add-source form + list that
+// front DatasourceService, which lives in this module), and
+// `@codefly-dev/saas-sdk` carries the generated accounts/connect Connect client
+// + data-graph tooling a remote binds to the gateway. All three are
+// Module-Federation singletons the host shares (`CODEFLY_KIT_SHARED` in
+// src/solutions/SolutionOutlet.tsx), so a remote resolves the host's instance
+// from the registry version — which is why every shared package must be
+// installable from the registry: a package the host shares but nobody publishes
+// forces each solution to re-implement the panel instead of mounting it.
+// GitHub Packages only accepts the org's `@codefly-dev` scope, so each of these
+// is named under it. Their plugin peers are optional (see each manifest), so a
+// solution installs those subpaths without the host-internal plugin packages —
+// no need to publish them here.
+export const PACKAGES = [
+	"@codefly-dev/ui",
+	"@codefly-dev/saas-ui",
+	"@codefly-dev/saas-sdk",
+];
 
 export function workspacesByName(codeRoot = CODE_ROOT) {
 	const packagesRoot = join(codeRoot, "packages");
@@ -84,21 +95,61 @@ function remoteIntegrity(name, version) {
 	}
 }
 
+// Resolve EVERY package's action before any of them is published.
+//
+// A registry publish is irreversible (GitHub Packages restricts version
+// deletion), so publishing inside the same loop that packs and decides means a
+// failure on package N — an unbumped version, a 5xx, a bad token — leaves
+// packages 1..N-1 published and the rest not. The host then advertises three
+// Module-Federation singletons at versions only some of which a solution can
+// install: exactly the host-serves-bytes-nobody-can-resolve drift the version
+// gate exists to prevent, now baked into an immutable registry. Deciding first
+// means every failure that is knowable before the first publish happens with
+// nothing published at all.
+//
+// This cannot make publishing atomic — nothing can, once the first `npm publish`
+// returns — but it shrinks the unrecoverable window to the publish calls
+// themselves, which is the only part that genuinely cannot be pre-checked.
+export function planPublications({
+	packages,
+	manifests,
+	packPackage,
+	readRemoteIntegrity,
+}) {
+	return packages.map((name) => {
+		const manifest = manifests.get(name);
+		if (!manifest) throw new Error(`no workspace package named '${name}'`);
+		const { version } = manifest;
+		const { path, integrity } = packPackage(name);
+		return {
+			name,
+			version,
+			path,
+			action: decidePublish({
+				name,
+				version,
+				localIntegrity: integrity,
+				remoteIntegrity: readRemoteIntegrity(name, version),
+			}),
+		};
+	});
+}
+
 function main() {
 	const packDir = process.env.RUNNER_TEMP ?? tmpdir();
 	const manifests = workspacesByName();
 	const published = [];
-	for (const name of PACKAGES) {
-		const manifest = manifests.get(name);
-		if (!manifest) throw new Error(`no workspace package named '${name}'`);
-		const { version } = manifest;
-		const { path, integrity } = pack(name, packDir);
-		const action = decidePublish({
-			name,
-			version,
-			localIntegrity: integrity,
-			remoteIntegrity: remoteIntegrity(name, version),
-		});
+
+	// Phase 1 — pack and decide everything. Throws before anything is published.
+	const plan = planPublications({
+		packages: PACKAGES,
+		manifests,
+		packPackage: (name) => pack(name, packDir),
+		readRemoteIntegrity: remoteIntegrity,
+	});
+
+	// Phase 2 — publish only what phase 1 approved.
+	for (const { name, version, path, action } of plan) {
 		if (action === "skip") {
 			console.log(`${name}@${version} already published — skipping`);
 			continue;

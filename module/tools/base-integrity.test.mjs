@@ -21,7 +21,9 @@ import {
   productionTruthErrors,
   requiredAdditionsErrors,
   verifyErrors,
+  satisfiesWorkspaceRange,
   workspaceInstallGraphErrors,
+  workspaceLinkSatisfactionErrors,
 } from "./base-integrity.mjs";
 
 function writeJSON(path, value) {
@@ -480,4 +482,193 @@ test("does not require the frontend capability manifest when frontend is omitted
   );
 
   assert.deepEqual(productionTruthErrors(root), []);
+});
+
+// The range evaluation is hand-rolled (bare node, no `semver`), and it sits on a
+// gate that runs for every PR in the repo — so a FALSE REJECT is as damaging as a
+// false accept: it hard-fails unrelated PRs until someone edits a range npm was
+// always happy with. These pin both directions.
+test("satisfiesWorkspaceRange evaluates the ranges workspace links use", () => {
+  assert.equal(satisfiesWorkspaceRange("0.2.1", "0.2.1"), true);
+  assert.equal(satisfiesWorkspaceRange("0.2.0", "0.2.1"), false);
+  assert.equal(satisfiesWorkspaceRange("^0.2.1", "0.2.9"), true);
+  // ^0.2.1 must NOT allow 0.3.0: in a 0.x line npm treats a minor as breaking.
+  assert.equal(satisfiesWorkspaceRange("^0.2.1", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^0.0.3", "0.0.4"), false);
+  assert.equal(satisfiesWorkspaceRange("^0", "0.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("^0", "1.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^1.2.3", "1.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("^1.2.3", "2.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("~0.2.1", "0.2.9"), true);
+  assert.equal(satisfiesWorkspaceRange("~0.2.1", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange("~1.2", "1.2.9"), true);
+  assert.equal(satisfiesWorkspaceRange("~1.2", "1.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange(">=19.2 <20", "19.2.8"), true);
+  assert.equal(satisfiesWorkspaceRange(">=19.2 <20", "20.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("^1.0.0 || ^2.0.0", "2.1.0"), true);
+});
+
+// Forms npm accepts that an earlier revision of this gate rejected outright,
+// hard-failing "Base manifest integrity" and telling the author their perfectly
+// legal range was unsupported.
+test("satisfiesWorkspaceRange accepts the npm range forms it once false-rejected", () => {
+  // Operator detached from its operand.
+  assert.equal(satisfiesWorkspaceRange(">= 0.2.1", "0.2.1"), true);
+  assert.equal(satisfiesWorkspaceRange(">=  0.2.1  <0.4.0", "0.3.0"), true);
+  assert.equal(satisfiesWorkspaceRange("<  0.2.1", "0.3.0"), false);
+  // Leading `v`.
+  assert.equal(satisfiesWorkspaceRange("v0.2.1", "0.2.1"), true);
+  // X-ranges and wildcards.
+  assert.equal(satisfiesWorkspaceRange("0.2.x", "0.2.9"), true);
+  assert.equal(satisfiesWorkspaceRange("0.2.x", "0.3.0"), false);
+  assert.equal(satisfiesWorkspaceRange("1.x", "1.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("1.x", "2.0.0"), false);
+  assert.equal(satisfiesWorkspaceRange("*", "9.9.9"), true);
+  assert.equal(satisfiesWorkspaceRange("x", "1.0.0"), true);
+});
+
+// npm excludes a prerelease from a range unless a comparator pins the same
+// major.minor.patch AND carries a prerelease itself. Getting this wrong in the
+// permissive direction would call an unlinkable workspace fine.
+test("satisfiesWorkspaceRange applies npm's prerelease inclusion rule", () => {
+  assert.equal(satisfiesWorkspaceRange("^1.0.0", "1.5.0-rc.1"), false);
+  assert.equal(satisfiesWorkspaceRange(">=0.3.0-rc.1", "0.3.0-rc.2"), true);
+  assert.equal(satisfiesWorkspaceRange("^0.3.0-rc.1", "0.3.0-rc.2"), true);
+  assert.equal(satisfiesWorkspaceRange("0.3.0-rc.1", "0.3.0-rc.1"), true);
+  // Prerelease sorts below its own release.
+  assert.equal(satisfiesWorkspaceRange(">=0.3.0", "0.3.0-rc.1"), false);
+});
+
+// Fail closed: a shape the evaluator does not understand must surface as unknown
+// (null) so the caller errors, never as a silent pass.
+test("satisfiesWorkspaceRange reports unknown rather than guessing", () => {
+  for (const range of ["1.0.0 - 2.0.0", "workspace:*", ">=1.0.0 || ", "not-a-range"]) {
+    assert.equal(satisfiesWorkspaceRange(range, "1.0.0"), null, range);
+  }
+});
+
+// The regression this gate exists for: `@codefly-dev/saas-ui` kept requiring
+// `@codefly-dev/saas-sdk@0.2.0` after the SDK workspace moved to 0.2.1. The
+// lockfile agreed with the manifest, so every metadata-equality check passed and
+// "Base manifest integrity" reported in-sync — while `npm ci` went to the public
+// registry for a package that is not there and failed three CI jobs with E404.
+test("workspaceLinkSatisfactionErrors catches a workspace pin the workspace cannot satisfy", () => {
+  const workspaces = [
+    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
+    {
+      label: "packages/saas-ui/package.json",
+      manifest: {
+        name: "@codefly-dev/saas-ui",
+        version: "0.2.0",
+        devDependencies: { "@codefly-dev/saas-sdk": "0.2.0" },
+        peerDependencies: { "@codefly-dev/saas-sdk": "0.2.0", react: ">=19.2 <20" },
+      },
+    },
+  ];
+  const errors = workspaceLinkSatisfactionErrors({ workspaces });
+  assert.equal(errors.length, 2);
+  for (const error of errors) {
+    assert.match(error, /@codefly-dev\/saas-sdk = "0\.2\.0" is not satisfied by workspace @codefly-dev\/saas-sdk@0\.2\.1/);
+  }
+  // A third-party range is not a workspace edge and must not be evaluated.
+  assert.ok(!errors.some((error) => error.includes("react")));
+});
+
+test("workspaceLinkSatisfactionErrors accepts a range the workspace satisfies", () => {
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      workspaces: [
+        { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
+        {
+          label: "packages/saas-ui/package.json",
+          manifest: {
+            name: "@codefly-dev/saas-ui",
+            version: "0.2.0",
+            peerDependencies: { "@codefly-dev/saas-sdk": "^0.2.1" },
+          },
+        },
+      ],
+    }),
+    [],
+  );
+});
+
+// Scope check, verified against real npm: a ROOT dependency resolves a workspace
+// by NAME and links it whatever the range says — even when the registry carries
+// the pinned version (a workspace named `is-odd` at 99.0.0 wins over a root pin
+// of the real `is-odd@3.0.1`). So a drifting root pin is not an install hazard,
+// and an earlier revision that flagged it failed the repo-wide gate with an E404
+// claim that could never happen.
+test("workspaceLinkSatisfactionErrors does not police root-manifest pins", () => {
+  const workspaces = [
+    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.2" } },
+  ];
+  // Passed the way the caller once did; the root manifest must be ignored.
+  assert.deepEqual(workspaceLinkSatisfactionErrors({ workspaces }), []);
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      root: { dependencies: { "@codefly-dev/saas-sdk": "0.2.1" } },
+      workspaces,
+    }),
+    [],
+  );
+});
+
+// A sibling that declares no readable `version` produces the SAME E404 as a
+// mismatched range (reproduced against real npm), so it must not be dropped.
+// An earlier revision skipped it entirely and returned no errors at all.
+test("workspaceLinkSatisfactionErrors catches an edge onto an unusable workspace version", () => {
+  for (const declared of [undefined, "not-a-version", null]) {
+    const manifest = { name: "foo" };
+    if (declared !== undefined) manifest.version = declared;
+    const errors = workspaceLinkSatisfactionErrors({
+      workspaces: [
+        { label: "packages/foo/package.json", manifest },
+        {
+          label: "packages/bar/package.json",
+          manifest: { name: "bar", version: "1.0.0", devDependencies: { foo: "1.0.0" } },
+        },
+      ],
+    });
+    assert.equal(errors.length, 1, `declared=${String(declared)}`);
+    assert.match(errors[0], /points at workspace packages\/foo\/package\.json/);
+    assert.match(errors[0], /public registry instead of the local workspace/);
+  }
+});
+
+// …but a workspace nobody depends on cannot break an install, so it is not an
+// error on its own. Over-reporting here would fail the repo-wide gate for a
+// private helper package that is perfectly fine.
+test("workspaceLinkSatisfactionErrors ignores an unusable version nothing depends on", () => {
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      workspaces: [{ label: "packages/foo/package.json", manifest: { name: "foo" } }],
+    }),
+    [],
+  );
+});
+
+test("workspaceLinkSatisfactionErrors supports a prerelease workspace version", () => {
+  const workspaces = (range) => [
+    { label: "packages/a/package.json", manifest: { name: "a", version: "0.3.0-rc.1" } },
+    { label: "packages/b/package.json", manifest: { name: "b", version: "1.0.0", dependencies: { a: range } } },
+  ];
+  assert.deepEqual(workspaceLinkSatisfactionErrors({ workspaces: workspaces("^0.3.0-rc.1") }), []);
+  const stale = workspaceLinkSatisfactionErrors({ workspaces: workspaces("^0.1.0") });
+  assert.equal(stale.length, 1);
+  assert.match(stale[0], /is not satisfied by workspace a@0\.3\.0-rc\.1/);
+});
+
+test("workspaceLinkSatisfactionErrors fails closed on an unevaluatable workspace range", () => {
+  const errors = workspaceLinkSatisfactionErrors({
+    workspaces: [
+      { label: "packages/saas-ui/package.json", manifest: { name: "@codefly-dev/saas-ui", version: "1.5.0" } },
+      {
+        label: "packages/other/package.json",
+        manifest: { name: "other", version: "1.0.0", dependencies: { "@codefly-dev/saas-ui": "1.0.0 - 2.0.0" } },
+      },
+    ],
+  });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /cannot evaluate/);
 });

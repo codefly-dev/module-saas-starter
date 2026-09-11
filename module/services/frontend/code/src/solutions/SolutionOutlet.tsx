@@ -1,22 +1,22 @@
 "use client";
 
 import * as SaasSdk from "@codefly-dev/saas-sdk";
-import * as SaasUi from "@codefly/saas-ui";
+import * as SaasUi from "@codefly-dev/saas-ui";
 import * as CodeflyUi from "@codefly-dev/ui";
 import {
 	createInstance,
 	type ModuleFederation,
 } from "@module-federation/runtime";
 import * as React from "react";
-import * as ReactDOM from "react-dom";
-import * as ReactJSXRuntime from "react/jsx-runtime";
 import {
 	Component,
-	Suspense,
-	lazy,
 	type ComponentType,
+	lazy,
 	type ReactNode,
+	Suspense,
 } from "react";
+import * as ReactJSXRuntime from "react/jsx-runtime";
+import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
@@ -37,9 +37,12 @@ import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
 // false` records that this host imposes no version floor on the shared instance
 // (versioning — which version wins — is governed separately; see the kit README).
 // The `kit-shared-version` test asserts the singleton flag on this object.
-const SEALED_SHARE_CONFIG = { singleton: true, requiredVersion: false } as const;
+const SEALED_SHARE_CONFIG = {
+	singleton: true,
+	requiredVersion: false,
+} as const;
 
-// The co-versioned @codefly UI kit (@codefly-dev/ui + @codefly/saas-ui) ships
+// The co-versioned @codefly-dev UI kit (@codefly-dev/ui + @codefly-dev/saas-ui) ships
 // lockstep with this host, so one version covers both. It MUST track the
 // packages' real version — a shared module that under-reports its version can
 // lose singleton resolution to a remote that bundles a higher one, splitting the
@@ -63,7 +66,7 @@ export const CODEFLY_KIT_SHARED = {
 		lib: () => CodeflyUi,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
-	"@codefly/saas-ui": {
+	"@codefly-dev/saas-ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => SaasUi,
 		shareConfig: SEALED_SHARE_CONFIG,
@@ -116,7 +119,7 @@ export const SEALED_SHARED = {
  * boundary). The remote's build marks react/react-dom/jsx-runtime as shared
  * singletons and therefore ships without them.
  *
- * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly/saas-ui`,
+ * The Codefly frontend kit (`@codefly-dev/ui`, `@codefly-dev/saas-ui`,
  * `@codefly-dev/saas-sdk`) is shared the same way, so a remote imports
  * `<DatasourcesPanel gateway={…}>` and renders it against the host's one copy —
  * no bundling, and one React instance across the boundary.
@@ -169,7 +172,9 @@ function isTransientRemoteLoadError(err: unknown): boolean {
  * renders — required by react-hooks/static-components and needed for Suspense
  * to keep its state.
  */
-function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProps> {
+function remoteComponent(
+	remote: SolutionRemote,
+): ComponentType<SolutionPageProps> {
 	const key = `${remote.id}|${remote.manifestUrl}|${remote.exposedModule}`;
 	const cached = remoteComponents.get(key);
 	if (cached) {
@@ -220,7 +225,9 @@ function remoteComponent(remote: SolutionRemote): ComponentType<SolutionPageProp
 				if (attempt === maxAttempts - 1) {
 					break;
 				}
-				await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+				await new Promise((resolve) =>
+					setTimeout(resolve, 250 * (attempt + 1)),
+				);
 				federation.registerRemotes(
 					[{ name: remote.id, entry: remote.manifestUrl }],
 					{ force: true },
@@ -271,7 +278,10 @@ export interface SolutionPageProps {
 	 * gets the portal's refresh-then-retry recovery — and the dead-session
 	 * auto-relogin — for free, rather than surfacing a bare `HTTP 401`.
 	 */
-	authedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+	authedFetch: (
+		input: RequestInfo | URL,
+		init?: RequestInit,
+	) => Promise<Response>;
 	/**
 	 * The host's dashboard-authoring capability, injected into the mounted
 	 * runtime so a composing module can change the live dashboard: list the
@@ -325,7 +335,10 @@ export function SolutionOutlet({
 	// the remote never touches the token store or constructs its own handle.
 	pageProps: Omit<
 		SolutionPageProps,
-		"getAccessToken" | "refreshAccessToken" | "authedFetch" | "dashboardAuthoring"
+		| "getAccessToken"
+		| "refreshAccessToken"
+		| "authedFetch"
+		| "dashboardAuthoring"
 	>;
 	authoring: DashboardAuthoring;
 }) {
@@ -333,7 +346,11 @@ export function SolutionOutlet({
 
 	return (
 		<SolutionErrorBoundary key={remote.id}>
-			<Suspense fallback={<div className="p-6 text-sm opacity-70">Loading solution…</div>}>
+			<Suspense
+				fallback={
+					<div className="p-6 text-sm opacity-70">Loading solution…</div>
+				}
+			>
 				{/* eslint-disable-next-line react-hooks/static-components -- a solution's ./Page is a Module Federation remote loaded at runtime; it cannot be a static component. It is cached at module scope (remoteComponent) so it stays stable across renders. */}
 				<Remote
 					{...pageProps}

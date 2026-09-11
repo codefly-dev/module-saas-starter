@@ -1,6 +1,6 @@
 "use client";
 
-import { DatasourcesPanel } from "@codefly/saas-ui";
+import { DatasourcesPanel } from "@codefly-dev/saas-ui";
 import { HardDriveDownload } from "lucide-react";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/empty-state";

@@ -3,17 +3,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CODEFLY_KIT_SHARED } from "../SolutionOutlet";
 
-// The host shares @codefly-dev/ui, @codefly/saas-ui, and @codefly-dev/saas-sdk
+// The host shares @codefly-dev/ui, @codefly-dev/saas-ui, and @codefly-dev/saas-sdk
 // into the Module-Federation scope, each under its own published version. If a
 // share entry under-reports its package's real version, a remote bundling the
 // newer copy could win singleton resolution and split the instance. The UI kit
-// (@codefly-dev/ui + @codefly/saas-ui) is co-versioned; @codefly-dev/saas-sdk
+// (@codefly-dev/ui + @codefly-dev/saas-ui) is co-versioned; @codefly-dev/saas-sdk
 // tracks the API contract and versions independently — so this pins EACH share
 // entry's declared version to that package's actual package.json version rather
 // than to one shared constant, and a bump to any of them can't drift silently.
 const SHARE_KEY_TO_DIR: Record<keyof typeof CODEFLY_KIT_SHARED, string> = {
 	"@codefly-dev/ui": "codefly-ui",
-	"@codefly/saas-ui": "saas-ui",
+	"@codefly-dev/saas-ui": "saas-ui",
 	"@codefly-dev/saas-sdk": "saas-sdk",
 };
 
