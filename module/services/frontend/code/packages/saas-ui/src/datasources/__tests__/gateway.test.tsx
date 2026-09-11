@@ -67,6 +67,8 @@ const oneSource = {
 			boundaryNodeId: "11111111-1111-1111-1111-111111111111",
 			status: "DATASOURCE_STATUS_ACTIVE",
 			webhookConfigured: true,
+			lastIngestedAt: "2026-09-08T11:30:00Z",
+			lastIngestedCommit: "9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
 		},
 	],
 };
@@ -93,6 +95,8 @@ describe("createDatasourceClient", () => {
 				webhookConfigured: true,
 				status: "active",
 				lastSyncedAt: undefined,
+				lastIngestedAt: "2026-09-08T11:30:00.000Z",
+				lastIngestedCommit: "9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
 				createdAt: undefined,
 			},
 		]);
@@ -101,6 +105,26 @@ describe("createDatasourceClient", () => {
 			"/api/solutions/wiki/proxy/saas.accounts.v1.DatasourceService/ListSources",
 		);
 		expect(calls[0].authorization).toBe("Bearer test-token");
+	});
+
+	it("leaves the ingest provenance unset before the first delivery lands", async () => {
+		// The wire carries an empty string, not an absent field, for a commit that
+		// has never been set; the view must not render it as a real commit.
+		const [source] = oneSource.datasources;
+		stubFetch({
+			datasources: [
+				{ ...source, lastIngestedAt: undefined, lastIngestedCommit: "" },
+			],
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/wiki/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const [view] = await client.listSources("org-1");
+
+		expect(view.lastIngestedAt).toBeUndefined();
+		expect(view.lastIngestedCommit).toBeUndefined();
 	});
 
 	it("reads the current token on each request", async () => {

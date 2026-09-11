@@ -21,6 +21,19 @@ export interface DatasourceView {
 	webhookConfigured: boolean;
 	status: DatasourceStatusName;
 	lastSyncedAt: string | undefined;
+	/**
+	 * When the change-set compiler last durably enqueued a change set — advanced
+	 * by a webhook delivery, the periodic reconcile, or a tenant's "Sync now"
+	 * (which for a github source dispatches a forced reconcile rather than a
+	 * pull). A separate clock from `lastSyncedAt`, which only the pulled
+	 * providers advance; at most one of the two ever ticks for a given source.
+	 *
+	 * Optional so that a consumer adapting its own client to `DatasourceClient`
+	 * — the pattern this file's header documents — keeps compiling without them.
+	 */
+	lastIngestedAt?: string | undefined;
+	/** Head commit the `lastIngestedAt` change set covered. */
+	lastIngestedCommit?: string | undefined;
 	createdAt: string | undefined;
 }
 

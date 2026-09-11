@@ -132,6 +132,10 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		lastSyncedAt: source.lastSyncedAt
 			? timestampDate(source.lastSyncedAt).toISOString()
 			: undefined,
+		lastIngestedAt: source.lastIngestedAt
+			? timestampDate(source.lastIngestedAt).toISOString()
+			: undefined,
+		lastIngestedCommit: source.lastIngestedCommit || undefined,
 		createdAt: source.createdAt
 			? timestampDate(source.createdAt).toISOString()
 			: undefined,

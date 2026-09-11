@@ -22,6 +22,7 @@ import type {
 import {
 	cn,
 	formatGrants,
+	formatIngest,
 	formatSyncedAt,
 	parsePaths,
 	shortBoundaryId,
@@ -279,6 +280,26 @@ function messageOf(error: unknown): string {
 	return message.replace(/^rpc error: code = \w+ desc = /, "");
 }
 
+/**
+ * A row's clocks. At most one of them ticks for a given source: a github
+ * source's ingest is advanced by the change-set compiler and never sets
+ * `lastSyncedAt`, while the pulled providers advance `lastSyncedAt` alone. So
+ * the "Never" is dropped whenever there is an ingest to show — left in, it
+ * would sit above live provenance telling the reader a healthy source has
+ * never synced.
+ */
+function LastSyncCell({ source }: { source: DatasourceView }) {
+	const ingest = formatIngest(source.lastIngestedAt, source.lastIngestedCommit);
+	return (
+		<>
+			{(source.lastSyncedAt || !ingest) && (
+				<div>{formatSyncedAt(source.lastSyncedAt)}</div>
+			)}
+			{ingest && <div className="text-xs">{ingest}</div>}
+		</>
+	);
+}
+
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
 
@@ -333,7 +354,7 @@ function SourcesTable({
 								{source.webhookConfigured ? "Configured" : "None"}
 							</td>
 							<td className={cn(cellClass, "text-muted-foreground")}>
-								{formatSyncedAt(source.lastSyncedAt)}
+								<LastSyncCell source={source} />
 							</td>
 							<td className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">
