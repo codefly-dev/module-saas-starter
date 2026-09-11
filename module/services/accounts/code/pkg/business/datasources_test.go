@@ -490,6 +490,13 @@ func TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot(t *testing.T) {
 	if job.GetAttributes()["datasource.reconcile_mode"] != "force" {
 		t.Fatalf("reconcile mode = %q, want force", job.GetAttributes()["datasource.reconcile_mode"])
 	}
+	// The job platform validates content_type (min_len 1) on every enqueue; a
+	// request job that carries only attributes still has to declare one, or
+	// Sync now is refused by the platform before the reconcile is ever scheduled.
+	if job.GetContentType() == "" || len(job.GetPayload()) == 0 {
+		t.Fatalf("sync request job declares no content type or carries no payload (content_type %q, payload %d bytes); the job platform refuses the first and the store rejects the second (payload NOT NULL)",
+			job.GetContentType(), len(job.GetPayload()))
+	}
 	if job.GetOrdering().GetNamespace() != "datasource.delivery" ||
 		len(job.GetOrdering().GetComponents()) != 1 || job.GetOrdering().GetComponents()[0] != source.ID {
 		t.Fatalf("ordering key = %v, want per-source", job.GetOrdering())

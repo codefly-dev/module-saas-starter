@@ -890,7 +890,13 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceChangeSetSchemaVersion,
-			MaxAttempts:    datasourceDeliveryMaxAttempts,
+			// The request carries no data — the attributes name the source and
+			// the mode — but a job is a message: the platform validates its
+			// content type and stores its payload NOT NULL, so it carries an
+			// empty JSON body.
+			Payload:     []byte("{}"),
+			ContentType: "application/json",
+			MaxAttempts: datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,
 				attrOrgID:         source.OrgID,
@@ -910,6 +916,8 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			// already-terminal request.
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceSyncRequestSchemaVersion,
+			Payload:        []byte("{}"),
+			ContentType:    "application/json",
 			MaxAttempts:    datasourceSyncRequestMaxAttempts,
 			Attributes:     map[string]string{attrSourceID: source.ID},
 		}
