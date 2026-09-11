@@ -2,10 +2,13 @@ package tools
 
 import (
 	"fmt"
+	"go/ast"
+	"go/token"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -30,10 +33,22 @@ const (
 	// means both "not internal" and "forgotten", which is the silence this gate
 	// exists to remove.
 	internalRouteExemption = "codefly:internal-http-route-exempt"
+	// internalHTTPMethodSource holds the method set the topology compiler will
+	// accept in internal_http_routes. It is read rather than restated: a second
+	// copy here is the same drift this gate exists to catch, one artifact over.
+	internalHTTPMethodSource = "services/accounts/code/pkg/cataloggen/deployment_topology.go"
+	internalHTTPMethodMap    = "internalHTTPMethods"
+	// internalTokenModule defines the gate. It is named by path because the
+	// declaration form is not the gate's identity: rewriting it as an exported
+	// const would make the defining module fail its own check.
+	internalTokenModule = "src/lib/internal-token.ts"
 )
 
 // nextRouteHandlerMethods is the set of exported names Next.js serves as route
-// handlers from a route module.
+// handlers from a route module. It is deliberately wider than what
+// internal_http_routes can express: Next serves HEAD and OPTIONS, the mesh
+// binding cannot name them, and a gated handler on one of those is a conflict
+// to report rather than a declaration to demand.
 var nextRouteHandlerMethods = map[string]bool{
 	"DELETE":  true,
 	"GET":     true,
@@ -78,6 +93,7 @@ type gatedRouteHandler struct {
 func TestInternalHTTPRoutesMatchTokenGatedHandlers(t *testing.T) {
 	moduleDir := findModuleDir(t)
 	composed := composedServiceNames(t, moduleDir)
+	declarable := declarableInternalHTTPMethods(t, moduleDir)
 
 	for _, service := range loadTopologyBindings(t, moduleDir).Services {
 		if composed != nil && !composed[service.Name] {
@@ -90,7 +106,7 @@ func TestInternalHTTPRoutesMatchTokenGatedHandlers(t *testing.T) {
 			}
 			continue
 		}
-		compareInternalHTTPRoutes(t, service.Name, gatedRouteHandlers(t, moduleDir, appDir), declaredInternalRoutes(service))
+		compareInternalHTTPRoutes(t, service.Name, gatedRouteHandlers(t, moduleDir, appDir, declarable), declaredInternalRoutes(service))
 	}
 }
 
@@ -125,11 +141,18 @@ func TestInternalCallGateIsReachedOnlyFromRouteModules(t *testing.T) {
 				return readErr
 			}
 			code, _ := blankNonCode(string(contents))
-			if !strings.Contains(code, internalCallGate) || gateDefinition.MatchString(code) {
+			if !strings.Contains(code, internalCallGate) {
 				return nil
 			}
-			relative, _ := filepath.Rel(moduleDir, path)
-			t.Errorf("%s: %s is reached outside a route module; internal_http_routes is checked against the exported handler that calls it, so a route gated here would go undeclared", filepath.ToSlash(relative), internalCallGate)
+			relative, relErr := filepath.Rel(moduleDir, path)
+			if relErr != nil {
+				return relErr
+			}
+			slashed := filepath.ToSlash(relative)
+			if strings.HasSuffix(slashed, internalTokenModule) {
+				return nil
+			}
+			t.Errorf("%s: %s is reached outside a route module; internal_http_routes is checked against the exported handler that calls it, so a route gated here would go undeclared", slashed, internalCallGate)
 			return nil
 		})
 		if err != nil {
@@ -163,6 +186,47 @@ func compareInternalHTTPRoutes(t *testing.T, service string, gated []gatedRouteH
 	}
 }
 
+// declarableInternalHTTPMethods reads the topology compiler's own accepted
+// method set out of its source, so this gate cannot demand a declaration the
+// compiler rejects.
+func declarableInternalHTTPMethods(t *testing.T, moduleDir string) map[string]bool {
+	t.Helper()
+	path := filepath.Join(moduleDir, filepath.FromSlash(internalHTTPMethodSource))
+	literal := findMapLiteral(parseInventorySource(t, path), internalHTTPMethodMap)
+	if literal == nil {
+		t.Fatalf("%s does not declare %s as a map literal", internalHTTPMethodSource, internalHTTPMethodMap)
+	}
+	methods := make(map[string]bool, len(literal.Elts))
+	for _, element := range literal.Elts {
+		entry, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			t.Fatalf("%s: unexpected entry in %s", internalHTTPMethodSource, internalHTTPMethodMap)
+		}
+		key, ok := entry.Key.(*ast.BasicLit)
+		if !ok || key.Kind != token.STRING {
+			t.Fatalf("%s: %s is keyed by something other than a method literal", internalHTTPMethodSource, internalHTTPMethodMap)
+		}
+		method, err := strconv.Unquote(key.Value)
+		if err != nil {
+			t.Fatalf("%s: %s holds an unparsable method %s", internalHTTPMethodSource, internalHTTPMethodMap, key.Value)
+		}
+		methods[method] = true
+	}
+	if len(methods) == 0 {
+		t.Fatalf("%s: %s is empty", internalHTTPMethodSource, internalHTTPMethodMap)
+	}
+	return methods
+}
+
+func sortedSet(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func declaredInternalRoutes(service topologyServiceBinding) map[internalRouteKey]bool {
 	declared := make(map[internalRouteKey]bool)
 	for _, route := range service.InternalHTTPRoutes {
@@ -173,7 +237,7 @@ func declaredInternalRoutes(service topologyServiceBinding) map[internalRouteKey
 	return declared
 }
 
-func gatedRouteHandlers(t *testing.T, moduleDir, appDir string) []gatedRouteHandler {
+func gatedRouteHandlers(t *testing.T, moduleDir, appDir string, declarable map[string]bool) []gatedRouteHandler {
 	t.Helper()
 	var handlers []gatedRouteHandler
 	err := filepath.WalkDir(appDir, func(path string, entry os.DirEntry, walkErr error) error {
@@ -199,12 +263,19 @@ func gatedRouteHandlers(t *testing.T, moduleDir, appDir string) []gatedRouteHand
 		if len(scan.gated) == 0 {
 			return nil
 		}
-		routePath, dynamic := routeModulePath(appDir, path)
+		routePath, dynamic, pathErr := routeModulePath(appDir, path)
+		if pathErr != nil {
+			return pathErr
+		}
 		if dynamic {
 			t.Errorf("%s: a handler here checks the cluster-internal token, but the mesh matches literal paths and %s carries a dynamic segment", relative, routePath)
 			return nil
 		}
-		for _, method := range sortedKeys(scan.gated) {
+		gated, undeclarable := partitionGatedMethods(scan.gated, declarable)
+		for _, method := range undeclarable {
+			t.Errorf("%s: %s checks the cluster-internal token, but internal_http_routes admits only %s, so the route it serves cannot be denied in the mesh", relative, method, strings.Join(sortedSet(declarable), ", "))
+		}
+		for _, method := range gated {
 			handlers = append(handlers, gatedRouteHandler{
 				key:          internalRouteKey{method: method, path: routePath},
 				file:         relative,
@@ -219,6 +290,23 @@ func gatedRouteHandlers(t *testing.T, moduleDir, appDir string) []gatedRouteHand
 	return handlers
 }
 
+// partitionGatedMethods splits the methods a module gates into those
+// internal_http_routes can name and those it cannot. Next.js serves HEAD and
+// OPTIONS; the topology compiler rejects them. Demanding a declaration for one
+// would leave the author with a gate they cannot satisfy and an exemption
+// marker that would then misstate a route they do want denied.
+func partitionGatedMethods(gated, declarable map[string]bool) ([]string, []string) {
+	var declarableMethods, undeclarable []string
+	for _, method := range sortedKeys(gated) {
+		if declarable[method] {
+			declarableMethods = append(declarableMethods, method)
+			continue
+		}
+		undeclarable = append(undeclarable, method)
+	}
+	return declarableMethods, undeclarable
+}
+
 // routeModuleScan is what one route module says about the cluster-internal
 // gate: the methods whose handler checks it, the methods an author marked
 // deliberately un-denied, and whatever made the module unreadable to this gate.
@@ -229,14 +317,49 @@ type routeModuleScan struct {
 }
 
 var (
-	gateReference      = regexp.MustCompile(`\b` + internalCallGate + `\b`)
-	gateDefinition     = regexp.MustCompile(`export[\t ]+function[\t ]+` + internalCallGate + `\b`)
-	exportedFunction   = regexp.MustCompile(`(?m)^[\t ]*export[\t ]+(?:async[\t ]+)?function[\t ]+([A-Za-z_$][\w$]*)[\t ]*\(`)
-	functionDefinition = regexp.MustCompile(`(?m)^[\t ]*(?:export[\t ]+)?(?:async[\t ]+)?function[\t ]+([A-Za-z_$][\w$]*)[\t ]*\(`)
+	// A module-scope declaration starts at column zero. Allowing leading
+	// whitespace let a function nested inside a handler shadow the module-scope
+	// binding of the same name, which is the only thing an aliased export can
+	// refer to.
+	exportedFunction   = regexp.MustCompile(`(?m)^export[\t ]+(?:async[\t ]+)?function[\t ]+([A-Za-z_$][\w$]*)[\t ]*\(`)
+	functionDefinition = regexp.MustCompile(`(?m)^(?:export[\t ]+)?(?:async[\t ]+)?function[\t ]+([A-Za-z_$][\w$]*)[\t ]*\(`)
 	exportList         = regexp.MustCompile(`\bexport[\t\n ]*\{([^}]*)\}`)
 	exportAlias        = regexp.MustCompile(`^(?:([A-Za-z_$][\w$]*)[\t\n ]+as[\t\n ]+)?([A-Za-z_$][\w$]*)$`)
+	importClause       = regexp.MustCompile(`\bimport[\t\n ]*\{([^}]*)\}[\t\n ]*from`)
+	importBinding      = regexp.MustCompile(`^(?:type[\t\n ]+)?([A-Za-z_$][\w$]*)(?:[\t\n ]+as[\t\n ]+([A-Za-z_$][\w$]*))?$`)
 	exemptionMarker    = regexp.MustCompile(internalRouteExemption + `[\t ]+([A-Za-z]+)[\t ]*:[\t ]*(.*)`)
 )
+
+// gateLocalNames is every name the gate is bound to in this module. An import
+// clause may rename it (`import { isTrustedInternalCall as gate }`), which is
+// ordinary TypeScript, so the name called in the handler is not necessarily the
+// exported one. Resolving the binding is what makes the call attributable;
+// matching the exported name alone read an aliased gate as absent, and an
+// absent gate is a route nothing requires to be declared.
+func gateLocalNames(code string) ([]string, [][]int) {
+	names := []string{internalCallGate}
+	clauses := importClause.FindAllStringSubmatchIndex(code, -1)
+	spans := make([][]int, 0, len(clauses))
+	for _, clause := range clauses {
+		spans = append(spans, []int{clause[0], clause[1]})
+		for _, entry := range strings.Split(code[clause[2]:clause[3]], ",") {
+			binding := importBinding.FindStringSubmatch(strings.TrimSpace(entry))
+			if binding == nil || binding[1] != internalCallGate || binding[2] == "" {
+				continue
+			}
+			names = append(names, binding[2])
+		}
+	}
+	return names, spans
+}
+
+func gateReferencePattern(names []string) *regexp.Regexp {
+	quoted := make([]string, 0, len(names))
+	for _, name := range names {
+		quoted = append(quoted, regexp.QuoteMeta(name))
+	}
+	return regexp.MustCompile(`\b(?:` + strings.Join(quoted, "|") + `)\b`)
+}
 
 // scanRouteModule attributes the token check to the exported handlers that
 // perform it. A reference it cannot place inside one is reported rather than
@@ -245,18 +368,26 @@ var (
 func scanRouteModule(file, source string) routeModuleScan {
 	code, comments := blankNonCode(source)
 	scan := routeModuleScan{gated: map[string]bool{}, exemptions: map[string]string{}}
+	if !balancedDelimiters(code) {
+		scan.problems = append(scan.problems, fmt.Sprintf("%s: delimiters do not balance after comments and literals are removed, so this module cannot be read reliably; the gate refuses to report it as ungated", file))
+		return scan
+	}
 	regions := routeHandlerRegions(code)
+	names, importSpans := gateLocalNames(code)
 
-	for _, reference := range gateReference.FindAllStringIndex(code, -1) {
+	for _, reference := range gateReferencePattern(names).FindAllStringIndex(code, -1) {
+		if withinAny(importSpans, reference[0]) {
+			continue
+		}
 		methods := handlerMethodsAt(regions, reference[0])
 		called := nextSymbol(code, reference[1]) == '('
 		switch {
 		case len(methods) == 0 && !called:
-			// The import, or a type position. Only a call gates a route.
+			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is bound to another name outside a route handler; the route it gates is derived from the call in the handler, so the binding hides it", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
 		case len(methods) == 0:
-			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is called outside an exported route handler; move it into the handler so the route it gates can be matched against internal_http_routes", file, lineAt(source, reference[0]), internalCallGate))
+			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is called outside an exported route handler; move it into the handler so the route it gates can be matched against internal_http_routes", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
 		case !called:
-			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is referenced without being called; the route it gates is derived from the direct call in the handler", file, lineAt(source, reference[0]), internalCallGate))
+			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is referenced without being called; the route it gates is derived from the direct call in the handler", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
 		default:
 			for _, method := range methods {
 				scan.gated[method] = true
@@ -401,6 +532,8 @@ func blankNonCode(source string) (string, []string) {
 		}
 	}
 	previous := byte(0)
+	previousWord := ""
+	word := make([]byte, 0, 16)
 	for index := 0; index < len(buffer); {
 		current := buffer[index]
 		next := byte(0)
@@ -425,14 +558,24 @@ func blankNonCode(source string) (string, []string) {
 			comments = append(comments, source[index:end])
 			blank(index, end)
 			index = end
-		case current == '\'' || current == '"' || current == '`' || (current == '/' && opensRegularExpression(previous)):
+		case current == '\'' || current == '"' || current == '`' || (current == '/' && opensRegularExpression(previous, previousWord)):
 			end := closingDelimiter(buffer, index)
 			blank(index, end)
 			index = end
 			// A literal is a value, so a division that follows it is not a
-			// regular expression.
+			// regular expression. The word is cleared with it: `return "a" / 2`
+			// divides, and leaving "return" standing would read it as a regular
+			// expression and blank through the rest of the statement.
 			previous = 'x'
+			previousWord = ""
+			word = word[:0]
 		default:
+			if identifierByte(current) {
+				word = append(word, current)
+			} else if len(word) > 0 {
+				previousWord = string(word)
+				word = word[:0]
+			}
 			if current != ' ' && current != '\t' && current != '\n' && current != '\r' {
 				previous = current
 			}
@@ -455,20 +598,59 @@ func closingDelimiter(buffer []byte, start int) int {
 	return len(buffer)
 }
 
+// regexPrecedingKeywords are the keywords after which a slash can only open a
+// regular expression. Reading the preceding *punctuation* alone was not enough:
+// `return /["']/.test(id)` ends in a letter, so the slash read as a division and
+// the quote inside the character class opened a literal that blanked through the
+// rest of the module — including the token check it was meant to find.
+var regexPrecedingKeywords = map[string]bool{
+	"await":      true,
+	"case":       true,
+	"delete":     true,
+	"do":         true,
+	"else":       true,
+	"in":         true,
+	"instanceof": true,
+	"new":        true,
+	"of":         true,
+	"return":     true,
+	"throw":      true,
+	"typeof":     true,
+	"void":       true,
+	"yield":      true,
+}
+
 // opensRegularExpression distinguishes a regular-expression literal from a
-// division by what precedes the slash: an operator or an opening delimiter can
-// only be followed by a value.
-func opensRegularExpression(previous byte) bool {
-	return previous == 0 || strings.IndexByte("(,=:[!&|?{};+-*%^~<>", previous) >= 0
+// division by the token before the slash: an operator, an opening delimiter or
+// a keyword can only be followed by a value, while an identifier, a literal or
+// a closing delimiter is one.
+func opensRegularExpression(previous byte, previousWord string) bool {
+	if previous == 0 {
+		return true
+	}
+	if identifierByte(previous) {
+		return regexPrecedingKeywords[previousWord]
+	}
+	return strings.IndexByte("(,=:[!&|?{};+-*%^~<>", previous) >= 0
+}
+
+func identifierByte(current byte) bool {
+	return current == '_' || current == '$' ||
+		(current >= 'a' && current <= 'z') ||
+		(current >= 'A' && current <= 'Z') ||
+		(current >= '0' && current <= '9')
 }
 
 // routeModulePath derives the served path from a route module's directory, the
 // way Next.js does: a route group contributes no segment, and a dynamic segment
 // makes the path unmatchable by a mesh policy, which matches literals.
-func routeModulePath(appDir, routeFile string) (string, bool) {
+func routeModulePath(appDir, routeFile string) (string, bool, error) {
 	relative, err := filepath.Rel(appDir, filepath.Dir(routeFile))
-	if err != nil || relative == "." {
-		return "/", false
+	if err != nil {
+		return "", false, fmt.Errorf("resolve %s under %s: %w", routeFile, appDir, err)
+	}
+	if relative == "." {
+		return "/", false, nil
 	}
 	dynamic := false
 	segments := make([]string, 0, 8)
@@ -481,7 +663,7 @@ func routeModulePath(appDir, routeFile string) (string, bool) {
 		}
 		segments = append(segments, segment)
 	}
-	return "/" + strings.Join(segments, "/"), dynamic
+	return "/" + strings.Join(segments, "/"), dynamic, nil
 }
 
 func loadTopologyBindings(t *testing.T, moduleDir string) topologyBindings {
@@ -551,6 +733,38 @@ func typeScriptSource(name string) bool {
 		return true
 	}
 	return false
+}
+
+func withinAny(spans [][]int, offset int) bool {
+	for _, span := range spans {
+		if offset >= span[0] && offset < span[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// balancedDelimiters is the backstop for the lexer being wrong in a way nobody
+// anticipated. Every brace, parenthesis and bracket in real TypeScript that is
+// not inside a comment or a literal is matched, so a blanking mistake that
+// swallows code shows up here as an imbalance. Without it, a mis-lexed module
+// reports no gated handler at all, which is indistinguishable from a module
+// that gates nothing.
+func balancedDelimiters(code string) bool {
+	var stack []byte
+	pairs := map[byte]byte{')': '(', ']': '[', '}': '{'}
+	for index := 0; index < len(code); index++ {
+		switch code[index] {
+		case '(', '[', '{':
+			stack = append(stack, code[index])
+		case ')', ']', '}':
+			if len(stack) == 0 || stack[len(stack)-1] != pairs[code[index]] {
+				return false
+			}
+			stack = stack[:len(stack)-1]
+		}
+	}
+	return len(stack) == 0
 }
 
 // nextSymbol is the first byte after offset that is not whitespace, or 0.

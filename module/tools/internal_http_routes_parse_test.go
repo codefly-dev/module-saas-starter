@@ -105,6 +105,124 @@ export async function POST(request: Request): Promise<Response> {
 	assertProblem(t, scan, "referenced without being called")
 }
 
+// An import clause may rename the gate. Matching only the exported name read an
+// aliased gate as absent, and an absent gate is a route nothing requires to be
+// declared — the fail-open this whole check exists to remove, inside the check.
+func TestScanRouteModuleResolvesAnAliasedImport(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall as gate } from "@/lib/internal-token";
+
+export async function POST(request: Request): Promise<Response> {
+	if (!gate(request)) {
+		return new Response(null, { status: 401 });
+	}
+	return new Response(null, { status: 204 });
+}
+`)
+	assertNoProblems(t, scan)
+	assertGated(t, scan, "POST")
+}
+
+// Binding the gate to another name at module scope hides the call from the
+// handler it belongs to, so the binding itself is refused.
+func TestScanRouteModuleRefusesAModuleScopeBinding(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall } from "@/lib/internal-token";
+
+const gate = isTrustedInternalCall;
+
+export async function POST(request: Request): Promise<Response> {
+	return gate(request) ? new Response(null, { status: 204 }) : new Response(null, { status: 401 });
+}
+`)
+	assertGated(t, scan)
+	assertProblem(t, scan, "bound to another name outside a route handler")
+}
+
+// `return /["']/` ends in a letter. Reading only the preceding punctuation made
+// the slash a division, and the quote inside the character class then opened a
+// literal that blanked through the token check further down the module.
+func TestScanRouteModuleReadsARegularExpressionAfterAKeyword(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall } from "@/lib/internal-token";
+
+function suspicious(id: string): boolean {
+	return /["']/.test(id);
+}
+
+export async function POST(request: Request): Promise<Response> {
+	if (suspicious("x")) {
+		return new Response(null, { status: 400 });
+	}
+	if (!isTrustedInternalCall(request)) {
+		return new Response(null, { status: 401 });
+	}
+	return new Response(null, { status: 204 });
+}
+`)
+	assertNoProblems(t, scan)
+	assertGated(t, scan, "POST")
+}
+
+// The other direction of the same judgement: a slash after a value divides.
+// Treating it as a regular expression would blank forward to the next slash and
+// swallow whatever the handler does in between.
+func TestScanRouteModuleReadsDivisionAfterAValue(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall } from "@/lib/internal-token";
+
+export async function POST(request: Request): Promise<Response> {
+	const budget = Number(request.headers.get("x-budget") ?? "0");
+	const share = budget / 2;
+	const ratio = "10" / 5;
+	if (!isTrustedInternalCall(request)) {
+		return new Response(null, { status: 401 });
+	}
+	return Response.json({ share, ratio });
+}
+`)
+	assertNoProblems(t, scan)
+	assertGated(t, scan, "POST")
+}
+
+// A lexer mistake nobody anticipated must not read as "this module gates
+// nothing". Unbalanced delimiters are what a blanking mistake leaves behind.
+func TestScanRouteModuleRefusesAModuleItCannotRead(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+export async function GET(): Promise<Response> {
+	return Response.json({ ok: true });
+`)
+	assertGated(t, scan)
+	assertProblem(t, scan, "cannot be read reliably")
+}
+
+// Only a module-scope declaration can back an aliased export. A function nested
+// inside another handler that happens to share its name shadowed it, and the
+// real handler's token check was then reported as sitting outside any handler.
+func TestScanRouteModuleIgnoresANestedFunctionOfTheSameName(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall } from "@/lib/internal-token";
+
+async function handler(request: Request) {
+	if (!isTrustedInternalCall(request)) {
+		return new Response(null, { status: 401 });
+	}
+	return new Response(null, { status: 204 });
+}
+
+export function GET() {
+	function handler() {
+		return 1;
+	}
+	return new Response(String(handler()));
+}
+
+export { handler as POST };
+`)
+	assertNoProblems(t, scan)
+	assertGated(t, scan, "POST")
+}
+
 // A destructured parameter opens a brace before the body does; matching it as
 // the body ends the handler's span at the parameter list and loses the gate.
 func TestScanRouteModuleReadsPastADestructuredParameter(t *testing.T) {
@@ -175,6 +293,50 @@ export async function POST(): Promise<Response> {
 	}
 }
 
+// The compiler's accepted method set and Next's handler set are different sets,
+// and the difference is load-bearing: Next serves HEAD and OPTIONS, the binding
+// cannot name them, and restating either set here would demand a declaration
+// the compiler rejects. Read the compiler's set from its source and pin the
+// relationship between the two.
+func TestDeclarableMethodsComeFromTheTopologyCompiler(t *testing.T) {
+	declarable := declarableInternalHTTPMethods(t, findModuleDir(t))
+
+	for _, method := range []string{"DELETE", "GET", "PATCH", "POST", "PUT"} {
+		if !declarable[method] {
+			t.Errorf("%s admits %s, which %s does not list", internalHTTPMethodSource, method, internalHTTPMethodMap)
+		}
+	}
+	for _, method := range []string{"HEAD", "OPTIONS"} {
+		if declarable[method] {
+			t.Errorf("%s now admits %s; the gate no longer needs to report it as undeclarable", internalHTTPMethodSource, method)
+		}
+	}
+	// The dangerous direction: a method the compiler accepts but Next never
+	// serves could be declared and would never resolve to a handler, which is
+	// the "policy matching nothing" this gate reports.
+	for _, method := range sortedSet(declarable) {
+		if !nextRouteHandlerMethods[method] {
+			t.Errorf("%s admits %s, which Next.js does not serve from a route module", internalHTTPMethodSource, method)
+		}
+	}
+}
+
+// A gated HEAD or OPTIONS handler is a conflict between two artifacts, not a
+// missing declaration. Treating it as the latter demanded a binding entry the
+// topology compiler rejects, leaving the author no way to make both gates pass.
+func TestPartitionGatedMethodsSeparatesWhatCannotBeDeclared(t *testing.T) {
+	declarable := map[string]bool{"DELETE": true, "GET": true, "PATCH": true, "POST": true, "PUT": true}
+	gated := map[string]bool{"HEAD": true, "OPTIONS": true, "POST": true}
+
+	declared, undeclarable := partitionGatedMethods(gated, declarable)
+	if strings.Join(declared, ",") != "POST" {
+		t.Errorf("declarable = %v, want [POST]", declared)
+	}
+	if strings.Join(undeclarable, ",") != "HEAD,OPTIONS" {
+		t.Errorf("undeclarable = %v, want [HEAD OPTIONS]", undeclarable)
+	}
+}
+
 // The mesh policy matches a literal path, so a gated handler under a dynamic
 // segment has no declarable pair — the reason the derivation reports it rather
 // than rendering a path that can never match.
@@ -189,7 +351,10 @@ func TestRouteModulePathFollowsNextSegmentRules(t *testing.T) {
 		{file: "/app/route.ts", path: "/"},
 		{file: "/app/api/solutions/[id]/proxy/route.ts", path: "/api/solutions/[id]/proxy", dynamic: true},
 	} {
-		path, dynamic := routeModulePath("/app", testCase.file)
+		path, dynamic, err := routeModulePath("/app", testCase.file)
+		if err != nil {
+			t.Fatalf("routeModulePath(%q): %v", testCase.file, err)
+		}
 		if path != testCase.path || dynamic != testCase.dynamic {
 			t.Errorf("routeModulePath(%q) = %q, %v; want %q, %v", testCase.file, path, dynamic, testCase.path, testCase.dynamic)
 		}
