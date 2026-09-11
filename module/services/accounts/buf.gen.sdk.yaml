@@ -1,0 +1,11 @@
+version: v2
+plugins:
+  # Regenerate the complete import closure: descriptor-client generation in
+  # some CLI builds omits buf/validate and google/api foreign dependencies.
+  - local: [npx, --prefix, ../frontend/code, --no-install, protoc-gen-es]
+    out: ../frontend/code/packages/saas-sdk/generated/typescript/src/gen
+    strategy: all
+    include_imports: true
+    opt:
+      - target=ts
+      - import_extension=none

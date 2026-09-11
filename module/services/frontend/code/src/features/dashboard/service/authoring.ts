@@ -33,7 +33,7 @@ export interface EventTypeVocabulary {
 // before committing.
 export interface MetricPreview {
 	points: MetricPoint[];
-	total: number;
+	total: number | null;
 }
 
 // PreconditionCode enumerates the pending-channel tokens a driver branches on

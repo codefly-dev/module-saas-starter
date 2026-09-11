@@ -156,6 +156,10 @@ function assertMetric(
 			"description",
 			"event",
 			"category",
+			"resource",
+			"resourceId",
+			"collectionId",
+			"payloadContains",
 			"groupBy",
 			"bucket",
 			"chart",
@@ -169,6 +173,27 @@ function assertMetric(
 		context,
 	);
 	assertNonEmptyString(value.title, `${context} title`);
+	if (value.collectionId !== undefined)
+		assertNonEmptyString(value.collectionId, `${context} collectionId`);
+	if (value.resource !== undefined)
+		assertNonEmptyString(value.resource, `${context} resource`);
+	if (value.resourceId !== undefined) {
+		assertNonEmptyString(value.resourceId, `${context} resourceId`);
+		assertNonEmptyString(value.resource, `${context} resource`);
+		assertSpec(
+			value.event !== undefined,
+			`${context} resourceId requires event`,
+		);
+	}
+	assertSpec(
+		value.payloadContains === undefined ||
+			(isObject(value.payloadContains) &&
+				Object.entries(value.payloadContains).every(
+					([key, val]) => key.trim().length > 0 && typeof val === "string",
+				)),
+		`${context} payloadContains must contain string values`,
+	);
+
 	assertOptionalText(value.description, `${context} description`);
 
 	// groupBy is one dimension or, for multi-dimensional grouping, a non-empty

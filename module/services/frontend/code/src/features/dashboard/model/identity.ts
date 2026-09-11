@@ -18,6 +18,14 @@ export function metricIdentity(metric: MetricDef): string {
 		metric.bucket ?? "",
 		metric.event?.type ?? "",
 		metric.category ?? "",
+		metric.resource ?? "",
+		metric.resourceId ?? "",
+		metric.collectionId ?? "",
+		JSON.stringify(
+			Object.entries(metric.payloadContains ?? {}).sort(([a], [b]) =>
+				a.localeCompare(b),
+			),
+		),
 		metric.from ?? "",
 		metric.to ?? "",
 		metric.span ?? "",

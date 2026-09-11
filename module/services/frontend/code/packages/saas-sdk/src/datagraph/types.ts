@@ -20,7 +20,10 @@ export interface MetricPoint {
 export interface MetricSeries {
 	metricId: string;
 	points: MetricPoint[];
-	total: number;
+	/** Null when empty, partial, or not additive across multiple groups. */
+	total: number | null;
+	/** Completeness of observed telemetry, not proof that producers emitted all events. */
+	coverage: "complete" | "partial" | "empty";
 	groupBy: MetricGroupBy;
 	bucket?: MetricBucket;
 }

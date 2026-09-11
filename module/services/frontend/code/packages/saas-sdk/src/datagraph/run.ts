@@ -23,11 +23,21 @@ function toSeries(
 	points: MetricPoint[],
 	groupBy: MetricGroupBy,
 	bucket: MetricBucket | undefined,
+	additive = true,
+	partial = false,
 ): MetricSeries {
 	return {
 		metricId,
 		points,
-		total: points.reduce((sum, point) => sum + point.value, 0),
+		total:
+			partial || points.length === 0
+				? null
+				: additive
+					? points.reduce((sum, point) => sum + point.value, 0)
+					: points.length === 1
+						? points[0].value
+						: null,
+		coverage: partial ? "partial" : points.length === 0 ? "empty" : "complete",
 		groupBy,
 		bucket,
 	};
@@ -53,18 +63,35 @@ export async function runMetric(
 			? (bucket: (typeof response.buckets)[number]) => Number(bucket.count)
 			: (bucket: (typeof response.buckets)[number]) =>
 					bucket.metrics[METRIC_VALUE_ALIAS];
+	let partial = false;
 	const points: MetricPoint[] = [];
 	for (const bucket of response.buckets) {
 		const value = readValue(bucket);
-		if (value === undefined) continue;
+		if (value === undefined || !Number.isFinite(value)) {
+			partial = true;
+			continue;
+		}
+		if (
+			metric.aggregation !== "count" &&
+			(bucket.samples[METRIC_VALUE_ALIAS] === undefined ||
+				bucket.samples[METRIC_VALUE_ALIAS] < bucket.count)
+		)
+			partial = true;
 		points.push({ key: bucket.key, value });
 	}
-	return toSeries(metric.id, points, metric.groupBy, metric.bucket);
+	return toSeries(
+		metric.id,
+		points,
+		metric.groupBy,
+		metric.bucket,
+		metric.aggregation === "count" || metric.aggregation === "sum",
+		partial,
+	);
 }
 
 // Combine the resolved series of a derived metric's inputs. Inputs are aligned
-// on the union of their point keys (first-seen order), a key missing from an
-// input counting as 0. Combining series grouped by different dimensions is
+// on the union of their point keys (first-seen order). Missing operands
+// remain unknown and are never substituted with zero. Combining series grouped by different dimensions is
 // meaningless — the keyspaces don't line up — so it is rejected rather than
 // silently producing a series of stray values.
 function combineDerived(
@@ -105,38 +132,52 @@ function combineDerived(
 			}
 		}
 	}
-	const valueAt = (input: MetricSeries, key: string): number =>
-		input.points.find((point) => point.key === key)?.value ?? 0;
-
-	let points: MetricPoint[];
-	switch (metric.operation) {
-		case "sum":
-			points = keys.map((key) => ({
-				key,
-				value: inputs.reduce((sum, input) => sum + valueAt(input, key), 0),
-			}));
-			break;
-		case "difference":
-			points = keys.map((key) => ({
-				key,
-				value: valueAt(inputs[0], key) - valueAt(inputs[1], key),
-			}));
-			break;
-		case "ratio":
-			points = keys.map((key) => {
-				const denominator = valueAt(inputs[1], key);
-				return {
-					key,
-					value: denominator === 0 ? 0 : valueAt(inputs[0], key) / denominator,
-				};
-			});
-			break;
-		default:
-			throw new Error(
-				`derived metric '${metric.id}' has unsupported operation '${metric.operation}'`,
-			);
+	const valueAt = (input: MetricSeries, key: string): number | undefined =>
+		input.points.find((point) => point.key === key)?.value;
+	let partial = inputs.some((input) => input.coverage === "partial");
+	const points: MetricPoint[] = [];
+	for (const key of keys) {
+		const values = inputs.map((input) => valueAt(input, key));
+		if (values.some((value) => value === undefined)) {
+			partial = true;
+			continue;
+		}
+		const present = values as number[];
+		let value: number;
+		switch (metric.operation) {
+			case "sum":
+				value = present.reduce((sum, v) => sum + v, 0);
+				break;
+			case "difference":
+				value = present[0] - present[1];
+				break;
+			case "ratio":
+				if (present[1] === 0) {
+					partial = true;
+					continue;
+				}
+				value = present[0] / present[1];
+				break;
+			default:
+				throw new Error(
+					`derived metric '${metric.id}' has unsupported operation '${metric.operation}'`,
+				);
+		}
+		if (!Number.isFinite(value)) {
+			partial = true;
+			continue;
+		}
+		points.push({ key, value });
 	}
-	return toSeries(metric.id, points, dimension.groupBy, dimension.bucket);
+
+	return toSeries(
+		metric.id,
+		points,
+		dimension.groupBy,
+		dimension.bucket,
+		false,
+		partial,
+	);
 }
 
 function indexMetrics(metrics: readonly Metric[]): Map<string, Metric> {

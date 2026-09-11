@@ -111,8 +111,10 @@ describe("dashboard authoring API", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		// Ranked by value, capped at the top-N limit.
-		expect(result.preview.points).toEqual([{ key: "saas.auth.login", value: 9 }]);
-		expect(result.preview.total).toBe(9);
+		expect(result.preview.points).toEqual([
+			{ key: "saas.auth.login", value: 9 },
+		]);
+		expect(result.preview.total).toBeNull();
 	});
 
 	it("previews a widened metric through the same compiled query a card uses", async () => {
@@ -167,7 +169,7 @@ describe("dashboard authoring API", () => {
 			alias: "value",
 		});
 		expect(result.preview.points).toEqual([{ key: "2026-08-01", value: 4200 }]);
-		expect(result.preview.total).toBe(4200);
+		expect(result.preview.total).toBeNull();
 	});
 
 	it("rejects a preview that references an unknown event before querying", async () => {

@@ -305,6 +305,8 @@ const (
 	// scope and the entry version in its payload, so a solution keeps one audit
 	// spine per tenant instead of a second trail.
 	EventDocumentIngested           EventType = "saas.document.ingested"
+	EventDocumentRead               EventType = "saas.document.read"
+	EventDocumentSearch             EventType = "saas.document.search"
 	EventDocumentVersionMinted      EventType = "saas.document.version_minted"
 	EventDocumentRenamed            EventType = "saas.document.renamed"
 	EventDocumentDeleted            EventType = "saas.document.deleted"
@@ -464,6 +466,8 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventEventSubscriptionRevoked, CategorySystem, "A domain-event subscription was revoked.", uid("subscription_id")),
 	mutation(EventEventReplayed, CategorySystem, "Domain events were replayed to a subscriber.",
 		str("type"), PayloadField{Name: "redelivered", Kind: FieldInt}),
+	observation(EventDocumentRead, CategoryAccess, "A document read returned evidence or an explicit outcome.", documentReadFields...),
+	observation(EventDocumentSearch, CategoryAccess, "A collection search returned evidence or an explicit outcome.", documentReadFields...),
 	mutation(EventDocumentIngested, CategoryLifecycle, "A document was ingested into a solution.", documentFields...),
 	mutation(EventDocumentVersionMinted, CategoryLifecycle, "A new document version was minted.", documentFields...),
 	mutation(EventDocumentRenamed, CategoryLifecycle, "A document was renamed.", documentFields...),
@@ -508,6 +512,12 @@ var documentFields = []PayloadField{
 	uid("owner_principal_id"),
 	str("initiator"),
 }
+
+// Observed read telemetry never carries query text, excerpts or credentials.
+var documentReadFields = append(append([]PayloadField(nil), documentFields...),
+	str("correlation_id"), enum("outcome", "returned", "empty", "denied", "failed"),
+	PayloadField{Name: "result_count", Kind: FieldInt}, PayloadField{Name: "duration_ms", Kind: FieldInt},
+)
 
 // auditEventIndex resolves an event type to its definition. Built once.
 var auditEventIndex = func() map[EventType]AuditEventDefinition {

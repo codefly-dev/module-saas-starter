@@ -53,12 +53,32 @@ export function compileMetric(
 	resolveEventType: EventTypeResolver,
 	context: MetricContext,
 ): AuditAggregateQuery {
+	if (
+		metric.filter.resourceId !== undefined &&
+		(!metric.filter.resourceId.trim() || !metric.filter.resource?.trim())
+	) {
+		throw new Error("resourceId requires a non-empty resource and id");
+	}
+	if (
+		metric.filter.collectionId !== undefined &&
+		!metric.filter.collectionId.trim()
+	) {
+		throw new Error("collectionId must be non-empty");
+	}
+	const eventType = resolveEventType(metric.filter.event);
+	if (!eventType.trim())
+		throw new Error("metric requires a registered event type");
+	if (context.from && context.to && context.from > context.to)
+		throw new Error("audit window is reversed");
 	return {
 		orgId: scopedOrgId(context),
-		eventType: resolveEventType(metric.filter.event),
+		eventType,
 		category: "",
 		actorId: metric.filter.actor ?? "",
 		resource: metric.filter.resource ?? "",
+		resourceId: metric.filter.resourceId ?? "",
+		collectionId: metric.filter.collectionId ?? "",
+		payloadContains: metric.filter.payloadContains ?? {},
 		from: context.from ? timestampFromDate(context.from) : undefined,
 		to: context.to ? timestampFromDate(context.to) : undefined,
 		groupBy: metric.groupBy,

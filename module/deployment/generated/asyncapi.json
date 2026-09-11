@@ -526,12 +526,34 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.document.read": {
+      "address": "saas.document.read",
+      "title": "saas.document.read",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.read"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.document.renamed": {
       "address": "saas.document.renamed",
       "title": "saas.document.renamed",
       "messages": {
         "envelope": {
           "$ref": "#/components/messages/saas.document.renamed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.search": {
+      "address": "saas.document.search",
+      "title": "saas.document.search",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.search"
         }
       },
       "x-visibility": "external",
@@ -1879,12 +1901,26 @@
       },
       "title": "saas publishes saas.document.quarantined"
     },
+    "send:saas.document.read": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.read"
+      },
+      "title": "saas publishes saas.document.read"
+    },
     "send:saas.document.renamed": {
       "action": "send",
       "channel": {
         "$ref": "#/channels/saas.document.renamed"
       },
       "title": "saas publishes saas.document.renamed"
+    },
+    "send:saas.document.search": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.search"
+      },
+      "title": "saas publishes saas.document.search"
     },
     "send:saas.document.subscribed": {
       "action": "send",
@@ -2855,9 +2891,23 @@
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }
       },
+      "saas.document.read": {
+        "name": "saas.document.read",
+        "title": "saas.document.read",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
       "saas.document.renamed": {
         "name": "saas.document.renamed",
         "title": "saas.document.renamed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.search": {
+        "name": "saas.document.search",
+        "title": "saas.document.search",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

@@ -26,7 +26,7 @@ export function MetricCard({
 	orgId: string;
 	className?: string;
 }) {
-	const { points, total, status } = useMetric(metric, orgId);
+	const { points, total, status, partial } = useMetric(metric, orgId);
 
 	return (
 		<Card className={className}>
@@ -37,6 +37,11 @@ export function MetricCard({
 				)}
 			</CardHeader>
 			<CardContent>
+				{partial && status === "ready" && (
+					<p role="status" className="text-sm text-muted-foreground">
+						Partial telemetry
+					</p>
+				)}
 				{status === "loading" ? (
 					<Skeleton className="h-[120px] w-full" />
 				) : status === "error" ? (
@@ -47,12 +52,12 @@ export function MetricCard({
 				) : points.length === 0 ? (
 					<div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
 						<BarChart3 className="h-4 w-4" />
-						No events yet.
+						No data yet.
 					</div>
 				) : metric.chart === "stat" ? (
 					<div className="flex items-end justify-between gap-4">
 						<span className="text-4xl font-bold tabular-nums tracking-tight">
-							{total.toLocaleString()}
+							{total === null ? "Total unavailable" : total.toLocaleString()}
 						</span>
 						<Sparkline
 							points={points.map((p) => p.value)}
