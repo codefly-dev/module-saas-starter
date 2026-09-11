@@ -1,0 +1,64 @@
+=== RUN   TestExecutionCustodyReal
+=== RUN   TestExecutionCustodyReal/lost_registration_ack_original_child
+=== RUN   TestExecutionCustodyReal/concurrent_registration_converges
+=== RUN   TestExecutionCustodyReal/registration_tuple_substitution
+=== RUN   TestExecutionCustodyReal/stored_private_ciphertext_and_roles
+=== RUN   TestExecutionCustodyReal/revision_only_and_spoofed_owner_headers
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/0
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/1
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/2
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/3
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/4
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/5
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/6
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/7
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/8
+=== RUN   TestExecutionCustodyReal/cross_worker_and_binding_substitutions/9
+=== RUN   TestExecutionCustodyReal/same_lineage_different_parent_and_conflicting_intent
+=== RUN   TestExecutionCustodyReal/restart_request_loss_replacement_worker_bounded_children
+=== RUN   TestExecutionCustodyReal/recover_without_original_request_or_parent
+=== RUN   TestExecutionCustodyReal/scope_injection_rejected
+=== RUN   TestExecutionCustodyReal/vault_key_rotation_preserves_original_binding
+=== RUN   TestExecutionCustodyReal/signing_key_rotation_denies_without_rebinding
+=== RUN   TestExecutionCustodyReal/stored_horizon_substitution
+=== RUN   TestExecutionCustodyReal/custody_outage
+=== RUN   TestExecutionCustodyReal/accounts_outage
+=== RUN   TestExecutionCustodyReal/vault_access_outage_fails_closed
+=== RUN   TestExecutionCustodyReal/real_accounts_subprocess_restart_and_owner_recovery
+=== RUN   TestExecutionCustodyReal/stale_authorization_revision
+=== RUN   TestExecutionCustodyReal/actor_chain_revocation
+=== RUN   TestExecutionCustodyReal/expiry_cleanup_tombstone
+--- PASS: TestExecutionCustodyReal (1.33s)
+    --- PASS: TestExecutionCustodyReal/lost_registration_ack_original_child (0.04s)
+    --- PASS: TestExecutionCustodyReal/concurrent_registration_converges (0.04s)
+    --- PASS: TestExecutionCustodyReal/registration_tuple_substitution (0.03s)
+    --- PASS: TestExecutionCustodyReal/stored_private_ciphertext_and_roles (0.01s)
+    --- PASS: TestExecutionCustodyReal/revision_only_and_spoofed_owner_headers (0.01s)
+    --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions (0.03s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/0 (0.01s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/1 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/2 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/3 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/4 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/5 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/6 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/7 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/8 (0.00s)
+        --- PASS: TestExecutionCustodyReal/cross_worker_and_binding_substitutions/9 (0.00s)
+    --- PASS: TestExecutionCustodyReal/same_lineage_different_parent_and_conflicting_intent (0.02s)
+    --- PASS: TestExecutionCustodyReal/restart_request_loss_replacement_worker_bounded_children (0.05s)
+    --- PASS: TestExecutionCustodyReal/recover_without_original_request_or_parent (0.03s)
+    --- PASS: TestExecutionCustodyReal/scope_injection_rejected (0.00s)
+    --- PASS: TestExecutionCustodyReal/vault_key_rotation_preserves_original_binding (0.02s)
+    --- PASS: TestExecutionCustodyReal/signing_key_rotation_denies_without_rebinding (0.02s)
+    --- PASS: TestExecutionCustodyReal/stored_horizon_substitution (0.01s)
+    --- PASS: TestExecutionCustodyReal/custody_outage (0.00s)
+    --- PASS: TestExecutionCustodyReal/accounts_outage (0.01s)
+    --- PASS: TestExecutionCustodyReal/vault_access_outage_fails_closed (0.01s)
+    --- PASS: TestExecutionCustodyReal/real_accounts_subprocess_restart_and_owner_recovery (0.80s)
+    --- PASS: TestExecutionCustodyReal/stale_authorization_revision (0.02s)
+    --- PASS: TestExecutionCustodyReal/actor_chain_revocation (0.01s)
+    --- PASS: TestExecutionCustodyReal/expiry_cleanup_tombstone (0.01s)
+PASS
+ok  	accounts/pkg/adapters	2.847s

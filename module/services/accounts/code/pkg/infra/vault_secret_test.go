@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"accounts/pkg/business"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -44,13 +45,28 @@ func TestVaultSecretCipherVersionedPurposeBoundRoundTrip(t *testing.T) {
 
 	_, err = client.DecryptSecret(t.Context(), "different-purpose", envelope)
 	require.ErrorContains(t, err, "purpose mismatch")
+	require.ErrorIs(t, err, business.ErrInvalidSecretEnvelope)
 }
 
 func TestVaultSecretCipherRejectsLegacyPlaintextAndMalformedEnvelope(t *testing.T) {
 	client := NewVaultClientDirect("http://unused.invalid", "token")
 	_, err := client.DecryptSecret(t.Context(), "mfa-totp", "PLAINTEXTBASE32")
 	require.ErrorContains(t, err, "unsupported secret envelope")
+	require.ErrorIs(t, err, business.ErrInvalidSecretEnvelope)
 
 	_, err = client.DecryptSecret(t.Context(), "mfa-totp", secretEnvelopePrefix+base64.RawURLEncoding.EncodeToString(nil))
 	require.ErrorContains(t, err, "invalid secret envelope")
+	require.ErrorIs(t, err, business.ErrInvalidSecretEnvelope)
+}
+
+func TestVaultDecryptOutageIsNotAnInvalidCredential(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	client := NewVaultClientDirect(server.URL, "token")
+	envelope := secretEnvelopePrefix + base64.RawURLEncoding.EncodeToString([]byte("vault:v1:ciphertext"))
+	_, err := client.DecryptSecret(t.Context(), "datasource", envelope)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, business.ErrInvalidSecretEnvelope)
 }
