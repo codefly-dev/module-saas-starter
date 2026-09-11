@@ -13,6 +13,22 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+// OrganizationIDExists reports whether any organizations row already holds this
+// id. The id is caller-supplied only by the fixture seeder, whose declared ids
+// must not collide with an organization this database already has.
+func (s *PostgresStore) OrganizationIDExists(ctx context.Context, id string) (bool, error) {
+	w := wool.Get(ctx).In("OrganizationIDExists")
+	executor := s.getQueryExecutor(ctx)
+
+	var exists bool
+	if err := executor.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM organizations WHERE id = $1)`, id,
+	).Scan(&exists); err != nil {
+		return false, w.Wrapf(err, "failed to check organization id")
+	}
+	return exists, nil
+}
+
 func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organization) error {
 	w := wool.Get(ctx).In("CreateOrganization")
 

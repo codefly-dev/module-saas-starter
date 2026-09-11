@@ -152,6 +152,10 @@ type Store interface {
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
+	// OrganizationIDExists reports whether any organizations row already holds
+	// this id, so a fixture declaring one can tell a reusable row from a
+	// primary key another organization has claimed.
+	OrganizationIDExists(ctx context.Context, id string) (bool, error)
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
 	ListOrganizationsForUser(ctx context.Context, userID string) ([]*gen.Organization, error)
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error

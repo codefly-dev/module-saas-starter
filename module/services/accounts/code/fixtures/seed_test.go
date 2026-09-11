@@ -140,6 +140,80 @@ func TestModuleFixtureUsersDeclareStableIDs(t *testing.T) {
 	}
 }
 
+func TestLoadFixtureCanonicalizesDeclaredOrganizationID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "product.yaml")
+	contents := "users:\n  - email: owner@example.com\n    provider: email\n    provider_id: owner\n" +
+		"organizations:\n  - id: 0000000A-0000-7000-8000-0000000000B1\n    name: Example\n    owner: owner@example.com\n"
+	if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fixture, err := loadFixtureFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fixture.Organizations[0].ID; got != "0000000a-0000-7000-8000-0000000000b1" {
+		t.Fatalf("loadFixtureFile() organization id = %q, want the canonical uuid rendering", got)
+	}
+}
+
+// An organization id is sealed as the tenant of a module principal's
+// capability and compared against organization ids downstream, so the same
+// spellings that cannot name a user cannot name a tenant.
+func TestValidateFixtureRejectsUnusableOrganizationIDs(t *testing.T) {
+	owner := fixtureUser{Email: "owner@example.com", Provider: "email", ProviderID: "owner"}
+	tests := map[string][]fixtureOrg{
+		"malformed": {
+			{ID: "acme", Name: "Acme", Owner: owner.Email},
+		},
+		"collision": {
+			{ID: "00000000-0000-7000-8000-0000000000b1", Name: "Acme", Owner: owner.Email},
+			{ID: "00000000-0000-7000-8000-0000000000B1", Name: "Globex", Owner: owner.Email},
+		},
+		"nil sentinel": {
+			{ID: "00000000-0000-0000-0000-000000000000", Name: "Acme", Owner: owner.Email},
+		},
+		"urn spelling": {
+			{ID: "urn:uuid:00000000-0000-7000-8000-0000000000b1", Name: "Acme", Owner: owner.Email},
+		},
+		"unhyphenated spelling": {
+			{ID: "000000000000700080000000000000b1", Name: "Acme", Owner: owner.Email},
+		},
+		"braced spelling": {
+			{ID: "{00000000-0000-7000-8000-0000000000b1}", Name: "Acme", Owner: owner.Email},
+		},
+	}
+	for name, orgs := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateFixture(&fixtureFile{Users: []fixtureUser{owner}, Organizations: orgs}); err == nil {
+				t.Fatal("validateFixture() accepted an organization id that cannot name a tenant")
+			}
+		})
+	}
+}
+
+// A module principal grant (MODULE_PRINCIPALS) names its tenant by organization
+// id, so a module fixture organization without a declared id leaves every
+// composed grant nothing stable to quote.
+func TestModuleFixtureOrganizationsDeclareStableIDs(t *testing.T) {
+	entries, err := embeddedFixtures.ReadDir("embedded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		t.Run(entry.Name(), func(t *testing.T) {
+			fixture, err := loadFixtureFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, org := range fixture.Organizations {
+				if org.ID == "" {
+					t.Fatalf("fixture organization %s declares no id", org.Name)
+				}
+			}
+		})
+	}
+}
+
 func TestValidateFixtureAcceptsAgentRoleAndAssignment(t *testing.T) {
 	fixture := &fixtureFile{
 		Users: []fixtureUser{{
