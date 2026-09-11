@@ -40,7 +40,9 @@ updates:
   # The repository-root tooling module only. The five modules under module/ are
   # base files; see rule 1.
   - package-ecosystem: gomod
-    directory: /
+    directories:
+      - /
+      - /libraries/source-read-sdk/go
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
