@@ -124,7 +124,7 @@ describe("DatasourcesPanel", () => {
 		// delivery, so a date cannot separate a source that ingested minutes ago
 		// from one whose ingest stopped shortly after midnight.
 		expect(line.textContent).not.toBe(
-			`last ingest ${new Date(at).toLocaleDateString()}`,
+			`last ingest ${new Date(at).toLocaleString()}`,
 		);
 		expect(line.textContent).toContain(
 			new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(
@@ -178,7 +178,7 @@ describe("DatasourcesPanel", () => {
 
 		expect(
 			await screen.findByText(
-				new Date("2026-09-08T11:30:00.000Z").toLocaleDateString(),
+				new Date("2026-09-08T11:30:00.000Z").toLocaleString(),
 			),
 		).toBeTruthy();
 		expect(screen.queryByText(/last ingest/i)).toBeNull();

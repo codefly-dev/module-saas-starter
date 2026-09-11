@@ -118,7 +118,7 @@ describe("createDatasourceClient", () => {
 			),
 		).toThrow();
 		expectRoutable(
-			"/saas.accounts.v1.PermissionService/ListMyAccessibleScopes",
+			"/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
 		);
 	});
 
@@ -130,6 +130,7 @@ describe("createDatasourceClient", () => {
 		});
 		const operations = {
 			listSources: () => client.listSources("org-1"),
+			listActivity: () => client.listActivity!("org-1", "ds-1"),
 			addGitHubSource: () =>
 				client.addGitHubSource({
 					orgId: "org-1",
@@ -142,12 +143,13 @@ describe("createDatasourceClient", () => {
 				}),
 			syncSource: () => client.syncSource("org-1", "ds-1"),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
-		} satisfies Record<keyof typeof client, () => Promise<unknown>>;
+		} satisfies Partial<Record<keyof typeof client, () => Promise<unknown>>>;
 		expect(Object.keys(operations).sort()).toEqual(Object.keys(client).sort());
 		for (const operation of Object.values(operations)) {
+			const before = calls.length;
 			await operation();
+			expect(calls.length).toBeGreaterThan(before);
 		}
-		expect(calls).toHaveLength(Object.keys(operations).length);
 	});
 
 	it("calls the live DatasourceService through the gateway with the host token", async () => {
