@@ -56,6 +56,15 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 		return nil, w.Wrapf(err, "failed to get read-write connection string")
 	}
 
+	return NewPostgresStoreWithCapabilities(ctx, readOnlyConnection, readWriteConnection)
+}
+
+// NewPostgresStoreWithCapabilities composes the same production reader/writer
+// boundary from primitive-projected connection secrets. It preserves verified
+// identity, distinct roles, startup pings and the rotating credential hook.
+func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, readWriteConnection string) (*PostgresStore, error) {
+	w := wool.Get(ctx).In("NewPostgresStoreWithCapabilities")
+
 	// One token-resolution path for every pool. In external-identity mode the
 	// database password is a rotating token; the reader, writer, and legacy
 	// pools all attach this same hook so a reconnect after token expiry presents

@@ -273,3 +273,14 @@ Starter should split the corresponding pools/processes—so a request-only
 credential has no `SET ROLE` path to privileged roles. Track that PaaS work
 under `P2-DB-002`; do not compensate with a public endpoint, superuser
 credential, or application-settable policy flag.
+
+
+## Private execution custody candidate
+
+Migration `131_execution_custody` adds forced-RLS tenant-owned ciphertext with a
+literal deny-all request policy. Only `app_control_plane` receives SELECT, INSERT,
+DELETE and column-level UPDATE on `envelope` for expiry erasure. All original
+registration fields are immutable to runtime SQL roles; no worker or tenant
+custody grant is added. Ciphertext erasure retains non-authorizing admission
+tombstones. See [the private broker contract](services/accounts/EXECUTION_CUSTODY.md)
+for authentication, Vault projection, lifetime and qualification boundaries.
