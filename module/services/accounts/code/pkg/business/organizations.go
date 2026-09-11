@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -56,6 +57,106 @@ func OrgAdminContinuity(current int, projected int) error {
 		return nil
 	}
 	return ErrOrgAdminContinuity
+}
+
+// OrgAdministration is one organization an identity administers: how many
+// eligible administrators it has in total — the identity itself included, since
+// it is one of them — and how many members other than the identity are still
+// able to authenticate.
+type OrgAdministration struct {
+	OrgID                  string
+	EligibleAdministrators int
+	OtherActiveMembers     int
+}
+
+// StrandedByDeactivating reports whether deactivating the identity would leave
+// this organization unadministrable *to somebody*. Two conditions, and the
+// second is not a softening of the rule but the whole point of it: an
+// organization nobody else is in has nobody to strand.
+//
+// RegisterUser gives every identity a personal organization it solely owns, so
+// an organization count alone would refuse every deletion on this platform —
+// including the ordinary member's, who administers nothing anyone shares.
+// What the invariant protects is the members who would be left in an
+// organization no one can administer, so it asks whether there are any.
+func (a OrgAdministration) StrandedByDeactivating() bool {
+	if a.OtherActiveMembers == 0 {
+		return false
+	}
+	// The identity is one of the counted administrators, so deactivating it
+	// removes exactly one.
+	return OrgAdminContinuity(a.EligibleAdministrators, a.EligibleAdministrators-1) != nil
+}
+
+// ErrIdentityAdminContinuity reports a deactivation refused because the identity
+// is the only eligible administrator of at least one organization. It is the
+// same invariant ErrOrgAdminContinuity guards, reached from the identity's side
+// rather than one organization's, and it is a distinct sentinel because the
+// remedy is too: administration of those organizations has to be handed over
+// first, and the error names them.
+var ErrIdentityAdminContinuity = errors.New("identity is the only administrator of an organization")
+
+// IdentityAdminContinuityError carries the organizations a refused deactivation
+// would strand, so the caller is told which handovers it is waiting on instead
+// of only that something is.
+type IdentityAdminContinuityError struct {
+	Organizations []string
+}
+
+func (e *IdentityAdminContinuityError) Error() string {
+	return fmt.Sprintf("%s: %s", ErrIdentityAdminContinuity, strings.Join(e.Organizations, ", "))
+}
+
+func (e *IdentityAdminContinuityError) Unwrap() error { return ErrIdentityAdminContinuity }
+
+// organizationsStrandedByDeactivation locks the administrative standing of
+// every organization the identity administers and returns those its
+// deactivation would strand — see OrgAdministration.StrandedByDeactivating for
+// what that means.
+//
+// A deactivation is not a membership change and cannot be expressed as one: it
+// leaves every organization_members row standing and removes the identity from
+// all of them at once, so the invariant has to be evaluated per organization
+// and all of those organizations have to be pinned at the same time. Callers
+// hold the locks for the rest of the transaction that writes the status, which
+// is what serializes a deactivation against a concurrent removal or demotion in
+// any of the same organizations.
+//
+// Ascending organization id is the order the locks are taken in — the order
+// ListAdministeredOrganizations returns — so two concurrent deactivations
+// sharing organizations queue rather than deadlock.
+//
+// The roster is read twice on purpose. The first read only decides which locks
+// to take; the decision rests on the second, made under them. An organization
+// the identity is promoted into between the two reads is decided on a count
+// taken without its lock, which can only be conservative: promoting somebody
+// requires an administrator who is active at that moment, and a demotion that
+// would remove them holds that organization's lock and still counts this
+// identity as active, so it refuses.
+func (s *Service) organizationsStrandedByDeactivation(ctx context.Context, userID string) ([]string, error) {
+	w := wool.Get(ctx).In("organizationsStrandedByDeactivation")
+
+	administered, err := s.store.ListAdministeredOrganizations(ctx, userID)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot list administered organizations")
+	}
+	for _, administration := range administered {
+		if err := s.store.LockOrgAdministration(ctx, administration.OrgID); err != nil {
+			return nil, w.Wrapf(err, "cannot lock organization administration")
+		}
+	}
+
+	administered, err = s.store.ListAdministeredOrganizations(ctx, userID)
+	if err != nil {
+		return nil, w.Wrapf(err, "cannot re-read administered organizations")
+	}
+	var stranded []string
+	for _, administration := range administered {
+		if administration.StrandedByDeactivating() {
+			stranded = append(stranded, administration.OrgID)
+		}
+	}
+	return stranded, nil
 }
 
 // requireOrgAdminContinuity takes the organization's administration lock and

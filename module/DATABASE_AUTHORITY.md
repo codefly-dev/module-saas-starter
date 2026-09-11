@@ -334,6 +334,41 @@ silently disable the rule instead of tightening it. Control-plane transactions
 set no tenant organization and hold `BYPASSRLS`, so they evaluate the same
 predicate directly.
 
+## Identity deactivation and administered organizations
+
+Migration `136_identity_administered_organizations` adds
+`identity_administered_organizations(user_id)`, the read behind the
+deactivation half of the same invariant. Deactivating an identity — a soft
+delete or a suspension — writes no `organization_members` row but withdraws
+eligibility from every administrative membership the identity holds at once, so
+the decision needs the organizations it administers and, for each, how many
+eligible administrators that organization has and whether anybody else is still
+in it. That last count separates an organization left unadministrable from one
+left empty: `RegisterUser` gives every identity a personal organization it
+solely owns, so a rule counting only administrators would refuse every deletion
+on this platform.
+
+A deactivating transaction is scoped to an identity and to no organization,
+which is the one scope that can read neither input: `organization_members` is
+scoped to `app.current_org_id` (migrations `29`/`68`) and `users` to the
+caller's own row (migration `69`). Both return zero rows rather than an error,
+and zero administered organizations reads as "this identity administers
+nothing" — the answer that admits the deactivation. Same shape as the two
+sections above: a `SECURITY DEFINER` function owned by the NOLOGIN
+`app_control_plane` role, public execution revoked, `EXECUTE` granted only to
+`app_tenant`, and the body scoped to `app.current_user_id` so it answers only
+for the caller's own identity. It returns organization ids that caller is
+already a member of, plus a count over them, and no `users` column.
+
+The administrator count repeats migration `133`'s eligibility predicate rather than
+calling `organization_eligible_administrators`, which scopes itself to
+`app.current_org_id` — a value a deactivation has no single one of.
+`PostgresStore.ListAdministeredOrganizations` branches on the transaction's
+scope: the caller's own identity goes through the function, a transaction
+holding `BYPASSRLS` evaluates the predicate directly, and one that is neither is
+refused rather than answered empty. Executable tests pin the function's owner,
+security mode, and ACL, the eligibility filter, and that refusal.
+
 ## Session authorization invalidation
 
 Migration `70_session_authorization_invalidation` makes refresh-session

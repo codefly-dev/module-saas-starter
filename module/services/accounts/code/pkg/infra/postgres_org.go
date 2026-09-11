@@ -239,6 +239,90 @@ func (s *PostgresStore) CountOrgAdministrators(ctx context.Context, orgID string
 	return total, others, nil
 }
 
+// ListAdministeredOrganizations returns every organization the identity is an
+// eligible administrator of, each with that organization's total count of
+// eligible administrators, ordered by organization id.
+//
+// Same two audiences as CountOrgAdministrators and the same reason to branch on
+// the transaction's scope rather than fall back. A deactivation is not scoped to
+// one organization, so it reads organization_members with no app.current_org_id
+// set and users outside the caller's own row — both of which return zero rows
+// rather than an error, and "administers nothing" is the answer that lets the
+// deactivation through. A request transaction therefore goes through the
+// SECURITY DEFINER operation scoped to its own identity, and a transaction that
+// spans tenants reads the same predicate directly. Anything else is neither, and
+// would silently read as a clean identity; say so instead.
+func (s *PostgresStore) ListAdministeredOrganizations(ctx context.Context, userID string) ([]business.OrgAdministration, error) {
+	w := wool.Get(ctx).In("ListAdministeredOrganizations")
+	executor := s.getQueryExecutor(ctx)
+
+	var scopedUser string
+	var spansTenants bool
+	if err := executor.QueryRow(ctx, `
+		SELECT coalesce(pg_catalog.current_setting('app.current_user_id', true), ''),
+		       EXISTS (
+		           SELECT 1 FROM pg_catalog.pg_roles
+		           WHERE rolname = current_user AND (rolbypassrls OR rolsuper)
+		       )`,
+	).Scan(&scopedUser, &spansTenants); err != nil {
+		return nil, w.Wrapf(err, "failed to read the transaction's identity scope")
+	}
+
+	query := `
+		SELECT administered_org_id, eligible_administrators, other_active_members
+		FROM public.identity_administered_organizations($1)`
+	if scopedUser != userID {
+		if !spansTenants {
+			return nil, w.NewError(
+				"listing another identity's administered organizations needs a transaction that spans tenants")
+		}
+		query = `
+			SELECT held.org_id,
+			       (
+			           SELECT count(*)::integer
+			           FROM organization_members AS peer
+			           JOIN users AS peer_holder ON peer_holder.uuid = peer.user_id
+			           WHERE peer.org_id = held.org_id
+			             AND peer.role IN ('owner', 'admin')
+			             AND peer_holder.status = 'active'
+			       ),
+			       (
+			           SELECT count(*)::integer
+			           FROM organization_members AS peer
+			           JOIN users AS peer_holder ON peer_holder.uuid = peer.user_id
+			           WHERE peer.org_id = held.org_id
+			             AND peer.user_id <> $1
+			             AND peer_holder.status = 'active'
+			       )
+			FROM organization_members AS held
+			JOIN users AS holder ON holder.uuid = held.user_id
+			WHERE held.user_id = $1
+			  AND held.role IN ('owner', 'admin')
+			  AND holder.status = 'active'
+			ORDER BY held.org_id`
+	}
+
+	rows, err := executor.Query(ctx, query, userID)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list administered organizations")
+	}
+	defer rows.Close()
+
+	var administered []business.OrgAdministration
+	for rows.Next() {
+		var administration business.OrgAdministration
+		if err := rows.Scan(&administration.OrgID,
+			&administration.EligibleAdministrators, &administration.OtherActiveMembers); err != nil {
+			return nil, w.Wrapf(err, "failed to scan administered organization")
+		}
+		administered = append(administered, administration)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "failed to read administered organizations")
+	}
+	return administered, nil
+}
+
 // LockOrgAdministration serializes every change to one organization's
 // administrative standing — a role upsert, a demotion, or a removal, whichever
 // member it names. It must be taken in the same transaction as the roster read

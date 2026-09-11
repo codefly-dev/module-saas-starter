@@ -453,6 +453,65 @@ membership rows are locked, not `users`: this is the authentication path, and
 locking identities would put invitation redemption in contention with every
 concurrent write to the same users.
 
+### Deactivating an identity is the same invariant, from the other side
+
+Nothing above writes `organization_members` when an identity is deactivated.
+`Service.DeleteUser` is a soft delete and `Service.SuspendUser` a status change;
+both leave every administrative membership row standing while `findIdentity`
+stops admitting the identity at all. Eligibility is what changes, and it changes
+for every organization the identity administers at once — so the decision is not
+a single-organization guard and cannot be expressed as one.
+
+`Service.organizationsStrandedByDeactivation` is that decision. It lists the
+organizations in which the identity is itself an eligible administrator
+(`Store.ListAdministeredOrganizations`, ordered by organization id), takes each
+one's `administration:<org>` lock **in that order**, re-reads under the locks,
+and returns the organizations the deactivation would strand. The locks are held
+for the rest of the transaction that writes the status, which is what serializes
+a deactivation against a concurrent removal or demotion in any of the same
+organizations. Ascending organization id is the order both callers take them in,
+so two concurrent deactivations over shared organizations queue rather than
+deadlock.
+
+**Stranded takes two conditions, and the second is the point of the rule rather
+than a softening of it** (`OrgAdministration.StrandedByDeactivating`): the
+identity is the organization's only eligible administrator, **and** somebody
+else in that organization can still authenticate. `RegisterUser` gives every
+identity a personal organization it solely owns, so counting administrators
+alone would refuse every deletion on this platform — an ordinary member's
+included. What the invariant protects is the members who would be left in an
+organization nobody can administer, so it asks whether there are any. An
+organization nobody else is in is left empty, not unadministrable.
+
+The roster is read twice on purpose: the first read only chooses which locks to
+take, and the decision rests on the second, made under them. An organization the
+identity is promoted into between the two reads is decided on a count taken
+without its lock — which can only be conservative, because promoting anyone
+requires an administrator who is active at that moment, and a demotion that would
+remove them holds that organization's lock and still counts this identity as
+active.
+
+A user-scoped transaction can resolve none of this on its own:
+`organization_members` is scoped to `app.current_org_id`, which a deactivation
+does not set, and `users` is readable only for the caller's own row. Both fail
+*silently* — zero rows, no error — and "administers nothing" is exactly the
+answer that lets the deactivation through. So request traffic resolves it through
+`identity_administered_organizations`, a `SECURITY DEFINER` function owned by
+`app_control_plane` and scoped to the caller's **own identity** (migration 136),
+and a transaction that spans tenants evaluates the same predicate directly.
+`ListAdministeredOrganizations` branches on which of the two it is in and
+refuses a transaction that is neither, rather than returning the empty answer.
+
+**The two entry points differ in what they do with the result, deliberately:**
+
+| Entry point | Disposition |
+| --- | --- |
+| `Service.DeleteUser` | **Refused** — `business.ErrIdentityAdminContinuity`, carried by `IdentityAdminContinuityError`, which names the organizations and maps to `FailedPrecondition`. Offboarding an administrator is a handover first and a deletion second, and the caller is told which organizations are waiting on one. |
+| `Service.SuspendUser` | **Permitted, and recorded.** Suspension is how a compromised account is contained; an invariant about who can administer an organization must not be the reason a credential in somebody else's hands stays live. The stranded organizations go onto the `user.suspended` audit event as `organizations_without_administrator` and into the operator notification. The locks are still taken — they are what makes the recorded list the one that actually committed. |
+
+Reactivation (`Service.UnsuspendUser`) can only raise an eligible-administrator
+count, so it is settled from its argument like a promotion and takes no lock.
+
 ### `organizations.owner_id` is provenance, not authority
 
 `owner_id` is the owner of record. It is written exactly once, when the

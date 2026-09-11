@@ -320,7 +320,11 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventUserCreated, CategoryIdentity, "A user was provisioned by an administrator.", pii(str("email"))),
 	mutation(EventUserUpdated, CategoryIdentity, "A user profile was updated."),
 	mutation(EventUserDeleted, CategoryIdentity, "A user account was deleted."),
-	mutation(EventUserSuspended, CategoryIdentity, "A user account was suspended."),
+	// A suspension is allowed to leave an organization with no administrator —
+	// containing a compromised account outranks that — so the organizations it
+	// did leave that way are part of the record rather than a reason to refuse.
+	mutation(EventUserSuspended, CategoryIdentity, "A user account was suspended.",
+		strs("organizations_without_administrator")),
 	mutation(EventUserUnsuspended, CategoryIdentity, "A user account was reinstated."),
 	mutation(EventUserIdentityAdd, CategoryIdentity, "An external identity was linked to a user.", str("provider")),
 	observation(EventSettingsUpdated, CategoryIdentity, "A user's personal settings changed."),
