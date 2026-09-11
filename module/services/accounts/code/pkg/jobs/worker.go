@@ -288,6 +288,17 @@ func (w *Worker) process(ctx context.Context, envelope *jobsv1.JobEnvelope) erro
 	go w.heartbeat(heartbeatCtx, cancelHandler, lease, heartbeatDone)
 
 	handlerErr, panicked := w.invokeHandler(handlerCtx, envelope)
+	if handlerErr != nil {
+		// The failure record carries only a code and a generic message; the
+		// cause is the one thing an operator needs and this is the only place
+		// that still holds it.
+		wool.Get(handlerCtx).In("jobs.worker").Warn("job handler failed",
+			wool.Field("queue", envelope.GetQueue()),
+			wool.Field("topic", envelope.GetTopic()),
+			wool.Field("job_id", envelope.GetId()),
+			wool.Field("panicked", panicked),
+			wool.ErrField(handlerErr))
+	}
 	cancelHeartbeat()
 	heartbeatErr := <-heartbeatDone
 	cancelHandler()
