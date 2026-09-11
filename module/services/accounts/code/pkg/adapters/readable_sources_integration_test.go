@@ -9,6 +9,7 @@ import (
 
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"

@@ -158,6 +158,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 	require.ElementsMatch(t, []string{
 		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",
 		"/saas.accounts.v1.IdentityService/ResolveIdentity",
+		"/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections",
 		"/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
 		"/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
 		"/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",

@@ -7,10 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"sort"
 	"strings"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ReadableSourceCollections intersects current owner/actor grants in the same
