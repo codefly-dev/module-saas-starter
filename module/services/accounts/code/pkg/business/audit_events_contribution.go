@@ -1,6 +1,7 @@
 package business
 
 import (
+	"accounts/pkg/eventcatalog"
 	"bytes"
 	"fmt"
 )
@@ -14,7 +15,7 @@ const AuditEventsContributionPath = "contracts/accounts/saas.events.codefly.yaml
 // downstream contribution can publish under it. The base module's own
 // contribution reaches compose through --base-events, which is the invocation
 // that waives the reservation for the module that owns it.
-const auditEventsNamespace = "saas"
+const auditEventsNamespace = eventcatalog.PlatformAuditNamespace
 
 // Every audit event carries an untyped payload map rather than a generated
 // message, so each published type resolves to the envelope itself — the same

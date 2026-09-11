@@ -477,6 +477,12 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 			}
 			continue
 		}
+		// Existing subscriptions can predate the platform namespace reservation.
+		// Recheck at delivery time so a legacy saas.* row cannot receive the
+		// audit events now published for tenant-owned webhook endpoints.
+		if eventcatalog.Namespace(e.GetType()) == eventcatalog.PlatformAuditNamespace {
+			continue
+		}
 		request := p.delivery(e, subscription, e.GetId()+":"+subscription.ID)
 		if err := enqueueOne(ctx, tx, request); err != nil {
 			return mapEnqueueError(err)

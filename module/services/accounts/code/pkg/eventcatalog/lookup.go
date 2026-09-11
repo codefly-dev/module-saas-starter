@@ -2,6 +2,9 @@ package eventcatalog
 
 import "strings"
 
+// PlatformAuditNamespace is reserved for audit events delivered only to tenant-owned webhooks.
+const PlatformAuditNamespace = "saas"
+
 // Namespace returns the leading dotted segment of an event type — the namespace
 // a producer must own to publish it. "reference.console.viewed" → "reference".
 // A type with no dot is its own namespace; an empty type yields "".

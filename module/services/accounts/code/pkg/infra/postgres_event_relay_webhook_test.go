@@ -365,3 +365,16 @@ func TestSyncWebhookEventSubscriptionsRejectsMissingTenantScope(t *testing.T) {
 	require.ErrorContains(t, err, "webhook subscription org does not match the signed request scope")
 	require.Equal(t, []string{externalEventType}, webhookSubscriptionPatterns(t, endpointID))
 }
+
+func TestPostgresRelayDoesNotDeliverAuditToLegacyModuleSubscription(t *testing.T) {
+	transport, pool := newWebhookRelayTransport(t)
+	orgID := seedOrg(t, seedUser(t))
+	endpointID := seedWebhookEndpoint(t, orgID, true, externalEventType)
+	legacy := seedSubscriptionRow(t, "saas.*", "relay.legacy."+relayToken(), events.DeliveryUnordered)
+	publishExternal(t, transport, externalEventType, orgID, []byte(`{}`))
+	require.Len(t, webhookDeliveries(t, pool, endpointID), 1)
+	var queued int
+	require.NoError(t, pool.QueryRow(testCtx,
+		"SELECT count(*) FROM public.job_messages WHERE queue = $1", legacy.Queue).Scan(&queued))
+	require.Zero(t, queued, "legacy module subscriptions cannot read platform audit events")
+}
