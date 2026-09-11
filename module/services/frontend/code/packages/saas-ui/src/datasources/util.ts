@@ -20,5 +20,5 @@ export function parsePaths(raw: string | undefined): string[] {
 export function formatSyncedAt(iso: string | undefined): string {
 	if (!iso) return "Never";
 	const date = new Date(iso);
-	return Number.isNaN(date.getTime()) ? "Never" : date.toLocaleDateString();
+	return Number.isNaN(date.getTime()) ? "Never" : date.toLocaleString();
 }

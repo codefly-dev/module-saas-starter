@@ -47,6 +47,48 @@ export function datasourceClientOverTransport(
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
+		async listActivity(orgId, sourceId) {
+			const audit = accounts.New(transport).audit();
+			const types = [
+				"saas.datasource.source.added",
+				"saas.datasource.credential.updated",
+				"saas.datasource.source.synced",
+				"saas.datasource.source.removed",
+				"saas.datasource.change_set_compiled",
+				"saas.datasource.sync.completed",
+				"saas.datasource.sync.failed",
+			];
+			const pages = await Promise.all(
+				types.map((eventType) =>
+					audit.queryAuditLog({
+						orgId,
+						resourceId: sourceId,
+						eventType,
+						pageSize: 10,
+					}),
+				),
+			);
+			const events = [
+				...new Map(
+					pages
+						.flatMap((page) => page.events)
+						.map((event) => [event.id, event]),
+				).values(),
+			];
+			events.sort(
+				(a, b) =>
+					Number(b.createdAt?.seconds ?? 0) - Number(a.createdAt?.seconds ?? 0),
+			);
+			return events.slice(0, 50).map((event) => ({
+				id: event.id,
+				type: event.eventType,
+				actor: event.actorId,
+				at: event.createdAt
+					? timestampDate(event.createdAt).toISOString()
+					: undefined,
+				fields: event.payload ?? {},
+			}));
+		},
 		async listSources(orgId) {
 			const response = await client.listSources({ orgId });
 			return response.datasources.map(toDatasourceView);
@@ -65,8 +107,8 @@ export function datasourceClientOverTransport(
 				boundary: { case: "collectionLabel", value: input.targetCollection },
 			});
 		},
-		async syncSource(orgId, id) {
-			const response = await client.syncSource({ orgId, id });
+		async syncSource(orgId, id, accessToken) {
+			const response = await client.syncSource({ orgId, id, ...(accessToken ? { accessToken } : {}) });
 			return response.jobId;
 		},
 		async deleteSource(orgId, id) {
@@ -129,9 +171,12 @@ function toDatasourceView(source: Datasource): DatasourceView {
 				: source.status === DatasourceStatus.PAUSED
 					? "paused"
 					: "unknown",
-		lastSyncedAt: source.lastSyncedAt
-			? timestampDate(source.lastSyncedAt).toISOString()
-			: undefined,
+		lastSyncedAt:
+			(source.lastIngestedAt ?? source.lastSyncedAt)
+				? timestampDate(
+						(source.lastIngestedAt ?? source.lastSyncedAt)!,
+					).toISOString()
+				: undefined,
 		createdAt: source.createdAt
 			? timestampDate(source.createdAt).toISOString()
 			: undefined,

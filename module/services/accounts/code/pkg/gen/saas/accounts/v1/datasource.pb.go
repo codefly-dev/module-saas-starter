@@ -1646,9 +1646,12 @@ func (x *GetSourceResponse) GetDatasource() *Datasource {
 }
 
 type SyncSourceRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Id    string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	// Optional replacement PAT: validate and encrypt for this existing GitHub
+	// source before queuing sync. Empty keeps the saved credential. Never returned.
+	AccessToken   string `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1693,6 +1696,13 @@ func (x *SyncSourceRequest) GetOrgId() string {
 func (x *SyncSourceRequest) GetId() string {
 	if x != nil {
 		return x.Id
+	}
+	return ""
+}
+
+func (x *SyncSourceRequest) GetAccessToken() string {
+	if x != nil {
+		return x.AccessToken
 	}
 	return ""
 }
@@ -1947,10 +1957,11 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x11GetSourceResponse\x12<\n" +
 	"\n" +
 	"datasource\x18\x01 \x01(\v2\x1c.saas.accounts.v1.DatasourceR\n" +
-	"datasource\"N\n" +
+	"datasource\"{\n" +
 	"\x11SyncSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x18\n" +
-	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"+\n" +
+	"\x02id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12+\n" +
+	"\faccess_token\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\vaccessToken\"+\n" +
 	"\x12SyncSourceResponse\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"P\n" +
 	"\x13DeleteSourceRequest\x12\x1f\n" +
@@ -1989,7 +2000,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\n" +
 	"SyncSource\x12#.saas.accounts.v1.SyncSourceRequest\x1a$.saas.accounts.v1.SyncSourceResponse\"E\xc2\xf3\x18A\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:!\n" +
-	"\x1dsaas.datasource.source.synced\x10\x02@\x01H\x04P\x02X\x02`\x01\x12\xa5\x01\n" +
+	"\x1dsaas.datasource.source.synced\x10\x02@\x01H\x04P\x04X\x02`\x01\x12\xa5\x01\n" +
 	"\fDeleteSource\x12%.saas.accounts.v1.DeleteSourceRequest\x1a&.saas.accounts.v1.DeleteSourceResponse\"F\xc2\xf3\x18B\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\"\n" +
 	"\x1esaas.datasource.source.removed\x10\x02@\x01H\x04P\x02X\x02`\x01B\xb7\x01\n" +
