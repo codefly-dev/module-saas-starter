@@ -201,7 +201,7 @@ func DatasourceDeliveryOrderingKey(sourceID string) *jobsv1.JobOrderingKey {
 // is a no-op success; a malformed payload is terminal; a GitHub or store failure
 // stays retryable.
 func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
-	return func(ctx context.Context, envelope *jobsv1.JobEnvelope) error {
+	return func(ctx context.Context, envelope *jobsv1.JobEnvelope) (resultErr error) {
 		if envelope.GetQueue() != DatasourceDeliveryQueue {
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery job routing", false)
 		}
@@ -216,6 +216,12 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		if source == nil {
 			return nil
 		}
+		defer func() {
+			if resultErr != nil {
+				s.emit(ctx, source.ID, "system", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, map[string]any{"job_id": envelope.GetId(), "repo": source.Repo, "reason": "Source fetch or dispatch failed; the job may retry. Check service logs for details."})
+			}
+		}()
+
 		// Only GitHub sources are enqueued here today, but the compiler and
 		// reconcile paths assume a GitHub token + repo; a non-GitHub source would
 		// never become processable, so drop it terminally rather than driving

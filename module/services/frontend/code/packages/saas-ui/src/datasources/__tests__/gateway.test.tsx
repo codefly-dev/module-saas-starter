@@ -211,3 +211,37 @@ describe("DatasourcesPanel gateway binding", () => {
 		);
 	});
 });
+
+it("uses GitHub's dispatch clock instead of reporting Never", async () => {
+	const github = {
+		...oneSource.datasources[0],
+		lastIngestedAt: "2026-09-11T14:00:00Z",
+	};
+	stubFetch({ datasources: [github] });
+	const client = createDatasourceClient({
+		apiBase: "http://example.test",
+		getAccessToken: () => "viewer",
+	});
+	expect((await client.listSources("org-1"))[0].lastSyncedAt).toBe(
+		"2026-09-11T14:00:00.000Z",
+	);
+});
+it("reads source-specific typed audit history", async () => {
+	stubFetch({
+		events: [
+			{
+				id: "a1",
+				eventType: "saas.datasource.sync.completed",
+				actorId: "worker",
+				createdAt: "2026-09-11T14:00:00Z",
+				payload: { processed: 45, job_id: "j1" },
+			},
+		],
+	});
+	const client = createDatasourceClient({
+		apiBase: "http://example.test",
+		getAccessToken: () => "viewer",
+	});
+	const events = await client.listActivity!("org-1", "s1");
+	expect(events[0].fields).toEqual({ processed: 45, job_id: "j1" });
+});

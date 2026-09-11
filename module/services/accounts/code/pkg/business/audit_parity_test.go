@@ -29,6 +29,8 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceChangeSetCompiled,
 	EventDatasourceForcePushReconciled,
 	EventDatasourceSnapshotTooLarge,
+	EventDatasourceSyncCompleted,
+	EventDatasourceSyncFailed,
 	EventDatasourceSourceRecovered,
 	EventDocumentDeleted,
 	EventDocumentIngested,

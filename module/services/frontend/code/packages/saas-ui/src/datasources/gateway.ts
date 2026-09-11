@@ -47,6 +47,21 @@ export function datasourceClientOverTransport(
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
+		async listActivity(orgId, sourceId) {
+			const response = await accounts
+				.New(transport)
+				.audit()
+				.queryAuditLog({ orgId, resourceId: sourceId, pageSize: 50 });
+			return response.events.map((event) => ({
+				id: event.id,
+				type: event.eventType,
+				actor: event.actorId,
+				at: event.createdAt
+					? timestampDate(event.createdAt).toISOString()
+					: undefined,
+				fields: event.payload ?? {},
+			}));
+		},
 		async listSources(orgId) {
 			const response = await client.listSources({ orgId });
 			return response.datasources.map(toDatasourceView);
@@ -129,9 +144,12 @@ function toDatasourceView(source: Datasource): DatasourceView {
 				: source.status === DatasourceStatus.PAUSED
 					? "paused"
 					: "unknown",
-		lastSyncedAt: source.lastSyncedAt
-			? timestampDate(source.lastSyncedAt).toISOString()
-			: undefined,
+		lastSyncedAt:
+			(source.lastIngestedAt ?? source.lastSyncedAt)
+				? timestampDate(
+						(source.lastIngestedAt ?? source.lastSyncedAt)!,
+					).toISOString()
+				: undefined,
 		createdAt: source.createdAt
 			? timestampDate(source.createdAt).toISOString()
 			: undefined,

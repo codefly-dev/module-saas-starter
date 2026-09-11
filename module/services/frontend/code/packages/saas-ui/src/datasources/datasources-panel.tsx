@@ -2,7 +2,11 @@
 
 import { ConnectError } from "@connectrpc/connect";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+	QueryClient,
+	QueryClientProvider,
+	useQuery,
+} from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
@@ -83,6 +87,9 @@ function DatasourcesPanelView({
 	onSyncEnqueued,
 	className,
 }: DatasourcesPanelViewProps) {
+	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
+		null,
+	);
 	const [showConnect, setShowConnect] = useState(false);
 	// Per-row pending sets, not the shared mutation's single `isPending`, so two
 	// rows can sync/delete at once without one clearing the other's spinner and
@@ -169,6 +176,15 @@ function DatasourcesPanelView({
 				</button>
 			</div>
 
+			{activitySource && (
+				<SourceHistory
+					client={client}
+					orgId={orgId}
+					source={activitySource}
+					onClose={() => setActivitySource(null)}
+				/>
+			)}
+
 			{syncNotice && (
 				<p role="status" className="text-sm text-muted-foreground">
 					{syncNotice}
@@ -204,6 +220,7 @@ function DatasourcesPanelView({
 				</PanelMessage>
 			) : (
 				<SourcesTable
+					onActivity={client.listActivity ? setActivitySource : undefined}
 					sources={sources}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
@@ -270,12 +287,14 @@ function SourcesTable({
 	deletingIds,
 	onSync,
 	onDelete,
+	onActivity,
 }: {
 	sources: DatasourceView[];
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
+	onActivity?: (source: DatasourceView) => void;
 }) {
 	return (
 		<div className="overflow-x-auto rounded-lg border">
@@ -306,10 +325,20 @@ function SourcesTable({
 								{source.webhookConfigured ? "Configured" : "None"}
 							</td>
 							<td className={cn(cellClass, "text-muted-foreground")}>
-								{formatSyncedAt(source.lastSyncedAt)}
+								<span title="Last sync dispatch. Open History for ingestion results.">
+									{formatSyncedAt(source.lastSyncedAt)}
+								</span>
 							</td>
 							<td className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">
+									{onActivity && (
+										<button
+											className={rowActionClass}
+											onClick={() => onActivity(source)}
+										>
+											History
+										</button>
+									)}
 									<button
 										type="button"
 										className={rowActionClass}
@@ -333,5 +362,80 @@ function SourcesTable({
 				</tbody>
 			</table>
 		</div>
+	);
+}
+
+function SourceHistory({
+	client,
+	orgId,
+	source,
+	onClose,
+}: {
+	client: DatasourceClient;
+	orgId: string;
+	source: DatasourceView;
+	onClose: () => void;
+}) {
+	const history = useQuery({
+		queryKey: ["source-history", orgId, source.id],
+		queryFn: () => client.listActivity!(orgId, source.id),
+		refetchInterval: 5000,
+	});
+	const names: Record<string, string> = {
+		"saas.datasource.source.synced": "Sync requested",
+		"saas.datasource.source.added": "Source connected",
+		"saas.datasource.change_set_compiled": "Files queued for ingestion",
+		"saas.datasource.sync.completed": "Ingestion completed",
+		"saas.datasource.sync.failed": "Ingestion attempt failed",
+	};
+	return (
+		<section
+			aria-label="Sync history"
+			className="rounded-lg border p-4 space-y-3"
+		>
+			<div className="flex items-center justify-between">
+				<h3 className="font-medium">Sync history · {source.repo}</h3>
+				<button className={rowActionClass} onClick={onClose}>
+					Close history
+				</button>
+			</div>
+			<p className="text-xs text-muted-foreground">
+				Sync requests, dispatched files, and ingestion results. History
+				refreshes automatically.
+			</p>
+			{history.isPending ? (
+				<p>Loading history…</p>
+			) : history.error ? (
+				<p role="alert">Could not load history: {messageOf(history.error)}</p>
+			) : !history.data?.length ? (
+				<p>No recorded activity yet.</p>
+			) : (
+				<ol className="space-y-3">
+					{history.data.map((e) => (
+						<li key={e.id} className="border-t pt-3 text-sm">
+							<div className="flex justify-between gap-3">
+								<strong>{names[e.type] ?? e.type}</strong>
+								<time className="text-xs text-muted-foreground">
+									{e.at ? new Date(e.at).toLocaleString() : "Unknown time"}
+								</time>
+							</div>
+							<p className="text-xs text-muted-foreground">Actor: {e.actor}</p>
+							<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+								{Object.entries(e.fields)
+									.filter(([k]) => k !== "solution")
+									.map(([k, v]) => (
+										<div key={k}>
+											<dt className="inline text-muted-foreground">
+												{k.replaceAll("_", " ")}:{" "}
+											</dt>
+											<dd className="inline break-all">{String(v)}</dd>
+										</div>
+									))}
+							</dl>
+						</li>
+					))}
+				</ol>
+			)}
+		</section>
 	);
 }

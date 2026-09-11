@@ -929,7 +929,7 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	if err != nil {
 		return "", w.Wrapf(err, "enqueue sync request")
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID)
+	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID, map[string]any{"job_id": response.GetJobId(), "repo": source.Repo})
 	return response.GetJobId(), nil
 }
 

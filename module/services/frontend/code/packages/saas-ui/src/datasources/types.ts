@@ -35,7 +35,15 @@ export interface ConnectGitHubInput {
 	webhookSecret: string;
 }
 
+export interface SourceActivity {
+	id: string;
+	type: string;
+	actor: string;
+	at?: string;
+	fields: Record<string, unknown>;
+}
 export interface DatasourceClient {
+	listActivity?(orgId: string, sourceId: string): Promise<SourceActivity[]>;
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
 	/** Enqueues an async pull; resolves to the durable job id. */
