@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -603,8 +604,13 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 // CreateFixtureOrganization is CreateOrganization with a caller-chosen id, for
 // the fixture seeder only: a fixture pins its organizations' uuids so committed
 // configuration (a module principal's tenant) can name one that survives a
-// reseed. An empty id mints one, exactly as CreateOrganization does. The seeder
-// has already validated the id's form and checked it is not taken.
+// reseed. An empty id mints one, exactly as CreateOrganization does.
+//
+// The id is validated here rather than trusted from the caller. The seeder does
+// validate it, but this method is exported next to CreateOrganization and takes
+// a primary key as an argument, so it has to be safe for whoever calls it next —
+// a tenant id that reaches the database malformed is not recoverable by anything
+// downstream.
 func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
 	slug := req.Slug
 	if slug == "" {
@@ -615,6 +621,15 @@ func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string,
 	}
 	if id == "" {
 		id = NewIDString()
+	} else {
+		parsed, err := ParseID(id)
+		if err != nil {
+			return nil, wool.Get(ctx).In("CreateFixtureOrganization").Wrapf(err, "organization id must be a uuid")
+		}
+		if parsed == uuid.Nil {
+			return nil, wool.Get(ctx).In("CreateFixtureOrganization").NewError("organization id must not be the nil uuid")
+		}
+		id = parsed.String()
 	}
 	org := &gen.Organization{
 		Id:      id,

@@ -567,6 +567,17 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 			return nil, fmt.Errorf("organization %q owner %q was not seeded", org.Name, org.Owner)
 		}
 
+		// Declaring an id is optional, so a fixture written before this
+		// existed still loads — but silence is how #610 reached a consumer in
+		// the first place. A module fixture is gated by a test; a consumer's
+		// own fixture (DEV_FIXTURE_PATH) is gated by nothing, and a consumer
+		// is exactly who needs a tenant id that survives a reseed. Say so
+		// once per seed rather than letting the omission stay invisible.
+		if org.ID == "" {
+			w.Warn("fixture organization declares no id, so every seed mints a fresh uuid: a module principal grant (MODULE_PRINCIPALS) naming this organization as its tenant has no stable id to quote. Add `id:` to the fixture organization",
+				wool.Field("name", org.Name))
+		}
+
 		var existingOrgs []*gen.Organization
 		listErr := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
 			var err error
@@ -579,14 +590,27 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 		for _, existing := range existingOrgs {
 			if existing.Name == org.Name {
 				// A database seeded before this organization declared an id
-				// keeps the uuid it was given; a seed cannot rewrite a primary
-				// key that memberships, teams and tenant rows reference. Report
-				// the drift rather than refusing to run — as for users.
+				// keeps the uuid it was given, and a seed cannot rewrite a
+				// primary key that memberships, teams and tenant rows
+				// reference. So the declared id cannot be honoured here, and
+				// continuing is not a safe degradation: an organization id is
+				// the tenant a MODULE_PRINCIPALS grant names, and nothing
+				// downstream ever checks that tenant exists —
+				// ParseModulePrincipalRegistry validates the uuid's *form*
+				// only, ModuleAuthorizeWorkContext copies it verbatim, and
+				// authorizeTenant compares the sealed value against itself. A
+				// boot that continued past this would therefore succeed, mint
+				// capabilities, and bind every call to an organization nobody
+				// can see, with no error anywhere. Refuse instead: the whole
+				// point of a declared id is that committed configuration can
+				// quote it, so a seed that cannot deliver it has failed.
 				if org.ID != "" && existing.Id != org.ID {
-					w.Error("fixture organization id drift: this database keeps its own uuid, so configuration naming the declared id (a module principal's tenant, say) matches no organization here; reseed against an empty store to adopt the declared id",
-						wool.Field("name", org.Name),
-						wool.Field("declared_id", org.ID),
-						wool.Field("stored_id", existing.Id))
+					return nil, fmt.Errorf(
+						"fixture organization %q declares id %s but this database already holds it as %s: "+
+							"a seed cannot rewrite a primary key that memberships, teams and tenant rows reference, "+
+							"and continuing would leave configuration naming the declared id (a module principal's tenant, say) "+
+							"matching no organization here. Reseed against an empty store to adopt the declared id",
+						org.Name, org.ID, existing.Id)
 				}
 				orgIDs[org.Name] = existing.Id
 				w.Info("org already exists, reusing", wool.Field("name", org.Name))
@@ -608,10 +632,26 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 					return nil, w.Wrapf(err, "cannot check the declared id of fixture organization %s", org.Name)
 				}
 				if taken {
-					w.Error("fixture organization declares an id another organization already holds; seeding with a fresh uuid, so configuration naming the declared id matches no organization here",
-						wool.Field("name", org.Name),
-						wool.Field("declared_id", orgID))
-					orgID = ""
+					// Falling back to a fresh uuid cannot work here. The
+					// organization holding the declared id is almost always
+					// this same fixture organization, seen from an owner who
+					// is no longer one of its members (the lookup above is
+					// membership-scoped) — so a "fallback" would insert a
+					// second organization with the same name, and
+					// idx_organizations_slug is UNIQUE on LOWER(slug) across
+					// the whole table. The insert would fail anyway, and the
+					// operator would get an opaque duplicate-key error instead
+					// of this one. Where the insert *would* succeed — the
+					// holder was renamed, so its slug differs — the outcome is
+					// worse than an error: a grant naming the declared id
+					// silently resolves to the renamed organization rather
+					// than to this fixture's. Refuse in both cases.
+					return nil, fmt.Errorf(
+						"fixture organization %q declares id %s, which another organization in this database already holds: "+
+							"the declared id cannot be honoured, and seeding a second organization of the same name would "+
+							"collide on the unique organization slug. Reseed against an empty store, or give this "+
+							"organization an id no other organization holds",
+						org.Name, orgID)
 				}
 			}
 			orgResp, err := service.CreateFixtureOrganization(ctx, ownerID, &gen.CreateOrganizationRequest{Name: org.Name}, orgID)
