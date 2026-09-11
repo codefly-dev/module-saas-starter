@@ -1,0 +1,3 @@
+ok  	accounts	1.876s
+ok  	accounts/pkg/vaultconnection	(cached)
+ok  	accounts/pkg/cataloggen	4.683s

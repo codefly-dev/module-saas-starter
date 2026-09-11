@@ -530,6 +530,15 @@ func (s *WorkContextAuthorityServer) ExchangeAudience(
 	if err != nil {
 		return nil, err
 	}
+	return s.exchangeVerifiedParent(parentToken, parent, actor, req)
+}
+
+// exchangeVerifiedParent is shared by the owner RPC and the private custody
+// broker AFTER their distinct caller authentication and current-parent checks.
+func (s *WorkContextAuthorityServer) exchangeVerifiedParent(
+	parentToken codefly.WorkContextToken, parent *basev0.WorkContextV1,
+	actor *business.Principal, req *gen.ExchangeWorkContextAudienceRequest,
+) (*gen.IssuedWorkContext, error) {
 	if req.GetAudience() == parent.GetAudience() {
 		return nil, status.Error(codes.InvalidArgument, "new audience must differ from parent audience")
 	}
