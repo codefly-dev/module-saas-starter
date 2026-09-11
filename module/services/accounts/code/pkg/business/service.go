@@ -597,6 +597,15 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.
 func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
+	return s.CreateFixtureOrganization(ctx, ownerID, req, "")
+}
+
+// CreateFixtureOrganization is CreateOrganization with a caller-chosen id, for
+// the fixture seeder only: a fixture pins its organizations' uuids so committed
+// configuration (a module principal's tenant) can name one that survives a
+// reseed. An empty id mints one, exactly as CreateOrganization does. The seeder
+// has already validated the id's form and checked it is not taken.
+func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
 	slug := req.Slug
 	if slug == "" {
 		slug = Slugify(req.Name)
@@ -604,8 +613,11 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 	if slug == "" {
 		return nil, wool.Get(ctx).In("CreateOrganization").NewError("organization name yields an empty slug")
 	}
+	if id == "" {
+		id = NewIDString()
+	}
 	org := &gen.Organization{
-		Id:      NewIDString(),
+		Id:      id,
 		Name:    req.Name,
 		Slug:    slug,
 		OwnerId: ownerID,
