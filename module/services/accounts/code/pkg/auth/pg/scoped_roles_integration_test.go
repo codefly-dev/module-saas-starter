@@ -1,3 +1,5 @@
+//go:build !pure
+
 package pgauth_test
 
 import (

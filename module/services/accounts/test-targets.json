@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "path_base": "repository",
+  "working_directory": "module/services/accounts/code",
+  "fallback": "whole-service-and-dependency-closure",
+  "targets": [
+    {
+      "suite": "pure",
+      "phase": "test",
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "-tags=pure",
+        "./..."
+      ],
+      "runtime_services": [],
+      "setup_budget_seconds": 0,
+      "input_roots": [
+        "module/services/accounts/",
+        "module/services/store/migrations/",
+        "module/tools/",
+        "module/deployment/",
+        "module/configurations/",
+        "module/module.package.codefly.yaml",
+        "module/contracts/",
+        "module/policies/",
+        "module/generated/",
+        "module/fixtures/",
+        "module/public/",
+        "module/flake.nix",
+        "module/module.codefly.yaml"
+      ],
+      "complete": false
+    },
+    {
+      "suite": "business-db",
+      "phase": "test",
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "./pkg/business"
+      ],
+      "runtime_services": [
+        "store",
+        "vault"
+      ],
+      "setup_budget_seconds": 300,
+      "input_roots": [
+        "module/services/accounts/",
+        "module/services/store/migrations/",
+        "module/tools/",
+        "module/deployment/",
+        "module/configurations/",
+        "module/module.package.codefly.yaml",
+        "module/services/store/",
+        "module/services/vault/",
+        "module/contracts/",
+        "module/policies/",
+        "module/generated/",
+        "module/fixtures/",
+        "module/public/",
+        "module/flake.nix",
+        "module/module.codefly.yaml"
+      ],
+      "complete": false
+    },
+    {
+      "suite": "infra-db",
+      "phase": "test",
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "./pkg/infra"
+      ],
+      "runtime_services": [
+        "store"
+      ],
+      "setup_budget_seconds": 90,
+      "input_roots": [
+        "module/services/accounts/",
+        "module/services/store/migrations/",
+        "module/tools/",
+        "module/deployment/",
+        "module/configurations/",
+        "module/module.package.codefly.yaml",
+        "module/services/store/",
+        "module/services/vault/",
+        "module/contracts/",
+        "module/policies/",
+        "module/generated/",
+        "module/fixtures/",
+        "module/public/",
+        "module/flake.nix",
+        "module/module.codefly.yaml"
+      ],
+      "complete": false
+    },
+    {
+      "suite": "auth-db",
+      "phase": "test",
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "./pkg/auth/pg"
+      ],
+      "runtime_services": [
+        "store"
+      ],
+      "setup_budget_seconds": 120,
+      "input_roots": [
+        "module/services/accounts/",
+        "module/services/store/migrations/",
+        "module/tools/",
+        "module/deployment/",
+        "module/configurations/",
+        "module/module.package.codefly.yaml",
+        "module/services/store/",
+        "module/services/vault/",
+        "module/contracts/",
+        "module/policies/",
+        "module/generated/",
+        "module/fixtures/",
+        "module/public/",
+        "module/flake.nix",
+        "module/module.codefly.yaml"
+      ],
+      "complete": false
+    },
+    {
+      "suite": "billing-db",
+      "phase": "test",
+      "command": [
+        "go",
+        "test",
+        "-count=1",
+        "./pkg/billing/pg"
+      ],
+      "runtime_services": [
+        "store"
+      ],
+      "setup_budget_seconds": 120,
+      "input_roots": [
+        "module/services/accounts/",
+        "module/services/store/migrations/",
+        "module/tools/",
+        "module/deployment/",
+        "module/configurations/",
+        "module/module.package.codefly.yaml",
+        "module/services/store/",
+        "module/services/vault/",
+        "module/contracts/",
+        "module/policies/",
+        "module/generated/",
+        "module/fixtures/",
+        "module/public/",
+        "module/flake.nix",
+        "module/module.codefly.yaml"
+      ],
+      "complete": false
+    }
+  ]
+}

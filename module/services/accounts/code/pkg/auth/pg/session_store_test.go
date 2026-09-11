@@ -1,3 +1,5 @@
+//go:build !pure
+
 package pgauth_test
 
 import (
@@ -57,12 +59,15 @@ func runSessionStoreTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
+	setupDone := testdb.Measure("auth-db", "dependency-setup", []string{"store"}, 120*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
 		sdk.WithNamingScope("pgauth-test"),
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store"),
 	)
+	setupDone(err != nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
@@ -101,7 +106,10 @@ func runSessionStoreTests(m *testing.M) int {
 	testStore = store
 	testPool = store.Pool()
 
-	return m.Run()
+	executionDone := testdb.Measure("auth-db", "test-execution", nil, 0)
+	exitCode := m.Run()
+	executionDone(exitCode != 0)
+	return exitCode
 }
 
 // seedUser inserts a minimum users row so sessions FK is happy.
