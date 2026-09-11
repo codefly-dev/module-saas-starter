@@ -47,6 +47,32 @@ export function datasourceClientOverTransport(
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
+		async listAccessibleScopes(orgId) {
+			const scopes = [];
+			let pageToken = "";
+			do {
+				const page = await accounts
+					.New(transport)
+					.accessibleScope()
+					.listMyAccessibleScopes({
+						orgId,
+						resourceType: "documents",
+						action: "read",
+						pageSize: 1000,
+						pageToken,
+					});
+				scopes.push(
+					...page.scopes.map((scope) => ({
+						nodeId: scope.nodeId,
+						label: scope.label,
+						kind: scope.kind,
+						actions: ["read"],
+					})),
+				);
+				pageToken = page.nextPageToken;
+			} while (pageToken);
+			return scopes;
+		},
 		async listActivity(orgId, sourceId) {
 			const audit = accounts.New(transport).audit();
 			const types = [
@@ -94,9 +120,6 @@ export function datasourceClientOverTransport(
 			return response.datasources.map(toDatasourceView);
 		},
 		async addGitHubSource(input) {
-			// The form's collection name mints a `collection` boundary node
-			// server-side; reuse of an existing boundary is the boundaryNodeId path,
-			// which this connect form does not expose.
 			await client.addGitHubSource({
 				orgId: input.orgId,
 				repo: input.repo,
@@ -104,11 +127,17 @@ export function datasourceClientOverTransport(
 				branch: input.branch,
 				accessToken: input.accessToken,
 				webhookSecret: input.webhookSecret,
-				boundary: { case: "collectionLabel", value: input.targetCollection },
+				boundary: input.boundaryNodeId
+					? { case: "boundaryNodeId", value: input.boundaryNodeId }
+					: { case: "collectionLabel", value: input.targetCollection },
 			});
 		},
 		async syncSource(orgId, id, accessToken) {
-			const response = await client.syncSource({ orgId, id, ...(accessToken ? { accessToken } : {}) });
+			const response = await client.syncSource({
+				orgId,
+				id,
+				...(accessToken ? { accessToken } : {}),
+			});
 			return response.jobId;
 		},
 		async deleteSource(orgId, id) {

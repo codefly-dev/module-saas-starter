@@ -1769,3 +1769,17 @@ func (s *PlatformAdminServer) ListEventSubscriptions(ctx context.Context, req *e
 	response, err := service.ListEventSubscriptions(ctx, actorID, req)
 	return response, eventOperationStatusError(err)
 }
+
+func (s *PermServer) ListCollectionAccess(ctx context.Context, req *gen.ListCollectionAccessRequest) (*gen.ListCollectionAccessResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.ListCollectionAccess(ctx, req)
+}

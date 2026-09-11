@@ -220,3 +220,24 @@ func (s *Service) ListShares(ctx context.Context, req *gen.ListSharesRequest) (*
 	}
 	return &gen.ListSharesResponse{Shares: shares}, nil
 }
+
+func (s *Service) ListCollectionAccess(ctx context.Context, req *gen.ListCollectionAccessRequest) (*gen.ListCollectionAccessResponse, error) {
+	size := int(req.PageSize)
+	if size <= 0 || size > 100 {
+		size = 100
+	}
+	var collections []*gen.CollectionAccess
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		var err error
+		collections, err = s.store.ListCollectionAccess(ctx, req.OrgId, req.PageToken, size+1)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	response := &gen.ListCollectionAccessResponse{Collections: collections}
+	if len(collections) > size {
+		response.Collections = collections[:size]
+		response.NextPageToken = collections[size-1].Node.ScopePath
+	}
+	return response, nil
+}

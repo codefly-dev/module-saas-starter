@@ -160,3 +160,21 @@ func TestScopePinPinsRequestOrgToVerifiedOrg(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, status.Code(memberErr))
 	require.Equal(t, "requested organization is outside the authenticated scope", status.Convert(memberErr).Message())
 }
+
+func TestCollectionAccessRequiresOrganizationAdmin(t *testing.T) {
+	enableEnforcement(t)
+	const method = "/saas.accounts.v1.PermissionService/ListCollectionAccess"
+	for _, role := range []gen.OrgRole{gen.OrgRole_ORG_ROLE_MEMBER, gen.OrgRole_ORG_ROLE_ADMIN, gen.OrgRole_ORG_ROLE_OWNER} {
+		t.Run(role.String(), func(t *testing.T) {
+			installEnforceService(t, memberStore(role))
+			err := enforceCentralPolicy(enforceActorCtx(), method)
+			if role == gen.OrgRole_ORG_ROLE_MEMBER {
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+				_, err = (&PermServer{}).ListCollectionAccess(enforceActorCtx(), &gen.ListCollectionAccessRequest{OrgId: enforceOrgID})
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

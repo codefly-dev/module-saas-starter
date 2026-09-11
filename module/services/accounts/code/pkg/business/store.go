@@ -306,6 +306,7 @@ type Store interface {
 	// ScopeNodeExists reports whether a scope node id is visible in the caller's
 	// tenant (run under WithOrgTx so RLS confines the probe to the org).
 	ScopeNodeExists(ctx context.Context, nodeID string) (bool, error)
+	ListCollectionAccess(ctx context.Context, orgID, afterPath string, limit int) ([]*gen.CollectionAccess, error)
 	GrantScope(ctx context.Context, grant *gen.ScopeGrant) error
 	RevokeScope(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, scopePath, roleID string) error
 	ShareRecord(ctx context.Context, share *gen.RecordShare) error

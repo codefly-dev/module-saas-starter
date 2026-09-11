@@ -32,6 +32,7 @@ const (
 	PermissionService_CheckAccess_FullMethodName          = "/saas.accounts.v1.PermissionService/CheckAccess"
 	PermissionService_ListAccessibleScopes_FullMethodName = "/saas.accounts.v1.PermissionService/ListAccessibleScopes"
 	PermissionService_RegisterScopeNode_FullMethodName    = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
+	PermissionService_ListCollectionAccess_FullMethodName = "/saas.accounts.v1.PermissionService/ListCollectionAccess"
 	PermissionService_GrantScope_FullMethodName           = "/saas.accounts.v1.PermissionService/GrantScope"
 	PermissionService_RevokeScope_FullMethodName          = "/saas.accounts.v1.PermissionService/RevokeScope"
 	PermissionService_ShareRecord_FullMethodName          = "/saas.accounts.v1.PermissionService/ShareRecord"
@@ -70,6 +71,7 @@ type PermissionServiceClient interface {
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(ctx context.Context, in *RegisterScopeNodeRequest, opts ...grpc.CallOption) (*RegisterScopeNodeResponse, error)
+	ListCollectionAccess(ctx context.Context, in *ListCollectionAccessRequest, opts ...grpc.CallOption) (*ListCollectionAccessResponse, error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(ctx context.Context, in *GrantScopeRequest, opts ...grpc.CallOption) (*GrantScopeResponse, error)
@@ -205,6 +207,16 @@ func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, in *Reg
 	return out, nil
 }
 
+func (c *permissionServiceClient) ListCollectionAccess(ctx context.Context, in *ListCollectionAccessRequest, opts ...grpc.CallOption) (*ListCollectionAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCollectionAccessResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ListCollectionAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *permissionServiceClient) GrantScope(ctx context.Context, in *GrantScopeRequest, opts ...grpc.CallOption) (*GrantScopeResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GrantScopeResponse)
@@ -286,6 +298,7 @@ type PermissionServiceServer interface {
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error)
+	ListCollectionAccess(context.Context, *ListCollectionAccessRequest) (*ListCollectionAccessResponse, error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(context.Context, *GrantScopeRequest) (*GrantScopeResponse, error)
@@ -343,6 +356,9 @@ func (UnimplementedPermissionServiceServer) ListAccessibleScopes(context.Context
 }
 func (UnimplementedPermissionServiceServer) RegisterScopeNode(context.Context, *RegisterScopeNodeRequest) (*RegisterScopeNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RegisterScopeNode not implemented")
+}
+func (UnimplementedPermissionServiceServer) ListCollectionAccess(context.Context, *ListCollectionAccessRequest) (*ListCollectionAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCollectionAccess not implemented")
 }
 func (UnimplementedPermissionServiceServer) GrantScope(context.Context, *GrantScopeRequest) (*GrantScopeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GrantScope not implemented")
@@ -578,6 +594,24 @@ func _PermissionService_RegisterScopeNode_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PermissionService_ListCollectionAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCollectionAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ListCollectionAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ListCollectionAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ListCollectionAccess(ctx, req.(*ListCollectionAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _PermissionService_GrantScope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GrantScopeRequest)
 	if err := dec(in); err != nil {
@@ -718,6 +752,10 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RegisterScopeNode",
 			Handler:    _PermissionService_RegisterScopeNode_Handler,
+		},
+		{
+			MethodName: "ListCollectionAccess",
+			Handler:    _PermissionService_ListCollectionAccess_Handler,
 		},
 		{
 			MethodName: "GrantScope",

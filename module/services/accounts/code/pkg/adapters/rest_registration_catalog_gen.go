@@ -113,6 +113,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"GET /v1/audit-log":                        {},
 	"GET /v1/audit-log:aggregate":              {},
 	"GET /v1/auth/.well-known/jwks.json":       {},
+	"GET /v1/collection-access":                {},
 	"GET /v1/consent/status":                   {},
 	"GET /v1/delegations:pending":              {},
 	"GET /v1/invitations":                      {},

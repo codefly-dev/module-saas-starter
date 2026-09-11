@@ -677,6 +677,39 @@
       },
       "type": "object"
     },
+    "v1CollectionAccess": {
+      "properties": {
+        "node": {
+          "$ref": "#/definitions/v1ScopeNode"
+        },
+        "readGrants": {
+          "description": "Active documents/read grants at this node or an ancestor.",
+          "items": {
+            "$ref": "#/definitions/v1CollectionReadGrant",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1CollectionReadGrant": {
+      "properties": {
+        "actorLabel": {
+          "type": "string"
+        },
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        },
+        "roleName": {
+          "type": "string"
+        },
+        "subjectLabel": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1CompleteMFAChallengeRequest": {
       "description": "CompleteMFAChallengeRequest is deliberately distinct from VerifyTOTPRequest:\nthis completes a login transaction, while VerifyTOTP only confirms a new\nauthenticator during enrollment.",
       "properties": {
@@ -2339,6 +2372,21 @@
             "type": "object"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "v1ListCollectionAccessResponse": {
+      "properties": {
+        "collections": {
+          "items": {
+            "$ref": "#/definitions/v1CollectionAccess",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nextPageToken": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -5536,6 +5584,49 @@
         },
         "tags": [
           "BillingService"
+        ]
+      }
+    },
+    "/v1/collection-access": {
+      "get": {
+        "operationId": "PermissionService_ListCollectionAccess",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "format": "int32",
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "in": "query",
+            "name": "pageToken",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListCollectionAccessResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PermissionService"
         ]
       }
     },
