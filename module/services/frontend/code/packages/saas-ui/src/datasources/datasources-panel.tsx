@@ -90,6 +90,9 @@ function DatasourcesPanelView({
 	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
 		null,
 	);
+	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
+	const [reconnectPending, setReconnectPending] = useState(false);
+	const [reconnectError, setReconnectError] = useState<string>();
 	const [showConnect, setShowConnect] = useState(false);
 	// Per-row pending sets, not the shared mutation's single `isPending`, so two
 	// rows can sync/delete at once without one clearing the other's spinner and
@@ -221,6 +224,7 @@ function DatasourcesPanelView({
 			) : (
 				<SourcesTable
 					onActivity={client.listActivity ? setActivitySource : undefined}
+					onReconnect={(source) => { setReconnectError(undefined); setReconnecting(source); }}
 					sources={sources}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
@@ -229,6 +233,19 @@ function DatasourcesPanelView({
 				/>
 			)}
 
+			{reconnecting && (
+				<ReconnectSource source={reconnecting} pending={reconnectPending} error={reconnectError}
+				 onCancel={() => { if (!reconnectPending) setReconnecting(null); }}
+				 onSubmit={async (token) => {
+				  setReconnectPending(true); setReconnectError(undefined);
+				  try {
+				   const jobId = await client.syncSource(orgId, reconnecting.id, token);
+				   setSyncNotice(`Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`);
+				   setReconnecting(null); onSyncEnqueued?.(jobId); await list.refetch();
+				  } catch (error) { setReconnectError(messageOf(error)); }
+				  finally { setReconnectPending(false); }
+				 }} />
+			)}
 			{showConnect && (
 				<ConnectGitHubForm
 					onSubmit={handleConnect}
@@ -288,6 +305,7 @@ function SourcesTable({
 	onSync,
 	onDelete,
 	onActivity,
+	onReconnect,
 }: {
 	sources: DatasourceView[];
 	syncingIds: ReadonlySet<string>;
@@ -295,6 +313,7 @@ function SourcesTable({
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
 	onActivity?: (source: DatasourceView) => void;
+	onReconnect: (source: DatasourceView) => void;
 }) {
 	return (
 		<div className="overflow-x-auto rounded-lg border">
@@ -322,7 +341,7 @@ function SourcesTable({
 							</td>
 							<td className={cellClass}>{source.branch || "default"}</td>
 							<td className={cellClass}>
-								{source.webhookConfigured ? "Configured" : "None"}
+								{source.webhookConfigured ? "Signing secret configured" : "Not configured"}
 							</td>
 							<td className={cn(cellClass, "text-muted-foreground")}>
 								<span title="Last sync dispatch. Open History for ingestion results.">
@@ -331,6 +350,7 @@ function SourcesTable({
 							</td>
 							<td className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">
+									{source.provider === "github" && <button type="button" className={rowActionClass} onClick={() => onReconnect(source)}>Reconnect</button>}
 									{onActivity && (
 										<button
 											className={rowActionClass}
@@ -384,6 +404,7 @@ function SourceHistory({
 	const names: Record<string, string> = {
 		"saas.datasource.source.synced": "Sync requested",
 		"saas.datasource.source.added": "Source connected",
+		"saas.datasource.credential.updated": "Credential replaced",
 		"saas.datasource.change_set_compiled": "Files queued for ingestion",
 		"saas.datasource.sync.completed": "Ingestion completed",
 		"saas.datasource.sync.failed": "Sync attempt failed",
@@ -419,7 +440,7 @@ function SourceHistory({
 									{e.at ? new Date(e.at).toLocaleString() : "Unknown time"}
 								</time>
 							</div>
-							<p className="text-xs text-muted-foreground">Actor: {e.actor}</p>
+							<p className="text-xs text-muted-foreground">Actor: {e.actor === source.id ? "Source sync worker" : e.actor}</p>
 							<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
 								{Object.entries(e.fields)
 									.filter(([k]) => k !== "solution")
@@ -438,4 +459,19 @@ function SourceHistory({
 			)}
 		</section>
 	);
+}
+
+function ReconnectSource({source, pending, error, onSubmit, onCancel}: {
+ source: DatasourceView; pending: boolean; error?: string;
+ onSubmit: (token: string) => Promise<void>; onCancel: () => void;
+}) {
+ const [token, setToken] = useState("");
+ return <form aria-label="Reconnect GitHub source" className="space-y-3 rounded-lg border p-4"
+ onSubmit={(event) => { event.preventDefault(); if (!pending && token.trim()) { const replacement = token.trim(); setToken(""); void onSubmit(replacement); } }}>
+ <h3 className="font-medium">Reconnect {source.repo}</h3>
+ <p className="text-sm text-muted-foreground">Replace the saved PAT and start a sync. Your source, collection, documents, and history are preserved.</p>
+ <label className="block text-sm">New GitHub PAT<input type="password" autoComplete="new-password" required maxLength={4096} value={token} disabled={pending} onChange={(event) => setToken(event.target.value)} className="block w-full rounded-md border bg-background p-2" /></label>
+ {error && <p role="alert">{error}</p>}
+ <div className="flex gap-2"><button type="submit" className={buttonClass} disabled={pending || !token.trim()}>{pending ? "Validating and reconnecting…" : "Reconnect and sync"}</button><button type="button" className={rowActionClass} disabled={pending} onClick={onCancel}>Cancel</button></div>
+ </form>;
 }

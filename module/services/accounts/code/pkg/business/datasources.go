@@ -876,7 +876,7 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 // (regardless of cursor equality), serialized behind any in-flight delivery for
 // the same source; other providers keep the full-refetch sync path. The Source
 // must belong to orgID.
-func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string) (jobID string, resultErr error) {
+func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string, replacementToken ...string) (jobID string, resultErr error) {
 	w := wool.Get(ctx).In("SyncDatasourceSource")
 	source, err := s.GetDatasourceSource(ctx, orgID, id)
 	if err != nil {
@@ -884,17 +884,47 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	}
 	defer func() {
 		if resultErr != nil {
-			s.emit(ctx, actorID, "user", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, map[string]any{"repo": source.Repo, "reason": "The source could not be validated or the sync could not be queued. Review the source connection error."})
+			s.emit(ctx, actorID, "user", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, datasourceFailureFields(resultErr, source.Repo, "manual"))
 		}
 	}()
 	if s.datasourceJobs == nil {
 		return "", w.NewError("datasource connector is not configured")
 	}
 
+	if len(replacementToken) > 0 && replacementToken[0] != "" && (source.Provider != DatasourceProviderGitHub || len(replacementToken[0]) > 4096) {
+		return "", w.NewError("a replacement PAT of at most 4096 bytes is supported only for GitHub sources")
+	}
 	var job *jobsv1.NewJob
 	if source.Provider == DatasourceProviderGitHub {
-		if err := s.checkGitHubSyncPreflight(ctx, source); err != nil {
+		if s.datasourceCipher == nil {
+			return "", w.NewError("datasource secret cipher is not configured")
+		}
+		var token string
+		if len(replacementToken) > 0 {
+			token = strings.TrimSpace(replacementToken[0])
+		}
+		replacing := token != ""
+		if !replacing {
+			if err := s.checkGitHubSyncPreflight(ctx, source); err != nil {
+				return "", err
+			}
+		} else if err := s.validateGitHubSource(ctx, source.Repo, source.Branch, token); err != nil {
 			return "", err
+		}
+		if replacing {
+			encrypted, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), token)
+			if err != nil {
+				return "", jobs.NewProcessingError("datasource.credential_store_unavailable", "Could not securely save the replacement credential. Retry shortly.", true)
+			}
+			if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+				if _, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id); err != nil {
+					return err
+				}
+				return s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted)
+			}); err != nil {
+				return "", err
+			}
+			s.emit(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID, map[string]any{"repo": source.Repo})
 		}
 		job = &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,

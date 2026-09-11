@@ -218,7 +218,17 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		}
 		defer func() {
 			if resultErr != nil {
-				s.emit(ctx, source.ID, "system", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, map[string]any{"job_id": envelope.GetId(), "repo": source.Repo, "reason": "Source fetch or dispatch failed; the job may retry. Check service logs for details."})
+				resultErr = datasourceProcessingError(resultErr)
+				trigger := "reconcile"
+				if envelope.GetTopic() == datasourcePushTopic {
+					trigger = "webhook"
+				} else if envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce {
+					trigger = "manual"
+				}
+				fields := datasourceFailureFields(resultErr, source.Repo, trigger)
+				fields["job_id"] = envelope.GetId()
+				fields["attempt"] = int(envelope.GetAttemptCount())
+				s.emit(ctx, source.ID, "system", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, fields)
 			}
 		}()
 
@@ -269,7 +279,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 
 	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
-		return "", w.Wrapf(err, "decrypt access token")
+		return "", datasourceCredentialError(err)
 	}
 	client := s.newGitHubClient(token)
 
@@ -358,7 +368,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	}
 	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
-		return false, w.Wrapf(err, "decrypt access token")
+		return false, datasourceCredentialError(err)
 	}
 	client := s.newGitHubClient(token)
 

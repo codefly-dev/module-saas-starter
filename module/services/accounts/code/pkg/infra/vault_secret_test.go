@@ -4,6 +4,7 @@ import (
 	"accounts/pkg/business"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -69,4 +70,20 @@ func TestVaultDecryptOutageIsNotAnInvalidCredential(t *testing.T) {
 	_, err := client.DecryptSecret(t.Context(), "datasource", envelope)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, business.ErrInvalidSecretEnvelope)
+}
+
+func TestVaultDecryptExposesStatusWithoutProviderBody(t *testing.T) {
+	for _, code := range []int{400, 403, 503} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+			_, _ = fmt.Fprint(w, "sensitive-provider-body")
+		}))
+		client := NewVaultClientDirect(server.URL, "token")
+		_, err := client.DecryptSecret(t.Context(), "purpose", secretEnvelopePrefix+base64.RawURLEncoding.EncodeToString([]byte("vault:v1:old")))
+		var typed interface{ HTTPStatusCode() int }
+		require.True(t, errors.As(err, &typed))
+		require.Equal(t, code, typed.HTTPStatusCode())
+		require.NotContains(t, err.Error(), "sensitive-provider-body")
+		server.Close()
+	}
 }

@@ -274,6 +274,7 @@ const (
 
 	EventDatasourceSourceAdded         EventType = "saas.datasource.source.added"
 	EventDatasourceSyncCompleted       EventType = "saas.datasource.sync.completed"
+	EventDatasourceCredentialUpdated   EventType = "saas.datasource.credential.updated"
 	EventDatasourceSyncFailed          EventType = "saas.datasource.sync.failed"
 	EventDatasourceSourceSynced        EventType = "saas.datasource.source.synced"
 	EventDatasourceSourceRemoved       EventType = "saas.datasource.source.removed"
@@ -435,6 +436,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...), webhookAdminVersion),
 	mutation(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
+	mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.", str("repo")),
 	mutation(EventDatasourceSourceRemoved, CategorySystem, "A datasource was removed."),
 	observation(EventDatasourceSyncCompleted, CategorySystem, "A datasource ingestion job completed.", sourceSyncFields...),
 	observation(EventDatasourceSyncFailed, CategorySystem, "A datasource ingestion attempt failed and may retry.", sourceSyncFields...),
@@ -492,7 +494,7 @@ var webhookAdminFields = []PayloadField{
 // and `version` name the write; `boundary` is the data boundary (scope node) it
 // landed in; actor/owner principal ids and `initiator` (a provenance string,
 // e.g. a webhook delivery id) make a solution-owned write attributable (#473).
-var sourceSyncFields = []PayloadField{str("solution"), str("job_id"), str("repo"), str("commit"), PayloadField{Name: "processed", Kind: FieldInt}, PayloadField{Name: "new_versions", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}, PayloadField{Name: "failed", Kind: FieldInt}, str("reason")}
+var sourceSyncFields = []PayloadField{str("solution"), str("job_id"), str("repo"), str("commit"), PayloadField{Name: "processed", Kind: FieldInt}, PayloadField{Name: "new_versions", Kind: FieldInt}, PayloadField{Name: "deleted", Kind: FieldInt}, PayloadField{Name: "failed", Kind: FieldInt}, str("reason"), str("code"), str("trigger"), PayloadField{Name: "attempt", Kind: FieldInt}, PayloadField{Name: "retryable", Kind: FieldBool}}
 
 var documentFields = []PayloadField{
 	str("solution"),

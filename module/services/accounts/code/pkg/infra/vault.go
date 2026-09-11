@@ -190,7 +190,7 @@ func (v *VaultClient) request(ctx context.Context, method, path, body string) (m
 	respBody, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("vault request returned %d", resp.StatusCode)
+		return nil, &vaultHTTPError{status: resp.StatusCode}
 	}
 
 	var envelope struct {
@@ -208,3 +208,13 @@ func (v *VaultClient) httpClient() *http.Client {
 	}
 	return http.DefaultClient // explicit local/test constructor
 }
+
+// Preserve a typed status without retaining provider bodies or secret material.
+type vaultHTTPError struct {
+	status int
+}
+
+func (e *vaultHTTPError) Error() string {
+	return fmt.Sprintf("vault request returned %d", e.status)
+}
+func (e *vaultHTTPError) HTTPStatusCode() int { return e.status }

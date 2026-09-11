@@ -51,6 +51,7 @@ export function datasourceClientOverTransport(
 			const audit = accounts.New(transport).audit();
 			const types = [
 				"saas.datasource.source.added",
+				"saas.datasource.credential.updated",
 				"saas.datasource.source.synced",
 				"saas.datasource.source.removed",
 				"saas.datasource.change_set_compiled",
@@ -106,8 +107,8 @@ export function datasourceClientOverTransport(
 				boundary: { case: "collectionLabel", value: input.targetCollection },
 			});
 		},
-		async syncSource(orgId, id) {
-			const response = await client.syncSource({ orgId, id });
+		async syncSource(orgId, id, accessToken) {
+			const response = await client.syncSource({ orgId, id, ...(accessToken ? { accessToken } : {}) });
 			return response.jobId;
 		},
 		async deleteSource(orgId, id) {

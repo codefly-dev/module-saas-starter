@@ -2267,7 +2267,7 @@
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
-        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,

@@ -47,6 +47,6 @@ export interface DatasourceClient {
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
 	/** Enqueues an async pull; resolves to the durable job id. */
-	syncSource(orgId: string, id: string): Promise<string>;
+	syncSource(orgId: string, id: string, accessToken?: string): Promise<string>;
 	deleteSource(orgId: string, id: string): Promise<void>;
 }
