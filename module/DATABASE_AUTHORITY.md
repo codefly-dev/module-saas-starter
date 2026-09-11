@@ -76,8 +76,8 @@ absence of `TRUNCATE`.
 
 ## Tenant and user relation grants
 
-Migrations `63_request_relation_grants`, `64_delegation_grant_authority`, and
-`66_team_member_upsert_authority`
+Migrations `63_request_relation_grants`, `64_delegation_grant_authority`,
+`66_team_member_upsert_authority`, and `124_privacy_durable_execution`
 replace historical full CRUD with the following exact `app_tenant` authority.
 All tenant/user rows remain constrained by their forced RLS policies.
 
@@ -87,7 +87,8 @@ All tenant/user rows remain constrained by their forced RLS policies.
 | select, insert, update | `api_keys`, `delegation_grants`, `entitlement_overrides`, `invitations`, `org_settings`, `organizations`, `principals`, `subscriptions`, `usage_totals`, `webhook_deliveries` |
 | select, insert, delete | `role_assignments`, `roles` |
 | select, insert, update, delete | `audit_export_configs`, `organization_members`, `team_members`, `teams`, `webhook_subscriptions` |
-| select, insert, update | `gdpr_requests`, `onboarding_progress`, `sessions`, `users`, `webauthn_ceremonies`, `webauthn_credentials` |
+| select, insert, update | `onboarding_progress`, `sessions`, `users`, `webauthn_ceremonies`, `webauthn_credentials` |
+| select, insert | `gdpr_requests` (accepted by request traffic, transitioned only by the leased privacy worker under the control plane) |
 | select, insert, update, delete | `mfa_backup_codes`, `mfa_devices`, `notifications`, `user_identities` |
 | insert only | `mfa_login_transactions` |
 | no tenant relation authority | `job_attempts`, `job_messages`, `job_state_transitions`, `magic_links` |
@@ -114,7 +115,7 @@ executable inventory and this table in the same change.
 | Scope | Relations | Required database boundary |
 |---|---|---|
 | `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `solution_registrations` | No RLS; exact grants |
-| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `installations`, `invitations`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `execution_custody`, `installations`, `invitations`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
@@ -272,3 +273,14 @@ Starter should split the corresponding pools/processes—so a request-only
 credential has no `SET ROLE` path to privileged roles. Track that PaaS work
 under `P2-DB-002`; do not compensate with a public endpoint, superuser
 credential, or application-settable policy flag.
+
+
+## Private execution custody candidate
+
+Migration `131_execution_custody` adds forced-RLS tenant-owned ciphertext with a
+literal deny-all request policy. Only `app_control_plane` receives SELECT, INSERT,
+DELETE and column-level UPDATE on `envelope` for expiry erasure. All original
+registration fields are immutable to runtime SQL roles; no worker or tenant
+custody grant is added. Ciphertext erasure retains non-authorizing admission
+tombstones. See [the private broker contract](services/accounts/EXECUTION_CUSTODY.md)
+for authentication, Vault projection, lifetime and qualification boundaries.

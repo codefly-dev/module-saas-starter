@@ -23,6 +23,7 @@ import (
 	"accounts/pkg/jobs"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
+	"accounts/pkg/vaultconnection"
 	"context"
 	ed25519core "crypto/ed25519"
 	"encoding/base64"
@@ -544,6 +545,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
+	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen)
+	if err != nil {
+		return nil, err
+	}
 
 	// Local development surfaces the underlying Authenticate failure reason for
 	// debugging; every deployed environment returns generic auth errors so the
@@ -731,6 +736,21 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
+	// Privacy export/deletion (issue #539): the leased worker that drives a
+	// configured privacy adapter. It runs whether or not one is wired — the
+	// starter ships none — so a job enqueued by a runtime that had an adapter
+	// dead-letters visibly here instead of sitting pending after the adapter is
+	// removed.
+	privacyWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.PrivacyWorkflowQueue,
+		Handler:    service.NewPrivacyJobHandler(),
+		RetryDelay: business.PrivacyWorkflowRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// The change-set compiler (issue #487): a leased worker that turns each raw
 	// GitHub delivery — and each periodic/forced reconcile request — into a set of
 	// per-file ingest ops, holding the source's decrypted token so all GitHub
@@ -791,6 +811,17 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		// An export artifact stays reachable only for its authorized window; the
+		// sweep asks the adapter to delete the stored object and drops the
+		// reference once that window has closed.
+		sweepPrivacyArtifacts := func() {
+			if n, err := service.PurgeExpiredPrivacyArtifacts(retentionCtx); err != nil {
+				rw.Warn("expired privacy artifact sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("deleted records", wool.Field("count", n), wool.Field("kind", "privacy_export_artifact"))
+			}
+		}
+
 		// Datasource reconcile (issue #487 §6): the production safety net for lost
 		// webhooks and for local development without a public tunnel. Each sweep
 		// enqueues a reconcile job for every active GitHub source whose schedule has
@@ -804,9 +835,17 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		sweepCustody := func() {
+			if err := store.PurgeExecutionCustody(retentionCtx, time.Now()); err != nil {
+				rw.Warn("execution custody expiry sweep failed")
+			}
+		}
+
 		// Run once immediately on startup.
+		sweepCustody()
 		runRetention()
 		sweepReplay()
+		sweepPrivacyArtifacts()
 		sweepReconcile()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
@@ -823,7 +862,9 @@ func doWork(ctx context.Context) (Clean, error) {
 				runRetention()
 			case <-replayTicker.C:
 				sweepReplay()
+				sweepPrivacyArtifacts()
 			case <-reconcileTicker.C:
+				sweepCustody()
 				sweepReconcile()
 			}
 		}
@@ -835,6 +876,11 @@ func doWork(ctx context.Context) (Clean, error) {
 			retentionCancel()
 			return nil, err
 		}
+	}
+	closeCustody, err := startExecutionCustody(ctx, custodyServer)
+	if err != nil {
+		retentionCancel()
+		return nil, err
 	}
 	if stripeWebhookWorker != nil {
 		stripeWebhookWorker.Start(ctx)
@@ -851,10 +897,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
+	privacyWorker.Start(ctx)
 	datasourceDeliveryWorker.Start(ctx)
 	eventRelayWorker.Start(ctx)
 
 	return func() {
+		closeCustody()
 		sw := wool.Get(ctx).In("shutdown")
 		if stripeWebhookWorker != nil {
 			sw.Info("stopping Stripe webhook worker")
@@ -898,6 +946,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := webhookWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("outbound webhook worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping privacy workflow worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := privacyWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("privacy workflow worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("stopping datasource sync worker")
@@ -1665,12 +1719,14 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // lets `codefly run service frontend --fixture dev-admin` work on a machine with
 // no Vault. The fallback logs a warning.
 func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.PrivateKey, error) {
-	vaultAddr, addrErr := codefly.For(ctx).Service("vault").Configuration("vault", "address")
-	vaultToken, tokErr := codefly.For(ctx).Service("vault").Secret("vault", "token")
-	if addrErr == nil && tokErr == nil && vaultAddr != "" && vaultToken != "" {
+	connection, connectionErr := vaultconnection.Load(ctx)
+	if connectionErr == nil {
+		vaultToken, tokenErr := connection.Token()
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
 		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
-			Address:           vaultAddr,
-			Token:             vaultToken,
+			Address: connection.Address, Token: vaultToken, HTTPClient: connection.Client,
 			AllowInsecureHTTP: workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP") == "true",
 		})
 		if err == nil {

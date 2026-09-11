@@ -24,26 +24,27 @@ import (
 // live-database check derives from that same scope — the boundary being the
 // half a reader actually acts on.
 const (
-	relationInventorySource = "services/accounts/code/pkg/infra/postgres_role_hardening_test.go"
-	relationInventoryMap    = "relationsByScope"
-	// rlsPredicateVar is the local the live-database check assigns the required
-	// RLS verdict to, per scope. Reading the scope set out of that expression
-	// is what keeps the documented boundary column derived rather than a second
-	// hand-maintained copy.
-	rlsPredicateVar       = "requiresRLS"
+	relationInventorySource = "services/accounts/code/pkg/relationcatalog/catalog.go"
+	relationInventoryMap    = "authorities"
+	// rlsPredicateFunc is the method the inventory itself answers "does this
+	// scope require row-level security?" with, and that both the live-database
+	// check and the published service catalog call. Reading the scope set out
+	// of its switch is what keeps the documented boundary column derived rather
+	// than a second hand-maintained copy.
+	rlsPredicateFunc      = "RequiresRLS"
 	databaseAuthorityDoc  = "DATABASE_AUTHORITY.md"
 	scopeInventoryHeading = "## Scope and RLS inventory"
 )
 
-// scopeConstantValues maps the relationScope constant identifiers used as keys
-// in the executable map to the scope names the documented table uses.
+// scopeConstantValues maps the Scope constant identifiers the inventory
+// classifies each relation with to the scope names the documented table uses.
 var scopeConstantValues = map[string]string{
-	"relationScopeGlobal":  "global",
-	"relationScopeTenant":  "tenant",
-	"relationScopeUser":    "user",
-	"relationScopePreAuth": "pre_auth",
-	"relationScopeJob":     "job",
-	"relationScopeWorker":  "worker",
+	"ScopeGlobal":  "global",
+	"ScopeTenant":  "tenant",
+	"ScopeUser":    "user",
+	"ScopePreAuth": "pre_auth",
+	"ScopeJob":     "job",
+	"ScopeWorker":  "worker",
 }
 
 func TestDatabaseAuthorityScopeInventoryMatchesCode(t *testing.T) {
@@ -94,22 +95,28 @@ func TestDatabaseAuthorityBoundaryMatchesCode(t *testing.T) {
 	}
 }
 
-// rlsRequiringScopes reads the scope set out of the live-database check's own
-// `requiresRLS := scope == relationScopeX || ...` assignment, so the documented
-// boundary is derived from the assertion rather than restated beside it.
+// rlsRequiringScopes reads the scope set out of the inventory's own
+// RequiresRLS switch — the cases that answer true — so the documented boundary
+// is derived from the predicate the runtime actually applies rather than
+// restated beside it.
 func rlsRequiringScopes(t *testing.T, file *ast.File) map[string]bool {
 	t.Helper()
 	scopes := make(map[string]bool)
 	ast.Inspect(file, func(node ast.Node) bool {
-		assign, ok := node.(*ast.AssignStmt)
-		if !ok || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+		declaration, ok := node.(*ast.FuncDecl)
+		if !ok || declaration.Name.Name != rlsPredicateFunc {
 			return true
 		}
-		if name, ok := assign.Lhs[0].(*ast.Ident); !ok || name.Name != rlsPredicateVar {
-			return true
-		}
-		ast.Inspect(assign.Rhs[0], func(inner ast.Node) bool {
-			if identifier, ok := inner.(*ast.Ident); ok {
+		ast.Inspect(declaration.Body, func(inner ast.Node) bool {
+			clause, ok := inner.(*ast.CaseClause)
+			if !ok || !clauseReturnsTrue(clause) {
+				return true
+			}
+			for _, expression := range clause.List {
+				identifier, ok := expression.(*ast.Ident)
+				if !ok {
+					continue
+				}
 				if scope, known := scopeConstantValues[identifier.Name]; known {
 					scopes[scope] = true
 				}
@@ -119,9 +126,22 @@ func rlsRequiringScopes(t *testing.T, file *ast.File) map[string]bool {
 		return false
 	})
 	if len(scopes) == 0 {
-		t.Fatalf("%s: found no scope constants in the %s predicate", relationInventorySource, rlsPredicateVar)
+		t.Fatalf("%s: found no scope constants in %s", relationInventorySource, rlsPredicateFunc)
 	}
 	return scopes
+}
+
+func clauseReturnsTrue(clause *ast.CaseClause) bool {
+	for _, statement := range clause.Body {
+		result, ok := statement.(*ast.ReturnStmt)
+		if !ok || len(result.Results) != 1 {
+			continue
+		}
+		if literal, ok := result.Results[0].(*ast.Ident); ok && literal.Name == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 func compareRelationSets(t *testing.T, scope string, code, documented []string) {
@@ -158,7 +178,9 @@ func parseInventorySource(t *testing.T, path string) *ast.File {
 	return file
 }
 
-// executableRelationScopes reads the scope map out of the parsed source.
+// executableRelationScopes reads the scope map out of the parsed source. The
+// inventory is keyed by relation name with the scope as a field, so this groups
+// entries by that field rather than reading map keys.
 func executableRelationScopes(t *testing.T, file *ast.File) map[string][]string {
 	t.Helper()
 	path := relationInventorySource
@@ -166,38 +188,61 @@ func executableRelationScopes(t *testing.T, file *ast.File) map[string][]string 
 	if literal == nil {
 		t.Fatalf("%s does not declare %s as a map literal", path, relationInventoryMap)
 	}
-	scopes := make(map[string][]string, len(literal.Elts))
+	scopes := make(map[string][]string)
 	for _, element := range literal.Elts {
 		entry, ok := element.(*ast.KeyValueExpr)
 		if !ok {
 			t.Fatalf("%s: unexpected entry in %s", path, relationInventoryMap)
 		}
-		key, ok := entry.Key.(*ast.Ident)
+		name, ok := entry.Key.(*ast.BasicLit)
+		if !ok || name.Kind != token.STRING {
+			t.Fatalf("%s: %s is keyed by something other than a relation name", path, relationInventoryMap)
+		}
+		relation, err := strconv.Unquote(name.Value)
+		if err != nil {
+			t.Fatalf("%s: %s holds an unparsable relation name %s", path, relationInventoryMap, name.Value)
+		}
+		authority, ok := entry.Value.(*ast.CompositeLit)
 		if !ok {
-			t.Fatalf("%s: %s is keyed by something other than a scope constant", path, relationInventoryMap)
+			t.Fatalf("%s: relation %s is not a struct literal", path, relation)
 		}
-		scope, known := scopeConstantValues[key.Name]
-		if !known {
-			t.Fatalf("%s: unknown scope constant %s; add it to scopeConstantValues", path, key.Name)
-		}
-		relations, ok := entry.Value.(*ast.CompositeLit)
-		if !ok {
-			t.Fatalf("%s: scope %s is not a slice literal", path, scope)
-		}
-		for _, relation := range relations.Elts {
-			name, ok := relation.(*ast.BasicLit)
-			if !ok || name.Kind != token.STRING {
-				t.Fatalf("%s: scope %s holds a non-literal relation name", path, scope)
-			}
-			unquoted, err := strconv.Unquote(name.Value)
-			if err != nil {
-				t.Fatalf("%s: scope %s holds an unparsable relation name %s", path, scope, name.Value)
-			}
-			scopes[scope] = append(scopes[scope], unquoted)
-		}
+		scopes[authorityScope(t, relation, authority)] = append(
+			scopes[authorityScope(t, relation, authority)], relation)
+	}
+	if len(scopes) == 0 {
+		t.Fatalf("%s: %s parsed to no relations", path, relationInventoryMap)
+	}
+	for scope := range scopes {
 		sort.Strings(scopes[scope])
 	}
 	return scopes
+}
+
+// authorityScope reads one entry's Scope field. A relation that names no scope
+// would otherwise vanish from the comparison, which reads exactly like a
+// relation the document never listed.
+func authorityScope(t *testing.T, relation string, authority *ast.CompositeLit) string {
+	t.Helper()
+	for _, field := range authority.Elts {
+		assignment, ok := field.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if name, ok := assignment.Key.(*ast.Ident); !ok || name.Name != "Scope" {
+			continue
+		}
+		constant, ok := assignment.Value.(*ast.Ident)
+		if !ok {
+			t.Fatalf("%s: relation %s has a computed Scope", relationInventorySource, relation)
+		}
+		scope, known := scopeConstantValues[constant.Name]
+		if !known {
+			t.Fatalf("%s: unknown scope constant %s; add it to scopeConstantValues", relationInventorySource, constant.Name)
+		}
+		return scope
+	}
+	t.Fatalf("%s: relation %s names no Scope", relationInventorySource, relation)
+	return ""
 }
 
 func findMapLiteral(file *ast.File, name string) *ast.CompositeLit {

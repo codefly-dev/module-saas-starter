@@ -577,6 +577,48 @@ function pinErrors(path, document) {
   return errors;
 }
 
+// A digest is immutable but says nothing: `@9c091bb…` records no release. The
+// remedy above has always asked for the version in a trailing comment and
+// nothing enforced it, which cost nothing while every pin was moved by hand.
+// The `github-actions` entry in .github/dependabot.yml now rewrites these pins
+// on a schedule, and the comment it carries alongside is the only human-readable
+// record of what a digest means — an unenforced convention would decay silently
+// into 40 hex characters nobody can review.
+//
+// The comment is stripped before the document is parsed, so this reads the raw
+// line; the parsed refs are the filter that keeps a `uses:` inside a `run:`
+// block scalar from being mistaken for a step.
+const USES_LINE = /^[ \t]*(?:-[ \t]+)?uses:[ \t]*(?<ref>[^\s#]+)(?<rest>.*)$/;
+
+function commentErrors(path, document, text) {
+  const declared = new Set(usedActionRefs(document?.jobs ?? {}).map(([, ref]) => ref));
+  const errors = [];
+  text.split("\n").forEach((line, index) => {
+    const match = USES_LINE.exec(line);
+    if (!match) return;
+    const { ref, rest } = match.groups;
+    if (!declared.has(ref)) return;
+    // A `./` path is versioned by the tree that calls it, exactly as the pin
+    // rule reasons, so it has no release to name.
+    if (ref.startsWith("./")) return;
+    // Only an already-immutable ref is in scope: a mutable one is the pin
+    // rule's defect, and its remedy already asks for the comment, so reporting
+    // it here too would describe one fix as two.
+    if (unpinnedRemedy(ref) !== null) return;
+    if (/#\s*\S/.test(rest)) return;
+    errors.push(
+      `${path}:${index + 1}: uses ${ref} with no trailing version comment; keep the version there ` +
+        "so the digest stays reviewable when Dependabot moves it",
+    );
+  });
+  return errors;
+}
+
+export function actionCommentErrors(path, text) {
+  const { document, error } = parseWorkflow(path, text);
+  return error ? [error] : commentErrors(path, document, text);
+}
+
 // Every workflow in `repositoryRoot`, parsed once, as {path, document, error}.
 function parsedWorkflows(repositoryRoot) {
   const workflows = join(repositoryRoot, ".github", "workflows");
@@ -586,6 +628,7 @@ function parsedWorkflows(repositoryRoot) {
     .filter((file) => /\.ya?ml$/.test(file))
     .map((file) => ({
       path: `.github/workflows/${file}`,
+      text: readFileSync(join(workflows, file), "utf8"),
       ...parseWorkflow(`.github/workflows/${file}`, readFileSync(join(workflows, file), "utf8")),
     }));
 }
@@ -595,7 +638,7 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
     return [`.github/workflows is missing under ${repositoryRoot}`];
   }
   const errors = [];
-  for (const { path, document, error } of parsedWorkflows(repositoryRoot)) {
+  for (const { path, document, error, text } of parsedWorkflows(repositoryRoot)) {
     if (error) {
       errors.push(error);
       continue;
@@ -604,6 +647,7 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
       ...contractErrors(path, document),
       ...pinErrors(path, document),
       ...mergeQueueErrors(path, document),
+      ...commentErrors(path, document, text),
     );
   }
   return errors;
@@ -702,14 +746,14 @@ function check() {
     console.error(
       `\nFAIL: ${errors.length} workflow-contract defect(s). Every artifact-writing job must ` +
         `depend on ${AGGREGATE_JOB}, ${AGGREGATE_JOB} on every mandatory gate, every action on a ` +
-        "digest, and every context in REQUIRED_CONTEXTS must be reported, under that name, by a " +
+        "digest carrying a version comment, and every context in REQUIRED_CONTEXTS must be reported, under that name, by a " +
         "job that runs on merge_group.",
     );
     process.exit(1);
   }
   console.log(
     `✓ every artifact-writing job is dominated by ${AGGREGATE_JOB}, which requires all ` +
-      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a digest; each of ` +
+      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a commented digest; each of ` +
       `the ${REQUIRED_CONTEXTS.length} contexts declared in REQUIRED_CONTEXTS is reported, ` +
       "under that name, by a job that runs on merge_group.",
   );

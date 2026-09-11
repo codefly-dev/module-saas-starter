@@ -337,3 +337,19 @@ test("rlsGateErrors reads a real migration tree in version order", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test("private control-plane custody may deny every tenant row", () => {
+  assert.deepEqual(analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false) WITH CHECK (false);`), []);
+});
+
+test("deny-all does not make an append-only trigger reachable", () => {
+  const errors = analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false) WITH CHECK (false);` + appendOnlyTrigger);
+  assert.equal(errors.length, 2);
+  assert.ok(errors.every(e => e.includes("no RLS policy admits")));
+});
+
+test("a false literal inside an unconditional expression is not deny-all", () => {
+  const errors = analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false OR true) WITH CHECK (true);`);
+  assert.equal(errors.length, 2);
+});

@@ -51,6 +51,7 @@ type Service struct {
 	productEvents             analytics.Emitter
 	usageMeters               *UsageMeterCatalog
 	privacy                   PrivacyWorkflow
+	privacyJobs               jobs.Producer // request-scoped, transactional producer for privacy workflow jobs
 	ssoManagementAPIKey       string
 	abuseVerifier             abuse.Verifier
 	identityCipher            SecretCipher               // encrypts per-org IdP client secrets
@@ -216,7 +217,13 @@ func (s *Service) SetWebhookSecurity(cipher SecretCipher, policy *WebhookEndpoin
 	s.webhookPolicy = policy.ensureDefaults()
 }
 
-func (s *Service) SetPrivacyWorkflow(workflow PrivacyWorkflow) {
+// SetPrivacyWorkflow enables the privacy capability. The producer and the
+// adapter arrive together because neither is usable alone: without a producer
+// an accepted request would have no durable owner, and without an adapter the
+// job it enqueues could never be executed. Leaving either unset keeps
+// RequestExport and RequestDeletion fail-closed.
+func (s *Service) SetPrivacyWorkflow(producer jobs.Producer, workflow PrivacyWorkflow) {
+	s.privacyJobs = producer
 	s.privacy = workflow
 }
 
