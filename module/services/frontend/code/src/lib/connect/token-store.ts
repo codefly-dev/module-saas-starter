@@ -7,7 +7,12 @@
 let currentToken: string | null = null;
 
 export function setToken(token: string | null) {
-	currentToken = token;
+	if (currentToken === token) return;
+ currentToken = token;
+ // Solution remotes keep a stable getter. Notify them synchronously when its
+ // value changes so the prior viewer's data does not survive an auth switch.
+ // The event carries no token or identity; consumers read their host getter.
+ if (typeof window !== "undefined") window.dispatchEvent(new Event("codefly:auth-changed"));
 }
 
 export function getToken(): string | null {

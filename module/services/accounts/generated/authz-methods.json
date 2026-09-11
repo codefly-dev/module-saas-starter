@@ -1493,7 +1493,7 @@
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
-        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
@@ -1505,7 +1505,7 @@
         "service": "accounts"
       },
       "source_proto": "saas/accounts/v1/datasource.proto",
-      "policy_sha256": "1fb0d3c84a61042b3e25c0a69361ffe4cefd02069e11b4862f7b93677230aa3c",
+      "policy_sha256": "6ce0fab18e353fa96ed9a46f9da3c7aed13627454d344d25a02e8bfcb27a4d1a",
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
