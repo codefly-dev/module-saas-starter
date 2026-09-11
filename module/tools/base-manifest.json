@@ -2270,7 +2270,7 @@
     "tools/cmd/module-compose/main.go": "ff5e90d1811c9decaa9375314b02c8fead01a28cec813158a8ad0ded03f96e88",
     "tools/cmd/module-format-generated/main.go": "4a4dd601e23316dde675074aef15af0ba5259546e0d03d5508b8fc762b012bc5",
     "tools/cmd/module-package/main.go": "d4d12554eda0c22d881cb23c9e7f5e196989da92d5b93fb8eb1376f3e519b75f",
-    "tools/codefly_sdk_boundary_test.go": "2a8a65e445dae64add9dd7a682e97fd243176947e2e83bbbcd1ab7685729e032",
+    "tools/codefly_sdk_boundary_test.go": "a18b2f4d31713eec21c0e34a855b5577599e2cd27f7974f8dea9d77305cefb45",
     "tools/composition/api_contracts_test.go": "bd91850bb97b1081c9a90a7eb7b6e2091cae9dbbd998bba3cac9f8c3ba3cc7dc",
     "tools/composition/composition.go": "440dbcea87e4cdba32dc6a818a5466a18e109674767e9c431fd1b07b05b92c23",
     "tools/composition/composition_events.go": "01dbfe69c9d397a9562c8dce0f92e5536cb543ab8ea463688ed01277958f24c0",
