@@ -1,7 +1,37 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatasourcesPanel } from "../datasources-panel.js";
 import { createDatasourceClient } from "../gateway.js";
+
+const gatewayCatalog = JSON.parse(
+	readFileSync(
+		resolve(
+			__dirname,
+			"../../../../../../../accounts/generated/gateway-routes.json",
+		),
+		"utf8",
+	),
+);
+const gatewayProcedures = new Set<string>(
+	gatewayCatalog.routes
+		.filter(
+			(route: { protocol: string; method: string; match: string }) =>
+				route.protocol === "GATEWAY_PROTOCOL_CONNECT" &&
+				route.method === "POST" &&
+				route.match === "GATEWAY_MATCH_EXACT",
+		)
+		.map((route: { path: string }) => route.path),
+);
+
+function expectRoutable(url: string) {
+	const procedure = url.slice(url.lastIndexOf("/saas.accounts.v1."));
+	expect(
+		gatewayProcedures.has(procedure),
+		`Gateway has no POST route for ${procedure}`,
+	).toBe(true);
+}
 
 afterEach(() => {
 	cleanup();
@@ -39,6 +69,8 @@ function stubFetchSequence(replies: FetchReply[]): { calls: FetchCall[] } {
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+			expect(init.method).toBe("POST");
+			expectRoutable(String(input));
 			calls.push({
 				url: String(input),
 				body: JSON.parse(typeof init.body === "string" ? init.body : new TextDecoder().decode(init.body as Uint8Array)),
@@ -76,6 +108,48 @@ const oneSource = {
 };
 
 describe("createDatasourceClient", () => {
+	it("rejects missing and internal procedures in the route gate", () => {
+		expect(() =>
+			expectRoutable("/saas.accounts.v1.ScopeService/ListAccessibleScopes"),
+		).toThrow();
+		expect(() =>
+			expectRoutable(
+				"/saas.accounts.v1.PermissionService/ListAccessibleScopes",
+			),
+		).toThrow();
+		expectRoutable(
+			"/saas.accounts.v1.PermissionService/ListMyAccessibleScopes",
+		);
+	});
+
+	it("routes every datasource operation emitted by the SDK", async () => {
+		const { calls } = stubFetch({});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/example/proxy",
+			getAccessToken: () => "test-token",
+		});
+		const operations = {
+			listSources: () => client.listSources("org-1"),
+			addGitHubSource: () =>
+				client.addGitHubSource({
+					orgId: "org-1",
+					repo: "acme/example",
+					paths: [],
+					branch: "main",
+					targetCollection: "Example",
+					accessToken: "",
+					webhookSecret: "",
+				}),
+			syncSource: () => client.syncSource("org-1", "ds-1"),
+			deleteSource: () => client.deleteSource("org-1", "ds-1"),
+		} satisfies Record<keyof typeof client, () => Promise<unknown>>;
+		expect(Object.keys(operations).sort()).toEqual(Object.keys(client).sort());
+		for (const operation of Object.values(operations)) {
+			await operation();
+		}
+		expect(calls).toHaveLength(Object.keys(operations).length);
+	});
+
 	it("calls the live DatasourceService through the gateway with the host token", async () => {
 		const { calls } = stubFetch(oneSource);
 		const client = createDatasourceClient({
