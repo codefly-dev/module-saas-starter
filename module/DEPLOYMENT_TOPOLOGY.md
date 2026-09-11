@@ -191,6 +191,54 @@ reachability of the public front door. What the deny adds is that a workload
 holding that credential cannot spend it against the frontend from inside the
 namespace.
 
+#### Keeping the declaration honest
+
+An authored list drifts, and it drifts open: a route that starts checking the
+cluster-internal token is simply ungated in the mesh, and a declared path whose
+route module is gone renders a policy matching nothing while reading as
+protection. Absence from `internal_http_routes` means both "not internal" and
+"forgotten", so neither direction shows up in a diff.
+
+`TestInternalHTTPRoutesMatchTokenGatedHandlers` (`module/tools`) makes the
+correspondence a gate. It derives the served method and path of every route
+module under a service's `src/app` the way Next.js does, reads which exported
+handlers verify a cluster-internal credential, and requires each such pair to
+appear in that service's `internal_http_routes` and each declared pair to
+resolve back to one. It runs over the same bounded composed-service scope as the
+production walkers: a consumer that omits a service omits its routes with it,
+every skip is disclosed, and a module this repository owns must compose
+everything it ships — otherwise dropping one line from an unprotected generated
+inventory would take these routes out of scope with green CI.
+
+What marks a route internal is that it verifies a credential, not which one:
+`isTrustedInternalCall` for the shared cluster-internal token, and
+`verifySolutionRegistration` for the signed, solution-bound credential
+registration requires. Keying the check to a single function name would read a
+route that changed credential as having stopped being internal, while the
+binding still declared it and the mesh still denied it. A handler may reach its
+check through the route module's own top-level functions — registration
+authorizes both of its writing methods through one shared helper — so the
+correspondence follows that call graph, bounded to the module so the whole of
+it is visible in the file being read.
+
+A gated route the author deliberately does not want mesh-denied says so in the
+route module, next to the handler:
+
+```ts
+// codefly:internal-http-route-exempt GET: <why this one is not mesh-denied>
+```
+
+The marker names one method, must state a reason, and is rejected on a handler
+that does not check the token or on a pair the binding also declares — a route
+is declared or exempt, never both.
+
+Because that call graph is bounded to the route module,
+`TestInternalCallGateIsReachedOnlyFromRouteModules` requires every credential
+check to be reached from one: a check called from a module outside `src/app`
+puts the graph out of view and would gate a route this correspondence cannot
+see. Adding a new credential mechanism therefore means adding it to
+`internalRouteGates`, beside the module that defines it.
+
 
 ## Generation and validation
 
