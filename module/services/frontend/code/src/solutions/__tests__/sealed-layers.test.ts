@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import * as Layout from "@codefly-dev/ui/layout";
+import { createInstance } from "@module-federation/runtime";
 import { describe, expect, it } from "vitest";
 import { PACKAGES } from "../../../scripts/publish-frontend-kit.mjs";
 import { SEALED_SHARED } from "../SolutionOutlet";
@@ -109,4 +111,32 @@ it("shares every exported kit subpath", () => {
 			path === "." ? "@codefly-dev/ui" : `@codefly-dev/ui${path.slice(1)}`,
 		);
 	}
+});
+
+it("a generic consumer resolves the loaded host layout singleton", async () => {
+	const key = "@codefly-dev/ui/layout";
+	const entry = SEALED_SHARED[key];
+	const host = createInstance({
+		name: "example_ui_host",
+		remotes: [],
+		shared: { [key]: entry },
+	});
+	const hostFactory = await host.loadShare<typeof Layout>(key);
+	expect(hostFactory && hostFactory()).toBe(Layout);
+	const consumer = createInstance({
+		name: "example_ui_consumer",
+		remotes: [],
+		shared: {
+			[key]: {
+				version: entry.version,
+				shareConfig: entry.shareConfig,
+				lib: () => {
+					throw new Error("A consumer must use the loaded host singleton");
+				},
+			},
+		},
+	});
+	consumer.initShareScopeMap("default", host.shareScopeMap.default);
+	const consumerFactory = await consumer.loadShare<typeof Layout>(key);
+	expect(consumerFactory && consumerFactory()).toBe(Layout);
 });

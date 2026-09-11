@@ -85,8 +85,8 @@ checkout; their configuration, composed discovery, static build and skin matrix
 have not been validated. Full-page billing, authentication/onboarding,
 privacy/consent, notifications, platform operations and editor previews remain
 outstanding. Owner-defined presentation replacement/fallbacks need explicit
-browser evidence in that environment. A real fixture-identity SaaS smoke run,
-required CI and reviewed visual baselines remain release prerequisites. These
+browser evidence in that environment. Required CI and reviewed visual baselines remain release prerequisites; the
+fixture-identity smoke result is recorded below. These
 requirements remain in the original work item; this document does not defer them
 out of scope or claim the issue can close on the component migration alone.
 
@@ -97,3 +97,17 @@ fixture text-token contrast; the rerun has no WCAG A/AA violations. Runtime
 switching also reached an already-open Sheet portal and preserved a mounted
 Tabs draft. These fixtures supplement, but do not replace, validation with
 externally supplied skin packages.
+
+The fixture-identity SaaS smoke passed with
+`codefly run service frontend --fixture dev-admin --temporary-ports --headless`:
+fixture login, consent, admin navigation and a populated production Users table.
+The temporary scope was stopped afterwards. The ordinary local store was not
+modified or reseeded: it holds an older fixture organization id, which caused the
+frontend-only Codefly CI test flow to reject startup. The broader Codefly CI run
+also failed in accounts integration readiness and skipped frontend. These local
+service gates therefore remain failed, despite the successful isolated smoke.
+
+The federation test creates a real host and generic consumer runtime sharing the
+layout scope. It verifies that both resolve the host's loaded module instance and
+that the consumer's competing implementation is not loaded. Package tarball
+consumption and runtime share resolution are independent checks.
