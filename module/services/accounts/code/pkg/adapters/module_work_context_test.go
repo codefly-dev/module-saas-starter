@@ -199,7 +199,8 @@ func TestModuleExchangesUseIndependentSecrets(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, business.ModulePrincipalID("documents"), caller.PrincipalID)
 			require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
-			require.Equal(t, 2, store.controlPlaneCalls)
+			require.Equal(t, 2, store.recordAttempts())
+			require.Equal(t, 1, store.tenantChecks)
 		})
 	}
 }
