@@ -95,11 +95,28 @@ type PostgresEventTransport struct {
 // knowing only about envelopes and subscriptions, and a deployment with no
 // webhook dispatcher wired simply relays nothing to endpoints.
 type WebhookRelay interface {
-	// Deliver reports whether an outbound delivery was created. False with a nil
-	// error means there was nothing to deliver — the endpoint already has history
-	// for this event, or its registration is gone.
-	Deliver(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, subscription events.Subscription) (bool, error)
+	// Deliver reports which of three things happened, because an operator reading
+	// a replay cannot act on them interchangeably: a delivery was created, the
+	// endpoint already held history for this event, or its registration was
+	// deleted while the event was being fanned out.
+	Deliver(ctx context.Context, tx pgx.Tx, e *eventsv1.EventEnvelope, subscription events.Subscription) (WebhookDeliveryOutcome, error)
 }
+
+// WebhookDeliveryOutcome distinguishes the reasons a fan-out produced no
+// outbound request. Collapsing them loses the difference between a replay that
+// correctly deduplicated and endpoints that have silently disappeared.
+type WebhookDeliveryOutcome int
+
+const (
+	// WebhookDelivered means a pending delivery and its dispatch job were written.
+	WebhookDelivered WebhookDeliveryOutcome = iota
+	// WebhookAlreadyDelivered means this endpoint already holds history for this
+	// event, which is what makes a replay safe to run twice.
+	WebhookAlreadyDelivered
+	// WebhookEndpointGone means the registration was deleted between the
+	// subscription scan and the delivery insert.
+	WebhookEndpointGone
+)
 
 // WithWebhookRelay wires the outbound dispatcher into the relay, which is what
 // makes a delivery = webhook subscription deliver.
@@ -461,19 +478,21 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 		}
 		return nil
 	}
-	skipped := 0
+	deduplicated, endpointsGone := 0, 0
 	for _, subscription := range subscriptions {
 		if !events.Matches(subscription.TypePattern, e.GetType()) {
 			continue
 		}
 		if subscription.Delivery == events.DeliveryWebhook {
-			delivered, err := p.relayToWebhook(ctx, tx, e, subscription)
+			outcome, err := p.relayToWebhook(ctx, tx, e, subscription)
 			if err != nil {
 				return err
 			}
-			if !delivered && subscription.OrgID == e.GetTenantId() &&
-				eventcatalog.IsExternalPublished(e.GetType()) {
-				skipped++
+			switch outcome {
+			case WebhookAlreadyDelivered:
+				deduplicated++
+			case WebhookEndpointGone:
+				endpointsGone++
 			}
 			continue
 		}
@@ -492,11 +511,19 @@ func (p *PostgresEventTransport) relayEvent(ctx context.Context, tx pgx.Tx, e *e
 	// dedupe drops every one of them. Reporting the count is what keeps a replay
 	// from looking like it re-delivered to endpoints when it delivered to none:
 	// ReplayDelivery is the RPC that actually re-sends one.
-	if skipped > 0 {
-		wool.Get(ctx).In("events.relay").Info("webhook deliveries skipped as already present",
+	if deduplicated > 0 {
+		wool.Get(ctx).In("events.relay").Info("webhook deliveries deduplicated as already present",
 			wool.Field("event_id", e.GetId()),
 			wool.Field("event_type", e.GetType()),
-			wool.Field("skipped", skipped))
+			wool.Field("deduplicated", deduplicated))
+	}
+	// An endpoint deleted mid-fan-out is not a replay deduplicating; reporting it
+	// as one would tell an operator the deliveries were already made.
+	if endpointsGone > 0 {
+		wool.Get(ctx).In("events.relay").Warn("webhook subscriptions vanished during fan-out",
+			wool.Field("event_id", e.GetId()),
+			wool.Field("event_type", e.GetType()),
+			wool.Field("endpoints_gone", endpointsGone))
 	}
 	if _, err := tx.Exec(ctx, relayMarkPublishedSQL, e.GetId()); err != nil {
 		return fmt.Errorf("events: mark published: %w", err)
@@ -522,12 +549,12 @@ func (p *PostgresEventTransport) relayToWebhook(
 	tx pgx.Tx,
 	e *eventsv1.EventEnvelope,
 	subscription events.Subscription,
-) (bool, error) {
+) (WebhookDeliveryOutcome, error) {
 	if !eventcatalog.IsExternalPublished(e.GetType()) {
-		return false, nil
+		return WebhookDelivered, nil
 	}
 	if subscription.OrgID == "" || subscription.OrgID != e.GetTenantId() {
-		return false, nil
+		return WebhookDelivered, nil
 	}
 	// Only a subscription past both gates owes a delivery, so only here is a
 	// missing dispatcher a misconfiguration rather than an empty result — before
@@ -536,7 +563,7 @@ func (p *PostgresEventTransport) relayToWebhook(
 	// distinguish it from an event nobody subscribed to. Production cannot reach
 	// it: work.go asserts the dispatcher at startup.
 	if p.webhooks == nil {
-		return false, errors.New("events: webhook subscription matched but no dispatcher is wired")
+		return WebhookDelivered, errors.New("events: webhook subscription matched but no dispatcher is wired")
 	}
 	return p.webhooks.Deliver(ctx, tx, e, subscription)
 }

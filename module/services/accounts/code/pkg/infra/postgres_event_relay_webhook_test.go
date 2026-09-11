@@ -378,3 +378,45 @@ func TestPostgresRelayDoesNotDeliverAuditToLegacyModuleSubscription(t *testing.T
 		"SELECT count(*) FROM public.job_messages WHERE queue = $1", legacy.Queue).Scan(&queued))
 	require.Zero(t, queued, "legacy module subscriptions cannot read platform audit events")
 }
+
+// TestWebhookDeliveryOutcomesAreDistinguished pins the classification the relay's
+// reporting rests on. Deliver returns no outbound request for two opposite
+// reasons — a replay this endpoint already holds history for, and a registration
+// deleted mid-fan-out — and the relay logs them differently because an operator
+// cannot act on them interchangeably. Collapsing them would report vanished
+// endpoints as deliveries that were already made.
+func TestWebhookDeliveryOutcomesAreDistinguished(t *testing.T) {
+	transport, pool := newWebhookRelayTransport(t)
+	orgID := seedOrg(t, seedUser(t))
+	endpointID := seedWebhookEndpoint(t, orgID, true, externalEventType)
+
+	// First fan-out delivers; a second fan-out of the same event deduplicates.
+	event := publishExternal(t, transport, externalEventType, orgID, []byte(`{}`))
+	require.Len(t, webhookDeliveries(t, pool, endpointID), 1)
+
+	replayed, err := transport.Replay(testCtx, events.ReplaySelector{Type: externalEventType, TenantID: orgID})
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, replayed, 1)
+	require.Len(t, webhookDeliveries(t, pool, endpointID), 1,
+		"a replayed event deduplicates rather than creating a second delivery")
+
+	// A registration deleted between the scan and the insert is the other reason
+	// no request is made, and it must not be reported as deduplication.
+	doomed := seedWebhookEndpoint(t, orgID, true, externalEventType)
+	second := &events.EventEnvelope{
+		Id: uuid.NewString(), Type: externalEventType, Source: "saas.accounts",
+		Specversion: "1.0", Datacontenttype: "application/json",
+		Time: timestamppb.New(time.Now().UTC()), TenantId: orgID, Data: []byte(`{}`),
+	}
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return transport.Publish(ctx, ctx.Value("tx"), second) //nolint:staticcheck // shared "tx" key
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.DeleteWebhookSubscription(ctx, doomed)
+	}))
+	relayed, err := transport.RelayOnce(testCtx)
+	require.NoError(t, err, "a vanished endpoint must not fail the relay")
+	require.GreaterOrEqual(t, relayed, 1)
+	require.Empty(t, webhookDeliveries(t, pool, doomed))
+	require.NotEmpty(t, event.GetId())
+}

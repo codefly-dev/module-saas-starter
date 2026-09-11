@@ -832,22 +832,22 @@ func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, type
 			return nil, status.Errorf(codes.PermissionDenied, "type pattern %q matches internal event %q, which is not subscribable", typePattern, internalType)
 		}
 	}
-	// Ordered delivery is only meaningful over a type that declares a partition;
-	// without one the relay hands deliveries out unordered and says nothing. A
-	// subscriber that asked for FIFO has to be told here, at subscribe time,
-	// rather than discovering the reordering in production.
-	if delivery == string(events.DeliveryOrdered) {
-		for _, unorderedType := range eventcatalog.UnorderedPublishedTypes() {
-			if events.Matches(typePattern, unorderedType) {
-				return nil, status.Errorf(codes.FailedPrecondition, "type pattern %q matches event %q, which declares no partition; ordered delivery cannot be provided for it", typePattern, unorderedType)
-			}
-		}
-	}
 	// The platform namespace is external so an org's own endpoints may receive it
 	// over a webhook the org configured. That is a tenant's grant over its own
 	// records, not a capability a module inherits by declaring a queue.
 	if eventcatalog.Namespace(typePattern) == auditEventsNamespace {
 		return nil, status.Errorf(codes.PermissionDenied, "type pattern %q is in the platform namespace, which is not subscribable", typePattern)
+	}
+	// Ordered delivery is only meaningful over a type that declares a partition;
+	// without one the relay hands deliveries out unordered and says nothing. A
+	// subscriber that asked for FIFO has to be told here, at subscribe time,
+	// rather than discovering the reordering in production.
+	if delivery == string(events.DeliveryOrdered) {
+		for _, unorderedType := range eventcatalog.UnorderedPublishedTypesInNamespace(eventcatalog.Namespace(typePattern)) {
+			if events.Matches(typePattern, unorderedType) {
+				return nil, status.Errorf(codes.FailedPrecondition, "type pattern %q matches event %q, which declares no partition; ordered delivery cannot be provided for it", typePattern, unorderedType)
+			}
+		}
 	}
 
 	var created *EventSubscription

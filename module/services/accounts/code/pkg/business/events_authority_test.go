@@ -431,3 +431,21 @@ func claimOne(t *testing.T, transport events.Transport, queue string) *events.Le
 	}
 	return &leased[0]
 }
+
+// TestModuleSubscribePlatformNamespaceDeniedBeforeFeasibility pins the order of
+// the two gates. Ordered delivery over a type that declares no partition is a
+// precondition failure, but the platform namespace is refused outright — so a
+// caller asking for ordered delivery of saas.* must be told it is forbidden, not
+// that it is infeasible. Answering with the precondition returns the wrong status
+// and names a platform audit event type to a principal that may not subscribe to
+// any of them.
+func TestModuleSubscribePlatformNamespaceDeniedBeforeFeasibility(t *testing.T) {
+	svc := newEventService(t, &fakeSubStore{}, events.NewFakeTransport(nil, time.Second))
+	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: moduleTenantA}
+
+	_, err := svc.ModuleSubscribe(context.Background(), caller, "saas.*", "reference.ingest", "ordered")
+	requireCode(t, err, codes.PermissionDenied)
+
+	_, err = svc.ModuleSubscribe(context.Background(), caller, "saas.webhook.created", "reference.ingest", "ordered")
+	requireCode(t, err, codes.PermissionDenied)
+}

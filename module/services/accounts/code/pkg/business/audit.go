@@ -555,5 +555,12 @@ func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry Audi
 		Data:             data,
 		TenantId:         entry.OrgID,
 		ActorPrincipalId: entry.ActorID,
+		// The registered contract version of this event. It is the CloudEvents
+		// attribute EVENTS.md defines as the minor within the dataschema major, so
+		// a subscriber reading the envelope — rather than digging into data — is
+		// what it has to tell a revised payload by. Leaving it unset defaults the
+		// stored event and its delivery job to 1, which would say "v1" for the
+		// saas.webhook.* types revised to v2 while the payload said otherwise.
+		SchemaVersion: uint32(entry.SchemaVersion),
 	})
 }

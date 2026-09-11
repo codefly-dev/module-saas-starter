@@ -429,3 +429,39 @@ func envelopeFromRequest(t *testing.T, request *jobsv1.EnqueueJobRequest) *jobsv
 		MaxAttempts:    job.GetMaxAttempts(),
 	}
 }
+
+// TestPublishedEventCarriesTheRegisteredSchemaVersion pins the envelope against
+// the payload. The webhook administration types were revised to v2 when actor_id
+// changed meaning under a name that cannot change, and the envelope's
+// schema_version is the CloudEvents attribute a subscriber is meant to read to
+// tell the two contracts apart. Leaving it unset defaults the stored event and
+// its delivery job to 1 while the payload says 2 — two fields of the same name
+// disagreeing in one delivery, and the durable one is the wrong one.
+func TestPublishedEventCarriesTheRegisteredSchemaVersion(t *testing.T) {
+	store := &teeStore{}
+	transport, queue := auditEventSubscriber()
+	emitter, err := NewDurableAuditEmitter(store, store, WithDomainEventTransport(transport))
+	if err != nil {
+		t.Fatalf("NewDurableAuditEmitter: %v", err)
+	}
+
+	def, ok := LookupAuditEvent(EventWebhookCreated)
+	if !ok {
+		t.Fatalf("%s is not registered", EventWebhookCreated)
+	}
+	if def.Version < 2 {
+		t.Fatalf("expected the revised webhook administration contract, got v%d", def.Version)
+	}
+
+	entry := orgAuditEntry()
+	entry.EventType = EventWebhookCreated
+	emitter.Emit(t.Context(), entry)
+
+	leased := publishedEvents(t, transport, queue)
+	if len(leased) != 1 {
+		t.Fatalf("published domain events = %d, want 1", len(leased))
+	}
+	if got := leased[0].Envelope.GetSchemaVersion(); got != uint32(def.Version) {
+		t.Fatalf("envelope schema_version = %d, want the registered %d", got, def.Version)
+	}
+}

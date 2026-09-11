@@ -47,7 +47,7 @@ func (r *PostgresWebhookRelay) Deliver(
 	tx pgx.Tx,
 	e *eventsv1.EventEnvelope,
 	subscription events.Subscription,
-) (bool, error) {
+) (WebhookDeliveryOutcome, error) {
 	delivery, body, err := business.NewDomainEventWebhookDelivery(
 		e.GetId(),
 		e.GetType(),
@@ -56,11 +56,11 @@ func (r *PostgresWebhookRelay) Deliver(
 		e.GetData(),
 	)
 	if err != nil {
-		return false, err
+		return WebhookDelivered, err
 	}
 	request, err := business.NewOutboundWebhookJobRequest(subscription.OrgID, delivery, body)
 	if err != nil {
-		return false, err
+		return WebhookDelivered, err
 	}
 	// Both writes go inside a savepoint of their own. The endpoint can be deleted
 	// between the scan that resolved this subscription and this insert, and the
@@ -70,23 +70,27 @@ func (r *PostgresWebhookRelay) Deliver(
 	// event down with it.
 	sp, err := tx.Begin(ctx)
 	if err != nil {
-		return false, fmt.Errorf("webhooks: open delivery savepoint: %w", err)
+		return WebhookDelivered, fmt.Errorf("webhooks: open delivery savepoint: %w", err)
 	}
 	//nolint:staticcheck // the string key is the shared ctx-tx contract WithOrgTx defines
 	spCtx := context.WithValue(ctx, "tx", sp)
 	if err := r.deliverOn(spCtx, sp, delivery, request); err != nil {
 		if rbErr := sp.Rollback(ctx); rbErr != nil {
-			return false, fmt.Errorf("webhooks: roll back delivery: %w", rbErr)
+			return WebhookDelivered, fmt.Errorf("webhooks: roll back delivery: %w", rbErr)
 		}
-		// The endpoint was deleted while this event was being fanned out, or it
-		// already has history for this event. Neither is a transport fault and
-		// neither leaves anything to deliver, so the rest of the fan-out proceeds.
-		if errors.Is(err, business.ErrWebhookDeliveryExists) || isForeignKeyViolation(err) {
-			return false, nil
+		// Neither is a transport fault and neither leaves anything to deliver, so
+		// the rest of the fan-out proceeds — but they are reported apart, because
+		// a deduplicated replay and a vanished endpoint mean opposite things to
+		// whoever is reading the relay's output.
+		if errors.Is(err, business.ErrWebhookDeliveryExists) {
+			return WebhookAlreadyDelivered, nil
 		}
-		return false, err
+		if isForeignKeyViolation(err) {
+			return WebhookEndpointGone, nil
+		}
+		return WebhookDelivered, err
 	}
-	return true, sp.Commit(ctx)
+	return WebhookDelivered, sp.Commit(ctx)
 }
 
 func (r *PostgresWebhookRelay) deliverOn(

@@ -85,6 +85,22 @@ func UnorderedPublishedTypes() []string {
 	return out
 }
 
+// UnorderedPublishedTypesInNamespace is UnorderedPublishedTypes confined to one
+// namespace. A subscription pattern is either an exact type or a single trailing
+// ".*", so every type it can match shares its leading segment — scanning the rest
+// can only ever fail to match. The distinction matters because the platform
+// namespace alone contributes one unordered type per registered audit event, and
+// that set grows with the registry.
+func UnorderedPublishedTypesInNamespace(namespace string) []string {
+	var out []string
+	for _, e := range published {
+		if e.Partition == "" && Namespace(e.Type) == namespace {
+			out = append(out, e.Type)
+		}
+	}
+	return out
+}
+
 // ResolvePartition substitutes one envelope's scope fields into the partition
 // template a published event declares ("{tenant_id}", "{tenant_id}/{boundary_id}").
 // An empty template is a type that declares no ordering domain and resolves to
