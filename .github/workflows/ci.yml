@@ -8,6 +8,12 @@ on:
     tags: ["v*", "module-package/v*"]
   pull_request:
     branches: [main]
+  # The merge queue builds each entry as `main + the PR` and reports the
+  # required checks from THAT ref, which is the guarantee "require branches to
+  # be up to date" was buying by making every author rebase by hand. Every
+  # context the ruleset requires must therefore also run here, or a queued PR
+  # waits forever on a check that never reports and is dropped from the queue.
+  merge_group:
   workflow_dispatch:
 
 permissions:
@@ -15,7 +21,10 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseding a pull request's run is free; superseding a merge-queue entry,
+  # a main push or a release tag is not. A cancelled merge_group run never
+  # reports its required checks, which stalls the queue and evicts the entry.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   base-integrity:
@@ -324,11 +333,13 @@ jobs:
         id: plan
         shell: bash
         env:
-          CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
-          # Pushes to main and release tags verify the full topology; PRs scope
-          # to the delta against their base. A missing/zero base (first push)
-          # also falls back to the full topology. This is the ONLY place the
+          # Pushes to main and release tags verify the full topology; PRs and
+          # merge-queue entries scope to the delta against their base — for a
+          # queue entry that base is the tip of main the entry was built on, so
+          # the delta is exactly what the merge would add. A missing/zero base
+          # (first push) also falls back to the full topology. This is the ONLY place the
           # full-vs-delta decision (and the zero-sha normalization) is made;
           # the fan-out jobs consume the `all`/`base` outputs verbatim so the
           # contract cannot drift across the four jobs.
