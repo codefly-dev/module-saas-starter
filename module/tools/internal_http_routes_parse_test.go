@@ -65,10 +65,10 @@ export async function GET(): Promise<Response> {
 	assertGated(t, scan)
 }
 
-// A gate reached through a helper cannot be attributed to a method, so the
-// route would silently stay out of internal_http_routes. Refuse rather than
-// guess.
-func TestScanRouteModuleRefusesAnUnattributableGate(t *testing.T) {
+// Verifying the caller through a shared helper is ordinary code — registration
+// does exactly that for both of its writing methods — so the check follows the
+// module's own call graph rather than demanding the call sit in the handler.
+func TestScanRouteModuleFollowsAModuleScopeHelper(t *testing.T) {
 	scan := scanRouteModule("route.ts", `
 import { isTrustedInternalCall } from "@/lib/internal-token";
 
@@ -82,9 +82,29 @@ export async function POST(request: Request): Promise<Response> {
 	}
 	return new Response(null, { status: 204 });
 }
+
+export async function GET(): Promise<Response> {
+	return Response.json({ public: true });
+}
+`)
+	assertNoProblems(t, scan)
+	assertGated(t, scan, "POST")
+}
+
+// The call graph is followed only inside the module, so a check performed
+// outside every top-level function belongs to no handler and is refused.
+func TestScanRouteModuleRefusesAGateOutsideEveryFunction(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import { isTrustedInternalCall } from "@/lib/internal-token";
+
+const trusted = isTrustedInternalCall(new Request("https://example.test"));
+
+export async function POST(): Promise<Response> {
+	return new Response(null, { status: trusted ? 204 : 401 });
+}
 `)
 	assertGated(t, scan)
-	assertProblem(t, scan, "outside an exported route handler")
+	assertProblem(t, scan, "outside any top-level function")
 }
 
 // The route a gate protects is read off the direct call, so an alias inside a
@@ -102,7 +122,52 @@ export async function POST(request: Request): Promise<Response> {
 }
 `)
 	assertGated(t, scan)
-	assertProblem(t, scan, "referenced without being called")
+	assertProblem(t, scan, "bound to another name rather than called")
+}
+
+// A route is internal because it verifies a credential, not because it verifies
+// one particular credential. Registration moved from the shared cluster-internal
+// token to a signed, solution-bound one; keyed to a single function name, the
+// check read that route as no longer internal while the binding still declared
+// it and the mesh still denied it.
+func TestScanRouteModuleRecognisesEveryCredentialCheck(t *testing.T) {
+	scan := scanRouteModule("route.ts", `
+import {
+	consumeRegistrationToken,
+	SOLUTION_REGISTRATION_HEADER,
+	verifySolutionRegistration,
+} from "@/solutions/registration-authority";
+
+async function authorize(request: Request) {
+	const claims = await verifySolutionRegistration(
+		request.headers.get(SOLUTION_REGISTRATION_HEADER),
+	);
+	if (!claims) {
+		return null;
+	}
+	return consumeRegistrationToken(claims) ? claims : null;
+}
+
+export async function POST(request: Request): Promise<Response> {
+	if (!(await authorize(request))) {
+		return Response.json({ error: "unauthorized" }, { status: 401 });
+	}
+	return Response.json({ ok: true });
+}
+
+export async function DELETE(request: Request): Promise<Response> {
+	if (!(await authorize(request))) {
+		return Response.json({ error: "unauthorized" }, { status: 401 });
+	}
+	return Response.json({ ok: true });
+}
+
+export async function GET(): Promise<Response> {
+	return Response.json({ solutions: [] });
+}
+`)
+	assertNoProblems(t, scan)
+	assertGated(t, scan, "DELETE", "POST")
 }
 
 // An import clause may rename the gate. Matching only the exported name read an
@@ -136,7 +201,7 @@ export async function POST(request: Request): Promise<Response> {
 }
 `)
 	assertGated(t, scan)
-	assertProblem(t, scan, "bound to another name outside a route handler")
+	assertProblem(t, scan, "bound to another name rather than called")
 }
 
 // `return /["']/` ends in a letter. Reading only the preceding punctuation made

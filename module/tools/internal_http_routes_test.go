@@ -44,6 +44,18 @@ const (
 	internalTokenModule = "src/lib/internal-token.ts"
 )
 
+// internalRouteGates are the checks that mark a route as carrying authority the
+// public front door does not grant, each mapped to the module that defines it.
+// There is more than one: registration moved from the shared cluster-internal
+// token to a signed, solution-bound credential, and a check keyed to a single
+// function name read that route as having stopped being internal — while the
+// binding still declared it and the mesh still denied it. What makes a route
+// internal is that it verifies a credential, not which credential it verifies.
+var internalRouteGates = map[string]string{
+	internalCallGate:             internalTokenModule,
+	"verifySolutionRegistration": "src/solutions/registration-authority.ts",
+}
+
 // nextRouteHandlerMethods is the set of exported names Next.js serves as route
 // handlers from a route module. It is deliberately wider than what
 // internal_http_routes can express: Next serves HEAD and OPTIONS, the mesh
@@ -82,8 +94,8 @@ type internalRouteKey struct {
 
 func (key internalRouteKey) String() string { return key.method + " " + key.path }
 
-// gatedRouteHandler is one exported HTTP method of one route module whose body
-// checks the cluster-internal token.
+// gatedRouteHandler is one exported HTTP method of one route module that
+// verifies a cluster-internal credential.
 type gatedRouteHandler struct {
 	key          internalRouteKey
 	file         string
@@ -111,9 +123,10 @@ func TestInternalHTTPRoutesMatchTokenGatedHandlers(t *testing.T) {
 }
 
 // TestInternalCallGateIsReachedOnlyFromRouteModules keeps the correspondence
-// above attributable. It reads the token check as belonging to the exported
-// handler whose body calls it, so a gate reached through a shared helper would
-// leave its route invisible to that check and silently undeclared.
+// above attributable. A credential check is followed through the route module's
+// own top-level functions, so the whole call graph behind a handler is visible
+// in the file being read; reaching one from another module would put that graph
+// out of view and leave the route silently undeclared.
 func TestInternalCallGateIsReachedOnlyFromRouteModules(t *testing.T) {
 	moduleDir := findModuleDir(t)
 	composed := composedServiceNames(t, moduleDir)
@@ -141,18 +154,17 @@ func TestInternalCallGateIsReachedOnlyFromRouteModules(t *testing.T) {
 				return readErr
 			}
 			code, _ := blankNonCode(string(contents))
-			if !strings.Contains(code, internalCallGate) {
-				return nil
-			}
 			relative, relErr := filepath.Rel(moduleDir, path)
 			if relErr != nil {
 				return relErr
 			}
 			slashed := filepath.ToSlash(relative)
-			if strings.HasSuffix(slashed, internalTokenModule) {
-				return nil
+			for _, gate := range sortedKeys(internalRouteGates) {
+				if !strings.Contains(code, gate) || strings.HasSuffix(slashed, internalRouteGates[gate]) {
+					continue
+				}
+				t.Errorf("%s: %s is reached outside a route module; internal_http_routes is checked against the handler that reaches it inside its own module, so a route gated here would go undeclared", slashed, gate)
 			}
-			t.Errorf("%s: %s is reached outside a route module; internal_http_routes is checked against the exported handler that calls it, so a route gated here would go undeclared", slashed, internalCallGate)
 			return nil
 		})
 		if err != nil {
@@ -171,7 +183,7 @@ func compareInternalHTTPRoutes(t *testing.T, service string, gated []gatedRouteH
 			t.Errorf("%s: %s is declared in internal_http_routes and marked %s; it is one or the other", handler.file, handler.key, internalRouteExemption)
 		case handler.exemptReason != "" || declared[handler.key]:
 		default:
-			t.Errorf("%s: %s checks the cluster-internal token, but service %q does not declare it in internal_http_routes; declare it there, or mark the handler `%s %s: <why not>`", handler.file, handler.key, service, internalRouteExemption, handler.key.method)
+			t.Errorf("%s: %s verifies a cluster-internal credential, but service %q does not declare it in internal_http_routes; declare it there, or mark the handler `%s %s: <why not>`", handler.file, handler.key, service, internalRouteExemption, handler.key.method)
 		}
 	}
 	undeclared := make([]internalRouteKey, 0, len(declared))
@@ -182,7 +194,7 @@ func compareInternalHTTPRoutes(t *testing.T, service string, gated []gatedRouteH
 	}
 	sort.Slice(undeclared, func(i, j int) bool { return undeclared[i].String() < undeclared[j].String() })
 	for _, key := range undeclared {
-		t.Errorf("service %q declares internal_http_routes %s, which no route module gates with %s; the rendered deny matches nothing", service, key, internalCallGate)
+		t.Errorf("service %q declares internal_http_routes %s, which no route module gates with any of %s; the rendered deny matches nothing", service, key, strings.Join(sortedKeys(internalRouteGates), " / "))
 	}
 }
 
@@ -268,12 +280,12 @@ func gatedRouteHandlers(t *testing.T, moduleDir, appDir string, declarable map[s
 			return pathErr
 		}
 		if dynamic {
-			t.Errorf("%s: a handler here checks the cluster-internal token, but the mesh matches literal paths and %s carries a dynamic segment", relative, routePath)
+			t.Errorf("%s: a handler here verifies a cluster-internal credential, but the mesh matches literal paths and %s carries a dynamic segment", relative, routePath)
 			return nil
 		}
 		gated, undeclarable := partitionGatedMethods(scan.gated, declarable)
 		for _, method := range undeclarable {
-			t.Errorf("%s: %s checks the cluster-internal token, but internal_http_routes admits only %s, so the route it serves cannot be denied in the mesh", relative, method, strings.Join(sortedSet(declarable), ", "))
+			t.Errorf("%s: %s verifies a cluster-internal credential, but internal_http_routes admits only %s, so the route it serves cannot be denied in the mesh", relative, method, strings.Join(sortedSet(declarable), ", "))
 		}
 		for _, method := range gated {
 			handlers = append(handlers, gatedRouteHandler{
@@ -336,35 +348,41 @@ var (
 // exported one. Resolving the binding is what makes the call attributable;
 // matching the exported name alone read an aliased gate as absent, and an
 // absent gate is a route nothing requires to be declared.
-func gateLocalNames(code string) ([]string, [][]int) {
-	names := []string{internalCallGate}
+func gateLocalNames(code string) (map[string]bool, [][]int) {
+	names := make(map[string]bool, len(internalRouteGates))
+	for gate := range internalRouteGates {
+		names[gate] = true
+	}
 	clauses := importClause.FindAllStringSubmatchIndex(code, -1)
 	spans := make([][]int, 0, len(clauses))
 	for _, clause := range clauses {
 		spans = append(spans, []int{clause[0], clause[1]})
 		for _, entry := range strings.Split(code[clause[2]:clause[3]], ",") {
 			binding := importBinding.FindStringSubmatch(strings.TrimSpace(entry))
-			if binding == nil || binding[1] != internalCallGate || binding[2] == "" {
+			if binding == nil || binding[2] == "" {
 				continue
 			}
-			names = append(names, binding[2])
+			if _, isGate := internalRouteGates[binding[1]]; isGate {
+				names[binding[2]] = true
+			}
 		}
 	}
 	return names, spans
 }
 
-func gateReferencePattern(names []string) *regexp.Regexp {
+func gateReferencePattern(names map[string]bool) *regexp.Regexp {
 	quoted := make([]string, 0, len(names))
-	for _, name := range names {
+	for _, name := range sortedSet(names) {
 		quoted = append(quoted, regexp.QuoteMeta(name))
 	}
 	return regexp.MustCompile(`\b(?:` + strings.Join(quoted, "|") + `)\b`)
 }
 
-// scanRouteModule attributes the token check to the exported handlers that
-// perform it. A reference it cannot place inside one is reported rather than
-// dropped: an unattributed gate is a route that would silently stay out of
-// internal_http_routes, which is the failure this gate exists to catch.
+// scanRouteModule attributes a route's credential check to the exported
+// handlers that perform it, following calls through the module's own top-level
+// functions. A route that verifies its caller through a shared local helper is
+// ordinary code — registration does exactly that — and refusing to follow one
+// step of indirection reported a correctly gated route as ungated.
 func scanRouteModule(file, source string) routeModuleScan {
 	code, comments := blankNonCode(source)
 	scan := routeModuleScan{gated: map[string]bool{}, exemptions: map[string]string{}}
@@ -372,26 +390,25 @@ func scanRouteModule(file, source string) routeModuleScan {
 		scan.problems = append(scan.problems, fmt.Sprintf("%s: delimiters do not balance after comments and literals are removed, so this module cannot be read reliably; the gate refuses to report it as ungated", file))
 		return scan
 	}
-	regions := routeHandlerRegions(code)
+	bodies := moduleScopeFunctions(code)
 	names, importSpans := gateLocalNames(code)
 
 	for _, reference := range gateReferencePattern(names).FindAllStringIndex(code, -1) {
 		if withinAny(importSpans, reference[0]) {
 			continue
 		}
-		methods := handlerMethodsAt(regions, reference[0])
-		called := nextSymbol(code, reference[1]) == '('
-		switch {
-		case len(methods) == 0 && !called:
-			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is bound to another name outside a route handler; the route it gates is derived from the call in the handler, so the binding hides it", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
-		case len(methods) == 0:
-			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is called outside an exported route handler; move it into the handler so the route it gates can be matched against internal_http_routes", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
-		case !called:
-			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is referenced without being called; the route it gates is derived from the direct call in the handler", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
-		default:
-			for _, method := range methods {
-				scan.gated[method] = true
-			}
+		if nextSymbol(code, reference[1]) != '(' {
+			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is bound to another name rather than called; the route it gates is derived from the call, so the binding hides it", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
+			continue
+		}
+		if !withinAny(bodySpans(bodies), reference[0]) {
+			scan.problems = append(scan.problems, fmt.Sprintf("%s:%d: %s is called outside any top-level function of this module, so no route handler can be held to it", file, lineAt(source, reference[0]), code[reference[0]:reference[1]]))
+		}
+	}
+
+	for method, backing := range exportedHandlers(code) {
+		if reachesGate(code, bodies, backing, names) {
+			scan.gated[method] = true
 		}
 	}
 
@@ -411,22 +428,72 @@ func scanRouteModule(file, source string) routeModuleScan {
 	}
 	for _, method := range sortedKeys(scan.exemptions) {
 		if !scan.gated[method] {
-			scan.problems = append(scan.problems, fmt.Sprintf("%s: %s %s exempts a handler that does not check the cluster-internal token", file, internalRouteExemption, method))
+			scan.problems = append(scan.problems, fmt.Sprintf("%s: %s %s exempts a handler that does not check a cluster-internal credential", file, internalRouteExemption, method))
 			delete(scan.exemptions, method)
 		}
 	}
 	return scan
 }
 
-// handlerRegion is the body of one function, and the HTTP methods a route
-// module serves from it. An aliased export (`export { handler as GET }`) makes
-// that more than one method.
-type handlerRegion struct {
-	methods    []string
-	start, end int
+// reachesGate reports whether a top-level function verifies a credential, either
+// itself or through another top-level function of the same module. The walk is
+// bounded to this module on purpose: crossing a module boundary is what
+// TestInternalCallGateIsReachedOnlyFromRouteModules forbids, so the closure here
+// is finite and every step of it is visible in the file being read.
+func reachesGate(code string, bodies map[string][2]int, name string, gates map[string]bool) bool {
+	visited := map[string]bool{}
+	var walk func(string) bool
+	walk = func(current string) bool {
+		if visited[current] {
+			return false
+		}
+		visited[current] = true
+		body, defined := bodies[current]
+		if !defined {
+			return false
+		}
+		text := code[body[0]:body[1]]
+		for _, called := range calledNames(text) {
+			// A declaration nested inside this body shadows the module-scope
+			// one, so the call does not reach the top-level function of that
+			// name and must not inherit its verdict.
+			if shadowsLocally(text, called) {
+				continue
+			}
+			if gates[called] || walk(called) {
+				return true
+			}
+		}
+		return false
+	}
+	return walk(name)
 }
 
-func routeHandlerRegions(code string) []handlerRegion {
+var calledName = regexp.MustCompile(`([A-Za-z_$][\w$]*)[\t\n ]*\(`)
+
+// shadowsLocally reports whether a body declares the name itself. An indented
+// declaration is by definition not the module-scope binding, and resolving a
+// call to it by name alone credited the enclosing handler with a credential
+// check performed by an entirely different function.
+func shadowsLocally(body, name string) bool {
+	declaration := regexp.MustCompile(`(?m)^[\t ]+(?:(?:async[\t ]+)?function|const|let|var)[\t ]+` + regexp.QuoteMeta(name) + `\b`)
+	return declaration.MatchString(body)
+}
+
+func calledNames(body string) []string {
+	matches := calledName.FindAllStringSubmatch(body, -1)
+	names := make([]string, 0, len(matches))
+	for _, match := range matches {
+		names = append(names, match[1])
+	}
+	return names
+}
+
+// moduleScopeFunctions maps each top-level function declaration to its body.
+// Only column-zero declarations count: a function nested inside a handler is
+// not the binding an aliased export can name, and treating it as one let it
+// shadow the real one.
+func moduleScopeFunctions(code string) map[string][2]int {
 	bodies := make(map[string][2]int)
 	for _, match := range functionDefinition.FindAllStringSubmatchIndex(code, -1) {
 		start, end := functionBody(code, match[1]-1)
@@ -434,16 +501,27 @@ func routeHandlerRegions(code string) []handlerRegion {
 			bodies[code[match[2]:match[3]]] = [2]int{start, end}
 		}
 	}
-	var regions []handlerRegion
-	for _, match := range exportedFunction.FindAllStringSubmatchIndex(code, -1) {
-		name := code[match[2]:match[3]]
-		body, defined := bodies[name]
-		if !nextRouteHandlerMethods[name] || !defined {
-			continue
-		}
-		regions = append(regions, handlerRegion{methods: []string{name}, start: body[0], end: body[1]})
+	return bodies
+}
+
+func bodySpans(bodies map[string][2]int) [][]int {
+	spans := make([][]int, 0, len(bodies))
+	for _, body := range bodies {
+		spans = append(spans, []int{body[0], body[1]})
 	}
-	aliased := make(map[string][]string)
+	return spans
+}
+
+// exportedHandlers maps each HTTP method the module serves to the top-level
+// function that backs it, covering both `export function GET` and the aliased
+// `export { handler as GET }` form.
+func exportedHandlers(code string) map[string]string {
+	handlers := make(map[string]string)
+	for _, match := range exportedFunction.FindAllStringSubmatchIndex(code, -1) {
+		if name := code[match[2]:match[3]]; nextRouteHandlerMethods[name] {
+			handlers[name] = name
+		}
+	}
 	for _, list := range exportList.FindAllStringSubmatch(code, -1) {
 		for _, entry := range strings.Split(list[1], ",") {
 			alias := exportAlias.FindStringSubmatch(strings.TrimSpace(entry))
@@ -454,28 +532,10 @@ func routeHandlerRegions(code string) []handlerRegion {
 			if local == "" {
 				local = alias[2]
 			}
-			aliased[local] = append(aliased[local], alias[2])
+			handlers[alias[2]] = local
 		}
 	}
-	for _, local := range sortedKeys(aliased) {
-		body, defined := bodies[local]
-		if !defined {
-			continue
-		}
-		sort.Strings(aliased[local])
-		regions = append(regions, handlerRegion{methods: aliased[local], start: body[0], end: body[1]})
-	}
-	return regions
-}
-
-func handlerMethodsAt(regions []handlerRegion, offset int) []string {
-	var methods []string
-	for _, region := range regions {
-		if offset >= region.start && offset < region.end {
-			methods = append(methods, region.methods...)
-		}
-	}
-	return methods
+	return handlers
 }
 
 // functionBody returns the span of the body following the parameter list that

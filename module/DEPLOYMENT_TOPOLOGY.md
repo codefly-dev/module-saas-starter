@@ -202,10 +202,21 @@ protection. Absence from `internal_http_routes` means both "not internal" and
 `TestInternalHTTPRoutesMatchTokenGatedHandlers` (`module/tools`) makes the
 correspondence a gate. It derives the served method and path of every route
 module under a service's `src/app` the way Next.js does, reads which exported
-handlers call `isTrustedInternalCall`, and requires each such pair to appear in
-that service's `internal_http_routes` and each declared pair to resolve back to
-one. It runs over the composed service set, so a consumer that omits a service
-omits its routes with it.
+handlers verify a cluster-internal credential, and requires each such pair to
+appear in that service's `internal_http_routes` and each declared pair to
+resolve back to one. It runs over the composed service set, so a consumer that
+omits a service omits its routes with it.
+
+What marks a route internal is that it verifies a credential, not which one:
+`isTrustedInternalCall` for the shared cluster-internal token, and
+`verifySolutionRegistration` for the signed, solution-bound credential
+registration requires. Keying the check to a single function name would read a
+route that changed credential as having stopped being internal, while the
+binding still declared it and the mesh still denied it. A handler may reach its
+check through the route module's own top-level functions — registration
+authorizes both of its writing methods through one shared helper — so the
+correspondence follows that call graph, bounded to the module so the whole of
+it is visible in the file being read.
 
 A gated route the author deliberately does not want mesh-denied says so in the
 route module, next to the handler:
@@ -218,10 +229,12 @@ The marker names one method, must state a reason, and is rejected on a handler
 that does not check the token or on a pair the binding also declares — a route
 is declared or exempt, never both.
 
-Because the gate attributes the token check to the exported handler that calls
-it, `isTrustedInternalCall` may be reached only from a route module:
-`TestInternalCallGateIsReachedOnlyFromRouteModules` rejects a shared helper,
-which would otherwise gate a route this check cannot see.
+Because that call graph is bounded to the route module,
+`TestInternalCallGateIsReachedOnlyFromRouteModules` requires every credential
+check to be reached from one: a check called from a module outside `src/app`
+puts the graph out of view and would gate a route this correspondence cannot
+see. Adding a new credential mechanism therefore means adding it to
+`internalRouteGates`, beside the module that defines it.
 
 
 ## Generation and validation
