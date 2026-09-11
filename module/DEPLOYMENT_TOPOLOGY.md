@@ -191,6 +191,38 @@ reachability of the public front door. What the deny adds is that a workload
 holding that credential cannot spend it against the frontend from inside the
 namespace.
 
+#### Keeping the declaration honest
+
+An authored list drifts, and it drifts open: a route that starts checking the
+cluster-internal token is simply ungated in the mesh, and a declared path whose
+route module is gone renders a policy matching nothing while reading as
+protection. Absence from `internal_http_routes` means both "not internal" and
+"forgotten", so neither direction shows up in a diff.
+
+`TestInternalHTTPRoutesMatchTokenGatedHandlers` (`module/tools`) makes the
+correspondence a gate. It derives the served method and path of every route
+module under a service's `src/app` the way Next.js does, reads which exported
+handlers call `isTrustedInternalCall`, and requires each such pair to appear in
+that service's `internal_http_routes` and each declared pair to resolve back to
+one. It runs over the composed service set, so a consumer that omits a service
+omits its routes with it.
+
+A gated route the author deliberately does not want mesh-denied says so in the
+route module, next to the handler:
+
+```ts
+// codefly:internal-http-route-exempt GET: <why this one is not mesh-denied>
+```
+
+The marker names one method, must state a reason, and is rejected on a handler
+that does not check the token or on a pair the binding also declares — a route
+is declared or exempt, never both.
+
+Because the gate attributes the token check to the exported handler that calls
+it, `isTrustedInternalCall` may be reached only from a route module:
+`TestInternalCallGateIsReachedOnlyFromRouteModules` rejects a shared helper,
+which would otherwise gate a route this check cannot see.
+
 
 ## Generation and validation
 
