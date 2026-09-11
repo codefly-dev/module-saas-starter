@@ -3,6 +3,7 @@
 import { Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Dashboard, type DashboardData } from "@/components/dashboard";
+import { useAuth } from "@/lib/auth";
 import {
 	Button,
 	DropdownMenu,
@@ -21,6 +22,7 @@ import {
 	useAuditAggregate,
 	useAuditEventTypes,
 	useAuditLog,
+	usePrincipalDirectory,
 } from "../service/queries";
 import { AuditTable } from "./audit-table";
 
@@ -33,6 +35,8 @@ export function AuditPage() {
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
 	const namespace = namespaceFilter === "all" ? undefined : namespaceFilter;
 
+	const { organizationId } = useAuth();
+
 	const { data: eventTypes } = useAuditEventTypes();
 	const { data, isLoading } = useAuditLog({
 		eventType,
@@ -40,6 +44,12 @@ export function AuditPage() {
 		namespace,
 		pageSize: 100,
 	});
+	const events = useMemo(() => data?.events ?? [], [data]);
+	const { directory: actorNames, failed: actorNamesFailed } =
+		usePrincipalDirectory(
+			organizationId ?? "",
+			events.map((e) => e.actorId),
+		);
 	const exportMutation = useExportAuditLog();
 
 	const {
@@ -222,7 +232,20 @@ export function AuditPage() {
 				id: "audit-table",
 				kind: "node",
 				span: "full",
-				node: <AuditTable events={data?.events ?? []} isLoading={isLoading} />,
+				node: (
+					<div className="space-y-2">
+						{actorNamesFailed ? (
+							<p className="text-xs text-muted-foreground">
+								Actor names could not be loaded; actors are shown by id.
+							</p>
+						) : null}
+						<AuditTable
+							events={events}
+							isLoading={isLoading}
+							actorNames={actorNames}
+						/>
+					</div>
+				),
 			},
 		],
 	};

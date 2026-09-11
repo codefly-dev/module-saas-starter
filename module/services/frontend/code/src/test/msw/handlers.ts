@@ -124,6 +124,11 @@ export const handlers = [
 		HttpResponse.json({ allowed: true }),
 	),
 
+	// ── PrincipalService ──────────────────────────────────────
+	http.post(rpc("PrincipalService", "ListPrincipals"), () =>
+		HttpResponse.json({ principals: [], nextPageToken: "" }),
+	),
+
 	// ── APIKeyService ─────────────────────────────────────────
 	http.post(rpc("APIKeyService", "ListAPIKeys"), () =>
 		HttpResponse.json({ keys: [] }),

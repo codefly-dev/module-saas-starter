@@ -25,9 +25,16 @@ import {
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { auditEventAction } from "@/features/audit/model/transforms";
+import {
+	auditEventAction,
+	formatActorType,
+	resolveActor,
+} from "@/features/audit/model/transforms";
 import type { AuditEvent } from "@/features/audit/model/types";
-import { useAuditLog } from "@/features/audit/service/queries";
+import {
+	useAuditLog,
+	usePrincipalDirectory,
+} from "@/features/audit/service/queries";
 import { useAuth } from "@/lib/auth";
 
 // Keys are registered audit event types (pkg/business/audit_registry.go), so a
@@ -67,6 +74,10 @@ export function ActivityFeed({
 	);
 
 	const events: AuditEvent[] = data?.events ?? [];
+	const { directory: actorNames } = usePrincipalDirectory(
+		resolvedOrgId,
+		events.map((e) => e.actorId),
+	);
 
 	if (!isLoading && events.length === 0) return null;
 
@@ -107,8 +118,19 @@ export function ActivityFeed({
 									<div className="flex-1 min-w-0">
 										<div className="truncate">
 											<span className="font-medium">
-												{isYou ? "You" : "Someone"}
+												{isYou
+													? "You"
+													: resolveActor(e.actorId, actorNames).label}
 											</span>{" "}
+											{e.actorType && e.actorType !== "user" ? (
+												// Only a non-human actor earns the tag: the sentence
+												// already reads as a person, and an agent's action
+												// misread as a person's is the failure worth spending
+												// the pixels on.
+												<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+													{formatActorType(e.actorType)}
+												</span>
+											) : null}{" "}
 											<span className="text-muted-foreground">
 												{humanize(e.eventType)}
 											</span>

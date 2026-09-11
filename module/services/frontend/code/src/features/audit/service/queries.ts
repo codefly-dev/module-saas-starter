@@ -7,9 +7,16 @@ import type {
 	AggregateAuditLogResponse,
 	AuditService,
 } from "@/gen/saas/accounts/v1/audit_pb";
-import { useAuditService } from "@/lib/hooks/use-api-client";
+import {
+	useAuditService,
+	usePrincipalService,
+} from "@/lib/hooks/use-api-client";
 import { toAuditEvent } from "../model/transforms";
-import type { AuditEventTypeInfo, AuditLogFilters } from "../model/types";
+import type {
+	AuditEventTypeInfo,
+	AuditLogFilters,
+	PrincipalDirectory,
+} from "../model/types";
 
 export function useAuditLog(
 	params: AuditLogFilters,
@@ -33,6 +40,62 @@ export function useAuditLog(
 			totalCount: data.totalCount,
 		}),
 	});
+}
+
+// ListPrincipals has no id filter, so a name lookup walks the org's principals
+// newest-first until every actor it was asked about is named. Pages are capped
+// at 200 server-side; the walk stops at PRINCIPAL_PAGE_LIMIT pages, so an actor
+// outside the 1000 most recently created principals stays unresolved and falls
+// back to its truncated id. In practice an audit page's actors are recent and
+// page one answers it, which is what keeps this off the dashboard's hot path.
+const PRINCIPAL_PAGE_SIZE = 200;
+const PRINCIPAL_PAGE_LIMIT = 5;
+
+const EMPTY_DIRECTORY: PrincipalDirectory = new Map();
+
+export interface PrincipalDirectoryResult {
+	directory: PrincipalDirectory;
+	// A failed walk is not an org with no names: without this the surface
+	// renders every actor as an id and gives the reader nothing to act on.
+	failed: boolean;
+}
+
+// usePrincipalDirectory names the actors in `actorIds` for the audit surfaces.
+// The directory is empty until the walk lands, because every consumer already
+// renders a fallback for an id it cannot resolve — an in-flight directory is
+// just one more unresolved actor.
+export function usePrincipalDirectory(
+	orgId: string,
+	actorIds: readonly string[],
+): PrincipalDirectoryResult {
+	const svc = usePrincipalService();
+	// Sorted and deduped so the query key is stable across renders that pass an
+	// equal-but-new array, and so it identifies the question being asked.
+	const wanted = Array.from(new Set(actorIds.filter(Boolean))).sort();
+	const { data, isError } = useQuery({
+		queryKey: ["principal-directory", orgId, wanted.join(",")],
+		queryFn: async (): Promise<PrincipalDirectory> => {
+			const directory = new Map<string, string>();
+			let pageToken = "";
+			for (let page = 0; page < PRINCIPAL_PAGE_LIMIT; page++) {
+				const res = await svc.listPrincipals({
+					orgId,
+					pageSize: PRINCIPAL_PAGE_SIZE,
+					pageToken,
+				});
+				for (const p of res.principals) {
+					directory.set(p.id, p.displayName);
+				}
+				if (!res.nextPageToken) break;
+				if (wanted.every((id) => directory.has(id))) break;
+				pageToken = res.nextPageToken;
+			}
+			return directory;
+		},
+		enabled: orgId !== "" && wanted.length > 0,
+		staleTime: 5 * 60 * 1000,
+	});
+	return { directory: data ?? EMPTY_DIRECTORY, failed: isError };
 }
 
 // auditEventTypesQuery is the single react-query descriptor for the server-owned
