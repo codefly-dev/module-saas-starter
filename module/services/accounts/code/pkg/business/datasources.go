@@ -876,12 +876,17 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 // (regardless of cursor equality), serialized behind any in-flight delivery for
 // the same source; other providers keep the full-refetch sync path. The Source
 // must belong to orgID.
-func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string) (string, error) {
+func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string) (jobID string, resultErr error) {
 	w := wool.Get(ctx).In("SyncDatasourceSource")
 	source, err := s.GetDatasourceSource(ctx, orgID, id)
 	if err != nil {
 		return "", err
 	}
+	defer func() {
+		if resultErr != nil {
+			s.emit(ctx, actorID, "user", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, map[string]any{"repo": source.Repo, "reason": "The source could not be validated or the sync could not be queued. Review the source connection error."})
+		}
+	}()
 	if s.datasourceJobs == nil {
 		return "", w.NewError("datasource connector is not configured")
 	}
@@ -900,7 +905,12 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceChangeSetSchemaVersion,
-			MaxAttempts:    datasourceDeliveryMaxAttempts,
+			// The request carries no body — the attributes name the source and
+			// the mode — but the job platform refuses a job without a content
+			// type, so declare the (empty) JSON body it would carry.
+			ContentType: "application/json",
+			Payload:     []byte("{}"),
+			MaxAttempts: datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,
 				attrOrgID:         source.OrgID,
@@ -920,6 +930,8 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			// already-terminal request.
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceSyncRequestSchemaVersion,
+			ContentType:    "application/json",
+			Payload:        []byte("{}"),
 			MaxAttempts:    datasourceSyncRequestMaxAttempts,
 			Attributes:     map[string]string{attrSourceID: source.ID},
 		}

@@ -48,11 +48,37 @@ export function datasourceClientOverTransport(
 	const client = accounts.New(transport).datasource();
 	return {
 		async listActivity(orgId, sourceId) {
-			const response = await accounts
-				.New(transport)
-				.audit()
-				.queryAuditLog({ orgId, resourceId: sourceId, pageSize: 50 });
-			return response.events.map((event) => ({
+			const audit = accounts.New(transport).audit();
+			const types = [
+				"saas.datasource.source.added",
+				"saas.datasource.source.synced",
+				"saas.datasource.source.removed",
+				"saas.datasource.change_set_compiled",
+				"saas.datasource.sync.completed",
+				"saas.datasource.sync.failed",
+			];
+			const pages = await Promise.all(
+				types.map((eventType) =>
+					audit.queryAuditLog({
+						orgId,
+						resourceId: sourceId,
+						eventType,
+						pageSize: 10,
+					}),
+				),
+			);
+			const events = [
+				...new Map(
+					pages
+						.flatMap((page) => page.events)
+						.map((event) => [event.id, event]),
+				).values(),
+			];
+			events.sort(
+				(a, b) =>
+					Number(b.createdAt?.seconds ?? 0) - Number(a.createdAt?.seconds ?? 0),
+			);
+			return events.slice(0, 50).map((event) => ({
 				id: event.id,
 				type: event.eventType,
 				actor: event.actorId,

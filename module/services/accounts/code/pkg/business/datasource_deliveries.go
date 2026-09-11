@@ -695,6 +695,8 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceChangeSetSchemaVersion,
+			ContentType:    "application/json",
+			Payload:        []byte("{}"),
 			MaxAttempts:    datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,

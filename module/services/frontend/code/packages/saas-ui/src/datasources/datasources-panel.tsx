@@ -305,7 +305,7 @@ function SourcesTable({
 						<th className={headerClass}>Paths</th>
 						<th className={headerClass}>Branch</th>
 						<th className={headerClass}>Webhook</th>
-						<th className={headerClass}>Last sync</th>
+						<th className={headerClass}>Last sync dispatch</th>
 						<th className={cn(headerClass, "text-right")}>Actions</th>
 					</tr>
 				</thead>
@@ -379,14 +379,14 @@ function SourceHistory({
 	const history = useQuery({
 		queryKey: ["source-history", orgId, source.id],
 		queryFn: () => client.listActivity!(orgId, source.id),
-		refetchInterval: 5000,
+		refetchInterval: 15000,
 	});
 	const names: Record<string, string> = {
 		"saas.datasource.source.synced": "Sync requested",
 		"saas.datasource.source.added": "Source connected",
 		"saas.datasource.change_set_compiled": "Files queued for ingestion",
 		"saas.datasource.sync.completed": "Ingestion completed",
-		"saas.datasource.sync.failed": "Ingestion attempt failed",
+		"saas.datasource.sync.failed": "Sync attempt failed",
 	};
 	return (
 		<section
@@ -410,7 +410,7 @@ function SourceHistory({
 			) : !history.data?.length ? (
 				<p>No recorded activity yet.</p>
 			) : (
-				<ol className="space-y-3">
+				<ol className="space-y-3" style={{ maxHeight: 360, overflowY: "auto" }}>
 					{history.data.map((e) => (
 						<li key={e.id} className="border-t pt-3 text-sm">
 							<div className="flex justify-between gap-3">
