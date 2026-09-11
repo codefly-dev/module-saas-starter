@@ -107,14 +107,14 @@ BEGIN
         -- from the same per-organization facts rather than from repeated
         -- correlated subqueries that could drift apart.
         --
-        -- "Eligible" is migration 130's definition, deliberately reproduced
+        -- "Eligible" is migration 133's definition, deliberately reproduced
         -- rather than approximated: role IN ('owner','admin') AND the identity
         -- is active. findIdentity admits only active identities and DeleteUser
         -- is a soft delete that leaves the membership row standing, so counting
         -- every administrative row regardless of identity status reports an
         -- organization healthy when nobody can actually sign in and administer
         -- it. That organization is precisely the backlog this inventory exists
-        -- to size. Migration 130's organization_eligible_administrators() is
+        -- to size. Migration 133's organization_eligible_administrators() is
         -- not reused here: it is SECURITY DEFINER scoped to app.current_org_id,
         -- so it answers for one tenant, and this is a cross-tenant inventory.
         SELECT

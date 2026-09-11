@@ -9,7 +9,7 @@ import (
 )
 
 // MembershipIntegrityFinding is one organization-level administrative-continuity
-// defect recorded by migration 132's scan. The two findings are mutually
+// defect recorded by migration 135's scan. The two findings are mutually
 // exclusive, so a finding is also an organization: a backlog of N rows is N
 // organizations an operator has to decide about.
 type MembershipIntegrityFinding struct {

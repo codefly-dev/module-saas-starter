@@ -107,6 +107,7 @@ var authorities = map[string]Authority{
 	"solution_registrations":  {Scope: ScopeGlobal},
 
 	// Tenant-scoped relations.
+	"execution_custody": {Scope: ScopeTenant, PolicyShape: ShapeControlPlane, Notes: "Private Vault envelopes; tenant access denied. Expiry erases ciphertext and retains immutable registration tombstones."},
 	"actor_chain_journal": {
 		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
 		Notes: "Append-only: an immutable trigger rejects updates and deletes.",

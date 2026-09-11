@@ -423,7 +423,7 @@ export function analyzeSql(sql) {
     const list = policies.get(name) ?? [];
     const admitted = new Set(
       list
-        .filter((p) => p.permissive)
+        .filter((p) => p.permissive && p.using?.trim().toLowerCase() !== "false")
         .flatMap((p) => (p.verb === "ALL" ? ["SELECT", "INSERT", "UPDATE", "DELETE"] : [p.verb])),
     );
     for (const verb of guarded.get(name) ?? []) {
@@ -437,7 +437,7 @@ export function analyzeSql(sql) {
     for (const p of list) {
       if (!p.permissive) continue;
       for (const [clause, expr] of [["USING", p.using], ["WITH CHECK", p.check]]) {
-        if (expr !== null && !SCOPING_SETTING.test(expr)) {
+        if (expr !== null && expr.trim().toLowerCase() !== "false" && !SCOPING_SETTING.test(expr)) {
           errors.push(
             `${name}: policy ${p.policy} has a ${clause} predicate that never references app.current_org_id/app.current_user_id — it may be accidentally unconditional`,
           );

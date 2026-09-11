@@ -7,6 +7,7 @@ import (
 	"crypto/sha1"
 	"encoding/base32"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -53,6 +54,10 @@ type MFAStore interface {
 	UseBackupCode(ctx context.Context, id string) error
 	DeleteBackupCodes(ctx context.Context, userID string) error
 }
+
+// ErrInvalidSecretEnvelope identifies a locally verified envelope or purpose defect,
+// rather than a failure to reach the secret service.
+var ErrInvalidSecretEnvelope = errors.New("invalid secret envelope")
 
 // SecretCipher encrypts high-value application secrets with a versioned
 // envelope. Implementations must fail closed; plaintext fallback is forbidden.

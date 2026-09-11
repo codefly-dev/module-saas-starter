@@ -1,5 +1,5 @@
 // Command membership-integrity-scan re-runs the organization
-// administrative-continuity inventory (migration 132) and prints the current
+// administrative-continuity inventory (migration 135) and prints the current
 // backlog. It repairs nothing: both findings describe a state whose only
 // resolution is an operator deciding who should hold authority, and a tool that
 // picked for them would be performing a privilege escalation.

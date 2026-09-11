@@ -13,6 +13,12 @@
           "port": 8080
         },
         {
+          "name": "custody",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 9443
+        },
+        {
           "name": "grpc",
           "api": "CODEFLY_API_GRPC",
           "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
@@ -23,6 +29,12 @@
           "api": "CODEFLY_API_REST",
           "visibility": "ENDPOINT_VISIBILITY_PRIVATE",
           "port": 8080
+        },
+        {
+          "name": "revision",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 9444
         }
       ],
       "dependencies": [
@@ -177,6 +189,16 @@
     {
       "service": "accounts",
       "endpoint": "connect",
+      "visibility": "ENDPOINT_VISIBILITY_MODULE"
+    },
+    {
+      "service": "accounts",
+      "endpoint": "custody",
+      "visibility": "ENDPOINT_VISIBILITY_MODULE"
+    },
+    {
+      "service": "accounts",
+      "endpoint": "revision",
       "visibility": "ENDPOINT_VISIBILITY_MODULE"
     },
     {
