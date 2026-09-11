@@ -4,8 +4,10 @@ import { describe, expect, it } from "vitest";
 import { AuditEventSchema } from "@/gen/saas/accounts/v1/audit_pb";
 import {
 	auditEventAction,
+	formatActorType,
 	formatAuditAction,
 	groupByDate,
+	resolveActorName,
 	toAuditEvent,
 } from "../transforms";
 import type { AuditEvent } from "../types";
@@ -47,6 +49,54 @@ describe("auditEventAction", () => {
 
 	it("passes a bare value through", () => {
 		expect(auditEventAction("login")).toBe("login");
+	});
+});
+
+describe("resolveActorName", () => {
+	const directory = new Map([
+		["a3f81c2e-0000-4000-8000-000000000001", "Ada Lovelace"],
+		["a3f81c2e-0000-4000-8000-000000000002", "deploy-bot"],
+	]);
+
+	it("renders a resolved principal by its display name", () => {
+		expect(
+			resolveActorName("a3f81c2e-0000-4000-8000-000000000001", directory),
+		).toBe("Ada Lovelace");
+	});
+
+	it("resolves a non-human principal by name too", () => {
+		expect(
+			resolveActorName("a3f81c2e-0000-4000-8000-000000000002", directory),
+		).toBe("deploy-bot");
+	});
+
+	// A revoked or cross-org principal is absent from the directory. The row
+	// must still read as an actor, so it falls back to the truncated id rather
+	// than to a blank cell.
+	it("falls back to the truncated id for an unresolved principal", () => {
+		expect(
+			resolveActorName("b7c22d10-0000-4000-8000-000000000003", directory),
+		).toBe("b7c22d10...");
+	});
+
+	it("names an actor-less row rather than rendering blank", () => {
+		expect(resolveActorName("", directory)).toBe("System");
+	});
+
+	it("falls back when the directory has not landed yet", () => {
+		expect(
+			resolveActorName("a3f81c2e-0000-4000-8000-000000000001", new Map()),
+		).toBe("a3f81c2e...");
+	});
+});
+
+describe("formatActorType", () => {
+	it("renders the underscored wire value as words", () => {
+		expect(formatActorType("api_key")).toBe("api key");
+	});
+
+	it("passes a single-word type through", () => {
+		expect(formatActorType("agent")).toBe("agent");
 	});
 });
 

@@ -1,6 +1,7 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import type { AuditEvent as ProtoAuditEvent } from "@/gen/saas/accounts/v1/audit_pb";
-import type { AuditEvent } from "./types";
+import { truncateUUID } from "@/shared/lib/utils";
+import type { AuditEvent, PrincipalDirectory } from "./types";
 
 // toAuditEvent maps a wire (protobuf-es) audit event to the pure domain model.
 // The one load-bearing conversion is `created_at`: over protobuf-es it arrives
@@ -43,6 +44,28 @@ export function formatAuditAction(action: string): string {
 export function auditEventAction(eventType: string): string {
 	const dot = eventType.indexOf(".");
 	return dot === -1 ? eventType : eventType.slice(dot + 1);
+}
+
+// resolveActorName renders an audit row's actor as a person, service, or agent
+// rather than as an opaque id. A principal that is revoked, cross-org, or past
+// the directory's page walk is absent from the map, so the fallback is the
+// truncated id: an unresolved actor must still read as *an* actor.
+export function resolveActorName(
+	actorId: string,
+	directory: PrincipalDirectory,
+): string {
+	const displayName = directory.get(actorId);
+	if (displayName) return displayName;
+	// A row with no actor id is automated work the server attributed to no
+	// principal; truncating "" would leave the cell blank.
+	return actorId ? truncateUUID(actorId) : "System";
+}
+
+// formatActorType renders the audit row's actor_type facet — one of user,
+// api_key, system, agent. It stays beside the resolved name because reading an
+// agent's action as a human's is worse than reading a uuid.
+export function formatActorType(actorType: string): string {
+	return actorType.replace(/_/g, " ");
 }
 
 export interface AuditGroup {

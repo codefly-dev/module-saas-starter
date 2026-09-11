@@ -3,6 +3,7 @@
 import { Download } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Dashboard, type DashboardData } from "@/components/dashboard";
+import { useAuth } from "@/lib/auth";
 import {
 	Button,
 	DropdownMenu,
@@ -21,6 +22,7 @@ import {
 	useAuditAggregate,
 	useAuditEventTypes,
 	useAuditLog,
+	usePrincipalDirectory,
 } from "../service/queries";
 import { AuditTable } from "./audit-table";
 
@@ -32,6 +34,9 @@ export function AuditPage() {
 	const eventType = eventTypeFilter === "all" ? undefined : eventTypeFilter;
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
 	const namespace = namespaceFilter === "all" ? undefined : namespaceFilter;
+
+	const { organizationId } = useAuth();
+	const actorNames = usePrincipalDirectory(organizationId ?? "");
 
 	const { data: eventTypes } = useAuditEventTypes();
 	const { data, isLoading } = useAuditLog({
@@ -222,7 +227,13 @@ export function AuditPage() {
 				id: "audit-table",
 				kind: "node",
 				span: "full",
-				node: <AuditTable events={data?.events ?? []} isLoading={isLoading} />,
+				node: (
+					<AuditTable
+						events={data?.events ?? []}
+						isLoading={isLoading}
+						actorNames={actorNames}
+					/>
+				),
 			},
 		],
 	};

@@ -7,9 +7,16 @@ import type {
 	AggregateAuditLogResponse,
 	AuditService,
 } from "@/gen/saas/accounts/v1/audit_pb";
-import { useAuditService } from "@/lib/hooks/use-api-client";
+import {
+	useAuditService,
+	usePrincipalService,
+} from "@/lib/hooks/use-api-client";
 import { toAuditEvent } from "../model/transforms";
-import type { AuditEventTypeInfo, AuditLogFilters } from "../model/types";
+import type {
+	AuditEventTypeInfo,
+	AuditLogFilters,
+	PrincipalDirectory,
+} from "../model/types";
 
 export function useAuditLog(
 	params: AuditLogFilters,
@@ -33,6 +40,47 @@ export function useAuditLog(
 			totalCount: data.totalCount,
 		}),
 	});
+}
+
+// ListPrincipals caps a page at 200 and returns every kind in the org — humans
+// via membership, services and agents via direct org_id — so walking the cursor
+// resolves a whole audit page's actors without a per-row query. The walk is
+// bounded rather than exhaustive: past the ceiling an actor simply stays
+// unresolved, which is the same fallback a revoked or cross-org principal gets.
+const PRINCIPAL_PAGE_SIZE = 200;
+const PRINCIPAL_PAGE_LIMIT = 5;
+
+const EMPTY_DIRECTORY: PrincipalDirectory = new Map();
+
+// usePrincipalDirectory resolves the org's principal ids to display names for
+// the audit surfaces. It returns the directory itself, empty until the walk
+// lands, because every consumer already renders a fallback for an id it cannot
+// resolve — an in-flight directory is just one more unresolved actor.
+export function usePrincipalDirectory(orgId: string): PrincipalDirectory {
+	const svc = usePrincipalService();
+	const { data } = useQuery({
+		queryKey: ["principal-directory", orgId],
+		queryFn: async (): Promise<PrincipalDirectory> => {
+			const directory = new Map<string, string>();
+			let pageToken = "";
+			for (let page = 0; page < PRINCIPAL_PAGE_LIMIT; page++) {
+				const res = await svc.listPrincipals({
+					orgId,
+					pageSize: PRINCIPAL_PAGE_SIZE,
+					pageToken,
+				});
+				for (const p of res.principals) {
+					directory.set(p.id, p.displayName);
+				}
+				if (!res.nextPageToken) break;
+				pageToken = res.nextPageToken;
+			}
+			return directory;
+		},
+		enabled: orgId !== "",
+		staleTime: 5 * 60 * 1000,
+	});
+	return data ?? EMPTY_DIRECTORY;
 }
 
 // auditEventTypesQuery is the single react-query descriptor for the server-owned

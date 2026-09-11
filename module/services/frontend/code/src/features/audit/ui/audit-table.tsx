@@ -11,17 +11,23 @@ import { useMemo } from "react";
 import { formatDate, truncateUUID } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
-import { formatAuditAction } from "../model/transforms";
-import type { AuditEvent } from "../model/types";
+import {
+	formatActorType,
+	formatAuditAction,
+	resolveActorName,
+} from "../model/transforms";
+import type { AuditEvent, PrincipalDirectory } from "../model/types";
 
 const col = createColumnHelper<AuditEvent>();
 
 export function AuditTable({
 	events,
 	isLoading,
+	actorNames,
 }: {
 	events: AuditEvent[];
 	isLoading: boolean;
+	actorNames: PrincipalDirectory;
 }) {
 	const columns = useMemo(
 		() => [
@@ -53,11 +59,28 @@ export function AuditTable({
 			}),
 			col.accessor("actorId", {
 				header: "Actor",
-				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
+				cell: (info) => {
+					const actorId = info.getValue();
+					const resolved = actorNames.has(actorId);
+					return (
+						<div className="flex flex-col gap-1">
+							<span
+								className={
+									resolved
+										? "text-foreground"
+										: "font-mono text-xs text-muted-foreground"
+								}
+							>
+								{resolveActorName(actorId, actorNames)}
+							</span>
+							{info.row.original.actorType ? (
+								<span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+									{formatActorType(info.row.original.actorType)}
+								</span>
+							) : null}
+						</div>
+					);
+				},
 			}),
 			col.accessor("resource", {
 				header: "Resource",
@@ -96,7 +119,7 @@ export function AuditTable({
 				},
 			}),
 		],
-		[],
+		[actorNames],
 	);
 
 	const table = useReactTable({

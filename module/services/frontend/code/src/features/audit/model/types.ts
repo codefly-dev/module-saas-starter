@@ -15,6 +15,11 @@ export interface AuditEvent {
 	createdAt?: string;
 }
 
+// PrincipalDirectory maps a principal id to the display name the audit
+// surfaces render for it. Built from one ListPrincipals walk per org, so a
+// table of N rows costs no lookups of its own.
+export type PrincipalDirectory = ReadonlyMap<string, string>;
+
 export interface AuditLogFilters {
 	orgId?: string;
 	eventType?: string;
