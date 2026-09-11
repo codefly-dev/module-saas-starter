@@ -69,10 +69,15 @@ func testRouteEntries() []*RouteEntry {
 	}
 }
 
+// testRegistrationKey is the harness's signing key, published so the solution
+// registration helpers can mint the credential the gateway now requires.
+var testRegistrationKey ed25519.PrivateKey
+
 func newGatewayHarness(t *testing.T) (*Gateway, *fakeUpstream, *fakeUpstream, ed25519.PrivateKey) {
 	t.Helper()
 
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	testRegistrationKey = priv
 	require.NoError(t, err)
 
 	authz := &ExtAuthz{

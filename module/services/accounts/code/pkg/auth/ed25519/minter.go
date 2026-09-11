@@ -253,10 +253,16 @@ func (m *Minter) JWKS() (string, error) {
 // registration token cannot authenticate a user.
 const ModuleRegistrationAudience = "module-registration"
 
-// moduleRegistrationTTL keeps a registration credential alive just long enough
-// for a module to finish its startup handshake. It is presented once, to one
+// SolutionRegistrationAudience is the same separation for the solution
+// credential: it authorizes registering a gateway upstream and a host-origin
+// Module-Federation remote, which is strictly more authority than federating a
+// REST prefix, so a module-registration token must not be usable for it.
+const SolutionRegistrationAudience = "solution-registration"
+
+// registrationTTL keeps a registration credential alive just long enough for a
+// registrant to finish its startup handshake. It is presented once, to one
 // endpoint, immediately after it is issued.
-const moduleRegistrationTTL = 5 * time.Minute
+const registrationTTL = 5 * time.Minute
 
 // moduleRegistrationClaims binds a module identity (`sub`) to the single
 // catalog-identity segment it may claim at the gateway. The verifier reads
@@ -279,7 +285,7 @@ func (m *Minter) MintModuleRegistration(prefix string) (string, time.Time, error
 		return "", time.Time{}, fmt.Errorf("ed25519minter: module registration prefix required")
 	}
 	now := m.now()
-	expiresAt := now.Add(moduleRegistrationTTL)
+	expiresAt := now.Add(registrationTTL)
 	jti, err := randHex(16)
 	if err != nil {
 		return "", time.Time{}, err
@@ -866,3 +872,53 @@ func GenerateKey() (ed25519.PublicKey, ed25519.PrivateKey, error) {
 
 // Compile-time assertion that Minter satisfies the interface.
 var _ auth.JWTMinter = (*Minter)(nil)
+
+// solutionRegistrationClaims binds a solution identity (`sub`) to the single
+// solution id it may register, update, or delete at the gateway and at the
+// frontend. Both verifiers read Solution, not `sub`, when enforcing the binding;
+// `sub` names the same solution in the conventional subject position.
+type solutionRegistrationClaims struct {
+	jwt.RegisteredClaims
+	Solution string `json:"solution"`
+}
+
+// MintSolutionRegistration issues the short-lived credential a solution presents
+// to register, update, or delete its gateway upstream and its frontend
+// Module-Federation remote. The caller has already authenticated the solution;
+// this signs the authorization decision so both consumers can verify it without
+// sharing a secret with every registrant.
+//
+// It is signed with the access-token key, which the gateway already holds
+// through JWKS and the frontend fetches from the same published set, and
+// separated from access tokens — and from module-registration tokens — by
+// audience.
+func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time, error) {
+	if solutionID == "" {
+		return "", time.Time{}, fmt.Errorf("ed25519minter: solution registration id required")
+	}
+	now := m.now()
+	expiresAt := now.Add(registrationTTL)
+	jti, err := randHex(16)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	claims := solutionRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    m.cfg.Issuer,
+			Subject:   "solution:" + solutionID,
+			Audience:  jwt.ClaimStrings{SolutionRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now.Add(-1 * time.Second)),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			ID:        jti,
+		},
+		Solution: solutionID,
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
+	token.Header["kid"] = m.keyID
+	signed, err := token.SignedString(m.privateKey)
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	return signed, expiresAt, nil
+}

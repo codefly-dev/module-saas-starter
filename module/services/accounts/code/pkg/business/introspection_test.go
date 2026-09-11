@@ -136,6 +136,7 @@ func TestRPCPolicyInventoryIsCompleteAndClassified(t *testing.T) {
 		"/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
 		"/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
 		"/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
+		"/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
 		"/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
 		"/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
 		"/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe",

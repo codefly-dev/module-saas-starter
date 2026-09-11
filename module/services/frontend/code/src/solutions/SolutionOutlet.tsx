@@ -20,6 +20,10 @@ import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
+import {
+	CODEFLY_KIT_VERSION,
+	CODEFLY_SAAS_SDK_VERSION,
+} from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
 // shadow or replace it: a solution remote renders against the one true instance
@@ -42,20 +46,12 @@ const SEALED_SHARE_CONFIG = {
 	requiredVersion: false,
 } as const;
 
-// The co-versioned @codefly-dev UI kit (@codefly-dev/ui + @codefly-dev/saas-ui) ships
-// lockstep with this host, so one version covers both. It MUST track the
-// packages' real version — a shared module that under-reports its version can
-// lose singleton resolution to a remote that bundles a higher one, splitting the
-// instance the dedup exists to keep single. The `kit-shared-version` test pins
-// this to the packages' actual versions so a bump can't drift it silently.
-export const CODEFLY_KIT_VERSION = "0.2.0";
-
-// @codefly-dev/saas-sdk tracks the published accounts/connect API contract, not
-// the UI kit's release cadence, so it versions independently of the kit. Its
-// shared version MUST still match the package's real version (same
-// `kit-shared-version` invariant, checked per package rather than against one
-// shared constant).
-export const CODEFLY_SAAS_SDK_VERSION = "0.2.1";
+// The kit and SDK versions this host publishes live in host-runtime.ts, where
+// the register route reads them too: registration REFUSES a remote whose
+// declared requirements they do not satisfy, so both sides have to agree on one
+// set of numbers. Re-exported here because the share config below and the
+// `kit-shared-version` test have always read them from this module.
+export { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION };
 
 // The co-versioned kit + module-UI packages, sealed into the Module-Federation
 // scope. This is the single source of truth the `kit-shared-version` test

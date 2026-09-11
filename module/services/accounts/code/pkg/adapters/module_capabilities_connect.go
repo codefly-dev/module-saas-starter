@@ -20,6 +20,10 @@ func (h *moduleCapabilitiesConnectHandler) MintModuleRegistration(ctx context.Co
 	return unary(ctx, req, h.inner.MintModuleRegistration)
 }
 
+func (h *moduleCapabilitiesConnectHandler) MintSolutionRegistration(ctx context.Context, req *connect.Request[gen.SolutionMintRegistrationRequest]) (*connect.Response[gen.SolutionMintRegistrationResponse], error) {
+	return unary(ctx, req, h.inner.MintSolutionRegistration)
+}
+
 func (h *moduleCapabilitiesConnectHandler) EnqueueJob(ctx context.Context, req *connect.Request[gen.ModuleEnqueueJobRequest]) (*connect.Response[gen.ModuleEnqueueJobResponse], error) {
 	return unary(ctx, req, h.inner.EnqueueJob)
 }

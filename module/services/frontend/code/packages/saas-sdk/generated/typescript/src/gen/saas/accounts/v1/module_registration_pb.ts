@@ -5,15 +5,15 @@
 import type { GenFile, GenMessage } from "@bufbuild/protobuf/codegenv1";
 import { fileDesc, messageDesc } from "@bufbuild/protobuf/codegenv1";
 import { file_buf_validate_validate } from "../../../buf/validate/validate_pb";
-import type { Timestamp } from "../../../google/protobuf/timestamp_pb";
-import { file_google_protobuf_timestamp } from "../../../google/protobuf/timestamp_pb";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file saas/accounts/v1/module_registration.proto.
  */
 export const file_saas_accounts_v1_module_registration: GenFile = /*@__PURE__*/
-  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEieQodTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiXwoeTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wYgZwcm90bzM", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEieQodTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiXwoeTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoABCh9Tb2x1dGlvbk1pbnRSZWdpc3RyYXRpb25SZXF1ZXN0EkEKC3NvbHV0aW9uX2lkGAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiYQogU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * ModuleMintRegistrationRequest asks for the credential a module presents to
@@ -64,4 +64,55 @@ export type ModuleMintRegistrationResponse = Message<"saas.accounts.v1.ModuleMin
  */
 export const ModuleMintRegistrationResponseSchema: GenMessage<ModuleMintRegistrationResponse> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_module_registration, 1);
+
+/**
+ * SolutionMintRegistrationRequest asks for the credential a solution presents to
+ * register — and later update or delete — its gateway upstream and its frontend
+ * Module-Federation remote. secret is the solution's own registration secret,
+ * provisioned by the composition; accounts compares it against the digest
+ * declared for `solution_id`, so the credential for one solution never yields a
+ * token for another.
+ *
+ * @generated from message saas.accounts.v1.SolutionMintRegistrationRequest
+ */
+export type SolutionMintRegistrationRequest = Message<"saas.accounts.v1.SolutionMintRegistrationRequest"> & {
+  /**
+   * @generated from field: string solution_id = 1;
+   */
+  solutionId: string;
+
+  /**
+   * @generated from field: string secret = 2;
+   */
+  secret: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SolutionMintRegistrationRequest.
+ * Use `create(SolutionMintRegistrationRequestSchema)` to create a new message.
+ */
+export const SolutionMintRegistrationRequestSchema: GenMessage<SolutionMintRegistrationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_registration, 2);
+
+/**
+ * @generated from message saas.accounts.v1.SolutionMintRegistrationResponse
+ */
+export type SolutionMintRegistrationResponse = Message<"saas.accounts.v1.SolutionMintRegistrationResponse"> & {
+  /**
+   * @generated from field: string token = 1;
+   */
+  token: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 2;
+   */
+  expiresAt?: Timestamp;
+};
+
+/**
+ * Describes the message saas.accounts.v1.SolutionMintRegistrationResponse.
+ * Use `create(SolutionMintRegistrationResponseSchema)` to create a new message.
+ */
+export const SolutionMintRegistrationResponseSchema: GenMessage<SolutionMintRegistrationResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_registration, 3);
 

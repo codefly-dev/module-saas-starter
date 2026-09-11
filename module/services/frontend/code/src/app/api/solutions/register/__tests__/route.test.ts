@@ -1,3 +1,5 @@
+import { generateKeyPairSync, sign } from "node:crypto";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -20,6 +22,45 @@ import {
 } from "@/solutions/registry";
 
 const TOKEN = "internal-test-token";
+const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+const KEY_ID = "test-key";
+const JWKS = JSON.stringify({
+	keys: [
+		{
+			...publicKey.export({ format: "jwk" }),
+			alg: "EdDSA",
+			use: "sig",
+			kid: KEY_ID,
+		},
+	],
+});
+
+let jtiCounter = 0;
+
+function base64url(value: object): string {
+	return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+
+/** A credential accounts would mint: EdDSA, bound to one id and one publisher. */
+function credential(solution = "audit", subject = `solution:${solution}`): string {
+	const now = Math.floor(Date.now() / 1000);
+	const head = base64url({ alg: "EdDSA", typ: "JWT", kid: KEY_ID });
+	const payload = base64url({
+		iss: "saas-starter",
+		sub: subject,
+		aud: ["solution-registration"],
+		solution,
+		iat: now,
+		exp: now + 300,
+		jti: `jti-${jtiCounter++}`,
+	});
+	const signature = sign(
+		null,
+		Buffer.from(`${head}.${payload}`, "utf8"),
+		privateKey,
+	).toString("base64url");
+	return `${head}.${payload}.${signature}`;
+}
 const GATEWAY = "http://gateway.internal:8080";
 
 // A stand-in for the durable registry behind the gateway: enough of the wire
@@ -35,6 +76,9 @@ function fakeGateway() {
 		});
 	return vi.fn(async (input: string | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
+		if (url.pathname === "/v1/auth/.well-known/jwks.json") {
+			return new Response(JWKS, { status: 200 });
+		}
 		if (url.pathname === "/solutions/_frontend") {
 			const body = JSON.parse(String(init?.body ?? "{}"));
 			stored.set(body.id, body.manifest);
@@ -58,6 +102,22 @@ function fakeGateway() {
 			});
 		}
 		return respond({ error: "unexpected" }, 500);
+	});
+}
+
+/**
+ * A fetch stub that answers the JWKS lookup normally and drives every registry
+ * call to one outcome. The credential check and the registry write share a
+ * fetch, so a stub that only models the registry refuses the credential first
+ * and the test would pass for the wrong reason.
+ */
+function registryAnswering(response?: Response, onRegistry?: () => never) {
+	return vi.fn(async (input: string | URL) => {
+		if (new URL(String(input)).pathname === "/v1/auth/.well-known/jwks.json") {
+			return new Response(JWKS, { status: 200 });
+		}
+		if (onRegistry) onRegistry();
+		return response!.clone();
 	});
 }
 
@@ -87,6 +147,11 @@ function postRequest(body: unknown, token?: string): Request {
 	};
 	if (token !== undefined) {
 		headers["x-codefly-internal-token"] = token;
+		const id =
+			typeof body === "object" && body !== null
+				? String((body as { id?: unknown }).id ?? "audit")
+				: "audit";
+		headers["x-codefly-solution-registration"] = credential(id);
 	}
 	return new Request("http://frontend/api/solutions/register", {
 		method: "POST",
@@ -98,6 +163,9 @@ function postRequest(body: unknown, token?: string): Request {
 describe("solutions register route auth", () => {
 	beforeEach(() => {
 		resetRegistryCache();
+		const g = globalThis as Record<string, unknown>;
+		g.__solutionRegistrationJwks = undefined;
+		g.__solutionRegistrationJtis = undefined;
 		getEndpoints.mockReturnValue([
 			{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
 		]);
@@ -125,16 +193,36 @@ describe("solutions register route auth", () => {
 		expect(res.status).toBe(401);
 	});
 
-	it("rejects a POST with the wrong internal token", async () => {
+	it("refuses a POST carrying the cluster-internal token but no credential", async () => {
+		// The shared token attests to no particular publisher, which is why it is
+		// no longer sufficient here: it is exactly what let any holder claim any id.
 		getWorkspaceSecret.mockReturnValue(TOKEN);
-		const res = await POST(postRequest(manifestBody(), "not-the-token"));
+		const res = await POST(
+			new Request("http://frontend/api/solutions/register", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-codefly-internal-token": TOKEN,
+				},
+				body: JSON.stringify(manifestBody()),
+			}),
+		);
 		expect(res.status).toBe(401);
 	});
 
-	it("fails closed when no internal secret is configured", async () => {
-		getWorkspaceSecret.mockReturnValue(undefined);
-		const res = await POST(postRequest(manifestBody(), TOKEN));
-		expect(res.status).toBe(401);
+	it("refuses a POST whose credential names another solution", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		const res = await POST(
+			new Request("http://frontend/api/solutions/register", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					"x-codefly-solution-registration": credential("example-other"),
+				},
+				body: JSON.stringify(manifestBody()),
+			}),
+		);
+		expect(res.status).toBe(403);
 	});
 
 	it("accepts a POST with the correct internal token", async () => {
@@ -153,19 +241,13 @@ describe("solutions register route auth", () => {
 
 	it("relays a registry conflict rather than reporting success", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response("conflict", { status: 409 })),
-		);
+		vi.stubGlobal("fetch", registryAnswering(new Response("conflict", { status: 409 })));
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(409);
 	});
 
 	it("relays a foreign-publisher refusal", async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async () => new Response("forbidden", { status: 403 })),
-		);
+		vi.stubGlobal("fetch", registryAnswering(new Response("forbidden", { status: 403 })));
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(403);
 	});
 
@@ -173,7 +255,7 @@ describe("solutions register route auth", () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () => {
+			registryAnswering(undefined, () => {
 				throw new Error("gateway unreachable");
 			}),
 		);

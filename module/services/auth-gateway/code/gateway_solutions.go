@@ -63,10 +63,14 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	}
 	rest := strings.TrimPrefix(r.URL.Path, solutionPrefix)
 
-	// Internal registration and registry reads. These mutate or expose the
-	// proxy's routing state, so they are authenticated with the
-	// cluster-internal token rather than trusting network placement alone.
+	// Registration and registry reads mutate or expose the proxy's routing state
+	// and decide what the host loads as an in-origin remote, so they are
+	// authenticated with the registrant's own signed, solution-bound credential
+	// rather than with network placement or a secret the whole mesh shares.
 	switch rest {
+	case solutionRegistrationTokenSegment:
+		g.handleSolutionRegistrationToken(w, r)
+		return true
 	case solutionRegisterSegment:
 		g.handleSolutionRegister(w, r)
 		return true
@@ -263,7 +267,8 @@ func (g *Gateway) decodeSolutionRegistration(w http.ResponseWriter, r *http.Requ
 	// establish a trusted origin — so an unauthenticated edge caller cannot
 	// register an attacker-controlled upstream and harvest forwarded bearers.
 	// acceptsInternalToken fails closed on an empty/unset credential.
-	if !g.acceptsSolutionRegistrationCredential(r) {
+	claims, authorized := g.acceptsSolutionRegistrationCredential(r)
+	if !authorized {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return nil, false
 	}
@@ -276,13 +281,16 @@ func (g *Gateway) decodeSolutionRegistration(w http.ResponseWriter, r *http.Requ
 		httpError(w, http.StatusBadRequest, "missing id")
 		return nil, false
 	}
-	// Publisher defaults to the solution id. Registration is authenticated by
-	// the shared cluster-internal token, which attests to no particular
-	// publisher, so this binding is first-claim-wins on the id rather than a
-	// verified identity; A13 (#540) replaces the default with one.
-	if body.Publisher == "" {
-		body.Publisher = body.ID
+	// The credential names the one id it may act on, so a holder of Example
+	// Solution A's credential cannot write B's record whatever the body says.
+	if claims.Solution != body.ID {
+		httpError(w, http.StatusForbidden, "solution not authorized for this identity")
+		return nil, false
 	}
+	// The publisher is the VERIFIED subject, never a caller-supplied field: that
+	// is what turns the registry's cross-publisher refusal from a first-claim
+	// convention into an owner-bound guarantee.
+	body.Publisher = claims.Subject
 	return body, true
 }
 
@@ -291,8 +299,26 @@ func (g *Gateway) decodeSolutionRegistration(w http.ResponseWriter, r *http.Requ
 // 256 KiB is far above any of those and matches what the registry accepts.
 const maxSolutionRegistrationBytes = 256 << 10
 
-func (g *Gateway) acceptsSolutionRegistrationCredential(r *http.Request) bool {
-	return g.authz != nil && g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token"))
+// acceptsSolutionRegistrationCredential verifies the presented registration
+// credential and burns its single use, returning the claims it proved. The
+// shared cluster-internal token is deliberately NOT accepted: it attests to no
+// particular publisher, which is what left the registry's publisher binding
+// first-claim-wins on the id rather than owner-bound.
+func (g *Gateway) acceptsSolutionRegistrationCredential(
+	r *http.Request,
+) (*solutionRegistrationClaims, bool) {
+	claims, ok := g.authz.verifySolutionRegistration(
+		r.Context(), r.Header.Get(solutionRegistrationHeader))
+	if !ok {
+		return nil, false
+	}
+	// A credential is fetched per attempt and presented once. Burning the jti
+	// stops a copy captured in transit or in a log from re-pointing a route
+	// inside its remaining lifetime.
+	if !g.registrationReplay.consume(claims.ID, claims.ExpiresAt.Time) {
+		return nil, false
+	}
+	return claims, true
 }
 
 // handleSolutionRegister serves the backend half: POST registers or renews the
@@ -317,7 +343,7 @@ func (g *Gateway) handleSolutionRegister(w http.ResponseWriter, r *http.Request)
 	// from inside the mesh). Loopback is deliberately allowed — local
 	// `codefly run` solutions self-register loopback upstreams, and a deployed
 	// upstream is a cluster DNS name, never link-local.
-	if isForbiddenUpstreamHost(upstream.Hostname()) {
+	if isDisallowedRegisteredUpstreamHost(upstream.Hostname()) {
 		httpError(w, http.StatusBadRequest, "forbidden upstream host")
 		return
 	}
@@ -410,13 +436,18 @@ func (g *Gateway) solutionExpectedRevision(body *solutionRegistrationBody) *int6
 // together: a solution is removed as a unit, so there is no window where the
 // page survives its backend or the other way round.
 func (g *Gateway) handleSolutionDeregister(w http.ResponseWriter, r *http.Request) {
-	if !g.acceptsSolutionRegistrationCredential(r) {
+	claims, authorized := g.acceptsSolutionRegistrationCredential(r)
+	if !authorized {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.URL.Query().Get("id")
 	if !solutionIDPattern.MatchString(id) {
 		httpError(w, http.StatusBadRequest, "missing id")
+		return
+	}
+	if claims.Solution != id {
+		httpError(w, http.StatusForbidden, "solution not authorized for this identity")
 		return
 	}
 	record, err := g.solutions.remove(r.Context(), id)
@@ -461,7 +492,7 @@ func (g *Gateway) handleSolutionRegistrySnapshot(w http.ResponseWriter, r *http.
 		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if !g.acceptsSolutionRegistrationCredential(r) {
+	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
 		httpError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}

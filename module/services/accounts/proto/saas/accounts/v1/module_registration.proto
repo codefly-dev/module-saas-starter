@@ -5,13 +5,20 @@ package saas.accounts.v1;
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-// Module-registration credential exchange.
+// Federation registration credential exchange.
 //
 // These messages live in their own file, with deliberately minimal imports, so
 // the auth-gateway can generate the same types from the same source proto and
-// call MintModuleRegistration (declared on ModuleCapabilitiesService) over the
-// internal listener. Sharing the generated definition rather than restating the
-// wire shape is what keeps the two sides from drifting.
+// call MintModuleRegistration / MintSolutionRegistration (both declared on
+// ModuleCapabilitiesService) over the internal listener. Sharing the generated
+// definition rather than restating the wire shape is what keeps the two sides
+// from drifting.
+//
+// Two registrant kinds, one issuer. A composed module federates a REST prefix;
+// a solution additionally registers a gateway upstream and a Module-Federation
+// remote that executes in the host origin. Their credentials are declared,
+// minted, and audience-scoped separately so holding one never confers the
+// other's authority — the solution credential is the strictly larger grant.
 
 // ModuleMintRegistrationRequest asks for the credential a module presents to
 // federate its REST prefix with the gateway. secret is the module's own
@@ -31,6 +38,29 @@ message ModuleMintRegistrationRequest {
 }
 
 message ModuleMintRegistrationResponse {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// SolutionMintRegistrationRequest asks for the credential a solution presents to
+// register — and later update or delete — its gateway upstream and its frontend
+// Module-Federation remote. secret is the solution's own registration secret,
+// provisioned by the composition; accounts compares it against the digest
+// declared for `solution_id`, so the credential for one solution never yields a
+// token for another.
+message SolutionMintRegistrationRequest {
+  string solution_id = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+  }];
+  string secret = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 512
+  }];
+}
+
+message SolutionMintRegistrationResponse {
   string token = 1;
   google.protobuf.Timestamp expires_at = 2;
 }
