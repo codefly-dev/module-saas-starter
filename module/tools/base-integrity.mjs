@@ -161,6 +161,261 @@ function packageLockProjection(value) {
   );
 }
 
+// Semver for workspace→workspace ranges, FAIL CLOSED beyond it. `module/tools`
+// runs on bare node with no node_modules (the Base-manifest job installs
+// nothing), so the real `semver` package is unavailable and this is hand-rolled.
+// It must accept everything npm accepts in these edges, because a false reject
+// here hard-fails "Base manifest integrity" — a gate on every PR in the repo.
+
+// A version: "1.2.3", "v1.2.3", "1.2.3-rc.1", "1.2.3-rc.1+build".
+// Prerelease identifiers are kept so precedence can be compared properly; build
+// metadata is stripped, which is what semver says to do when comparing.
+export function parseSemver(text) {
+  if (typeof text !== "string") return null;
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(text.trim());
+  if (!match) return null;
+  const pre = match[4] === undefined
+    ? null
+    : match[4].split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+  return { triple: [Number(match[1]), Number(match[2]), Number(match[3])], pre };
+}
+
+// A comparator operand, which npm lets you write partially or with an `x`
+// placeholder: "1", "1.2", "1.2.3", "1.x", "1.2.*", "*", "". `specified` records
+// how many of major/minor/patch were actually pinned so `^`, `~` and bare
+// X-ranges can derive the bounds npm derives.
+function parseOperand(text) {
+  const trimmed = text.trim();
+  if (trimmed === "" || trimmed === "*" || /^[xX]$/.test(trimmed)) {
+    return { triple: [0, 0, 0], pre: null, specified: 0 };
+  }
+  const match = /^v?(\d+|[xX*])(?:\.(\d+|[xX*]))?(?:\.(\d+|[xX*]))?(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(trimmed);
+  if (!match) return null;
+  const parts = [match[1], match[2], match[3]];
+  const triple = [0, 0, 0];
+  let specified = 0;
+  for (let index = 0; index < 3; index += 1) {
+    const part = parts[index];
+    if (part === undefined || /^[xX*]$/.test(part)) break;
+    triple[index] = Number(part);
+    specified += 1;
+  }
+  if (specified === 0) return { triple: [0, 0, 0], pre: null, specified: 0 };
+  const pre = match[4] === undefined
+    ? null
+    : match[4].split(".").map((part) => (/^\d+$/.test(part) ? Number(part) : part));
+  return { triple, pre, specified };
+}
+
+const compareTriples = (left, right) =>
+  left[0] - right[0] || left[1] - right[1] || left[2] - right[2];
+
+// Semver 2.0 precedence: equal triples, then a version WITH a prerelease sorts
+// before one without; otherwise identifiers compare left to right, numeric
+// before alphanumeric.
+function comparePre(left, right) {
+  if (left === null && right === null) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  for (let index = 0; index < Math.max(left.length, right.length); index += 1) {
+    const a = left[index];
+    const b = right[index];
+    if (a === undefined) return -1;
+    if (b === undefined) return 1;
+    const aNumeric = typeof a === "number";
+    const bNumeric = typeof b === "number";
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+    if (a !== b) return a < b ? -1 : 1;
+  }
+  return 0;
+}
+
+const compareSemver = (left, right) =>
+  compareTriples(left.triple, right.triple) || comparePre(left.pre, right.pre);
+
+// The upper bound npm gives `^`, including its leading-zero special cases:
+// ^0.2.1 allows <0.3.0 (not <1.0.0) and ^0.0.3 allows <0.0.4, because in a 0.x
+// line every minor is potentially breaking.
+function caretUpper({ triple, specified }) {
+  const [major, minor, patch] = triple;
+  if (major !== 0) return [major + 1, 0, 0];
+  if (specified === 1) return [1, 0, 0]; // ^0 → <1.0.0
+  if (minor !== 0) return [0, minor + 1, 0];
+  if (specified === 2) return [0, 1, 0]; // ^0.0 → <0.1.0
+  return [0, 0, patch + 1];
+}
+
+// Expand one comparator into concrete bounds. Returns a list of {op, semver}
+// predicates, or null when the shape is not understood.
+function expandComparator(token) {
+  const match = /^(>=|<=|>|<|=|\^|~)?\s*(.*)$/.exec(token);
+  if (!match) return null;
+  const [, operator = "", rest] = match;
+  const operand = parseOperand(rest);
+  if (operand === null) return null;
+  const { triple, pre, specified } = operand;
+  const lower = { triple, pre };
+  if (specified === 0) return []; // `*` / `x` — no constraint at all.
+  if (operator === "^") {
+    return [
+      { op: ">=", semver: lower },
+      { op: "<", semver: { triple: caretUpper(operand), pre: null } },
+    ];
+  }
+  if (operator === "~") {
+    const upper = specified === 1 ? [triple[0] + 1, 0, 0] : [triple[0], triple[1] + 1, 0];
+    return [
+      { op: ">=", semver: lower },
+      { op: "<", semver: { triple: upper, pre: null } },
+    ];
+  }
+  if (operator === "" || operator === "=") {
+    // A fully pinned version is exact; a partial one is an X-range.
+    if (specified === 3) return [{ op: "=", semver: lower }];
+    const upper = specified === 1 ? [triple[0] + 1, 0, 0] : [triple[0], triple[1] + 1, 0];
+    return [
+      { op: ">=", semver: lower },
+      { op: "<", semver: { triple: upper, pre: null } },
+    ];
+  }
+  // Ordering comparators zero-fill a partial operand, which is what npm does.
+  return [{ op: operator, semver: lower }];
+}
+
+// npm excludes a prerelease version from a range unless some comparator in the
+// same branch pins the SAME major.minor.patch and itself carries a prerelease.
+// So 1.5.0-rc.1 does NOT satisfy ^1.0.0, but 0.3.0-rc.2 does satisfy >=0.3.0-rc.1.
+function prereleaseAllowed(target, predicates) {
+  if (target.pre === null) return true;
+  return predicates.some(
+    ({ semver }) => semver.pre !== null && compareTriples(semver.triple, target.triple) === 0,
+  );
+}
+
+export function satisfiesWorkspaceRange(range, version) {
+  const target = parseSemver(version);
+  // The caller checks the version separately and reports it as such; guard here
+  // so this stays a total function.
+  if (target === null || typeof range !== "string") return null;
+  const branches = range.split("||").map((branch) => branch.trim());
+  let anySatisfied = false;
+  for (const branch of branches) {
+    // Split on whitespace, then re-join an operator that was written detached
+    // from its operand (">= 1.2.3" is legal npm and must not be rejected).
+    const rawTokens = branch.split(/\s+/).filter(Boolean);
+    const tokens = [];
+    for (const raw of rawTokens) {
+      if (/^(>=|<=|>|<|=|\^|~)$/.test(raw)) tokens.push({ pendingOperator: raw });
+      else if (tokens.length > 0 && tokens[tokens.length - 1].pendingOperator !== undefined) {
+        tokens[tokens.length - 1] = { token: tokens[tokens.length - 1].pendingOperator + raw };
+      } else tokens.push({ token: raw });
+    }
+    if (tokens.length === 0) return null; // An empty branch ("a || ") is malformed.
+    const predicates = [];
+    for (const entry of tokens) {
+      if (entry.token === undefined) return null; // Dangling operator, no operand.
+      const expanded = expandComparator(entry.token);
+      if (expanded === null) return null; // Hyphen ranges and anything else: fail closed.
+      predicates.push(...expanded);
+    }
+    let branchSatisfied = prereleaseAllowed(target, predicates);
+    if (branchSatisfied) {
+      for (const { op, semver } of predicates) {
+        const ordering = compareSemver(target, semver);
+        const ok =
+          op === ">=" ? ordering >= 0
+          : op === ">" ? ordering > 0
+          : op === "<=" ? ordering <= 0
+          : op === "<" ? ordering < 0
+          : ordering === 0;
+        if (!ok) {
+          branchSatisfied = false;
+          break;
+        }
+      }
+    }
+    if (branchSatisfied) anySatisfied = true;
+  }
+  return anySatisfied;
+}
+
+// Every dependency edge FROM one workspace TO another must be satisfiable by
+// that workspace. npm links a sibling workspace only when the declared range
+// covers its version; when it does not, npm stops treating it as local and goes
+// to the public registry — where these packages do not exist, so `npm ci` dies
+// with E404 (and would install a stranger's package if the name were squatted).
+//
+// The metadata equality checks above cannot see this: they prove the lockfile
+// AGREES with each manifest, and a stale exact pin copied faithfully into the
+// lockfile agrees perfectly while being unsatisfiable. That is exactly how
+// `@codefly-dev/saas-ui` kept requiring `@codefly-dev/saas-sdk@0.2.0` after the
+// SDK workspace moved to 0.2.1: this gate reported "in sync" while three CI jobs
+// died on `npm ci`. Agreement is not satisfiability.
+//
+// Scope is deliberately workspace→workspace, established by reproducing each
+// case against real npm (install-links=true, `npm ci`):
+//
+//   workspace→workspace, range mismatches sibling ........ E404
+//   workspace→workspace, sibling declares no `version` ... E404
+//   workspace→workspace, range satisfied ................. linked
+//   ROOT→workspace, range mismatches workspace ........... LINKED, no error
+//   ROOT→workspace, registry even has the pinned version . LINKED (workspace wins)
+//
+// So the root manifest is NOT checked here. A root pin that drifts from its
+// workspace is not an install hazard — npm resolves the workspace by name and
+// ignores the range — and flagging it would fail every PR in the repo with an
+// E404 claim that is simply untrue. Nothing derives behavior from the root pin's
+// version either: the kit-version gate and kit-shared-version test both read
+// `packages/*/package.json`, and the module-package claim check reads only names.
+export function workspaceLinkSatisfactionErrors({ workspaces }) {
+  const versions = new Map();
+  // A workspace whose own version npm cannot match on — missing, or not semver.
+  // A sibling depending on it gets the same E404 as a mismatched range, so it
+  // must not be silently dropped from the map the way an earlier revision did.
+  const unusable = new Map();
+  for (const { label, manifest } of workspaces) {
+    if (typeof manifest?.name !== "string" || !manifest.name) continue;
+    const declared = manifest.version;
+    if (typeof declared !== "string" || parseSemver(declared) === null) {
+      unusable.set(manifest.name, { label, declared });
+      continue;
+    }
+    versions.set(manifest.name, declared);
+  }
+  const errors = [];
+  for (const { label, manifest } of workspaces) {
+    for (const field of PACKAGE_DEPENDENCY_FIELDS) {
+      for (const [name, range] of Object.entries(manifest?.[field] ?? {})) {
+        const broken = unusable.get(name);
+        if (broken !== undefined) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" points at workspace ${broken.label}, ` +
+              `whose version is ${broken.declared === undefined ? "missing" : `"${broken.declared}"`} — ` +
+              "npm cannot match a range against it and resolves the dependency from the " +
+              "public registry instead of the local workspace",
+          );
+          continue;
+        }
+        const version = versions.get(name);
+        if (version === undefined) continue; // Not a local workspace.
+        const satisfied = satisfiesWorkspaceRange(range, version);
+        if (satisfied === null) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" uses a range this gate cannot evaluate; ` +
+              "use an exact, ^, ~, x-range or comparator range so the workspace link stays checkable",
+          );
+        } else if (!satisfied) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" is not satisfied by workspace ${name}@${version}, ` +
+              "so npm ci resolves it from the public registry instead of the local workspace",
+          );
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 // package-lock.json is application-generated, but it is not unchecked. The
 // protected root package.json fixes Starter-owned scripts/dependencies and its
 // packages/* wildcard. Consumer package.json files are additive side-files.
@@ -214,6 +469,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   const packagesRoot = join(frontendCodeRoot, "packages");
   const workspaceKeys = [];
   const packageNames = new Set();
+  const workspaceManifests = [];
   if (existsSync(packagesRoot)) {
     for (const entry of readdirSync(packagesRoot, { withFileTypes: true }).sort((left, right) => left.name.localeCompare(right.name))) {
       if (!entry.isDirectory()) continue;
@@ -233,6 +489,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
         continue;
       }
       packageNames.add(manifest.name);
+      workspaceManifests.push({ label: `${key}/package.json`, manifest });
       const locked = lock.packages[key];
       if (!locked || JSON.stringify(normalizedJSON(packageLockProjection(locked))) !==
           JSON.stringify(normalizedJSON(packageLockProjection(manifest)))) {
@@ -250,6 +507,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   if (JSON.stringify(lockedWorkspaceKeys) !== JSON.stringify(workspaceKeys.sort())) {
     errors.push("frontend package-lock.json contains a missing or removed packages/* workspace");
   }
+  errors.push(...workspaceLinkSatisfactionErrors({ workspaces: workspaceManifests }));
   return errors;
 }
 

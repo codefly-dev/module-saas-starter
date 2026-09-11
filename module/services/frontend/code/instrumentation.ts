@@ -12,6 +12,18 @@ import * as Sentry from "@sentry/nextjs";
 import { configuredErrorTracking } from "./src/lib/error-tracking";
 
 export async function register() {
+	if (process.env.NEXT_RUNTIME === "nodejs") {
+		// Startup gate for the single product API path. The frontend has no
+		// direct-Accounts fallback, so a composition that resolves no
+		// auth-gateway/rest must refuse to serve rather than answer product API
+		// routes from the Next app itself. Imported here so the resolver stays out
+		// of the edge instrumentation bundle.
+		const { resolveAccountsBindings } = await import(
+			"./server/accounts-bindings.mjs"
+		);
+		resolveAccountsBindings();
+	}
+
 	const configuration = configuredErrorTracking(
 		process.env.ERROR_TRACKING_MODE,
 		process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN,

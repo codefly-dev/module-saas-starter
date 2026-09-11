@@ -37,6 +37,7 @@ const KIT_ROOT = "module/services/frontend/code/packages";
 // list covers exactly it, so a package added there cannot escape the gate.
 export const PUBLISHED_KIT_PACKAGES = [
   { name: "@codefly-dev/ui", directory: `${KIT_ROOT}/codefly-ui` },
+  { name: "@codefly-dev/saas-ui", directory: `${KIT_ROOT}/saas-ui` },
   { name: "@codefly-dev/saas-sdk", directory: `${KIT_ROOT}/saas-sdk` },
 ];
 
@@ -138,7 +139,7 @@ function check() {
       `\nFAIL: ${errors.length} package(s) would publish changed bytes under a version the ` +
         "registry already serves, which it refuses — and until it does, consumers keep " +
         "resolving the older bytes. Bump the version in the package's package.json. The kit " +
-        "is co-versioned: @codefly-dev/ui moves with @codefly/saas-ui and with " +
+        "is co-versioned: @codefly-dev/ui moves with @codefly-dev/saas-ui and with " +
         "CODEFLY_KIT_VERSION in src/solutions/SolutionOutlet.tsx, which the " +
         "kit-shared-version test pins to both.",
     );
