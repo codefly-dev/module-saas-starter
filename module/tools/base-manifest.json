@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2351,
+  "fileCount": 2352,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "9663fcdd6753b5823959d3280e71a30dff1708e728c92f4a74e3d377fe7aa331",
@@ -1865,9 +1865,10 @@
     "services/frontend/code/src/lib/auth-session.ts": "7fee93f2a6eeb16b643935d1ce900a3ed50d839abce9633cdfdcfd7e776cbec5",
     "services/frontend/code/src/lib/auth.tsx": "fdf3f7031afbaa3da89497f0600e1df232eb025e585f894b43560f3f58cb3060",
     "services/frontend/code/src/lib/codefly-gateway-context.ts": "f9d12bab3f2b49fe08502215f45367ccb5a787c435d24b1bde138a162f9dffaa",
+    "services/frontend/code/src/lib/connect/__tests__/token-store-notification.test.ts": "9aeaa67cc24831ec3f12ecd23c04ee7f8cca8cddebd6407f582905aef7971a68",
     "services/frontend/code/src/lib/connect/__tests__/transport.test.ts": "a7b66e68c8fbe5d322ab0db69e64b8fe005ef87f64896a21813dc5d831b377fb",
     "services/frontend/code/src/lib/connect/rate-limit-tracker.ts": "e6552b2ace4d0ec7a27bdcf1ff6c4b05c16cbcb49f434cb2406d9ea3dd8b1319",
-    "services/frontend/code/src/lib/connect/token-store.ts": "ebbbec176e8df93c605d9bc3a413ebb76fb061aae277191199baa9dd303aa0c2",
+    "services/frontend/code/src/lib/connect/token-store.ts": "97f5f27fdedd430e57cfbad5d4c2f850d58004b0e31d135f6f761a7ad42b0698",
     "services/frontend/code/src/lib/connect/transport.ts": "fb8e5610136261afafab79bfa5ad31238b389a1e5f23994a083d8ea23e4ea2b9",
     "services/frontend/code/src/lib/error-tracking.test.ts": "e7d47c63988dfb2a52515f499dd08a04004a771e5e00f7d5d97bb37b9c577eb0",
     "services/frontend/code/src/lib/error-tracking.ts": "cf6172f369ef8e6b0bb97a5c0d61732096051632e97c17c4cbdb9539cebe8bb7",
