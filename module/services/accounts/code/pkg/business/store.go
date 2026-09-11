@@ -156,6 +156,13 @@ type Store interface {
 	// this id, so a fixture declaring one can tell a reusable row from a
 	// primary key another organization has claimed.
 	OrganizationIDExists(ctx context.Context, id string) (bool, error)
+	// GetOrganizationBySlug resolves the organization holding a slug, or nil
+	// when the slug is free. The slug is globally unique (idx_organizations_slug
+	// is UNIQUE on LOWER(slug)), so this answers "would creating an
+	// organization of this name collide, and with which id" without needing to
+	// know who owns it — which is what the fixture seeder must decide before it
+	// writes anything.
+	GetOrganizationBySlug(ctx context.Context, slug string) (*gen.Organization, error)
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
 	ListOrganizationsForUser(ctx context.Context, userID string) ([]*gen.Organization, error)
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
