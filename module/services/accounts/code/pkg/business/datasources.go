@@ -920,11 +920,13 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 				if _, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id); err != nil {
 					return err
 				}
-				return s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted)
+				if err := s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted); err != nil {
+					return err
+				}
+				return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID, map[string]any{"repo": source.Repo})
 			}); err != nil {
 				return "", err
 			}
-			s.emit(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID, map[string]any{"repo": source.Repo})
 		}
 		job = &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
