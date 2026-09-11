@@ -480,6 +480,86 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 	return true
 }
 
+// moduleWorkContextPath serves the second exchange a module runs at startup: it
+// presents the same registration secret and receives the Work Context its
+// service principal calls the module-facing capability surface with.
+const moduleWorkContextPath = "/modules/_work-context"
+
+// mintModuleWorkContextMethod is accounts' Work Context mint for a composed
+// module. EXPOSURE_INTERNAL like the credential exchange above, so the generated
+// mesh policy admits this gateway's service account and denies every other.
+const mintModuleWorkContextMethod = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
+
+// handleModuleWorkContext serves POST /modules/_work-context. It returns true
+// when it has handled the request.
+//
+// It brokers for the same reason the credential exchange does: a composed module
+// cannot reach accounts' internal listener itself, and this handler makes no
+// authorization decision — accounts decides which principal the presented secret
+// is good for and which tenant it may act on.
+func (g *Gateway) handleModuleWorkContext(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != moduleWorkContextPath {
+		return false
+	}
+	if r.Method != http.MethodPost {
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return true
+	}
+
+	if g.authz == nil || !g.authz.acceptsInternalToken(r.Header.Get("X-Codefly-Internal-Token")) {
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return true
+	}
+	secret := r.Header.Get(moduleSecretHeader)
+	if secret == "" {
+		httpError(w, http.StatusUnauthorized, "unauthorized")
+		return true
+	}
+
+	var payload struct {
+		Prefix string `json:"prefix"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&payload); err != nil {
+		httpError(w, http.StatusBadRequest, "invalid json")
+		return true
+	}
+	if !validCatalogIdentity(payload.Prefix) {
+		httpError(w, http.StatusBadRequest, "invalid prefix")
+		return true
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), moduleRegistrationExchangeTimeout)
+	defer cancel()
+	issued, err := g.authz.mintModuleWorkContext(ctx, payload.Prefix, secret)
+	if err != nil {
+		switch status.Code(err) {
+		case codes.PermissionDenied:
+			httpError(w, http.StatusUnauthorized, "unauthorized")
+		case codes.InvalidArgument:
+			httpError(w, http.StatusBadRequest, "invalid request")
+		default:
+			httpError(w, http.StatusBadGateway, "work context unavailable")
+		}
+		return true
+	}
+
+	body, err := json.Marshal(map[string]string{
+		"token":       issued.GetToken(),
+		"expiresAt":   issued.GetExpiresAt().AsTime().UTC().Format(time.RFC3339),
+		"principalId": issued.GetPrincipalId(),
+		"tenant":      issued.GetTenant(),
+	})
+	if err != nil {
+		httpError(w, http.StatusBadGateway, "work context unavailable")
+		return true
+	}
+	w.Header().Set("content-type", "application/json")
+	w.Header().Set("cache-control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(body)
+	return true
+}
+
 // mintModuleRegistration runs the internal leg over the existing accounts
 // connection, presenting the gateway's own cluster-internal credential. There is
 // no vendored client stub for ModuleCapabilitiesService, so the method is
@@ -494,6 +574,21 @@ func (s *ExtAuthz) mintModuleRegistration(
 	response := &accountsv1.ModuleMintRegistrationResponse{}
 	request := &accountsv1.ModuleMintRegistrationRequest{Prefix: prefix, Secret: secret}
 	if err := s.backendConn.Invoke(ctx, mintModuleRegistrationMethod, request, response); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (s *ExtAuthz) mintModuleWorkContext(
+	ctx context.Context, prefix, secret string,
+) (*accountsv1.ModuleMintWorkContextResponse, error) {
+	if s.backendConn == nil {
+		return nil, fmt.Errorf("accounts connection not configured")
+	}
+	ctx = metadata.AppendToOutgoingContext(ctx, "x-codefly-internal-token", s.internalToken)
+	response := &accountsv1.ModuleMintWorkContextResponse{}
+	request := &accountsv1.ModuleMintWorkContextRequest{Prefix: prefix, Secret: secret}
+	if err := s.backendConn.Invoke(ctx, mintModuleWorkContextMethod, request, response); err != nil {
 		return nil, err
 	}
 	return response, nil

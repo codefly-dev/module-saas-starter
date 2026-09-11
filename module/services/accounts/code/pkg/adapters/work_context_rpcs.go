@@ -380,6 +380,82 @@ func (s *WorkContextAuthorityServer) StartInstallationTask(
 	return issuedWorkContext(token, signed), nil
 }
 
+// ModuleWorkContextAudience is the one consumer a composed module's capability
+// is good for. It keeps a module token and a delegated user context minted for
+// another service non-interchangeable even though one key signs both.
+const ModuleWorkContextAudience = "module-capabilities"
+
+// ErrWorkContextAuthorityUnconfigured distinguishes a deployment that never
+// wired the signing key from a capability this issuer refused to sign. Both
+// reach the caller as a failure to mint, but only one is the operator's to fix.
+var ErrWorkContextAuthorityUnconfigured = errors.New("Work Context authority is not configured")
+
+// StartModuleTask mints the capability a composed module presents to the
+// module-facing surface, with the module's service principal as both owner and
+// sole actor.
+//
+// It seals identity and tenant, not capabilities: what the principal may do is
+// re-read from the declared grant on every call, so a narrowed grant takes
+// effect at once instead of when the outstanding token expires. Sealing the
+// grant here too would put the same authority in two places that disagree for a
+// token lifetime, and an empty scope set denies at any consumer that reads one.
+//
+// Unlike every other mint here the authority is not resolved from the database:
+// a module principal is declared by the deployment rather than registered per
+// organization, so there is no owner of record to resolve, no standing grant to
+// intersect, and no authorization revision to seal. For the same reason no
+// actor-chain hop is journaled — that journal records hops between registered
+// principals — and the durable record is the issuance audit event instead.
+func (s *WorkContextAuthorityServer) StartModuleTask(
+	authority business.ModuleWorkContextAuthority,
+) (codefly.WorkContextToken, *basev0.WorkContextV1, error) {
+	if s == nil || s.configureErr != nil || s.signer == nil {
+		return codefly.WorkContextToken{}, nil, ErrWorkContextAuthorityUnconfigured
+	}
+	return s.signer.StartTask(codefly.StartTaskInput{
+		Audience:         ModuleWorkContextAudience,
+		TenantID:         authority.Tenant,
+		OwnerPrincipalID: authority.PrincipalID,
+		TaskID:           uuid.NewString(),
+		SessionID:        uuid.NewString(),
+		ActorChain: []*basev0.WorkActorV1{{
+			PrincipalId:   authority.PrincipalID,
+			PrincipalKind: business.PrincipalKindService,
+			DelegationId:  uuid.NewString(),
+		}},
+		TTL: codefly.WorkContextMaxTTL,
+	})
+}
+
+// VerifyModuleWorkContext authenticates a module capability token and returns
+// the principal it names with the tenant it is bound to. The signature, issuer,
+// audience, and expiry are all checked; the actor chain names the acting
+// principal, which for a module mint is the module's own service principal.
+func (s *WorkContextAuthorityServer) VerifyModuleWorkContext(encoded string) (business.ModuleCaller, error) {
+	if s == nil || s.configureErr != nil || s.verifier == nil {
+		return business.ModuleCaller{}, status.Error(codes.FailedPrecondition, "Work Context authority is not configured")
+	}
+	token, err := codefly.ParseWorkContextToken(encoded)
+	if err != nil {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
+	}
+	verified, err := s.verifier.Verify(token, codefly.WorkContextExpectations{
+		Issuer:   s.issuer,
+		Audience: ModuleWorkContextAudience,
+	})
+	if err != nil {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context is not a valid capability")
+	}
+	actors := verified.GetActorChain()
+	if len(actors) == 0 {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context names no actor")
+	}
+	return business.ModuleCaller{
+		PrincipalID: actors[len(actors)-1].GetPrincipalId(),
+		BoundOrg:    verified.GetTenantId(),
+	}, nil
+}
+
 func (s *WorkContextAuthorityServer) resolveInstallationAuthority(
 	ctx context.Context,
 	orgID string,

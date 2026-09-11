@@ -9,7 +9,7 @@ import "google/protobuf/timestamp.proto";
 //
 // These messages live in their own file, with deliberately minimal imports, so
 // the auth-gateway can generate the same types from the same source proto and
-// call MintModuleRegistration / MintSolutionRegistration (both declared on
+// call MintModuleRegistration / MintSolutionRegistration / MintModuleWorkContext (all declared on
 // ModuleCapabilitiesService) over the internal listener. Sharing the generated
 // definition rather than restating the wire shape is what keeps the two sides
 // from drifting.
@@ -63,4 +63,34 @@ message SolutionMintRegistrationRequest {
 message SolutionMintRegistrationResponse {
   string token = 1;
   google.protobuf.Timestamp expires_at = 2;
+}
+
+// ModuleMintWorkContextRequest asks for the Work Context a composed module
+// presents to the module-facing capability surface. It carries the same
+// registration secret the credential exchange above uses: a module proves which
+// module it is once, with one credential, and the principal it acts as is
+// derived from that prefix rather than configured separately.
+//
+// The tenant the capability is bound to is not requested. It is the one declared
+// for that principal by the deployment, so a module cannot name a tenant by
+// asking, and the response reports which one was sealed.
+message ModuleMintWorkContextRequest {
+  string prefix = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+  }];
+  string secret = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 512
+  }];
+}
+
+// ModuleMintWorkContextResponse carries the signed capability plus the identity
+// it asserts, so a module can attribute its own work without parsing the token.
+message ModuleMintWorkContextResponse {
+  string token = 1;
+  google.protobuf.Timestamp expires_at = 2;
+  string principal_id = 3;
+  string tenant = 4;
 }

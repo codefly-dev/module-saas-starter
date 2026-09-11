@@ -30,6 +30,7 @@ import (
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -41,11 +42,15 @@ import (
 // Namespaces bounds the event namespaces it may publish into (the leading dotted
 // segment of an event type); CrossTenant lets it act on tenants other than its
 // bound org and enqueue global (inbox-worker) jobs — the authority an inbox
-// worker needs to service every tenant's deliveries on its queue.
+// worker needs to service every tenant's deliveries on its queue. Tenant is the
+// org a single-tenant module is bound to, which its minted Work Context carries;
+// a cross-tenant module names the tenant per mint instead.
 type ModulePrincipalGrant struct {
+	Prefix      string
 	Queues      []string
 	Namespaces  []string
 	CrossTenant bool
+	Tenant      string
 }
 
 func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
@@ -72,10 +77,22 @@ func (g ModulePrincipalGrant) allowsNamespace(namespace string) bool {
 // ModulePrincipalRegistry maps a module service principal id to its grant.
 type ModulePrincipalRegistry map[string]ModulePrincipalGrant
 
+// ModulePrincipalID is the service principal a composed module acts as. It is
+// derived from the module's registration prefix — the same identity the
+// registration broker binds as the credential's `sub` — so a composition
+// declares a module's authority under the name it already federates with rather
+// than inventing an opaque id, and every side computes the same value without
+// coordinating. A UUID is what the identity columns downstream (the actor-chain
+// journal, audit actors) are typed as.
+func ModulePrincipalID(prefix string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("https://codefly.dev/module-principal/"+prefix)).String()
+}
+
 // ParseModulePrincipalRegistry decodes the deployment-provided registry of
-// module service principals. The document its JSON describes is a map of
-// principal id to {"queues": [...], "namespaces": [...], "cross_tenant": bool}.
-// An empty string yields an empty registry, which denies every caller
+// module service principals. The document its JSON describes is a map of module
+// prefix to {"queues": [...], "namespaces": [...], "cross_tenant": bool,
+// "tenant": "<org uuid>"}, indexed here by the principal id derived from that
+// prefix. An empty string yields an empty registry, which denies every caller
 // (fail-closed).
 func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 	if raw == "" {
@@ -85,13 +102,38 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		Queues      []string `json:"queues"`
 		Namespaces  []string `json:"namespaces"`
 		CrossTenant bool     `json:"cross_tenant"`
+		Tenant      string   `json:"tenant"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return nil, err
 	}
 	registry := make(ModulePrincipalRegistry, len(wire))
-	for id, grant := range wire {
-		registry[id] = ModulePrincipalGrant{Queues: grant.Queues, Namespaces: grant.Namespaces, CrossTenant: grant.CrossTenant}
+	for prefix, grant := range wire {
+		// A principal id is a valid module prefix by pattern, so an entry still
+		// keyed the way the registry used to be — by the opaque principal id —
+		// would otherwise parse into a principal no module can ever be, and every
+		// call would be denied for a reason that names the caller rather than the
+		// stale configuration.
+		if err := uuid.Validate(prefix); err == nil {
+			return nil, fmt.Errorf("module principal registry is keyed by module prefix, not principal id: %q", prefix)
+		}
+		if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
+			return nil, fmt.Errorf("module principal registry has invalid module prefix %q", prefix)
+		}
+		// The tenant is sealed into a signed capability and compared against
+		// organization ids, so a malformed one cannot be caught downstream: it
+		// signs, then silently matches no tenant and drops the org from its own
+		// audit record.
+		if err := uuid.Validate(grant.Tenant); err != nil {
+			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
+		}
+		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
+			Prefix:      prefix,
+			Queues:      grant.Queues,
+			Namespaces:  grant.Namespaces,
+			CrossTenant: grant.CrossTenant,
+			Tenant:      grant.Tenant,
+		}
 	}
 	return registry, nil
 }

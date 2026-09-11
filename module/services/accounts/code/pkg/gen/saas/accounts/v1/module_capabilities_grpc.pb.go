@@ -34,6 +34,7 @@ const (
 	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
 	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName   = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
 	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
+	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName    = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
 	ModuleCapabilitiesService_PublishEvent_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
 	ModuleCapabilitiesService_Subscribe_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
 	ModuleCapabilitiesService_Unsubscribe_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
@@ -86,6 +87,11 @@ type ModuleCapabilitiesServiceClient interface {
 	// solution's own registration secret, declared separately from the module
 	// secrets because a solution remote executes in the host origin.
 	MintSolutionRegistration(ctx context.Context, in *SolutionMintRegistrationRequest, opts ...grpc.CallOption) (*SolutionMintRegistrationResponse, error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -245,6 +251,16 @@ func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.C
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, in *ModuleMintWorkContextRequest, opts ...grpc.CallOption) (*ModuleMintWorkContextResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleMintWorkContextResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, in *ModulePublishEventRequest, opts ...grpc.CallOption) (*ModulePublishEventResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ModulePublishEventResponse)
@@ -340,6 +356,11 @@ type ModuleCapabilitiesServiceServer interface {
 	// solution's own registration secret, declared separately from the module
 	// secrets because a solution remote executes in the host origin.
 	MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -398,6 +419,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) MintModuleRegistration(conte
 }
 func (UnimplementedModuleCapabilitiesServiceServer) MintSolutionRegistration(context.Context, *SolutionMintRegistrationRequest) (*SolutionMintRegistrationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method MintSolutionRegistration not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) MintModuleWorkContext(context.Context, *ModuleMintWorkContextRequest) (*ModuleMintWorkContextResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MintModuleWorkContext not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) PublishEvent(context.Context, *ModulePublishEventRequest) (*ModulePublishEventResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PublishEvent not implemented")
@@ -663,6 +687,24 @@ func _ModuleCapabilitiesService_MintSolutionRegistration_Handler(srv interface{}
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_MintModuleWorkContext_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleMintWorkContextRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleWorkContext(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).MintModuleWorkContext(ctx, req.(*ModuleMintWorkContextRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_PublishEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ModulePublishEventRequest)
 	if err := dec(in); err != nil {
@@ -807,6 +849,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MintSolutionRegistration",
 			Handler:    _ModuleCapabilitiesService_MintSolutionRegistration_Handler,
+		},
+		{
+			MethodName: "MintModuleWorkContext",
+			Handler:    _ModuleCapabilitiesService_MintModuleWorkContext_Handler,
 		},
 		{
 			MethodName: "PublishEvent",

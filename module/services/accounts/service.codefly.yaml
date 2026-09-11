@@ -28,6 +28,7 @@ workspace-configuration-dependencies:
     - federation
     - identity
     - internal-auth
+    - module-capabilities
     - observability
     - product-analytics
     - security

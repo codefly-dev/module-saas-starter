@@ -540,3 +540,46 @@ func TestModuleRequestApproval_ResumeQueueMustBeAllowed(t *testing.T) {
 	})
 	requireCode(t, err, codes.PermissionDenied)
 }
+
+// The registry is authored under the prefix a module already federates with, and
+// indexed by the principal id derived from it, so a deployment never hand-writes
+// an opaque id and every side computes the same one.
+func TestParseModulePrincipalRegistry_IndexesByDerivedPrincipal(t *testing.T) {
+	registry, err := business.ParseModulePrincipalRegistry(
+		`{"documents":{"queues":["datasource"],"namespaces":["document"],"tenant":"` + moduleTenantA + `"}}`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	grant, registered := registry[business.ModulePrincipalID("documents")]
+	if !registered {
+		t.Fatalf("registry is not indexed by the derived principal id: %v", registry)
+	}
+	if grant.Prefix != "documents" || grant.Tenant != moduleTenantA {
+		t.Fatalf("grant = %+v, want the declared prefix and tenant", grant)
+	}
+	if business.ModulePrincipalID("documents") == business.ModulePrincipalID("billing") {
+		t.Fatal("two modules must not derive the same principal id")
+	}
+}
+
+func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) {
+	tests := map[string]string{
+		"invalid prefix": `{"Documents/v1":{"queues":["datasource"],"tenant":"` + moduleTenantA + `"}}`,
+		// The tenant is sealed into a signed capability and compared against
+		// organization ids: a malformed one signs, then matches no tenant and drops
+		// the org from its own audit record, so it is rejected where it is read.
+		"no tenant":       `{"documents":{"queues":["datasource"]}}`,
+		"non-uuid tenant": `{"documents":{"queues":["datasource"],"tenant":"acme-org"}}`,
+		// A principal id is a valid prefix by pattern, so an entry keyed the way the
+		// registry used to be would otherwise parse into a principal no module can
+		// ever be, denying every call for a reason that names the caller.
+		"keyed by principal id": `{"` + modulePrincSvc + `":{"queues":["datasource"],"cross_tenant":true,"tenant":"` + moduleTenantA + `"}}`,
+	}
+	for name, raw := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := business.ParseModulePrincipalRegistry(raw); err == nil {
+				t.Fatal("expected an unusable module principal declaration to be rejected")
+			}
+		})
+	}
+}
