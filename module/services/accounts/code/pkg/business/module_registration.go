@@ -92,6 +92,10 @@ func (s *Service) SetModuleRegistrar(minter ModuleRegistrationMinter, secrets ma
 	}
 }
 
+func (s *Service) SetModuleIdentitySecrets(secrets map[string][sha256.Size]byte) {
+	s.moduleIdentity = &registrationAuthority{secrets: secrets}
+}
+
 // SetSolutionRegistrar wires solution-registration issuance, from the separate
 // declaration that governs who may publish a host-origin remote.
 func (s *Service) SetSolutionRegistrar(minter SolutionRegistrationMinter, secrets map[string][sha256.Size]byte) {
@@ -204,14 +208,19 @@ type ModuleWorkContextAuthority struct {
 }
 
 // ModuleAuthorizeWorkContext resolves the identity a composed module may be
-// issued a Work Context for. It authenticates with the same registration secret
-// the credential exchange uses, its principal is derived from the prefix that
-// secret is bound to, and its tenant is the one the deployment declared — so a
+// issued a Work Context for. It authenticates with the identity secret,
+// its principal is derived from the prefix that secret is bound to, and its
+// tenant is the one the deployment declared — so a
 // module can never name a tenant it was not granted by asking for it.
 func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkContextAuthority, error) {
-	if s.moduleRegistrar == nil ||
+	authority := s.moduleIdentity
+	// Older compositions only provision registration secrets until the CLI floor moves.
+	if authority == nil {
+		authority = s.moduleRegistrar
+	}
+	if authority == nil ||
 		!registrationIdentityPattern.MatchString(prefix) ||
-		!s.moduleRegistrar.authorize(prefix, secret) {
+		!authority.authorize(prefix, secret) {
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	principalID := ModulePrincipalID(prefix)

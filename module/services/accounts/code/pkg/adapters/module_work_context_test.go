@@ -105,7 +105,7 @@ func mintModuleWorkContext(t *testing.T, prefix, secret string) (*gen.ModuleMint
 
 // The identity a module receives must be the one the surface then authenticates
 // it as, so the mint and the verification are asserted as one round trip.
-func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
+func TestMintModuleWorkContextFallsBackToRegistrationSecrets(t *testing.T) {
 	installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
 	installModuleWorkContextAuthority(t)
 
@@ -119,6 +119,52 @@ func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, resp.GetPrincipalId(), caller.PrincipalID)
 	require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
+}
+
+func TestModuleExchangesUseIndependentSecrets(t *testing.T) {
+	for name, identityDeclaration := range map[string]string{
+		"declared identity": "documents:" + registrationDigest("identity-secret"),
+		"missing prefix":    "billing:" + registrationDigest("identity-secret"),
+		"empty authority":   "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := installModuleWorkContextService(t,
+				"documents:"+registrationDigest("registration-secret"), documentsPrincipals)
+			secrets, err := business.ParseRegistrationSecrets(identityDeclaration)
+			require.NoError(t, err)
+			service.SetModuleIdentitySecrets(secrets)
+			installModuleWorkContextAuthority(t)
+
+			resp, err := mintModuleWorkContext(t, "documents", "registration-secret")
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.Nil(t, resp)
+			require.Zero(t, store.controlPlaneCalls)
+
+			_, err = ModuleCapabilitiesSingleton().MintModuleRegistration(context.Background(),
+				&gen.ModuleMintRegistrationRequest{Prefix: "documents", Secret: "identity-secret"})
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
+			require.Zero(t, store.controlPlaneCalls)
+
+			registration, err := ModuleCapabilitiesSingleton().MintModuleRegistration(context.Background(),
+				&gen.ModuleMintRegistrationRequest{Prefix: "documents", Secret: "registration-secret"})
+			require.NoError(t, err)
+			require.NotEmpty(t, registration.GetToken())
+
+			resp, err = mintModuleWorkContext(t, "documents", "identity-secret")
+			if _, declared := secrets["documents"]; !declared {
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+				require.Nil(t, resp)
+				require.Equal(t, 1, store.controlPlaneCalls)
+				return
+			}
+			require.NoError(t, err)
+			caller, err := WorkContextSingleton().VerifyModuleWorkContext(resp.GetToken())
+			require.NoError(t, err)
+			require.Equal(t, business.ModulePrincipalID("documents"), caller.PrincipalID)
+			require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
+			require.Equal(t, 2, store.controlPlaneCalls)
+		})
+	}
 }
 
 // The capability seals identity and tenant only. Sealing the grant as well would
@@ -211,9 +257,12 @@ func TestMintModuleWorkContextFailsClosed(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			store := installModuleWorkContextService(t, test.secrets, test.principals)
+			secrets, err := business.ParseRegistrationSecrets(test.secrets)
+			require.NoError(t, err)
+			service.SetModuleIdentitySecrets(secrets)
 			installModuleWorkContextAuthority(t)
 
-			_, err := mintModuleWorkContext(t, "documents", test.secret)
+			_, err = mintModuleWorkContext(t, "documents", test.secret)
 
 			require.Equal(t, codes.PermissionDenied, status.Code(err))
 			require.Zero(t, store.controlPlaneCalls, "a refused mint must not record an issuance")

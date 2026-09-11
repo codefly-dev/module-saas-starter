@@ -52,7 +52,7 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 
 // MintModuleWorkContext issues that Work Context. Like MintModuleRegistration it
 // takes none itself — this is where a module obtains its identity, so it
-// authenticates with the registration secret its composition provisioned and the
+// authenticates with the identity secret its composition provisioned and the
 // principal it acts as is derived from the prefix that secret is bound to.
 func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, req *gen.ModuleMintWorkContextRequest) (*gen.ModuleMintWorkContextResponse, error) {
 	if err := Validate(req); err != nil {

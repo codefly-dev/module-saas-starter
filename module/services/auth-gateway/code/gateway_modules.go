@@ -481,7 +481,7 @@ func (g *Gateway) handleModuleRegistrationToken(w http.ResponseWriter, r *http.R
 }
 
 // moduleWorkContextPath serves the second exchange a module runs at startup: it
-// presents the same registration secret and receives the Work Context its
+// presents its identity secret and receives the Work Context its
 // service principal calls the module-facing capability surface with.
 const moduleWorkContextPath = "/modules/_work-context"
 
