@@ -4,10 +4,11 @@ import (
 	"accounts/pkg/datasource/github"
 	"context"
 	"errors"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Validate with GitHub before persisting credentials or accepting an explicit sync.
