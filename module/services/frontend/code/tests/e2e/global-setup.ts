@@ -19,11 +19,18 @@
 //     instances, so two terminals can run tests in parallel without
 //     fighting over the same db.
 
+import { type Dependencies, withDependencies } from "codefly";
+// Endpoint resolution is the shared rule, not a third copy of it: see
+// src/test/codefly-endpoints. `codeflyInjectedRuntime` is true when Codefly owns
+// this process — `codefly test service frontend --suite e2e` — and has already
+// started the dependency graph. That run is the one that carries the frontend's
+// own configuration into the web server, so the gateway treats its origin as
+// verified; starting a second graph underneath it would only fight the first
+// for ports and the database.
 import {
-	type Dependencies,
-	resolveServiceAddressSync,
-	withDependencies,
-} from "codefly";
+	codeflyInjectedRuntime,
+	productOrigin,
+} from "../../src/test/codefly-endpoints";
 
 // Shared handle: globalSetup stashes it here, globalTeardown reads it.
 // Playwright runs setup/teardown in the SAME Node process so a module
@@ -31,6 +38,15 @@ import {
 let deps: Dependencies | null = null;
 
 async function globalSetup(): Promise<void> {
+	if (codeflyInjectedRuntime()) {
+		// Codefly injects the endpoints of the dependencies it started; the
+		// frontend's own address is not among them while no server is running,
+		// so the shared resolver falls through to the scoped deterministic
+		// lookup for it.
+		process.env.PLAYWRIGHT_BASE_URL = productOrigin();
+		return;
+	}
+
 	// Default: NO scope. That keeps codefly's derived ports at the
 	// deterministic defaults (frontend=21931) which matches the
 	// playwright baseURL fallback. Set CODEFLY_TEST_SCOPE=<name> in the
@@ -43,14 +59,19 @@ async function globalSetup(): Promise<void> {
 	// a test fails at "stack didn't come ready", the cause (missing
 	// binary, port conflict, migration failure) shows up in the test
 	// log instead of being swallowed by Playwright's reporter.
-	// withDependencies passes --exclude-root, so it brings up accounts +
-	// postgres/vault/redis but NOT the frontend itself —
-	// Playwright's webServer config does that in step 2. Probe the API's
-	// REST endpoint (there's no FE running yet at this point). The port is
-	// NOT hardcoded: `readyService: "accounts"` makes the SDK resolve the accounts service's
-	// REST address from codefly (`codefly get endpoints accounts --type rest`),
-	// so this works in ANY consumer workspace — the port is a workspace
-	// hash and differs between, e.g., the canonical starter and a consuming solution.
+	// withDependencies passes --exclude-root, so it brings up auth-gateway +
+	// accounts + postgres/vault/redis but NOT the frontend itself —
+	// Playwright's webServer config does that in step 2.
+	//
+	// Wait on the auth-gateway, because that is what the suite actually
+	// depends on: every product API call the browser makes is forwarded there,
+	// and its /ready answers 200 only once every routed upstream is dialable AND
+	// it has loaded the access-token verification keys. Waiting on accounts
+	// instead let the suite start against a gateway that was still keyless, which
+	// answers 503 to every authenticated request. The port is NOT hardcoded:
+	// `readyService` makes the SDK resolve the address from codefly, so this
+	// works in ANY consumer workspace — the port is a workspace hash and differs
+	// between, e.g., the canonical starter and a consuming solution.
 	deps = await withDependencies({
 		service: "frontend",
 		fixture: "dev-admin",
@@ -58,16 +79,15 @@ async function globalSetup(): Promise<void> {
 		silents: ["store"],
 		keepAlive,
 		readyTimeoutMs: 180_000,
-		readyService: "accounts",
-		readyPath: "/",
+		readyService: "auth-gateway",
+		readyPath: "/ready",
 		echo: true,
 	});
 
 	// The FE binds to its codefly-resolved http port (NOT a hardcoded one) once
 	// Playwright brings it up via webServer. Resolve the same address the
 	// webServer uses so baseURL and the running server always agree.
-	const frontendUrl = resolveServiceAddressSync("frontend", "http");
-	if (frontendUrl) process.env.PLAYWRIGHT_BASE_URL = frontendUrl;
+	process.env.PLAYWRIGHT_BASE_URL = productOrigin();
 }
 
 export default globalSetup;

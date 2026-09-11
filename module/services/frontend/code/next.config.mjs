@@ -1,7 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { withSentryConfig } from "@sentry/nextjs";
 import { getCurrentFixture } from "codefly";
-import { resolveAccountsBindings } from "./server/accounts-bindings.mjs";
 import {
 	baselineSecurityHeaders,
 	resolveCspInputs,
@@ -81,31 +80,20 @@ const nextConfig = {
 		return [{ source: "/:path*", headers: baselineSecurityHeaders() }];
 	},
 	// The frontend is the module's public product entry. The browser only talks
-	// to this origin; Next proxies API traffic to auth-gateway/rest, which
+	// to this origin; the server forwards API traffic to auth-gateway/rest, which
 	// enforces the generated route/auth policy before Accounts. This keeps auth
 	// cookies first-party while preserving the backend trust boundary.
 	//
-	// Complete Codefly runs resolve auth-gateway through the SDK. Isolated
-	// Playwright runs may provide direct API_* fallbacks because they
-	// intentionally do not start the module graph.
-	async rewrites() {
-		const { rest: apiRest, connect: apiConnect } = resolveAccountsBindings();
-		const rules = [];
-		if (apiRest) {
-			rules.push({ source: "/v1/:path*", destination: `${apiRest}/v1/:path*` });
-		}
-		if (apiConnect) {
-			// Connect-ES service paths, e.g. /saas.accounts.v1.UserService/ListUsers.
-			// Keep the generated service and method as separate path segments. A
-			// single `:path*` after the package dot does not match the following `/`
-			// under Next 16, so the request falls through to the frontend as a 404.
-			rules.push({
-				source: "/saas.accounts.v1.:service/:method",
-				destination: `${apiConnect}/saas.accounts.v1.:service/:method`,
-			});
-		}
-		return rules;
-	},
+	// That forwarding deliberately does NOT live here. Next compiles `rewrites`
+	// destinations into the build manifest, and a container image is built
+	// outside the module graph, so a rewrite would freeze whatever address the
+	// BUILD could see — nothing at all in an image build, or the build host's
+	// gateway when built next to a running graph. Either way the running server
+	// never re-checks it, so a resolvable-gateway probe reports ready while the
+	// only path to the product API is dead or pointed at the wrong host.
+	// `src/proxy.ts` rewrites /v1/* and /saas.accounts.v1.* to the gateway the
+	// RUNNING composition resolves, on the request, and fails the request closed
+	// when it resolves none. Do not reintroduce a product API rewrite here.
 };
 
 // Sentry build-time plugin:

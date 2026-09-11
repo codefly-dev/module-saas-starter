@@ -706,10 +706,26 @@ Frontend browser configuration (`NEXT_PUBLIC_*` values are baked into the client
 | `NEXT_PUBLIC_ABUSE_PROTECTION_MODE` | Explicit `disabled` or `turnstile` widget mode          |
 | `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Public Turnstile widget key                              |
 
-Accounts REST and Connect browser calls are relative and same-origin. The
-server-only `API_REST_INTERNAL` and `API_CONNECT_INTERNAL` Codefly bindings are
-resolved by Next rewrites and server route handlers; backend origins are never
-published to browser code.
+Accounts REST and Connect browser calls are relative and same-origin. The server
+forwards them to `auth-gateway/rest` — the single product API path — and to
+nothing else; backend origins are never published to browser code. `src/proxy.ts`
+forwards the two product API namespaces onto that endpoint and server route
+handlers dial it directly, both resolving it through the Codefly SDK on the
+request, so a frontend composed with its `auth-gateway` dependency needs no
+configuration. Nothing is baked into the build: an image carries no product API
+address at all, so a server forwards to the gateway its own composition
+injected — never one a build host happened to see. A frontend started outside the
+module graph (the browser suite's own server) names the same gateway explicitly
+with `PRODUCT_GATEWAY_INTERNAL`; a server that resolves no gateway refuses to
+start, and fails any product API request closed rather than answering it from
+the Next app.
+
+`API_REST_INTERNAL` and `API_CONNECT_INTERNAL` are retired. They pointed the
+server straight at Accounts, which bypassed the gateway's route allow-list, rate
+limiter, and identity-header discipline. Setting either one now fails startup
+with a migration error: remove it, and either compose the frontend with its
+`auth-gateway` dependency or set `PRODUCT_GATEWAY_INTERNAL` to the gateway's REST
+address.
 
 ---
 

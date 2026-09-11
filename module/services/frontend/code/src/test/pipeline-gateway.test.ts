@@ -49,6 +49,17 @@ function runtime(
 	};
 }
 
+/** A harness that started the graph itself: Codefly owns no execution context. */
+function selfStartedRuntime(
+	overrides: Partial<PipelineRuntimeReader> = {},
+): PipelineRuntimeReader {
+	return runtime({
+		currentModule: () => "",
+		currentService: () => "",
+		...overrides,
+	});
+}
+
 describe("codeflyInjectedRuntime", () => {
 	it("recognizes a Codefly-owned test before endpoints are injected", () => {
 		expect(codeflyInjectedRuntime(runtime({ endpoints: () => [] }))).toBe(true);
@@ -101,16 +112,19 @@ describe("productOrigin", () => {
 		expect(productOrigin(withNoise)).toBe(ORIGIN);
 	});
 
-	it("falls back to SDK resolution when nothing is injected", () => {
+	it("falls back to SDK resolution when the harness started the graph itself", () => {
 		expect(
 			productOrigin(
-				runtime({ endpoints: () => [], resolveAddress: () => ORIGIN }),
+				selfStartedRuntime({
+					endpoints: () => [],
+					resolveAddress: () => ORIGIN,
+				}),
 			),
 		).toBe(ORIGIN);
 	});
 
 	it("throws when the origin can be neither injected nor resolved", () => {
-		expect(() => productOrigin(runtime())).toThrow(
+		expect(() => productOrigin(selfStartedRuntime())).toThrow(
 			/did not resolve frontend\/http/i,
 		);
 	});
@@ -136,11 +150,32 @@ describe("productGatewayURL", () => {
 		);
 	});
 
-	it("falls back to SDK resolution when nothing is injected", () => {
+	it("falls back to SDK resolution when the harness started the graph itself", () => {
+		expect(
+			productGatewayURL(
+				selfStartedRuntime({
+					endpoints: () => [],
+					resolveAddress: () => GATEWAY,
+				}),
+			),
+		).toBe(GATEWAY);
+	});
+
+	it("falls back even while Codefly owns the process", () => {
+		// Codefly injects the endpoints of the DEPENDENCIES it started, so an
+		// endpoint can legitimately be absent from an owned process — a service's
+		// own endpoint always is when the service is not running. Treating
+		// ownership as proof of injection and refusing the fallback failed every
+		// pipeline test under `codefly test service frontend`.
 		expect(
 			productGatewayURL(
 				runtime({ endpoints: () => [], resolveAddress: () => GATEWAY }),
 			),
 		).toBe(GATEWAY);
+		expect(
+			productOrigin(
+				runtime({ endpoints: () => [], resolveAddress: () => ORIGIN }),
+			),
+		).toBe(ORIGIN);
 	});
 });
