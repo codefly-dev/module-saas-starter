@@ -14,6 +14,8 @@ import {
   needsClosure,
   publicationReasons,
   publicationVerdictErrors,
+  mergeQueueContractErrors,
+  QUEUED_CONTEXTS,
   releaseGateContractErrors,
   releaseGateGraphErrors,
 } from "./release-gates.mjs";
@@ -417,6 +419,132 @@ test("no action already pinned in this repository is misread as a publisher", ()
 test("a job inherits the workflow's publication permissions", () => {
   assert.ok(publicationReasons({ steps: [] }, { packages: "write" }).length > 0);
   assert.deepEqual(publicationReasons({ permissions: { contents: "read" }, steps: [] }, { packages: "write" }), []);
+});
+
+// ---------------------------------------------------------------------------
+// check — the merge-queue contract
+// ---------------------------------------------------------------------------
+
+// A workflow that reports one required context, parameterised over the three
+// things a queue entry needs from it.
+function queued({
+  on = "on:\n  pull_request:\n  merge_group:\n",
+  concurrency = "",
+  planEnv = "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}",
+  gates = [AGGREGATE_JOB],
+} = {}) {
+  const planJob = gates.includes("codefly-plan")
+    ? "  codefly-plan:\n    runs-on: ubuntu-latest\n    steps:\n" +
+      "      - env:\n" +
+      `          CODEFLY_BASE: ${planEnv}\n` +
+      "        run: codefly ci plan\n"
+    : "";
+  return [
+    "name: ci\n",
+    on,
+    concurrency,
+    "jobs:\n",
+    gates.filter((id) => id !== "codefly-plan").map(gateJob).join(""),
+    planJob,
+  ].join("");
+}
+
+test("the shipped ci.yml reports every required context from a merge-queue entry", () => {
+  const text = readFileSync(CI_WORKFLOW, "utf8");
+  assert.deepEqual(mergeQueueContractErrors(".github/workflows/ci.yml", text), []);
+});
+
+test("the queued contexts are the mandatory gates plus the aggregate", () => {
+  assert.deepEqual(QUEUED_CONTEXTS, [...REQUIRED_GATES, AGGREGATE_JOB]);
+});
+
+test("a workflow producing no required context is not subject to the contract", () => {
+  const text = "name: audit\non:\n  schedule:\n    - cron: \"0 3 * * *\"\njobs:\n" + gateJob("audit");
+  assert.deepEqual(mergeQueueContractErrors("dep-audit.yml", text), []);
+});
+
+test("a required context on a workflow with no merge_group trigger fails", () => {
+  const text = queued({ on: "on:\n  pull_request:\n" });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /has no `merge_group:` trigger/);
+  assert.match(errors[0], new RegExp(AGGREGATE_JOB));
+});
+
+test("the missing-trigger failure names every required context that would stall", () => {
+  const text = queued({ on: "on:\n  pull_request:\n", gates: [AGGREGATE_JOB, "base-integrity"] });
+  const [error] = mergeQueueContractErrors("w.yml", text);
+  assert.match(error, /base-integrity/);
+  assert.match(error, new RegExp(AGGREGATE_JOB));
+});
+
+test("a sequence or scalar on: names the trigger as well as a mapping does", () => {
+  for (const on of ["on: [pull_request, merge_group]\n", "on: merge_group\n"]) {
+    assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ on })), [], on);
+  }
+  assert.equal(mergeQueueContractErrors("w.yml", queued({ on: "on: pull_request\n" })).length, 1);
+});
+
+test("unconditionally cancelling in progress fails, since a cancelled entry never reports", () => {
+  const text = queued({ concurrency: "concurrency:\n  group: g\n  cancel-in-progress: true\n" });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /cancel-in-progress is unconditionally true/);
+});
+
+test("an expression cancel-in-progress is the author discriminating by event", () => {
+  const scoped = "concurrency:\n  group: g\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ concurrency: scoped })), []);
+  const off = "concurrency:\n  group: g\n  cancel-in-progress: false\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ concurrency: off })), []);
+  const bare = "concurrency: g\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", queued({ concurrency: bare })), []);
+});
+
+test("a plan that never reads the queue entry's base sha fails", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    planEnv: "${{ github.event.pull_request.base.sha || github.event.before }}",
+  });
+  const errors = mergeQueueContractErrors("w.yml", text);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /codefly-plan never reads github\.event\.merge_group\.base_sha/);
+});
+
+test("the plan's base sha counts wherever in the job it is written", () => {
+  const inRun =
+    "name: ci\non:\n  merge_group:\njobs:\n" +
+    gateJob(AGGREGATE_JOB) +
+    "  codefly-plan:\n    runs-on: ubuntu-latest\n    steps:\n" +
+    "      - run: codefly ci plan --base ${{ github.event.merge_group.base_sha }}\n";
+  assert.deepEqual(mergeQueueContractErrors("w.yml", inRun), []);
+});
+
+test("a workflow can fail the trigger and the cancellation contracts independently", () => {
+  const text = queued({
+    gates: [AGGREGATE_JOB, "codefly-plan"],
+    concurrency: "concurrency:\n  group: g\n  cancel-in-progress: true\n",
+    planEnv: "${{ github.event.pull_request.base.sha }}",
+  });
+  assert.equal(mergeQueueContractErrors("w.yml", text).length, 2);
+});
+
+test("the graph walk reddens check when a gate workflow loses its merge_group trigger", () => {
+  const root = mkdtempSync(join(tmpdir(), "release-gates-"));
+  mkdirSync(join(root, ".github", "workflows"), { recursive: true });
+  writeFileSync(
+    join(root, ".github", "workflows", "gates.yml"),
+    queued({ on: "on:\n  pull_request:\n" }),
+  );
+  const errors = releaseGateGraphErrors(root);
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /gates\.yml: .*has no `merge_group:` trigger/);
+});
+
+test("an unparsable workflow fails the merge-queue check instead of passing empty", () => {
+  const errors = mergeQueueContractErrors("w.yml", "jobs: {a: b}\n");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not be parsed/);
 });
 
 // ---------------------------------------------------------------------------

@@ -183,6 +183,24 @@ Resolve a new action's tag to its commit with
 (`git/ref/tags/TAG`) and you get the *tag object's* SHA whenever the tag is
 annotated, which names no commit and will not resolve in `uses:`.
 
+The same job also enforces the merge queue's prerequisite. `main` merges through
+a queue, which builds each entry as `main + the pull request` and gates the merge
+on the required contexts reported from *that* ref — the guarantee "require
+branches to be up to date" used to buy by making every author rebase by hand.
+Every required context must therefore report on `merge_group` too. One that does
+not leaves its entry waiting on a check that never arrives until the queue evicts
+it, and entries merge in order, so a single missing context stalls every merge in
+the repository. No pull request run reveals this, because the same job is green
+there. The check fails if a workflow holding any job in `QUEUED_CONTEXTS` (the
+mandatory gates plus `release-gates`) has no `merge_group:` trigger, if
+`concurrency.cancel-in-progress` is unconditionally `true` — a cancelled
+`merge_group` run never reports, which stalls the queue exactly as never running
+would — or if `codefly-plan` stops reading
+`github.event.merge_group.base_sha`, without which an entry has no base and
+verifies the full topology every time. An *expression* for `cancel-in-progress`
+is taken at its word as the author discriminating by event; only the bare literal
+is rejected.
+
 Two limits are worth stating plainly. The contract **cannot protect its own job**:
 delete `release-contract` from the workflow and both the check and its tests stop
 running, with nothing in-repo left to notice — branch protection is the only

@@ -23,7 +23,8 @@
 // aggregate, and the aggregate by every mandatory gate. It also fails unless
 // every action the workflows call is pinned to a commit digest, since a
 // mutable tag lets whoever can move it rewrite any gate, the aggregate
-// included.
+// included, and unless every job that reports a required context can report it
+// from a merge-queue entry as well.
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -342,6 +343,93 @@ function contractErrors(path, document) {
 }
 
 // ---------------------------------------------------------------------------
+// the merge-queue contract
+// ---------------------------------------------------------------------------
+
+// `main` merges through a merge queue: GitHub builds each entry as `main + the
+// pull request` and gates the merge on the required contexts reported from
+// THAT ref, which is the guarantee "require branches to be up to date" bought
+// by making every author rebase by hand and re-run everything.
+//
+// What that costs is a prerequisite no pull request can reveal, because the
+// same job is green there: every required context must report on `merge_group`
+// too. One that does not leaves its entry waiting on a check that never
+// arrives until the queue evicts it — and since entries merge in order, a
+// single missing context stalls every merge in the repository.
+
+// The contexts the branch ruleset requires: every mandatory gate, plus the
+// aggregate that authorizes publication.
+export const QUEUED_CONTEXTS = [...REQUIRED_GATES, AGGREGATE_JOB];
+
+const MERGE_GROUP_BASE = "github.event.merge_group.base_sha";
+
+// Whether `on` names `event`, in any of the three spellings GitHub accepts: a
+// mapping whose key carries no value (`merge_group:`), a sequence, or a bare
+// scalar.
+function triggersOn(on, event) {
+  if (typeof on === "string") return on === event;
+  if (Array.isArray(on)) return on.includes(event);
+  return typeof on === "object" && on !== null && event in on;
+}
+
+// Every scalar anywhere under `value`, so a contract can ask what a job's text
+// mentions without knowing whether it sits in `env`, a `run` body or `with`.
+function scalars(value) {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(scalars);
+  if (value !== null && typeof value === "object") return Object.values(value).flatMap(scalars);
+  return [];
+}
+
+function mergeQueueErrors(path, document) {
+  const jobs = document?.jobs ?? {};
+  const required = QUEUED_CONTEXTS.filter((context) => context in jobs);
+  if (required.length === 0) return [];
+
+  if (!triggersOn(document?.on, "merge_group")) {
+    return [
+      `${path}: ${required.join(", ")} report required contexts but this workflow has no ` +
+        "`merge_group:` trigger; a queued pull request would wait on checks that never report " +
+        "and be evicted",
+    ];
+  }
+
+  const errors = [];
+
+  // `true` cancels a superseded run whatever event produced it. An entry
+  // superseded by the next one then reports nothing at all, which stalls the
+  // queue exactly as never having run would. An expression is the author
+  // discriminating by event and is taken at its word; the bare literal is the
+  // copy-paste that is not.
+  const cancel = document?.concurrency?.["cancel-in-progress"];
+  if (cancel !== undefined && String(cancel).trim() === "true") {
+    errors.push(
+      `${path}: concurrency.cancel-in-progress is unconditionally true, so a superseded ` +
+        "merge_group run is cancelled and never reports its required checks; scope it to the " +
+        "events whose runs are free to supersede",
+    );
+  }
+
+  // A queue entry's base is the tip of `main` it was built on, so the delta
+  // against it is exactly what the merge would add. The `merge_group` payload
+  // carries neither `pull_request.base.sha` nor `before`, so a plan that never
+  // reads this silently falls through to the full topology on every entry.
+  if (PLAN_JOB in jobs && !scalars(jobs[PLAN_JOB]).some((text) => text.includes(MERGE_GROUP_BASE))) {
+    errors.push(
+      `${path}: job ${PLAN_JOB} never reads ${MERGE_GROUP_BASE}, so a queue entry has no base ` +
+        "to scope its plan against and would verify the full topology every time",
+    );
+  }
+
+  return errors;
+}
+
+export function mergeQueueContractErrors(path, text) {
+  const { document, error } = parseWorkflow(path, text);
+  return error ? [error] : mergeQueueErrors(path, document);
+}
+
+// ---------------------------------------------------------------------------
 // the action-pinning contract
 // ---------------------------------------------------------------------------
 
@@ -410,7 +498,11 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
       errors.push(error);
       continue;
     }
-    errors.push(...contractErrors(path, document), ...pinErrors(path, document));
+    errors.push(
+      ...contractErrors(path, document),
+      ...pinErrors(path, document),
+      ...mergeQueueErrors(path, document),
+    );
   }
   return errors;
 }
@@ -422,14 +514,15 @@ function check() {
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(
       `\nFAIL: ${errors.length} workflow-contract defect(s). Every artifact-writing job must ` +
-        `depend on ${AGGREGATE_JOB}, ${AGGREGATE_JOB} on every mandatory gate, and every action ` +
-        "on a digest.",
+        `depend on ${AGGREGATE_JOB}, ${AGGREGATE_JOB} on every mandatory gate, every action on a ` +
+        "digest, and every required context must report from a merge-queue entry.",
     );
     process.exit(1);
   }
   console.log(
     `✓ every artifact-writing job is dominated by ${AGGREGATE_JOB}, which requires all ` +
-      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a digest.`,
+      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a digest; all ` +
+      `${QUEUED_CONTEXTS.length} required contexts report from a merge-queue entry.`,
   );
 }
 
