@@ -273,7 +273,7 @@
     "services/accounts/code/pkg/adapters/module_capabilities_server.go": "c2d0e5766cad239114cf872b32f2c451861fdabc66a9d062b20fa575db92ca78",
     "services/accounts/code/pkg/adapters/module_capabilities_server_test.go": "fefce62b61a36482e4a7bb8d5499feff325c15d10e5071a87c55ac4040395819",
     "services/accounts/code/pkg/adapters/module_registration_test.go": "cab06758ae1328e5fcd42b169a0145ca9b2219d054de45e7305cb3ae90361b40",
-    "services/accounts/code/pkg/adapters/module_work_context_test.go": "e4a4a5b82865639fe068914fa37653d6498ce987b4b5e82de983c470ab23fc2d",
+    "services/accounts/code/pkg/adapters/module_work_context_test.go": "a73018c9e227d01037890060decf9dafd11433367b40b78670f80df7ab5c0fa1",
     "services/accounts/code/pkg/adapters/org_membership_status_test.go": "4cdc848b69903c7bdbf00e63d48e4cc9ff63ae7d42db3bfd3ab0cd138e3961fc",
     "services/accounts/code/pkg/adapters/permission_servers.go": "0d967db7f3493fae2fb27bd687307b66c1ed2c0ac63869c720ba2007150083fd",
     "services/accounts/code/pkg/adapters/platform_admin_authorization_test.go": "ba3f67210b9e28dbd1b1b7f4eba93d55d0eeb891d2a2d66effb0aa5806028068",
