@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/codefly-dev/core/wool"
@@ -109,6 +110,12 @@ func (e *IdentityAdminContinuityError) Error() string {
 
 func (e *IdentityAdminContinuityError) Unwrap() error { return ErrIdentityAdminContinuity }
 
+// maxDeactivationLockPasses bounds the enumerate-and-lock loop below. Each pass
+// past the second means the identity gained an administrative membership while
+// the loop was running; more than a handful of those in one transaction is not
+// contention, it is something pathological, and failing loudly beats looping.
+const maxDeactivationLockPasses = 8
+
 // organizationsStrandedByDeactivation locks the administrative standing of
 // every organization the identity administers and returns those its
 // deactivation would strand — see OrgAdministration.StrandedByDeactivating for
@@ -122,41 +129,70 @@ func (e *IdentityAdminContinuityError) Unwrap() error { return ErrIdentityAdminC
 // is what serializes a deactivation against a concurrent removal or demotion in
 // any of the same organizations.
 //
-// Ascending organization id is the order the locks are taken in — the order
-// ListAdministeredOrganizations returns — so two concurrent deactivations
-// sharing organizations queue rather than deadlock.
+// The loop is the load-bearing part, and one pass is not enough. A promotion
+// can only raise an administrator count, so AddOrgMember settles it from its
+// argument and takes no administration lock — which means the identity can be
+// made an administrator of an organization this loop has already read past.
+// Deciding on an organization whose lock is not held admits exactly the
+// interleaving the lock exists to stop: the promotion lands, a demotion in that
+// same organization counts this identity (still active, because this
+// transaction has not committed) and commits, and then the deactivation commits
+// on top and leaves the organization with nobody. So the loop re-reads until
+// the roster comes back unchanged with every organization in it already locked,
+// and only then decides.
 //
-// The roster is read twice on purpose. The first read only decides which locks
-// to take; the decision rests on the second, made under them. An organization
-// the identity is promoted into between the two reads is decided on a count
-// taken without its lock, which can only be conservative: promoting somebody
-// requires an administrator who is active at that moment, and a demotion that
-// would remove them holds that organization's lock and still counts this
-// identity as active, so it refuses.
+// Organizations are locked in ascending id, and the order is established here
+// rather than trusted from the query, because it is this loop that depends on
+// it: it is what keeps two concurrent deactivations over shared organizations
+// queueing instead of waiting on each other. A pass that discovers a new
+// organization sorting below one already held does acquire out of that order —
+// unavoidable, since a transaction-scoped advisory lock cannot be released to
+// retake it — so two deactivations that discover each other's organizations
+// mid-loop can deadlock. PostgreSQL detects that and aborts one with a loud
+// serialization error; it is a far better failure than the silent stranding it
+// replaces, and it needs a promotion to land inside both loops to happen at all.
 func (s *Service) organizationsStrandedByDeactivation(ctx context.Context, userID string) ([]string, error) {
 	w := wool.Get(ctx).In("organizationsStrandedByDeactivation")
 
-	administered, err := s.store.ListAdministeredOrganizations(ctx, userID)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot list administered organizations")
-	}
-	for _, administration := range administered {
-		if err := s.store.LockOrgAdministration(ctx, administration.OrgID); err != nil {
-			return nil, w.Wrapf(err, "cannot lock organization administration")
+	held := map[string]bool{}
+	var previous []string
+	for range maxDeactivationLockPasses {
+		administered, err := s.store.ListAdministeredOrganizations(ctx, userID)
+		if err != nil {
+			return nil, w.Wrapf(err, "cannot list administered organizations")
 		}
-	}
+		orgs := make([]string, 0, len(administered))
+		for _, administration := range administered {
+			orgs = append(orgs, administration.OrgID)
+		}
+		slices.Sort(orgs)
 
-	administered, err = s.store.ListAdministeredOrganizations(ctx, userID)
-	if err != nil {
-		return nil, w.Wrapf(err, "cannot re-read administered organizations")
-	}
-	var stranded []string
-	for _, administration := range administered {
-		if administration.StrandedByDeactivating() {
-			stranded = append(stranded, administration.OrgID)
+		// previous is nil only on the first pass, which has taken no locks yet,
+		// so an identity that administers nothing still gets a second read
+		// rather than a verdict from an unlocked one.
+		if previous != nil && slices.Equal(orgs, previous) {
+			var stranded []string
+			for _, administration := range administered {
+				if administration.StrandedByDeactivating() {
+					stranded = append(stranded, administration.OrgID)
+				}
+			}
+			return stranded, nil
 		}
+
+		for _, orgID := range orgs {
+			if held[orgID] {
+				continue
+			}
+			if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
+				return nil, w.Wrapf(err, "cannot lock organization administration")
+			}
+			held[orgID] = true
+		}
+		previous = orgs
 	}
-	return stranded, nil
+	return nil, w.NewError(
+		"the organizations this identity administers kept changing under their administration locks")
 }
 
 // requireOrgAdminContinuity takes the organization's administration lock and

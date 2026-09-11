@@ -268,10 +268,17 @@ func (s *PostgresStore) ListAdministeredOrganizations(ctx context.Context, userI
 		return nil, w.Wrapf(err, "failed to read the transaction's identity scope")
 	}
 
+	// Explicitly "this transaction is scoped to this identity", not "the two
+	// strings match": an unscoped transaction reads the setting as empty, and
+	// string equality alone would send a control-plane transaction asking about
+	// an empty user id down the tenant branch, where it fails on a uuid cast
+	// instead of on the scope it actually lacks.
+	selfScoped := scopedUser != "" && scopedUser == userID
+
 	query := `
 		SELECT administered_org_id, eligible_administrators, other_active_members
 		FROM public.identity_administered_organizations($1)`
-	if scopedUser != userID {
+	if !selfScoped {
 		if !spansTenants {
 			return nil, w.NewError(
 				"listing another identity's administered organizations needs a transaction that spans tenants")

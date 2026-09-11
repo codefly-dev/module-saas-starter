@@ -2,6 +2,7 @@ package business_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -297,6 +298,118 @@ func TestSuspendingTheSoleAdministratorProceedsAndRecordsTheConsequence(t *testi
 	require.Contains(t, string(payload), "organizations_without_administrator")
 	require.Contains(t, string(payload), org,
 		"the audit record must name the organization the suspension left without an administrator")
+}
+
+// deactivationProbe runs a hook after each roster read the deactivation guard
+// takes, so an interleaving can be placed between two of them exactly rather
+// than raced for.
+type deactivationProbe struct {
+	business.Store
+	reads     int
+	afterRead func(read int)
+	locked    []string
+}
+
+func (s *deactivationProbe) ListAdministeredOrganizations(
+	ctx context.Context, userID string,
+) ([]business.OrgAdministration, error) {
+	administered, err := s.Store.ListAdministeredOrganizations(ctx, userID)
+	s.reads++
+	if s.afterRead != nil {
+		s.afterRead(s.reads)
+	}
+	return administered, err
+}
+
+func (s *deactivationProbe) LockOrgAdministration(ctx context.Context, orgID string) error {
+	s.locked = append(s.locked, orgID)
+	return s.Store.LockOrgAdministration(ctx, orgID)
+}
+
+// A promotion takes no administration lock — it can only raise a count, so
+// AddOrgMember settles it from its argument — which means the identity can be
+// made an administrator of an organization the guard has already read past.
+// Deciding on that organization without holding its lock admits the whole
+// interleaving: the promotion lands, a demotion in the same organization counts
+// this identity (still active, because the deactivation has not committed) and
+// commits, and the deactivation then commits on top and leaves nobody.
+//
+// Both steps are placed between specific reads rather than raced for, so this
+// fails deterministically against a guard that decides on its second read.
+func TestPromotionRacingDeactivationCannotStrandAnOrganization(t *testing.T) {
+	clearData(t)
+	owner, org := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
+	mustMember(t, owner, org, "member@example.com", "example-member")
+	// Administers nothing when the guard takes its first read.
+	latecomer := mustUser(t, "latecomer@example.com", "example-latecomer")
+
+	probe := &deactivationProbe{Store: testStore}
+	probe.afterRead = func(read int) {
+		switch read {
+		case 1:
+			// Now it administers one, and that organization keeps two.
+			require.NoError(t, testService.AddOrgMember(testCtx, owner, &gen.AddOrgMemberRequest{
+				OrgId: org, UserId: latecomer, Role: gen.OrgRole_ORG_ROLE_ADMIN,
+			}))
+		case 2:
+			// And now it is the only one — committed after the read a
+			// single-pass guard would have decided on.
+			require.NoError(t, testService.RemoveOrgMember(testCtx, owner, &gen.RemoveOrgMemberRequest{
+				OrgId: org, UserId: owner,
+			}))
+		}
+	}
+
+	err := deleteUser(continuityService(t, probe), business.System(), latecomer)
+
+	require.ErrorIs(t, err, business.ErrIdentityAdminContinuity,
+		"the organization gained under the guard's own feet must still be decided under its lock")
+	require.Equal(t, "active", userStatus(t, latecomer))
+	requireEligibleAdministrator(t, org)
+}
+
+// The order the locks are taken in is what keeps two concurrent deactivations
+// over shared organizations queueing instead of waiting on each other, so the
+// guard establishes it rather than inheriting whatever order the roster read
+// happened to return.
+func TestAdministrationLocksAreTakenInAscendingOrganizationOrder(t *testing.T) {
+	clearData(t)
+	owner, first := mustUserAndOrg(t, testCtx, "owner@example.com", "example-owner", "Acme")
+	second := mustOrg(t, owner, "example-owner-second", "ExampleCorp")
+	third := mustOrg(t, owner, "example-owner-third", "Placeholder Org")
+
+	probe := &deactivationProbe{Store: reversedRosterStore{testStore}}
+	// The verdict is beside the point here; the lock sequence is the assertion.
+	_ = deleteUser(continuityService(t, probe), business.System(), owner)
+
+	require.Subset(t, probe.locked, []string{first, second, third})
+	require.True(t, slices.IsSorted(probe.locked),
+		"locks must be taken in ascending organization id, got %v", probe.locked)
+}
+
+// reversedRosterStore hands the guard its organizations in descending order, so
+// a guard that locked in the order it received them would fail the assertion
+// above instead of happening to pass on an already-ordered query result.
+type reversedRosterStore struct {
+	business.Store
+}
+
+func (s reversedRosterStore) ListAdministeredOrganizations(
+	ctx context.Context, userID string,
+) ([]business.OrgAdministration, error) {
+	administered, err := s.Store.ListAdministeredOrganizations(ctx, userID)
+	slices.Reverse(administered)
+	return administered, err
+}
+
+// The suspension payload is a published contract: audit_event_types.payload_schema
+// is projected from the registry, so a field emitted but not registered is a
+// field no consumer can discover. Registry validation only warns, so nothing
+// else in this suite notices if the registration goes away.
+func TestSuspensionPayloadFieldIsRegistered(t *testing.T) {
+	require.NoError(t, business.ValidatePayload(business.EventUserSuspended, map[string]any{
+		"organizations_without_administrator": []string{"11111111-1111-7111-8111-111111111111"},
+	}))
 }
 
 // requireEligibleAdministrator asserts against what was persisted: at least one
