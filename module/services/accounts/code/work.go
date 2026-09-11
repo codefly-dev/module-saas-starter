@@ -23,6 +23,7 @@ import (
 	"accounts/pkg/jobs"
 	"accounts/pkg/metrics"
 	"accounts/pkg/permissionsplugin"
+	"accounts/pkg/vaultconnection"
 	"context"
 	ed25519core "crypto/ed25519"
 	"encoding/base64"
@@ -554,6 +555,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
+	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen)
+	if err != nil {
+		return nil, err
+	}
 
 	// Local development surfaces the underlying Authenticate failure reason for
 	// debugging; every deployed environment returns generic auth errors so the
@@ -840,7 +845,14 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		sweepCustody := func() {
+			if err := store.PurgeExecutionCustody(retentionCtx, time.Now()); err != nil {
+				rw.Warn("execution custody expiry sweep failed")
+			}
+		}
+
 		// Run once immediately on startup.
+		sweepCustody()
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
@@ -862,6 +874,7 @@ func doWork(ctx context.Context) (Clean, error) {
 				sweepReplay()
 				sweepPrivacyArtifacts()
 			case <-reconcileTicker.C:
+				sweepCustody()
 				sweepReconcile()
 			}
 		}
@@ -873,6 +886,11 @@ func doWork(ctx context.Context) (Clean, error) {
 			retentionCancel()
 			return nil, err
 		}
+	}
+	closeCustody, err := startExecutionCustody(ctx, custodyServer)
+	if err != nil {
+		retentionCancel()
+		return nil, err
 	}
 	if stripeWebhookWorker != nil {
 		stripeWebhookWorker.Start(ctx)
@@ -894,6 +912,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	eventRelayWorker.Start(ctx)
 
 	return func() {
+		closeCustody()
 		sw := wool.Get(ctx).In("shutdown")
 		if stripeWebhookWorker != nil {
 			sw.Info("stopping Stripe webhook worker")
@@ -1710,12 +1729,14 @@ func requireLocalForDevFixtureProvider(authProvider string, isLocal bool) error 
 // lets `codefly run service frontend --fixture dev-admin` work on a machine with
 // no Vault. The fallback logs a warning.
 func loadSigningKey(ctx context.Context, allowEphemeral bool) (ed25519core.PrivateKey, error) {
-	vaultAddr, addrErr := codefly.For(ctx).Service("vault").Configuration("vault", "address")
-	vaultToken, tokErr := codefly.For(ctx).Service("vault").Secret("vault", "token")
-	if addrErr == nil && tokErr == nil && vaultAddr != "" && vaultToken != "" {
+	connection, connectionErr := vaultconnection.Load(ctx)
+	if connectionErr == nil {
+		vaultToken, tokenErr := connection.Token()
+		if tokenErr != nil {
+			return nil, tokenErr
+		}
 		priv, err := ed25519minter.LoadKeyFromVault(ctx, ed25519minter.VaultKeyLoaderConfig{
-			Address:           vaultAddr,
-			Token:             vaultToken,
+			Address: connection.Address, Token: vaultToken, HTTPClient: connection.Client,
 			AllowInsecureHTTP: workspaceEnv("vault", "VAULT_ALLOW_INSECURE_HTTP") == "true",
 		})
 		if err == nil {

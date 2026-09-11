@@ -1,0 +1,5 @@
+=== RUN   TestAccountsLocalProxyStore
+    database_transport_integration_test.go:127: Accounts two-socket identities, full migrations, private custody recovery and three fixed worker pools passed
+--- PASS: TestAccountsLocalProxyStore (0.88s)
+PASS
+ok  	accounts/pkg/adapters	2.379s
