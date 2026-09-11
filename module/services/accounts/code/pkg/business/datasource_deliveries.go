@@ -49,6 +49,14 @@ const (
 	// content ticket); v1 was raw bytes with routing only in attributes.
 	datasourceChangeSetSchemaVersion = 2
 
+	// datasourceReconcileSchemaVersion versions the reconcile *request* message,
+	// which is a control message and not a change set: its attributes name the
+	// source and the mode and its body is empty. It must not advertise
+	// datasourceChangeSetSchemaVersion — that versions the per-file payload a
+	// consumer decodes, so reusing it would describe an empty body as a v2
+	// change-set file.
+	datasourceReconcileSchemaVersion = 1
+
 	attrDeliveryID    = "datasource.delivery_id"
 	attrChangeSet     = "datasource.change_set"
 	attrReconcileMode = "datasource.reconcile_mode"
@@ -688,7 +696,9 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 			Source:         datasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
-			SchemaVersion:  datasourceChangeSetSchemaVersion,
+			SchemaVersion:  datasourceReconcileSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,

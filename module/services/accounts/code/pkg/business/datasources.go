@@ -85,6 +85,10 @@ const (
 	datasourceIngestMaxAttempts   = 24
 	datasourceIngestContentType   = "application/octet-stream"
 
+	// datasourceRequestContentType types the body every datasource *request* job
+	// carries (see datasourceRequestBody).
+	datasourceRequestContentType = "application/json"
+
 	// The internal sync-request queue. SyncSource enqueues one request here and
 	// returns; a leased worker performs the actual repo pull off-request, so a
 	// large repo cannot block or time out the RPC and gets the jobs framework's
@@ -889,14 +893,10 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			Source:         datasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
-			SchemaVersion:  datasourceChangeSetSchemaVersion,
-			// The request carries no data — the attributes name the source and
-			// the mode — but a job is a message: the platform validates its
-			// content type and stores its payload NOT NULL, so it carries an
-			// empty JSON body.
-			Payload:     []byte("{}"),
-			ContentType: "application/json",
-			MaxAttempts: datasourceDeliveryMaxAttempts,
+			SchemaVersion:  datasourceReconcileSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
+			MaxAttempts:    datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,
 				attrOrgID:         source.OrgID,
@@ -916,8 +916,8 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			// already-terminal request.
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceSyncRequestSchemaVersion,
-			Payload:        []byte("{}"),
-			ContentType:    "application/json",
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceSyncRequestMaxAttempts,
 			Attributes:     map[string]string{attrSourceID: source.ID},
 		}
@@ -930,6 +930,15 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID)
 	return response.GetJobId(), nil
 }
+
+// datasourceRequestBody is the body every datasource *request* job carries —
+// the forced and periodic reconcile requests and the generic sync request. A
+// request has no data of its own (its attributes name the source and the mode),
+// but a job is a message: saas.jobs.v1 validates content_type (min_len 1) and
+// job_messages.payload is NOT NULL, so a request declares an empty JSON object
+// rather than nothing. Returned fresh per call so no consumer can mutate a
+// shared backing array into another job's payload.
+func datasourceRequestBody() []byte { return []byte("{}") }
 
 // RunDatasourceSync performs the actual pull for one Source, dispatched by
 // provider. It is invoked by the leased sync worker, never by request traffic.
