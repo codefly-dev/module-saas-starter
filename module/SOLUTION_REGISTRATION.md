@@ -170,3 +170,14 @@ expects to register and provision each plaintext to its solution, exactly as
 `MODULE_REGISTRATION_SECRETS` is provisioned today. Until it does, registration
 fails closed and no solution is served — which is the intended direction of
 failure for a surface that decides what executes in the host origin.
+
+Registrations that already exist at upgrade time are carried over, not locked
+out. Before this contract the gateway stored a registration's publisher as the
+bare solution id (the caller named none); the verified subject is
+`solution:<id>`, and a write from a different publisher is refused. Store
+migration `130_solution_registrations_verified_publisher` rewrites that
+pre-contract default to the verified form, so the solution's own credential
+keeps renewing its record after the upgrade. A pre-contract row whose publisher
+was self-asserted as anything else was never authenticated; it stays as it is,
+and who owns it is an operator's decision — delete the row (or `DELETE` the
+registration) and let the credentialed publisher register it afresh.
