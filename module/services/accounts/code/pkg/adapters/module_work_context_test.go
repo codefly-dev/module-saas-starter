@@ -77,6 +77,7 @@ func installModuleWorkContextService(t *testing.T, declaredSecrets, declaredPrin
 	secrets, err := business.ParseRegistrationSecrets(declaredSecrets)
 	require.NoError(t, err)
 	svc.SetModuleRegistrar(&recordingRegistrationMinter{}, secrets)
+	svc.SetModuleIdentitySecrets(secrets)
 	registry, err := business.ParseModulePrincipalRegistry(declaredPrincipals)
 	require.NoError(t, err)
 	svc.SetModuleCapabilities(nil, nil, registry)
@@ -105,7 +106,7 @@ func mintModuleWorkContext(t *testing.T, prefix, secret string) (*gen.ModuleMint
 
 // The identity a module receives must be the one the surface then authenticates
 // it as, so the mint and the verification are asserted as one round trip.
-func TestMintModuleWorkContextFallsBackToRegistrationSecrets(t *testing.T) {
+func TestMintModuleWorkContextRoundTripsToTheCallerIdentity(t *testing.T) {
 	installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
 	installModuleWorkContextAuthority(t)
 
@@ -119,6 +120,19 @@ func TestMintModuleWorkContextFallsBackToRegistrationSecrets(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, resp.GetPrincipalId(), caller.PrincipalID)
 	require.Equal(t, moduleWorkContextTenant, caller.BoundOrg)
+}
+
+func TestMintModuleWorkContextDeniesUnconfiguredIdentity(t *testing.T) {
+	installModuleRegistrar(t, "documents:"+registrationDigest("registration-secret"))
+	registry, err := business.ParseModulePrincipalRegistry(documentsPrincipals)
+	require.NoError(t, err)
+	service.SetModuleCapabilities(nil, nil, registry)
+	installModuleWorkContextAuthority(t)
+
+	resp, err := mintModuleWorkContext(t, "documents", "registration-secret")
+
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Nil(t, resp)
 }
 
 func TestModuleExchangesUseIndependentSecrets(t *testing.T) {

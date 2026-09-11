@@ -191,10 +191,10 @@ on-demand refresh on a cache miss; frontend a 5s snapshot TTL).
   event once the capability exists. The response carries
   `{token, expiresAt, principalId, tenant}`.
 
-  During the CLI transition, an empty `MODULE_IDENTITY_SECRETS` falls back to
-  `MODULE_REGISTRATION_SECRETS` and logs a startup warning. Registration secret
-  holders can obtain module identities while this fallback is active. A configured
-  identity map never falls back for missing prefixes or invalid secrets.
+  An empty or absent `MODULE_IDENTITY_SECRETS` denies every module identity
+  exchange. Compositions must provision identity digests and distribute their
+  matching secrets before modules can obtain Work Contexts; registration
+  credentials never substitute for missing identity digests.
 
   The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking. The capability
