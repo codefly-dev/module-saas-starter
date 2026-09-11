@@ -339,12 +339,11 @@ export function satisfiesWorkspaceRange(range, version) {
   return anySatisfied;
 }
 
-// Every dependency edge that points at another workspace in this repo must be
-// satisfiable BY that workspace. npm links a workspace only when the declared
-// range covers the workspace's own version; when it does not, npm silently
-// stops treating it as local and goes to the public registry for it instead —
-// where these packages do not exist, so `npm ci` dies with E404 (and would
-// install a stranger's package if the name were ever squatted).
+// Every dependency edge FROM one workspace TO another must be satisfiable by
+// that workspace. npm links a sibling workspace only when the declared range
+// covers its version; when it does not, npm stops treating it as local and goes
+// to the public registry — where these packages do not exist, so `npm ci` dies
+// with E404 (and would install a stranger's package if the name were squatted).
 //
 // The metadata equality checks above cannot see this: they prove the lockfile
 // AGREES with each manifest, and a stale exact pin copied faithfully into the
@@ -352,28 +351,53 @@ export function satisfiesWorkspaceRange(range, version) {
 // `@codefly-dev/saas-ui` kept requiring `@codefly-dev/saas-sdk@0.2.0` after the
 // SDK workspace moved to 0.2.1: this gate reported "in sync" while three CI jobs
 // died on `npm ci`. Agreement is not satisfiability.
-export function workspaceLinkSatisfactionErrors({ root, workspaces }) {
+//
+// Scope is deliberately workspace→workspace, established by reproducing each
+// case against real npm (install-links=true, `npm ci`):
+//
+//   workspace→workspace, range mismatches sibling ........ E404
+//   workspace→workspace, sibling declares no `version` ... E404
+//   workspace→workspace, range satisfied ................. linked
+//   ROOT→workspace, range mismatches workspace ........... LINKED, no error
+//   ROOT→workspace, registry even has the pinned version . LINKED (workspace wins)
+//
+// So the root manifest is NOT checked here. A root pin that drifts from its
+// workspace is not an install hazard — npm resolves the workspace by name and
+// ignores the range — and flagging it would fail every PR in the repo with an
+// E404 claim that is simply untrue. Nothing derives behavior from the root pin's
+// version either: the kit-version gate and kit-shared-version test both read
+// `packages/*/package.json`, and the module-package claim check reads only names.
+export function workspaceLinkSatisfactionErrors({ workspaces }) {
   const versions = new Map();
-  const errors = [];
+  // A workspace whose own version npm cannot match on — missing, or not semver.
+  // A sibling depending on it gets the same E404 as a mismatched range, so it
+  // must not be silently dropped from the map the way an earlier revision did.
+  const unusable = new Map();
   for (const { label, manifest } of workspaces) {
-    if (typeof manifest?.name !== "string" || typeof manifest.version !== "string") continue;
-    // Report an unreadable VERSION against the workspace that declares it. The
-    // range is the other half of the comparison and is usually innocent, so
-    // blaming it here sends the reader to the wrong file.
-    if (parseSemver(manifest.version) === null) {
-      errors.push(
-        `${label} version "${manifest.version}" is not a semver this gate can read, ` +
-          "so its workspace links cannot be checked",
-      );
+    if (typeof manifest?.name !== "string" || !manifest.name) continue;
+    const declared = manifest.version;
+    if (typeof declared !== "string" || parseSemver(declared) === null) {
+      unusable.set(manifest.name, { label, declared });
       continue;
     }
-    versions.set(manifest.name, manifest.version);
+    versions.set(manifest.name, declared);
   }
-  for (const { label, manifest } of [{ label: "package.json", manifest: root }, ...workspaces]) {
+  const errors = [];
+  for (const { label, manifest } of workspaces) {
     for (const field of PACKAGE_DEPENDENCY_FIELDS) {
       for (const [name, range] of Object.entries(manifest?.[field] ?? {})) {
+        const broken = unusable.get(name);
+        if (broken !== undefined) {
+          errors.push(
+            `${label} ${field}.${name} = "${range}" points at workspace ${broken.label}, ` +
+              `whose version is ${broken.declared === undefined ? "missing" : `"${broken.declared}"`} — ` +
+              "npm cannot match a range against it and resolves the dependency from the " +
+              "public registry instead of the local workspace",
+          );
+          continue;
+        }
         const version = versions.get(name);
-        if (version === undefined) continue; // Not a local workspace (or already reported).
+        if (version === undefined) continue; // Not a local workspace.
         const satisfied = satisfiesWorkspaceRange(range, version);
         if (satisfied === null) {
           errors.push(
@@ -483,9 +507,7 @@ export function workspaceInstallGraphErrors(frontendCodeRoot = FRONTEND_CODE_ROO
   if (JSON.stringify(lockedWorkspaceKeys) !== JSON.stringify(workspaceKeys.sort())) {
     errors.push("frontend package-lock.json contains a missing or removed packages/* workspace");
   }
-  errors.push(
-    ...workspaceLinkSatisfactionErrors({ root: rootManifest, workspaces: workspaceManifests }),
-  );
+  errors.push(...workspaceLinkSatisfactionErrors({ workspaces: workspaceManifests }));
   return errors;
 }
 

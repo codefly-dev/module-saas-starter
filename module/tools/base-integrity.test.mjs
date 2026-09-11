@@ -565,7 +565,7 @@ test("workspaceLinkSatisfactionErrors catches a workspace pin the workspace cann
       },
     },
   ];
-  const errors = workspaceLinkSatisfactionErrors({ root: {}, workspaces });
+  const errors = workspaceLinkSatisfactionErrors({ workspaces });
   assert.equal(errors.length, 2);
   for (const error of errors) {
     assert.match(error, /@codefly-dev\/saas-sdk = "0\.2\.0" is not satisfied by workspace @codefly-dev\/saas-sdk@0\.2\.1/);
@@ -575,62 +575,98 @@ test("workspaceLinkSatisfactionErrors catches a workspace pin the workspace cann
 });
 
 test("workspaceLinkSatisfactionErrors accepts a range the workspace satisfies", () => {
-  const workspaces = [
-    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
-    {
-      label: "packages/saas-ui/package.json",
-      manifest: {
-        name: "@codefly-dev/saas-ui",
-        version: "0.2.0",
-        peerDependencies: { "@codefly-dev/saas-sdk": "^0.2.1" },
-      },
-    },
-  ];
   assert.deepEqual(
     workspaceLinkSatisfactionErrors({
-      root: { dependencies: { "@codefly-dev/saas-ui": "0.2.0" } },
+      workspaces: [
+        { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.1" } },
+        {
+          label: "packages/saas-ui/package.json",
+          manifest: {
+            name: "@codefly-dev/saas-ui",
+            version: "0.2.0",
+            peerDependencies: { "@codefly-dev/saas-sdk": "^0.2.1" },
+          },
+        },
+      ],
+    }),
+    [],
+  );
+});
+
+// Scope check, verified against real npm: a ROOT dependency resolves a workspace
+// by NAME and links it whatever the range says — even when the registry carries
+// the pinned version (a workspace named `is-odd` at 99.0.0 wins over a root pin
+// of the real `is-odd@3.0.1`). So a drifting root pin is not an install hazard,
+// and an earlier revision that flagged it failed the repo-wide gate with an E404
+// claim that could never happen.
+test("workspaceLinkSatisfactionErrors does not police root-manifest pins", () => {
+  const workspaces = [
+    { label: "packages/saas-sdk/package.json", manifest: { name: "@codefly-dev/saas-sdk", version: "0.2.2" } },
+  ];
+  // Passed the way the caller once did; the root manifest must be ignored.
+  assert.deepEqual(workspaceLinkSatisfactionErrors({ workspaces }), []);
+  assert.deepEqual(
+    workspaceLinkSatisfactionErrors({
+      root: { dependencies: { "@codefly-dev/saas-sdk": "0.2.1" } },
       workspaces,
     }),
     [],
   );
 });
 
-// A prerelease workspace version is a normal thing to cut. It must not be
-// reported as an unevaluatable RANGE — that names the wrong file, and an earlier
-// revision did exactly that for every dependent edge.
-test("workspaceLinkSatisfactionErrors supports a prerelease workspace version", () => {
-  const workspaces = [
-    { label: "packages/a/package.json", manifest: { name: "a", version: "0.3.0-rc.1" } },
-  ];
+// A sibling that declares no readable `version` produces the SAME E404 as a
+// mismatched range (reproduced against real npm), so it must not be dropped.
+// An earlier revision skipped it entirely and returned no errors at all.
+test("workspaceLinkSatisfactionErrors catches an edge onto an unusable workspace version", () => {
+  for (const declared of [undefined, "not-a-version", null]) {
+    const manifest = { name: "foo" };
+    if (declared !== undefined) manifest.version = declared;
+    const errors = workspaceLinkSatisfactionErrors({
+      workspaces: [
+        { label: "packages/foo/package.json", manifest },
+        {
+          label: "packages/bar/package.json",
+          manifest: { name: "bar", version: "1.0.0", devDependencies: { foo: "1.0.0" } },
+        },
+      ],
+    });
+    assert.equal(errors.length, 1, `declared=${String(declared)}`);
+    assert.match(errors[0], /points at workspace packages\/foo\/package\.json/);
+    assert.match(errors[0], /public registry instead of the local workspace/);
+  }
+});
+
+// …but a workspace nobody depends on cannot break an install, so it is not an
+// error on its own. Over-reporting here would fail the repo-wide gate for a
+// private helper package that is perfectly fine.
+test("workspaceLinkSatisfactionErrors ignores an unusable version nothing depends on", () => {
   assert.deepEqual(
-    workspaceLinkSatisfactionErrors({ root: { dependencies: { a: "^0.3.0-rc.1" } }, workspaces }),
+    workspaceLinkSatisfactionErrors({
+      workspaces: [{ label: "packages/foo/package.json", manifest: { name: "foo" } }],
+    }),
     [],
   );
-  const stale = workspaceLinkSatisfactionErrors({
-    root: { dependencies: { a: "^0.1.0" } },
-    workspaces,
-  });
+});
+
+test("workspaceLinkSatisfactionErrors supports a prerelease workspace version", () => {
+  const workspaces = (range) => [
+    { label: "packages/a/package.json", manifest: { name: "a", version: "0.3.0-rc.1" } },
+    { label: "packages/b/package.json", manifest: { name: "b", version: "1.0.0", dependencies: { a: range } } },
+  ];
+  assert.deepEqual(workspaceLinkSatisfactionErrors({ workspaces: workspaces("^0.3.0-rc.1") }), []);
+  const stale = workspaceLinkSatisfactionErrors({ workspaces: workspaces("^0.1.0") });
   assert.equal(stale.length, 1);
   assert.match(stale[0], /is not satisfied by workspace a@0\.3\.0-rc\.1/);
 });
 
-// An unreadable VERSION is reported against the workspace that declares it, not
-// blamed on whichever range happened to reference it.
-test("workspaceLinkSatisfactionErrors blames an unreadable version on its own workspace", () => {
-  const errors = workspaceLinkSatisfactionErrors({
-    root: { dependencies: { a: "^1.0.0" } },
-    workspaces: [{ label: "packages/a/package.json", manifest: { name: "a", version: "not-a-version" } }],
-  });
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /packages\/a\/package\.json version "not-a-version" is not a semver/);
-  assert.ok(!errors[0].includes("^1.0.0"));
-});
-
 test("workspaceLinkSatisfactionErrors fails closed on an unevaluatable workspace range", () => {
   const errors = workspaceLinkSatisfactionErrors({
-    root: { dependencies: { "@codefly-dev/saas-ui": "1.0.0 - 2.0.0" } },
     workspaces: [
       { label: "packages/saas-ui/package.json", manifest: { name: "@codefly-dev/saas-ui", version: "1.5.0" } },
+      {
+        label: "packages/other/package.json",
+        manifest: { name: "other", version: "1.0.0", dependencies: { "@codefly-dev/saas-ui": "1.0.0 - 2.0.0" } },
+      },
     ],
   });
   assert.equal(errors.length, 1);

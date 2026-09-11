@@ -26,14 +26,24 @@ const CODE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // asserted `files.length > 0`, which README.md + package.json satisfy
 // unconditionally. Hence `shipsBuiltOutput` below: the guard now proves it
 // actually inspected build output before concluding anything.
+// Packing is done lazily and memoized, INSIDE the tests rather than at module
+// scope: a pack failure then surfaces as a named assertion instead of a bare
+// collection error with no indication of which package or check was involved.
+const packCache = new Map();
 function packedFiles(name) {
-	const output = execFileSync(
-		"npm",
-		["pack", "--workspace", name, "--dry-run", "--json"],
-		{ cwd: CODE_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-	);
-	const [entry] = JSON.parse(output);
-	return entry.files.map((file) => file.path.replaceAll("\\", "/"));
+	if (!packCache.has(name)) {
+		const output = execFileSync(
+			"npm",
+			["pack", "--workspace", name, "--dry-run", "--json"],
+			{ cwd: CODE_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+		);
+		const [entry] = JSON.parse(output);
+		packCache.set(
+			name,
+			entry.files.map((file) => file.path.replaceAll("\\", "/")),
+		);
+	}
+	return packCache.get(name);
 }
 
 // Workspace directory for a package, read from the manifests on disk rather
@@ -66,12 +76,11 @@ const SOURCE_MAPPING_URL = /\/\/# sourceMappingURL=(.+)\s*$/;
 
 describe.each(PACKAGES)("%s ships a self-contained tarball", (name) => {
 	const dir = packageDir(name);
-	const files = packedFiles(name);
-	const shipped = new Set(files);
 
 	// Without this the two checks below are vacuously true for an unbuilt
 	// package, which is precisely how the earlier revision went green.
 	it("ships built output, so the checks below actually inspect something", () => {
+		const files = packedFiles(name);
 		const dist = files.filter((file) => file.startsWith("dist/"));
 		expect(
 			dist.length,
@@ -81,6 +90,8 @@ describe.each(PACKAGES)("%s ships a self-contained tarball", (name) => {
 	});
 
 	it("never references a sourcemap it does not ship", () => {
+		const files = packedFiles(name);
+		const shipped = new Set(files);
 		const dangling = [];
 		for (const file of files) {
 			if (!file.endsWith(".js") && !file.endsWith(".d.ts")) continue;
@@ -101,6 +112,8 @@ describe.each(PACKAGES)("%s ships a self-contained tarball", (name) => {
 	});
 
 	it("never names a source it does not ship or inline", () => {
+		const files = packedFiles(name);
+		const shipped = new Set(files);
 		const unresolved = [];
 		for (const map of files.filter((file) => file.endsWith(".map"))) {
 			const parsed = JSON.parse(readFileSync(join(dir, map), "utf8"));
@@ -120,5 +133,42 @@ describe.each(PACKAGES)("%s ships a self-contained tarball", (name) => {
 			`${name} ships maps naming sources that are neither in the tarball nor ` +
 				"inlined — a consumer gets 'source not found' on those frames",
 		).toEqual([]);
+	});
+});
+
+// `npm pack` runs prepack/prepare/prepublishOnly before building the tarball. If
+// any kit package gained such a script, the three packs above would each trigger
+// a BUILD — concurrently with the ~200 other files in this vitest project that
+// import these packages, rewriting `dist` out from under them mid-resolution.
+// That is not hypothetical: clearing `dist` from a sibling spec's `beforeAll`
+// did exactly that here and failed four test files with Vite
+// `resolvePackageEntry`. Today no kit package declares one, which is the only
+// reason packing is safe from inside the test run — so pin that rather than rely
+// on it staying true by accident.
+describe("packing a kit package cannot trigger a build", () => {
+	const packagesRoot = join(CODE_ROOT, "packages");
+	for (const name of PACKAGES) {
+		it(`${name} declares no pack lifecycle script`, () => {
+			const dir = packageDir(name);
+			const manifest = JSON.parse(
+				readFileSync(join(dir, "package.json"), "utf8"),
+			);
+			const scripts = manifest.scripts ?? {};
+			const lifecycle = [
+				"prepack",
+				"prepare",
+				"prepublishOnly",
+				"postpack",
+			].filter((hook) => scripts[hook] !== undefined);
+			expect(
+				lifecycle,
+				`${name} declares ${lifecycle.join(", ")}; npm pack would run it during ` +
+					"the test run and rebuild dist while concurrent specs import this package",
+			).toEqual([]);
+		});
+	}
+	it("resolved a packages root (guards the loop against an empty set)", () => {
+		expect(packagesRoot).toContain("packages");
+		expect(PACKAGES.length).toBeGreaterThanOrEqual(3);
 	});
 });

@@ -35,10 +35,21 @@ describe("the README install line matches peerDependencies", () => {
 		throw new Error("README has no ``` block containing an `npm i ` command");
 	})();
 
+	// Compare PACKAGE names only. A shell comment or an npm flag inside the fence
+	// is legitimate prose/usage, not a drifted dependency, and treating it as one
+	// would fail with "the list has drifted from the manifest" — a message that
+	// names the wrong cause and sends the reader to package.json for nothing.
 	const documented = new Set(
 		installBlock
-			.match(/(?:@[\w.-]+\/)?[\w.-]+/g)
-			?.filter((token) => token !== "npm" && token !== "i") ?? [],
+			.split("\n")
+			.map((line) => line.replace(/#.*$/, "")) // strip shell comments
+			.join(" ")
+			.split(/\s+/)
+			.filter(
+				(token) => token && token !== "\\" && token !== "npm" && token !== "i",
+			)
+			.filter((token) => !token.startsWith("-")) // npm flags, e.g. --save-exact
+			.filter((token) => /^(?:@[\w.-]+\/)?[\w.-]+$/.test(token)),
 	);
 	const peers = Object.keys(manifest.peerDependencies ?? {});
 
