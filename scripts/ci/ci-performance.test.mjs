@@ -3,11 +3,38 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { parseWorkflowYaml } from './workflow-yaml.mjs';
 
 const root = join(import.meta.dirname, '../..');
 const workflow = parseWorkflowYaml(readFileSync(join(root, '.github/workflows/ci.yml'), 'utf8'));
+
+test('the CLI installer verifies downloads before putting the executable on PATH', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ci-cli-'));
+  try {
+    writeFileSync(join(dir, 'codefly'), '#!/bin/sh\necho fixture\n');
+    const archive = join(dir, 'fixture.tar.gz');
+    assert.equal(spawnSync('tar', ['-czf', archive, '-C', dir, 'codefly']).status, 0);
+    const digest = createHash('sha256').update(readFileSync(archive)).digest('hex');
+    const installer = readFileSync(join(root, 'scripts/ci/install-codefly.sh'), 'utf8');
+    writeFileSync(join(dir, 'installer.sh'), installer.replace(/^checksum=.+$/m, `checksum=${digest}`));
+    writeFileSync(join(dir, 'uname'), '#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo x86_64; fi\n', { mode: 0o755 });
+    writeFileSync(join(dir, 'curl'), '#!/bin/bash\ncp "$FIXTURE_ARCHIVE" "${@: -1}"\n', { mode: 0o755 });
+    const pathFile = join(dir, 'github-path');
+    const env = { ...process.env, PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, GITHUB_PATH: pathFile, FIXTURE_ARCHIVE: archive };
+    const valid = spawnSync('bash', [join(dir, 'installer.sh')], { env, encoding: 'utf8' });
+    assert.equal(valid.status, 0, valid.stderr);
+    assert.equal(readFileSync(join(dir, 'codefly-bin/codefly'), 'utf8'), '#!/bin/sh\necho fixture\n');
+    writeFileSync(pathFile, '');
+    writeFileSync(archive, 'corrupt download');
+    const corrupt = spawnSync('bash', [join(dir, 'installer.sh')], { env, encoding: 'utf8' });
+    assert.notEqual(corrupt.status, 0);
+    assert.equal(readFileSync(pathFile, 'utf8'), '');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('the required Codefly quality check accepts only a successful phase matrix', () => {
   const gate = workflow.jobs['codefly-quality'];

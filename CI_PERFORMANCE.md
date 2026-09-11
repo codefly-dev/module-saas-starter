@@ -60,6 +60,10 @@ approximately 408 MB Go cache keyed only to the root module's checksum file.
    files in the heavy jobs' cache keys. Cache npm downloads across quality
    runners while keeping clean dependency installation owned by each agent.
 
+4. Install the published Linux x64 Codefly binary with a checked-in SHA-256
+   digest instead of compiling the same pinned CLI independently in every job.
+   The archive digest was checked against the downloaded v0.1.145 release.
+
 These changes are not a measured sub-five-minute result. Standalone phases
 start cold and cannot reuse installs or compiler output from earlier phases in
 the same run. Hosted measurements must establish their actual duration, disk

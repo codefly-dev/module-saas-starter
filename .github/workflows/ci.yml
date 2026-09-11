@@ -215,9 +215,7 @@ jobs:
           GOWORK: "off"
         run: go test -run TestMergedProtocolGeneratorsUseOneInvocation .
       - name: Install Codefly
-        env:
-          GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
+        run: bash scripts/ci/install-codefly.sh
       - name: Check exported API contracts are in sync with the proto
         run: codefly generate contracts saas-starter --check
 
@@ -321,12 +319,7 @@ jobs:
         with:
           go-version: "1.27.0"
       - name: Install Codefly
-        env:
-          # First-party modules never verify against the public checksum DB —
-          # sum.golang.org 500s/404s on fresh or private codefly-dev tags.
-          # Same setting a consuming product's CI uses (scripts/ci-fetch-codefly.sh).
-          GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
+        run: bash scripts/ci/install-codefly.sh
       - name: Resolve affected services
         id: plan
         shell: bash
@@ -413,9 +406,7 @@ jobs:
           restore-keys: |
             npm-quality-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
-        env:
-          GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
+        run: bash scripts/ci/install-codefly.sh
       - name: Ensure runner disk space
         if: matrix.phase == 'test'
         run: bash scripts/ci/ensure-disk-space.sh
@@ -508,9 +499,7 @@ jobs:
             module/tools/go.sum
             module/services/*/code/go.sum
       - name: Install Codefly
-        env:
-          GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
+        run: bash scripts/ci/install-codefly.sh
       # Temporal's amd64 image expands beyond Core's managed 512 MiB Syft
       # scratch volume. A host binary lets Codefly use the runner's disk.
       - name: Install Syft
@@ -579,9 +568,7 @@ jobs:
             module/tools/go.sum
             module/services/*/code/go.sum
       - name: Install Codefly
-        env:
-          GOPRIVATE: github.com/codefly-dev/*
-        run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
+        run: bash scripts/ci/install-codefly.sh
       - name: Ensure runner disk space
         run: bash scripts/ci/ensure-disk-space.sh
       - name: Build affected service images
