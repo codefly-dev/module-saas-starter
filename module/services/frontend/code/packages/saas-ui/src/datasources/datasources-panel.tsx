@@ -12,7 +12,7 @@ import {
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
 import type { DatasourceClient, DatasourceView } from "./types.js";
-import { cn, formatSyncedAt, parsePaths } from "./util.js";
+import { cn, formatIngest, formatSyncedAt, parsePaths } from "./util.js";
 
 interface DatasourcesPanelBaseProps {
 	orgId: string;
@@ -244,6 +244,17 @@ function messageOf(error: unknown): string {
 		: "unexpected error";
 }
 
+/**
+ * The second clock on a row: `lastSyncedAt` moves on a tenant-triggered sync,
+ * while this one is advanced by the leased ingest worker on a webhook delivery
+ * or periodic reconcile. Rendered only once a delivery has landed, so a source
+ * without one shows the sync clock alone rather than a second "Never".
+ */
+function IngestLine({ source }: { source: DatasourceView }) {
+	const line = formatIngest(source.lastIngestedAt, source.lastIngestedCommit);
+	return line ? <div className="text-xs">{line}</div> : null;
+}
+
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
 
@@ -289,7 +300,8 @@ function SourcesTable({
 								{source.webhookConfigured ? "Configured" : "None"}
 							</td>
 							<td className={cn(cellClass, "text-muted-foreground")}>
-								{formatSyncedAt(source.lastSyncedAt)}
+								<div>{formatSyncedAt(source.lastSyncedAt)}</div>
+								<IngestLine source={source} />
 							</td>
 							<td className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">

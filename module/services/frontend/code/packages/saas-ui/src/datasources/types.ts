@@ -21,6 +21,14 @@ export interface DatasourceView {
 	webhookConfigured: boolean;
 	status: DatasourceStatusName;
 	lastSyncedAt: string | undefined;
+	/**
+	 * When the change-set compiler last enqueued a delivery. A separate clock
+	 * from `lastSyncedAt`: the tenant's "Sync now" moves that one, the leased
+	 * ingest worker moves this one on a webhook delivery or periodic reconcile.
+	 */
+	lastIngestedAt: string | undefined;
+	/** Head commit the `lastIngestedAt` delivery covered. */
+	lastIngestedCommit: string | undefined;
 	createdAt: string | undefined;
 }
 

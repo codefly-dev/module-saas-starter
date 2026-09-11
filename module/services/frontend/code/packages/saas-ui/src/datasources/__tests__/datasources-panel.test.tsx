@@ -46,6 +46,8 @@ const sampleSource: DatasourceView = {
 	webhookConfigured: true,
 	status: "active",
 	lastSyncedAt: undefined,
+	lastIngestedAt: undefined,
+	lastIngestedCommit: undefined,
 	createdAt: undefined,
 };
 
@@ -82,6 +84,42 @@ describe("DatasourcesPanel", () => {
 			await screen.findByText("codefly-dev/module-saas-starter"),
 		).toBeTruthy();
 		expect(client.listSources).toHaveBeenCalledWith("org-1");
+	});
+
+	it("renders the ingest provenance beside the tenant-triggered sync clock", async () => {
+		// A github source's ingest is advanced by the leased worker, not by
+		// "Sync now", so the two clocks have to read as two facts: collapsing them
+		// would hide that this repo has live webhook ingest and no manual pull.
+		const ingestedAt = "2026-09-08T11:30:00.000Z";
+		const ingested: DatasourceView = {
+			...sampleSource,
+			lastIngestedAt: ingestedAt,
+			lastIngestedCommit: "9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [ingested]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const line = await screen.findByText(/last webhook ingest/i);
+		expect(line.textContent).toContain(
+			new Date(ingestedAt).toLocaleDateString(),
+		);
+		// The short commit git itself would print, not the full 40-char sha.
+		expect(line.textContent).toContain("9f2c1ab");
+		expect(line.textContent).not.toContain(
+			"9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
+		);
+		// The manual-pull clock keeps its own, still-never value.
+		expect(screen.getByText("Never")).toBeTruthy();
+	});
+
+	it("shows no ingest line for a source whose first delivery has not landed", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(screen.queryByText(/last webhook ingest/i)).toBeNull();
 	});
 
 	it("submits the connect form through addGitHubSource", async () => {
