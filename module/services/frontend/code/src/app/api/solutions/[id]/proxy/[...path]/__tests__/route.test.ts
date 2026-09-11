@@ -145,22 +145,96 @@ describe("solution proxy passthrough", () => {
 		);
 	});
 
-	it("rejects a cross-site request before reaching any upstream", async () => {
+	it.each([
+		"saas.accounts.v1.DatasourceService/ListSources",
+		"saas.store.v1.StoreService/Get",
+	])(
+		"forwards platform procedure %s to the gateway root",
+		async (procedure) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
+			const body = JSON.stringify({ pageSize: 10 });
+
+			const res = await POST(
+				proxyRequest(
+					`http://frontend/api/solutions/audit/proxy/${procedure}?key=value`,
+					{
+						method: "POST",
+						headers: {
+							authorization: "Bearer caller-token",
+							"content-type": "application/json",
+							"x-codefly-internal-token": "untrusted-token",
+						},
+						body,
+					},
+				),
+				context("audit", procedure.split("/")),
+			);
+
+			expect(res.status).toBe(200);
+			expect(await res.text()).toBe("upstream-body");
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+			const [target, init] = fetchMock.mock.calls[0];
+			expect(target).toBe(`${GATEWAY}/${procedure}?key=value`);
+			expect(init.method).toBe("POST");
+			expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe(body);
+			const headers = init.headers as Headers;
+			expect(headers.get("authorization")).toBe("Bearer caller-token");
+			expect(headers.get("content-type")).toBe("application/json");
+			expect(headers.get("x-codefly-internal-token")).toBe(INTERNAL_TOKEN);
+			expect(headers.get("x-codefly-public-origin")).toBe("http://frontend");
+		},
+	);
+
+	it.each([
+		"records",
+		"example.audit.v1.AuditService/ListRecords",
+		"saas.accounts.v1.DatasourceService",
+		"saas.accounts.v1.DatasourceService/ListSources/extra",
+		"saas.accounts.v1.DatasourceService/not-a-method",
+		"saas.accounts.v2.DatasourceService/ListSources",
+	])("keeps solution path %s on the registered upstream", async (path) => {
 		withGateway();
-		withTrustContext();
 		registerAudit();
 
-		const res = await POST(
-			rawRequest("http://frontend/api/solutions/audit/proxy/records", "POST", {
-				cookie: "codefly_session=1",
-				"sec-fetch-site": "cross-site",
+		await POST(
+			proxyRequest(`http://frontend/api/solutions/audit/proxy/${path}`, {
+				method: "POST",
+				body: "{}",
 			}),
-			context("audit", ["records"]),
+			context("audit", path.split("/")),
 		);
 
-		expect(res.status).toBe(403);
-		expect(fetchMock).not.toHaveBeenCalled();
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock.mock.calls[0][0]).toBe(
+			`${GATEWAY}/solutions/audit-backend/${path}`,
+		);
 	});
+
+	it.each(["records", "saas.accounts.v1.DatasourceService/ListSources"])(
+		"rejects a cross-site request before reaching any upstream (%s)",
+		async (path) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
+
+			const res = await POST(
+				rawRequest(
+					`http://frontend/api/solutions/audit/proxy/${path}`,
+					"POST",
+					{
+						cookie: "codefly_session=1",
+						"sec-fetch-site": "cross-site",
+					},
+				),
+				context("audit", path.split("/")),
+			);
+
+			expect(res.status).toBe(403);
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
 
 	it("rejects a request whose Origin is a different origin", async () => {
 		withGateway();
@@ -261,23 +335,26 @@ describe("solution proxy passthrough", () => {
 		);
 	});
 
-	it("forwards the session cookie so a cookie-authenticated remote is identified", async () => {
-		withGateway();
-		withTrustContext();
-		registerAudit();
+	it.each(["records", "saas.accounts.v1.DatasourceService/ListSources"])(
+		"forwards the session cookie so a cookie-authenticated remote is identified (%s)",
+		async (path) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
 
-		await GET(
-			rawRequest("http://frontend/api/solutions/audit/proxy/records", "GET", {
-				cookie: "codefly_session=1; codefly_refresh=abc",
-			}),
-			context("audit", ["records"]),
-		);
+			await GET(
+				rawRequest(`http://frontend/api/solutions/audit/proxy/${path}`, "GET", {
+					cookie: "codefly_session=1; codefly_refresh=abc",
+				}),
+				context("audit", path.split("/")),
+			);
 
-		const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
-		expect(forwarded.get("cookie")).toBe(
-			"codefly_session=1; codefly_refresh=abc",
-		);
-	});
+			const forwarded = fetchMock.mock.calls[0][1].headers as Headers;
+			expect(forwarded.get("cookie")).toBe(
+				"codefly_session=1; codefly_refresh=abc",
+			);
+		},
+	);
 
 	it("omits trust headers when no internal token is configured", async () => {
 		withGateway();
@@ -329,20 +406,23 @@ describe("solution proxy passthrough", () => {
 		);
 	});
 
-	it("rejects an unregistered solution id without reaching any upstream", async () => {
-		withGateway();
-		// No registration for "ghost".
+	it.each(["records", "saas.accounts.v1.DatasourceService/ListSources"])(
+		"rejects an unregistered solution id without reaching any upstream (%s)",
+		async (path) => {
+			withGateway();
+			// No registration for "ghost".
 
-		const res = await GET(
-			proxyRequest("http://frontend/api/solutions/ghost/proxy/records", {
-				headers: { authorization: "Bearer caller-token" },
-			}),
-			context("ghost", ["records"]),
-		);
+			const res = await GET(
+				proxyRequest(`http://frontend/api/solutions/ghost/proxy/${path}`, {
+					headers: { authorization: "Bearer caller-token" },
+				}),
+				context("ghost", path.split("/")),
+			);
 
-		expect(res.status).toBe(404);
-		expect(fetchMock).not.toHaveBeenCalled();
-	});
+			expect(res.status).toBe(404);
+			expect(fetchMock).not.toHaveBeenCalled();
+		},
+	);
 
 	it("fails with 502 when the gateway endpoint is unresolvable", async () => {
 		getEndpoints.mockReturnValue([]);

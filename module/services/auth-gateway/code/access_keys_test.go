@@ -292,26 +292,67 @@ func TestAccessJWKS_StaleKeysDoNotWithdrawTheListener(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestAccessJWKS_ConcurrentUnknownKeyIDsAreBounded(t *testing.T) {
-	pub, _ := mustEd25519(t)
+	pub, priv := mustEd25519(t)
 	_, attacker := mustEd25519(t)
 	publisher := newRotatingJWKSServer(t, accessJWKSFor(t, pub))
 	authz := newJWKSExtAuthz(t, publisher.server.URL)
+	// The bound is one probe per interval, so the window has to be held still
+	// for the count to mean anything.
+	clock := newTestClock(t, authz)
 
-	const callers = 32
-	var wg sync.WaitGroup
-	for i := 0; i < callers; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			token := signAccessToken(t, attacker, fmt.Sprintf("attacker-chosen-%d", i), validClaims(time.Now()))
-			requireDenied(t, authz, token, 401)
-		}(i)
+	// Ordinary traffic warms the cache first, so what the storm adds is the
+	// probe budget alone rather than a cold fetch the scheduler may or may not
+	// have folded into it.
+	requireAdmitted(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
+	warm := publisher.fetches()
+	require.Equal(t, int64(1), warm)
+
+	// Tokens are minted on this goroutine: the callers exercise key resolution,
+	// and require's FailNow is only valid here.
+	storm := func(round int) {
+		const callers = 32
+		tokens := make([]string, callers)
+		for i := range tokens {
+			tokens[i] = signAccessToken(t, attacker,
+				fmt.Sprintf("attacker-chosen-%d-%d", round, i), validClaims(time.Now()))
+		}
+
+		statuses := make([]int32, callers)
+		var wg sync.WaitGroup
+		for i := 0; i < callers; i++ {
+			wg.Add(1)
+			go func(i int) {
+				defer wg.Done()
+				statuses[i] = deniedStatus(authz, tokens[i])
+			}(i)
+		}
+		wg.Wait()
+
+		for i, status := range statuses {
+			require.Equal(t, int32(401), status, "caller %d must be denied as a bad credential", i)
+		}
 	}
-	wg.Wait()
 
-	// One cold fetch plus at most one unknown-key probe for the whole window,
-	// however many distinct key ids the traffic invents.
-	require.LessOrEqual(t, publisher.fetches(), int64(2))
+	// However many distinct key ids the traffic invents, one window buys it one
+	// probe — not one fetch per request.
+	storm(1)
+	require.Equal(t, warm+1, publisher.fetches(),
+		"a whole window of invented key ids must cost exactly one probe")
+
+	// The next window buys exactly one more. The guarantee is a rate, so the
+	// cost of sustained invented key ids is per interval, not per request.
+	clock.advance(jwksProbeInterval)
+	storm(2)
+	require.Equal(t, warm+2, publisher.fetches(),
+		"a second window must buy exactly one more probe")
+
+	// A stopped clock proves the shape of that rate but says nothing about its
+	// magnitude: every positive interval suppresses a probe when now never
+	// moves. The floor is what makes the rate worth having — at a millisecond
+	// spacing an unauthenticated caller could still drive hundreds of fetches a
+	// second at the publisher, which is the storm this bound exists to stop.
+	require.GreaterOrEqual(t, jwksProbeInterval, time.Second,
+		"the probe interval must stay coarse enough to bound the fetch rate")
 }
 
 func TestAccessJWKS_ConcurrentColdRequestsShareOneFetch(t *testing.T) {
@@ -470,32 +511,39 @@ func extAuthzWithKeys(keys accessKeys) *ExtAuthz {
 	}
 }
 
-// testClock replaces the key cache's clock so TTL and grace boundaries are
-// exercised without sleeping.
+// freezeClock stops a key cache's clock and returns the only thing that moves
+// it. A clock that still tracked wall time would let a slow runner cross a
+// boundary the test did not ask it to cross. Both verification paths are built
+// on the same cache, so both freeze it through here.
+func freezeClock[T any](cache *jwksCache[T]) func(time.Duration) {
+	var mu sync.Mutex
+	at := time.Now()
+	cache.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return at
+	}
+	return func(d time.Duration) {
+		mu.Lock()
+		at = at.Add(d)
+		mu.Unlock()
+	}
+}
+
+// testClock drives the access-token key cache's TTL, probe, and grace
+// boundaries without sleeping.
 type testClock struct {
-	mu     sync.Mutex
-	offset time.Duration
-	keys   *accessJWKS
+	advanceBy func(time.Duration)
 }
 
 func newTestClock(t *testing.T, authz *ExtAuthz) *testClock {
 	t.Helper()
 	keys, ok := authz.keys.(*accessJWKS)
 	require.True(t, ok)
-	clock := &testClock{keys: keys}
-	keys.cache.now = func() time.Time {
-		clock.mu.Lock()
-		defer clock.mu.Unlock()
-		return time.Now().Add(clock.offset)
-	}
-	return clock
+	return &testClock{advanceBy: freezeClock(keys.cache)}
 }
 
-func (c *testClock) advance(d time.Duration) {
-	c.mu.Lock()
-	c.offset += d
-	c.mu.Unlock()
-}
+func (c *testClock) advance(d time.Duration) { c.advanceBy(d) }
 
 func requireAdmitted(t *testing.T, authz *ExtAuthz, token string) {
 	t.Helper()
@@ -515,6 +563,24 @@ func requireDenied(t *testing.T, authz *ExtAuthz, token string, status int32) {
 	denied := resp.GetDeniedResponse()
 	require.NotNil(t, denied, "token should have been denied")
 	require.Equal(t, status, int32(denied.GetStatus().GetCode()))
+}
+
+// deniedStatus runs one Check and reports the denial status, for callers on a
+// goroutine other than the test's — where require's FailNow is not valid. It
+// reports 0 when the request was admitted and -1 when Check itself failed, so
+// either shows up as a mismatch once the test goroutine asserts.
+func deniedStatus(authz *ExtAuthz, token string) int32 {
+	resp, err := authz.Check(context.Background(), checkReq("/v1/users", map[string]string{
+		"authorization": "Bearer " + token,
+	}))
+	if err != nil {
+		return -1
+	}
+	denied := resp.GetDeniedResponse()
+	if denied == nil {
+		return 0
+	}
+	return int32(denied.GetStatus().GetCode())
 }
 
 func readyStatus(t *testing.T, gateway *Gateway) int {

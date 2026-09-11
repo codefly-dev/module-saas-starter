@@ -17,9 +17,19 @@ func TestGDPRStatusIsBoundToSubjectAndRequestType(t *testing.T) {
 	userB, _ := mustUserAndOrg(t, ctx, "bob-gdpr-authz@test.com", "bob-gdpr-authz", "GDPR B")
 	store := business.GDPRStore(testStore)
 
-	exportA := &business.GDPRRequest{ID: business.NewIDString(), UserID: userA, Type: business.GDPRExport, Status: business.GDPRPending}
-	deletionA := &business.GDPRRequest{ID: business.NewIDString(), UserID: userA, Type: business.GDPRDeletion, Status: business.GDPRPending}
-	exportB := &business.GDPRRequest{ID: business.NewIDString(), UserID: userB, Type: business.GDPRExport, Status: business.GDPRPending}
+	newRequest := func(userID string, kind business.GDPRRequestType) *business.GDPRRequest {
+		return &business.GDPRRequest{
+			ID:     business.NewIDString(),
+			UserID: userID,
+			Type:   kind,
+			Status: business.GDPRPending,
+			// A pending request must name the job that owns it.
+			JobID: business.NewIDString(),
+		}
+	}
+	exportA := newRequest(userA, business.GDPRExport)
+	deletionA := newRequest(userA, business.GDPRDeletion)
+	exportB := newRequest(userB, business.GDPRExport)
 	for _, request := range []*business.GDPRRequest{exportA, deletionA, exportB} {
 		require.NoError(t, testStore.As(business.Identity{UserID: request.UserID}).Within(ctx, func(scoped context.Context) error {
 			return store.CreateGDPRRequest(scoped, request)
