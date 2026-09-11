@@ -223,9 +223,9 @@ func (s *PostgresStore) UpdateUser(ctx context.Context, userID string, updates m
 // profile writers serialize on the server instead of a caller having to
 // read-modify-write the whole map (which loses concurrent changes).
 //
-// This is deliberately separate from the "profile" replace path, which GDPR
-// anonymization (business.(*Service).processDeletion) relies on to scrub PII
-// by overwriting the entire map — a merge there would preserve the PII.
+// This is deliberately separate from the "profile" replace path, which a
+// privacy deletion adapter relies on to scrub PII by overwriting the entire
+// map — a merge there would preserve the PII.
 func (s *PostgresStore) mergeUserProfile(ctx context.Context, executor QueryExecutor, userID string, patch any) error {
 	w := wool.Get(ctx).In("mergeUserProfile")
 	fields, ok := patch.(map[string]string)

@@ -76,8 +76,8 @@ absence of `TRUNCATE`.
 
 ## Tenant and user relation grants
 
-Migrations `63_request_relation_grants`, `64_delegation_grant_authority`, and
-`66_team_member_upsert_authority`
+Migrations `63_request_relation_grants`, `64_delegation_grant_authority`,
+`66_team_member_upsert_authority`, and `124_privacy_durable_execution`
 replace historical full CRUD with the following exact `app_tenant` authority.
 All tenant/user rows remain constrained by their forced RLS policies.
 
@@ -87,7 +87,8 @@ All tenant/user rows remain constrained by their forced RLS policies.
 | select, insert, update | `api_keys`, `delegation_grants`, `entitlement_overrides`, `invitations`, `org_settings`, `organizations`, `principals`, `subscriptions`, `usage_totals`, `webhook_deliveries` |
 | select, insert, delete | `role_assignments`, `roles` |
 | select, insert, update, delete | `audit_export_configs`, `organization_members`, `team_members`, `teams`, `webhook_subscriptions` |
-| select, insert, update | `gdpr_requests`, `onboarding_progress`, `sessions`, `users`, `webauthn_ceremonies`, `webauthn_credentials` |
+| select, insert, update | `onboarding_progress`, `sessions`, `users`, `webauthn_ceremonies`, `webauthn_credentials` |
+| select, insert | `gdpr_requests` (accepted by request traffic, transitioned only by the leased privacy worker under the control plane) |
 | select, insert, update, delete | `mfa_backup_codes`, `mfa_devices`, `notifications`, `user_identities` |
 | insert only | `mfa_login_transactions` |
 | no tenant relation authority | `job_attempts`, `job_messages`, `job_state_transitions`, `magic_links` |

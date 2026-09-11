@@ -695,8 +695,8 @@ func (s *PostgresStore) ClearAll(ctx context.Context) error {
 	return s.WithControlPlane(ctx, func(ctx context.Context) error {
 		executor := s.getQueryExecutor(ctx)
 		for _, stmt := range []string{
-			// gdpr_requests.user_id intentionally has no ON DELETE CASCADE;
-			// remove durable privacy jobs before their subjects.
+			// gdpr_requests deliberately does not reference users: a privacy
+			// request outlives its subject, so nothing cascades it away.
 			"DELETE FROM gdpr_requests",
 			"DELETE FROM role_assignments",
 			"DELETE FROM role_permissions WHERE role_id IN (SELECT id FROM roles WHERE NOT built_in)",

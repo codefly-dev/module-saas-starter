@@ -731,6 +731,21 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
+	// Privacy export/deletion (issue #539): the leased worker that drives a
+	// configured privacy adapter. It runs whether or not one is wired — the
+	// starter ships none — so a job enqueued by a runtime that had an adapter
+	// dead-letters visibly here instead of sitting pending after the adapter is
+	// removed.
+	privacyWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.PrivacyWorkflowQueue,
+		Handler:    service.NewPrivacyJobHandler(),
+		RetryDelay: business.PrivacyWorkflowRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// The change-set compiler (issue #487): a leased worker that turns each raw
 	// GitHub delivery — and each periodic/forced reconcile request — into a set of
 	// per-file ingest ops, holding the source's decrypted token so all GitHub
@@ -791,6 +806,17 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		// An export artifact stays reachable only for its authorized window; the
+		// sweep asks the adapter to delete the stored object and drops the
+		// reference once that window has closed.
+		sweepPrivacyArtifacts := func() {
+			if n, err := service.PurgeExpiredPrivacyArtifacts(retentionCtx); err != nil {
+				rw.Warn("expired privacy artifact sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("deleted records", wool.Field("count", n), wool.Field("kind", "privacy_export_artifact"))
+			}
+		}
+
 		// Datasource reconcile (issue #487 §6): the production safety net for lost
 		// webhooks and for local development without a public tunnel. Each sweep
 		// enqueues a reconcile job for every active GitHub source whose schedule has
@@ -807,6 +833,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		// Run once immediately on startup.
 		runRetention()
 		sweepReplay()
+		sweepPrivacyArtifacts()
 		sweepReconcile()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
@@ -823,6 +850,7 @@ func doWork(ctx context.Context) (Clean, error) {
 				runRetention()
 			case <-replayTicker.C:
 				sweepReplay()
+				sweepPrivacyArtifacts()
 			case <-reconcileTicker.C:
 				sweepReconcile()
 			}
@@ -851,6 +879,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	emailWorker.Start(ctx)
 	webhookWorker.Start(ctx)
 	datasourceSyncWorker.Start(ctx)
+	privacyWorker.Start(ctx)
 	datasourceDeliveryWorker.Start(ctx)
 	eventRelayWorker.Start(ctx)
 
@@ -898,6 +927,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := webhookWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("outbound webhook worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping privacy workflow worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := privacyWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("privacy workflow worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("stopping datasource sync worker")
