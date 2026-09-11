@@ -1,0 +1,102 @@
+# Dependency updates for the ecosystems this repository can actually update.
+#
+# Which ecosystems those are is not a free choice, and
+# `scripts/ci/dependabot-coverage.mjs` enforces both rules below on every pull
+# request rather than leaving them to this comment.
+#
+# 1. A manifest hashed in module/tools/base-manifest.json must NOT be listed.
+#    Bumping one leaves that manifest stale, which fails `base-integrity` — a
+#    gate in REQUIRED_GATES — and Dependabot cannot repair it: it has no way to
+#    run `base-integrity.mjs gen`. Regenerating the manifest from a workflow and
+#    pushing onto Dependabot's branch does not rescue it either, because a commit
+#    pushed with GITHUB_TOKEN starts no new workflow run, so the required checks
+#    would sit unreported against the new head. Such an entry yields a pull
+#    request that can never merge, and open-pull-requests-limit then blocks every
+#    later update in that ecosystem behind it.
+#
+#    This is why npm (all 11 package.json), pip (the accounts pyproject.toml) and
+#    the five in-module go.mod files are absent. They are base files: their
+#    declared versions are owned by the canonical module, not by this
+#    repository's bots.
+#
+# 2. Every dependency manifest that is NOT base-tracked must be listed, so a gap
+#    is a gate failure rather than silence. The repository-root go.mod, the five
+#    builder Dockerfiles and the workflows are the whole of that set today.
+#
+# Two groups per ecosystem, not one. A single catch-all that also swallowed
+# `major` meant one incompatible major bump made the entire grouped pull request
+# unmergeable, and open-pull-requests-limit: 1 then stopped Dependabot opening
+# any replacement — starving the ecosystem of every patch queued behind it.
+# Majors travel in their own pull request, and the limit of 2 leaves room for
+# exactly that second request.
+#
+# Transitive security advisories are remediated by
+# .github/workflows/dep-audit.yml, which edits only lockfiles and regenerates the
+# base manifest itself. This file owns declared-version updates; the two do not
+# share a manifest.
+version: 2
+
+updates:
+  # The repository-root tooling module only. The five modules under module/ are
+  # base files; see rule 1.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      gomod:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      gomod-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+
+  - package-ecosystem: docker
+    directories:
+      - /module/services/store/builder
+      - /module/services/accounts/builder
+      - /module/services/frontend/builder
+      - /module/services/marketing/builder
+      - /module/services/auth-gateway/builder
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      docker:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      docker-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
+
+  # Every action is already pinned to a commit digest, and
+  # `release-gates.mjs check` fails the build on any mutable ref, so nothing but
+  # this entry would ever move those pins.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+      github-actions-major:
+        patterns:
+          - "*"
+        update-types:
+          - major
