@@ -161,23 +161,21 @@ describe("productGatewayURL", () => {
 		).toBe(GATEWAY);
 	});
 
-	it("refuses a default-scope fallback while Codefly owns the process", () => {
-		// Codefly owns this process (module + service are set) but has not
-		// injected the endpoint yet. The deterministic lookup answers for the
-		// DEFAULT naming scope, not the scope Codefly actually started, so
-		// accepting it would hand the harness a well-formed address for a graph
-		// that is not under test — the Playwright web server would then proxy the
-		// product API to the wrong gateway and the suite would prove nothing while
-		// looking healthy. It must refuse instead.
-		const notYetInjected = runtime({
-			endpoints: () => [],
-			resolveAddress: () => "http://localhost:9999",
-		});
-		expect(() => productGatewayURL(notYetInjected)).toThrow(
-			/owns this process but injected no auth-gateway\/rest/i,
-		);
-		expect(() => productOrigin(notYetInjected)).toThrow(
-			/owns this process but injected no frontend\/http/i,
-		);
+	it("falls back even while Codefly owns the process", () => {
+		// Codefly injects the endpoints of the DEPENDENCIES it started, so an
+		// endpoint can legitimately be absent from an owned process — a service's
+		// own endpoint always is when the service is not running. Treating
+		// ownership as proof of injection and refusing the fallback failed every
+		// pipeline test under `codefly test service frontend`.
+		expect(
+			productGatewayURL(
+				runtime({ endpoints: () => [], resolveAddress: () => GATEWAY }),
+			),
+		).toBe(GATEWAY);
+		expect(
+			productOrigin(
+				runtime({ endpoints: () => [], resolveAddress: () => ORIGIN }),
+			),
+		).toBe(ORIGIN);
 	});
 });

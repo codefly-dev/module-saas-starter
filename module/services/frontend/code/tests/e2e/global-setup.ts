@@ -39,8 +39,10 @@ let deps: Dependencies | null = null;
 
 async function globalSetup(): Promise<void> {
 	if (codeflyInjectedRuntime()) {
-		// The shared resolver refuses a default-scope fallback here rather than
-		// pointing the suite at a graph Codefly did not start.
+		// Codefly injects the endpoints of the dependencies it started; the
+		// frontend's own address is not among them while no server is running,
+		// so the shared resolver falls through to the scoped deterministic
+		// lookup for it.
 		process.env.PLAYWRIGHT_BASE_URL = productOrigin();
 		return;
 	}

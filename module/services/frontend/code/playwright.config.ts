@@ -14,11 +14,12 @@ import {
 //
 // Resolution itself lives in src/test/codefly-endpoints, shared with the
 // pipeline vitest tier and the e2e global setup, so the ambiguity guard and the
-// scope-aware fallback cannot drift between the three harnesses. Under `codefly
-// test service frontend --suite e2e` Codefly owns this process and injects the
-// endpoints, so those win — and if it owns the process but has not injected
-// them yet, the shared resolver refuses rather than answering for the default
-// naming scope, which is not the scope Codefly started.
+// scope-aware fallback cannot drift between the three harnesses — this config
+// previously carried its own copy that resolved the fallback with no scope at
+// all. Under `codefly test service frontend --suite e2e` Codefly injects the
+// endpoints of the dependencies it started, so those win; anything it does not
+// inject (the frontend's own address, while no server is running yet) resolves
+// through the scoped deterministic lookup.
 const frontendUrl = productOrigin(); // the FE's own codefly address
 const frontendPort = new URL(frontendUrl).port;
 // The browser suite exercises the product path, so its server addresses the
