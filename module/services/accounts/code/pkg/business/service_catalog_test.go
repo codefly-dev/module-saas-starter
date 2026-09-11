@@ -22,7 +22,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "accounts", catalog.GetOwner().GetService())
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
-	require.Len(t, catalog.GetServices(), 30)
+	require.Len(t, catalog.GetServices(), 31)
 	require.Len(t, catalog.GetMethods(), 196)
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)

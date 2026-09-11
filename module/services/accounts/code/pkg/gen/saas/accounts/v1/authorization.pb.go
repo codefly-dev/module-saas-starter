@@ -2047,76 +2047,6 @@ func (x *CheckAccessResponse) GetReason() string {
 	return ""
 }
 
-type AccessibleScope struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	NodeId    string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	ScopePath string                 `protobuf:"bytes,2,opt,name=scope_path,json=scopePath,proto3" json:"scope_path,omitempty"`
-	Kind      string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	// Human-readable node name. scope_path is an ltree of encoded UUIDs for a
-	// machine-minted boundary, so it never renders as a name on its own.
-	Label         string `protobuf:"bytes,4,opt,name=label,proto3" json:"label,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AccessibleScope) Reset() {
-	*x = AccessibleScope{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[29]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AccessibleScope) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AccessibleScope) ProtoMessage() {}
-
-func (x *AccessibleScope) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[29]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AccessibleScope.ProtoReflect.Descriptor instead.
-func (*AccessibleScope) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{29}
-}
-
-func (x *AccessibleScope) GetNodeId() string {
-	if x != nil {
-		return x.NodeId
-	}
-	return ""
-}
-
-func (x *AccessibleScope) GetScopePath() string {
-	if x != nil {
-		return x.ScopePath
-	}
-	return ""
-}
-
-func (x *AccessibleScope) GetKind() string {
-	if x != nil {
-		return x.Kind
-	}
-	return ""
-}
-
-func (x *AccessibleScope) GetLabel() string {
-	if x != nil {
-		return x.Label
-	}
-	return ""
-}
-
 type ListAccessibleScopesRequest struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	SubjectId    string                 `protobuf:"bytes,1,opt,name=subject_id,json=subjectId,proto3" json:"subject_id,omitempty"`
@@ -2136,7 +2066,7 @@ type ListAccessibleScopesRequest struct {
 
 func (x *ListAccessibleScopesRequest) Reset() {
 	*x = ListAccessibleScopesRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[30]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2148,7 +2078,7 @@ func (x *ListAccessibleScopesRequest) String() string {
 func (*ListAccessibleScopesRequest) ProtoMessage() {}
 
 func (x *ListAccessibleScopesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[30]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2161,7 +2091,7 @@ func (x *ListAccessibleScopesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAccessibleScopesRequest.ProtoReflect.Descriptor instead.
 func (*ListAccessibleScopesRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{30}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ListAccessibleScopesRequest) GetSubjectId() string {
@@ -2213,141 +2143,6 @@ func (x *ListAccessibleScopesRequest) GetPageToken() string {
 	return ""
 }
 
-type ListAccessibleScopesResponse struct {
-	state  protoimpl.MessageState `protogen:"open.v1"`
-	Scopes []*AccessibleScope     `protobuf:"bytes,1,rep,name=scopes,proto3" json:"scopes,omitempty"`
-	// Set when more scopes remain; pass it back as page_token. Empty on the last page.
-	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListAccessibleScopesResponse) Reset() {
-	*x = ListAccessibleScopesResponse{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[31]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListAccessibleScopesResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListAccessibleScopesResponse) ProtoMessage() {}
-
-func (x *ListAccessibleScopesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[31]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListAccessibleScopesResponse.ProtoReflect.Descriptor instead.
-func (*ListAccessibleScopesResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{31}
-}
-
-func (x *ListAccessibleScopesResponse) GetScopes() []*AccessibleScope {
-	if x != nil {
-		return x.Scopes
-	}
-	return nil
-}
-
-func (x *ListAccessibleScopesResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
-	}
-	return ""
-}
-
-// ListMyAccessibleScopesRequest is the authenticated caller-scoped form of
-// ListAccessibleScopesRequest: the subject is the bearer's own principal, so
-// there is deliberately NO subject_id field. The caller can therefore only ever
-// enumerate their own boundaries and never probe another principal's (I5).
-type ListMyAccessibleScopesRequest struct {
-	state        protoimpl.MessageState `protogen:"open.v1"`
-	OrgId        string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	ResourceType string                 `protobuf:"bytes,2,opt,name=resource_type,json=resourceType,proto3" json:"resource_type,omitempty"`
-	Action       string                 `protobuf:"bytes,3,opt,name=action,proto3" json:"action,omitempty"`
-	// Page bound, same ceiling as the internal RPC.
-	PageSize int32 `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	// Opaque cursor from a previous response's next_page_token; empty for page one.
-	PageToken     string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListMyAccessibleScopesRequest) Reset() {
-	*x = ListMyAccessibleScopesRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[32]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListMyAccessibleScopesRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListMyAccessibleScopesRequest) ProtoMessage() {}
-
-func (x *ListMyAccessibleScopesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[32]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListMyAccessibleScopesRequest.ProtoReflect.Descriptor instead.
-func (*ListMyAccessibleScopesRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{32}
-}
-
-func (x *ListMyAccessibleScopesRequest) GetOrgId() string {
-	if x != nil {
-		return x.OrgId
-	}
-	return ""
-}
-
-func (x *ListMyAccessibleScopesRequest) GetResourceType() string {
-	if x != nil {
-		return x.ResourceType
-	}
-	return ""
-}
-
-func (x *ListMyAccessibleScopesRequest) GetAction() string {
-	if x != nil {
-		return x.Action
-	}
-	return ""
-}
-
-func (x *ListMyAccessibleScopesRequest) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
-	}
-	return 0
-}
-
-func (x *ListMyAccessibleScopesRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
-	}
-	return ""
-}
-
 type GetPrincipalRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -2357,7 +2152,7 @@ type GetPrincipalRequest struct {
 
 func (x *GetPrincipalRequest) Reset() {
 	*x = GetPrincipalRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[33]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2369,7 +2164,7 @@ func (x *GetPrincipalRequest) String() string {
 func (*GetPrincipalRequest) ProtoMessage() {}
 
 func (x *GetPrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[33]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2382,7 +2177,7 @@ func (x *GetPrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetPrincipalRequest.ProtoReflect.Descriptor instead.
 func (*GetPrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{33}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GetPrincipalRequest) GetId() string {
@@ -2402,7 +2197,7 @@ type GetAgentPrincipalRequest struct {
 
 func (x *GetAgentPrincipalRequest) Reset() {
 	*x = GetAgentPrincipalRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[34]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2414,7 +2209,7 @@ func (x *GetAgentPrincipalRequest) String() string {
 func (*GetAgentPrincipalRequest) ProtoMessage() {}
 
 func (x *GetAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[34]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2427,7 +2222,7 @@ func (x *GetAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAgentPrincipalRequest.ProtoReflect.Descriptor instead.
 func (*GetAgentPrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{34}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *GetAgentPrincipalRequest) GetOrgId() string {
@@ -2461,7 +2256,7 @@ type CreateAgentPrincipalRequest struct {
 
 func (x *CreateAgentPrincipalRequest) Reset() {
 	*x = CreateAgentPrincipalRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[35]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2473,7 +2268,7 @@ func (x *CreateAgentPrincipalRequest) String() string {
 func (*CreateAgentPrincipalRequest) ProtoMessage() {}
 
 func (x *CreateAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[35]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2486,7 +2281,7 @@ func (x *CreateAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateAgentPrincipalRequest.ProtoReflect.Descriptor instead.
 func (*CreateAgentPrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{35}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *CreateAgentPrincipalRequest) GetOrgId() string {
@@ -2534,7 +2329,7 @@ type RevokePrincipalRequest struct {
 
 func (x *RevokePrincipalRequest) Reset() {
 	*x = RevokePrincipalRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[36]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2546,7 +2341,7 @@ func (x *RevokePrincipalRequest) String() string {
 func (*RevokePrincipalRequest) ProtoMessage() {}
 
 func (x *RevokePrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[36]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2559,7 +2354,7 @@ func (x *RevokePrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokePrincipalRequest.ProtoReflect.Descriptor instead.
 func (*RevokePrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{36}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *RevokePrincipalRequest) GetId() string {
@@ -2586,7 +2381,7 @@ type DisableAgentPrincipalRequest struct {
 
 func (x *DisableAgentPrincipalRequest) Reset() {
 	*x = DisableAgentPrincipalRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[37]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2598,7 +2393,7 @@ func (x *DisableAgentPrincipalRequest) String() string {
 func (*DisableAgentPrincipalRequest) ProtoMessage() {}
 
 func (x *DisableAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[37]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2611,7 +2406,7 @@ func (x *DisableAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DisableAgentPrincipalRequest.ProtoReflect.Descriptor instead.
 func (*DisableAgentPrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{37}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *DisableAgentPrincipalRequest) GetId() string {
@@ -2637,7 +2432,7 @@ type EnableAgentPrincipalRequest struct {
 
 func (x *EnableAgentPrincipalRequest) Reset() {
 	*x = EnableAgentPrincipalRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[38]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2649,7 +2444,7 @@ func (x *EnableAgentPrincipalRequest) String() string {
 func (*EnableAgentPrincipalRequest) ProtoMessage() {}
 
 func (x *EnableAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[38]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2662,7 +2457,7 @@ func (x *EnableAgentPrincipalRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnableAgentPrincipalRequest.ProtoReflect.Descriptor instead.
 func (*EnableAgentPrincipalRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{38}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *EnableAgentPrincipalRequest) GetId() string {
@@ -2686,7 +2481,7 @@ type ListPrincipalsRequest struct {
 
 func (x *ListPrincipalsRequest) Reset() {
 	*x = ListPrincipalsRequest{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[39]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2698,7 +2493,7 @@ func (x *ListPrincipalsRequest) String() string {
 func (*ListPrincipalsRequest) ProtoMessage() {}
 
 func (x *ListPrincipalsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[39]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2711,7 +2506,7 @@ func (x *ListPrincipalsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPrincipalsRequest.ProtoReflect.Descriptor instead.
 func (*ListPrincipalsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{39}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ListPrincipalsRequest) GetOrgId() string {
@@ -2752,7 +2547,7 @@ type ListPrincipalsResponse struct {
 
 func (x *ListPrincipalsResponse) Reset() {
 	*x = ListPrincipalsResponse{}
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[40]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2764,7 +2559,7 @@ func (x *ListPrincipalsResponse) String() string {
 func (*ListPrincipalsResponse) ProtoMessage() {}
 
 func (x *ListPrincipalsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[40]
+	mi := &file_saas_accounts_v1_authorization_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2777,7 +2572,7 @@ func (x *ListPrincipalsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPrincipalsResponse.ProtoReflect.Descriptor instead.
 func (*ListPrincipalsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{40}
+	return file_saas_accounts_v1_authorization_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ListPrincipalsResponse) GetPrincipals() []*Principal {
@@ -2798,7 +2593,7 @@ var File_saas_accounts_v1_authorization_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/authorization.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1csaas/policy/v1/options.proto\"\xa9\x01\n" +
+	"$saas/accounts/v1/authorization.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a(saas/accounts/v1/accessible_scopes.proto\x1a\x1dsaas/accounts/v1/common.proto\x1a\x1csaas/policy/v1/options.proto\"\xa9\x01\n" +
 	"\x11CreateRoleRequest\x12\x1b\n" +
 	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x12>\n" +
@@ -2980,13 +2775,7 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\x06org_id\x18\x06 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"G\n" +
 	"\x13CheckAccessResponse\x12\x18\n" +
 	"\aallowed\x18\x01 \x01(\bR\aallowed\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"s\n" +
-	"\x0fAccessibleScope\x12\x17\n" +
-	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x1d\n" +
-	"\n" +
-	"scope_path\x18\x02 \x01(\tR\tscopePath\x12\x12\n" +
-	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x14\n" +
-	"\x05label\x18\x04 \x01(\tR\x05label\"\xc0\x02\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xc0\x02\n" +
 	"\x1bListAccessibleScopesRequest\x12'\n" +
 	"\n" +
 	"subject_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\tsubjectId\x12@\n" +
@@ -2997,18 +2786,7 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\tpage_size\x18\x06 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\a \x01(\tR\tpageToken\"\x81\x01\n" +
-	"\x1cListAccessibleScopesResponse\x129\n" +
-	"\x06scopes\x18\x01 \x03(\v2!.saas.accounts.v1.AccessibleScopeR\x06scopes\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xd7\x01\n" +
-	"\x1dListMyAccessibleScopesRequest\x12\x1f\n" +
-	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12,\n" +
-	"\rresource_type\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\fresourceType\x12\x1f\n" +
-	"\x06action\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06action\x12'\n" +
-	"\tpage_size\x18\x04 \x01(\x05B\n" +
-	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\bpageSize\x12\x1d\n" +
-	"\n" +
-	"page_token\x18\x05 \x01(\tR\tpageToken\"/\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\"/\n" +
 	"\x13GetPrincipalRequest\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\"o\n" +
 	"\x18GetAgentPrincipalRequest\x12\x1f\n" +
@@ -3039,7 +2817,7 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\n" +
 	"principals\x18\x01 \x03(\v2\x1b.saas.accounts.v1.PrincipalR\n" +
 	"principals\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xf2\x14\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken2\xb1\x13\n" +
 	"\x11PermissionService\x12\x98\x01\n" +
 	"\n" +
 	"CreateRole\x12#.saas.accounts.v1.CreateRoleRequest\x1a$.saas.accounts.v1.CreateRoleResponse\"?\xc2\xf3\x18'\b\x02\x10\x020\x01:\x15\n" +
@@ -3058,9 +2836,7 @@ const file_saas_accounts_v1_authorization_proto_rawDesc = "" +
 	"\x0fCheckPermission\x12(.saas.accounts.v1.CheckPermissionRequest\x1a).saas.accounts.v1.CheckPermissionResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12e\n" +
 	"\x06Decide\x12\x1f.saas.accounts.v1.DecideRequest\x1a .saas.accounts.v1.DecideResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12t\n" +
 	"\vCheckAccess\x12$.saas.accounts.v1.CheckAccessRequest\x1a%.saas.accounts.v1.CheckAccessResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\x8f\x01\n" +
-	"\x14ListAccessibleScopes\x12-.saas.accounts.v1.ListAccessibleScopesRequest\x1a..saas.accounts.v1.ListAccessibleScopesResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xbe\x01\n" +
-	"\x16ListMyAccessibleScopes\x12/.saas.accounts.v1.ListMyAccessibleScopesRequest\x1a..saas.accounts.v1.ListAccessibleScopesResponse\"C\xc2\xf3\x18\"\b\x02\x10\x03*\f\n" +
-	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x17\x12\x15/v1/accessible-scopes\x12\xca\x01\n" +
+	"\x14ListAccessibleScopes\x12-.saas.accounts.v1.ListAccessibleScopesRequest\x1a..saas.accounts.v1.ListAccessibleScopesResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\xca\x01\n" +
 	"\x11RegisterScopeNode\x12*.saas.accounts.v1.RegisterScopeNodeRequest\x1a+.saas.accounts.v1.RegisterScopeNodeResponse\"\\\xc2\xf3\x18>\b\x02\x10\x04*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x1e\n" +
 	"\x1asaas.scope.node_registered\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x14:\x01*\"\x0f/v1/scope-nodes\x12\xae\x01\n" +
@@ -3109,147 +2885,142 @@ func file_saas_accounts_v1_authorization_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_authorization_proto_rawDescData
 }
 
-var file_saas_accounts_v1_authorization_proto_msgTypes = make([]protoimpl.MessageInfo, 41)
+var file_saas_accounts_v1_authorization_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_saas_accounts_v1_authorization_proto_goTypes = []any{
-	(*CreateRoleRequest)(nil),             // 0: saas.accounts.v1.CreateRoleRequest
-	(*CreateRoleResponse)(nil),            // 1: saas.accounts.v1.CreateRoleResponse
-	(*ListRolesRequest)(nil),              // 2: saas.accounts.v1.ListRolesRequest
-	(*ListRolesResponse)(nil),             // 3: saas.accounts.v1.ListRolesResponse
-	(*DeleteRoleRequest)(nil),             // 4: saas.accounts.v1.DeleteRoleRequest
-	(*AssignRoleRequest)(nil),             // 5: saas.accounts.v1.AssignRoleRequest
-	(*AssignRoleResponse)(nil),            // 6: saas.accounts.v1.AssignRoleResponse
-	(*RevokeRoleRequest)(nil),             // 7: saas.accounts.v1.RevokeRoleRequest
-	(*ListRoleAssignmentsRequest)(nil),    // 8: saas.accounts.v1.ListRoleAssignmentsRequest
-	(*ListRoleAssignmentsResponse)(nil),   // 9: saas.accounts.v1.ListRoleAssignmentsResponse
-	(*CheckPermissionRequest)(nil),        // 10: saas.accounts.v1.CheckPermissionRequest
-	(*CheckPermissionResponse)(nil),       // 11: saas.accounts.v1.CheckPermissionResponse
-	(*DecideRequest)(nil),                 // 12: saas.accounts.v1.DecideRequest
-	(*DecideResponse)(nil),                // 13: saas.accounts.v1.DecideResponse
-	(*ScopeNode)(nil),                     // 14: saas.accounts.v1.ScopeNode
-	(*RegisterScopeNodeRequest)(nil),      // 15: saas.accounts.v1.RegisterScopeNodeRequest
-	(*RegisterScopeNodeResponse)(nil),     // 16: saas.accounts.v1.RegisterScopeNodeResponse
-	(*ScopeGrant)(nil),                    // 17: saas.accounts.v1.ScopeGrant
-	(*GrantScopeRequest)(nil),             // 18: saas.accounts.v1.GrantScopeRequest
-	(*GrantScopeResponse)(nil),            // 19: saas.accounts.v1.GrantScopeResponse
-	(*RevokeScopeRequest)(nil),            // 20: saas.accounts.v1.RevokeScopeRequest
-	(*RecordShare)(nil),                   // 21: saas.accounts.v1.RecordShare
-	(*ShareRecordRequest)(nil),            // 22: saas.accounts.v1.ShareRecordRequest
-	(*ShareRecordResponse)(nil),           // 23: saas.accounts.v1.ShareRecordResponse
-	(*RevokeShareRequest)(nil),            // 24: saas.accounts.v1.RevokeShareRequest
-	(*ListSharesRequest)(nil),             // 25: saas.accounts.v1.ListSharesRequest
-	(*ListSharesResponse)(nil),            // 26: saas.accounts.v1.ListSharesResponse
-	(*CheckAccessRequest)(nil),            // 27: saas.accounts.v1.CheckAccessRequest
-	(*CheckAccessResponse)(nil),           // 28: saas.accounts.v1.CheckAccessResponse
-	(*AccessibleScope)(nil),               // 29: saas.accounts.v1.AccessibleScope
-	(*ListAccessibleScopesRequest)(nil),   // 30: saas.accounts.v1.ListAccessibleScopesRequest
-	(*ListAccessibleScopesResponse)(nil),  // 31: saas.accounts.v1.ListAccessibleScopesResponse
-	(*ListMyAccessibleScopesRequest)(nil), // 32: saas.accounts.v1.ListMyAccessibleScopesRequest
-	(*GetPrincipalRequest)(nil),           // 33: saas.accounts.v1.GetPrincipalRequest
-	(*GetAgentPrincipalRequest)(nil),      // 34: saas.accounts.v1.GetAgentPrincipalRequest
-	(*CreateAgentPrincipalRequest)(nil),   // 35: saas.accounts.v1.CreateAgentPrincipalRequest
-	(*RevokePrincipalRequest)(nil),        // 36: saas.accounts.v1.RevokePrincipalRequest
-	(*DisableAgentPrincipalRequest)(nil),  // 37: saas.accounts.v1.DisableAgentPrincipalRequest
-	(*EnableAgentPrincipalRequest)(nil),   // 38: saas.accounts.v1.EnableAgentPrincipalRequest
-	(*ListPrincipalsRequest)(nil),         // 39: saas.accounts.v1.ListPrincipalsRequest
-	(*ListPrincipalsResponse)(nil),        // 40: saas.accounts.v1.ListPrincipalsResponse
-	(*Permission)(nil),                    // 41: saas.accounts.v1.Permission
-	(*Role)(nil),                          // 42: saas.accounts.v1.Role
-	(SubjectKind)(0),                      // 43: saas.accounts.v1.SubjectKind
-	(*RoleAssignment)(nil),                // 44: saas.accounts.v1.RoleAssignment
-	(*structpb.Struct)(nil),               // 45: google.protobuf.Struct
-	(Decision)(0),                         // 46: saas.accounts.v1.Decision
-	(*timestamppb.Timestamp)(nil),         // 47: google.protobuf.Timestamp
-	(PrincipalKind)(0),                    // 48: saas.accounts.v1.PrincipalKind
-	(*Principal)(nil),                     // 49: saas.accounts.v1.Principal
-	(*emptypb.Empty)(nil),                 // 50: google.protobuf.Empty
+	(*CreateRoleRequest)(nil),            // 0: saas.accounts.v1.CreateRoleRequest
+	(*CreateRoleResponse)(nil),           // 1: saas.accounts.v1.CreateRoleResponse
+	(*ListRolesRequest)(nil),             // 2: saas.accounts.v1.ListRolesRequest
+	(*ListRolesResponse)(nil),            // 3: saas.accounts.v1.ListRolesResponse
+	(*DeleteRoleRequest)(nil),            // 4: saas.accounts.v1.DeleteRoleRequest
+	(*AssignRoleRequest)(nil),            // 5: saas.accounts.v1.AssignRoleRequest
+	(*AssignRoleResponse)(nil),           // 6: saas.accounts.v1.AssignRoleResponse
+	(*RevokeRoleRequest)(nil),            // 7: saas.accounts.v1.RevokeRoleRequest
+	(*ListRoleAssignmentsRequest)(nil),   // 8: saas.accounts.v1.ListRoleAssignmentsRequest
+	(*ListRoleAssignmentsResponse)(nil),  // 9: saas.accounts.v1.ListRoleAssignmentsResponse
+	(*CheckPermissionRequest)(nil),       // 10: saas.accounts.v1.CheckPermissionRequest
+	(*CheckPermissionResponse)(nil),      // 11: saas.accounts.v1.CheckPermissionResponse
+	(*DecideRequest)(nil),                // 12: saas.accounts.v1.DecideRequest
+	(*DecideResponse)(nil),               // 13: saas.accounts.v1.DecideResponse
+	(*ScopeNode)(nil),                    // 14: saas.accounts.v1.ScopeNode
+	(*RegisterScopeNodeRequest)(nil),     // 15: saas.accounts.v1.RegisterScopeNodeRequest
+	(*RegisterScopeNodeResponse)(nil),    // 16: saas.accounts.v1.RegisterScopeNodeResponse
+	(*ScopeGrant)(nil),                   // 17: saas.accounts.v1.ScopeGrant
+	(*GrantScopeRequest)(nil),            // 18: saas.accounts.v1.GrantScopeRequest
+	(*GrantScopeResponse)(nil),           // 19: saas.accounts.v1.GrantScopeResponse
+	(*RevokeScopeRequest)(nil),           // 20: saas.accounts.v1.RevokeScopeRequest
+	(*RecordShare)(nil),                  // 21: saas.accounts.v1.RecordShare
+	(*ShareRecordRequest)(nil),           // 22: saas.accounts.v1.ShareRecordRequest
+	(*ShareRecordResponse)(nil),          // 23: saas.accounts.v1.ShareRecordResponse
+	(*RevokeShareRequest)(nil),           // 24: saas.accounts.v1.RevokeShareRequest
+	(*ListSharesRequest)(nil),            // 25: saas.accounts.v1.ListSharesRequest
+	(*ListSharesResponse)(nil),           // 26: saas.accounts.v1.ListSharesResponse
+	(*CheckAccessRequest)(nil),           // 27: saas.accounts.v1.CheckAccessRequest
+	(*CheckAccessResponse)(nil),          // 28: saas.accounts.v1.CheckAccessResponse
+	(*ListAccessibleScopesRequest)(nil),  // 29: saas.accounts.v1.ListAccessibleScopesRequest
+	(*GetPrincipalRequest)(nil),          // 30: saas.accounts.v1.GetPrincipalRequest
+	(*GetAgentPrincipalRequest)(nil),     // 31: saas.accounts.v1.GetAgentPrincipalRequest
+	(*CreateAgentPrincipalRequest)(nil),  // 32: saas.accounts.v1.CreateAgentPrincipalRequest
+	(*RevokePrincipalRequest)(nil),       // 33: saas.accounts.v1.RevokePrincipalRequest
+	(*DisableAgentPrincipalRequest)(nil), // 34: saas.accounts.v1.DisableAgentPrincipalRequest
+	(*EnableAgentPrincipalRequest)(nil),  // 35: saas.accounts.v1.EnableAgentPrincipalRequest
+	(*ListPrincipalsRequest)(nil),        // 36: saas.accounts.v1.ListPrincipalsRequest
+	(*ListPrincipalsResponse)(nil),       // 37: saas.accounts.v1.ListPrincipalsResponse
+	(*Permission)(nil),                   // 38: saas.accounts.v1.Permission
+	(*Role)(nil),                         // 39: saas.accounts.v1.Role
+	(SubjectKind)(0),                     // 40: saas.accounts.v1.SubjectKind
+	(*RoleAssignment)(nil),               // 41: saas.accounts.v1.RoleAssignment
+	(*structpb.Struct)(nil),              // 42: google.protobuf.Struct
+	(Decision)(0),                        // 43: saas.accounts.v1.Decision
+	(*timestamppb.Timestamp)(nil),        // 44: google.protobuf.Timestamp
+	(PrincipalKind)(0),                   // 45: saas.accounts.v1.PrincipalKind
+	(*Principal)(nil),                    // 46: saas.accounts.v1.Principal
+	(*emptypb.Empty)(nil),                // 47: google.protobuf.Empty
+	(*ListAccessibleScopesResponse)(nil), // 48: saas.accounts.v1.ListAccessibleScopesResponse
 }
 var file_saas_accounts_v1_authorization_proto_depIdxs = []int32{
-	41, // 0: saas.accounts.v1.CreateRoleRequest.permissions:type_name -> saas.accounts.v1.Permission
-	42, // 1: saas.accounts.v1.CreateRoleResponse.role:type_name -> saas.accounts.v1.Role
-	42, // 2: saas.accounts.v1.ListRolesResponse.roles:type_name -> saas.accounts.v1.Role
-	43, // 3: saas.accounts.v1.AssignRoleRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	44, // 4: saas.accounts.v1.AssignRoleResponse.assignment:type_name -> saas.accounts.v1.RoleAssignment
-	43, // 5: saas.accounts.v1.ListRoleAssignmentsRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	44, // 6: saas.accounts.v1.ListRoleAssignmentsResponse.assignments:type_name -> saas.accounts.v1.RoleAssignment
-	43, // 7: saas.accounts.v1.CheckPermissionRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	45, // 8: saas.accounts.v1.DecideRequest.context:type_name -> google.protobuf.Struct
-	41, // 9: saas.accounts.v1.DecideRequest.declared_permissions:type_name -> saas.accounts.v1.Permission
-	46, // 10: saas.accounts.v1.DecideResponse.decision:type_name -> saas.accounts.v1.Decision
-	47, // 11: saas.accounts.v1.ScopeNode.created_at:type_name -> google.protobuf.Timestamp
+	38, // 0: saas.accounts.v1.CreateRoleRequest.permissions:type_name -> saas.accounts.v1.Permission
+	39, // 1: saas.accounts.v1.CreateRoleResponse.role:type_name -> saas.accounts.v1.Role
+	39, // 2: saas.accounts.v1.ListRolesResponse.roles:type_name -> saas.accounts.v1.Role
+	40, // 3: saas.accounts.v1.AssignRoleRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	41, // 4: saas.accounts.v1.AssignRoleResponse.assignment:type_name -> saas.accounts.v1.RoleAssignment
+	40, // 5: saas.accounts.v1.ListRoleAssignmentsRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	41, // 6: saas.accounts.v1.ListRoleAssignmentsResponse.assignments:type_name -> saas.accounts.v1.RoleAssignment
+	40, // 7: saas.accounts.v1.CheckPermissionRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	42, // 8: saas.accounts.v1.DecideRequest.context:type_name -> google.protobuf.Struct
+	38, // 9: saas.accounts.v1.DecideRequest.declared_permissions:type_name -> saas.accounts.v1.Permission
+	43, // 10: saas.accounts.v1.DecideResponse.decision:type_name -> saas.accounts.v1.Decision
+	44, // 11: saas.accounts.v1.ScopeNode.created_at:type_name -> google.protobuf.Timestamp
 	14, // 12: saas.accounts.v1.RegisterScopeNodeResponse.node:type_name -> saas.accounts.v1.ScopeNode
-	43, // 13: saas.accounts.v1.ScopeGrant.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	47, // 14: saas.accounts.v1.ScopeGrant.expires_at:type_name -> google.protobuf.Timestamp
-	47, // 15: saas.accounts.v1.ScopeGrant.created_at:type_name -> google.protobuf.Timestamp
-	43, // 16: saas.accounts.v1.GrantScopeRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	47, // 17: saas.accounts.v1.GrantScopeRequest.expires_at:type_name -> google.protobuf.Timestamp
+	40, // 13: saas.accounts.v1.ScopeGrant.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	44, // 14: saas.accounts.v1.ScopeGrant.expires_at:type_name -> google.protobuf.Timestamp
+	44, // 15: saas.accounts.v1.ScopeGrant.created_at:type_name -> google.protobuf.Timestamp
+	40, // 16: saas.accounts.v1.GrantScopeRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	44, // 17: saas.accounts.v1.GrantScopeRequest.expires_at:type_name -> google.protobuf.Timestamp
 	17, // 18: saas.accounts.v1.GrantScopeResponse.grant:type_name -> saas.accounts.v1.ScopeGrant
-	43, // 19: saas.accounts.v1.RevokeScopeRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	43, // 20: saas.accounts.v1.RecordShare.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	47, // 21: saas.accounts.v1.RecordShare.expires_at:type_name -> google.protobuf.Timestamp
-	47, // 22: saas.accounts.v1.RecordShare.created_at:type_name -> google.protobuf.Timestamp
-	43, // 23: saas.accounts.v1.ShareRecordRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	47, // 24: saas.accounts.v1.ShareRecordRequest.expires_at:type_name -> google.protobuf.Timestamp
+	40, // 19: saas.accounts.v1.RevokeScopeRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	40, // 20: saas.accounts.v1.RecordShare.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	44, // 21: saas.accounts.v1.RecordShare.expires_at:type_name -> google.protobuf.Timestamp
+	44, // 22: saas.accounts.v1.RecordShare.created_at:type_name -> google.protobuf.Timestamp
+	40, // 23: saas.accounts.v1.ShareRecordRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	44, // 24: saas.accounts.v1.ShareRecordRequest.expires_at:type_name -> google.protobuf.Timestamp
 	21, // 25: saas.accounts.v1.ShareRecordResponse.share:type_name -> saas.accounts.v1.RecordShare
-	43, // 26: saas.accounts.v1.RevokeShareRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	40, // 26: saas.accounts.v1.RevokeShareRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
 	21, // 27: saas.accounts.v1.ListSharesResponse.shares:type_name -> saas.accounts.v1.RecordShare
-	43, // 28: saas.accounts.v1.CheckAccessRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	43, // 29: saas.accounts.v1.ListAccessibleScopesRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
-	29, // 30: saas.accounts.v1.ListAccessibleScopesResponse.scopes:type_name -> saas.accounts.v1.AccessibleScope
-	48, // 31: saas.accounts.v1.ListPrincipalsRequest.kind:type_name -> saas.accounts.v1.PrincipalKind
-	49, // 32: saas.accounts.v1.ListPrincipalsResponse.principals:type_name -> saas.accounts.v1.Principal
-	0,  // 33: saas.accounts.v1.PermissionService.CreateRole:input_type -> saas.accounts.v1.CreateRoleRequest
-	2,  // 34: saas.accounts.v1.PermissionService.ListRoles:input_type -> saas.accounts.v1.ListRolesRequest
-	4,  // 35: saas.accounts.v1.PermissionService.DeleteRole:input_type -> saas.accounts.v1.DeleteRoleRequest
-	5,  // 36: saas.accounts.v1.PermissionService.AssignRole:input_type -> saas.accounts.v1.AssignRoleRequest
-	7,  // 37: saas.accounts.v1.PermissionService.RevokeRole:input_type -> saas.accounts.v1.RevokeRoleRequest
-	8,  // 38: saas.accounts.v1.PermissionService.ListRoleAssignments:input_type -> saas.accounts.v1.ListRoleAssignmentsRequest
-	10, // 39: saas.accounts.v1.PermissionService.CheckPermission:input_type -> saas.accounts.v1.CheckPermissionRequest
-	12, // 40: saas.accounts.v1.PermissionService.Decide:input_type -> saas.accounts.v1.DecideRequest
-	27, // 41: saas.accounts.v1.PermissionService.CheckAccess:input_type -> saas.accounts.v1.CheckAccessRequest
-	30, // 42: saas.accounts.v1.PermissionService.ListAccessibleScopes:input_type -> saas.accounts.v1.ListAccessibleScopesRequest
-	32, // 43: saas.accounts.v1.PermissionService.ListMyAccessibleScopes:input_type -> saas.accounts.v1.ListMyAccessibleScopesRequest
-	15, // 44: saas.accounts.v1.PermissionService.RegisterScopeNode:input_type -> saas.accounts.v1.RegisterScopeNodeRequest
-	18, // 45: saas.accounts.v1.PermissionService.GrantScope:input_type -> saas.accounts.v1.GrantScopeRequest
-	20, // 46: saas.accounts.v1.PermissionService.RevokeScope:input_type -> saas.accounts.v1.RevokeScopeRequest
-	22, // 47: saas.accounts.v1.PermissionService.ShareRecord:input_type -> saas.accounts.v1.ShareRecordRequest
-	24, // 48: saas.accounts.v1.PermissionService.RevokeShare:input_type -> saas.accounts.v1.RevokeShareRequest
-	25, // 49: saas.accounts.v1.PermissionService.ListShares:input_type -> saas.accounts.v1.ListSharesRequest
-	33, // 50: saas.accounts.v1.PrincipalService.GetPrincipal:input_type -> saas.accounts.v1.GetPrincipalRequest
-	34, // 51: saas.accounts.v1.PrincipalService.GetAgentPrincipal:input_type -> saas.accounts.v1.GetAgentPrincipalRequest
-	35, // 52: saas.accounts.v1.PrincipalService.CreateAgentPrincipal:input_type -> saas.accounts.v1.CreateAgentPrincipalRequest
-	36, // 53: saas.accounts.v1.PrincipalService.RevokePrincipal:input_type -> saas.accounts.v1.RevokePrincipalRequest
-	37, // 54: saas.accounts.v1.PrincipalService.DisableAgentPrincipal:input_type -> saas.accounts.v1.DisableAgentPrincipalRequest
-	38, // 55: saas.accounts.v1.PrincipalService.EnableAgentPrincipal:input_type -> saas.accounts.v1.EnableAgentPrincipalRequest
-	39, // 56: saas.accounts.v1.PrincipalService.ListPrincipals:input_type -> saas.accounts.v1.ListPrincipalsRequest
-	1,  // 57: saas.accounts.v1.PermissionService.CreateRole:output_type -> saas.accounts.v1.CreateRoleResponse
-	3,  // 58: saas.accounts.v1.PermissionService.ListRoles:output_type -> saas.accounts.v1.ListRolesResponse
-	50, // 59: saas.accounts.v1.PermissionService.DeleteRole:output_type -> google.protobuf.Empty
-	6,  // 60: saas.accounts.v1.PermissionService.AssignRole:output_type -> saas.accounts.v1.AssignRoleResponse
-	50, // 61: saas.accounts.v1.PermissionService.RevokeRole:output_type -> google.protobuf.Empty
-	9,  // 62: saas.accounts.v1.PermissionService.ListRoleAssignments:output_type -> saas.accounts.v1.ListRoleAssignmentsResponse
-	11, // 63: saas.accounts.v1.PermissionService.CheckPermission:output_type -> saas.accounts.v1.CheckPermissionResponse
-	13, // 64: saas.accounts.v1.PermissionService.Decide:output_type -> saas.accounts.v1.DecideResponse
-	28, // 65: saas.accounts.v1.PermissionService.CheckAccess:output_type -> saas.accounts.v1.CheckAccessResponse
-	31, // 66: saas.accounts.v1.PermissionService.ListAccessibleScopes:output_type -> saas.accounts.v1.ListAccessibleScopesResponse
-	31, // 67: saas.accounts.v1.PermissionService.ListMyAccessibleScopes:output_type -> saas.accounts.v1.ListAccessibleScopesResponse
-	16, // 68: saas.accounts.v1.PermissionService.RegisterScopeNode:output_type -> saas.accounts.v1.RegisterScopeNodeResponse
-	19, // 69: saas.accounts.v1.PermissionService.GrantScope:output_type -> saas.accounts.v1.GrantScopeResponse
-	50, // 70: saas.accounts.v1.PermissionService.RevokeScope:output_type -> google.protobuf.Empty
-	23, // 71: saas.accounts.v1.PermissionService.ShareRecord:output_type -> saas.accounts.v1.ShareRecordResponse
-	50, // 72: saas.accounts.v1.PermissionService.RevokeShare:output_type -> google.protobuf.Empty
-	26, // 73: saas.accounts.v1.PermissionService.ListShares:output_type -> saas.accounts.v1.ListSharesResponse
-	49, // 74: saas.accounts.v1.PrincipalService.GetPrincipal:output_type -> saas.accounts.v1.Principal
-	49, // 75: saas.accounts.v1.PrincipalService.GetAgentPrincipal:output_type -> saas.accounts.v1.Principal
-	49, // 76: saas.accounts.v1.PrincipalService.CreateAgentPrincipal:output_type -> saas.accounts.v1.Principal
-	50, // 77: saas.accounts.v1.PrincipalService.RevokePrincipal:output_type -> google.protobuf.Empty
-	50, // 78: saas.accounts.v1.PrincipalService.DisableAgentPrincipal:output_type -> google.protobuf.Empty
-	50, // 79: saas.accounts.v1.PrincipalService.EnableAgentPrincipal:output_type -> google.protobuf.Empty
-	40, // 80: saas.accounts.v1.PrincipalService.ListPrincipals:output_type -> saas.accounts.v1.ListPrincipalsResponse
-	57, // [57:81] is the sub-list for method output_type
-	33, // [33:57] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	40, // 28: saas.accounts.v1.CheckAccessRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	40, // 29: saas.accounts.v1.ListAccessibleScopesRequest.subject_kind:type_name -> saas.accounts.v1.SubjectKind
+	45, // 30: saas.accounts.v1.ListPrincipalsRequest.kind:type_name -> saas.accounts.v1.PrincipalKind
+	46, // 31: saas.accounts.v1.ListPrincipalsResponse.principals:type_name -> saas.accounts.v1.Principal
+	0,  // 32: saas.accounts.v1.PermissionService.CreateRole:input_type -> saas.accounts.v1.CreateRoleRequest
+	2,  // 33: saas.accounts.v1.PermissionService.ListRoles:input_type -> saas.accounts.v1.ListRolesRequest
+	4,  // 34: saas.accounts.v1.PermissionService.DeleteRole:input_type -> saas.accounts.v1.DeleteRoleRequest
+	5,  // 35: saas.accounts.v1.PermissionService.AssignRole:input_type -> saas.accounts.v1.AssignRoleRequest
+	7,  // 36: saas.accounts.v1.PermissionService.RevokeRole:input_type -> saas.accounts.v1.RevokeRoleRequest
+	8,  // 37: saas.accounts.v1.PermissionService.ListRoleAssignments:input_type -> saas.accounts.v1.ListRoleAssignmentsRequest
+	10, // 38: saas.accounts.v1.PermissionService.CheckPermission:input_type -> saas.accounts.v1.CheckPermissionRequest
+	12, // 39: saas.accounts.v1.PermissionService.Decide:input_type -> saas.accounts.v1.DecideRequest
+	27, // 40: saas.accounts.v1.PermissionService.CheckAccess:input_type -> saas.accounts.v1.CheckAccessRequest
+	29, // 41: saas.accounts.v1.PermissionService.ListAccessibleScopes:input_type -> saas.accounts.v1.ListAccessibleScopesRequest
+	15, // 42: saas.accounts.v1.PermissionService.RegisterScopeNode:input_type -> saas.accounts.v1.RegisterScopeNodeRequest
+	18, // 43: saas.accounts.v1.PermissionService.GrantScope:input_type -> saas.accounts.v1.GrantScopeRequest
+	20, // 44: saas.accounts.v1.PermissionService.RevokeScope:input_type -> saas.accounts.v1.RevokeScopeRequest
+	22, // 45: saas.accounts.v1.PermissionService.ShareRecord:input_type -> saas.accounts.v1.ShareRecordRequest
+	24, // 46: saas.accounts.v1.PermissionService.RevokeShare:input_type -> saas.accounts.v1.RevokeShareRequest
+	25, // 47: saas.accounts.v1.PermissionService.ListShares:input_type -> saas.accounts.v1.ListSharesRequest
+	30, // 48: saas.accounts.v1.PrincipalService.GetPrincipal:input_type -> saas.accounts.v1.GetPrincipalRequest
+	31, // 49: saas.accounts.v1.PrincipalService.GetAgentPrincipal:input_type -> saas.accounts.v1.GetAgentPrincipalRequest
+	32, // 50: saas.accounts.v1.PrincipalService.CreateAgentPrincipal:input_type -> saas.accounts.v1.CreateAgentPrincipalRequest
+	33, // 51: saas.accounts.v1.PrincipalService.RevokePrincipal:input_type -> saas.accounts.v1.RevokePrincipalRequest
+	34, // 52: saas.accounts.v1.PrincipalService.DisableAgentPrincipal:input_type -> saas.accounts.v1.DisableAgentPrincipalRequest
+	35, // 53: saas.accounts.v1.PrincipalService.EnableAgentPrincipal:input_type -> saas.accounts.v1.EnableAgentPrincipalRequest
+	36, // 54: saas.accounts.v1.PrincipalService.ListPrincipals:input_type -> saas.accounts.v1.ListPrincipalsRequest
+	1,  // 55: saas.accounts.v1.PermissionService.CreateRole:output_type -> saas.accounts.v1.CreateRoleResponse
+	3,  // 56: saas.accounts.v1.PermissionService.ListRoles:output_type -> saas.accounts.v1.ListRolesResponse
+	47, // 57: saas.accounts.v1.PermissionService.DeleteRole:output_type -> google.protobuf.Empty
+	6,  // 58: saas.accounts.v1.PermissionService.AssignRole:output_type -> saas.accounts.v1.AssignRoleResponse
+	47, // 59: saas.accounts.v1.PermissionService.RevokeRole:output_type -> google.protobuf.Empty
+	9,  // 60: saas.accounts.v1.PermissionService.ListRoleAssignments:output_type -> saas.accounts.v1.ListRoleAssignmentsResponse
+	11, // 61: saas.accounts.v1.PermissionService.CheckPermission:output_type -> saas.accounts.v1.CheckPermissionResponse
+	13, // 62: saas.accounts.v1.PermissionService.Decide:output_type -> saas.accounts.v1.DecideResponse
+	28, // 63: saas.accounts.v1.PermissionService.CheckAccess:output_type -> saas.accounts.v1.CheckAccessResponse
+	48, // 64: saas.accounts.v1.PermissionService.ListAccessibleScopes:output_type -> saas.accounts.v1.ListAccessibleScopesResponse
+	16, // 65: saas.accounts.v1.PermissionService.RegisterScopeNode:output_type -> saas.accounts.v1.RegisterScopeNodeResponse
+	19, // 66: saas.accounts.v1.PermissionService.GrantScope:output_type -> saas.accounts.v1.GrantScopeResponse
+	47, // 67: saas.accounts.v1.PermissionService.RevokeScope:output_type -> google.protobuf.Empty
+	23, // 68: saas.accounts.v1.PermissionService.ShareRecord:output_type -> saas.accounts.v1.ShareRecordResponse
+	47, // 69: saas.accounts.v1.PermissionService.RevokeShare:output_type -> google.protobuf.Empty
+	26, // 70: saas.accounts.v1.PermissionService.ListShares:output_type -> saas.accounts.v1.ListSharesResponse
+	46, // 71: saas.accounts.v1.PrincipalService.GetPrincipal:output_type -> saas.accounts.v1.Principal
+	46, // 72: saas.accounts.v1.PrincipalService.GetAgentPrincipal:output_type -> saas.accounts.v1.Principal
+	46, // 73: saas.accounts.v1.PrincipalService.CreateAgentPrincipal:output_type -> saas.accounts.v1.Principal
+	47, // 74: saas.accounts.v1.PrincipalService.RevokePrincipal:output_type -> google.protobuf.Empty
+	47, // 75: saas.accounts.v1.PrincipalService.DisableAgentPrincipal:output_type -> google.protobuf.Empty
+	47, // 76: saas.accounts.v1.PrincipalService.EnableAgentPrincipal:output_type -> google.protobuf.Empty
+	37, // 77: saas.accounts.v1.PrincipalService.ListPrincipals:output_type -> saas.accounts.v1.ListPrincipalsResponse
+	55, // [55:78] is the sub-list for method output_type
+	32, // [32:55] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_authorization_proto_init() }
@@ -3257,6 +3028,7 @@ func file_saas_accounts_v1_authorization_proto_init() {
 	if File_saas_accounts_v1_authorization_proto != nil {
 		return
 	}
+	file_saas_accounts_v1_accessible_scopes_proto_init()
 	file_saas_accounts_v1_common_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -3264,7 +3036,7 @@ func file_saas_accounts_v1_authorization_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_authorization_proto_rawDesc), len(file_saas_accounts_v1_authorization_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   41,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

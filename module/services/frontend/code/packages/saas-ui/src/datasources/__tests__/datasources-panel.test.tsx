@@ -262,7 +262,7 @@ describe("DatasourcesPanel boundary column", () => {
 		await openConnectForm(client);
 		expect(await screen.findByText("11111111")).toBeTruthy();
 
-		fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));
+		fireEvent.click(screen.getByRole("button", { name: /^validate and connect$/i }));
 
 		await waitFor(() => expect(screen.getByText("Docs")).toBeTruthy());
 	});

@@ -1,10 +1,13 @@
 {
   "swagger": "2.0",
   "info": {
-    "title": "saas/accounts/v1/common.proto",
+    "title": "saas/policy/v1/options.proto",
     "version": "version not set"
   },
   "tags": [
+    {
+      "name": "AccessibleScopeService"
+    },
     {
       "name": "APIKeyService"
     },
@@ -127,8 +130,8 @@
     },
     "/v1/accessible-scopes": {
       "get": {
-        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal ListAccessibleScopes: a signed-in org member enumerates the scope\nnodes THEY may act on with (resource_type, action) through the gateway with a\nnormal bearer. The subject is the bearer's own principal — no subject_id in\nthe request — so it can never be an oracle about other principals. Same grant\n+ share union and same pagination as the internal RPC.",
-        "operationId": "PermissionService_ListMyAccessibleScopes",
+        "summary": "ListMyAccessibleScopes is the authenticated, caller-scoped companion to the\ninternal PermissionService.ListAccessibleScopes: a signed-in org member\nenumerates the scope nodes THEY may act on with (resource_type, action)\nthrough the gateway with a normal bearer. The subject is the bearer's own\nprincipal — no subject_id in the request — so it can never be an oracle\nabout other principals. Same grant + share union and same pagination as the\ninternal RPC.",
+        "operationId": "AccessibleScopeService_ListMyAccessibleScopes",
         "responses": {
           "200": {
             "description": "A successful response.",
@@ -179,7 +182,7 @@
           }
         ],
         "tags": [
-          "PermissionService"
+          "AccessibleScopeService"
         ]
       }
     },
@@ -5767,7 +5770,7 @@
         },
         "label": {
           "type": "string",
-          "description": "Human-readable node name. scope_path is an ltree of encoded UUIDs for a\nmachine-minted boundary, so it never renders as a name on its own."
+          "description": "Human-readable boundary name, visible only for caller-accessible scopes."
         }
       }
     },
@@ -7745,7 +7748,8 @@
           "type": "string",
           "description": "Set when more scopes remain; pass it back as page_token. Empty on the last page."
         }
-      }
+      },
+      "description": "Shared by the caller-scoped ListMyAccessibleScopes below AND by the internal\nPermissionService.ListAccessibleScopes in authorization.proto. It lives in this\nfile, so it ships to every published SDK consumer: a field added here for the\ninternal RPC's benefit widens the public surface too. Add internal-only detail\nto a message in authorization.proto instead."
     },
     "v1ListActiveSessionsResponse": {
       "type": "object",

@@ -4,8 +4,8 @@ The TypeScript SDK a saas-starter consumer imports to reach the saas public API
 — the TS twin of the Go `saas-sdk`. Two layers:
 
 1. **Generated Connect client** — `connect-es` clients generated from the public
-   accounts/connect API contract (`AuditService`, `DatasourceService`,
-   `WebhookService`).
+   accounts/connect API contract (`AccessibleScopeService`, `AuditService`,
+   `DatasourceService`, `WebhookService`).
 2. **Generated gateway-bound facade** — `accounts.New(gw)` binds the generated
    clients to a transport (the gateway seam) and exposes one accessor per
    service, mirroring the Go facade's `accounts.New(gw).datasource().method(...)`.
@@ -20,10 +20,20 @@ const { datasource: source } = await accounts.New(gw).datasource().addGitHubSour
 });
 ```
 
-`accounts.New(gw)` exposes `.audit()`, `.datasource()`, and `.webhook()`, each
-returning the bound Connect client for that service. The generated service
-descriptors (`AuditService`, `DatasourceService`, `WebhookService`) are
-re-exported for consumers that build their own clients.
+`accounts.New(gw)` exposes `.accessibleScope()`, `.audit()`, `.datasource()`, and
+`.webhook()`, each returning the bound Connect client for that service. The
+generated service descriptors are re-exported for consumers that build their own
+clients.
+
+`.accessibleScope().listMyAccessibleScopes({ orgId, resourceType, action })`
+enumerates the scope nodes — data boundaries — the *bearer's own* principal may
+act on. The subject is derived from the bearer, so the request carries no
+`subjectId` and the call can never be an oracle about another principal. It is a
+separate service from the administrative `PermissionService` precisely so this
+read can ship: a generated binding is scoped to a whole proto file, and
+`PermissionService` shares `authorization.proto` with role assignment, scope
+grants, record shares and the decision oracles, none of which belong in a
+consumer's tarball.
 
 ## The data graph
 
@@ -145,19 +155,20 @@ npm run generate
 ```
 
 This runs `codefly generate client --from contracts:… --endpoint accounts/connect
---services AuditService,DatasourceService,WebhookService`, writing the bindings
+--services AccessibleScopeService,AuditService,DatasourceService,WebhookService`,
+writing the bindings
 (`generated/typescript/src/gen`), the `accounts` facade
 (`generated/typescript/src/accounts_facade.ts`), and the resolved
 `library.codefly.yaml` recording the contract digest.
 
-The `--services` flag scopes only the generated **facade** to the three public
+The `--services` flag scopes only the generated **facade** to the public
 services. The accounts/connect contract is the full `saas.accounts.v1` package
 descriptor, so the generator emits `_pb` bindings for the *entire* message graph
-under `generated/typescript/src/gen` — well beyond those three services. The
+under `generated/typescript/src/gen` — well beyond those services. The
 published tarball must not carry that whole graph (it includes internal
 admin/authz/mfa/sso message shapes), so the build restricts what ships: `build`
 compiles from `src` only (see `tsconfig.json`), and tsc emits just the generated
-files the facade and its three services actually reach. The `published-surface`
+files the facade and its services actually reach. The `published-surface`
 test asserts the shipped `dist` gen tree equals that reachable closure and never
 contains an internal surface.
 
@@ -202,6 +213,13 @@ those are the ones `tsc` cannot see.
 the library actually vendors does not hash to the digest it records, and when
 the vendored contract names a proto the tree has no `_pb.ts` for. Regenerating
 clears all three; editing the digest clears none of them.
+
+Because that closure is per **file**, which proto file an RPC lives in decides
+whether it can ship at all. Adding a service to `--services` ships every message
+shape in its file, so a caller-scoped read that shares a file with an
+administrative surface cannot be published without the administrative shapes —
+which is why `ListMyAccessibleScopes` lives in `accessible_scopes.proto` rather
+than in `authorization.proto`.
 
 ## Building and testing
 

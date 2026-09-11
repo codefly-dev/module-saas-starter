@@ -4,10 +4,10 @@ import {
 	datasourceClientOverTransport,
 } from "@codefly-dev/saas-ui";
 import { createClient } from "@connectrpc/connect";
-import { PermissionService } from "@/gen/saas/accounts/v1/authorization_pb";
+import { AccessibleScopeService } from "@/gen/saas/accounts/v1/accessible_scopes_pb";
 import { apiTransport } from "@/lib/connect/transport";
 
-const permissions = createClient(PermissionService, apiTransport);
+const permissions = createClient(AccessibleScopeService, apiTransport);
 
 // The vocabulary a boundary grant is expressed in belongs to the module that
 // owns the ingested content, not to saas-starter — `ListMyAccessibleScopes`
