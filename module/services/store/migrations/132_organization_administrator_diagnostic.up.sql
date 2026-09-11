@@ -1,14 +1,18 @@
 -- Inventory the organizations whose administrative authority is already
 -- inconsistent, before anything starts enforcing that it cannot become so.
 --
--- Two states exist in historical data and neither can be repaired by a
+-- Three states exist in historical data and none can be repaired by a
 -- migration. An organization with no owner or admin membership has nobody who
 -- can administer it, and the only way to "fix" that is to grant an arbitrary
 -- user administrative authority — a privilege escalation performed by a deploy,
--- with no operator deciding who. An organization whose `owner_id` is not an
--- administrative member is a disagreement between the owner of record and who
--- can actually administer it; writing either side to match the other silently
--- moves authority. So both are reported, and neither is touched.
+-- with no operator deciding who. An organization whose administrative members
+-- are all inactive identities has the same problem behind a healthier-looking
+-- membership table: the rows are there, but nobody holding one can sign in, and
+-- choosing whom to reactivate is equally an operator's decision. An
+-- organization whose `owner_id` is not an eligible administrative member is a
+-- disagreement between the owner of record and who can actually administer it;
+-- writing either side to match the other silently moves authority. So all three
+-- are reported, and none is touched.
 --
 -- The report matters ahead of enforcement rather than after it. An invariant
 -- that rejects mutations "leaving an organization without an administrator"
@@ -31,6 +35,7 @@ CREATE TABLE IF NOT EXISTS "membership_integrity_findings" (
     org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     finding     TEXT NOT NULL CHECK (finding IN (
                     'organization_without_administrator',
+                    'organization_without_an_eligible_administrator',
                     'owner_of_record_is_not_an_administrator'
                 )),
     detail      JSONB NOT NULL,
@@ -68,7 +73,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON membership_integrity_findings TO app_con
 -- refreshes detail), and a finding that has since been repaired is deleted, so
 -- the table always reads as the current backlog rather than an append-only
 -- history. Returns the number of findings outstanding afterwards, which is also
--- the number of organizations outstanding: the two findings are mutually
+-- the number of organizations outstanding: the three findings are mutually
 -- exclusive by construction, so no organization is ever counted twice.
 CREATE FUNCTION public.record_membership_integrity_findings()
 RETURNS integer
@@ -78,8 +83,9 @@ AS $function$
 DECLARE
     outstanding integer;
 BEGIN
-    -- An inventory has to see every organization, and organizations /
-    -- organization_members are FORCE ROW LEVEL SECURITY — which subjects the
+    -- An inventory has to see every organization, and organizations,
+    -- organization_members and users (administrator eligibility depends on
+    -- identity status) are all FORCE ROW LEVEL SECURITY — which subjects the
     -- table owner to their policies as well. Those policies scope to
     -- app.current_org_id and carry no bypass clause (a session setting must
     -- never grant RLS authority; the role-hardening suite asserts no live
@@ -96,52 +102,85 @@ BEGIN
             USING HINT = 'assume the control plane first: SET ROLE app_control_plane';
     END IF;
 
-    WITH current_findings AS (
-        -- Nobody can administer this organization at all.
+    WITH org_administration AS (
+        -- One pass over the membership graph, so every finding below is decided
+        -- from the same per-organization facts rather than from repeated
+        -- correlated subqueries that could drift apart.
+        --
+        -- "Eligible" is migration 130's definition, deliberately reproduced
+        -- rather than approximated: role IN ('owner','admin') AND the identity
+        -- is active. findIdentity admits only active identities and DeleteUser
+        -- is a soft delete that leaves the membership row standing, so counting
+        -- every administrative row regardless of identity status reports an
+        -- organization healthy when nobody can actually sign in and administer
+        -- it. That organization is precisely the backlog this inventory exists
+        -- to size. Migration 130's organization_eligible_administrators() is
+        -- not reused here: it is SECURITY DEFINER scoped to app.current_org_id,
+        -- so it answers for one tenant, and this is a cross-tenant inventory.
         SELECT
-            o.id AS org_id,
-            'organization_without_administrator' AS finding,
+            o.id       AS org_id,
+            o.owner_id AS owner_id,
+            (
+                SELECT om.role FROM organization_members om
+                WHERE om.org_id = o.id AND om.user_id = o.owner_id
+            ) AS owner_membership_role,
+            (
+                SELECT u.status::text FROM users u WHERE u.uuid = o.owner_id
+            ) AS owner_status,
+            count(*) FILTER (
+                WHERE member.role IN ('owner', 'admin')
+            ) AS administrative_members,
+            count(*) FILTER (
+                WHERE member.role IN ('owner', 'admin') AND holder.status = 'active'
+            ) AS eligible_administrators,
+            count(*) FILTER (
+                WHERE member.role IN ('owner', 'admin') AND holder.status = 'active'
+                  AND member.user_id = o.owner_id
+            ) AS owner_is_eligible
+        FROM organizations o
+        LEFT JOIN organization_members member ON member.org_id = o.id
+        LEFT JOIN users holder ON holder.uuid = member.user_id
+        GROUP BY o.id, o.owner_id
+    ),
+    current_findings AS (
+        -- The findings are mutually exclusive by construction: one CASE over
+        -- one row per organization can only ever yield one of them. The
+        -- previous shape kept three disjoint WHERE clauses in step by hand,
+        -- which is the kind of agreement that silently stops holding. An
+        -- organization is therefore never counted twice, so the row count this
+        -- function returns is an organization count -- the number an operator
+        -- sizes the repair from.
+        SELECT
+            org_id,
+            CASE
+                -- No administrative membership exists at all. Repairing this
+                -- means choosing a user and granting them authority.
+                WHEN administrative_members = 0
+                    THEN 'organization_without_administrator'
+                -- Administrative memberships exist, but every holder is
+                -- deleted, suspended or otherwise not active. Materially
+                -- cheaper to repair -- reactivating one identity may be
+                -- enough -- and a different operator decision, which is why it
+                -- is reported apart from the case above rather than folded in.
+                WHEN eligible_administrators = 0
+                    THEN 'organization_without_an_eligible_administrator'
+                -- Somebody eligible can administer this organization, but it is
+                -- not the owner of record: either the owner holds no
+                -- administrative membership, or holds one whose identity is not
+                -- active. owner_status and membership_role tell those apart.
+                ELSE 'owner_of_record_is_not_an_administrator'
+            END AS finding,
             jsonb_build_object(
-                'owner_id', o.owner_id,
-                'membership_role', (
-                    SELECT om.role FROM organization_members om
-                    WHERE om.org_id = o.id AND om.user_id = o.owner_id
-                )
+                'owner_id', owner_id,
+                'membership_role', owner_membership_role,
+                'owner_status', owner_status,
+                'administrative_members', administrative_members,
+                'eligible_administrators', eligible_administrators
             ) AS detail
-        FROM organizations o
-        WHERE NOT EXISTS (
-            SELECT 1 FROM organization_members om
-            WHERE om.org_id = o.id AND om.role IN ('owner', 'admin')
-        )
-        UNION ALL
-        -- Somebody can administer this organization, but it is not the owner of
-        -- record. Restricted to organizations that have an administrator on
-        -- purpose: an organization with none satisfies this predicate too (its
-        -- owner is trivially not an administrator), and reporting both would
-        -- count the same organization twice and inflate the backlog an operator
-        -- is trying to size. The first finding is the stronger statement, and
-        -- carries the owner's membership role in its own detail.
-        SELECT
-            o.id,
-            'owner_of_record_is_not_an_administrator',
-            jsonb_build_object(
-                'owner_id', o.owner_id,
-                'membership_role', (
-                    SELECT om.role FROM organization_members om
-                    WHERE om.org_id = o.id AND om.user_id = o.owner_id
-                )
-            )
-        FROM organizations o
-        WHERE EXISTS (
-            SELECT 1 FROM organization_members om
-            WHERE om.org_id = o.id AND om.role IN ('owner', 'admin')
-        )
-        AND NOT EXISTS (
-            SELECT 1 FROM organization_members om
-            WHERE om.org_id = o.id
-              AND om.user_id = o.owner_id
-              AND om.role IN ('owner', 'admin')
-        )
+        FROM org_administration
+        WHERE administrative_members  = 0
+           OR eligible_administrators = 0
+           OR owner_is_eligible       = 0
     ),
     resolved AS (
         DELETE FROM membership_integrity_findings f

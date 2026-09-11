@@ -226,6 +226,87 @@ func TestMembershipDiagnosticIsNotReachableByRequestTraffic(t *testing.T) {
 	require.Error(t, err, "app_tenant may not run a cross-organization inventory")
 }
 
+// setUserStatus moves an identity out of 'active' the way DeleteUser (a soft
+// delete) and suspension do: the organization_members row is left standing, so
+// the membership table still looks administrative.
+func setUserStatus(t *testing.T, userID, status string) {
+	t.Helper()
+	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx,
+			`UPDATE users SET status = $2::user_status WHERE uuid = $1`, userID, status)
+		return err
+	}))
+}
+
+// The eligibility gap this inventory shipped with, reported from the #594
+// deactivation-continuity work. An organization whose only administrator has
+// been deleted or suspended keeps the membership row, so a scan counting
+// administrative rows regardless of identity status calls it healthy — while
+// nobody can sign in to administer it. findIdentity admits only active
+// identities, so that organization is exactly the backlog this exists to size.
+//
+// Reported as its own finding rather than folded into
+// organization_without_administrator: the rows are there and reactivating one
+// identity may be the whole repair, which is a different and usually cheaper
+// operator decision than choosing someone to grant authority to.
+func TestMembershipDiagnosticReportsAnOrganizationWhoseAdministratorsAreAllInactive(t *testing.T) {
+	for _, status := range []string{"deleted", "suspended", "inactive"} {
+		t.Run(status, func(t *testing.T) {
+			owner := seedUser(t)
+			orgID := seedOrg(t, owner)
+			require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+				testCtx, owner, "owner",
+			))
+
+			runMembershipDiagnostic(t)
+			require.Empty(t, membershipFindings(t, orgID),
+				"precondition: an active owner-administrator is healthy")
+
+			setUserStatus(t, owner, status)
+			runMembershipDiagnostic(t)
+
+			require.Equal(t, []string{"organization_without_an_eligible_administrator"},
+				membershipFindings(t, orgID),
+				"an administrator who cannot sign in cannot administer")
+			require.Equal(t, "1", membershipFindingDetail(t, orgID, "administrative_members"),
+				"the membership row is still there — that is the point")
+			require.Equal(t, "0", membershipFindingDetail(t, orgID, "eligible_administrators"))
+		})
+	}
+}
+
+// The same question for the owner of record: a membership that IS
+// administrative, held by an identity that is not active. As long as somebody
+// else can still administer the organization, that is the owner-mismatch
+// finding, and detail has to make clear it is the identity rather than the
+// membership that is wrong.
+func TestMembershipDiagnosticReportsAnInactiveOwnerWhileAnotherAdministratorRemains(t *testing.T) {
+	owner := seedUser(t)
+	administrator := seedUser(t)
+	orgID := seedOrg(t, owner)
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, owner, "owner",
+	))
+	require.NoError(t, testStore.As(business.Identity{OrgID: orgID}).AddOrgMember(
+		testCtx, administrator, "admin",
+	))
+
+	runMembershipDiagnostic(t)
+	require.Empty(t, membershipFindings(t, orgID))
+
+	setUserStatus(t, owner, "suspended")
+	runMembershipDiagnostic(t)
+
+	require.Equal(t, []string{"owner_of_record_is_not_an_administrator"},
+		membershipFindings(t, orgID))
+	require.Equal(t, `"suspended"`, membershipFindingDetail(t, orgID, "owner_status"))
+	require.Equal(t, `"owner"`, membershipFindingDetail(t, orgID, "membership_role"),
+		"the membership is administrative; it is the identity that is not")
+	require.Equal(t, "1", membershipFindingDetail(t, orgID, "eligible_administrators"),
+		"the remaining administrator is why this is a mismatch and not an empty organization")
+}
+
 // Regression test for the defect this diagnostic shipped with.
 //
 // The migration ran the scan directly under the store owner-connection. That
@@ -256,7 +337,7 @@ func TestMembershipDiagnosticRefusesACallerThatCannotSpanOrganizations(t *testin
 		mustExec(t, ctx, conn, fmt.Sprintf(
 			`GRANT EXECUTE ON FUNCTION public.record_membership_integrity_findings() TO %s`, role))
 		mustExec(t, ctx, conn, fmt.Sprintf(
-			`GRANT SELECT ON organizations, organization_members TO %s`, role))
+			`GRANT SELECT ON organizations, organization_members, users TO %s`, role))
 		mustExec(t, ctx, conn, fmt.Sprintf(
 			`GRANT INSERT, UPDATE, DELETE, SELECT ON membership_integrity_findings TO %s`, role))
 		mustExec(t, ctx, conn, fmt.Sprintf(`SET ROLE %s`, role))

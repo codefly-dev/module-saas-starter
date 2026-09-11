@@ -164,23 +164,33 @@ organizations whose administrative authority is *already* inconsistent, so that
 work enforcing the invariant has a sized backlog rather than a guess. It changes
 no existing relation and grants no new request authority.
 
-`public.record_membership_integrity_findings()` records two findings into
-`membership_integrity_findings`, both **reported and never repaired**:
+`public.record_membership_integrity_findings()` records three findings into
+`membership_integrity_findings`, all **reported and never repaired**:
 
-| Finding | Why it is not repaired |
-|---|---|
-| `organization_without_administrator` | The only way to give an organization an administrator is to pick a user and grant them one. A deploy that does this performs a privilege escalation with no operator deciding who. |
-| `owner_of_record_is_not_an_administrator` | `organizations.owner_id` is written only by `CreateOrganization` and there is no owner-transfer path, so it is immutable provenance rather than live authority. Writing either side to match the other moves authority silently. |
+| Finding | Meaning | Why it is not repaired |
+|---|---|---|
+| `organization_without_administrator` | No `owner`/`admin` membership row exists at all. | The only way to give an organization an administrator is to pick a user and grant them one. A deploy that does this performs a privilege escalation with no operator deciding who. |
+| `organization_without_an_eligible_administrator` | Administrative membership rows exist, but every holder's identity is inactive. | Reactivating an identity hands authority back to whoever held it — equally an operator's decision, and usually the cheaper repair. Reported apart from the row above because it is a different decision, not a milder version of the same one. |
+| `owner_of_record_is_not_an_administrator` | Somebody eligible can administer the organization, but the owner of record cannot — either they hold no administrative membership, or they hold one whose identity is not active. | `organizations.owner_id` is written only by `CreateOrganization` and there is no owner-transfer path, so it is immutable provenance rather than live authority. Writing either side to match the other moves authority silently. |
 
-The two are **mutually exclusive**, and the second is restricted to
-organizations that do have an administrator. An organization with none also
-satisfies the second predicate — its owner is trivially not an administrator —
-and recording both would count the same organization twice in a backlog
-somebody is trying to size. The first finding is the stronger statement and
-carries the owner's membership role itself: `detail.membership_role` is `null`
-when the owner holds no membership at all, and the role string when they hold a
-non-administrative one, on either finding. So the row count is an organization
-count, and that is what the function returns.
+**Eligibility** is migration `130_organization_administrator_eligibility`'s
+definition, reproduced rather than approximated: `role IN ('owner', 'admin')`
+**and** `users.status = 'active'`. `findIdentity` admits only active identities
+and `DeleteUser` is a soft delete that leaves the membership row standing, so
+counting administrative rows regardless of identity status reports an
+organization healthy when nobody holding one can sign in to administer it —
+exactly the backlog this inventory exists to size. Migration 130's
+`organization_eligible_administrators()` is not reused: it is `SECURITY DEFINER`
+scoped to `app.current_org_id`, so it answers for a single tenant, and this is a
+cross-tenant inventory.
+
+The three are **mutually exclusive by construction** — one `CASE` over one row
+per organization can only ever yield one of them — so the row count is an
+organization count, and that is what the function returns. `detail` carries
+`owner_id`, `membership_role` (`null` when the owner holds no membership at
+all), `owner_status`, `administrative_members` and `eligible_administrators`, so
+an operator can tell "three administrators, none of whom can sign in" from "no
+administrators at all" without going back to the tables.
 
 The natural key is `(org_id, finding)`; there is no surrogate id. A finding *is*
 the fact that this organization is in this state, and migration 13 dropped
