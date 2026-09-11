@@ -346,3 +346,22 @@ func TestRequireWebhookRelayRefusesATransportWithNoDispatcher(t *testing.T) {
 		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(testStore)))
 	require.NoError(t, wired.RequireWebhookRelay())
 }
+
+// A user-scoped tenant transaction has no organization scope. SQL NULL must
+// deny the mutation just as an explicitly different organization does.
+func TestSyncWebhookEventSubscriptionsRejectsMissingTenantScope(t *testing.T) {
+	orgID := seedOrg(t, seedUser(t))
+	endpointID := seedWebhookEndpoint(t, orgID, true, externalEventType)
+	err := testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction key
+		if _, err := tx.Exec(ctx, "SET LOCAL ROLE app_tenant"); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, "SELECT set_config('app.current_org_id', '', true)"); err != nil {
+			return err
+		}
+		return testStore.SyncWebhookEventSubscriptions(ctx, orgID, endpointID, nil)
+	})
+	require.ErrorContains(t, err, "webhook subscription org does not match the signed request scope")
+	require.Equal(t, []string{externalEventType}, webhookSubscriptionPatterns(t, endpointID))
+}

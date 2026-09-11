@@ -270,7 +270,7 @@ BEGIN
 
     IF caller_role = 'app_tenant' THEN
         IF p_org_id IS NULL
-           OR p_org_id <> NULLIF(current_setting('app.current_org_id', true), '')::uuid THEN
+           OR p_org_id IS DISTINCT FROM NULLIF(current_setting('app.current_org_id', true), '')::uuid THEN
             RAISE EXCEPTION 'webhook subscription org does not match the signed request scope'
                 USING ERRCODE = 'insufficient_privilege';
         END IF;
