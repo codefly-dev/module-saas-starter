@@ -245,14 +245,23 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * The second clock on a row: `lastSyncedAt` moves on a tenant-triggered sync,
- * while this one is advanced by the leased ingest worker on a webhook delivery
- * or periodic reconcile. Rendered only once a delivery has landed, so a source
- * without one shows the sync clock alone rather than a second "Never".
+ * A row's clocks. At most one of them ticks for a given source: a github
+ * source's ingest is advanced by the change-set compiler and never sets
+ * `lastSyncedAt`, while the pulled providers advance `lastSyncedAt` alone. So
+ * the "Never" is dropped whenever there is an ingest to show — left in, it
+ * would sit above live provenance telling the reader a healthy source has
+ * never synced.
  */
-function IngestLine({ source }: { source: DatasourceView }) {
-	const line = formatIngest(source.lastIngestedAt, source.lastIngestedCommit);
-	return line ? <div className="text-xs">{line}</div> : null;
+function LastSyncCell({ source }: { source: DatasourceView }) {
+	const ingest = formatIngest(source.lastIngestedAt, source.lastIngestedCommit);
+	return (
+		<>
+			{(source.lastSyncedAt || !ingest) && (
+				<div>{formatSyncedAt(source.lastSyncedAt)}</div>
+			)}
+			{ingest && <div className="text-xs">{ingest}</div>}
+		</>
+	);
 }
 
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
@@ -300,8 +309,7 @@ function SourcesTable({
 								{source.webhookConfigured ? "Configured" : "None"}
 							</td>
 							<td className={cn(cellClass, "text-muted-foreground")}>
-								<div>{formatSyncedAt(source.lastSyncedAt)}</div>
-								<IngestLine source={source} />
+								<LastSyncCell source={source} />
 							</td>
 							<td className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">

@@ -46,8 +46,8 @@ const sampleSource: DatasourceView = {
 	webhookConfigured: true,
 	status: "active",
 	lastSyncedAt: undefined,
-	lastIngestedAt: undefined,
-	lastIngestedCommit: undefined,
+	// Deliberately omits lastIngestedAt/lastIngestedCommit: they are optional, so
+	// a consumer's own adapter keeps compiling without them.
 	createdAt: undefined,
 };
 
@@ -86,30 +86,96 @@ describe("DatasourcesPanel", () => {
 		expect(client.listSources).toHaveBeenCalledWith("org-1");
 	});
 
-	it("renders the ingest provenance beside the tenant-triggered sync clock", async () => {
-		// A github source's ingest is advanced by the leased worker, not by
-		// "Sync now", so the two clocks have to read as two facts: collapsing them
-		// would hide that this repo has live webhook ingest and no manual pull.
-		const ingestedAt = "2026-09-08T11:30:00.000Z";
+	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {
+		// A tenant pressing "Sync now" on a github source dispatches a forced
+		// reconcile, which advances this same clock — so a label naming the
+		// webhook would attribute the user's own manual pull to a delivery.
 		const ingested: DatasourceView = {
 			...sampleSource,
-			lastIngestedAt: ingestedAt,
+			lastIngestedAt: "2026-09-08T11:30:00.000Z",
 			lastIngestedCommit: "9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
 		};
 		const client = fakeClient({ listSources: vi.fn(async () => [ingested]) });
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		const line = await screen.findByText(/last webhook ingest/i);
-		expect(line.textContent).toContain(
-			new Date(ingestedAt).toLocaleDateString(),
-		);
+		const line = await screen.findByText(/last ingest/i);
+		expect(line.textContent).not.toMatch(/webhook/i);
 		// The short commit git itself would print, not the full 40-char sha.
 		expect(line.textContent).toContain("9f2c1ab");
 		expect(line.textContent).not.toContain(
 			"9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
 		);
-		// The manual-pull clock keeps its own, still-never value.
-		expect(screen.getByText("Never")).toBeTruthy();
+	});
+
+	it("renders the ingest time of day, not just its date", async () => {
+		const at = "2026-09-08T11:30:00.000Z";
+		const ingested: DatasourceView = { ...sampleSource, lastIngestedAt: at };
+		const client = fakeClient({ listSources: vi.fn(async () => [ingested]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const line = await screen.findByText(/last ingest/i);
+		// Exactly what a date-only render produces. The clock moves on every
+		// delivery, so a date cannot separate a source that ingested minutes ago
+		// from one whose ingest stopped shortly after midnight.
+		expect(line.textContent).not.toBe(
+			`last ingest ${new Date(at).toLocaleDateString()}`,
+		);
+		expect(line.textContent).toContain(
+			new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(
+				new Date(at),
+			),
+		);
+	});
+
+	it("distinguishes two ingests a minute apart", async () => {
+		// One minute keeps both on the same local date in every real timezone, so
+		// this fails for a date-only render and for nothing else.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [
+				{ ...sampleSource, lastIngestedAt: "2026-09-08T11:30:00.000Z" },
+				{ ...secondSource, lastIngestedAt: "2026-09-08T11:31:00.000Z" },
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const lines = await screen.findAllByText(/last ingest/i);
+		expect(lines).toHaveLength(2);
+		expect(lines[0].textContent).not.toBe(lines[1].textContent);
+	});
+
+	it('drops the sync clock\'s "Never" when there is an ingest to show', async () => {
+		// A github source never sets last_synced_at — the compiler advances the
+		// ingest clock instead — so keeping "Never" above live provenance would
+		// tell the reader a healthy source has never synced.
+		const ingested: DatasourceView = {
+			...sampleSource,
+			lastSyncedAt: undefined,
+			lastIngestedAt: "2026-09-08T11:30:00.000Z",
+			lastIngestedCommit: "9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [ingested]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await screen.findByText(/last ingest/i);
+		expect(screen.queryByText("Never")).toBeNull();
+	});
+
+	it("keeps the sync clock for a provider that pulls", async () => {
+		// An api/crawler/upload source advances last_synced_at and never ingests,
+		// so its cell keeps the column's own value — including "Never".
+		const pulled: DatasourceView = {
+			...sampleSource,
+			lastSyncedAt: "2026-09-08T11:30:00.000Z",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [pulled]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			await screen.findByText(
+				new Date("2026-09-08T11:30:00.000Z").toLocaleDateString(),
+			),
+		).toBeTruthy();
+		expect(screen.queryByText(/last ingest/i)).toBeNull();
 	});
 
 	it("shows no ingest line for a source whose first delivery has not landed", async () => {
@@ -119,7 +185,8 @@ describe("DatasourcesPanel", () => {
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
 		await screen.findByText("codefly-dev/module-saas-starter");
-		expect(screen.queryByText(/last webhook ingest/i)).toBeNull();
+		expect(screen.queryByText(/last ingest/i)).toBeNull();
+		expect(screen.getByText("Never")).toBeTruthy();
 	});
 
 	it("submits the connect form through addGitHubSource", async () => {
