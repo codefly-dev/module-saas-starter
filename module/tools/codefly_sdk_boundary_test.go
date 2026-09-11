@@ -6,12 +6,15 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TestShellToolsDoNotReadCodeflyCarriers extends the SDK boundary to operational
@@ -67,7 +70,7 @@ func TestShellToolsDoNotReadCodeflyCarriers(t *testing.T) {
 // canonical module and composed workspaces. Runtime carriers belong to sdk-go;
 // production services consume typed SDK methods.
 func TestProductionGoUsesCodeflySDK(t *testing.T) {
-	repositoryRoot, roots := findProductionScanRoots(t)
+	repositoryRoot, roots, nonComposed := findProductionScanRoots(t)
 	fset := token.NewFileSet()
 
 	for _, root := range roots {
@@ -76,6 +79,9 @@ func TestProductionGoUsesCodeflySDK(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
+				if nonComposed[path] {
+					return filepath.SkipDir
+				}
 				if entry.Name() == "vendor" || entry.Name() == "node_modules" || entry.Name() == ".git" {
 					return filepath.SkipDir
 				}
@@ -137,7 +143,7 @@ var loopbackPortLiteral = regexp.MustCompile(`(?i)(?:https?://)?(?:localhost|127
 // allocates and injects runtime endpoints; production code consumes the typed
 // SDK, while shell setup tools use `codefly endpoint`.
 func TestProductionCodeDoesNotPinCodeflyPorts(t *testing.T) {
-	repositoryRoot, roots := findProductionScanRoots(t)
+	repositoryRoot, roots, nonComposed := findProductionScanRoots(t)
 	fset := token.NewFileSet()
 	scriptExtensions := map[string]bool{
 		".cjs": true, ".js": true, ".jsx": true, ".mjs": true,
@@ -150,6 +156,9 @@ func TestProductionCodeDoesNotPinCodeflyPorts(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
+				if nonComposed[path] {
+					return filepath.SkipDir
+				}
 				switch entry.Name() {
 				case ".git", ".next", "node_modules", "target", "vendor":
 					return filepath.SkipDir
@@ -206,7 +215,7 @@ func TestProductionCodeDoesNotPinCodeflyPorts(t *testing.T) {
 // a private carrier, but executable product code may only reach it through the
 // language SDK.
 func TestProductionRustAndTypeScriptUseCodeflySDK(t *testing.T) {
-	repositoryRoot, roots := findProductionScanRoots(t)
+	repositoryRoot, roots, nonComposed := findProductionScanRoots(t)
 	extensions := map[string]bool{
 		".rs":  true,
 		".ts":  true,
@@ -223,6 +232,9 @@ func TestProductionRustAndTypeScriptUseCodeflySDK(t *testing.T) {
 				return walkErr
 			}
 			if entry.IsDir() {
+				if nonComposed[path] {
+					return filepath.SkipDir
+				}
 				switch entry.Name() {
 				case ".git", ".next", "node_modules", "target", "vendor":
 					return filepath.SkipDir
@@ -432,7 +444,7 @@ func scanRuntimeConfigurationsForPinnedPorts(t *testing.T, repositoryRoot string
 	}
 }
 
-func findProductionScanRoots(t *testing.T) (string, []string) {
+func findProductionScanRoots(t *testing.T) (string, []string, map[string]bool) {
 	t.Helper()
 	root := findRepositoryRoot(t)
 	candidates := []string{
@@ -451,7 +463,136 @@ func findProductionScanRoots(t *testing.T) (string, []string) {
 	if len(roots) == 0 {
 		t.Fatal("no Codefly production module roots found")
 	}
-	return root, roots
+	return root, roots, nonComposedServiceDirectories(t, roots)
+}
+
+// TestNonComposedServiceDirectoriesFollowTheModuleInventory pins the contract a
+// consuming workspace depends on: `codefly sync module` lands every service of a
+// base module on disk, and only the ones its module.codefly.yaml composes are in
+// this gate's reach.
+func TestNonComposedServiceDirectoriesFollowTheModuleInventory(t *testing.T) {
+	workspace := t.TempDir()
+	writeComposedModule(t, filepath.Join(workspace, "module"),
+		"services:\n    - name: accounts\n    - name: store\n",
+		"accounts", "store")
+	writeComposedModule(t, filepath.Join(workspace, "modules", "documents"),
+		"services:\n    - name: documents\n    - name: store\n",
+		"documents", "store", "runtime-worker")
+	writeComposedModule(t, filepath.Join(workspace, "modules", "inventoryless"),
+		"", "anything")
+
+	directories := nonComposedServiceDirectories(t, []string{
+		filepath.Join(workspace, "module"),
+		filepath.Join(workspace, "modules"),
+	})
+
+	expected := map[string]bool{
+		filepath.Join(workspace, "modules", "documents", "services", "runtime-worker"): true,
+	}
+	if !maps.Equal(directories, expected) {
+		t.Fatalf("non-composed service directories = %v, want %v", directories, expected)
+	}
+}
+
+func writeComposedModule(t *testing.T, moduleRoot, servicesBlock string, serviceDirectories ...string) {
+	t.Helper()
+	for _, service := range serviceDirectories {
+		if err := os.MkdirAll(filepath.Join(moduleRoot, "services", service), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	manifest := "kind: module\nname: " + filepath.Base(moduleRoot) + "\n" + servicesBlock
+	if err := os.WriteFile(filepath.Join(moduleRoot, "module.codefly.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// composedModuleDocument is the minimal view of module.codefly.yaml this gate
+// needs: the service inventory a workspace actually composes.
+type composedModuleDocument struct {
+	Services []struct {
+		Name string `yaml:"name"`
+	} `yaml:"services"`
+}
+
+// nonComposedServiceDirectories collects the `services/<name>/` subtrees that
+// sit on disk without being composed. A consumer may take a subset of a base
+// module's services, but `codefly sync module` copies the module whole — so the
+// omitted services' code is never built, run, or given a runtime endpoint to
+// resolve, and pinning one is not the out-of-band coupling this gate exists to
+// catch. base-integrity.mjs draws the same line for the same reason; a module
+// declaring no `services:` inventory enforces everything.
+func nonComposedServiceDirectories(t *testing.T, roots []string) map[string]bool {
+	t.Helper()
+	directories := map[string]bool{}
+	for _, moduleRoot := range moduleRootsUnder(t, roots) {
+		composed := composedServices(t, moduleRoot)
+		if composed == nil {
+			continue
+		}
+		servicesRoot := filepath.Join(moduleRoot, "services")
+		entries, err := os.ReadDir(servicesRoot)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() && !composed[entry.Name()] {
+				directories[filepath.Join(servicesRoot, entry.Name())] = true
+			}
+		}
+	}
+	return directories
+}
+
+// moduleRootsUnder resolves scan roots to module roots: a root either holds a
+// module.codefly.yaml itself (the canonical `module/`, or a module repository)
+// or contains one module per child directory (a workspace's `modules/`).
+func moduleRootsUnder(t *testing.T, roots []string) []string {
+	t.Helper()
+	var moduleRoots []string
+	for _, root := range roots {
+		if _, err := os.Stat(filepath.Join(root, "module.codefly.yaml")); err == nil {
+			moduleRoots = append(moduleRoots, root)
+			continue
+		}
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			t.Fatalf("read module roots under %s: %v", root, err)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			candidate := filepath.Join(root, entry.Name())
+			if _, err := os.Stat(filepath.Join(candidate, "module.codefly.yaml")); err == nil {
+				moduleRoots = append(moduleRoots, candidate)
+			}
+		}
+	}
+	return moduleRoots
+}
+
+// composedServices reads a module's declared service inventory, or nil when it
+// declares none — which enforces every service on disk.
+func composedServices(t *testing.T, moduleRoot string) map[string]bool {
+	t.Helper()
+	manifest := filepath.Join(moduleRoot, "module.codefly.yaml")
+	data, err := os.ReadFile(manifest)
+	if err != nil {
+		t.Fatalf("read %s: %v", manifest, err)
+	}
+	var document composedModuleDocument
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		t.Fatalf("decode %s: %v", manifest, err)
+	}
+	if len(document.Services) == 0 {
+		return nil
+	}
+	composed := make(map[string]bool, len(document.Services))
+	for _, service := range document.Services {
+		composed[service.Name] = true
+	}
+	return composed
 }
 
 func findRepositoryRoot(t *testing.T) string {
