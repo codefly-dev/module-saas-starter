@@ -401,11 +401,19 @@ though the lockfile never changed (browserslist did exactly this before #400).
 (and on demand via `workflow_dispatch`) it runs `npm audit fix
 --package-lock-only --omit=dev` across the frontend and marketing lockfiles,
 rolls whatever it can safely remediate into a single standing pull request
-(`chore/dep-audit-remediation`), and then re-runs the gate's own
+(`chore/dep-audit-remediation`), explicitly dispatches `ci.yml` on that branch
+after each push, and then re-runs the gate's own
 `--audit-level=high` audit. If an advisory cannot be auto-fixed — it needs a
 major bump or an explicit `overrides` pin — that final step fails the run so a
 maintainer acts before the next tag. The job never weakens the gate: it moves
 the same policy earlier so tags cut from an already-remediated tree.
+
+The explicit dispatch is necessary because pushes and PRs created with
+`GITHUB_TOKEN` do not trigger workflows. The token has `actions: write` to
+dispatch CI, which reports the required named checks on the remediation head
+SHA. A dispatch has no comparison base, so CI checks the full service graph;
+publication remains restricted to release tags. A dispatch failure fails the
+remediation run.
 
 ## Local use
 

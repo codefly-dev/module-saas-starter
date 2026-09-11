@@ -13,6 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   pull-requests: write
 
@@ -72,6 +73,9 @@ jobs:
               --title "chore(deps): auto-remediate transitive security advisories (#406)" \
               --body "Automated \`npm audit fix --package-lock-only --omit=dev\` remediation of newly-published advisories against the pinned dependency tree. Review the lockfile diff and let the release gate confirm the audit is clean before merging."
           fi
+          # GITHUB_TOKEN suppresses push/pull_request workflow triggers, but
+          # workflow_dispatch runs CI on the pushed head for new and updated PRs.
+          gh workflow run ci.yml --ref "$branch"
       - name: Fail if high-severity advisories remain after auto-fix
         shell: bash
         run: |
