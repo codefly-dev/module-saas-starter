@@ -1,0 +1,24 @@
+Real local dependencies initialized; running normal tenant mount acceptance.
+=== RUN   TestExecutionTenantReal
+=== RUN   TestExecutionTenantReal/explicit_opt_in
+=== RUN   TestExecutionTenantReal/bind_failure_rolls_back_all_listeners
+=== RUN   TestExecutionTenantReal/native_grpc_original_owner_start_and_exchange
+=== RUN   TestExecutionTenantReal/missing_forged_and_revision_credentials_denied
+=== RUN   TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied
+=== RUN   TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied/untrusted
+=== RUN   TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied/hostname
+=== RUN   TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied/obsolete_version
+=== RUN   TestExecutionTenantReal/tenant_and_revision_exposure_remain_separate
+=== RUN   TestExecutionTenantReal/shutdown_rebind_and_original_parent_survives
+--- PASS: TestExecutionTenantReal (0.17s)
+    --- PASS: TestExecutionTenantReal/explicit_opt_in (0.00s)
+    --- PASS: TestExecutionTenantReal/bind_failure_rolls_back_all_listeners (0.00s)
+    --- PASS: TestExecutionTenantReal/native_grpc_original_owner_start_and_exchange (0.07s)
+    --- PASS: TestExecutionTenantReal/missing_forged_and_revision_credentials_denied (0.00s)
+    --- PASS: TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied (0.01s)
+        --- PASS: TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied/untrusted (0.00s)
+        --- PASS: TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied/hostname (0.00s)
+        --- PASS: TestExecutionTenantReal/tls_trust_hostname_version_and_plaintext_denied/obsolete_version (0.00s)
+    --- PASS: TestExecutionTenantReal/tenant_and_revision_exposure_remain_separate (0.01s)
+    --- PASS: TestExecutionTenantReal/shutdown_rebind_and_original_parent_survives (0.02s)
+PASS
