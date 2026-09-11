@@ -1,6 +1,6 @@
 # ADR 0008: A datasource's sync actor stays in the audit trail — no `last_synced_by` on the tenant row
 
-- Status: Accepted
+- Status: Proposed
 - Date: 2026-09-10
 - Task: decides #586, the design question split out of #576 step 2. Closes the
   "who pressed sync" half of #564's ingest-provenance line; the ingest half
@@ -32,9 +32,13 @@ disagree with the first.
   `SyncDatasourceSource` with the caller's principal as `actor_id`
   (`pkg/business/datasources.go`), registered `CategorySystem` in the typed
   registry ([ADR 0003](0003-typed-audit-event-registry.md)).
-- `buildAuditEntry` also captures `x-is-impersonated` / `x-impersonated-by`
-  from request metadata, so the audit row records the **actor chain** — the
-  effective subject and the administrator impersonating them — not a single id.
+- `buildAuditEntry` also reads the verified request identity
+  (`auth.VerifiedRequestIdentity` → `Impersonated()` / `RealActorID()`, #533) and
+  records `IsImpersonated` / `ImpersonatedBy` beside the actor, so the audit row
+  carries the **actor chain** — the effective subject the action ran as and the
+  real actor behind the request — not a single id. Both ids come from that one
+  typed identity rather than a parallel metadata convention, which is precisely
+  the drift #533 removed.
 - `QueryAuditLog` already answers "the latest sync of this source": it filters
   `resource`, `resource_id` and `event_type`, and `postgres_audit.go` orders
   `created_at DESC, id DESC`. No new read model is required.
@@ -102,9 +106,10 @@ Reversing this needs a superseding ADR, not a migration. The two premises to
 re-examine first: whether `ListSources` has by then acquired a permission that
 matches the actor's classification, and whether the fact being projected is the
 same occurrence as the timestamp it renders beside. A guard test in
-`pkg/business` (`datasource_sync_actor_test.go`) fails if an actor field appears
-on `Datasource` while the methods projecting it still declare no `audit:read`,
-so the erosion is caught at the point it happens rather than in review.
+`pkg/cataloggen` (`datasource_sync_actor_test.go`) fails if an actor field appears
+anywhere in `Datasource`'s field tree while the methods projecting it still
+declare no `audit:read`, so the erosion is caught at the point it happens rather
+than in review.
 
 ## Consequences
 
