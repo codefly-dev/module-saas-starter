@@ -254,7 +254,7 @@ func (s *PostgresEventOperations) relayHealth(ctx context.Context) (*eventsv1.Ev
 // working set, and reaching it is logged rather than hidden.
 func (s *PostgresEventOperations) listLiveSubscriptions(ctx context.Context) ([]liveEventSubscription, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, subscriber_principal_id, type_pattern, queue, delivery, created_at
+		SELECT id, COALESCE(subscriber_principal_id::text, ''), type_pattern, queue, delivery, created_at
 		FROM public.event_subscriptions
 		WHERE revoked_at IS NULL
 		ORDER BY created_at, id

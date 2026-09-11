@@ -7,7 +7,9 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"time"
 
+	"accounts/pkg/events"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 
@@ -24,8 +26,11 @@ type teeStore struct {
 	mu                sync.Mutex
 	audits            []AuditEntry
 	jobs              []*jobsv1.EnqueueJobRequest
-	subs              []*WebhookSubscription
 	failExportEnqueue bool
+}
+
+func (s *teeStore) SyncWebhookEventSubscriptions(context.Context, string, string, []string) error {
+	return nil
 }
 
 func (s *teeStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
@@ -47,16 +52,6 @@ func (s *teeStore) InsertAuditEvent(_ context.Context, entry AuditEntry) error {
 	defer s.mu.Unlock()
 	s.audits = append(s.audits, entry)
 	return nil
-}
-
-func (s *teeStore) GetActiveWebhookSubscriptions(_ context.Context, orgID, _ string) ([]*WebhookSubscription, error) {
-	var out []*WebhookSubscription
-	for _, sub := range s.subs {
-		if sub.OrgID == orgID {
-			out = append(out, sub)
-		}
-	}
-	return out, nil
 }
 
 func (s *teeStore) CreateWebhookDelivery(_ context.Context, _ *WebhookDelivery) error { return nil }
@@ -101,9 +96,29 @@ func orgAuditEntry() AuditEntry {
 	}
 }
 
+// auditEventSubscriber is a fake subscription over every audit type, standing in
+// for the endpoints the relay resolves once the emitter has published.
+func auditEventSubscriber() (*events.FakeTransport, string) {
+	queue := "audit.events.test"
+	return events.NewFakeTransport([]events.Subscription{{
+		ID: NewIDString(), SubscriberPrincipalID: NewIDString(),
+		TypePattern: "saas.*", Queue: queue, Delivery: events.DeliveryUnordered,
+	}}, time.Minute), queue
+}
+
+func publishedEvents(t *testing.T, transport *events.FakeTransport, queue string) []events.Leased {
+	t.Helper()
+	leased, err := transport.Claim(t.Context(), queue, 1024)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
+	}
+	return leased
+}
+
 func TestSelectorPostgresDoesNotTee(t *testing.T) {
-	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002", OrgID: teeOrgID}}}
-	emitter, err := NewDurableAuditEmitter(store, store)
+	store := &teeStore{}
+	transport, queue := auditEventSubscriber()
+	emitter, err := NewDurableAuditEmitter(store, store, WithDomainEventTransport(transport))
 	if err != nil {
 		t.Fatalf("NewDurableAuditEmitter: %v", err)
 	}
@@ -115,14 +130,15 @@ func TestSelectorPostgresDoesNotTee(t *testing.T) {
 	if got := len(store.jobsForQueue(AuditExportQueue)); got != 0 {
 		t.Fatalf("audit export jobs = %d, want 0 (tee disabled)", got)
 	}
-	if got := len(store.jobsForQueue(OutboundWebhookQueue)); got != 1 {
-		t.Fatalf("webhook jobs = %d, want 1", got)
+	if got := len(publishedEvents(t, transport, queue)); got != 1 {
+		t.Fatalf("published domain events = %d, want 1", got)
 	}
 }
 
 func TestSelectorBothTeesAndCommitsAtomically(t *testing.T) {
-	store := &teeStore{subs: []*WebhookSubscription{{ID: "00000000-0000-0000-0000-000000000002", OrgID: teeOrgID}}}
-	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee())
+	store := &teeStore{}
+	transport, queue := auditEventSubscriber()
+	emitter, err := NewDurableAuditEmitter(store, store, WithExternalTee(), WithDomainEventTransport(transport))
 	if err != nil {
 		t.Fatalf("NewDurableAuditEmitter: %v", err)
 	}
@@ -132,8 +148,8 @@ func TestSelectorBothTeesAndCommitsAtomically(t *testing.T) {
 	if got := len(store.audits); got != 1 {
 		t.Fatalf("audits committed = %d, want 1", got)
 	}
-	if got := len(store.jobsForQueue(OutboundWebhookQueue)); got != 1 {
-		t.Fatalf("webhook jobs = %d, want 1", got)
+	if got := len(publishedEvents(t, transport, queue)); got != 1 {
+		t.Fatalf("published domain events = %d, want 1", got)
 	}
 	exports := store.jobsForQueue(AuditExportQueue)
 	if len(exports) != 1 {
@@ -411,5 +427,41 @@ func envelopeFromRequest(t *testing.T, request *jobsv1.EnqueueJobRequest) *jobsv
 		ContentType:    job.GetContentType(),
 		State:          jobsv1.JobState_JOB_STATE_PENDING,
 		MaxAttempts:    job.GetMaxAttempts(),
+	}
+}
+
+// TestPublishedEventCarriesTheRegisteredSchemaVersion pins the envelope against
+// the payload. The webhook administration types were revised to v2 when actor_id
+// changed meaning under a name that cannot change, and the envelope's
+// schema_version is the CloudEvents attribute a subscriber is meant to read to
+// tell the two contracts apart. Leaving it unset defaults the stored event and
+// its delivery job to 1 while the payload says 2 — two fields of the same name
+// disagreeing in one delivery, and the durable one is the wrong one.
+func TestPublishedEventCarriesTheRegisteredSchemaVersion(t *testing.T) {
+	store := &teeStore{}
+	transport, queue := auditEventSubscriber()
+	emitter, err := NewDurableAuditEmitter(store, store, WithDomainEventTransport(transport))
+	if err != nil {
+		t.Fatalf("NewDurableAuditEmitter: %v", err)
+	}
+
+	def, ok := LookupAuditEvent(EventWebhookCreated)
+	if !ok {
+		t.Fatalf("%s is not registered", EventWebhookCreated)
+	}
+	if def.Version < 2 {
+		t.Fatalf("expected the revised webhook administration contract, got v%d", def.Version)
+	}
+
+	entry := orgAuditEntry()
+	entry.EventType = EventWebhookCreated
+	emitter.Emit(t.Context(), entry)
+
+	leased := publishedEvents(t, transport, queue)
+	if len(leased) != 1 {
+		t.Fatalf("published domain events = %d, want 1", len(leased))
+	}
+	if got := leased[0].Envelope.GetSchemaVersion(); got != uint32(def.Version) {
+		t.Fatalf("envelope schema_version = %d, want the registered %d", got, def.Version)
 	}
 }

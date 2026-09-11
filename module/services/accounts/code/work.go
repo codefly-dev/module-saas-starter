@@ -190,7 +190,13 @@ func doWork(ctx context.Context) (Clean, error) {
 	// app_tenant; the relay worker then drains domain_events after commit, fanning
 	// each event out to matching subscriptions on the app_job_worker pool
 	// (BYPASSRLS, so it resolves events and subscriptions across every tenant).
-	eventTransport := infra.NewPostgresEventTransport(jobStore, jobWorkerPool, "events-relay-"+uuid.NewString(), time.Minute)
+	// The relay is also the outbound-webhook fan-out: a webhook endpoint is an
+	// event_subscriptions row with delivery = webhook (#488), and this is the
+	// dispatcher it is delivered through.
+	eventTransport := infra.NewPostgresEventTransport(
+		jobStore, jobWorkerPool, "events-relay-"+uuid.NewString(), time.Minute,
+		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(store)),
+	)
 	service.SetModuleEventTransport(eventTransport)
 	eventRelayWorker := infra.NewEventRelayWorker(eventTransport, 0)
 
@@ -200,6 +206,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	// is a regression guard — but it converts a future mis-wiring from invisible
 	// event loss into a startup error.
 	if err := service.VerifyEventWiring(ctx); err != nil {
+		return nil, err
+	}
+	// The symmetric guard for the other half of fan-out: a transport with no
+	// outbound dispatcher relays to module queues and silently never to webhook
+	// endpoints, which is the same invisible loss one layer over.
+	if err := eventTransport.RequireWebhookRelay(); err != nil {
 		return nil, err
 	}
 
@@ -447,6 +459,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	if auditSinkMode == auditSinkBoth {
 		auditEmitterOpts = append(auditEmitterOpts, business.WithExternalTee())
 	}
+	// Every org-scoped audit record publishes its external domain event in the
+	// same transaction; that event is what the relay fans out to the endpoints
+	// subscribed to its type.
+	auditEmitterOpts = append(auditEmitterOpts, business.WithDomainEventTransport(eventTransport))
 	auditEmitter, err := business.NewDurableAuditEmitter(store, store, auditEmitterOpts...)
 	if err != nil {
 		return nil, err

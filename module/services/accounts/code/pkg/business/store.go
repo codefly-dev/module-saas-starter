@@ -405,11 +405,11 @@ type Store interface {
 	UpdateWebhookSubscription(ctx context.Context, sub *WebhookSubscription) error
 	DeleteWebhookSubscription(ctx context.Context, id string) error
 	ListWebhookSubscriptions(ctx context.Context, orgID string) ([]*WebhookSubscription, error)
-	// GetActiveWebhookSubscriptions returns the org's active subscriptions for an
-	// event type. orgID is an explicit predicate rather than a reliance on RLS:
-	// audit fan-out runs inside its mutation's transaction, and a security
-	// mutation whose transaction is the control plane reads with RLS bypassed.
-	GetActiveWebhookSubscriptions(ctx context.Context, orgID, eventType string) ([]*WebhookSubscription, error)
+	// SyncWebhookEventSubscriptions makes an endpoint registration's subscription
+	// rows match the event names it is registered for. Delivery is driven by
+	// those rows, so the relay fans an event out to an endpoint only through a
+	// subscription this created.
+	SyncWebhookEventSubscriptions(ctx context.Context, orgID, webhookSubscriptionID string, eventNames []string) error
 	CreateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)

@@ -204,6 +204,10 @@ type memoryWebhookStore struct {
 	current *WebhookSubscription
 }
 
+func (s *memoryWebhookStore) SyncWebhookEventSubscriptions(context.Context, string, string, []string) error {
+	return nil
+}
+
 func (s *memoryWebhookStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
 	return fn(ctx)
 }

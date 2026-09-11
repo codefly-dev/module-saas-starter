@@ -810,11 +810,13 @@ func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, t
 
 // ModuleSubscribe creates, or idempotently re-affirms, a durable subscription
 // delivering events matching typePattern onto queue for the calling principal.
-// Authority is the queue grant plus the internal-visibility rule: a solution
-// principal may never subscribe a pattern that matches an internal published
-// event, so internal events stay intra-platform. A re-subscribe of the same
-// (principal, pattern, queue) returns the existing live row and emits no second
-// audit event.
+// Authority is the queue grant plus two visibility rules. A solution principal
+// may never subscribe a pattern that matches an internal published event, so
+// internal events stay intra-platform; and it may never subscribe the platform's
+// own namespace, whose types are the audit spine published for outbound webhook
+// delivery — the compliance record of every action in the tenant, including the
+// ones taken against the module itself. A re-subscribe of the same (principal,
+// pattern, queue) returns the existing live row and emits no second audit event.
 func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, typePattern, queue, delivery string) (*EventSubscription, error) {
 	grant, err := s.moduleGrant(caller)
 	if err != nil {
@@ -830,12 +832,18 @@ func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, type
 			return nil, status.Errorf(codes.PermissionDenied, "type pattern %q matches internal event %q, which is not subscribable", typePattern, internalType)
 		}
 	}
+	// The platform namespace is external so an org's own endpoints may receive it
+	// over a webhook the org configured. That is a tenant's grant over its own
+	// records, not a capability a module inherits by declaring a queue.
+	if eventcatalog.Namespace(typePattern) == auditEventsNamespace {
+		return nil, status.Errorf(codes.PermissionDenied, "type pattern %q is in the platform namespace, which is not subscribable", typePattern)
+	}
 	// Ordered delivery is only meaningful over a type that declares a partition;
 	// without one the relay hands deliveries out unordered and says nothing. A
 	// subscriber that asked for FIFO has to be told here, at subscribe time,
 	// rather than discovering the reordering in production.
 	if delivery == string(events.DeliveryOrdered) {
-		for _, unorderedType := range eventcatalog.UnorderedPublishedTypes() {
+		for _, unorderedType := range eventcatalog.UnorderedPublishedTypesInNamespace(eventcatalog.Namespace(typePattern)) {
 			if events.Matches(typePattern, unorderedType) {
 				return nil, status.Errorf(codes.FailedPrecondition, "type pattern %q matches event %q, which declares no partition; ordered delivery cannot be provided for it", typePattern, unorderedType)
 			}

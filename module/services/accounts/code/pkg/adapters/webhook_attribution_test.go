@@ -66,6 +66,13 @@ func (s *webhookAttributionStore) CreateWebhookSubscription(_ context.Context, s
 	return nil
 }
 
+// Registering an endpoint derives its event subscriptions in the same
+// transaction. These tests assert who the mutation is attributed to, not what it
+// subscribed to, so the rows are not retained here.
+func (s *webhookAttributionStore) SyncWebhookEventSubscriptions(context.Context, string, string, []string) error {
+	return nil
+}
+
 func (s *webhookAttributionStore) GetWebhookSubscription(_ context.Context, id string) (*business.WebhookSubscription, error) {
 	sub, ok := s.subscriptions[id]
 	if !ok {

@@ -42,6 +42,1447 @@
       "x-partition": "{tenant_id}",
       "x-retention": "30d"
     },
+    "saas.activation.achieved": {
+      "address": "saas.activation.achieved",
+      "title": "saas.activation.achieved",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.activation.achieved"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.api_key.created": {
+      "address": "saas.api_key.created",
+      "title": "saas.api_key.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.api_key.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.api_key.revoked": {
+      "address": "saas.api_key.revoked",
+      "title": "saas.api_key.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.api_key.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.approval.approved": {
+      "address": "saas.approval.approved",
+      "title": "saas.approval.approved",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.approval.approved"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.approval.asked": {
+      "address": "saas.approval.asked",
+      "title": "saas.approval.asked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.approval.asked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.approval.cancelled": {
+      "address": "saas.approval.cancelled",
+      "title": "saas.approval.cancelled",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.approval.cancelled"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.approval.denied": {
+      "address": "saas.approval.denied",
+      "title": "saas.approval.denied",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.approval.denied"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.approval.escalated": {
+      "address": "saas.approval.escalated",
+      "title": "saas.approval.escalated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.approval.escalated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.approval.timeout": {
+      "address": "saas.approval.timeout",
+      "title": "saas.approval.timeout",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.approval.timeout"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.auth.login": {
+      "address": "saas.auth.login",
+      "title": "saas.auth.login",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.auth.login"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.auth.magic_link_login": {
+      "address": "saas.auth.magic_link_login",
+      "title": "saas.auth.magic_link_login",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.auth.magic_link_login"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.auth.mfa_challenge_completed": {
+      "address": "saas.auth.mfa_challenge_completed",
+      "title": "saas.auth.mfa_challenge_completed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.auth.mfa_challenge_completed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.auth.mfa_challenge_started": {
+      "address": "saas.auth.mfa_challenge_started",
+      "title": "saas.auth.mfa_challenge_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.auth.mfa_challenge_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.auth.organization_switched": {
+      "address": "saas.auth.organization_switched",
+      "title": "saas.auth.organization_switched",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.auth.organization_switched"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.auth.sso_jit_provisioned": {
+      "address": "saas.auth.sso_jit_provisioned",
+      "title": "saas.auth.sso_jit_provisioned",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.auth.sso_jit_provisioned"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.billing.checkout_started": {
+      "address": "saas.billing.checkout_started",
+      "title": "saas.billing.checkout_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.billing.checkout_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.billing.free_plan_selected": {
+      "address": "saas.billing.free_plan_selected",
+      "title": "saas.billing.free_plan_selected",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.billing.free_plan_selected"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.billing.portal_opened": {
+      "address": "saas.billing.portal_opened",
+      "title": "saas.billing.portal_opened",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.billing.portal_opened"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.consent.preferences_updated": {
+      "address": "saas.consent.preferences_updated",
+      "title": "saas.consent.preferences_updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.consent.preferences_updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.consent.terms_accepted": {
+      "address": "saas.consent.terms_accepted",
+      "title": "saas.consent.terms_accepted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.consent.terms_accepted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.dashboard.created": {
+      "address": "saas.dashboard.created",
+      "title": "saas.dashboard.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.dashboard.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.dashboard.deleted": {
+      "address": "saas.dashboard.deleted",
+      "title": "saas.dashboard.deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.dashboard.deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.dashboard.shared": {
+      "address": "saas.dashboard.shared",
+      "title": "saas.dashboard.shared",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.dashboard.shared"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.dashboard.updated": {
+      "address": "saas.dashboard.updated",
+      "title": "saas.dashboard.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.dashboard.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.blob_fetched": {
+      "address": "saas.datasource.blob_fetched",
+      "title": "saas.datasource.blob_fetched",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.blob_fetched"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.branch_deleted": {
+      "address": "saas.datasource.branch_deleted",
+      "title": "saas.datasource.branch_deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.branch_deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.change_set_compiled": {
+      "address": "saas.datasource.change_set_compiled",
+      "title": "saas.datasource.change_set_compiled",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.change_set_compiled"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.force_push_reconciled": {
+      "address": "saas.datasource.force_push_reconciled",
+      "title": "saas.datasource.force_push_reconciled",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.force_push_reconciled"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.snapshot_too_large": {
+      "address": "saas.datasource.snapshot_too_large",
+      "title": "saas.datasource.snapshot_too_large",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.snapshot_too_large"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.source.added": {
+      "address": "saas.datasource.source.added",
+      "title": "saas.datasource.source.added",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.source.added"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.source.recovered": {
+      "address": "saas.datasource.source.recovered",
+      "title": "saas.datasource.source.recovered",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.source.recovered"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.source.removed": {
+      "address": "saas.datasource.source.removed",
+      "title": "saas.datasource.source.removed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.source.removed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.datasource.source.synced": {
+      "address": "saas.datasource.source.synced",
+      "title": "saas.datasource.source.synced",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.datasource.source.synced"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.delegation.approved": {
+      "address": "saas.delegation.approved",
+      "title": "saas.delegation.approved",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.delegation.approved"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.delegation.auto_approved": {
+      "address": "saas.delegation.auto_approved",
+      "title": "saas.delegation.auto_approved",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.delegation.auto_approved"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.delegation.denied": {
+      "address": "saas.delegation.denied",
+      "title": "saas.delegation.denied",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.delegation.denied"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.delegation.requested": {
+      "address": "saas.delegation.requested",
+      "title": "saas.delegation.requested",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.delegation.requested"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.deleted": {
+      "address": "saas.document.deleted",
+      "title": "saas.document.deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.ingested": {
+      "address": "saas.document.ingested",
+      "title": "saas.document.ingested",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.ingested"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.quarantine_released": {
+      "address": "saas.document.quarantine_released",
+      "title": "saas.document.quarantine_released",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.quarantine_released"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.quarantined": {
+      "address": "saas.document.quarantined",
+      "title": "saas.document.quarantined",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.quarantined"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.renamed": {
+      "address": "saas.document.renamed",
+      "title": "saas.document.renamed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.renamed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.subscribed": {
+      "address": "saas.document.subscribed",
+      "title": "saas.document.subscribed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.subscribed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.unsubscribed": {
+      "address": "saas.document.unsubscribed",
+      "title": "saas.document.unsubscribed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.unsubscribed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.document.version_minted": {
+      "address": "saas.document.version_minted",
+      "title": "saas.document.version_minted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.document.version_minted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.entitlement.override": {
+      "address": "saas.entitlement.override",
+      "title": "saas.entitlement.override",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.entitlement.override"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.event.replayed": {
+      "address": "saas.event.replayed",
+      "title": "saas.event.replayed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.event.replayed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.event.subscription_created": {
+      "address": "saas.event.subscription_created",
+      "title": "saas.event.subscription_created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.event.subscription_created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.event.subscription_revoked": {
+      "address": "saas.event.subscription_revoked",
+      "title": "saas.event.subscription_revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.event.subscription_revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.feature_flag.updated": {
+      "address": "saas.feature_flag.updated",
+      "title": "saas.feature_flag.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.feature_flag.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.gdpr.deletion_completed": {
+      "address": "saas.gdpr.deletion_completed",
+      "title": "saas.gdpr.deletion_completed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.gdpr.deletion_completed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.gdpr.deletion_requested": {
+      "address": "saas.gdpr.deletion_requested",
+      "title": "saas.gdpr.deletion_requested",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.gdpr.deletion_requested"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.gdpr.export_requested": {
+      "address": "saas.gdpr.export_requested",
+      "title": "saas.gdpr.export_requested",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.gdpr.export_requested"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.installation.created": {
+      "address": "saas.installation.created",
+      "title": "saas.installation.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.installation.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.installation.ownership_transferred": {
+      "address": "saas.installation.ownership_transferred",
+      "title": "saas.installation.ownership_transferred",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.installation.ownership_transferred"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.installation.revoked": {
+      "address": "saas.installation.revoked",
+      "title": "saas.installation.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.installation.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.invitation.accepted": {
+      "address": "saas.invitation.accepted",
+      "title": "saas.invitation.accepted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.invitation.accepted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.invitation.created": {
+      "address": "saas.invitation.created",
+      "title": "saas.invitation.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.invitation.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.invitation.resent": {
+      "address": "saas.invitation.resent",
+      "title": "saas.invitation.resent",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.invitation.resent"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.invitation.revoked": {
+      "address": "saas.invitation.revoked",
+      "title": "saas.invitation.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.invitation.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.job.replayed": {
+      "address": "saas.job.replayed",
+      "title": "saas.job.replayed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.job.replayed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.backup_code_used": {
+      "address": "saas.mfa.backup_code_used",
+      "title": "saas.mfa.backup_code_used",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.backup_code_used"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.backup_codes_generated": {
+      "address": "saas.mfa.backup_codes_generated",
+      "title": "saas.mfa.backup_codes_generated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.backup_codes_generated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.device_revoked": {
+      "address": "saas.mfa.device_revoked",
+      "title": "saas.mfa.device_revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.device_revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.totp_setup_started": {
+      "address": "saas.mfa.totp_setup_started",
+      "title": "saas.mfa.totp_setup_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.totp_setup_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.totp_verified": {
+      "address": "saas.mfa.totp_verified",
+      "title": "saas.mfa.totp_verified",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.totp_verified"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.webauthn_registered": {
+      "address": "saas.mfa.webauthn_registered",
+      "title": "saas.mfa.webauthn_registered",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.webauthn_registered"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.webauthn_registration_started": {
+      "address": "saas.mfa.webauthn_registration_started",
+      "title": "saas.mfa.webauthn_registration_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.webauthn_registration_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.mfa.webauthn_used": {
+      "address": "saas.mfa.webauthn_used",
+      "title": "saas.mfa.webauthn_used",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.mfa.webauthn_used"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.module.registration_minted": {
+      "address": "saas.module.registration_minted",
+      "title": "saas.module.registration_minted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module.registration_minted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.module.work_context_minted": {
+      "address": "saas.module.work_context_minted",
+      "title": "saas.module.work_context_minted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.module.work_context_minted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.onboarding.step_completed": {
+      "address": "saas.onboarding.step_completed",
+      "title": "saas.onboarding.step_completed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.onboarding.step_completed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.onboarding.step_skipped": {
+      "address": "saas.onboarding.step_skipped",
+      "title": "saas.onboarding.step_skipped",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.onboarding.step_skipped"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.org.created": {
+      "address": "saas.org.created",
+      "title": "saas.org.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.org.generic_settings_updated": {
+      "address": "saas.org.generic_settings_updated",
+      "title": "saas.org.generic_settings_updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.generic_settings_updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.org.member_added": {
+      "address": "saas.org.member_added",
+      "title": "saas.org.member_added",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.member_added"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.org.member_removed": {
+      "address": "saas.org.member_removed",
+      "title": "saas.org.member_removed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.member_removed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.org.settings_updated": {
+      "address": "saas.org.settings_updated",
+      "title": "saas.org.settings_updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.org.settings_updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.platform.role_granted": {
+      "address": "saas.platform.role_granted",
+      "title": "saas.platform.role_granted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.platform.role_granted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.platform.role_revoked": {
+      "address": "saas.platform.role_revoked",
+      "title": "saas.platform.role_revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.platform.role_revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.platform.user_impersonated": {
+      "address": "saas.platform.user_impersonated",
+      "title": "saas.platform.user_impersonated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.platform.user_impersonated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.principal.created": {
+      "address": "saas.principal.created",
+      "title": "saas.principal.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.principal.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.principal.disabled": {
+      "address": "saas.principal.disabled",
+      "title": "saas.principal.disabled",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.principal.disabled"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.principal.enabled": {
+      "address": "saas.principal.enabled",
+      "title": "saas.principal.enabled",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.principal.enabled"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.principal.revoked": {
+      "address": "saas.principal.revoked",
+      "title": "saas.principal.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.principal.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.record.share_revoked": {
+      "address": "saas.record.share_revoked",
+      "title": "saas.record.share_revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.record.share_revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.record.shared": {
+      "address": "saas.record.shared",
+      "title": "saas.record.shared",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.record.shared"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.role.assigned": {
+      "address": "saas.role.assigned",
+      "title": "saas.role.assigned",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.role.assigned"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.role.created": {
+      "address": "saas.role.created",
+      "title": "saas.role.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.role.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.role.deleted": {
+      "address": "saas.role.deleted",
+      "title": "saas.role.deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.role.deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.role.revoked": {
+      "address": "saas.role.revoked",
+      "title": "saas.role.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.role.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.role.updated": {
+      "address": "saas.role.updated",
+      "title": "saas.role.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.role.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.scope.granted": {
+      "address": "saas.scope.granted",
+      "title": "saas.scope.granted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.scope.granted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.scope.node_registered": {
+      "address": "saas.scope.node_registered",
+      "title": "saas.scope.node_registered",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.scope.node_registered"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.scope.revoked": {
+      "address": "saas.scope.revoked",
+      "title": "saas.scope.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.scope.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.session.revoked": {
+      "address": "saas.session.revoked",
+      "title": "saas.session.revoked",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.session.revoked"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.settings.updated": {
+      "address": "saas.settings.updated",
+      "title": "saas.settings.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.settings.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.solution.registration_deleted": {
+      "address": "saas.solution.registration_deleted",
+      "title": "saas.solution.registration_deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.solution.registration_deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.solution.registration_minted": {
+      "address": "saas.solution.registration_minted",
+      "title": "saas.solution.registration_minted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.solution.registration_minted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.solution.registration_updated": {
+      "address": "saas.solution.registration_updated",
+      "title": "saas.solution.registration_updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.solution.registration_updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.sso.disabled": {
+      "address": "saas.sso.disabled",
+      "title": "saas.sso.disabled",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.sso.disabled"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.sso.setup.started": {
+      "address": "saas.sso.setup.started",
+      "title": "saas.sso.setup.started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.sso.setup.started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.team.created": {
+      "address": "saas.team.created",
+      "title": "saas.team.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.team.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.team.deleted": {
+      "address": "saas.team.deleted",
+      "title": "saas.team.deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.team.deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.team.member_added": {
+      "address": "saas.team.member_added",
+      "title": "saas.team.member_added",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.team.member_added"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.team.member_removed": {
+      "address": "saas.team.member_removed",
+      "title": "saas.team.member_removed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.team.member_removed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.team.updated": {
+      "address": "saas.team.updated",
+      "title": "saas.team.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.team.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.user.created": {
+      "address": "saas.user.created",
+      "title": "saas.user.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.user.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.user.deleted": {
+      "address": "saas.user.deleted",
+      "title": "saas.user.deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.user.deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.user.identity_added": {
+      "address": "saas.user.identity_added",
+      "title": "saas.user.identity_added",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.user.identity_added"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.user.registered": {
+      "address": "saas.user.registered",
+      "title": "saas.user.registered",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.user.registered"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.user.suspended": {
+      "address": "saas.user.suspended",
+      "title": "saas.user.suspended",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.user.suspended"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.user.unsuspended": {
+      "address": "saas.user.unsuspended",
+      "title": "saas.user.unsuspended",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.user.unsuspended"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.user.updated": {
+      "address": "saas.user.updated",
+      "title": "saas.user.updated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.user.updated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.approved": {
+      "address": "saas.waitlist.approved",
+      "title": "saas.waitlist.approved",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.approved"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.converted": {
+      "address": "saas.waitlist.converted",
+      "title": "saas.waitlist.converted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.converted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.invited": {
+      "address": "saas.waitlist.invited",
+      "title": "saas.waitlist.invited",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.invited"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.joined": {
+      "address": "saas.waitlist.joined",
+      "title": "saas.waitlist.joined",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.joined"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.pending": {
+      "address": "saas.waitlist.pending",
+      "title": "saas.waitlist.pending",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.pending"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.rejected": {
+      "address": "saas.waitlist.rejected",
+      "title": "saas.waitlist.rejected",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.rejected"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.reviewed": {
+      "address": "saas.waitlist.reviewed",
+      "title": "saas.waitlist.reviewed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.reviewed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.waitlist.verified": {
+      "address": "saas.waitlist.verified",
+      "title": "saas.waitlist.verified",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.waitlist.verified"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.webhook.created": {
+      "address": "saas.webhook.created",
+      "title": "saas.webhook.created",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.webhook.created"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.webhook.deleted": {
+      "address": "saas.webhook.deleted",
+      "title": "saas.webhook.deleted",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.webhook.deleted"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.webhook.replayed": {
+      "address": "saas.webhook.replayed",
+      "title": "saas.webhook.replayed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.webhook.replayed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.webhook.secret_rotated": {
+      "address": "saas.webhook.secret_rotated",
+      "title": "saas.webhook.secret_rotated",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.webhook.secret_rotated"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.work_context.audience_exchanged": {
+      "address": "saas.work_context.audience_exchanged",
+      "title": "saas.work_context.audience_exchanged",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.work_context.audience_exchanged"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.work_context.child_session_started": {
+      "address": "saas.work_context.child_session_started",
+      "title": "saas.work_context.child_session_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.work_context.child_session_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.work_context.renewed": {
+      "address": "saas.work_context.renewed",
+      "title": "saas.work_context.renewed",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.work_context.renewed"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.work_context.root_session_started": {
+      "address": "saas.work_context.root_session_started",
+      "title": "saas.work_context.root_session_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.work_context.root_session_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
+    "saas.work_context.task_started": {
+      "address": "saas.work_context.task_started",
+      "title": "saas.work_context.task_started",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.work_context.task_started"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "scope.granted": {
       "address": "scope.granted",
       "title": "scope.granted",
@@ -97,6 +1538,923 @@
       },
       "title": "reference publishes reference.console.viewed"
     },
+    "send:saas.activation.achieved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.activation.achieved"
+      },
+      "title": "saas publishes saas.activation.achieved"
+    },
+    "send:saas.api_key.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.api_key.created"
+      },
+      "title": "saas publishes saas.api_key.created"
+    },
+    "send:saas.api_key.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.api_key.revoked"
+      },
+      "title": "saas publishes saas.api_key.revoked"
+    },
+    "send:saas.approval.approved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.approval.approved"
+      },
+      "title": "saas publishes saas.approval.approved"
+    },
+    "send:saas.approval.asked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.approval.asked"
+      },
+      "title": "saas publishes saas.approval.asked"
+    },
+    "send:saas.approval.cancelled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.approval.cancelled"
+      },
+      "title": "saas publishes saas.approval.cancelled"
+    },
+    "send:saas.approval.denied": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.approval.denied"
+      },
+      "title": "saas publishes saas.approval.denied"
+    },
+    "send:saas.approval.escalated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.approval.escalated"
+      },
+      "title": "saas publishes saas.approval.escalated"
+    },
+    "send:saas.approval.timeout": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.approval.timeout"
+      },
+      "title": "saas publishes saas.approval.timeout"
+    },
+    "send:saas.auth.login": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.auth.login"
+      },
+      "title": "saas publishes saas.auth.login"
+    },
+    "send:saas.auth.magic_link_login": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.auth.magic_link_login"
+      },
+      "title": "saas publishes saas.auth.magic_link_login"
+    },
+    "send:saas.auth.mfa_challenge_completed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.auth.mfa_challenge_completed"
+      },
+      "title": "saas publishes saas.auth.mfa_challenge_completed"
+    },
+    "send:saas.auth.mfa_challenge_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.auth.mfa_challenge_started"
+      },
+      "title": "saas publishes saas.auth.mfa_challenge_started"
+    },
+    "send:saas.auth.organization_switched": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.auth.organization_switched"
+      },
+      "title": "saas publishes saas.auth.organization_switched"
+    },
+    "send:saas.auth.sso_jit_provisioned": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.auth.sso_jit_provisioned"
+      },
+      "title": "saas publishes saas.auth.sso_jit_provisioned"
+    },
+    "send:saas.billing.checkout_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.billing.checkout_started"
+      },
+      "title": "saas publishes saas.billing.checkout_started"
+    },
+    "send:saas.billing.free_plan_selected": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.billing.free_plan_selected"
+      },
+      "title": "saas publishes saas.billing.free_plan_selected"
+    },
+    "send:saas.billing.portal_opened": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.billing.portal_opened"
+      },
+      "title": "saas publishes saas.billing.portal_opened"
+    },
+    "send:saas.consent.preferences_updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.consent.preferences_updated"
+      },
+      "title": "saas publishes saas.consent.preferences_updated"
+    },
+    "send:saas.consent.terms_accepted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.consent.terms_accepted"
+      },
+      "title": "saas publishes saas.consent.terms_accepted"
+    },
+    "send:saas.dashboard.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.dashboard.created"
+      },
+      "title": "saas publishes saas.dashboard.created"
+    },
+    "send:saas.dashboard.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.dashboard.deleted"
+      },
+      "title": "saas publishes saas.dashboard.deleted"
+    },
+    "send:saas.dashboard.shared": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.dashboard.shared"
+      },
+      "title": "saas publishes saas.dashboard.shared"
+    },
+    "send:saas.dashboard.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.dashboard.updated"
+      },
+      "title": "saas publishes saas.dashboard.updated"
+    },
+    "send:saas.datasource.blob_fetched": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.blob_fetched"
+      },
+      "title": "saas publishes saas.datasource.blob_fetched"
+    },
+    "send:saas.datasource.branch_deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.branch_deleted"
+      },
+      "title": "saas publishes saas.datasource.branch_deleted"
+    },
+    "send:saas.datasource.change_set_compiled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.change_set_compiled"
+      },
+      "title": "saas publishes saas.datasource.change_set_compiled"
+    },
+    "send:saas.datasource.force_push_reconciled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.force_push_reconciled"
+      },
+      "title": "saas publishes saas.datasource.force_push_reconciled"
+    },
+    "send:saas.datasource.snapshot_too_large": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.snapshot_too_large"
+      },
+      "title": "saas publishes saas.datasource.snapshot_too_large"
+    },
+    "send:saas.datasource.source.added": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.source.added"
+      },
+      "title": "saas publishes saas.datasource.source.added"
+    },
+    "send:saas.datasource.source.recovered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.source.recovered"
+      },
+      "title": "saas publishes saas.datasource.source.recovered"
+    },
+    "send:saas.datasource.source.removed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.source.removed"
+      },
+      "title": "saas publishes saas.datasource.source.removed"
+    },
+    "send:saas.datasource.source.synced": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.datasource.source.synced"
+      },
+      "title": "saas publishes saas.datasource.source.synced"
+    },
+    "send:saas.delegation.approved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.delegation.approved"
+      },
+      "title": "saas publishes saas.delegation.approved"
+    },
+    "send:saas.delegation.auto_approved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.delegation.auto_approved"
+      },
+      "title": "saas publishes saas.delegation.auto_approved"
+    },
+    "send:saas.delegation.denied": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.delegation.denied"
+      },
+      "title": "saas publishes saas.delegation.denied"
+    },
+    "send:saas.delegation.requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.delegation.requested"
+      },
+      "title": "saas publishes saas.delegation.requested"
+    },
+    "send:saas.document.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.deleted"
+      },
+      "title": "saas publishes saas.document.deleted"
+    },
+    "send:saas.document.ingested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.ingested"
+      },
+      "title": "saas publishes saas.document.ingested"
+    },
+    "send:saas.document.quarantine_released": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.quarantine_released"
+      },
+      "title": "saas publishes saas.document.quarantine_released"
+    },
+    "send:saas.document.quarantined": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.quarantined"
+      },
+      "title": "saas publishes saas.document.quarantined"
+    },
+    "send:saas.document.renamed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.renamed"
+      },
+      "title": "saas publishes saas.document.renamed"
+    },
+    "send:saas.document.subscribed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.subscribed"
+      },
+      "title": "saas publishes saas.document.subscribed"
+    },
+    "send:saas.document.unsubscribed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.unsubscribed"
+      },
+      "title": "saas publishes saas.document.unsubscribed"
+    },
+    "send:saas.document.version_minted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.document.version_minted"
+      },
+      "title": "saas publishes saas.document.version_minted"
+    },
+    "send:saas.entitlement.override": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.entitlement.override"
+      },
+      "title": "saas publishes saas.entitlement.override"
+    },
+    "send:saas.event.replayed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.event.replayed"
+      },
+      "title": "saas publishes saas.event.replayed"
+    },
+    "send:saas.event.subscription_created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.event.subscription_created"
+      },
+      "title": "saas publishes saas.event.subscription_created"
+    },
+    "send:saas.event.subscription_revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.event.subscription_revoked"
+      },
+      "title": "saas publishes saas.event.subscription_revoked"
+    },
+    "send:saas.feature_flag.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.feature_flag.updated"
+      },
+      "title": "saas publishes saas.feature_flag.updated"
+    },
+    "send:saas.gdpr.deletion_completed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.gdpr.deletion_completed"
+      },
+      "title": "saas publishes saas.gdpr.deletion_completed"
+    },
+    "send:saas.gdpr.deletion_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.gdpr.deletion_requested"
+      },
+      "title": "saas publishes saas.gdpr.deletion_requested"
+    },
+    "send:saas.gdpr.export_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.gdpr.export_requested"
+      },
+      "title": "saas publishes saas.gdpr.export_requested"
+    },
+    "send:saas.installation.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.installation.created"
+      },
+      "title": "saas publishes saas.installation.created"
+    },
+    "send:saas.installation.ownership_transferred": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.installation.ownership_transferred"
+      },
+      "title": "saas publishes saas.installation.ownership_transferred"
+    },
+    "send:saas.installation.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.installation.revoked"
+      },
+      "title": "saas publishes saas.installation.revoked"
+    },
+    "send:saas.invitation.accepted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.invitation.accepted"
+      },
+      "title": "saas publishes saas.invitation.accepted"
+    },
+    "send:saas.invitation.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.invitation.created"
+      },
+      "title": "saas publishes saas.invitation.created"
+    },
+    "send:saas.invitation.resent": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.invitation.resent"
+      },
+      "title": "saas publishes saas.invitation.resent"
+    },
+    "send:saas.invitation.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.invitation.revoked"
+      },
+      "title": "saas publishes saas.invitation.revoked"
+    },
+    "send:saas.job.replayed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.job.replayed"
+      },
+      "title": "saas publishes saas.job.replayed"
+    },
+    "send:saas.mfa.backup_code_used": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.backup_code_used"
+      },
+      "title": "saas publishes saas.mfa.backup_code_used"
+    },
+    "send:saas.mfa.backup_codes_generated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.backup_codes_generated"
+      },
+      "title": "saas publishes saas.mfa.backup_codes_generated"
+    },
+    "send:saas.mfa.device_revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.device_revoked"
+      },
+      "title": "saas publishes saas.mfa.device_revoked"
+    },
+    "send:saas.mfa.totp_setup_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.totp_setup_started"
+      },
+      "title": "saas publishes saas.mfa.totp_setup_started"
+    },
+    "send:saas.mfa.totp_verified": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.totp_verified"
+      },
+      "title": "saas publishes saas.mfa.totp_verified"
+    },
+    "send:saas.mfa.webauthn_registered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.webauthn_registered"
+      },
+      "title": "saas publishes saas.mfa.webauthn_registered"
+    },
+    "send:saas.mfa.webauthn_registration_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.webauthn_registration_started"
+      },
+      "title": "saas publishes saas.mfa.webauthn_registration_started"
+    },
+    "send:saas.mfa.webauthn_used": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.mfa.webauthn_used"
+      },
+      "title": "saas publishes saas.mfa.webauthn_used"
+    },
+    "send:saas.module.registration_minted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module.registration_minted"
+      },
+      "title": "saas publishes saas.module.registration_minted"
+    },
+    "send:saas.module.work_context_minted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.module.work_context_minted"
+      },
+      "title": "saas publishes saas.module.work_context_minted"
+    },
+    "send:saas.onboarding.step_completed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.onboarding.step_completed"
+      },
+      "title": "saas publishes saas.onboarding.step_completed"
+    },
+    "send:saas.onboarding.step_skipped": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.onboarding.step_skipped"
+      },
+      "title": "saas publishes saas.onboarding.step_skipped"
+    },
+    "send:saas.org.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.created"
+      },
+      "title": "saas publishes saas.org.created"
+    },
+    "send:saas.org.generic_settings_updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.generic_settings_updated"
+      },
+      "title": "saas publishes saas.org.generic_settings_updated"
+    },
+    "send:saas.org.member_added": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.member_added"
+      },
+      "title": "saas publishes saas.org.member_added"
+    },
+    "send:saas.org.member_removed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.member_removed"
+      },
+      "title": "saas publishes saas.org.member_removed"
+    },
+    "send:saas.org.settings_updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.org.settings_updated"
+      },
+      "title": "saas publishes saas.org.settings_updated"
+    },
+    "send:saas.platform.role_granted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.platform.role_granted"
+      },
+      "title": "saas publishes saas.platform.role_granted"
+    },
+    "send:saas.platform.role_revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.platform.role_revoked"
+      },
+      "title": "saas publishes saas.platform.role_revoked"
+    },
+    "send:saas.platform.user_impersonated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.platform.user_impersonated"
+      },
+      "title": "saas publishes saas.platform.user_impersonated"
+    },
+    "send:saas.principal.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.principal.created"
+      },
+      "title": "saas publishes saas.principal.created"
+    },
+    "send:saas.principal.disabled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.principal.disabled"
+      },
+      "title": "saas publishes saas.principal.disabled"
+    },
+    "send:saas.principal.enabled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.principal.enabled"
+      },
+      "title": "saas publishes saas.principal.enabled"
+    },
+    "send:saas.principal.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.principal.revoked"
+      },
+      "title": "saas publishes saas.principal.revoked"
+    },
+    "send:saas.record.share_revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.record.share_revoked"
+      },
+      "title": "saas publishes saas.record.share_revoked"
+    },
+    "send:saas.record.shared": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.record.shared"
+      },
+      "title": "saas publishes saas.record.shared"
+    },
+    "send:saas.role.assigned": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.role.assigned"
+      },
+      "title": "saas publishes saas.role.assigned"
+    },
+    "send:saas.role.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.role.created"
+      },
+      "title": "saas publishes saas.role.created"
+    },
+    "send:saas.role.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.role.deleted"
+      },
+      "title": "saas publishes saas.role.deleted"
+    },
+    "send:saas.role.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.role.revoked"
+      },
+      "title": "saas publishes saas.role.revoked"
+    },
+    "send:saas.role.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.role.updated"
+      },
+      "title": "saas publishes saas.role.updated"
+    },
+    "send:saas.scope.granted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.scope.granted"
+      },
+      "title": "saas publishes saas.scope.granted"
+    },
+    "send:saas.scope.node_registered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.scope.node_registered"
+      },
+      "title": "saas publishes saas.scope.node_registered"
+    },
+    "send:saas.scope.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.scope.revoked"
+      },
+      "title": "saas publishes saas.scope.revoked"
+    },
+    "send:saas.session.revoked": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.session.revoked"
+      },
+      "title": "saas publishes saas.session.revoked"
+    },
+    "send:saas.settings.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.settings.updated"
+      },
+      "title": "saas publishes saas.settings.updated"
+    },
+    "send:saas.solution.registration_deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.solution.registration_deleted"
+      },
+      "title": "saas publishes saas.solution.registration_deleted"
+    },
+    "send:saas.solution.registration_minted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.solution.registration_minted"
+      },
+      "title": "saas publishes saas.solution.registration_minted"
+    },
+    "send:saas.solution.registration_updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.solution.registration_updated"
+      },
+      "title": "saas publishes saas.solution.registration_updated"
+    },
+    "send:saas.sso.disabled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.sso.disabled"
+      },
+      "title": "saas publishes saas.sso.disabled"
+    },
+    "send:saas.sso.setup.started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.sso.setup.started"
+      },
+      "title": "saas publishes saas.sso.setup.started"
+    },
+    "send:saas.team.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.team.created"
+      },
+      "title": "saas publishes saas.team.created"
+    },
+    "send:saas.team.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.team.deleted"
+      },
+      "title": "saas publishes saas.team.deleted"
+    },
+    "send:saas.team.member_added": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.team.member_added"
+      },
+      "title": "saas publishes saas.team.member_added"
+    },
+    "send:saas.team.member_removed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.team.member_removed"
+      },
+      "title": "saas publishes saas.team.member_removed"
+    },
+    "send:saas.team.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.team.updated"
+      },
+      "title": "saas publishes saas.team.updated"
+    },
+    "send:saas.user.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.user.created"
+      },
+      "title": "saas publishes saas.user.created"
+    },
+    "send:saas.user.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.user.deleted"
+      },
+      "title": "saas publishes saas.user.deleted"
+    },
+    "send:saas.user.identity_added": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.user.identity_added"
+      },
+      "title": "saas publishes saas.user.identity_added"
+    },
+    "send:saas.user.registered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.user.registered"
+      },
+      "title": "saas publishes saas.user.registered"
+    },
+    "send:saas.user.suspended": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.user.suspended"
+      },
+      "title": "saas publishes saas.user.suspended"
+    },
+    "send:saas.user.unsuspended": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.user.unsuspended"
+      },
+      "title": "saas publishes saas.user.unsuspended"
+    },
+    "send:saas.user.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.user.updated"
+      },
+      "title": "saas publishes saas.user.updated"
+    },
+    "send:saas.waitlist.approved": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.approved"
+      },
+      "title": "saas publishes saas.waitlist.approved"
+    },
+    "send:saas.waitlist.converted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.converted"
+      },
+      "title": "saas publishes saas.waitlist.converted"
+    },
+    "send:saas.waitlist.invited": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.invited"
+      },
+      "title": "saas publishes saas.waitlist.invited"
+    },
+    "send:saas.waitlist.joined": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.joined"
+      },
+      "title": "saas publishes saas.waitlist.joined"
+    },
+    "send:saas.waitlist.pending": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.pending"
+      },
+      "title": "saas publishes saas.waitlist.pending"
+    },
+    "send:saas.waitlist.rejected": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.rejected"
+      },
+      "title": "saas publishes saas.waitlist.rejected"
+    },
+    "send:saas.waitlist.reviewed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.reviewed"
+      },
+      "title": "saas publishes saas.waitlist.reviewed"
+    },
+    "send:saas.waitlist.verified": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.waitlist.verified"
+      },
+      "title": "saas publishes saas.waitlist.verified"
+    },
+    "send:saas.webhook.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.webhook.created"
+      },
+      "title": "saas publishes saas.webhook.created"
+    },
+    "send:saas.webhook.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.webhook.deleted"
+      },
+      "title": "saas publishes saas.webhook.deleted"
+    },
+    "send:saas.webhook.replayed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.webhook.replayed"
+      },
+      "title": "saas publishes saas.webhook.replayed"
+    },
+    "send:saas.webhook.secret_rotated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.webhook.secret_rotated"
+      },
+      "title": "saas publishes saas.webhook.secret_rotated"
+    },
+    "send:saas.work_context.audience_exchanged": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.work_context.audience_exchanged"
+      },
+      "title": "saas publishes saas.work_context.audience_exchanged"
+    },
+    "send:saas.work_context.child_session_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.work_context.child_session_started"
+      },
+      "title": "saas publishes saas.work_context.child_session_started"
+    },
+    "send:saas.work_context.renewed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.work_context.renewed"
+      },
+      "title": "saas publishes saas.work_context.renewed"
+    },
+    "send:saas.work_context.root_session_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.work_context.root_session_started"
+      },
+      "title": "saas publishes saas.work_context.root_session_started"
+    },
+    "send:saas.work_context.task_started": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.work_context.task_started"
+      },
+      "title": "saas publishes saas.work_context.task_started"
+    },
     "send:scope.granted": {
       "action": "send",
       "channel": {
@@ -131,6 +2489,923 @@
       "reference.console.viewed": {
         "name": "reference.console.viewed",
         "title": "reference.console.viewed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.activation.achieved": {
+        "name": "saas.activation.achieved",
+        "title": "saas.activation.achieved",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.api_key.created": {
+        "name": "saas.api_key.created",
+        "title": "saas.api_key.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.api_key.revoked": {
+        "name": "saas.api_key.revoked",
+        "title": "saas.api_key.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.approval.approved": {
+        "name": "saas.approval.approved",
+        "title": "saas.approval.approved",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.approval.asked": {
+        "name": "saas.approval.asked",
+        "title": "saas.approval.asked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.approval.cancelled": {
+        "name": "saas.approval.cancelled",
+        "title": "saas.approval.cancelled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.approval.denied": {
+        "name": "saas.approval.denied",
+        "title": "saas.approval.denied",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.approval.escalated": {
+        "name": "saas.approval.escalated",
+        "title": "saas.approval.escalated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.approval.timeout": {
+        "name": "saas.approval.timeout",
+        "title": "saas.approval.timeout",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.auth.login": {
+        "name": "saas.auth.login",
+        "title": "saas.auth.login",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.auth.magic_link_login": {
+        "name": "saas.auth.magic_link_login",
+        "title": "saas.auth.magic_link_login",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.auth.mfa_challenge_completed": {
+        "name": "saas.auth.mfa_challenge_completed",
+        "title": "saas.auth.mfa_challenge_completed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.auth.mfa_challenge_started": {
+        "name": "saas.auth.mfa_challenge_started",
+        "title": "saas.auth.mfa_challenge_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.auth.organization_switched": {
+        "name": "saas.auth.organization_switched",
+        "title": "saas.auth.organization_switched",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.auth.sso_jit_provisioned": {
+        "name": "saas.auth.sso_jit_provisioned",
+        "title": "saas.auth.sso_jit_provisioned",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.billing.checkout_started": {
+        "name": "saas.billing.checkout_started",
+        "title": "saas.billing.checkout_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.billing.free_plan_selected": {
+        "name": "saas.billing.free_plan_selected",
+        "title": "saas.billing.free_plan_selected",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.billing.portal_opened": {
+        "name": "saas.billing.portal_opened",
+        "title": "saas.billing.portal_opened",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.consent.preferences_updated": {
+        "name": "saas.consent.preferences_updated",
+        "title": "saas.consent.preferences_updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.consent.terms_accepted": {
+        "name": "saas.consent.terms_accepted",
+        "title": "saas.consent.terms_accepted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.dashboard.created": {
+        "name": "saas.dashboard.created",
+        "title": "saas.dashboard.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.dashboard.deleted": {
+        "name": "saas.dashboard.deleted",
+        "title": "saas.dashboard.deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.dashboard.shared": {
+        "name": "saas.dashboard.shared",
+        "title": "saas.dashboard.shared",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.dashboard.updated": {
+        "name": "saas.dashboard.updated",
+        "title": "saas.dashboard.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.blob_fetched": {
+        "name": "saas.datasource.blob_fetched",
+        "title": "saas.datasource.blob_fetched",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.branch_deleted": {
+        "name": "saas.datasource.branch_deleted",
+        "title": "saas.datasource.branch_deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.change_set_compiled": {
+        "name": "saas.datasource.change_set_compiled",
+        "title": "saas.datasource.change_set_compiled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.force_push_reconciled": {
+        "name": "saas.datasource.force_push_reconciled",
+        "title": "saas.datasource.force_push_reconciled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.snapshot_too_large": {
+        "name": "saas.datasource.snapshot_too_large",
+        "title": "saas.datasource.snapshot_too_large",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.source.added": {
+        "name": "saas.datasource.source.added",
+        "title": "saas.datasource.source.added",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.source.recovered": {
+        "name": "saas.datasource.source.recovered",
+        "title": "saas.datasource.source.recovered",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.source.removed": {
+        "name": "saas.datasource.source.removed",
+        "title": "saas.datasource.source.removed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.datasource.source.synced": {
+        "name": "saas.datasource.source.synced",
+        "title": "saas.datasource.source.synced",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.delegation.approved": {
+        "name": "saas.delegation.approved",
+        "title": "saas.delegation.approved",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.delegation.auto_approved": {
+        "name": "saas.delegation.auto_approved",
+        "title": "saas.delegation.auto_approved",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.delegation.denied": {
+        "name": "saas.delegation.denied",
+        "title": "saas.delegation.denied",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.delegation.requested": {
+        "name": "saas.delegation.requested",
+        "title": "saas.delegation.requested",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.deleted": {
+        "name": "saas.document.deleted",
+        "title": "saas.document.deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.ingested": {
+        "name": "saas.document.ingested",
+        "title": "saas.document.ingested",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.quarantine_released": {
+        "name": "saas.document.quarantine_released",
+        "title": "saas.document.quarantine_released",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.quarantined": {
+        "name": "saas.document.quarantined",
+        "title": "saas.document.quarantined",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.renamed": {
+        "name": "saas.document.renamed",
+        "title": "saas.document.renamed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.subscribed": {
+        "name": "saas.document.subscribed",
+        "title": "saas.document.subscribed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.unsubscribed": {
+        "name": "saas.document.unsubscribed",
+        "title": "saas.document.unsubscribed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.document.version_minted": {
+        "name": "saas.document.version_minted",
+        "title": "saas.document.version_minted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.entitlement.override": {
+        "name": "saas.entitlement.override",
+        "title": "saas.entitlement.override",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.event.replayed": {
+        "name": "saas.event.replayed",
+        "title": "saas.event.replayed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.event.subscription_created": {
+        "name": "saas.event.subscription_created",
+        "title": "saas.event.subscription_created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.event.subscription_revoked": {
+        "name": "saas.event.subscription_revoked",
+        "title": "saas.event.subscription_revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.feature_flag.updated": {
+        "name": "saas.feature_flag.updated",
+        "title": "saas.feature_flag.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.gdpr.deletion_completed": {
+        "name": "saas.gdpr.deletion_completed",
+        "title": "saas.gdpr.deletion_completed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.gdpr.deletion_requested": {
+        "name": "saas.gdpr.deletion_requested",
+        "title": "saas.gdpr.deletion_requested",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.gdpr.export_requested": {
+        "name": "saas.gdpr.export_requested",
+        "title": "saas.gdpr.export_requested",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.installation.created": {
+        "name": "saas.installation.created",
+        "title": "saas.installation.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.installation.ownership_transferred": {
+        "name": "saas.installation.ownership_transferred",
+        "title": "saas.installation.ownership_transferred",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.installation.revoked": {
+        "name": "saas.installation.revoked",
+        "title": "saas.installation.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.invitation.accepted": {
+        "name": "saas.invitation.accepted",
+        "title": "saas.invitation.accepted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.invitation.created": {
+        "name": "saas.invitation.created",
+        "title": "saas.invitation.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.invitation.resent": {
+        "name": "saas.invitation.resent",
+        "title": "saas.invitation.resent",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.invitation.revoked": {
+        "name": "saas.invitation.revoked",
+        "title": "saas.invitation.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.job.replayed": {
+        "name": "saas.job.replayed",
+        "title": "saas.job.replayed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.backup_code_used": {
+        "name": "saas.mfa.backup_code_used",
+        "title": "saas.mfa.backup_code_used",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.backup_codes_generated": {
+        "name": "saas.mfa.backup_codes_generated",
+        "title": "saas.mfa.backup_codes_generated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.device_revoked": {
+        "name": "saas.mfa.device_revoked",
+        "title": "saas.mfa.device_revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.totp_setup_started": {
+        "name": "saas.mfa.totp_setup_started",
+        "title": "saas.mfa.totp_setup_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.totp_verified": {
+        "name": "saas.mfa.totp_verified",
+        "title": "saas.mfa.totp_verified",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.webauthn_registered": {
+        "name": "saas.mfa.webauthn_registered",
+        "title": "saas.mfa.webauthn_registered",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.webauthn_registration_started": {
+        "name": "saas.mfa.webauthn_registration_started",
+        "title": "saas.mfa.webauthn_registration_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.mfa.webauthn_used": {
+        "name": "saas.mfa.webauthn_used",
+        "title": "saas.mfa.webauthn_used",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module.registration_minted": {
+        "name": "saas.module.registration_minted",
+        "title": "saas.module.registration_minted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.module.work_context_minted": {
+        "name": "saas.module.work_context_minted",
+        "title": "saas.module.work_context_minted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.onboarding.step_completed": {
+        "name": "saas.onboarding.step_completed",
+        "title": "saas.onboarding.step_completed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.onboarding.step_skipped": {
+        "name": "saas.onboarding.step_skipped",
+        "title": "saas.onboarding.step_skipped",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.org.created": {
+        "name": "saas.org.created",
+        "title": "saas.org.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.org.generic_settings_updated": {
+        "name": "saas.org.generic_settings_updated",
+        "title": "saas.org.generic_settings_updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.org.member_added": {
+        "name": "saas.org.member_added",
+        "title": "saas.org.member_added",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.org.member_removed": {
+        "name": "saas.org.member_removed",
+        "title": "saas.org.member_removed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.org.settings_updated": {
+        "name": "saas.org.settings_updated",
+        "title": "saas.org.settings_updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.platform.role_granted": {
+        "name": "saas.platform.role_granted",
+        "title": "saas.platform.role_granted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.platform.role_revoked": {
+        "name": "saas.platform.role_revoked",
+        "title": "saas.platform.role_revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.platform.user_impersonated": {
+        "name": "saas.platform.user_impersonated",
+        "title": "saas.platform.user_impersonated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.principal.created": {
+        "name": "saas.principal.created",
+        "title": "saas.principal.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.principal.disabled": {
+        "name": "saas.principal.disabled",
+        "title": "saas.principal.disabled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.principal.enabled": {
+        "name": "saas.principal.enabled",
+        "title": "saas.principal.enabled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.principal.revoked": {
+        "name": "saas.principal.revoked",
+        "title": "saas.principal.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.record.share_revoked": {
+        "name": "saas.record.share_revoked",
+        "title": "saas.record.share_revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.record.shared": {
+        "name": "saas.record.shared",
+        "title": "saas.record.shared",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.role.assigned": {
+        "name": "saas.role.assigned",
+        "title": "saas.role.assigned",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.role.created": {
+        "name": "saas.role.created",
+        "title": "saas.role.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.role.deleted": {
+        "name": "saas.role.deleted",
+        "title": "saas.role.deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.role.revoked": {
+        "name": "saas.role.revoked",
+        "title": "saas.role.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.role.updated": {
+        "name": "saas.role.updated",
+        "title": "saas.role.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.scope.granted": {
+        "name": "saas.scope.granted",
+        "title": "saas.scope.granted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.scope.node_registered": {
+        "name": "saas.scope.node_registered",
+        "title": "saas.scope.node_registered",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.scope.revoked": {
+        "name": "saas.scope.revoked",
+        "title": "saas.scope.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.session.revoked": {
+        "name": "saas.session.revoked",
+        "title": "saas.session.revoked",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.settings.updated": {
+        "name": "saas.settings.updated",
+        "title": "saas.settings.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.solution.registration_deleted": {
+        "name": "saas.solution.registration_deleted",
+        "title": "saas.solution.registration_deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.solution.registration_minted": {
+        "name": "saas.solution.registration_minted",
+        "title": "saas.solution.registration_minted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.solution.registration_updated": {
+        "name": "saas.solution.registration_updated",
+        "title": "saas.solution.registration_updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.sso.disabled": {
+        "name": "saas.sso.disabled",
+        "title": "saas.sso.disabled",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.sso.setup.started": {
+        "name": "saas.sso.setup.started",
+        "title": "saas.sso.setup.started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.team.created": {
+        "name": "saas.team.created",
+        "title": "saas.team.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.team.deleted": {
+        "name": "saas.team.deleted",
+        "title": "saas.team.deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.team.member_added": {
+        "name": "saas.team.member_added",
+        "title": "saas.team.member_added",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.team.member_removed": {
+        "name": "saas.team.member_removed",
+        "title": "saas.team.member_removed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.team.updated": {
+        "name": "saas.team.updated",
+        "title": "saas.team.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.user.created": {
+        "name": "saas.user.created",
+        "title": "saas.user.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.user.deleted": {
+        "name": "saas.user.deleted",
+        "title": "saas.user.deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.user.identity_added": {
+        "name": "saas.user.identity_added",
+        "title": "saas.user.identity_added",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.user.registered": {
+        "name": "saas.user.registered",
+        "title": "saas.user.registered",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.user.suspended": {
+        "name": "saas.user.suspended",
+        "title": "saas.user.suspended",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.user.unsuspended": {
+        "name": "saas.user.unsuspended",
+        "title": "saas.user.unsuspended",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.user.updated": {
+        "name": "saas.user.updated",
+        "title": "saas.user.updated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.approved": {
+        "name": "saas.waitlist.approved",
+        "title": "saas.waitlist.approved",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.converted": {
+        "name": "saas.waitlist.converted",
+        "title": "saas.waitlist.converted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.invited": {
+        "name": "saas.waitlist.invited",
+        "title": "saas.waitlist.invited",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.joined": {
+        "name": "saas.waitlist.joined",
+        "title": "saas.waitlist.joined",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.pending": {
+        "name": "saas.waitlist.pending",
+        "title": "saas.waitlist.pending",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.rejected": {
+        "name": "saas.waitlist.rejected",
+        "title": "saas.waitlist.rejected",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.reviewed": {
+        "name": "saas.waitlist.reviewed",
+        "title": "saas.waitlist.reviewed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.waitlist.verified": {
+        "name": "saas.waitlist.verified",
+        "title": "saas.waitlist.verified",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.webhook.created": {
+        "name": "saas.webhook.created",
+        "title": "saas.webhook.created",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.webhook.deleted": {
+        "name": "saas.webhook.deleted",
+        "title": "saas.webhook.deleted",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.webhook.replayed": {
+        "name": "saas.webhook.replayed",
+        "title": "saas.webhook.replayed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.webhook.secret_rotated": {
+        "name": "saas.webhook.secret_rotated",
+        "title": "saas.webhook.secret_rotated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.work_context.audience_exchanged": {
+        "name": "saas.work_context.audience_exchanged",
+        "title": "saas.work_context.audience_exchanged",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.work_context.child_session_started": {
+        "name": "saas.work_context.child_session_started",
+        "title": "saas.work_context.child_session_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.work_context.renewed": {
+        "name": "saas.work_context.renewed",
+        "title": "saas.work_context.renewed",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.work_context.root_session_started": {
+        "name": "saas.work_context.root_session_started",
+        "title": "saas.work_context.root_session_started",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.work_context.task_started": {
+        "name": "saas.work_context.task_started",
+        "title": "saas.work_context.task_started",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

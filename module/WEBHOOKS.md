@@ -11,16 +11,24 @@ ranges.
 This follows the application- and network-layer defense-in-depth guidance in
 the [OWASP SSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html).
 
-The outbound webhook is the external-facing subscriber kind the
-[domain event contract](./EVENTS.md) will converge on: its P3 phase recasts a
-webhook as an event subscription with `delivery = webhook` whose consumer is the
-dispatcher described here, with only `visibility: external` event types eligible.
-That convergence is not built yet. The `event_subscriptions` relation the
-contract introduces is now live (EVENTS.md P2), but it carries only `ordered` /
-`unordered` deliveries to module principals; no `delivery = webhook` row exists.
-The delivery path below (the audit emitter and `webhook_deliveries`) is
-unchanged, and the endpoint registrations this document manages remain distinct
-from those event subscriptions.
+An outbound webhook is a subscriber kind of the
+[domain event contract](./EVENTS.md). An endpoint registered for N event names
+is N `event_subscriptions` rows with `delivery = webhook`, bound to the
+registering organization and to the registration itself, and the relay is the
+only thing that fans an event out. Only a `visibility: external` type is
+eligible; the audit registry declares every one of its types that way, so an
+endpoint can subscribe to any registered audit event type as before.
+
+The registration remains what a customer edits; its subscriptions are derived
+from it in the same transaction, and deleting it cascades them away. Everything
+below the fan-out is unchanged — the same `webhook_deliveries` row, the same
+signed bytes, the same dispatch job — so this document's delivery contract holds
+across the cutover.
+
+What produces the event is the audit emitter: each org-scoped audit record
+publishes its external domain event in the same transaction, and the relay
+resolves the endpoints subscribed to that type after commit. The audit spine is
+not the delivery channel; the event published beside the record is.
 
 ## Secret lifecycle
 
@@ -43,11 +51,12 @@ Subscription event names are canonical routing identifiers: 1–128 bytes,
 starting with a lowercase letter and containing only lowercase letters, digits,
 dots, underscores, or hyphens. This keeps `X-Webhook-Event` safe and portable.
 
-Fan-out is scoped to the audited event's own tenant: the emitter matches
-subscriptions on the event type and then keeps only those belonging to the
-event's `org_id`, so a security mutation whose transaction runs with RLS
-bypassed (platform-admin and other control-plane writes) cannot reach another
-tenant's endpoints. A NULL-org event has no fan-out at all.
+Fan-out is scoped to the event's own tenant: the relay resolves subscriptions
+across every tenant with RLS bypassed, so the subscription's `org_id` — not the
+type pattern, and not the policy — is what keeps a security mutation whose
+transaction runs with RLS bypassed (platform-admin and other control-plane
+writes) from reaching another tenant's endpoints. A NULL-org audit record
+publishes no event and so has no fan-out at all.
 
 Fan-out routes on the audit event type, which is namespaced
 (`<namespace>.<aggregate>.<event>`, this module minting only `saas.*` — issue
@@ -92,11 +101,17 @@ Verification order:
 Manual replay creates a new delivery ID but preserves the event ID. Consumers
 that already completed that event should return `2xx` without applying it again.
 
+`ReplayDelivery` is the only path that re-sends an event an endpoint already
+received. An operator replaying a window of domain events
+([EVENTS.md](./EVENTS.md)) reaches module queues and endpoints that never saw the
+event; an endpoint that already holds history for it is deduplicated and skipped,
+because the delivery is keyed on (subscription, event).
+
 ## Delivery lifecycle
 
-Audit event insertion, matching delivery-history rows, and generated
-`saas.webhooks.v1.OutboundWebhookJob` messages commit in one organization
-transaction. Each job has the delivery UUID as its idempotency key and the
+Audit event insertion and the domain event that carries it commit in one
+organization transaction; the relay then writes the delivery-history row and the
+generated `saas.webhooks.v1.OutboundWebhookJob` message together in its own. Each job has the delivery UUID as its idempotency key and the
 subscription UUID as a structured ordering key. The generic job platform uses
 `FOR UPDATE SKIP LOCKED`, heartbeats, expiring fenced leases, and strict FIFO to
 permit many replicas without concurrent delivery to one endpoint. Abandoned
