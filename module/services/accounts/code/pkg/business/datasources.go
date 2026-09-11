@@ -427,6 +427,10 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 
+	if err := s.validateGitHubSource(ctx, repo, input.Branch, input.AccessToken); err != nil {
+		return nil, err
+	}
+
 	source := &DatasourceSource{
 		ID:                NewIDString(),
 		OrgID:             orgID,
@@ -440,7 +444,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)
 	source.NextReconcileAt = &nextReconcile
 
-	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), input.AccessToken)
+	credentialRef, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), strings.TrimSpace(input.AccessToken))
 	if err != nil {
 		return nil, w.Wrapf(err, "encrypt access token")
 	}
@@ -541,6 +545,9 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		repo := strings.TrimSpace(input.Repo)
 		if !validRepo(repo) {
 			return nil, w.NewError("repo must be in owner/name form")
+		}
+		if err := s.validateGitHubSource(ctx, repo, input.Branch, credential); err != nil {
+			return nil, err
 		}
 		source.Repo = repo
 		source.Paths = normalizePaths(input.Paths)
@@ -885,6 +892,9 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 
 	var job *jobsv1.NewJob
 	if source.Provider == DatasourceProviderGitHub {
+		if err := s.checkGitHubSyncPreflight(ctx, source); err != nil {
+			return "", err
+		}
 		job = &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
