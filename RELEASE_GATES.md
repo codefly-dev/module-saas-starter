@@ -159,6 +159,33 @@ release, or repository-dispatch action — those authenticate with a secret in
 (`contents: write` alone does not count: `dep-audit.yml` holds it only to push a
 remediation branch.)
 
+Every `uses:` must also resolve to a digest — a commit digest, or an image digest
+for a `docker://` step — and carry its version in a trailing comment. The digest
+is the security property; the comment is the only thing that makes it reviewable,
+and `.github/dependabot.yml` now rewrites these pins on a schedule, so the
+convention had to become a rule.
+
+### The dependabot contract
+
+`release-contract` also runs `scripts/ci/dependabot-coverage.mjs check`, which
+compares `.github/dependabot.yml` against the manifests actually in the tree.
+
+A dependency manifest hashed in `module/tools/base-manifest.json` must **not** be
+configured. Dependabot would bump it, the recorded hash would go stale, and
+`base-integrity` — mandatory — would fail with no way for Dependabot to repair
+it: it cannot run `base-integrity.mjs gen`, and regenerating the manifest onto
+its branch from a workflow does not help, because a commit pushed with
+`GITHUB_TOKEN` starts no workflow run and the required checks would never report
+against the new head. The pull request could never merge, and it would hold that
+ecosystem's `open-pull-requests-limit` open indefinitely, silently starving every
+later update behind it. That is why npm, pip and the five in-module `go.mod`
+files are absent: they are base files, owned by the canonical module.
+
+The mirror rule closes the other gap: a manifest that is *not* base-tracked must
+be configured, so an ecosystem nobody wired up fails the gate instead of quietly
+receiving nothing. An entry pointing at a directory with no manifest of its
+ecosystem fails too, since it can never open a pull request.
+
 The same check fails if `authz-coverage` — or any other gate in `REQUIRED_GATES`
 — is dropped from the aggregate's `needs` or removed from the workflow, if the
 aggregate would skip past a failed gate, if it stops calling `decide`, or if a
@@ -228,7 +255,7 @@ reverse, fails the `release-contract` job.
 | --- | --- | --- |
 | `base-integrity` | the canonical base manifest that seeds every consumer sync, plus the RLS-migration, migration-pairing and generated-pin gates | `node --test` for each gate's own suite, then `node module/tools/<gate>.mjs check` |
 | `authz-coverage` | the generated authorization catalog: RBAC coverage, audit coverage, and permission no-broadening against `main` | `node module/tools/authz-coverage-gate.mjs`, plus `go test` for the gateway header-lockstep and adapter enforcement tests |
-| `release-contract` | this gating graph itself | `node --test scripts/ci/release-gates.test.mjs`, `node scripts/ci/release-gates.mjs check` |
+| `release-contract` | this gating graph itself, and the Dependabot configuration that feeds it | `node --test scripts/ci/release-gates.test.mjs`, `node --test scripts/ci/dependabot-coverage.test.mjs`, `node scripts/ci/release-gates.mjs check`, `node scripts/ci/dependabot-coverage.mjs check` |
 | `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
 | `kit-version` | the published frontend kit's version moves whenever its content does, since a registry version is immutable once served | `node --test scripts/ci/kit-version.test.mjs`, `node scripts/ci/kit-version.mjs check` |
 | `provider-shim` | provider setup scripts stay non-writing shims | `node --test scripts/setup/*.test.mjs` |
