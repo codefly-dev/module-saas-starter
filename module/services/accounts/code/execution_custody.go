@@ -67,6 +67,10 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	if !revokerWired || failOpen {
 		return nil, errors.New("execution custody requires fail-closed access-token revocation")
 	}
+	profile, err := infra.DatabaseTransportProfile()
+	if err != nil || profile == "" {
+		return nil, errors.New("execution custody requires explicit verified-tls or local-identity-proxy database transport")
+	}
 	data, err := projectedCustodyFile(path)
 	if err != nil {
 		return nil, err

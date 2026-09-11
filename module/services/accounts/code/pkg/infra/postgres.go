@@ -122,6 +122,13 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse read-write Postgres capability: %w", err)
 	}
+	profile, err := DatabaseTransportProfile()
+	if err != nil {
+		return nil, nil, err
+	}
+	if profile == "local-identity-proxy" && readerConfig.ConnConfig.Host == writerConfig.ConnConfig.Host {
+		return nil, nil, errors.New("reader and writer require distinct private identity sockets")
+	}
 	// Distinct non-owner reader/writer roles are the physical separation the RLS
 	// boundary depends on; keep the check service-postgres's Open enforced.
 	readerUser := strings.TrimSpace(readerConfig.ConnConfig.User)
@@ -182,7 +189,11 @@ func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool
 	if strings.TrimSpace(connectionURL) == "" {
 		return nil, errors.New("postgres connection URL is required")
 	}
-	config, err := pgxpool.ParseConfig(connectionURL)
+	profile, err := DatabaseTransportProfile()
+	if err != nil {
+		return nil, err
+	}
+	config, err := parseDatabaseTransport(connectionURL, profile, hook != nil)
 	if err != nil {
 		return nil, err
 	}
