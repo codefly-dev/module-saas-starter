@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/fixtures"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
 // A module principal grant (MODULE_PRINCIPALS) names its tenant by organization
@@ -50,30 +51,46 @@ organizations:
 	require.NoError(t, fixtures.Seed(ctx, testService, "stable-org-ids"))
 	require.Equal(t, pinnedID, seededOrgIDFor(t, ctx, owner, "Pinned Org"))
 	require.Equal(t, unpinned, seededOrgIDFor(t, ctx, owner, "Unpinned Org"))
-
-	// A database seeded before the id was declared keeps its own uuid; the
-	// seeder converges and reports the drift rather than refusing to boot.
-	drifted := captureWoolLogs(t)
-	writeFixture("00000000-0000-7000-8000-00000000f102")
-	require.NoError(t, fixtures.Seed(ctx, testService, "stable-org-ids"))
-	require.Equal(t, pinnedID, seededOrgIDFor(t, ctx, owner, "Pinned Org"))
-
-	logged := drifted()
-	require.Contains(t, logged, pinnedID)
-	require.Contains(t, logged, "00000000-0000-7000-8000-00000000f102")
-	require.Contains(t, logged, "fixture organization id drift")
 }
 
-// Two fixtures declaring the same organization id into one database: the
-// second cannot be honoured, so it seeds with a fresh uuid and reports.
-func TestFixtureSeedFallsBackWhenDeclaredOrganizationIDIsTaken(t *testing.T) {
+// An organization that declares no id logs the reason it will not be quotable,
+// so a consumer fixture (DEV_FIXTURE_PATH) — which no test gates — is told why
+// its MODULE_PRINCIPALS grant has no stable tenant to name.
+func TestFixtureSeedWarnsWhenOrganizationDeclaresNoID(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
-	fixturePath := filepath.Join(t.TempDir(), "conflicting-org-ids.yaml")
+	fixturePath := filepath.Join(t.TempDir(), "unpinned-org.yaml")
 	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
 
-	const sharedID = "00000000-0000-7000-8000-00000000f103"
-	writeOrg := func(name string) {
+	contents := `users:
+  - email: owner@fixture.test
+    provider: email
+    provider_id: fixture-org-owner
+organizations:
+  - name: Unpinned Org
+    owner: owner@fixture.test
+`
+	require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
+
+	logged := captureWoolLogs(t)
+	require.NoError(t, fixtures.Seed(ctx, testService, "unpinned-org"))
+	require.Contains(t, logged(), "declares no id")
+}
+
+// A database that already holds this organization under a different uuid cannot
+// adopt the declared one: a seed cannot rewrite a primary key that memberships,
+// teams and tenant rows reference. Continuing would be the dangerous outcome,
+// not the safe one — nothing downstream checks a tenant exists
+// (ParseModulePrincipalRegistry validates the uuid's form only), so a grant
+// naming the declared id would mint capabilities bound to an organization that
+// is not there, silently. The seed must fail instead.
+func TestFixtureSeedRefusesWhenDeclaredOrganizationIDDrifts(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	fixturePath := filepath.Join(t.TempDir(), "drifting-org-ids.yaml")
+	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
+
+	writeFixture := func(pinned string) {
 		t.Helper()
 		contents := fmt.Sprintf(`users:
   - email: owner@fixture.test
@@ -81,28 +98,111 @@ func TestFixtureSeedFallsBackWhenDeclaredOrganizationIDIsTaken(t *testing.T) {
     provider_id: fixture-org-owner
 organizations:
   - id: %s
-    name: %s
+    name: Pinned Org
     owner: owner@fixture.test
-`, sharedID, name)
+`, pinned)
 		require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
 	}
 
-	writeOrg("First Org")
+	const seededID = "00000000-0000-7000-8000-00000000f201"
+	writeFixture(seededID)
+	require.NoError(t, fixtures.Seed(ctx, testService, "drifting-org-ids"))
+	owner := seededUUIDFor(t, ctx, "fixture-org-owner")
+	require.Equal(t, seededID, seededOrgIDFor(t, ctx, owner, "Pinned Org"))
+
+	const redeclaredID = "00000000-0000-7000-8000-00000000f202"
+	writeFixture(redeclaredID)
+	err := fixtures.Seed(ctx, testService, "drifting-org-ids")
+	require.Error(t, err, "a declared organization id that the database cannot adopt must fail the seed, not boot with a tenant nothing can resolve")
+	require.Contains(t, err.Error(), redeclaredID)
+	require.Contains(t, err.Error(), seededID)
+
+	// The stored organization is untouched: refusing is not a partial write.
+	require.Equal(t, seededID, seededOrgIDFor(t, ctx, owner, "Pinned Org"))
+}
+
+// Another organization already holds the declared id. The seeder must refuse
+// rather than mint a fresh uuid: for a fixture's own organization the holder is
+// the same organization under an owner who is no longer a member, so seeding a
+// second one of that name collides on the unique organization slug — and where
+// it would not collide (the holder was renamed), a grant naming the declared id
+// resolves to the renamed organization instead of this one.
+func TestFixtureSeedRefusesWhenDeclaredOrganizationIDIsTaken(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	fixturePath := filepath.Join(t.TempDir(), "conflicting-org-ids.yaml")
+	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
+
+	const sharedID = "00000000-0000-7000-8000-00000000f103"
+	writeOrg := func(ownerProviderID, name string) {
+		t.Helper()
+		contents := fmt.Sprintf(`users:
+  - email: %s@fixture.test
+    provider: email
+    provider_id: %s
+organizations:
+  - id: %s
+    name: %s
+    owner: %s@fixture.test
+`, ownerProviderID, ownerProviderID, sharedID, name, ownerProviderID)
+		require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
+	}
+
+	writeOrg("fixture-org-owner", "First Org")
 	require.NoError(t, fixtures.Seed(ctx, testService, "conflicting-org-ids"))
 	owner := seededUUIDFor(t, ctx, "fixture-org-owner")
 	require.Equal(t, sharedID, seededOrgIDFor(t, ctx, owner, "First Org"))
 
-	reported := captureWoolLogs(t)
-	writeOrg("Second Org")
-	require.NoError(t, fixtures.Seed(ctx, testService, "conflicting-org-ids"))
+	// A different owner, so the membership-scoped name lookup cannot find the
+	// holder — this is the path that used to "fall back" to a fresh uuid.
+	writeOrg("fixture-org-other", "Second Org")
+	err := fixtures.Seed(ctx, testService, "conflicting-org-ids")
+	require.Error(t, err, "a declared organization id another organization holds must fail the seed")
+	require.Contains(t, err.Error(), sharedID)
 
-	second := seededOrgIDFor(t, ctx, owner, "Second Org")
-	require.NotEqual(t, sharedID, second)
-	require.NotEmpty(t, second)
+	// The same shape with the SAME name is the realistic one for a fixture's
+	// own organization, and is where a fallback to a fresh uuid could never
+	// have worked: idx_organizations_slug is UNIQUE on LOWER(slug) across the
+	// whole table, so the insert would have failed with an opaque duplicate-key
+	// error. The seeder must report the declared id, not the slug collision.
+	writeOrg("fixture-org-other", "First Org")
+	err = fixtures.Seed(ctx, testService, "conflicting-org-ids")
+	require.Error(t, err, "a same-named organization cannot fall back to a fresh uuid: the slug is globally unique")
+	require.Contains(t, err.Error(), sharedID)
+	require.NotContains(t, err.Error(), "idx_organizations_slug",
+		"the seeder should refuse on the declared id, not let an opaque unique-violation surface")
+}
 
-	logged := reported()
-	require.Contains(t, logged, sharedID)
-	require.Contains(t, logged, "already holds")
+// CreateFixtureOrganization takes a primary key as an argument and sits in the
+// exported API next to CreateOrganization, so it validates the id itself rather
+// than trusting the seeder to have done it. A tenant id that reached the
+// database malformed is not recoverable by anything downstream.
+func TestCreateFixtureOrganizationRejectsUnusableIDs(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	registered, err := testService.RegisterUser(ctx, &gen.RegisterUserRequest{
+		PrimaryEmail: "fixture-org-guard@test.com",
+		Identity: &gen.UserIdentity{
+			Provider:   "email",
+			ProviderId: "fixture-org-guard",
+		},
+	})
+	require.NoError(t, err)
+	owner := registered.GetUser().GetUuid()
+
+	for name, id := range map[string]string{
+		"malformed":             "acme",
+		"nil sentinel":          "00000000-0000-0000-0000-000000000000",
+		"urn spelling":          "urn:uuid:00000000-0000-7000-8000-0000000000b1",
+		"unhyphenated spelling": "000000000000700080000000000000b1",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := testService.CreateFixtureOrganization(ctx, owner,
+				&gen.CreateOrganizationRequest{Name: "Guard " + name}, id)
+			require.Error(t, err, "CreateFixtureOrganization accepted an id that cannot name a tenant")
+		})
+	}
 }
 
 // seededOrgIDFor returns the id of the owner's organization with this name.

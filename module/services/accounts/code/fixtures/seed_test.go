@@ -199,6 +199,7 @@ func TestModuleFixtureOrganizationsDeclareStableIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	checked := 0
 	for _, entry := range entries {
 		t.Run(entry.Name(), func(t *testing.T) {
 			fixture, err := loadFixtureFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
@@ -209,8 +210,15 @@ func TestModuleFixtureOrganizationsDeclareStableIDs(t *testing.T) {
 				if org.ID == "" {
 					t.Fatalf("fixture organization %s declares no id", org.Name)
 				}
+				checked++
 			}
 		})
+	}
+	// Fixtures without organizations pass this vacuously, so the rule would
+	// still read as enforced if every module organization disappeared. Assert
+	// the loop actually inspected something.
+	if checked == 0 {
+		t.Fatal("no module fixture organization was checked: the stable-id rule is not being enforced by this test")
 	}
 }
 
