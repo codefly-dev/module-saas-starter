@@ -52,6 +52,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"job_state_transitions":   {},
 
 	// Tenant-scoped relations.
+	"execution_custody":                    {},
 	"actor_chain_journal":                  {selectRows: true, insertRows: true},
 	"actor_chain_revocations":              {selectRows: true, insertRows: true},
 	"api_keys":                             {selectRows: true, insertRows: true, updateRows: true},
@@ -311,7 +312,7 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			}
 			// work_context_replay is claim-once: the control plane reads, inserts,
 			// and deletes (the expiry sweep) but never updates a consumed marker.
-			if relation == "work_context_replay" {
+			if relation == "work_context_replay" || relation == "execution_custody" {
 				want = relationPrivileges{selectRows: true, insertRows: true, deleteRows: true}
 			}
 			// domain_events and event_subscriptions: the control plane publishes
