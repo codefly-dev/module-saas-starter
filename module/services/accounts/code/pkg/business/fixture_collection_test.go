@@ -60,8 +60,8 @@ collections:
 	require.Len(t, collections.Collections, 1)
 	collection := collections.Collections[0]
 	require.Len(t, collection.ReadGrants, 1)
-	require.Equal(t, "Jane Doe", collection.ReadGrants[0].ActorLabel)
-	require.Equal(t, "Example Reader", collection.ReadGrants[0].SubjectLabel)
+	require.Equal(t, "owner@example.com", collection.ReadGrants[0].ActorLabel)
+	require.Equal(t, "reader@example.com", collection.ReadGrants[0].SubjectLabel)
 	readerID := seededUUIDFor(t, testCtx, "collection-reader")
 	ownerID := seededUUIDFor(t, testCtx, "collection-owner")
 	for _, identity := range []string{"collection-owner", "collection-member", "collection-reader"} {
