@@ -192,15 +192,43 @@ func TestCreateFixtureOrganizationRejectsUnusableIDs(t *testing.T) {
 	owner := registered.GetUser().GetUuid()
 
 	for name, id := range map[string]string{
-		"malformed":             "acme",
-		"nil sentinel":          "00000000-0000-0000-0000-000000000000",
-		"urn spelling":          "urn:uuid:00000000-0000-7000-8000-0000000000b1",
-		"unhyphenated spelling": "000000000000700080000000000000b1",
+		"malformed":    "acme",
+		"too short":    "00000000-0000-7000-8000-0000000000b",
+		"nil sentinel": "00000000-0000-0000-0000-000000000000",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := testService.CreateFixtureOrganization(ctx, owner,
 				&gen.CreateOrganizationRequest{Name: "Guard " + name}, id)
 			require.Error(t, err, "CreateFixtureOrganization accepted an id that cannot name a tenant")
+		})
+	}
+
+	// uuid.Parse also accepts the urn, braced and unhyphenated spellings of a
+	// real uuid. Those are not unusable — they denote the same id — so the
+	// guard canonicalizes rather than rejects, and what reaches the database
+	// is the dashed form a MODULE_PRINCIPALS grant would quote. (The fixture
+	// loader is stricter and rejects them outright, because there the spelling
+	// is something a human wrote and should fix.)
+	for name, spelling := range map[string]struct{ given, want string }{
+		"urn spelling": {
+			given: "urn:uuid:00000000-0000-7000-8000-0000000000d1",
+			want:  "00000000-0000-7000-8000-0000000000d1",
+		},
+		"unhyphenated spelling": {
+			given: "000000000000700080000000000000d2",
+			want:  "00000000-0000-7000-8000-0000000000d2",
+		},
+		"uppercase spelling": {
+			given: "00000000-0000-7000-8000-0000000000D3",
+			want:  "00000000-0000-7000-8000-0000000000d3",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			created, err := testService.CreateFixtureOrganization(ctx, owner,
+				&gen.CreateOrganizationRequest{Name: "Canonical " + name}, spelling.given)
+			require.NoError(t, err)
+			require.Equal(t, spelling.want, created.GetOrganization().GetId(),
+				"a declared id must reach the database in the canonical dashed form")
 		})
 	}
 }
