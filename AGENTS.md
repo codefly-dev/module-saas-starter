@@ -181,15 +181,20 @@ on-demand refresh on a cache miss; frontend a 5s snapshot TTL).
 
   The identity itself is a **Work Context**, obtained with a second exchange that
   mirrors the registration one: `POST /modules/_work-context` on the auth-gateway
-  with the cluster-internal token and the module's registration secret, body
+  with the cluster-internal token and the module's identity secret, body
   `{prefix}`. The gateway brokers to accounts
   (`ModuleCapabilitiesService/MintModuleWorkContext`, EXPOSURE_INTERNAL), which
-  authorizes the secret against the same `MODULE_REGISTRATION_SECRETS` digest,
+  authorizes the secret against the independent `MODULE_IDENTITY_SECRETS` digest,
   refuses a prefix that is not a declared module principal, and mints a
   capability owned and actored by the module principal
   (`aud=module-capabilities`), emitting a `module.work_context_minted` audit
   event once the capability exists. The response carries
   `{token, expiresAt, principalId, tenant}`.
+
+  During the CLI transition, an empty `MODULE_IDENTITY_SECRETS` falls back to
+  `MODULE_REGISTRATION_SECRETS` and logs a startup warning. Registration secret
+  holders can obtain module identities while this fallback is active. A configured
+  identity map never falls back for missing prefixes or invalid secrets.
 
   The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
   for that principal, so a module cannot name a tenant by asking. The capability
