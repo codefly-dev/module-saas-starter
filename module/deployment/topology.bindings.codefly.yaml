@@ -14,6 +14,9 @@ interface:
   - service: accounts
     endpoint: revision
     visibility: module
+  - service: accounts
+    endpoint: tenant
+    visibility: module
   - service: auth-gateway
     endpoint: grpc
     visibility: module
@@ -64,6 +67,10 @@ services:
         api: tcp
         visibility: module
         port: 9444
+      - name: tenant
+        api: tcp
+        visibility: module
+        port: 9445
     dependencies:
       - service: cache
         endpoints:

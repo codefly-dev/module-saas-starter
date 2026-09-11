@@ -43,6 +43,9 @@ endpoints:
     - name: revision
       visibility: module
       api: tcp
+    - name: tenant
+      visibility: module
+      api: tcp
 spec:
     connect-endpoint: true
     hot-reload: true

@@ -35,6 +35,12 @@
           "api": "CODEFLY_API_TCP",
           "visibility": "ENDPOINT_VISIBILITY_MODULE",
           "port": 9444
+        },
+        {
+          "name": "tenant",
+          "api": "CODEFLY_API_TCP",
+          "visibility": "ENDPOINT_VISIBILITY_MODULE",
+          "port": 9445
         }
       ],
       "dependencies": [
@@ -199,6 +205,11 @@
     {
       "service": "accounts",
       "endpoint": "revision",
+      "visibility": "ENDPOINT_VISIBILITY_MODULE"
+    },
+    {
+      "service": "accounts",
+      "endpoint": "tenant",
       "visibility": "ENDPOINT_VISIBILITY_MODULE"
     },
     {
