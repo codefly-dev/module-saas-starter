@@ -1,5 +1,7 @@
 "use client";
 
+import { ConnectError } from "@connectrpc/connect";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
 import { ConnectGitHubForm } from "./connect-github-form.js";
@@ -93,6 +95,7 @@ function DatasourcesPanelView({
 	);
 	// Row action errors have no other surface (no toast dependency, no global
 	// mutation handler), so they would vanish silently without this.
+	const [syncNotice, setSyncNotice] = useState<string | null>(null);
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
@@ -116,12 +119,18 @@ function DatasourcesPanelView({
 	};
 
 	const handleSync = (source: DatasourceView) => {
+		setSyncNotice(null);
 		setActionError(null);
 		setSyncingIds((prev) => new Set(prev).add(source.id));
 		syncMutation.mutate(
 			{ orgId, id: source.id },
 			{
-				onSuccess: (jobId) => onSyncEnqueued?.(jobId),
+				onSuccess: (jobId) => {
+					setSyncNotice(
+						`Sync queued for ${source.repo}. Ingestion runs in the background; documents will appear in Collection when ready.`,
+					);
+					onSyncEnqueued?.(jobId);
+				},
 				onError: (error) =>
 					setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`),
 				onSettled: () => setSyncingIds((prev) => without(prev, source.id)),
@@ -161,6 +170,11 @@ function DatasourcesPanelView({
 				</button>
 			</div>
 
+			{syncNotice && (
+				<p role="status" className="text-sm text-muted-foreground">
+					{syncNotice}
+				</p>
+			)}
 			{actionError && (
 				<div
 					role="alert"
@@ -239,9 +253,13 @@ function without(set: ReadonlySet<string>, id: string): ReadonlySet<string> {
 }
 
 function messageOf(error: unknown): string {
-	return error instanceof Error && error.message
-		? error.message
-		: "unexpected error";
+	const message =
+		error instanceof ConnectError
+			? error.rawMessage
+			: error instanceof Error
+				? error.message
+				: "unexpected error";
+	return message.replace(/^rpc error: code = \w+ desc = /, "");
 }
 
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";

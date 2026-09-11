@@ -27,6 +27,8 @@ const maxFileBytes = 5 * 1024 * 1024
 
 // ErrNotFound is returned when GitHub answers 404 for a repo, ref, or path.
 var ErrNotFound = errors.New("github: not found")
+var ErrUnauthorized = errors.New("github: unauthorized")
+var ErrForbidden = errors.New("github: forbidden or rate limited")
 
 // ErrFileTooLarge is returned when a file exceeds what the contents API can
 // return inline (GitHub caps it at 1 MiB; files above that come back with
@@ -221,6 +223,10 @@ func (c *Client) GetBlob(ctx context.Context, repo, blobSHA string, max int64) (
 		return nil, err
 	}
 	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return nil, ErrUnauthorized
+	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests:
+		return nil, ErrForbidden
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, ErrNotFound
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
@@ -303,6 +309,10 @@ func (c *Client) getJSON(ctx context.Context, path string, into any) error {
 		return err
 	}
 	switch {
+	case resp.StatusCode == http.StatusUnauthorized:
+		return ErrUnauthorized
+	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests:
+		return ErrForbidden
 	case resp.StatusCode == http.StatusNotFound:
 		return ErrNotFound
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:

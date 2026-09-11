@@ -1,3 +1,4 @@
+import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
 	cleanup,
@@ -103,7 +104,9 @@ describe("DatasourcesPanel", () => {
 		fireEvent.change(screen.getByLabelText("Access token"), {
 			target: { value: "ghp_token" },
 		});
-		fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));
+		fireEvent.click(
+			screen.getByRole("button", { name: /^validate and connect$/i }),
+		);
 
 		await waitFor(() =>
 			expect(client.addGitHubSource).toHaveBeenCalledTimes(1),
@@ -126,7 +129,9 @@ describe("DatasourcesPanel", () => {
 			}),
 		});
 		await openConnectForm(client);
-		fireEvent.click(screen.getByRole("button", { name: /^connect$/i }));
+		fireEvent.click(
+			screen.getByRole("button", { name: /^validate and connect$/i }),
+		);
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain("invalid access token");
@@ -204,4 +209,32 @@ describe("ConnectGitHubForm", () => {
 		expect(repoInputs[0].id).not.toBe("");
 		expect(repoInputs[0].id).not.toBe(repoInputs[1].id);
 	});
+});
+
+it("acknowledges queued sync without claiming ingestion completed", async () => {
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	fireEvent.click(await screen.findByRole("button", { name: /^Sync$/ }));
+	expect((await screen.findByRole("status")).textContent).toContain(
+		"Sync queued",
+	);
+	expect(screen.getByRole("status").textContent).toContain("background");
+});
+
+it("shows a rejected credential as an actionable message", async () => {
+	const client = fakeClient({
+		listSources: vi.fn(async () => [sampleSource]),
+		syncSource: vi.fn(async () => {
+			throw new ConnectError(
+				"rpc error: code = FailedPrecondition desc = GitHub rejected the access token (401). Reconnect the source.",
+				Code.FailedPrecondition,
+			);
+		}),
+	});
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	fireEvent.click(await screen.findByRole("button", { name: /^Sync$/ }));
+	const text = (await screen.findByRole("alert")).textContent;
+	expect(text).toContain("GitHub rejected the access token (401)");
+	expect(text).not.toContain("rpc error");
+	expect(text).not.toContain("[failed_precondition]");
 });
