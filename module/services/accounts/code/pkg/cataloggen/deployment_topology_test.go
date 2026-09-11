@@ -44,14 +44,14 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	}
 
 	require.Len(t, first.Catalog.GetServices(), 8)
-	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 6)
+	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 7)
 	require.Len(t, first.Catalog.GetPublicEgress(), 4)
 	endpointCount, dependencyCount := 0, 0
 	for _, service := range first.Catalog.GetServices() {
 		endpointCount += len(service.GetEndpoints())
 		dependencyCount += len(service.GetDependencies())
 	}
-	require.Equal(t, 14, endpointCount)
+	require.Equal(t, 15, endpointCount)
 	require.Equal(t, 8, dependencyCount)
 	privateREST := map[string]bool{"accounts": false, "auth-gateway": false}
 	authGatewayTelemetry := false
@@ -82,7 +82,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 			accountsConnectExposed = true
 		}
 		require.False(t,
-			(endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect" && endpoint.GetEndpoint() != "custody" && endpoint.GetEndpoint() != "revision") ||
+			(endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect" && endpoint.GetEndpoint() != "custody" && endpoint.GetEndpoint() != "revision" && endpoint.GetEndpoint() != "tenant") ||
 				(endpoint.GetService() == "auth-gateway" && endpoint.GetEndpoint() == "rest"),
 		)
 	}
