@@ -305,6 +305,64 @@ cd /tmp/bm-clean/module && node tools/base-integrity.mjs gen && node tools/base-
 git worktree remove /tmp/bm-clean --force
 ```
 
+## How pull requests land
+
+`main` merges through a **GitHub merge queue**, not by pressing Merge. The queue
+builds each entry as `main + the pull request` and runs the required checks
+against that merged ref, so a pull request never has to be rebased merely because
+`main` moved — "require branches to be up to date" is deliberately off, since
+with a queue it re-imposes the rebase race it was meant to replace.
+
+Two consequences worth knowing before you lose time to them:
+
+- **Verify queue membership after requesting a merge.** `gh 2.100.0` documents
+  that `gh pr merge` enqueues when required checks have passed and enables
+  auto-merge otherwise. A successful exit alone does not establish that the PR
+  is queued or merged. Set `PR_NUMBER` to the pull request number and inspect
+  its state:
+
+  ```bash
+  PR_NUMBER=626 # replace with the pull request number
+  gh api graphql -f query='query($number:Int!){repository(owner:"codefly-dev",name:"module-saas-starter")
+    {pullRequest(number:$number){id state autoMergeRequest{enabledAt} mergeQueueEntry{position state}}}}' \
+    -F number="$PR_NUMBER" --jq '.data.repository.pullRequest'
+  ```
+
+  `state: MERGED` confirms completion; a non-null `mergeQueueEntry` confirms
+  queue membership. An `autoMergeRequest` alone confirms neither. If the PR
+  is open, eligible, and has no queue entry, explicitly request enqueue using
+  its id (this can fail if requirements are unmet), then repeat the lookup:
+
+  ```bash
+  PRID=$(gh api graphql -f query='query($number:Int!){repository(owner:"codefly-dev",name:"module-saas-starter")
+    {pullRequest(number:$number){id}}}' -F number="$PR_NUMBER" \
+    --jq '.data.repository.pullRequest.id') &&
+  gh api graphql -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})
+    {mergeQueueEntry{position state}}}' -f id="$PRID"
+  ```
+
+- **Every required check must run on `merge_group`.** A required context that
+  never reports leaves its entry queued until the queue evicts it, and entries
+  merge in order, so one missing context stalls every merge in the repository —
+  and no pull request run shows it, because the same job is green there. The
+  `release-contract` gate checks publication dependencies and action pins; it
+  does **not** enforce merge-queue trigger coverage or compare required check
+  names with the live ruleset. Whenever workflows or required checks change,
+  read the effective required contexts:
+
+  ```bash
+  gh api repos/codefly-dev/module-saas-starter/rules/branches/main \
+    --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context'
+  ```
+
+  Compare each context with the reporting job's `name` (or job id when unnamed)
+  in `.github/workflows/`, including any matrix-expanded name. Check that its
+  workflow subscribes to `merge_group` and that job conditions and dependencies
+  permit it to report on that event. Confirm those contexts actually report on
+  the queue entry's merged commit; a green PR run or `release-contract` alone
+  cannot establish this. See [RELEASE_GATES.md § The contract
+  test](./RELEASE_GATES.md#the-contract-test) for the existing guard's scope.
+
 ## Cutting a release
 
 Two tag tracks live here on separate version axes (see

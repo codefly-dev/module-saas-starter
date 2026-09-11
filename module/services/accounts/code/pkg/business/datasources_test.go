@@ -371,6 +371,9 @@ func newDatasourceService(store business.Store, producer *recordingProducer, gh 
 	svc.SetDatasourceConnector(purposeCipher{}, producer, "")
 	audit := &recordingAudit{}
 	svc.SetAuditEmitter(audit)
+	if gh == nil {
+		gh = &fakeGitHub{defaultBranch: "main", commit: "abc"}
+	}
 	if gh != nil {
 		svc.SetDatasourceGitHubClientFactory(func(string) business.GitHubContentClient { return gh })
 	}

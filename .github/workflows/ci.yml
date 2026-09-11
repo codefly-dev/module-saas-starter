@@ -121,8 +121,16 @@ jobs:
         run: node --test scripts/ci/release-gates.test.mjs scripts/ci/ci-performance.test.mjs
       - name: Test the release announcement
         run: node --test scripts/ci/announce-release.test.mjs
+      - name: Test the dependabot coverage gate
+        run: node --test scripts/ci/dependabot-coverage.test.mjs
       - name: Require every artifact-writing job to depend on the release gates
         run: node scripts/ci/release-gates.mjs check
+      # A Dependabot entry over a base-tracked manifest opens a pull request that
+      # can never merge — the bump leaves base-manifest.json stale, base-integrity
+      # fails, and Dependabot cannot run `base-integrity.mjs gen` — which then
+      # consumes the ecosystem's open-pull-requests-limit indefinitely.
+      - name: Require dependabot to cover every updatable manifest and no base file
+        run: node scripts/ci/dependabot-coverage.mjs check
 
   docs-sync:
     name: Interface docs and story tests
