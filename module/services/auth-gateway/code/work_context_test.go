@@ -272,8 +272,7 @@ func TestWorkContextVerifier_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	verifier := newWorkContextVerifier(server.URL)
-	offset := time.Duration(0)
-	verifier.cache.now = func() time.Time { return time.Now().Add(offset) }
+	advance := freezeClock(verifier.cache)
 	ctx := context.Background()
 	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-1", currentPriv, nil)))
 
@@ -286,7 +285,7 @@ func TestWorkContextVerifier_UnknownKeyIDDoesNotBlockARotatedKey(t *testing.T) {
 	rotated := jwksDocument(map[string]ed25519.PublicKey{"key-1": current, "key-2": next})
 	document.Store(&rotated)
 
-	offset += jwksProbeInterval
+	advance(jwksProbeInterval)
 	require.NoError(t, verifier.Verify(ctx, mintWorkContext(t, "key-2", nextPriv, nil)),
 		"an unrecognised key id must not deny the probe to a genuinely rotated-in key")
 }
