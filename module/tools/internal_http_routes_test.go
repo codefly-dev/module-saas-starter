@@ -26,7 +26,6 @@ import (
 // binding and TypeScript route modules, so it is checked at the text level.
 const (
 	topologyBindingFile = "deployment/topology.bindings.codefly.yaml"
-	moduleManifestFile  = "module.codefly.yaml"
 	internalCallGate    = "isTrustedInternalCall"
 	// internalRouteExemption is how an author says a gated route is
 	// deliberately not mesh-denied. Absence from internal_http_routes otherwise
@@ -104,11 +103,11 @@ type gatedRouteHandler struct {
 
 func TestInternalHTTPRoutesMatchTokenGatedHandlers(t *testing.T) {
 	moduleDir := findModuleDir(t)
-	composed := composedServiceNames(t, moduleDir)
+	nonComposed := nonComposedServiceDirectories(t, []string{moduleDir})
 	declarable := declarableInternalHTTPMethods(t, moduleDir)
 
 	for _, service := range loadTopologyBindings(t, moduleDir).Services {
-		if composed != nil && !composed[service.Name] {
+		if nonComposed[filepath.Join(moduleDir, "services", service.Name)] {
 			continue
 		}
 		appDir := filepath.Join(moduleDir, "services", service.Name, "code", "src", "app")
@@ -129,10 +128,10 @@ func TestInternalHTTPRoutesMatchTokenGatedHandlers(t *testing.T) {
 // out of view and leave the route silently undeclared.
 func TestInternalCallGateIsReachedOnlyFromRouteModules(t *testing.T) {
 	moduleDir := findModuleDir(t)
-	composed := composedServiceNames(t, moduleDir)
+	nonComposed := nonComposedServiceDirectories(t, []string{moduleDir})
 
 	for _, service := range loadTopologyBindings(t, moduleDir).Services {
-		if composed != nil && !composed[service.Name] {
+		if nonComposed[filepath.Join(moduleDir, "services", service.Name)] {
 			continue
 		}
 		sourceDir := filepath.Join(moduleDir, "services", service.Name, "code", "src")
@@ -741,34 +740,6 @@ func loadTopologyBindings(t *testing.T, moduleDir string) topologyBindings {
 		t.Fatalf("%s declares no services", topologyBindingFile)
 	}
 	return bindings
-}
-
-// composedServiceNames is the services a consumer actually took. A composition
-// omitting a service legitimately omits its source tree, so a route declared
-// for it is not drift; nil means enforce every service, which is the canonical
-// module and any consumer without an explicit list.
-func composedServiceNames(t *testing.T, moduleDir string) map[string]bool {
-	t.Helper()
-	body, err := os.ReadFile(filepath.Join(moduleDir, moduleManifestFile))
-	if err != nil {
-		t.Fatalf("read %s: %v", moduleManifestFile, err)
-	}
-	var manifest struct {
-		Services []struct {
-			Name string `yaml:"name"`
-		} `yaml:"services"`
-	}
-	if err := yaml.Unmarshal(body, &manifest); err != nil {
-		t.Fatalf("parse %s: %v", moduleManifestFile, err)
-	}
-	if len(manifest.Services) == 0 {
-		return nil
-	}
-	names := make(map[string]bool, len(manifest.Services))
-	for _, service := range manifest.Services {
-		names[service.Name] = true
-	}
-	return names
 }
 
 func skipNonSourceDirectory(name string) error {

@@ -204,8 +204,11 @@ correspondence a gate. It derives the served method and path of every route
 module under a service's `src/app` the way Next.js does, reads which exported
 handlers verify a cluster-internal credential, and requires each such pair to
 appear in that service's `internal_http_routes` and each declared pair to
-resolve back to one. It runs over the composed service set, so a consumer that
-omits a service omits its routes with it.
+resolve back to one. It runs over the same bounded composed-service scope as the
+production walkers: a consumer that omits a service omits its routes with it,
+every skip is disclosed, and a module this repository owns must compose
+everything it ships — otherwise dropping one line from an unprotected generated
+inventory would take these routes out of scope with green CI.
 
 What marks a route internal is that it verifies a credential, not which one:
 `isTrustedInternalCall` for the shared cluster-internal token, and

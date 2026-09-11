@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -355,6 +356,31 @@ export async function POST(): Promise<Response> {
 	assertProblem(t, scan, "exempts a handler that does not check")
 	if _, exempt := scan.exemptions["POST"]; exempt {
 		t.Error("an exemption for an ungated handler was accepted")
+	}
+}
+
+// module.codefly.yaml carries no integrity protection, so narrowing this gate by
+// reading it unchecked would make it a self-service waiver: dropping one line
+// from `services:` would take the frontend's internal routes out of scope with
+// no error and green CI. The narrowing is the bounded, disclosed one the
+// production walkers share (#600), and this pins the property that matters
+// here — a service declaring internal routes can never be skipped.
+func TestNoServiceWithInternalRoutesCanBeComposedOut(t *testing.T) {
+	moduleDir := findModuleDir(t)
+	nonComposed := nonComposedServiceDirectories(t, []string{moduleDir})
+
+	declaring := 0
+	for _, service := range loadTopologyBindings(t, moduleDir).Services {
+		if len(service.InternalHTTPRoutes) == 0 {
+			continue
+		}
+		declaring++
+		if nonComposed[filepath.Join(moduleDir, "services", service.Name)] {
+			t.Errorf("service %q declares internal_http_routes but is out of this gate's scope; the correspondence would go unchecked", service.Name)
+		}
+	}
+	if declaring == 0 {
+		t.Fatal("no service declares internal_http_routes; this gate would assert nothing")
 	}
 }
 
