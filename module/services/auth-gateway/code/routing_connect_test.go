@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -71,4 +74,45 @@ func TestConnectRouteDiscoveryExcludesInternalRPCs(t *testing.T) {
 	require.NotNil(t, legacy)
 	require.Equal(t, "/saas.accounts.v1.UserService/GetSelf", legacy.UpstreamPath)
 	require.Equal(t, "/saas.accounts.v1.UserService/GetSelf", legacy.Procedure)
+}
+
+func TestGatewayAccessibleScopesRoutes(t *testing.T) {
+	for _, artifact := range []string{"", gatewayRouteArtifact} {
+		t.Run("catalog="+artifact, func(t *testing.T) {
+			t.Setenv(gatewayRouteCatalogEnv, artifact)
+			entries, err := LoadConnectRoutesFromCatalog()
+			require.NoError(t, err)
+			gateway, upstream, _, key := newGatewayHarness(t)
+			gateway.matcher = NewRouteMatcher(nil, entries)
+			gateway.upstreams["accounts_connect"] = gateway.upstreams["accounts"]
+			for _, prefix := range []string{"saas.accounts.v1", "customers"} {
+				for _, authenticated := range []bool{false, true} {
+					upstream.lastPath = ""
+					procedure := "/" + prefix + ".PermissionService/ListMyAccessibleScopes"
+					req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(`{"orgId":"org-1","resourceType":"datasource","action":"read"}`))
+					req.Header.Set("Content-Type", "application/json")
+					if authenticated {
+						req.Header.Set("Authorization", "Bearer "+signValidToken(t, key))
+					}
+					response := httptest.NewRecorder()
+					gateway.ServeHTTP(response, req)
+					if authenticated {
+						require.Equal(t, http.StatusOK, response.Code)
+						require.Equal(t, "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes", upstream.lastPath)
+						require.NotEmpty(t, upstream.lastHeaders.Get("X-User-Id"))
+					} else {
+						require.Equal(t, http.StatusUnauthorized, response.Code)
+						require.Empty(t, upstream.lastPath)
+					}
+				}
+				upstream.lastPath = ""
+				req := httptest.NewRequest(http.MethodPost, "/"+prefix+".PermissionService/ListAccessibleScopes", strings.NewReader(`{}`))
+				req.Header.Set("Authorization", "Bearer "+signValidToken(t, key))
+				response := httptest.NewRecorder()
+				gateway.ServeHTTP(response, req)
+				require.Equal(t, http.StatusNotFound, response.Code)
+				require.Empty(t, upstream.lastPath)
+			}
+		})
+	}
 }
