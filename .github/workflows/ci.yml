@@ -405,6 +405,13 @@ jobs:
             go.sum
             module/tools/go.sum
             module/services/*/code/go.sum
+      - name: Cache npm downloads for quality phases
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.npm
+          key: npm-quality-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/services/*/code/package-lock.json') }}
+          restore-keys: |
+            npm-quality-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
@@ -591,7 +598,7 @@ jobs:
           fi
 
           # Build two services concurrently. The standard ubuntu-latest runner
-          # is 4 vCPU / 16 GB with ~14 GB free disk after the reclaim above;
+          # is 4 vCPU / 16 GB; disk preparation requires 12 GiB free;
           # each Next.js `next build` is CPU- and memory-hungry, and there are
           # two of them, so a higher fan-out risks an OOM kill or exhausting
           # the disk on a full-topology build. Two at a time keeps the peak

@@ -57,7 +57,8 @@ approximately 408 MB Go cache keyed only to the root module's checksum file.
    still need a hosted-runner check to confirm this threshold provides enough
    headroom throughout the job.
 3. Enable the disabled Go caches and include all independent Go module checksum
-   files in the heavy jobs' cache keys.
+   files in the heavy jobs' cache keys. Cache npm downloads across quality
+   runners while keeping clean dependency installation owned by each agent.
 
 These changes are not a measured sub-five-minute result. Standalone phases
 start cold and cannot reuse installs or compiler output from earlier phases in
