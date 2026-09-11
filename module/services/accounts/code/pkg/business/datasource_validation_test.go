@@ -92,6 +92,8 @@ func TestGitHubSyncPreflightKeepsTransientFailuresDurable(t *testing.T) {
 		{"rate limit", github.ErrRateLimited, nil, codes.OK},
 		{"vault unavailable", nil, errors.New("private vault response"), codes.OK},
 		{"vault timeout", nil, context.DeadlineExceeded, codes.OK},
+		{"vault rejected ciphertext", nil, vaultStatusError(400), codes.FailedPrecondition},
+		{"vault forbidden", nil, vaultStatusError(403), codes.OK},
 		{"bad credential", github.ErrUnauthorized, nil, codes.FailedPrecondition},
 		{"permissions", github.ErrForbidden, nil, codes.FailedPrecondition},
 		{"missing ref", github.ErrNotFound, nil, codes.FailedPrecondition},
@@ -214,7 +216,7 @@ func TestGitHubReconnectPreservesSourceAndRejectsInvalidReplacement(t *testing.T
 		}
 		return client
 	})
-	client.repositoryErr = github.ErrUnauthorized
+	client.branchErr = github.ErrUnauthorized
 	if _, err := svc.SyncDatasourceSource(context.Background(), "actor", testOrg, source.ID, "replacement"); err == nil {
 		t.Fatal("accepted invalid replacement")
 	}
@@ -222,7 +224,7 @@ func TestGitHubReconnectPreservesSourceAndRejectsInvalidReplacement(t *testing.T
 	if current.CredentialSecretRef != original || len(producer.jobs) != 0 {
 		t.Fatal("invalid replacement mutated source")
 	}
-	client.repositoryErr = nil
+	client.branchErr = nil
 	if _, err := svc.SyncDatasourceSource(context.Background(), "actor", testOrg, source.ID, "replacement"); err != nil {
 		t.Fatal(err)
 	}
