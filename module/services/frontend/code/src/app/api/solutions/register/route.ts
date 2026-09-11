@@ -1,4 +1,10 @@
-import { isTrustedInternalCall } from "@/lib/internal-token";
+import { checkRuntimeCompatibility } from "@/solutions/compatibility";
+import {
+	consumeRegistrationToken,
+	SOLUTION_REGISTRATION_HEADER,
+	type SolutionRegistrationClaims,
+	verifySolutionRegistration,
+} from "@/solutions/registration-authority";
 import {
 	loadSolutions,
 	navProjection,
@@ -16,23 +22,44 @@ export const runtime = "nodejs";
  * shape and stores it, never referencing any specific solution.
  *
  * Registration mutates what the nav renders and what the solution route loads
- * as a Module Federation remote, so it is NOT public: it requires the
- * cluster-internal token. Without this, any caller that can reach the frontend
- * could register an attacker-controlled MF remote (arbitrary in-origin script
- * execution) or nav entry. Fails closed when the secret is unset.
+ * as a Module Federation remote — code that then runs in the host origin with
+ * the viewer's credentials — so it is authorized on the publisher's OWN signed,
+ * solution-bound credential, the same one the gateway requires, rather than on
+ * a secret every component in the mesh holds. A credential for one solution
+ * confers no authority over another.
  *
- * That token is the whole boundary on the public front door, and nothing below
- * the application can narrow it: `frontend/http` is a public module export, so
- * this path shares TCP 3000 with every browser-facing page, a NetworkPolicy
- * selects pods and ports rather than paths, and the mesh's L7 policy is
- * enforced by a waypoint that never sees ingress-originated traffic. POST/DELETE
- * here are declared as `internal_http_routes` in the topology binding and denied
- * in the mesh from every in-mesh principal outside the frontend's declared
- * callers, which contains lateral use of a leaked token but does not gate the
- * front door. See module/DEPLOYMENT_TOPOLOGY.md, "Cluster-internal HTTP routes".
+ * That credential is the whole boundary on the public front door, and nothing
+ * below the application can narrow it: `frontend/http` is a public module
+ * export, so this path shares TCP 3000 with every browser-facing page, a
+ * NetworkPolicy selects pods and ports rather than paths, and the mesh's L7
+ * policy is enforced by a waypoint that never sees ingress-originated traffic.
+ * POST/DELETE here are declared as `internal_http_routes` in the topology
+ * binding and denied in the mesh from every in-mesh principal outside the
+ * frontend's declared callers, which contains lateral use of a leaked
+ * credential but does not gate the front door. See
+ * module/DEPLOYMENT_TOPOLOGY.md, "Cluster-internal HTTP routes".
  */
+
+/**
+ * Verify the presented credential and burn its single use. The jti is burned
+ * per process, so the same credential still authorizes the gateway's own check
+ * on the write this route forwards.
+ */
+async function authorize(
+	request: Request,
+): Promise<SolutionRegistrationClaims | null> {
+	const claims = await verifySolutionRegistration(
+		request.headers.get(SOLUTION_REGISTRATION_HEADER),
+	);
+	if (!claims) {
+		return null;
+	}
+	return consumeRegistrationToken(claims) ? claims : null;
+}
+
 export async function POST(request: Request): Promise<Response> {
-	if (!isTrustedInternalCall(request)) {
+	const claims = await authorize(request);
+	if (!claims) {
 		return Response.json({ error: "unauthorized" }, { status: 401 });
 	}
 	let body: unknown;
@@ -45,6 +72,23 @@ export async function POST(request: Request): Promise<Response> {
 	if (!manifest) {
 		return Response.json({ error: "invalid_manifest" }, { status: 422 });
 	}
+	if (manifest.id !== claims.solution) {
+		return Response.json({ error: "solution_not_authorized" }, { status: 403 });
+	}
+	// Compatibility is enforced BEFORE the write, so an incompatible remote never
+	// reaches a browser and an existing, working registration keeps serving. The
+	// reasons ride the response and the server log: a registrant told only "409"
+	// would have nothing to act on.
+	const verdict = checkRuntimeCompatibility(manifest);
+	if (!verdict.compatible) {
+		console.error(
+			`solution registration refused as incompatible: ${manifest.id}: ${verdict.reasons.join("; ")}`,
+		);
+		return Response.json(
+			{ error: "incompatible_runtime", reasons: verdict.reasons },
+			{ status: 409 },
+		);
+	}
 	// A solution whose registration was deregistered has to say so to come back:
 	// an ordinary retry from a retiring deployment must not resurrect what an
 	// operator removed.
@@ -52,7 +96,10 @@ export async function POST(request: Request): Promise<Response> {
 		typeof body === "object" &&
 		body !== null &&
 		(body as { reactivate?: unknown }).reactivate === true;
-	const result = await registerSolution(manifest, { reactivate });
+	const result = await registerSolution(manifest, {
+		reactivate,
+		credential: request.headers.get(SOLUTION_REGISTRATION_HEADER) ?? undefined,
+	});
 	if (!result.ok) {
 		return writeFailure(result.reason);
 	}
@@ -88,14 +135,21 @@ function writeFailure(
 }
 
 export async function DELETE(request: Request): Promise<Response> {
-	if (!isTrustedInternalCall(request)) {
+	const claims = await authorize(request);
+	if (!claims) {
 		return Response.json({ error: "unauthorized" }, { status: 401 });
 	}
 	const id = new URL(request.url).searchParams.get("id");
 	if (!id) {
 		return Response.json({ error: "missing_id" }, { status: 400 });
 	}
-	const result = await unregisterSolution(id);
+	if (id !== claims.solution) {
+		return Response.json({ error: "solution_not_authorized" }, { status: 403 });
+	}
+	const result = await unregisterSolution(
+		id,
+		request.headers.get(SOLUTION_REGISTRATION_HEADER) ?? undefined,
+	);
 	if (!result.ok) {
 		return writeFailure(result.reason);
 	}

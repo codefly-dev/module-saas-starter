@@ -402,8 +402,9 @@ message ModuleReplayEventsResponse {
 
 // ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
 // internal-tier and identifies its caller from the forwarded Work Context —
-// except MintModuleRegistration, which a module calls at startup, before any
-// user request exists, and which authorizes on its own registration secret.
+// except MintModuleRegistration and MintSolutionRegistration, which a registrant
+// calls at startup, before any user request exists, and which authorize on the
+// registrant's own registration secret.
 service ModuleCapabilitiesService {
   // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
   rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
@@ -572,6 +573,27 @@ service ModuleCapabilitiesService {
       mfa: MFA_REQUIREMENT_NONE
       audit: {
         events: "saas.module.registration_minted"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // MintSolutionRegistration issues the signed, solution-bound credential a
+  // solution presents to the gateway and to the frontend to register, update, or
+  // delete its upstream and its Module-Federation remote. Authorized by the
+  // solution's own registration secret, declared separately from the module
+  // secrets because a solution remote executes in the host origin.
+  rpc MintSolutionRegistration(SolutionMintRegistrationRequest) returns (SolutionMintRegistrationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.solution.registration_minted"
         emission: AUDIT_EMISSION_SUCCESS
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN

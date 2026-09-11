@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	accountsv1 "auth-gateway/pkg/gen/saas/accounts/v1"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	grpcstatus "google.golang.org/grpc/status"
@@ -283,12 +286,50 @@ func TestGateway_Solution_Register(t *testing.T) {
 	require.Equal(t, "/v1/ping", fake.lastPath)
 }
 
-// postSolutionRegistration drives one registration endpoint with the internal
-// token and asserts the status, returning the decoded body.
+// signSolutionRegistration mints the solution-bound credential registration
+// requires, signed with the key the harness configured as the check's public
+// half.
+func signSolutionRegistration(t *testing.T, solutionID, subject string) string {
+	t.Helper()
+	c := solutionRegistrationClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    "saas-starter",
+			Subject:   subject,
+			Audience:  jwt.ClaimStrings{solutionRegistrationAudience},
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(5 * time.Minute)),
+			ID:        uuid.Must(uuid.NewV7()).String(),
+		},
+		Solution: solutionID,
+	}
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodEdDSA, c).SignedString(testRegistrationKey)
+	require.NoError(t, err)
+	return signed
+}
+
+// solutionIDFromRegistration recovers the id a registration call names, so the
+// helper can bind a credential to it.
+func solutionIDFromRegistration(path, body string) string {
+	decoded := map[string]any{}
+	_ = json.Unmarshal([]byte(body), &decoded)
+	if id, ok := decoded["id"].(string); ok && id != "" {
+		return id
+	}
+	if u, err := url.Parse(path); err == nil {
+		if id := u.Query().Get("id"); id != "" {
+			return id
+		}
+	}
+	return "audit"
+}
+
+// postSolutionRegistration drives one registration endpoint with a credential
+// bound to the id it names and asserts the status, returning the decoded body.
 func postSolutionRegistration(t *testing.T, gw *Gateway, path, body string, want int) map[string]any {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
-	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	id := solutionIDFromRegistration(path, body)
+	req.Header.Set(solutionRegistrationHeader, signSolutionRegistration(t, id, "solution:"+id))
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 	require.Equal(t, want, w.Code, "%s -> %s", path, w.Body.String())
@@ -310,22 +351,23 @@ func TestGateway_Solution_Register_Rejects(t *testing.T) {
 
 	// Missing id (with a valid internal token, to isolate the id check).
 	noIDReq := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(`{"upstream":"http://x:80"}`))
-	noIDReq.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	noIDReq.Header.Set(solutionRegistrationHeader, signSolutionRegistration(t, "audit", "solution:audit"))
 	noIDW := httptest.NewRecorder()
 	gw.ServeHTTP(noIDW, noIDReq)
 	require.Equal(t, http.StatusBadRequest, noIDW.Code)
 
 	// Non-http scheme is rejected (no file://, no scheme-less host).
 	badReq := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(`{"id":"x","upstream":"file:///etc/passwd"}`))
-	badReq.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	badReq.Header.Set(solutionRegistrationHeader, signSolutionRegistration(t, "x", "solution:x"))
 	badW := httptest.NewRecorder()
 	gw.ServeHTTP(badW, badReq)
 	require.Equal(t, http.StatusBadRequest, badW.Code)
 }
 
-// Registration is privileged: without the cluster-internal token it is
-// rejected before the upstream is ever stored, so an edge caller cannot point
-// authenticated traffic at an attacker-controlled host.
+// Registration is privileged: without a signed, solution-bound credential it is
+// rejected before the upstream is ever stored, so an edge caller — including one
+// holding the shared cluster-internal token, which used to be sufficient here —
+// cannot point authenticated traffic at a host it controls.
 func TestGateway_Solution_Register_RequiresInternalToken(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
 
@@ -339,7 +381,7 @@ func TestGateway_Solution_Register_RequiresInternalToken(t *testing.T) {
 
 	// Wrong token.
 	badTok := httptest.NewRequest(http.MethodPost, "/solutions/_register", strings.NewReader(body))
-	badTok.Header.Set("X-Codefly-Internal-Token", "not-the-token")
+	badTok.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
 	badTokW := httptest.NewRecorder()
 	gw.ServeHTTP(badTokW, badTok)
 	require.Equal(t, http.StatusUnauthorized, badTokW.Code)
@@ -367,7 +409,7 @@ func TestGateway_Solution_Register_RejectsSSRFHosts(t *testing.T) {
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/solutions/_register",
 			strings.NewReader(`{"id":"x","upstream":"`+upstream+`"}`))
-		req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+		req.Header.Set(solutionRegistrationHeader, signSolutionRegistration(t, "x", "solution:x"))
 		w := httptest.NewRecorder()
 		gw.ServeHTTP(w, req)
 		require.Equal(t, http.StatusBadRequest, w.Code, "upstream %q must be rejected", upstream)
@@ -636,7 +678,8 @@ func TestGateway_Solution_Deregister_BlocksResurrection(t *testing.T) {
 	registry := solutionRegistryFake(t, gw)
 
 	del := httptest.NewRequest(http.MethodDelete, "/solutions/_register?id=audit", nil)
-	del.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	del.Header.Set(solutionRegistrationHeader,
+		signSolutionRegistration(t, "audit", "solution:audit"))
 	delW := httptest.NewRecorder()
 	gw.ServeHTTP(delW, del)
 	require.Equal(t, http.StatusOK, delW.Code)

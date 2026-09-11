@@ -52,7 +52,7 @@ func installModuleRegistrar(t *testing.T, declared string) *recordingRegistratio
 
 	svc, err := business.NewService(&moduleRegistrationStore{})
 	require.NoError(t, err)
-	secrets, err := business.ParseModuleRegistrationSecrets(declared)
+	secrets, err := business.ParseRegistrationSecrets(declared)
 	require.NoError(t, err)
 	minter := &recordingRegistrationMinter{}
 	svc.SetModuleRegistrar(minter, secrets)
@@ -151,8 +151,8 @@ func TestMintModuleRegistrationSurfacesSigningFailure(t *testing.T) {
 	require.NotEqual(t, codes.PermissionDenied, status.Code(err))
 }
 
-func TestParseModuleRegistrationSecrets(t *testing.T) {
-	secrets, err := business.ParseModuleRegistrationSecrets(
+func TestParseRegistrationSecrets(t *testing.T) {
+	secrets, err := business.ParseRegistrationSecrets(
 		" documents:" + registrationDigest("a") + " , billing:" + registrationDigest("b") + " ,")
 	require.NoError(t, err)
 	require.Len(t, secrets, 2)
@@ -169,7 +169,7 @@ func TestParseModuleRegistrationSecrets(t *testing.T) {
 	}
 	for name, raw := range invalid {
 		t.Run(name, func(t *testing.T) {
-			_, err := business.ParseModuleRegistrationSecrets(raw)
+			_, err := business.ParseRegistrationSecrets(raw)
 			require.Error(t, err)
 		})
 	}

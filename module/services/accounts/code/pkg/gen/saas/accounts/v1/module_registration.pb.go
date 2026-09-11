@@ -133,6 +133,116 @@ func (x *ModuleMintRegistrationResponse) GetExpiresAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// SolutionMintRegistrationRequest asks for the credential a solution presents to
+// register — and later update or delete — its gateway upstream and its frontend
+// Module-Federation remote. secret is the solution's own registration secret,
+// provisioned by the composition; accounts compares it against the digest
+// declared for `solution_id`, so the credential for one solution never yields a
+// token for another.
+type SolutionMintRegistrationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SolutionId    string                 `protobuf:"bytes,1,opt,name=solution_id,json=solutionId,proto3" json:"solution_id,omitempty"`
+	Secret        string                 `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SolutionMintRegistrationRequest) Reset() {
+	*x = SolutionMintRegistrationRequest{}
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SolutionMintRegistrationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SolutionMintRegistrationRequest) ProtoMessage() {}
+
+func (x *SolutionMintRegistrationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SolutionMintRegistrationRequest.ProtoReflect.Descriptor instead.
+func (*SolutionMintRegistrationRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_registration_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *SolutionMintRegistrationRequest) GetSolutionId() string {
+	if x != nil {
+		return x.SolutionId
+	}
+	return ""
+}
+
+func (x *SolutionMintRegistrationRequest) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+type SolutionMintRegistrationResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SolutionMintRegistrationResponse) Reset() {
+	*x = SolutionMintRegistrationResponse{}
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SolutionMintRegistrationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SolutionMintRegistrationResponse) ProtoMessage() {}
+
+func (x *SolutionMintRegistrationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_module_registration_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SolutionMintRegistrationResponse.ProtoReflect.Descriptor instead.
+func (*SolutionMintRegistrationResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_module_registration_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *SolutionMintRegistrationResponse) GetToken() string {
+	if x != nil {
+		return x.Token
+	}
+	return ""
+}
+
+func (x *SolutionMintRegistrationResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 var File_saas_accounts_v1_module_registration_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_module_registration_proto_rawDesc = "" +
@@ -143,6 +253,15 @@ const file_saas_accounts_v1_module_registration_proto_rawDesc = "" +
 	"\x06secret\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x06secret\"q\n" +
 	"\x1eModuleMintRegistrationResponse\x12\x14\n" +
+	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
+	"\n" +
+	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x94\x01\n" +
+	"\x1fSolutionMintRegistrationRequest\x12M\n" +
+	"\vsolution_id\x18\x01 \x01(\tB,\xbaH)r'\x10\x01\x18?2!^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$R\n" +
+	"solutionId\x12\"\n" +
+	"\x06secret\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\x80\x04R\x06secret\"s\n" +
+	" SolutionMintRegistrationResponse\x12\x14\n" +
 	"\x05token\x18\x01 \x01(\tR\x05token\x129\n" +
 	"\n" +
 	"expires_at\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAtB\xbf\x01\n" +
@@ -160,19 +279,22 @@ func file_saas_accounts_v1_module_registration_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_module_registration_proto_rawDescData
 }
 
-var file_saas_accounts_v1_module_registration_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_saas_accounts_v1_module_registration_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_saas_accounts_v1_module_registration_proto_goTypes = []any{
-	(*ModuleMintRegistrationRequest)(nil),  // 0: saas.accounts.v1.ModuleMintRegistrationRequest
-	(*ModuleMintRegistrationResponse)(nil), // 1: saas.accounts.v1.ModuleMintRegistrationResponse
-	(*timestamppb.Timestamp)(nil),          // 2: google.protobuf.Timestamp
+	(*ModuleMintRegistrationRequest)(nil),    // 0: saas.accounts.v1.ModuleMintRegistrationRequest
+	(*ModuleMintRegistrationResponse)(nil),   // 1: saas.accounts.v1.ModuleMintRegistrationResponse
+	(*SolutionMintRegistrationRequest)(nil),  // 2: saas.accounts.v1.SolutionMintRegistrationRequest
+	(*SolutionMintRegistrationResponse)(nil), // 3: saas.accounts.v1.SolutionMintRegistrationResponse
+	(*timestamppb.Timestamp)(nil),            // 4: google.protobuf.Timestamp
 }
 var file_saas_accounts_v1_module_registration_proto_depIdxs = []int32{
-	2, // 0: saas.accounts.v1.ModuleMintRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	4, // 0: saas.accounts.v1.ModuleMintRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4, // 1: saas.accounts.v1.SolutionMintRegistrationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	2, // [2:2] is the sub-list for method output_type
+	2, // [2:2] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_saas_accounts_v1_module_registration_proto_init() }
@@ -186,7 +308,7 @@ func file_saas_accounts_v1_module_registration_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_module_registration_proto_rawDesc), len(file_saas_accounts_v1_module_registration_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
