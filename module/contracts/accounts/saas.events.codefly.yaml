@@ -127,6 +127,10 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.datasource.credential.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.datasource.force_push_reconciled
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
@@ -148,6 +152,14 @@ publishes:
     visibility: external
     retention: 30d
   - type: saas.datasource.source.synced
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.sync.completed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.sync.failed
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

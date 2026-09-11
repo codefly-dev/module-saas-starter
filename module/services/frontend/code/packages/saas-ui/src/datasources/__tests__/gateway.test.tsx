@@ -312,7 +312,7 @@ describe("DatasourcesPanel gateway binding", () => {
 	});
 });
 
-it("uses GitHub's dispatch clock instead of reporting Never", async () => {
+it("exposes GitHub dispatch time as ingest provenance", async () => {
 	const github = {
 		...oneSource.datasources[0],
 		lastIngestedAt: "2026-09-11T14:00:00Z",
@@ -322,9 +322,9 @@ it("uses GitHub's dispatch clock instead of reporting Never", async () => {
 		apiBase: "http://example.test",
 		getAccessToken: () => "viewer",
 	});
-	expect((await client.listSources("org-1"))[0].lastSyncedAt).toBe(
-		"2026-09-11T14:00:00.000Z",
-	);
+	const source = (await client.listSources("org-1"))[0];
+	expect(source.lastSyncedAt).toBeUndefined();
+	expect(source.lastIngestedAt).toBe("2026-09-11T14:00:00.000Z");
 });
 it("reads source-specific typed audit history", async () => {
 	stubFetch({
