@@ -1,0 +1,52 @@
+=== RUN   TestAccountsExplicitProxyTransport
+=== RUN   TestAccountsExplicitProxyTransport/TCP
+=== RUN   TestAccountsExplicitProxyTransport/password
+=== RUN   TestAccountsExplicitProxyTransport/role_override
+=== RUN   TestAccountsExplicitProxyTransport/missing_port
+=== RUN   TestAccountsExplicitProxyTransport/empty_password
+=== RUN   TestAccountsExplicitProxyTransport/relative_socket
+=== RUN   TestAccountsExplicitProxyTransport/duplicate_port
+=== RUN   TestAccountsExplicitProxyTransport/endpoint_override
+=== RUN   TestAccountsExplicitProxyTransport/options
+=== RUN   TestAccountsExplicitProxyTransport/passfile
+=== RUN   TestAccountsExplicitProxyTransport/ambient_PG
+=== RUN   TestAccountsExplicitProxyTransport/shared_token_file
+--- PASS: TestAccountsExplicitProxyTransport (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/TCP (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/password (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/role_override (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/missing_port (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/empty_password (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/relative_socket (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/duplicate_port (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/endpoint_override (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/options (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/passfile (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/ambient_PG (0.00s)
+    --- PASS: TestAccountsExplicitProxyTransport/shared_token_file (0.00s)
+=== RUN   TestAccountsDefaultAndVerifiedTransport
+=== RUN   TestAccountsDefaultAndVerifiedTransport/ROLE=app_control_plane
+=== RUN   TestAccountsDefaultAndVerifiedTransport/Role=app_control_plane
+=== RUN   TestAccountsDefaultAndVerifiedTransport/role=app_control_plane
+=== RUN   TestAccountsDefaultAndVerifiedTransport/session_authorization=proxy_admin
+=== RUN   TestAccountsDefaultAndVerifiedTransport/SESSION_AUTHORIZATION=proxy_admin
+=== RUN   TestAccountsDefaultAndVerifiedTransport/%73ession_authorization=proxy_admin
+=== RUN   TestAccountsDefaultAndVerifiedTransport/Options=-c+role%3Dapp_control_plane
+=== RUN   TestAccountsDefaultAndVerifiedTransport/options=-c+role%3Dapp_control_plane
+=== RUN   TestAccountsDefaultAndVerifiedTransport/HOST=%2Fdb%2Fw
+=== RUN   TestAccountsDefaultAndVerifiedTransport/search_path=private
+=== RUN   TestAccountsDefaultAndVerifiedTransport/application_name=label%00role%00app_control_plane
+--- PASS: TestAccountsDefaultAndVerifiedTransport (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/ROLE=app_control_plane (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/Role=app_control_plane (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/role=app_control_plane (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/session_authorization=proxy_admin (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/SESSION_AUTHORIZATION=proxy_admin (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/%73ession_authorization=proxy_admin (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/Options=-c+role%3Dapp_control_plane (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/options=-c+role%3Dapp_control_plane (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/HOST=%2Fdb%2Fw (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/search_path=private (0.00s)
+    --- PASS: TestAccountsDefaultAndVerifiedTransport/application_name=label%00role%00app_control_plane (0.00s)
+PASS
+ok  	command-line-arguments	1.257s
