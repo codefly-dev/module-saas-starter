@@ -26,6 +26,28 @@ describe("FixtureFileSchema", () => {
 		}
 	});
 
+	it("keeps the pinned organization id the module fixture declares", () => {
+		// The tenant a module principal grant names is this id; a schema that
+		// dropped it would leave the fixture route serving organizations that
+		// cannot be matched to the seeded tenant.
+		const parsed = FixtureFileSchema.parse(moduleFixture("dev-admin"));
+
+		const acme = parsed.organizations?.find((o) => o.name === "Acme Corp");
+		expect(acme?.id).toBe("00000000-0000-7000-8000-0000000000c1");
+		for (const org of parsed.organizations ?? []) {
+			expect(org.id).toMatch(/^[0-9a-f-]{36}$/);
+		}
+	});
+
+	it("rejects an organization id that is not a uuid", () => {
+		expect(() =>
+			FixtureFileSchema.parse({
+				users: [],
+				organizations: [{ id: "acme", name: "Acme", owner: "owner@example.com" }],
+			}),
+		).toThrow();
+	});
+
 	it("rejects a user id that is not a uuid", () => {
 		expect(() =>
 			FixtureFileSchema.parse({

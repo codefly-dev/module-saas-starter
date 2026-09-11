@@ -19,6 +19,9 @@ func registerCatalogRESTHandlers(ctx context.Context, mux *runtime.ServeMux, end
 	if err := gen.RegisterAPIKeyServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service APIKeyService: %w", err)
 	}
+	if err := gen.RegisterAccessibleScopeServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
+		return fmt.Errorf("register generated REST service AccessibleScopeService: %w", err)
+	}
 	if err := gen.RegisterAuditServiceHandlerFromEndpoint(ctx, mux, endpoint, options); err != nil {
 		return fmt.Errorf("register generated REST service AuditService: %w", err)
 	}

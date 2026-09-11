@@ -2,19 +2,35 @@
 
 import { ConnectError } from "@connectrpc/connect";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+	QueryClient,
+	QueryClientProvider,
+	useQuery,
+} from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import {
+	useAccessibleScopes,
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
 	useSyncSource,
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
-import type { DatasourceClient, DatasourceView } from "./types.js";
-import { cn, formatSyncedAt, parsePaths } from "./util.js";
+import type {
+	AccessibleScopeView,
+	DatasourceClient,
+	DatasourceView,
+} from "./types.js";
+import {
+	cn,
+	formatGrants,
+	formatIngest,
+	formatSyncedAt,
+	parsePaths,
+	shortBoundaryId,
+} from "./util.js";
 
 interface DatasourcesPanelBaseProps {
 	orgId: string;
@@ -83,6 +99,12 @@ function DatasourcesPanelView({
 	onSyncEnqueued,
 	className,
 }: DatasourcesPanelViewProps) {
+	const [activitySource, setActivitySource] = useState<DatasourceView | null>(
+		null,
+	);
+	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
+	const [reconnectPending, setReconnectPending] = useState(false);
+	const [reconnectError, setReconnectError] = useState<string>();
 	const [showConnect, setShowConnect] = useState(false);
 	// Per-row pending sets, not the shared mutation's single `isPending`, so two
 	// rows can sync/delete at once without one clearing the other's spinner and
@@ -99,6 +121,7 @@ function DatasourcesPanelView({
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
+	const scopes = useAccessibleScopes(client, orgId);
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -156,6 +179,11 @@ function DatasourcesPanelView({
 	};
 
 	const sources = list.data ?? [];
+	const boundaries = useMemo(() => {
+		const byNode = new Map<string, AccessibleScopeView>();
+		for (const scope of scopes.data ?? []) byNode.set(scope.nodeId, scope);
+		return byNode;
+	}, [scopes.data]);
 
 	return (
 		<div className={cn("space-y-4", className)}>
@@ -168,6 +196,15 @@ function DatasourcesPanelView({
 					Connect GitHub
 				</button>
 			</div>
+
+			{activitySource && (
+				<SourceHistory
+					client={client}
+					orgId={orgId}
+					source={activitySource}
+					onClose={() => setActivitySource(null)}
+				/>
+			)}
 
 			{syncNotice && (
 				<p role="status" className="text-sm text-muted-foreground">
@@ -204,7 +241,10 @@ function DatasourcesPanelView({
 				</PanelMessage>
 			) : (
 				<SourcesTable
+					onActivity={client.listActivity ? setActivitySource : undefined}
+					onReconnect={(source) => { setReconnectError(undefined); setReconnecting(source); }}
 					sources={sources}
+					boundaries={boundaries}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
 					onSync={handleSync}
@@ -212,6 +252,19 @@ function DatasourcesPanelView({
 				/>
 			)}
 
+			{reconnecting && (
+				<ReconnectSource source={reconnecting} pending={reconnectPending} error={reconnectError}
+				 onCancel={() => { if (!reconnectPending) setReconnecting(null); }}
+				 onSubmit={async (token) => {
+				  setReconnectPending(true); setReconnectError(undefined);
+				  try {
+				   const jobId = await client.syncSource(orgId, reconnecting.id, token);
+				   setSyncNotice(`Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`);
+				   setReconnecting(null); onSyncEnqueued?.(jobId); await list.refetch();
+				  } catch (error) { setReconnectError(messageOf(error)); }
+				  finally { setReconnectPending(false); }
+				 }} />
+			)}
 			{showConnect && (
 				<ConnectGitHubForm
 					onSubmit={handleConnect}
@@ -261,21 +314,47 @@ function messageOf(error: unknown): string {
 	return message.replace(/^rpc error: code = \w+ desc = /, "");
 }
 
+/**
+ * A row's clocks. At most one of them ticks for a given source: a github
+ * source's ingest is advanced by the change-set compiler and never sets
+ * `lastSyncedAt`, while the pulled providers advance `lastSyncedAt` alone. So
+ * the "Never" is dropped whenever there is an ingest to show — left in, it
+ * would sit above live provenance telling the reader a healthy source has
+ * never synced.
+ */
+function LastSyncCell({ source }: { source: DatasourceView }) {
+	const ingest = formatIngest(source.lastIngestedAt, source.lastIngestedCommit);
+	return (
+		<>
+			{(source.lastSyncedAt || !ingest) && (
+				<div>{formatSyncedAt(source.lastSyncedAt)}</div>
+			)}
+			{ingest && <div className="text-xs">{ingest}</div>}
+		</>
+	);
+}
+
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
 
 function SourcesTable({
 	sources,
+	boundaries,
 	syncingIds,
 	deletingIds,
 	onSync,
 	onDelete,
+	onActivity,
+	onReconnect,
 }: {
 	sources: DatasourceView[];
+	boundaries: ReadonlyMap<string, AccessibleScopeView>;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
+	onActivity?: (source: DatasourceView) => void;
+	onReconnect: (source: DatasourceView) => void;
 }) {
 	return (
 		<div className="overflow-x-auto rounded-lg border">
@@ -285,8 +364,9 @@ function SourcesTable({
 						<th className={headerClass}>Repository</th>
 						<th className={headerClass}>Paths</th>
 						<th className={headerClass}>Branch</th>
+						<th className={headerClass}>Boundary</th>
 						<th className={headerClass}>Webhook</th>
-						<th className={headerClass}>Last sync</th>
+						<th className={headerClass}>Last sync dispatch</th>
 						<th className={cn(headerClass, "text-right")}>Actions</th>
 					</tr>
 				</thead>
@@ -303,13 +383,28 @@ function SourcesTable({
 							</td>
 							<td className={cellClass}>{source.branch || "default"}</td>
 							<td className={cellClass}>
-								{source.webhookConfigured ? "Configured" : "None"}
+								<BoundaryCell
+									nodeId={source.boundaryNodeId}
+									scope={boundaries.get(source.boundaryNodeId)}
+								/>
+							</td>
+							<td className={cellClass}>
+								{source.webhookConfigured ? "Signing secret configured" : "Not configured"}
 							</td>
 							<td className={cn(cellClass, "text-muted-foreground")}>
-								{formatSyncedAt(source.lastSyncedAt)}
+								<LastSyncCell source={source} />
 							</td>
 							<td className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">
+									{source.provider === "github" && <button type="button" className={rowActionClass} onClick={() => onReconnect(source)}>Reconnect</button>}
+									{onActivity && (
+										<button
+											className={rowActionClass}
+											onClick={() => onActivity(source)}
+										>
+											History
+										</button>
+									)}
 									<button
 										type="button"
 										className={rowActionClass}
@@ -334,4 +429,127 @@ function SourcesTable({
 			</table>
 		</div>
 	);
+}
+
+/**
+ * A source's data boundary: the collection its Entries land in, named where the
+ * caller could resolve it, plus the grants it holds there. Falls back to the node
+ * id so the boundary is always identifiable.
+ *
+ * Absence is deliberately never rendered as denial. The lookup reports scope
+ * grants only, and a scope grant is one of several paths to authority — flat
+ * RBAC (an org admin's `*:*`) authorizes the datasource RPCs without ever
+ * creating a scope-grant row, so an empty result is the normal state for a
+ * tenant that grants no boundaries. "No access" here would therefore be false
+ * for the very admin who connected the source.
+ */
+function BoundaryCell({
+	nodeId,
+	scope,
+}: {
+	nodeId: string;
+	scope: AccessibleScopeView | undefined;
+}) {
+	if (scope) {
+		return (
+			<div className="space-y-0.5">
+				<div>{scope.label || shortBoundaryId(nodeId)}</div>
+				<div className="text-xs text-muted-foreground">
+					{formatGrants(scope.actions)}
+				</div>
+			</div>
+		);
+	}
+	return <div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>;
+}
+
+function SourceHistory({
+	client,
+	orgId,
+	source,
+	onClose,
+}: {
+	client: DatasourceClient;
+	orgId: string;
+	source: DatasourceView;
+	onClose: () => void;
+}) {
+	const history = useQuery({
+		queryKey: ["source-history", orgId, source.id],
+		queryFn: () => client.listActivity!(orgId, source.id),
+		refetchInterval: 15000,
+	});
+	const names: Record<string, string> = {
+		"saas.datasource.source.synced": "Sync requested",
+		"saas.datasource.source.added": "Source connected",
+		"saas.datasource.credential.updated": "Credential replaced",
+		"saas.datasource.change_set_compiled": "Files queued for ingestion",
+		"saas.datasource.sync.completed": "Ingestion completed",
+		"saas.datasource.sync.failed": "Sync attempt failed",
+	};
+	return (
+		<section
+			aria-label="Sync history"
+			className="rounded-lg border p-4 space-y-3"
+		>
+			<div className="flex items-center justify-between">
+				<h3 className="font-medium">Sync history · {source.repo}</h3>
+				<button className={rowActionClass} onClick={onClose}>
+					Close history
+				</button>
+			</div>
+			<p className="text-xs text-muted-foreground">
+				Sync requests, dispatched files, and ingestion results. History
+				refreshes automatically.
+			</p>
+			{history.isPending ? (
+				<p>Loading history…</p>
+			) : history.error ? (
+				<p role="alert">Could not load history: {messageOf(history.error)}</p>
+			) : !history.data?.length ? (
+				<p>No recorded activity yet.</p>
+			) : (
+				<ol className="space-y-3" style={{ maxHeight: 360, overflowY: "auto" }}>
+					{history.data.map((e) => (
+						<li key={e.id} className="border-t pt-3 text-sm">
+							<div className="flex justify-between gap-3">
+								<strong>{names[e.type] ?? e.type}</strong>
+								<time className="text-xs text-muted-foreground">
+									{e.at ? new Date(e.at).toLocaleString() : "Unknown time"}
+								</time>
+							</div>
+							<p className="text-xs text-muted-foreground">Actor: {e.actor === source.id ? "Source sync worker" : e.actor}</p>
+							<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+								{Object.entries(e.fields)
+									.filter(([k]) => k !== "solution")
+									.map(([k, v]) => (
+										<div key={k}>
+											<dt className="inline text-muted-foreground">
+												{k.replaceAll("_", " ")}:{" "}
+											</dt>
+											<dd className="inline break-all">{String(v)}</dd>
+										</div>
+									))}
+							</dl>
+						</li>
+					))}
+				</ol>
+			)}
+		</section>
+	);
+}
+
+function ReconnectSource({source, pending, error, onSubmit, onCancel}: {
+ source: DatasourceView; pending: boolean; error?: string;
+ onSubmit: (token: string) => Promise<void>; onCancel: () => void;
+}) {
+ const [token, setToken] = useState("");
+ return <form aria-label="Reconnect GitHub source" className="space-y-3 rounded-lg border p-4"
+ onSubmit={(event) => { event.preventDefault(); if (!pending && token.trim()) { const replacement = token.trim(); setToken(""); void onSubmit(replacement); } }}>
+ <h3 className="font-medium">Reconnect {source.repo}</h3>
+ <p className="text-sm text-muted-foreground">Replace the saved PAT and start a sync. Your source, collection, documents, and history are preserved.</p>
+ <label className="block text-sm">New GitHub PAT<input type="password" autoComplete="new-password" required maxLength={4096} value={token} disabled={pending} onChange={(event) => setToken(event.target.value)} className="block w-full rounded-md border bg-background p-2" /></label>
+ {error && <p role="alert">{error}</p>}
+ <div className="flex gap-2"><button type="submit" className={buttonClass} disabled={pending || !token.trim()}>{pending ? "Validating and reconnecting…" : "Reconnect and sync"}</button><button type="button" className={rowActionClass} disabled={pending} onClick={onCancel}>Cancel</button></div>
+ </form>;
 }

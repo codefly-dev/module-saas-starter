@@ -18,6 +18,8 @@ export const FixtureOrgMemberSchema = z.object({
 });
 
 export const FixtureOrgSchema = z.object({
+	/** Pinned across reseeds so a module principal grant can name its tenant. */
+	id: z.string().uuid().optional(),
 	name: z.string().min(1),
 	owner: z.string().email(),
 	members: z.array(FixtureOrgMemberSchema).default([]),

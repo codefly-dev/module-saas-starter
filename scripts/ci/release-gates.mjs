@@ -23,8 +23,10 @@
 // aggregate, and the aggregate by every mandatory gate. It also fails unless
 // every action the workflows call is pinned to a commit digest, since a
 // mutable tag lets whoever can move it rewrite any gate, the aggregate
-// included.
+// included, and unless every job that reports a required context can report it
+// from a merge-queue entry as well.
 
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -342,6 +344,184 @@ function contractErrors(path, document) {
 }
 
 // ---------------------------------------------------------------------------
+// the merge-queue contract
+// ---------------------------------------------------------------------------
+
+// `main` merges through a merge queue: GitHub builds each entry as `main + the
+// pull request` and gates the merge on the required contexts reported from
+// THAT ref, which is the guarantee "require branches to be up to date" bought
+// by making every author rebase by hand and re-run everything.
+//
+// What that costs is a prerequisite no pull request can reveal, because the
+// same job is green there: every required context must report on `merge_group`
+// too. One that does not leaves its entry waiting on a check that never
+// arrives until the queue evicts it — and since entries merge in order, a
+// single missing context stalls every merge in the repository.
+
+// The jobs that report a required context: every mandatory gate, plus the
+// aggregate that authorizes publication.
+export const QUEUED_CONTEXTS = [...REQUIRED_GATES, AGGREGATE_JOB];
+
+// What those jobs are called where the ruleset names them. A required context
+// is matched by a job's `name:`, not by its id, so renaming a job here without
+// renaming it in the ruleset leaves the ruleset waiting on a context nothing
+// reports — which blocks every pull request and stalls the queue, and is
+// invisible in a diff that only shows a tidier job name. Declaring the names
+// makes that rename fail here instead.
+//
+// This list is the tree's copy of a set that really lives in the branch
+// ruleset, and nothing in a workflow run can read that. `contexts` below
+// reconciles the two against the live API; run it whenever either side moves.
+export const REQUIRED_CONTEXTS = [
+  "Authorization coverage",
+  "Base manifest integrity",
+  "Codefly build",
+  "Codefly CI plan",
+  "Codefly quality",
+  "Codefly SDK boundary",
+  "Codefly supply chain",
+  "Frontend kit version",
+  "Immutable module package",
+  "Interface docs and story tests",
+  "Marketing isolation",
+  "Provider setup shims",
+  "Release gate contract",
+  "Release gates",
+];
+
+const MERGE_GROUP_BASE = "github.event.merge_group.base_sha";
+
+// Whether `on` names `event`, in any of the three spellings GitHub accepts: a
+// mapping whose key carries no value (`merge_group:`), a sequence, or a bare
+// scalar.
+function triggersOn(on, event) {
+  if (typeof on === "string") return on === event;
+  if (Array.isArray(on)) return on.includes(event);
+  return typeof on === "object" && on !== null && event in on;
+}
+
+// Every scalar anywhere under `value`, so a contract can ask what a job's text
+// mentions without knowing whether it sits in `env`, a `run` body or `with`.
+function scalars(value) {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(scalars);
+  if (value !== null && typeof value === "object") return Object.values(value).flatMap(scalars);
+  return [];
+}
+
+// Whether the job actually *reads* the queue entry's base, as opposed to
+// merely mentioning it. Two things separate the two, and the workflow this
+// gate guards has both within three lines of each other: block-scalar `run`
+// bodies reach here raw, comments and all, and prose about the merge queue
+// naturally names the very expression under test. So comment lines are dropped
+// first, and what remains counts only inside a `${{ … }}` interpolation, which
+// is the only place the expression has any effect.
+const uncommented = (text) =>
+  text
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+
+const readsMergeGroupBase = (job) =>
+  scalars(job).some((text) =>
+    new RegExp(`\\$\\{\\{[^}]*${MERGE_GROUP_BASE.replace(/\./g, "\\.")}`).test(uncommented(text)),
+  );
+
+// Whether `cancel-in-progress` cancels a merge-queue entry. `true` cancels a
+// superseded run whatever event produced it, and an entry superseded by the
+// next one then reports nothing at all, which stalls the queue exactly as
+// never having run would. An expression is the author discriminating by event
+// and is taken at its word; the bare literal is the copy-paste that is not.
+const cancelsEverything = (concurrency) => {
+  const cancel = concurrency?.["cancel-in-progress"];
+  return cancel !== undefined && String(cancel).trim() === "true";
+};
+
+function mergeQueueErrors(path, document) {
+  const jobs = document?.jobs ?? {};
+  const required = QUEUED_CONTEXTS.filter((context) => context in jobs);
+  if (required.length === 0) return [];
+
+  const subject = required.length === 1 ? `job ${required[0]} reports` : `jobs ${required.join(", ")} report`;
+  if (!triggersOn(document?.on, "merge_group")) {
+    // The rest of the contract is moot without the trigger: a workflow that
+    // never runs on `merge_group` has no entry to cancel and no entry base to
+    // scope a plan against. One defect, not three.
+    return [
+      `${path}: ${subject} a required context but this workflow has no \`merge_group:\` ` +
+        "trigger; a queued pull request would wait on checks that never report and be evicted",
+    ];
+  }
+
+  const errors = [];
+
+  if (cancelsEverything(document?.concurrency)) {
+    errors.push(
+      `${path}: concurrency.cancel-in-progress is unconditionally true, so a superseded ` +
+        "merge_group run is cancelled and never reports its required checks; scope it to the " +
+        "events whose runs are free to supersede",
+    );
+  }
+
+  // A job carries its own `concurrency:` independently of the workflow's, and
+  // cancelling there stalls the queue just as surely.
+  for (const name of required) {
+    if (cancelsEverything(jobs[name]?.concurrency)) {
+      errors.push(
+        `${path}: job ${name} sets concurrency.cancel-in-progress to an unconditional true, so ` +
+          "a superseded merge_group run is cancelled and never reports this required context",
+      );
+    }
+  }
+
+  // A queue entry's base is the tip of `main` it was built on, so the delta
+  // against it is exactly what the merge would add. The `merge_group` payload
+  // carries neither `pull_request.base.sha` nor `before`, so a plan that never
+  // reads this silently falls through to the full topology on every entry.
+  if (PLAN_JOB in jobs && !readsMergeGroupBase(jobs[PLAN_JOB])) {
+    errors.push(
+      `${path}: job ${PLAN_JOB} never reads ${MERGE_GROUP_BASE} in an expression, so a queue ` +
+        "entry has no base to scope its plan against and would verify the full topology every time",
+    );
+  }
+
+  // The ruleset matches a required context by a job's `name:`, so a job that
+  // reports one and is renamed here stops reporting it there.
+  for (const name of required) {
+    const context = jobs[name]?.name;
+    if (context === undefined) {
+      errors.push(
+        `${path}: job ${name} reports a required context but has no \`name:\`, so the ruleset ` +
+          `has no context to match; give it one of: ${REQUIRED_CONTEXTS.join(", ")}`,
+      );
+    } else if (!REQUIRED_CONTEXTS.includes(context)) {
+      errors.push(
+        `${path}: job ${name} is named "${context}", which is not a context the ruleset ` +
+          "requires; renaming a required job leaves the ruleset waiting on a context nothing " +
+          "reports. Update REQUIRED_CONTEXTS and the ruleset together, then run " +
+          "`release-gates.mjs contexts`",
+      );
+    }
+  }
+
+  return errors;
+}
+
+// The contexts `document`'s jobs report, for the graph-level check that every
+// declared one is actually produced somewhere.
+function producedContexts(document) {
+  const jobs = document?.jobs ?? {};
+  return QUEUED_CONTEXTS.filter((context) => context in jobs)
+    .map((name) => jobs[name]?.name)
+    .filter((context) => context !== undefined);
+}
+
+export function mergeQueueContractErrors(path, text) {
+  const { document, error } = parseWorkflow(path, text);
+  return error ? [error] : mergeQueueErrors(path, document);
+}
+
+// ---------------------------------------------------------------------------
 // the action-pinning contract
 // ---------------------------------------------------------------------------
 
@@ -439,15 +619,26 @@ export function actionCommentErrors(path, text) {
   return error ? [error] : commentErrors(path, document, text);
 }
 
-export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
+// Every workflow in `repositoryRoot`, parsed once, as {path, document, error}.
+function parsedWorkflows(repositoryRoot) {
   const workflows = join(repositoryRoot, ".github", "workflows");
-  if (!existsSync(workflows)) return [`.github/workflows is missing under ${repositoryRoot}`];
+  if (!existsSync(workflows)) return [];
+  return readdirSync(workflows)
+    .sort()
+    .filter((file) => /\.ya?ml$/.test(file))
+    .map((file) => ({
+      path: `.github/workflows/${file}`,
+      text: readFileSync(join(workflows, file), "utf8"),
+      ...parseWorkflow(`.github/workflows/${file}`, readFileSync(join(workflows, file), "utf8")),
+    }));
+}
+
+export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
+  if (!existsSync(join(repositoryRoot, ".github", "workflows"))) {
+    return [`.github/workflows is missing under ${repositoryRoot}`];
+  }
   const errors = [];
-  for (const file of readdirSync(workflows).sort()) {
-    if (!/\.ya?ml$/.test(file)) continue;
-    const path = `.github/workflows/${file}`;
-    const text = readFileSync(join(workflows, file), "utf8");
-    const { document, error } = parseWorkflow(path, text);
+  for (const { path, document, error, text } of parsedWorkflows(repositoryRoot)) {
     if (error) {
       errors.push(error);
       continue;
@@ -455,27 +646,120 @@ export function releaseGateGraphErrors(repositoryRoot = REPOSITORY_ROOT) {
     errors.push(
       ...contractErrors(path, document),
       ...pinErrors(path, document),
+      ...mergeQueueErrors(path, document),
       ...commentErrors(path, document, text),
     );
   }
   return errors;
 }
 
+// A declared context that nothing reports is the same stall as one that never
+// runs on `merge_group`: the ruleset waits on it forever. Deleting a required
+// job, or moving it to a workflow the walk cannot see, lands here.
+//
+// This is separate from the walk above because it is a claim about *this*
+// repository's ruleset, not about any tree of workflows — a fixture root is
+// entitled to hold one workflow and no required context at all.
+export function unreportedContextErrors(repositoryRoot = REPOSITORY_ROOT) {
+  const produced = [];
+  for (const { document } of parsedWorkflows(repositoryRoot)) {
+    if (document) produced.push(...producedContexts(document));
+  }
+  return REQUIRED_CONTEXTS.filter((context) => !produced.includes(context)).map(
+    (context) =>
+      `no job in .github/workflows reports the required context "${context}"; the ruleset would ` +
+      "wait on it forever. Remove it from REQUIRED_CONTEXTS and the ruleset together, then run " +
+      "`release-gates.mjs contexts`",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// contexts — reconcile REQUIRED_CONTEXTS with the live branch ruleset
+// ---------------------------------------------------------------------------
+
+// `check` can only hold the workflows to what this tree declares. The set that
+// actually gates a merge lives in the branch ruleset, which a workflow run
+// cannot read: reading rulesets needs Administration:read, and the token a job
+// gets tops out below that. So this half runs from a developer's or agent's
+// own credentials rather than in CI, and is the thing to run whenever either
+// side moves.
+//
+// A context required by the ruleset but absent here is the dangerous
+// direction: nothing makes it run on `merge_group`, so the first queued pull
+// request waits out the queue's check-response timeout and is evicted, and
+// every merge behind it stalls.
+export function rulesetContexts(repository) {
+  const gh = (endpoint) =>
+    JSON.parse(execFileSync("gh", ["api", endpoint], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  const contexts = new Set();
+  for (const { id } of gh(`repos/${repository}/rulesets`)) {
+    for (const rule of gh(`repos/${repository}/rulesets/${id}`).rules ?? []) {
+      if (rule.type !== "required_status_checks") continue;
+      for (const check of rule.parameters?.required_status_checks ?? []) contexts.add(check.context);
+    }
+  }
+  return [...contexts].sort();
+}
+
+// What the two sides disagree about, as [missingHere, missingThere].
+export function contextDrift(declared, required) {
+  return [
+    required.filter((context) => !declared.includes(context)),
+    declared.filter((context) => !required.includes(context)),
+  ];
+}
+
+function contexts(repository) {
+  const required = rulesetContexts(repository);
+  if (required.length === 0) {
+    console.error(
+      `contexts: ${repository} has no ruleset requiring any status check, so nothing gates a ` +
+        "merge there and a merge queue would gate nothing.",
+    );
+    process.exit(1);
+  }
+  const [unguarded, stale] = contextDrift(REQUIRED_CONTEXTS, required);
+  for (const context of unguarded) {
+    console.error(
+      `    the ruleset requires "${context}", which REQUIRED_CONTEXTS does not declare; nothing ` +
+        "holds it to running on merge_group, so a queue entry can wait on it forever",
+    );
+  }
+  for (const context of stale) {
+    console.error(
+      `    REQUIRED_CONTEXTS declares "${context}", which the ruleset does not require; either ` +
+        "the ruleset lost it or this list is stale",
+    );
+  }
+  if (unguarded.length || stale.length) {
+    console.error(`\nFAIL: ${unguarded.length + stale.length} context(s) differ between ${repository} and this tree.`);
+    process.exit(1);
+  }
+  console.log(`✓ ${repository}'s ruleset requires exactly the ${required.length} contexts REQUIRED_CONTEXTS declares.`);
+}
+
 function check() {
-  const errors = releaseGateGraphErrors();
+  const errors = [...releaseGateGraphErrors(), ...unreportedContextErrors()];
   if (errors.length) {
     console.error("release-gates: the workflows do not satisfy the release contract:");
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(
       `\nFAIL: ${errors.length} workflow-contract defect(s). Every artifact-writing job must ` +
-        `depend on ${AGGREGATE_JOB}, ${AGGREGATE_JOB} on every mandatory gate, and every action ` +
-        "on a digest carrying its version in a trailing comment.",
+        `depend on ${AGGREGATE_JOB}, ${AGGREGATE_JOB} on every mandatory gate, every action on a ` +
+        "digest carrying a version comment, and every context in REQUIRED_CONTEXTS must be reported, under that name, by a " +
+        "job that runs on merge_group.",
     );
     process.exit(1);
   }
   console.log(
     `✓ every artifact-writing job is dominated by ${AGGREGATE_JOB}, which requires all ` +
-      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a commented digest.`,
+      `${REQUIRED_GATES.length} mandatory gates; every action is pinned to a commented digest; each of ` +
+      `the ${REQUIRED_CONTEXTS.length} contexts declared in REQUIRED_CONTEXTS is reported, ` +
+      "under that name, by a job that runs on merge_group.",
+  );
+  console.log(
+    "  note: that the ruleset requires exactly those contexts is not checked here — no token " +
+      "in a workflow run can read it. Run `release-gates.mjs contexts` to reconcile the two.",
   );
 }
 
@@ -483,8 +767,9 @@ if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
   const command = process.argv[2];
   if (command === "check") check();
   else if (command === "decide") decide();
+  else if (command === "contexts") contexts(process.argv[3] ?? "codefly-dev/module-saas-starter");
   else {
-    console.error("usage: release-gates.mjs check | decide");
+    console.error("usage: release-gates.mjs check | decide | contexts [owner/repo]");
     process.exit(2);
   }
 }

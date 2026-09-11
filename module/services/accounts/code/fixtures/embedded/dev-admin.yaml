@@ -45,8 +45,12 @@ users:
     provider: email
     provider_id: dev-dana
 
+# Organization ids are pinned for the same reason as user ids: a module
+# principal grant (MODULE_PRINCIPALS) names its tenant by organization id, and a
+# committed grant can only quote an id that survives a fresh seed.
 organizations:
-  - name: Acme Corp
+  - id: 00000000-0000-7000-8000-0000000000c1
+    name: Acme Corp
     owner: admin@acme.com
     members:
       - email: alice@acme.com

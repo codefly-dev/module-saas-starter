@@ -18,7 +18,7 @@
         "additionalProperties": false,
         "required": ["type", "schema", "visibility"],
         "properties": {
-          "type": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+)+$"},
+          "type": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z0-9_]+)+$"},
           "schema": {"type": "string", "pattern": "^[^#]+\\.proto#[A-Za-z][A-Za-z0-9]*$"},
           "visibility": {"enum": ["internal", "tenant", "external"]},
           "partition": {"type": "string"},
@@ -33,7 +33,7 @@
         "additionalProperties": false,
         "required": ["type", "queue", "delivery"],
         "properties": {
-          "type": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:\\.[a-z0-9]+)+$"},
+          "type": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z0-9_]+)+$"},
           "queue": {"type": "string", "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"},
           "delivery": {"enum": ["ordered", "unordered"]}
         }

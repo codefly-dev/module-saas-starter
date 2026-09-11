@@ -24,6 +24,10 @@ type Delivery string
 const (
 	DeliveryOrdered   Delivery = "ordered"
 	DeliveryUnordered Delivery = "unordered"
+	// DeliveryWebhook is an outbound webhook endpoint. Its consumer is the shared
+	// dispatcher rather than a queue a principal claims from, so it carries an
+	// organization and an endpoint registration instead of a principal.
+	DeliveryWebhook Delivery = "webhook"
 )
 
 // Subscription is a durable declaration that a subscriber receives events
@@ -35,6 +39,12 @@ type Subscription struct {
 	TypePattern           string
 	Queue                 string
 	Delivery              Delivery
+	// OrgID is set only for DeliveryWebhook and confines the subscription to one
+	// tenant's events; a module subscription is cross-tenant and leaves it empty.
+	OrgID string
+	// WebhookSubscriptionID names the endpoint registration a DeliveryWebhook
+	// subscription delivers to.
+	WebhookSubscriptionID string
 }
 
 // Leased is one at-least-once delivery of an envelope, fenced by an opaque

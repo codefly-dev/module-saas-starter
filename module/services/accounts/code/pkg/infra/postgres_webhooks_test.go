@@ -287,63 +287,6 @@ func TestDeleteWebhookSubscription(t *testing.T) {
 	}))
 }
 
-func TestGetActiveWebhookSubscriptions(t *testing.T) {
-	userID := seedUser(t)
-	orgID := seedOrg(t, userID)
-
-	activeSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/active", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: true,
-	}
-	inactiveSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/inactive", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: false,
-	}
-	otherEventSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: orgID,
-		URL: "https://example.com/other", SecretEncrypted: "encrypted:sec",
-		Events: []string{"org.created"}, Active: true,
-	}
-	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, activeSub))
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, inactiveSub))
-		require.NoError(t, testStore.CreateWebhookSubscription(ctx, otherEventSub))
-		return nil
-	}))
-
-	otherOwner := seedUser(t)
-	otherOrgID := seedOrg(t, otherOwner)
-	foreignSub := &business.WebhookSubscription{
-		ID: business.NewIDString(), OrgID: otherOrgID,
-		URL: "https://example.com/foreign", SecretEncrypted: "encrypted:sec",
-		Events: []string{"user.registered"}, Active: true,
-	}
-	require.NoError(t, testStore.WithOrgTx(testCtx, otherOrgID, func(ctx context.Context) error {
-		return testStore.CreateWebhookSubscription(ctx, foreignSub)
-	}))
-
-	// Read under the control plane deliberately: that is the scope audit fan-out
-	// runs in for platform-admin and other privileged writes, and there RLS
-	// scopes nothing. The org argument is what must exclude the other tenant.
-	var subs []*business.WebhookSubscription
-	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		s, err := testStore.GetActiveWebhookSubscriptions(ctx, orgID, "user.registered")
-		subs = s
-		return err
-	}))
-
-	ids := make(map[string]bool)
-	for _, s := range subs {
-		ids[s.ID] = true
-	}
-	require.True(t, ids[activeSub.ID], "active sub with matching event should be returned")
-	require.False(t, ids[inactiveSub.ID], "inactive sub should not be returned")
-	require.False(t, ids[otherEventSub.ID], "sub with different event should not be returned")
-	require.False(t, ids[foreignSub.ID], "another tenant's sub must be excluded with RLS bypassed")
-}
-
 func TestCreateAndListWebhookDeliveries(t *testing.T) {
 	userID := seedUser(t)
 	orgID := seedOrg(t, userID)
@@ -396,10 +339,22 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 		Events: []string{eventType}, Active: true,
 	}
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		return testStore.CreateWebhookSubscription(ctx, sub)
+		if err := testStore.CreateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		return testStore.SyncWebhookEventSubscriptions(ctx, orgID, sub.ID, sub.Events)
 	}))
 
-	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	relayPool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(relayPool.Close)
+	transport := infra.NewPostgresEventTransport(
+		infra.NewPostgresJobStore(relayPool), relayPool, "audit-webhook-"+business.NewIDString(), time.Second,
+		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(testStore)),
+	)
+
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(transport))
 	require.NoError(t, err)
 	emitter.Emit(testCtx, business.AuditEntry{
 		ID: eventID, ActorID: userID, ActorType: "user",
@@ -407,6 +362,11 @@ func TestDurableAuditEmitterCreatesWebhookOutboxAtomically(t *testing.T) {
 		Payload:   map[string]any{"source": "integration-test"},
 		CreatedAt: time.Now().UTC(),
 	})
+	// The audit record and its event commit together; fan-out is the relay's
+	// work afterwards, which is what the emitter no longer does itself.
+	relayed, err := transport.RelayOnce(testCtx)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, relayed, 1)
 
 	var deliveries []*business.WebhookDelivery
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {

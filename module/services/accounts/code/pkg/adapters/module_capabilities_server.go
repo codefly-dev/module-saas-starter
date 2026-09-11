@@ -52,7 +52,7 @@ func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
 
 // MintModuleWorkContext issues that Work Context. Like MintModuleRegistration it
 // takes none itself — this is where a module obtains its identity, so it
-// authenticates with the registration secret its composition provisioned and the
+// authenticates with the identity secret its composition provisioned and the
 // principal it acts as is derived from the prefix that secret is bound to.
 func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, req *gen.ModuleMintWorkContextRequest) (*gen.ModuleMintWorkContextResponse, error) {
 	if err := Validate(req); err != nil {
@@ -62,6 +62,18 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 	if err != nil {
 		if errors.Is(err, business.ErrModuleRegistrationDenied) {
 			return nil, status.Error(codes.PermissionDenied, "module work context denied")
+		}
+		return nil, err
+	}
+	// The declared tenant is checked against the database before anything is
+	// signed. Everything upstream validates its *form* only, and the capability
+	// seals the tenant, so an id that names no organization would mint cleanly
+	// and then bind every call to a tenant that is not there — silently, since
+	// the audit and event tables carry no foreign key to organizations. Fail
+	// closed here instead: a module cannot act on a tenant that does not exist.
+	if err := service.VerifyModuleTenant(ctx, authority); err != nil {
+		if errors.Is(err, business.ErrModuleTenantUnknown) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
 		}
 		return nil, err
 	}

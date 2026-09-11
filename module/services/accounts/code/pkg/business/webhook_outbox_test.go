@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
+	"accounts/pkg/events"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
-	webhooksv1 "accounts/pkg/gen/saas/webhooks/v1"
 
 	"google.golang.org/protobuf/proto"
 )
@@ -21,6 +22,10 @@ type burstOutboxStore struct {
 	sub        *WebhookSubscription
 }
 
+func (s *burstOutboxStore) SyncWebhookEventSubscriptions(context.Context, string, string, []string) error {
+	return nil
+}
+
 func (s *burstOutboxStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
 	return fn(ctx)
 }
@@ -30,13 +35,6 @@ func (s *burstOutboxStore) InsertAuditEvent(_ context.Context, entry AuditEntry)
 	defer s.mu.Unlock()
 	s.audits[entry.ID] = struct{}{}
 	return nil
-}
-
-func (s *burstOutboxStore) GetActiveWebhookSubscriptions(_ context.Context, orgID, _ string) ([]*WebhookSubscription, error) {
-	if s.sub.OrgID != orgID {
-		return nil, nil
-	}
-	return []*WebhookSubscription{s.sub}, nil
 }
 
 func (s *burstOutboxStore) CreateWebhookDelivery(_ context.Context, delivery *WebhookDelivery) error {
@@ -67,12 +65,13 @@ func TestDurableAuditEmitterBurstHasNoQueueSaturationLoss(t *testing.T) {
 		audits:     map[string]struct{}{},
 		deliveries: map[string]struct{}{},
 		jobs:       map[string]*jobsv1.EnqueueJobRequest{},
-		sub: &WebhookSubscription{
-			ID:    "00000000-0000-0000-0000-000000000002",
-			OrgID: burstOrgID,
-		},
 	}
-	emitter, err := NewDurableAuditEmitter(store, store)
+	queue := "burst.events.test"
+	transport := events.NewFakeTransport([]events.Subscription{{
+		ID: NewIDString(), SubscriberPrincipalID: NewIDString(),
+		TypePattern: "saas.*", Queue: queue, Delivery: events.DeliveryUnordered,
+	}}, time.Minute)
+	emitter, err := NewDurableAuditEmitter(store, store, WithDomainEventTransport(transport))
 	if err != nil {
 		t.Fatalf("NewDurableAuditEmitter: %v", err)
 	}
@@ -86,30 +85,43 @@ func TestDurableAuditEmitterBurstHasNoQueueSaturationLoss(t *testing.T) {
 			defer wait.Done()
 			emitter.Emit(t.Context(), AuditEntry{
 				ID: NewIDString(), OrgID: burstOrgID,
-				ActorType: "system", EventType: EventType(fmt.Sprintf("burst.event.%d", i)),
+				ActorType: "system", EventType: EventSessionRevoked,
+				ResourceID: fmt.Sprintf("burst-%d", i),
 			})
 		}()
 	}
 	wait.Wait()
 
 	store.mu.Lock()
-	defer store.mu.Unlock()
-	if len(store.audits) != eventCount || len(store.deliveries) != eventCount || len(store.jobs) != eventCount {
-		t.Fatalf("audits/deliveries/jobs = %d/%d/%d, want %d each",
-			len(store.audits), len(store.deliveries), len(store.jobs), eventCount)
+	audits := len(store.audits)
+	store.mu.Unlock()
+	if audits != eventCount {
+		t.Fatalf("audits committed = %d, want %d", audits, eventCount)
 	}
-	for deliveryID, request := range store.jobs {
-		job := request.GetJob()
-		if job.GetDirection() != jobsv1.JobDirection_JOB_DIRECTION_OUTBOX ||
-			job.GetQueue() != OutboundWebhookQueue || job.GetIdempotencyKey() != deliveryID {
-			t.Fatalf("invalid outbound job routing for delivery %s", deliveryID)
+
+	// A claim is capped at one batch, so the subscriber drains and acks until the
+	// queue is empty — every emit has to show up exactly once across the drain.
+	seen := map[string]struct{}{}
+	for {
+		leased, err := transport.Claim(t.Context(), queue, eventCount)
+		if err != nil {
+			t.Fatalf("Claim: %v", err)
 		}
-		payload := &webhooksv1.OutboundWebhookJob{}
-		if err := proto.Unmarshal(job.GetPayload(), payload); err != nil {
-			t.Fatalf("decode outbound job: %v", err)
+		if len(leased) == 0 {
+			break
 		}
-		if payload.GetDeliveryId() != deliveryID || len(payload.GetRawBody()) == 0 {
-			t.Fatalf("invalid outbound workload for delivery %s", deliveryID)
+		for _, delivery := range leased {
+			id := delivery.Envelope.GetId()
+			if _, duplicate := seen[id]; duplicate {
+				t.Fatalf("event %s published more than once", id)
+			}
+			seen[id] = struct{}{}
+			if err := transport.Ack(t.Context(), delivery.Token); err != nil {
+				t.Fatalf("Ack: %v", err)
+			}
 		}
+	}
+	if len(seen) != eventCount {
+		t.Fatalf("published domain events = %d, want %d", len(seen), eventCount)
 	}
 }

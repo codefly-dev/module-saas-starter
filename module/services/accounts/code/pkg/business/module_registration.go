@@ -92,6 +92,10 @@ func (s *Service) SetModuleRegistrar(minter ModuleRegistrationMinter, secrets ma
 	}
 }
 
+func (s *Service) SetModuleIdentitySecrets(secrets map[string][sha256.Size]byte) {
+	s.moduleIdentity = &registrationAuthority{secrets: secrets}
+}
+
 // SetSolutionRegistrar wires solution-registration issuance, from the separate
 // declaration that governs who may publish a host-origin remote.
 func (s *Service) SetSolutionRegistrar(minter SolutionRegistrationMinter, secrets map[string][sha256.Size]byte) {
@@ -204,14 +208,15 @@ type ModuleWorkContextAuthority struct {
 }
 
 // ModuleAuthorizeWorkContext resolves the identity a composed module may be
-// issued a Work Context for. It authenticates with the same registration secret
-// the credential exchange uses, its principal is derived from the prefix that
-// secret is bound to, and its tenant is the one the deployment declared — so a
+// issued a Work Context for. It authenticates with the identity secret,
+// its principal is derived from the prefix that secret is bound to, and its
+// tenant is the one the deployment declared — so a
 // module can never name a tenant it was not granted by asking for it.
 func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkContextAuthority, error) {
-	if s.moduleRegistrar == nil ||
+	authority := s.moduleIdentity
+	if authority == nil ||
 		!registrationIdentityPattern.MatchString(prefix) ||
-		!s.moduleRegistrar.authorize(prefix, secret) {
+		!authority.authorize(prefix, secret) {
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	principalID := ModulePrincipalID(prefix)
@@ -220,6 +225,43 @@ func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkC
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	return ModuleWorkContextAuthority{PrincipalID: principalID, Tenant: grant.Tenant}, nil
+}
+
+// ErrModuleTenantUnknown reports that a module principal's declared tenant
+// names no organization in this database.
+var ErrModuleTenantUnknown = errors.New("module principal tenant names no organization")
+
+// VerifyModuleTenant confirms the tenant a grant declares actually exists
+// before a capability is sealed to it.
+//
+// ParseModulePrincipalRegistry can only check the tenant's *form* — it runs at
+// boot, from configuration, with no database to ask. Nothing after it checked
+// either: ModuleAuthorizeWorkContext copies the value through (it takes no
+// ctx, so it cannot ask), and authorizeTenant compares the sealed tenant
+// against itself, which always passes. A tenant uuid that names no
+// organization — a typo, or an id carried over from another environment —
+// therefore signed cleanly and bound every call to a tenant nobody can see.
+//
+// That failure is silent all the way down: audit_events.org_id and
+// domain_events.tenant_id are bare UUID columns with no foreign key to
+// organizations, so the writes succeed and nothing ever raises. The mint is
+// the last point that holds both the tenant and a database handle, so it is
+// where the check belongs — and it closes every route at once, including
+// configuration this module never generated.
+func (s *Service) VerifyModuleTenant(ctx context.Context, authority ModuleWorkContextAuthority) error {
+	var exists bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var checkErr error
+		exists, checkErr = s.store.OrganizationIDExists(ctx, authority.Tenant)
+		return checkErr
+	}); err != nil {
+		return err
+	}
+	if !exists {
+		return fmt.Errorf("%w: principal %s declares tenant %s",
+			ErrModuleTenantUnknown, authority.PrincipalID, authority.Tenant)
+	}
+	return nil
 }
 
 // RecordModuleWorkContextMint commits the durable record of an issued module

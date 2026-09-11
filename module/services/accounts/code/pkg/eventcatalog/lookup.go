@@ -2,6 +2,9 @@ package eventcatalog
 
 import "strings"
 
+// PlatformAuditNamespace is reserved for audit events delivered only to tenant-owned webhooks.
+const PlatformAuditNamespace = "saas"
+
 // Namespace returns the leading dotted segment of an event type — the namespace
 // a producer must own to publish it. "reference.console.viewed" → "reference".
 // A type with no dot is its own namespace; an empty type yields "".
@@ -41,6 +44,15 @@ func IsInternalPublished(eventType string) bool {
 	return ok && e.Visibility == "internal"
 }
 
+// IsExternalPublished reports whether the event type is declared with external
+// visibility — the only kind an outbound webhook may carry. A type absent from
+// the catalog is not external: eligibility is granted by declaration, never by
+// omission, so an unregistered type is never delivered outside the platform.
+func IsExternalPublished(eventType string) bool {
+	e, ok := publishedIndex[eventType]
+	return ok && e.Visibility == "external"
+}
+
 // InternalPublishedTypes returns the types of every published event declared
 // with internal visibility. The Subscribe authority gate rejects a solution
 // principal whose type pattern would match any of these, so an internal event
@@ -67,6 +79,22 @@ func UnorderedPublishedTypes() []string {
 	var out []string
 	for _, e := range published {
 		if e.Partition == "" {
+			out = append(out, e.Type)
+		}
+	}
+	return out
+}
+
+// UnorderedPublishedTypesInNamespace is UnorderedPublishedTypes confined to one
+// namespace. A subscription pattern is either an exact type or a single trailing
+// ".*", so every type it can match shares its leading segment — scanning the rest
+// can only ever fail to match. The distinction matters because the platform
+// namespace alone contributes one unordered type per registered audit event, and
+// that set grows with the registry.
+func UnorderedPublishedTypesInNamespace(namespace string) []string {
+	var out []string
+	for _, e := range published {
+		if e.Partition == "" && Namespace(e.Type) == namespace {
 			out = append(out, e.Type)
 		}
 	}

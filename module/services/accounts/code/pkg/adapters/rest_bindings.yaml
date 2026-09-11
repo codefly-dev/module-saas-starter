@@ -1,5 +1,7 @@
 version: v1
 services:
+  AccessibleScopeService:
+    kind: generated
   APIKeyService:
     kind: generated
   AuditService:

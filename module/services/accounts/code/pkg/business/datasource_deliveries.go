@@ -49,6 +49,14 @@ const (
 	// content ticket); v1 was raw bytes with routing only in attributes.
 	datasourceChangeSetSchemaVersion = 2
 
+	// datasourceReconcileSchemaVersion versions the reconcile *request* message,
+	// which is a control message and not a change set: its attributes name the
+	// source and the mode and its body is empty. It must not advertise
+	// datasourceChangeSetSchemaVersion — that versions the per-file payload a
+	// consumer decodes, so reusing it would describe an empty body as a v2
+	// change-set file.
+	datasourceReconcileSchemaVersion = 1
+
 	attrDeliveryID    = "datasource.delivery_id"
 	attrChangeSet     = "datasource.change_set"
 	attrReconcileMode = "datasource.reconcile_mode"
@@ -201,7 +209,7 @@ func DatasourceDeliveryOrderingKey(sourceID string) *jobsv1.JobOrderingKey {
 // is a no-op success; a malformed payload is terminal; a GitHub or store failure
 // stays retryable.
 func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
-	return func(ctx context.Context, envelope *jobsv1.JobEnvelope) error {
+	return func(ctx context.Context, envelope *jobsv1.JobEnvelope) (resultErr error) {
 		if envelope.GetQueue() != DatasourceDeliveryQueue {
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery job routing", false)
 		}
@@ -216,6 +224,22 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		if source == nil {
 			return nil
 		}
+		defer func() {
+			if resultErr != nil {
+				resultErr = datasourceProcessingError(resultErr)
+				trigger := "reconcile"
+				if envelope.GetTopic() == datasourcePushTopic {
+					trigger = "webhook"
+				} else if envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce {
+					trigger = "manual"
+				}
+				fields := datasourceFailureFields(resultErr, source.Repo, trigger)
+				fields["job_id"] = envelope.GetId()
+				fields["attempt"] = int(envelope.GetAttemptCount())
+				s.emit(ctx, source.ID, "system", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, fields)
+			}
+		}()
+
 		// Only GitHub sources are enqueued here today, but the compiler and
 		// reconcile paths assume a GitHub token + repo; a non-GitHub source would
 		// never become processable, so drop it terminally rather than driving
@@ -263,7 +287,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 
 	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
-		return "", w.Wrapf(err, "decrypt access token")
+		return "", datasourceCredentialError(err)
 	}
 	client := s.newGitHubClient(token)
 
@@ -352,7 +376,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	}
 	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
-		return false, w.Wrapf(err, "decrypt access token")
+		return false, datasourceCredentialError(err)
 	}
 	client := s.newGitHubClient(token)
 
@@ -688,7 +712,9 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 			Source:         datasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
-			SchemaVersion:  datasourceChangeSetSchemaVersion,
+			SchemaVersion:  datasourceReconcileSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,

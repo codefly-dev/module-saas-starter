@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 )
 
 type Service struct {
@@ -36,6 +37,7 @@ type Service struct {
 	slack                     *SlackNotifier // optional: sends critical notifications to Slack
 	oauthState                *auth.OAuthStateSigner
 	moduleRegistrar           *registrationAuthority
+	moduleIdentity            *registrationAuthority
 	solutionRegistrar         *registrationAuthority
 	oauthPolicy               *auth.OAuthRequestPolicy
 	webhookJobs               jobs.Producer // request-scoped, transactional outbound producer
@@ -597,6 +599,20 @@ func (s *Service) ResolveIdentity(ctx context.Context, req *gen.ResolveIdentityR
 // User authz is at the handler — only authenticated users can create
 // orgs; abuse is rate-limited.
 func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest) (*gen.CreateOrganizationResponse, error) {
+	return s.CreateFixtureOrganization(ctx, ownerID, req, "")
+}
+
+// CreateFixtureOrganization is CreateOrganization with a caller-chosen id, for
+// the fixture seeder only: a fixture pins its organizations' uuids so committed
+// configuration (a module principal's tenant) can name one that survives a
+// reseed. An empty id mints one, exactly as CreateOrganization does.
+//
+// The id is validated here rather than trusted from the caller. The seeder does
+// validate it, but this method is exported next to CreateOrganization and takes
+// a primary key as an argument, so it has to be safe for whoever calls it next —
+// a tenant id that reaches the database malformed is not recoverable by anything
+// downstream.
+func (s *Service) CreateFixtureOrganization(ctx context.Context, ownerID string, req *gen.CreateOrganizationRequest, id string) (*gen.CreateOrganizationResponse, error) {
 	slug := req.Slug
 	if slug == "" {
 		slug = Slugify(req.Name)
@@ -604,8 +620,20 @@ func (s *Service) CreateOrganization(ctx context.Context, ownerID string, req *g
 	if slug == "" {
 		return nil, wool.Get(ctx).In("CreateOrganization").NewError("organization name yields an empty slug")
 	}
+	if id == "" {
+		id = NewIDString()
+	} else {
+		parsed, err := ParseID(id)
+		if err != nil {
+			return nil, wool.Get(ctx).In("CreateFixtureOrganization").Wrapf(err, "organization id must be a uuid")
+		}
+		if parsed == uuid.Nil {
+			return nil, wool.Get(ctx).In("CreateFixtureOrganization").NewError("organization id must not be the nil uuid")
+		}
+		id = parsed.String()
+	}
 	org := &gen.Organization{
-		Id:      NewIDString(),
+		Id:      id,
 		Name:    req.Name,
 		Slug:    slug,
 		OwnerId: ownerID,

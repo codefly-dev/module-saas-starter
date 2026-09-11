@@ -272,7 +272,7 @@ there.
 | Audit **emission** | stdout JSON | ↔ Postgres `audit_events` + typed registry (see §1.8); async tee to a swappable compliance sink + tiered retention planned ([ADR 0006](./module/docs/adr/0006-audit-sink-and-retention-tiers.md)) |
 | Audit/analytics **query** | Hand-written BigQuery SQL (❌ lock-in) | ✅ SQL over the same Postgres — no warehouse dialect to lock into |
 | Document/DB store | Firestore-first (❌) | ✅ Postgres-first |
-| Eventing | Pub/Sub only (❌) | 🟡 Durable Postgres jobs (inbox/outbox); typed domain-event contract standardized over the outbox behind a Transport port ([module/EVENTS.md](./module/EVENTS.md)); pub/sub relay and external broker adapter sequenced, not built |
+| Eventing | Pub/Sub only (❌) | 🟡 Durable Postgres jobs (inbox/outbox); typed domain-event contract over the outbox behind a Transport port, with the pub/sub relay, subscriptions and fan-out live and outbound webhooks delivered as subscribers ([module/EVENTS.md](./module/EVENTS.md)); an external broker adapter is sequenced, not built |
 | Scheduling + leases + idempotency | Zero abstraction (❌) | ✅ Leased workers + idempotency in the jobs layer ([module/JOBS.md](./module/JOBS.md)) |
 | Consumer IdP | Swappable in practice (⚠️) | ✅ Multi-provider adapters + own session JWT as the primary path |
 | LLM access | Provider port + capability flags | ⬜ Not a starter concern |

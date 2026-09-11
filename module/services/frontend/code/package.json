@@ -35,9 +35,9 @@
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",
 		"@bufbuild/protobuf": "^2.11.0",
-		"@codefly-dev/saas-sdk": "0.2.2",
-		"@codefly-dev/saas-ui": "0.2.2",
-		"@codefly-dev/ui": "0.2.2",
+		"@codefly-dev/saas-sdk": "0.2.3",
+		"@codefly-dev/saas-ui": "0.2.3",
+		"@codefly-dev/ui": "0.2.3",
 		"@codefly/saas-plugin-contract": "2.1.0",
 		"@codefly/saas-plugin-manifest": "0.1.0",
 		"@codefly/saas-plugin-react": "0.4.1",

@@ -31,13 +31,14 @@ func run(arguments []string) error {
 	input := flags.String("input", os.Getenv("CODEFLY_COMPOSITION_INPUT"), "Core composition input JSON")
 	moduleRoot := flags.String("module", "..", "module package root")
 	output := flags.String("output", "..", "composed module projection root")
-	var frontend, settings, permissions, fixtures, topology, events paths
+	var frontend, settings, permissions, fixtures, topology, events, baseEvents paths
 	flags.Var(&frontend, "frontend", "frontend contribution document")
 	flags.Var(&settings, "settings", "settings contribution document")
 	flags.Var(&permissions, "permissions", "permissions contribution document")
 	flags.Var(&fixtures, "fixtures", "fixtures contribution document")
 	flags.Var(&topology, "topology", "topology contribution document")
 	flags.Var(&events, "events", "events contribution document")
+	flags.Var(&baseEvents, "base-events", "events contribution document owned by this module, which may publish under a reserved namespace")
 	if err := flags.Parse(arguments); err != nil {
 		return err
 	}
@@ -54,5 +55,6 @@ func run(arguments []string) error {
 		Fixtures:    fixtures,
 		Topology:    topology,
 		Events:      events,
+		BaseEvents:  baseEvents,
 	})
 }

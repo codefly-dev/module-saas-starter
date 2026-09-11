@@ -152,11 +152,44 @@ type Store interface {
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
+	// OrganizationIDExists reports whether any organizations row already holds
+	// this id, so a fixture declaring one can tell a reusable row from a
+	// primary key another organization has claimed.
+	OrganizationIDExists(ctx context.Context, id string) (bool, error)
+	// GetOrganizationBySlug resolves the organization holding a slug, or nil
+	// when the slug is free. The slug is globally unique (idx_organizations_slug
+	// is UNIQUE on LOWER(slug)), so this answers "would creating an
+	// organization of this name collide, and with which id" without needing to
+	// know who owns it — which is what the fixture seeder must decide before it
+	// writes anything.
+	GetOrganizationBySlug(ctx context.Context, slug string) (*gen.Organization, error)
 	GetOrganization(ctx context.Context, id string) (*gen.Organization, error)
 	ListOrganizationsForUser(ctx context.Context, userID string) ([]*gen.Organization, error)
 	AddOrgMember(ctx context.Context, orgID string, userID string, role string) error
 	OrgMemberExists(ctx context.Context, orgID string, userID string) (bool, error)
 	RemoveOrgMember(ctx context.Context, orgID string, userID string) error
+	// CountOrgAdministrators returns how many eligible administrative
+	// memberships the organization has, and how many of those are held by
+	// somebody other than excludeUserID. Eligible means the membership carries
+	// an administrative role AND the identity behind it can still authenticate:
+	// a soft-deleted or suspended user administers nothing, so counting their
+	// membership would let the last usable administrator be removed.
+	//
+	// Call it under LockOrgAdministration — on its own it is only a read.
+	CountOrgAdministrators(ctx context.Context, orgID string, excludeUserID string) (int, int, error)
+	// LockOrgAdministration serializes every change to one organization's
+	// administrative standing, whichever member it names: a role upsert, a
+	// demotion, or a removal. Callers take it before reading the roster the
+	// decision depends on and hold it for the rest of the transaction, so two
+	// requests cannot each observe the same two administrators and each
+	// remove one.
+	//
+	// Deliberately coarser than LockOrgMembership: the invariant is a property
+	// of the organization, not of one member, so a per-pair lock does not
+	// serialize the contenders that violate it. Lock order when a path takes
+	// more than one: LockOrgAdministration -> LockOrgMembership ->
+	// LockEntitlementQuota.
+	LockOrgAdministration(ctx context.Context, orgID string) error
 	// LockOrgMembership serializes every mutation of one (organization, user)
 	// authority pair. Callers hold it for the whole transaction that writes
 	// the membership row and the team memberships that depend on it, so an
@@ -379,11 +412,11 @@ type Store interface {
 	UpdateWebhookSubscription(ctx context.Context, sub *WebhookSubscription) error
 	DeleteWebhookSubscription(ctx context.Context, id string) error
 	ListWebhookSubscriptions(ctx context.Context, orgID string) ([]*WebhookSubscription, error)
-	// GetActiveWebhookSubscriptions returns the org's active subscriptions for an
-	// event type. orgID is an explicit predicate rather than a reliance on RLS:
-	// audit fan-out runs inside its mutation's transaction, and a security
-	// mutation whose transaction is the control plane reads with RLS bypassed.
-	GetActiveWebhookSubscriptions(ctx context.Context, orgID, eventType string) ([]*WebhookSubscription, error)
+	// SyncWebhookEventSubscriptions makes an endpoint registration's subscription
+	// rows match the event names it is registered for. Delivery is driven by
+	// those rows, so the relay fans an event out to an endpoint only through a
+	// subscription this created.
+	SyncWebhookEventSubscriptions(ctx context.Context, orgID, webhookSubscriptionID string, eventNames []string) error
 	CreateWebhookDelivery(ctx context.Context, delivery *WebhookDelivery) error
 	GetWebhookDelivery(ctx context.Context, id string) (*WebhookDelivery, error)
 	ListWebhookDeliveries(ctx context.Context, subscriptionID string, pageSize int) ([]*WebhookDelivery, error)

@@ -100,7 +100,7 @@ func TestListMyAccessibleScopesUsesBearerSubject(t *testing.T) {
 	store := &layeredAuthzStore{role: gen.OrgRole_ORG_ROLE_MEMBER}
 	installLayeredAuthzService(t, store)
 
-	resp, err := (&PermServer{}).ListMyAccessibleScopes(
+	resp, err := (&AccessibleScopeServer{}).ListMyAccessibleScopes(
 		stampVerifiedIdentity(context.Background(), layeredActorID, layeredOrgID, auth.Assurance{}),
 		&gen.ListMyAccessibleScopesRequest{OrgId: layeredOrgID, ResourceType: "doc", Action: "read"},
 	)
@@ -119,7 +119,7 @@ func TestListMyAccessibleScopesRejectsNonMember(t *testing.T) {
 	installLayeredAuthzService(t, store)
 
 	const otherOrg = "019f6bf7-9999-7aaa-8bbb-cccccccccccc"
-	_, err := (&PermServer{}).ListMyAccessibleScopes(
+	_, err := (&AccessibleScopeServer{}).ListMyAccessibleScopes(
 		stampVerifiedIdentity(context.Background(), layeredActorID, otherOrg, auth.Assurance{}),
 		&gen.ListMyAccessibleScopesRequest{OrgId: otherOrg, ResourceType: "doc", Action: "read"},
 	)

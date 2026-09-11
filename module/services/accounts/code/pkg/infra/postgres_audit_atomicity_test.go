@@ -2,13 +2,17 @@ package infra_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/infra"
 )
 
 // A security mutation and the record of it are one fact. These tests hold that
@@ -49,16 +53,41 @@ func seedWebhookSubscription(t *testing.T, orgID, eventType string) string {
 	t.Helper()
 	id := business.NewIDString()
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		return testStore.CreateWebhookSubscription(ctx, &business.WebhookSubscription{
+		if err := testStore.CreateWebhookSubscription(ctx, &business.WebhookSubscription{
 			ID:              id,
 			OrgID:           orgID,
 			URL:             "https://example.com/hooks/" + id,
 			SecretEncrypted: "secret",
 			Events:          []string{eventType},
 			Active:          true,
-		})
+		}); err != nil {
+			return err
+		}
+		return testStore.SyncWebhookEventSubscriptions(ctx, orgID, id, []string{eventType})
 	}))
 	return id
+}
+
+// auditRelayTransport is the events transport the emitter publishes into and the
+// relay delivers from, wired to the outbound dispatcher so a published event
+// reaches a subscribed endpoint.
+func auditRelayTransport(t *testing.T) *infra.PostgresEventTransport {
+	t.Helper()
+	pool, err := infra.NewJobWorkerPool(testCtx)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	return infra.NewPostgresEventTransport(
+		infra.NewPostgresJobStore(pool), pool, "audit-atomicity-"+business.NewIDString(), time.Second,
+		infra.WithWebhookRelay(infra.NewPostgresWebhookRelay(testStore)),
+	)
+}
+
+// rejectingEventTransport fails the publish that the audit write stages beside
+// itself, standing in for an events subsystem that cannot accept the fact.
+type rejectingEventTransport struct{ events.Transport }
+
+func (rejectingEventTransport) Publish(context.Context, events.TxHandle, *events.EventEnvelope) error {
+	return errors.New("publish rejected")
 }
 
 func createRoleRequest(orgID string) *gen.CreateRoleRequest {
@@ -87,14 +116,18 @@ func TestSecurityMutation_AuditFailureRollsBackTheDomainWrite(t *testing.T) {
 		"no audit row may survive the rolled-back mutation")
 }
 
-// TestSecurityMutation_CommitsDomainAuditAndFanOutTogether is the positive half:
-// on success all three land, in one transaction.
-func TestSecurityMutation_CommitsDomainAuditAndFanOutTogether(t *testing.T) {
+// TestSecurityMutation_CommitsDomainAuditAndEventTogether is the positive half:
+// on success the mutation, its record, and the event that carries it to
+// subscribers all land in one transaction. Delivery is the relay's work
+// afterwards, so the endpoint's history appears once the relay has run.
+func TestSecurityMutation_CommitsDomainAuditAndEventTogether(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 	subscriptionID := seedWebhookSubscription(t, orgID, string(business.EventRoleCreated))
 
-	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	transport := auditRelayTransport(t)
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(transport))
 	require.NoError(t, err)
 	service := auditedService(t, emitter)
 
@@ -104,30 +137,38 @@ func TestSecurityMutation_CommitsDomainAuditAndFanOutTogether(t *testing.T) {
 	require.Equal(t, 1, countRows(t, `SELECT count(*) FROM roles WHERE id = $1`, response.GetRole().GetId()))
 	require.Equal(t, 1, countAuditEvents(t, string(business.EventRoleCreated), response.GetRole().GetId()))
 	require.Equal(t, 1, countRows(t,
+		`SELECT count(*) FROM domain_events WHERE type = $1 AND tenant_id = $2`,
+		string(business.EventRoleCreated), orgID),
+		"the event must be published from the mutation's own transaction")
+
+	_, err = transport.RelayOnce(testCtx)
+	require.NoError(t, err)
+	require.Equal(t, 1, countRows(t,
 		`SELECT count(*) FROM webhook_deliveries WHERE subscription_id = $1`, subscriptionID),
-		"the subscribed endpoint must have a durable delivery from the same transaction")
+		"the subscribed endpoint receives the event through the relay")
 }
 
-// TestSecurityMutation_FanOutFailureRollsBackDomainAndAudit injects the failure
-// one step later than the audit insert: the audit row is staged, the outbox
-// enqueue fails, and nothing at all commits — no half-written audit/delivery set.
-func TestSecurityMutation_FanOutFailureRollsBackDomainAndAudit(t *testing.T) {
+// TestSecurityMutation_PublishFailureRollsBackDomainAndAudit injects the failure
+// one step later than the audit insert: the audit row is staged, the publish
+// fails, and nothing at all commits — no record of a fact that no subscriber can
+// ever be told about.
+func TestSecurityMutation_PublishFailureRollsBackDomainAndAudit(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
-	subscriptionID := seedWebhookSubscription(t, orgID, string(business.EventRoleCreated))
 
-	emitter, err := business.NewDurableAuditEmitter(testStore, rejectingWebhookJobProducer{})
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(rejectingEventTransport{}))
 	require.NoError(t, err)
 	service := auditedService(t, emitter)
 
 	_, err = service.CreateRole(testCtx, owner, createRoleRequest(orgID))
-	require.Error(t, err, "a fan-out that cannot be enqueued must fail the mutation")
+	require.Error(t, err, "an event that cannot be published must fail the mutation")
 
 	require.Zero(t, countRows(t, `SELECT count(*) FROM roles WHERE org_id = $1`, orgID))
 	require.Zero(t, countRows(t, `SELECT count(*) FROM audit_events WHERE org_id = $1`, orgID),
-		"the staged audit row must roll back with the fan-out")
+		"the staged audit row must roll back with the publish")
 	require.Zero(t, countRows(t,
-		`SELECT count(*) FROM webhook_deliveries WHERE subscription_id = $1`, subscriptionID))
+		`SELECT count(*) FROM domain_events WHERE tenant_id = $1`, orgID))
 }
 
 // TestSecurityMutation_CancelledRequestCommitsNothing covers the crash boundary
@@ -194,7 +235,9 @@ func TestSecurityMutation_RetriedIdempotentWriteRecordsItOnce(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
 
-	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	transport := auditRelayTransport(t)
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(transport))
 	require.NoError(t, err)
 	service := auditedService(t, emitter)
 
@@ -214,10 +257,10 @@ func TestSecurityMutation_RetriedIdempotentWriteRecordsItOnce(t *testing.T) {
 		"a repeated revoke changes nothing, so it must add no second revocation record")
 }
 
-// TestSecurityMutation_FanOutStaysWithinTheEventTenant guards the widening this
-// change makes: a control-plane security mutation reads webhook subscriptions
-// with RLS bypassed, so the fan-out must scope itself to the event's own tenant
-// rather than trusting the policy to do it.
+// TestSecurityMutation_FanOutStaysWithinTheEventTenant guards the tenant gate the
+// relay applies: it resolves subscriptions across every tenant with RLS
+// bypassed, so the subscription's own org is what confines a control-plane
+// security mutation's event to the tenant it happened in.
 func TestSecurityMutation_FanOutStaysWithinTheEventTenant(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)
@@ -227,7 +270,9 @@ func TestSecurityMutation_FanOutStaysWithinTheEventTenant(t *testing.T) {
 	subscriptionID := seedWebhookSubscription(t, orgID, string(business.EventPrincipalRevoked))
 	foreignSubscriptionID := seedWebhookSubscription(t, otherOrgID, string(business.EventPrincipalRevoked))
 
-	emitter, err := business.NewDurableAuditEmitter(testStore, testStore)
+	transport := auditRelayTransport(t)
+	emitter, err := business.NewDurableAuditEmitter(testStore, testStore,
+		business.WithDomainEventTransport(transport))
 	require.NoError(t, err)
 	service := auditedService(t, emitter)
 
@@ -238,6 +283,9 @@ func TestSecurityMutation_FanOutStaysWithinTheEventTenant(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NoError(t, service.RevokePrincipal(testCtx, principal.ID, "end of engagement"))
+
+	_, err = transport.RelayOnce(testCtx)
+	require.NoError(t, err)
 
 	require.Equal(t, 1, countRows(t,
 		`SELECT count(*) FROM webhook_deliveries WHERE subscription_id = $1`, subscriptionID))
