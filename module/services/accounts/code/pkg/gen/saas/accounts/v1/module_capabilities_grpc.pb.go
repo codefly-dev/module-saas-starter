@@ -21,37 +21,36 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ModuleCapabilitiesService_EnqueueJob_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
-	ModuleCapabilitiesService_ClaimJobs_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
-	ModuleCapabilitiesService_HeartbeatJob_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
-	ModuleCapabilitiesService_AckJob_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
-	ModuleCapabilitiesService_NackJob_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
-	ModuleCapabilitiesService_NotifyUser_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
-	ModuleCapabilitiesService_RequestApproval_FullMethodName          = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
-	ModuleCapabilitiesService_GetApproval_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
-	ModuleCapabilitiesService_CancelApproval_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
-	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
-	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
-	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName   = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
-	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
-	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName    = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
-	ModuleCapabilitiesService_PublishEvent_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
-	ModuleCapabilitiesService_Subscribe_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
-	ModuleCapabilitiesService_Unsubscribe_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
-	ModuleCapabilitiesService_ListSubscriptions_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
-	ModuleCapabilitiesService_ReplayEvents_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
+	ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
+	ModuleCapabilitiesService_EnqueueJob_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
+	ModuleCapabilitiesService_ClaimJobs_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
+	ModuleCapabilitiesService_HeartbeatJob_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
+	ModuleCapabilitiesService_AckJob_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
+	ModuleCapabilitiesService_NackJob_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
+	ModuleCapabilitiesService_NotifyUser_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	ModuleCapabilitiesService_RequestApproval_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+	ModuleCapabilitiesService_GetApproval_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
+	ModuleCapabilitiesService_CancelApproval_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
+	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
+	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
+	ModuleCapabilitiesService_PublishEvent_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
+	ModuleCapabilitiesService_Subscribe_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
+	ModuleCapabilitiesService_Unsubscribe_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+	ModuleCapabilitiesService_ListSubscriptions_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
+	ModuleCapabilitiesService_ReplayEvents_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
 )
 
 // ModuleCapabilitiesServiceClient is the client API for ModuleCapabilitiesService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
-// internal-tier and identifies its caller from the forwarded Work Context —
-// except MintModuleRegistration and MintSolutionRegistration, which a registrant
-// calls at startup, before any user request exists, and which authorize on the
-// registrant's own registration secret.
 type ModuleCapabilitiesServiceClient interface {
+	// This read verifies the forwarded viewer Work Context (documents audience,
+	// documents/read attenuation) and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(ctx context.Context, in *ListReadableSourceCollectionsRequest, opts ...grpc.CallOption) (*ListReadableSourceCollectionsResponse, error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(ctx context.Context, in *ModuleEnqueueJobRequest, opts ...grpc.CallOption) (*ModuleEnqueueJobResponse, error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -110,6 +109,16 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) ListReadableSourceCollections(ctx context.Context, in *ListReadableSourceCollectionsRequest, opts ...grpc.CallOption) (*ListReadableSourceCollectionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListReadableSourceCollectionsResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) EnqueueJob(ctx context.Context, in *ModuleEnqueueJobRequest, opts ...grpc.CallOption) (*ModuleEnqueueJobResponse, error) {
@@ -314,13 +323,11 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 // ModuleCapabilitiesServiceServer is the server API for ModuleCapabilitiesService service.
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
-//
-// ModuleCapabilitiesService is the module-facing platform surface. Every RPC is
-// internal-tier and identifies its caller from the forwarded Work Context —
-// except MintModuleRegistration and MintSolutionRegistration, which a registrant
-// calls at startup, before any user request exists, and which authorize on the
-// registrant's own registration secret.
 type ModuleCapabilitiesServiceServer interface {
+	// This read verifies the forwarded viewer Work Context (documents audience,
+	// documents/read attenuation) and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(context.Context, *ListReadableSourceCollectionsRequest) (*ListReadableSourceCollectionsResponse, error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *ModuleEnqueueJobRequest) (*ModuleEnqueueJobResponse, error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -381,6 +388,9 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) ListReadableSourceCollections(context.Context, *ListReadableSourceCollectionsRequest) (*ListReadableSourceCollectionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListReadableSourceCollections not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) EnqueueJob(context.Context, *ModuleEnqueueJobRequest) (*ModuleEnqueueJobResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnqueueJob not implemented")
 }
@@ -458,6 +468,24 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_ListReadableSourceCollections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListReadableSourceCollectionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ListReadableSourceCollections(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ListReadableSourceCollections(ctx, req.(*ListReadableSourceCollectionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_EnqueueJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -802,6 +830,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListReadableSourceCollections",
+			Handler:    _ModuleCapabilitiesService_ListReadableSourceCollections_Handler,
+		},
 		{
 			MethodName: "EnqueueJob",
 			Handler:    _ModuleCapabilitiesService_EnqueueJob_Handler,

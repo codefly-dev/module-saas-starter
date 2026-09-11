@@ -405,7 +405,43 @@ message ModuleReplayEventsResponse {
 // except MintModuleRegistration and MintSolutionRegistration, which a registrant
 // calls at startup, before any user request exists, and which authorize on the
 // registrant's own registration secret.
+// Non-secret, current-viewer source read projection.
+message ReadableSourceCollection {
+  string source_id = 1;
+  string boundary_id = 2;
+  string origin = 3;
+  string container = 4;
+  string ref = 5;
+  repeated string paths = 6;
+}
+// Tenant and viewer come exclusively from the verified Work Context.
+message ListReadableSourceCollectionsRequest {
+  int32 page_size = 1 [(buf.validate.field).int32 = {gte: 0, lte: 1000}];
+  string page_token = 2 [(buf.validate.field).string.max_len = 2048];
+}
+message ListReadableSourceCollectionsResponse {
+  repeated ReadableSourceCollection collections = 1;
+  string next_page_token = 2;
+}
+
 service ModuleCapabilitiesService {
+  // This read verifies the forwarded viewer Work Context (documents audience,
+  // documents/read attenuation) and current owner/actor and collection grants.
+  // The internal listener remains mandatory; callers cannot supply identities.
+  rpc ListReadableSourceCollections(ListReadableSourceCollectionsRequest) returns (ListReadableSourceCollectionsResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
   // EnqueueJob appends durable work for a tenant- or subject-scoped queue.
   rpc EnqueueJob(ModuleEnqueueJobRequest) returns (ModuleEnqueueJobResponse) {
     option (saas.policy.v1.method_policy) = {

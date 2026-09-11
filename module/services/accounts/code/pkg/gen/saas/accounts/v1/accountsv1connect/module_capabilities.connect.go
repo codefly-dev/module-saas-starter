@@ -36,6 +36,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure is the fully-qualified name of
+	// the ModuleCapabilitiesService's ListReadableSourceCollections RPC.
+	ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
 	// ModuleCapabilitiesServiceEnqueueJobProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EnqueueJob RPC.
 	ModuleCapabilitiesServiceEnqueueJobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
@@ -98,6 +101,10 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// This read verifies the forwarded viewer Work Context (documents audience,
+	// documents/read attenuation) and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -161,6 +168,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		listReadableSourceCollections: connect.NewClient[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListReadableSourceCollections")),
+			connect.WithClientOptions(opts...),
+		),
 		enqueueJob: connect.NewClient[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceEnqueueJobProcedure,
@@ -280,25 +293,32 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
-	enqueueJob               *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
-	claimJobs                *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
-	heartbeatJob             *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
-	ackJob                   *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
-	nackJob                  *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
-	notifyUser               *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
-	requestApproval          *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
-	getApproval              *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
-	cancelApproval           *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
-	emitAuditEvent           *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
-	fetchDatasourceBlob      *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
-	mintModuleRegistration   *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
-	mintSolutionRegistration *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
-	mintModuleWorkContext    *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
-	publishEvent             *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
-	subscribe                *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
-	unsubscribe              *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
-	listSubscriptions        *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
-	replayEvents             *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+	listReadableSourceCollections *connect.Client[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse]
+	enqueueJob                    *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
+	claimJobs                     *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
+	heartbeatJob                  *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
+	ackJob                        *connect.Client[v1.ModuleAckJobRequest, emptypb.Empty]
+	nackJob                       *connect.Client[v1.ModuleNackJobRequest, emptypb.Empty]
+	notifyUser                    *connect.Client[v1.ModuleNotifyUserRequest, v1.ModuleNotifyUserResponse]
+	requestApproval               *connect.Client[v1.ModuleRequestApprovalRequest, v1.ModuleRequestApprovalResponse]
+	getApproval                   *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
+	cancelApproval                *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
+	emitAuditEvent                *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	fetchDatasourceBlob           *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
+	mintModuleRegistration        *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
+	mintSolutionRegistration      *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
+	mintModuleWorkContext         *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
+	publishEvent                  *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
+	subscribe                     *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
+	unsubscribe                   *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
+	listSubscriptions             *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
+	replayEvents                  *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+}
+
+// ListReadableSourceCollections calls
+// saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections.
+func (c *moduleCapabilitiesServiceClient) ListReadableSourceCollections(ctx context.Context, req *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
+	return c.listReadableSourceCollections.CallUnary(ctx, req)
 }
 
 // EnqueueJob calls saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob.
@@ -400,6 +420,10 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// This read verifies the forwarded viewer Work Context (documents audience,
+	// documents/read attenuation) and current owner/actor and collection grants.
+	// The internal listener remains mandatory; callers cannot supply identities.
+	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -459,6 +483,12 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceListReadableSourceCollectionsHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
+		svc.ListReadableSourceCollections,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListReadableSourceCollections")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceEnqueueJobHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceEnqueueJobProcedure,
 		svc.EnqueueJob,
@@ -575,6 +605,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure:
+			moduleCapabilitiesServiceListReadableSourceCollectionsHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEnqueueJobProcedure:
 			moduleCapabilitiesServiceEnqueueJobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceClaimJobsProcedure:
@@ -621,6 +653,10 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections is not implemented"))
+}
 
 func (UnimplementedModuleCapabilitiesServiceHandler) EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob is not implemented"))
