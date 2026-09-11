@@ -91,7 +91,7 @@ All tenant/user rows remain constrained by their forced RLS policies.
 | select, insert | `gdpr_requests` (accepted by request traffic, transitioned only by the leased privacy worker under the control plane) |
 | select, insert, update, delete | `mfa_backup_codes`, `mfa_devices`, `notifications`, `user_identities` |
 | insert only | `mfa_login_transactions` |
-| no tenant relation authority | `job_attempts`, `job_messages`, `job_state_transitions`, `magic_links` |
+| no tenant relation authority | `job_attempts`, `job_messages`, `job_state_transitions`, `magic_links`, `membership_integrity_findings` |
 
 Retention deletes and token-based pre-auth reads/updates use the audited
 control-plane boundary; they are intentionally not granted to `app_tenant`.
@@ -115,7 +115,7 @@ executable inventory and this table in the same change.
 | Scope | Relations | Required database boundary |
 |---|---|---|
 | `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `solution_registrations` | No RLS; exact grants |
-| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `execution_custody`, `installations`, `invitations`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `execution_custody`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
@@ -157,6 +157,89 @@ and no policy is indistinguishable from one whose isolation was forgotten. It
 also outlives a rollback of the migration that filled it — the memberships it
 describes are already deleted and no migration restores them, so dropping the
 record with the schema would destroy the only evidence they existed.
+## Organization administrative-continuity diagnostic
+
+Migration `135_organization_administrator_diagnostic` inventories the
+organizations whose administrative authority is *already* inconsistent, so that
+work enforcing the invariant has a sized backlog rather than a guess. It changes
+no existing relation and grants no new request authority.
+
+`public.record_membership_integrity_findings()` records three findings into
+`membership_integrity_findings`, all **reported and never repaired**:
+
+| Finding | Meaning | Why it is not repaired |
+|---|---|---|
+| `organization_without_administrator` | No `owner`/`admin` membership row exists at all. | The only way to give an organization an administrator is to pick a user and grant them one. A deploy that does this performs a privilege escalation with no operator deciding who. |
+| `organization_without_an_eligible_administrator` | Administrative membership rows exist, but every holder's identity is inactive. | Reactivating an identity hands authority back to whoever held it — equally an operator's decision, and usually the cheaper repair. Reported apart from the row above because it is a different decision, not a milder version of the same one. |
+| `owner_of_record_is_not_an_administrator` | Somebody eligible can administer the organization, but the owner of record cannot — either they hold no administrative membership, or they hold one whose identity is not active. | `organizations.owner_id` is written only by `CreateOrganization` and there is no owner-transfer path, so it is immutable provenance rather than live authority. Writing either side to match the other moves authority silently. |
+
+**Eligibility** is migration `130_organization_administrator_eligibility`'s
+definition, reproduced rather than approximated: `role IN ('owner', 'admin')`
+**and** `users.status = 'active'`. `findIdentity` admits only active identities
+and `DeleteUser` is a soft delete that leaves the membership row standing, so
+counting administrative rows regardless of identity status reports an
+organization healthy when nobody holding one can sign in to administer it —
+exactly the backlog this inventory exists to size. Migration 130's
+`organization_eligible_administrators()` is not reused: it is `SECURITY DEFINER`
+scoped to `app.current_org_id`, so it answers for a single tenant, and this is a
+cross-tenant inventory.
+
+The three are **mutually exclusive by construction** — one `CASE` over one row
+per organization can only ever yield one of them — so the row count is an
+organization count, and that is what the function returns. `detail` carries
+`owner_id`, `membership_role` (`null` when the owner holds no membership at
+all), `owner_status`, `administrative_members` and `eligible_administrators`, so
+an operator can tell "three administrators, none of whom can sign in" from "no
+administrators at all" without going back to the tables.
+
+The natural key is `(org_id, finding)`; there is no surrogate id. A finding *is*
+the fact that this organization is in this state, and migration 13 dropped
+server-side `gen_random_uuid()` defaults on purpose.
+
+### Running it
+
+`membership-integrity-scan` is the operator's vehicle:
+
+```
+membership-integrity-scan -database-url "$DATABASE_URL" [-list-only]
+```
+
+The scan is a function, not inline migration DML, so it can be re-run after
+repairs and watched shrinking. Re-running is non-destructive: a finding that
+still holds keeps its original `found_at` (the conflict target is the
+`(org_id, finding)` pair and the update refreshes only `detail`), and a finding
+that has since been repaired is deleted, so the table always reads as the
+current backlog rather than an append-only history.
+
+**The connection principal must be a member of `app_control_plane`**, and that
+is load-bearing rather than ceremonial. `organizations`, `organization_members`
+and `membership_integrity_findings` all force RLS — which binds the table owner
+too — with policies scoped to `app.current_org_id` and no bypass clause. A
+principal that does not span organizations therefore reads zero rows through
+all three: it would record an empty backlog and report a healthy platform. The
+function refuses to run for such a principal instead, and the migration assumes
+`app_control_plane` before its own initial scan for the same reason. The store
+owner-connection alone is not sufficient, and reading the findings table
+directly under it returns silently empty.
+
+### Authority
+
+It is a plain invoker-rights function. `app_control_plane` is the only role
+granted `EXECUTE`, and it already spans organizations through `BYPASSRLS`, so
+`SECURITY DEFINER` would add privilege without adding capability. `app_tenant`
+holds no grant on either the function or the table: these are operator evidence
+read through the control-plane boundary, not product data.
+
+No role actually reaches these rows *through* the table's policy — request
+traffic holds no grant, and `BYPASSRLS` is decided before any policy is
+consulted for the one role that does. The policy is nobody's access-control
+decision. It exists because a tenant-columned table without one is
+indistinguishable from an unprotected one, and because the inventory above
+requires every tenant relation to force RLS and carry a tenant-scoped policy.
+
+Scope: organization-level findings only. A team membership with no parent
+organization membership is a different relation with its own repair, and this
+migration deliberately neither scans for it nor quarantines it.
 
 ## Generic job platform
 
