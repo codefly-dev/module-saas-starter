@@ -7,6 +7,7 @@ import (
 	"github.com/codefly-dev/core/wool"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/relationcatalog"
 )
 
 // ServiceVersion is the semver of THIS service's API surface (the
@@ -34,20 +35,26 @@ const ServiceVersion = "0.4.0"
 // in rpcDescriptions until P1-DOC-001 makes source comments compiler-readable.
 //
 // The redaction pass at the end strips platform_admin / mfa-tier
-// RPCs for unauthenticated callers (the catalog is exposed publicly
-// at GET /v1/.well-known/service-info; no need to advertise the
-// privileged attack surface to anonymous probes).
+// RPCs for unauthenticated callers, and the RLS catalog with them
+// (the catalog is exposed publicly at GET /v1/.well-known/service-info;
+// no need to advertise the privileged attack surface to anonymous
+// probes). The relation inventory names every user-scoped relation and
+// the column that scopes it, and its notes describe the mechanisms
+// behind each boundary — evidence for an authenticated auditor, a
+// schema map for an anonymous one. Authenticate for it.
 func (s *Service) GetServiceInfo(ctx context.Context, _ *gen.GetServiceInfoRequest) (*gen.GetServiceInfoResponse, error) {
 	rpcs := buildRPCList()
+	rlsTables := serviceRLSTables
 	if !callerIsAuthenticated(ctx) {
 		rpcs = redactPrivilegedRPCs(rpcs)
+		rlsTables = nil
 	}
 	return &gen.GetServiceInfoResponse{
 		Capabilities: &gen.ServiceCapabilities{
 			Info:        serviceInfo,
 			Rpcs:        rpcs,
 			Permissions: servicePermissions,
-			RlsTables:   serviceRLSTables,
+			RlsTables:   rlsTables,
 			Scopes:      serviceScopes,
 		},
 	}, nil
@@ -321,36 +328,31 @@ func redactPrivilegedRPCs(in []*gen.RPCInfo) []*gen.RPCInfo {
 	return out
 }
 
-// serviceRLSTables — RLS-protected tables this api service depends
-// on. The tables themselves live in the store service's schema (via
-// store/migrations); this api is the enforcer that wraps every
-// per-tenant Store call in WithOrgTx / WithControlPlane.
+// serviceRLSTables projects the RLS-protected relations out of the store
+// schema's authority inventory. The tables themselves live in the store
+// service's schema (via store/migrations); this api is the enforcer that wraps
+// every per-tenant Store call in WithOrgTx / WithControlPlane.
 //
-// Source: store migrations through 60.
-var serviceRLSTables = []*gen.RLSPolicyInfo{
-	{Table: "webhook_subscriptions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "webhook_deliveries", PolicyShape: "join", FailClosed: true, ScopeColumn: "subscription_id", Notes: "JOIN walks subscription_id → webhook_subscriptions.org_id"},
-	{Table: "api_keys", PolicyShape: "direct", FailClosed: true, ScopeColumn: "organization_id"},
-	{Table: "org_settings", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "invitations", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "organization_activations", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "organization_members", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "subscriptions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "entitlement_overrides", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "usage_events", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id", Notes: "Immutable accepted/rejected usage attempt ledger."},
-	{Table: "usage_totals", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id", Notes: "Transactionally maintained monthly meter aggregates."},
-	{Table: "teams", PolicyShape: "direct", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "team_members", PolicyShape: "join", FailClosed: true, ScopeColumn: "team_id", Notes: "JOIN walks team_id → teams.org_id"},
-	{Table: "audit_events", PolicyShape: "polymorphic", FailClosed: true, ScopeColumn: "org_id", Notes: "NULL org_id rows visible only via WithControlPlane (system events)."},
-	{Table: "roles", PolicyShape: "polymorphic", FailClosed: true, ScopeColumn: "org_id", Notes: "Built-in roles (org_id IS NULL) globally readable; tenant rows scoped."},
-	{Table: "role_assignments", PolicyShape: "polymorphic", FailClosed: true, ScopeColumn: "org_id"},
-	{Table: "organizations", PolicyShape: "self_referential", FailClosed: true, ScopeColumn: "id"},
-	{Table: "mfa_devices", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
-	{Table: "mfa_backup_codes", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
-	{Table: "mfa_login_transactions", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Public completion uses exact opaque-token hash lookup under audited bypass."},
-	{Table: "webauthn_credentials", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Complete credential record is Vault-encrypted; public credential ID is unique."},
-	{Table: "webauthn_ceremonies", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id", Notes: "Short-lived server-side state; login ceremonies are bound to an MFA login transaction."},
-	{Table: "waitlist_entries", PolicyShape: "control_plane", FailClosed: true, ScopeColumn: "id", Notes: "Public writes and platform administration use bounded service operations under the control-plane role."},
-	{Table: "user_consent_preferences", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
-	{Table: "user_consent_events", PolicyShape: "direct", FailClosed: true, ScopeColumn: "user_id"},
-}
+// Drift resistance: the inventory is the same one the infrastructure hardening
+// suite checks a live database against, so a relation added, dropped, or
+// rescoped by a migration shows up here or fails that suite. Every relation in
+// a scope that requires row-level security is enabled, forced, and carries at
+// least one policy, which is what fail_closed claims.
+var serviceRLSTables = func() []*gen.RLSPolicyInfo {
+	inventory := relationcatalog.All()
+	out := make([]*gen.RLSPolicyInfo, 0, len(inventory))
+	for table, authority := range inventory {
+		if !authority.Scope.RequiresRLS() {
+			continue
+		}
+		out = append(out, &gen.RLSPolicyInfo{
+			Table:       table,
+			PolicyShape: authority.PolicyShape,
+			FailClosed:  true,
+			ScopeColumn: authority.ScopeColumn,
+			Notes:       authority.Notes,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Table < out[j].Table })
+	return out
+}()
