@@ -169,6 +169,7 @@ const (
 
 	EventAPIKeyCreated               EventType = "saas.api_key.created"
 	EventModuleRegistrationMint      EventType = "saas.module.registration_minted"
+	EventModuleWorkContextMint       EventType = "saas.module.work_context_minted"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
@@ -325,6 +326,7 @@ var auditEventCatalog = []AuditEventDefinition{
 
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
 	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
+	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
 	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),

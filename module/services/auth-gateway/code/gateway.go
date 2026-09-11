@@ -195,6 +195,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The module's other startup exchange (/modules/_work-context): the identity
+	// it calls the module-facing capability surface with, brokered the same way
+	// and gated on the same header this pass has yet to strip.
+	if g.handleModuleWorkContext(w, r) {
+		return
+	}
+
 	r = g.withTrustedFrontendOrigin(r)
 
 	entry := g.matcher.Match(r.Method, r.URL.Path)

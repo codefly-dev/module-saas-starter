@@ -2117,7 +2117,7 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\rEventDelivery\x12\x1e\n" +
 	"\x1aEVENT_DELIVERY_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18EVENT_DELIVERY_UNORDERED\x10\x01\x12\x1a\n" +
-	"\x16EVENT_DELIVERY_ORDERED\x10\x022\xe1\x12\n" +
+	"\x16EVENT_DELIVERY_ORDERED\x10\x022\x97\x14\n" +
 	"\x19ModuleCapabilitiesService\x12}\n" +
 	"\n" +
 	"EnqueueJob\x12).saas.accounts.v1.ModuleEnqueueJobRequest\x1a*.saas.accounts.v1.ModuleEnqueueJobResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12z\n" +
@@ -2135,7 +2135,9 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x16MintModuleRegistration\x12/.saas.accounts.v1.ModuleMintRegistrationRequest\x1a0.saas.accounts.v1.ModuleMintRegistrationResponse\"9\xc2\xf3\x185\b\x03\x10\x010\x01:#\n" +
 	"\x1fsaas.module.registration_minted\x10\x02@\x01H\aP\x04X\x04`\x01\x12\xbe\x01\n" +
 	"\x18MintSolutionRegistration\x121.saas.accounts.v1.SolutionMintRegistrationRequest\x1a2.saas.accounts.v1.SolutionMintRegistrationResponse\";\xc2\xf3\x187\b\x03\x10\x010\x01:%\n" +
-	"!saas.solution.registration_minted\x10\x02@\x01H\aP\x04X\x04`\x01\x12\x83\x01\n" +
+	"!saas.solution.registration_minted\x10\x02@\x01H\aP\x04X\x04`\x01\x12\xb3\x01\n" +
+	"\x15MintModuleWorkContext\x12..saas.accounts.v1.ModuleMintWorkContextRequest\x1a/.saas.accounts.v1.ModuleMintWorkContextResponse\"9\xc2\xf3\x185\b\x03\x10\x010\x01:#\n" +
+	"\x1fsaas.module.work_context_minted\x10\x02@\x01H\aP\x04X\x04`\x01\x12\x83\x01\n" +
 	"\fPublishEvent\x12+.saas.accounts.v1.ModulePublishEventRequest\x1a,.saas.accounts.v1.ModulePublishEventResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12z\n" +
 	"\tSubscribe\x12(.saas.accounts.v1.ModuleSubscribeRequest\x1a).saas.accounts.v1.ModuleSubscribeResponse\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12k\n" +
 	"\vUnsubscribe\x12*.saas.accounts.v1.ModuleUnsubscribeRequest\x1a\x16.google.protobuf.Empty\"\x18\xc2\xf3\x18\x14\b\x03\x10\x010\x01:\x02\x10\x01@\x01H\aP\x03X\x03`\x01\x12\x92\x01\n" +
@@ -2201,9 +2203,11 @@ var file_saas_accounts_v1_module_capabilities_proto_goTypes = []any{
 	(*v11.EventEnvelope)(nil),                // 40: saas.events.v1.EventEnvelope
 	(*ModuleMintRegistrationRequest)(nil),    // 41: saas.accounts.v1.ModuleMintRegistrationRequest
 	(*SolutionMintRegistrationRequest)(nil),  // 42: saas.accounts.v1.SolutionMintRegistrationRequest
-	(*emptypb.Empty)(nil),                    // 43: google.protobuf.Empty
-	(*ModuleMintRegistrationResponse)(nil),   // 44: saas.accounts.v1.ModuleMintRegistrationResponse
-	(*SolutionMintRegistrationResponse)(nil), // 45: saas.accounts.v1.SolutionMintRegistrationResponse
+	(*ModuleMintWorkContextRequest)(nil),     // 43: saas.accounts.v1.ModuleMintWorkContextRequest
+	(*emptypb.Empty)(nil),                    // 44: google.protobuf.Empty
+	(*ModuleMintRegistrationResponse)(nil),   // 45: saas.accounts.v1.ModuleMintRegistrationResponse
+	(*SolutionMintRegistrationResponse)(nil), // 46: saas.accounts.v1.SolutionMintRegistrationResponse
+	(*ModuleMintWorkContextResponse)(nil),    // 47: saas.accounts.v1.ModuleMintWorkContextResponse
 }
 var file_saas_accounts_v1_module_capabilities_proto_depIdxs = []int32{
 	31, // 0: saas.accounts.v1.ModuleEnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
@@ -2249,31 +2253,33 @@ var file_saas_accounts_v1_module_capabilities_proto_depIdxs = []int32{
 	19, // 40: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:input_type -> saas.accounts.v1.FetchDatasourceBlobRequest
 	41, // 41: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:input_type -> saas.accounts.v1.ModuleMintRegistrationRequest
 	42, // 42: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:input_type -> saas.accounts.v1.SolutionMintRegistrationRequest
-	21, // 43: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
-	23, // 44: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
-	26, // 45: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
-	27, // 46: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
-	29, // 47: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
-	2,  // 48: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
-	4,  // 49: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
-	6,  // 50: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
-	43, // 51: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
-	43, // 52: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
-	10, // 53: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
-	14, // 54: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
-	16, // 55: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
-	43, // 56: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
-	43, // 57: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
-	20, // 58: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
-	44, // 59: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:output_type -> saas.accounts.v1.ModuleMintRegistrationResponse
-	45, // 60: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:output_type -> saas.accounts.v1.SolutionMintRegistrationResponse
-	22, // 61: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
-	25, // 62: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
-	43, // 63: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
-	28, // 64: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
-	30, // 65: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
-	48, // [48:66] is the sub-list for method output_type
-	30, // [30:48] is the sub-list for method input_type
+	43, // 43: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:input_type -> saas.accounts.v1.ModuleMintWorkContextRequest
+	21, // 44: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:input_type -> saas.accounts.v1.ModulePublishEventRequest
+	23, // 45: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:input_type -> saas.accounts.v1.ModuleSubscribeRequest
+	26, // 46: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:input_type -> saas.accounts.v1.ModuleUnsubscribeRequest
+	27, // 47: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:input_type -> saas.accounts.v1.ModuleListSubscriptionsRequest
+	29, // 48: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:input_type -> saas.accounts.v1.ModuleReplayEventsRequest
+	2,  // 49: saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob:output_type -> saas.accounts.v1.ModuleEnqueueJobResponse
+	4,  // 50: saas.accounts.v1.ModuleCapabilitiesService.ClaimJobs:output_type -> saas.accounts.v1.ModuleClaimJobsResponse
+	6,  // 51: saas.accounts.v1.ModuleCapabilitiesService.HeartbeatJob:output_type -> saas.accounts.v1.ModuleHeartbeatJobResponse
+	44, // 52: saas.accounts.v1.ModuleCapabilitiesService.AckJob:output_type -> google.protobuf.Empty
+	44, // 53: saas.accounts.v1.ModuleCapabilitiesService.NackJob:output_type -> google.protobuf.Empty
+	10, // 54: saas.accounts.v1.ModuleCapabilitiesService.NotifyUser:output_type -> saas.accounts.v1.ModuleNotifyUserResponse
+	14, // 55: saas.accounts.v1.ModuleCapabilitiesService.RequestApproval:output_type -> saas.accounts.v1.ModuleRequestApprovalResponse
+	16, // 56: saas.accounts.v1.ModuleCapabilitiesService.GetApproval:output_type -> saas.accounts.v1.ModuleApproval
+	44, // 57: saas.accounts.v1.ModuleCapabilitiesService.CancelApproval:output_type -> google.protobuf.Empty
+	44, // 58: saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent:output_type -> google.protobuf.Empty
+	20, // 59: saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob:output_type -> saas.accounts.v1.FetchDatasourceBlobChunk
+	45, // 60: saas.accounts.v1.ModuleCapabilitiesService.MintModuleRegistration:output_type -> saas.accounts.v1.ModuleMintRegistrationResponse
+	46, // 61: saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration:output_type -> saas.accounts.v1.SolutionMintRegistrationResponse
+	47, // 62: saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext:output_type -> saas.accounts.v1.ModuleMintWorkContextResponse
+	22, // 63: saas.accounts.v1.ModuleCapabilitiesService.PublishEvent:output_type -> saas.accounts.v1.ModulePublishEventResponse
+	25, // 64: saas.accounts.v1.ModuleCapabilitiesService.Subscribe:output_type -> saas.accounts.v1.ModuleSubscribeResponse
+	44, // 65: saas.accounts.v1.ModuleCapabilitiesService.Unsubscribe:output_type -> google.protobuf.Empty
+	28, // 66: saas.accounts.v1.ModuleCapabilitiesService.ListSubscriptions:output_type -> saas.accounts.v1.ModuleListSubscriptionsResponse
+	30, // 67: saas.accounts.v1.ModuleCapabilitiesService.ReplayEvents:output_type -> saas.accounts.v1.ModuleReplayEventsResponse
+	49, // [49:68] is the sub-list for method output_type
+	30, // [30:49] is the sub-list for method input_type
 	30, // [30:30] is the sub-list for extension type_name
 	30, // [30:30] is the sub-list for extension extendee
 	0,  // [0:30] is the sub-list for field type_name

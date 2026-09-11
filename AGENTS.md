@@ -169,6 +169,47 @@ on-demand refresh on a cache miss; frontend a 5s snapshot TTL).
   `federation` group, the plaintext into the module. The token is short-lived and
   fetched per registration attempt, not cached across a gateway restart. Registration only adds a proxy target —
   every proxied `/v1/<module>/*` request still runs the full ext_authz check.
+- **Composed-module service principal** — a module consuming the module-facing
+  capability surface (`ModuleCapabilitiesService`: job enqueue/claim, notify,
+  approvals, audit, events) calls it as its own **service principal**, whose id is
+  derived from the same registration prefix (`business.ModulePrincipalID`), so
+  nothing is hand-authored as an opaque id. Its authority is declared in the
+  `module-capabilities` group's `MODULE_PRINCIPALS`, a JSON map keyed by that
+  prefix: `queues` (enqueue and claim), `namespaces` (event publish), `tenant`
+  (the org it is bound to), `cross_tenant` (an inbox worker serving every
+  tenant). Unset means no module may call the surface.
+
+  The identity itself is a **Work Context**, obtained with a second exchange that
+  mirrors the registration one: `POST /modules/_work-context` on the auth-gateway
+  with the cluster-internal token and the module's registration secret, body
+  `{prefix}`. The gateway brokers to accounts
+  (`ModuleCapabilitiesService/MintModuleWorkContext`, EXPOSURE_INTERNAL), which
+  authorizes the secret against the same `MODULE_REGISTRATION_SECRETS` digest,
+  refuses a prefix that is not a declared module principal, and mints a
+  capability owned and actored by the module principal
+  (`aud=module-capabilities`), emitting a `module.work_context_minted` audit
+  event once the capability exists. The response carries
+  `{token, expiresAt, principalId, tenant}`.
+
+  The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
+  for that principal, so a module cannot name a tenant by asking. The capability
+  seals identity and tenant only: what the principal may do is re-read from the
+  declared grant on every call, so narrowing a grant takes effect immediately
+  rather than when the outstanding token expires.
+
+  The module presents that token in `x-codefly-work-context` on every capability
+  call; accounts takes the calling principal and its bound tenant from the
+  verified token, never from request metadata. Work Contexts cap at 15 minutes, so
+  a long-running worker re-runs the exchange rather than holding one open.
+
+  **Mesh reachability is the composition's to grant.** The generated
+  `AuthorizationPolicy` allowlists accounts' internal surface to the service
+  accounts of services that *declare a dependency on accounts* in the workspace
+  topology. This module's own topology names no composed module (it must carry no
+  build-time knowledge of its consumers), so a composed module reaches the
+  capability surface in a mesh-enforced deployment only when its own workspace
+  declares that dependency and regenerates the policy. A valid Work Context does
+  not substitute for it: mTLS refuses the call before any token is read.
 - **Host page** — `/s/[solutionId]`
   (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the remote via
   `SolutionOutlet` from the registered `manifestUrl` + `exposedModule`, read

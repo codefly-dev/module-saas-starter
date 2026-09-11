@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/module_registration.proto.
  */
 export const file_saas_accounts_v1_module_registration: GenFile = /*@__PURE__*/
-  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEieQodTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiXwoeTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoABCh9Tb2x1dGlvbk1pbnRSZWdpc3RyYXRpb25SZXF1ZXN0EkEKC3NvbHV0aW9uX2lkGAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiYQogU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBiBnByb3RvMw", [file_buf_validate_validate, file_google_protobuf_timestamp]);
+  fileDesc("CipzYWFzL2FjY291bnRzL3YxL21vZHVsZV9yZWdpc3RyYXRpb24ucHJvdG8SEHNhYXMuYWNjb3VudHMudjEieQodTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlcXVlc3QSPAoGcHJlZml4GAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiXwoeTW9kdWxlTWludFJlZ2lzdHJhdGlvblJlc3BvbnNlEg0KBXRva2VuGAEgASgJEi4KCmV4cGlyZXNfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIoABCh9Tb2x1dGlvbk1pbnRSZWdpc3RyYXRpb25SZXF1ZXN0EkEKC3NvbHV0aW9uX2lkGAEgASgJQiy6SClyJxABGD8yIV5bYS16MC05XSg/OlthLXowLTktXSpbYS16MC05XSk/JBIaCgZzZWNyZXQYAiABKAlCCrpIB3IFEAEYgAQiYQogU29sdXRpb25NaW50UmVnaXN0cmF0aW9uUmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAieAocTW9kdWxlTWludFdvcmtDb250ZXh0UmVxdWVzdBI8CgZwcmVmaXgYASABKAlCLLpIKXInEAEYPzIhXlthLXowLTldKD86W2EtejAtOS1dKlthLXowLTldKT8kEhoKBnNlY3JldBgCIAEoCUIKukgHcgUQARiABCKEAQodTW9kdWxlTWludFdvcmtDb250ZXh0UmVzcG9uc2USDQoFdG9rZW4YASABKAkSLgoKZXhwaXJlc19hdBgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcHJpbmNpcGFsX2lkGAMgASgJEg4KBnRlbmFudBgEIAEoCWIGcHJvdG8z", [file_buf_validate_validate, file_google_protobuf_timestamp]);
 
 /**
  * ModuleMintRegistrationRequest asks for the credential a module presents to
@@ -115,4 +115,71 @@ export type SolutionMintRegistrationResponse = Message<"saas.accounts.v1.Solutio
  */
 export const SolutionMintRegistrationResponseSchema: GenMessage<SolutionMintRegistrationResponse> = /*@__PURE__*/
   messageDesc(file_saas_accounts_v1_module_registration, 3);
+
+/**
+ * ModuleMintWorkContextRequest asks for the Work Context a composed module
+ * presents to the module-facing capability surface. It carries the same
+ * registration secret the credential exchange above uses: a module proves which
+ * module it is once, with one credential, and the principal it acts as is
+ * derived from that prefix rather than configured separately.
+ *
+ * The tenant the capability is bound to is not requested. It is the one declared
+ * for that principal by the deployment, so a module cannot name a tenant by
+ * asking, and the response reports which one was sealed.
+ *
+ * @generated from message saas.accounts.v1.ModuleMintWorkContextRequest
+ */
+export type ModuleMintWorkContextRequest = Message<"saas.accounts.v1.ModuleMintWorkContextRequest"> & {
+  /**
+   * @generated from field: string prefix = 1;
+   */
+  prefix: string;
+
+  /**
+   * @generated from field: string secret = 2;
+   */
+  secret: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleMintWorkContextRequest.
+ * Use `create(ModuleMintWorkContextRequestSchema)` to create a new message.
+ */
+export const ModuleMintWorkContextRequestSchema: GenMessage<ModuleMintWorkContextRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_registration, 4);
+
+/**
+ * ModuleMintWorkContextResponse carries the signed capability plus the identity
+ * it asserts, so a module can attribute its own work without parsing the token.
+ *
+ * @generated from message saas.accounts.v1.ModuleMintWorkContextResponse
+ */
+export type ModuleMintWorkContextResponse = Message<"saas.accounts.v1.ModuleMintWorkContextResponse"> & {
+  /**
+   * @generated from field: string token = 1;
+   */
+  token: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp expires_at = 2;
+   */
+  expiresAt?: Timestamp;
+
+  /**
+   * @generated from field: string principal_id = 3;
+   */
+  principalId: string;
+
+  /**
+   * @generated from field: string tenant = 4;
+   */
+  tenant: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ModuleMintWorkContextResponse.
+ * Use `create(ModuleMintWorkContextResponseSchema)` to create a new message.
+ */
+export const ModuleMintWorkContextResponseSchema: GenMessage<ModuleMintWorkContextResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_module_registration, 5);
 

@@ -192,3 +192,46 @@ func (a *registrationAuthority) authorizeAndMint(id, secret string) (string, tim
 	}
 	return a.mint(id)
 }
+
+// ModuleWorkContextAuthority is the identity one module Work Context mint
+// asserts: who the module acts as, and on which tenant. The capabilities that
+// identity may exercise are not sealed here — every call re-reads the declared
+// grant, so narrowing a module's authority takes effect immediately rather than
+// when its current token expires.
+type ModuleWorkContextAuthority struct {
+	PrincipalID string
+	Tenant      string
+}
+
+// ModuleAuthorizeWorkContext resolves the identity a composed module may be
+// issued a Work Context for. It authenticates with the same registration secret
+// the credential exchange uses, its principal is derived from the prefix that
+// secret is bound to, and its tenant is the one the deployment declared — so a
+// module can never name a tenant it was not granted by asking for it.
+func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkContextAuthority, error) {
+	if s.moduleRegistrar == nil ||
+		!registrationIdentityPattern.MatchString(prefix) ||
+		!s.moduleRegistrar.authorize(prefix, secret) {
+		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
+	}
+	principalID := ModulePrincipalID(prefix)
+	grant, registered := s.modulePrincipals[principalID]
+	if !registered {
+		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
+	}
+	return ModuleWorkContextAuthority{PrincipalID: principalID, Tenant: grant.Tenant}, nil
+}
+
+// RecordModuleWorkContextMint commits the durable record of an issued module
+// capability. Like the registration credential it is written after the thing it
+// describes exists, and the caller withholds the capability when the record
+// cannot be committed — so the spine never carries an issuance that did not
+// happen, and never misses one that did.
+func (s *Service) RecordModuleWorkContextMint(
+	ctx context.Context, prefix string, authority ModuleWorkContextAuthority,
+) error {
+	return s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		return s.emitTx(ctx, authority.PrincipalID, "system", EventModuleWorkContextMint, "module", prefix,
+			authority.Tenant, map[string]any{"prefix": prefix, "tenant": authority.Tenant})
+	})
+}

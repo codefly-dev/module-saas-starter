@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:3ebdec14a75abee3ec5367ea3a5c7322c7ef3c9c2178b79516afd7daab545c96",
+      "digest": "sha256:fc379d37ba94988a62d960e90281b19d901e4722fc7d26d9381fe5da689145c8",
       "services": [
         {
           "name": "APIKeyService",
@@ -174,6 +174,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",

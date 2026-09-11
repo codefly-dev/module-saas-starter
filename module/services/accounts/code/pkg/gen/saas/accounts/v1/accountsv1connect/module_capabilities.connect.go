@@ -75,6 +75,9 @@ const (
 	// ModuleCapabilitiesServiceMintSolutionRegistrationProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's MintSolutionRegistration RPC.
 	ModuleCapabilitiesServiceMintSolutionRegistrationProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
+	// ModuleCapabilitiesServiceMintModuleWorkContextProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's MintModuleWorkContext RPC.
+	ModuleCapabilitiesServiceMintModuleWorkContextProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
 	// ModuleCapabilitiesServicePublishEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's PublishEvent RPC.
 	ModuleCapabilitiesServicePublishEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
@@ -130,6 +133,11 @@ type ModuleCapabilitiesServiceClient interface {
 	// solution's own registration secret, declared separately from the module
 	// secrets because a solution remote executes in the host origin.
 	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -231,6 +239,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
 			connect.WithClientOptions(opts...),
 		),
+		mintModuleWorkContext: connect.NewClient[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleWorkContext")),
+			connect.WithClientOptions(opts...),
+		),
 		publishEvent: connect.NewClient[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServicePublishEventProcedure,
@@ -279,6 +293,7 @@ type moduleCapabilitiesServiceClient struct {
 	fetchDatasourceBlob      *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
 	mintModuleRegistration   *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
 	mintSolutionRegistration *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
+	mintModuleWorkContext    *connect.Client[v1.ModuleMintWorkContextRequest, v1.ModuleMintWorkContextResponse]
 	publishEvent             *connect.Client[v1.ModulePublishEventRequest, v1.ModulePublishEventResponse]
 	subscribe                *connect.Client[v1.ModuleSubscribeRequest, v1.ModuleSubscribeResponse]
 	unsubscribe              *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
@@ -352,6 +367,11 @@ func (c *moduleCapabilitiesServiceClient) MintSolutionRegistration(ctx context.C
 	return c.mintSolutionRegistration.CallUnary(ctx, req)
 }
 
+// MintModuleWorkContext calls saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext.
+func (c *moduleCapabilitiesServiceClient) MintModuleWorkContext(ctx context.Context, req *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {
+	return c.mintModuleWorkContext.CallUnary(ctx, req)
+}
+
 // PublishEvent calls saas.accounts.v1.ModuleCapabilitiesService.PublishEvent.
 func (c *moduleCapabilitiesServiceClient) PublishEvent(ctx context.Context, req *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {
 	return c.publishEvent.CallUnary(ctx, req)
@@ -415,6 +435,11 @@ type ModuleCapabilitiesServiceHandler interface {
 	// solution's own registration secret, declared separately from the module
 	// secrets because a solution remote executes in the host origin.
 	MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error)
+	// MintModuleWorkContext issues the Work Context a composed module presents to
+	// this surface: owner and sole actor are the module service principal derived
+	// from its registration prefix. Authorized by the module's own registration
+	// secret, like the credential exchange above.
+	MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error)
 	// PublishEvent appends one domain event to the outbox for the caller's tenant.
 	PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error)
 	// Subscribe creates or re-affirms a durable subscription for the caller.
@@ -512,6 +537,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintSolutionRegistration")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceMintModuleWorkContextHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceMintModuleWorkContextProcedure,
+		svc.MintModuleWorkContext,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("MintModuleWorkContext")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServicePublishEventHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServicePublishEventProcedure,
 		svc.PublishEvent,
@@ -570,6 +601,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceMintModuleRegistrationHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintSolutionRegistrationProcedure:
 			moduleCapabilitiesServiceMintSolutionRegistrationHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceMintModuleWorkContextProcedure:
+			moduleCapabilitiesServiceMintModuleWorkContextHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServicePublishEventProcedure:
 			moduleCapabilitiesServicePublishEventHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceSubscribeProcedure:
@@ -639,6 +672,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleRegistration(cont
 
 func (UnimplementedModuleCapabilitiesServiceHandler) MintSolutionRegistration(context.Context, *connect.Request[v1.SolutionMintRegistrationRequest]) (*connect.Response[v1.SolutionMintRegistrationResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintSolutionRegistration is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) MintModuleWorkContext(context.Context, *connect.Request[v1.ModuleMintWorkContextRequest]) (*connect.Response[v1.ModuleMintWorkContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.MintModuleWorkContext is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) PublishEvent(context.Context, *connect.Request[v1.ModulePublishEventRequest]) (*connect.Response[v1.ModulePublishEventResponse], error) {

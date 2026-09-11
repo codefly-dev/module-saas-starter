@@ -803,3 +803,172 @@ func TestGateway_ModuleSecretHeaderStrippedFromProxiedRequests(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Empty(t, moduleFake.lastHeaders.Get(moduleSecretHeader))
 }
+
+// ============================================================================
+// Work Context exchange (/modules/_work-context)
+// ============================================================================
+
+// fakeAccountsWorkContextMint stands in for accounts' MintModuleWorkContext RPC,
+// registered under the real service and method name so the test exercises the
+// exact procedure string the generated mesh policy admits.
+type fakeAccountsWorkContextMint struct {
+	code         codes.Code
+	lastInternal string
+	lastPrefix   string
+	lastSecret   string
+	requestCount int
+}
+
+func (f *fakeAccountsWorkContextMint) handle(ctx context.Context, dec func(any) error) (any, error) {
+	req := &accountsv1.ModuleMintWorkContextRequest{}
+	if err := dec(req); err != nil {
+		return nil, err
+	}
+	f.requestCount++
+	f.lastPrefix = req.GetPrefix()
+	f.lastSecret = req.GetSecret()
+	if md, ok := metadata.FromIncomingContext(ctx); ok {
+		if values := md.Get("x-codefly-internal-token"); len(values) > 0 {
+			f.lastInternal = values[0]
+		}
+	}
+	if f.code != codes.OK {
+		return nil, status.Error(f.code, "denied")
+	}
+	return &accountsv1.ModuleMintWorkContextResponse{
+		Token:       "work-context-for-" + req.GetPrefix(),
+		ExpiresAt:   timestamppb.New(time.Now().Add(15 * time.Minute)),
+		PrincipalId: "00000000-0000-4000-8000-00000000beef",
+		Tenant:      "11111111-1111-4111-8111-111111111111",
+	}, nil
+}
+
+func newWorkContextExchangeHarness(t *testing.T) (*Gateway, *fakeAccountsWorkContextMint) {
+	t.Helper()
+	gw, _, _, _ := newGatewayHarness(t)
+	mint := &fakeAccountsWorkContextMint{}
+
+	server := grpc.NewServer()
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
+		HandlerType: (*any)(nil),
+		Methods: []grpc.MethodDesc{{
+			MethodName: "MintModuleWorkContext",
+			Handler: func(_ any, ctx context.Context, dec func(any) error, _ grpc.UnaryServerInterceptor) (any, error) {
+				return mint.handle(ctx, dec)
+			},
+		}},
+		Metadata: "saas/accounts/v1/module_registration.proto",
+	}, mint)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+	gw.authz.backendConn = conn
+	return gw, mint
+}
+
+func workContextRequest(prefix, secret, internal string) *http.Request {
+	req := httptest.NewRequest(http.MethodPost, moduleWorkContextPath,
+		strings.NewReader(fmt.Sprintf(`{"prefix":%q}`, prefix)))
+	if secret != "" {
+		req.Header.Set(moduleSecretHeader, secret)
+	}
+	if internal != "" {
+		req.Header.Set("X-Codefly-Internal-Token", internal)
+	}
+	return req
+}
+
+func TestGateway_ModuleWorkContext_BrokersToAccounts(t *testing.T) {
+	gw, mint := newWorkContextExchangeHarness(t)
+
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, workContextRequest("documents", "documents-secret", "test-internal-token"))
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "no-store", w.Header().Get("cache-control"))
+	// The gateway presents its OWN cluster credential on the internal leg and
+	// forwards the module's secret for accounts to judge.
+	require.Equal(t, "test-internal-token", mint.lastInternal)
+	require.Equal(t, "documents", mint.lastPrefix)
+	require.Equal(t, "documents-secret", mint.lastSecret)
+
+	var payload struct {
+		Token       string `json:"token"`
+		PrincipalID string `json:"principalId"`
+		Tenant      string `json:"tenant"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &payload))
+	require.Equal(t, "work-context-for-documents", payload.Token)
+	require.Equal(t, "00000000-0000-4000-8000-00000000beef", payload.PrincipalID)
+	require.Equal(t, "11111111-1111-4111-8111-111111111111", payload.Tenant)
+}
+
+func TestGateway_ModuleWorkContext_FailsClosed(t *testing.T) {
+	tests := map[string]struct {
+		prefix   string
+		secret   string
+		internal string
+		want     int
+	}{
+		"no internal token":  {"documents", "documents-secret", "", http.StatusUnauthorized},
+		"bad internal token": {"documents", "documents-secret", "wrong", http.StatusUnauthorized},
+		"no module secret":   {"documents", "", "test-internal-token", http.StatusUnauthorized},
+		"path prefix":        {"documents/nested", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"wildcard prefix":    {"*", "documents-secret", "test-internal-token", http.StatusBadRequest},
+		"empty prefix":       {"", "documents-secret", "test-internal-token", http.StatusBadRequest},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, workContextRequest(test.prefix, test.secret, test.internal))
+
+			require.Equal(t, test.want, w.Code)
+			// Nothing reached accounts: the perimeter rejected it first.
+			require.Zero(t, mint.requestCount)
+		})
+	}
+}
+
+// accounts owns the decision, so its refusal is the gateway's — and a refusal, a
+// rejected request, and an outage stay distinguishable to the module.
+func TestGateway_ModuleWorkContext_RelaysAccountsOutcome(t *testing.T) {
+	for name, test := range map[string]struct {
+		code codes.Code
+		want int
+	}{
+		"refusal":          {codes.PermissionDenied, http.StatusUnauthorized},
+		"rejected request": {codes.InvalidArgument, http.StatusBadRequest},
+		"outage":           {codes.Internal, http.StatusBadGateway},
+	} {
+		t.Run(name, func(t *testing.T) {
+			gw, mint := newWorkContextExchangeHarness(t)
+			mint.code = test.code
+
+			w := httptest.NewRecorder()
+			gw.ServeHTTP(w, workContextRequest("documents", "documents-secret", "test-internal-token"))
+
+			require.Equal(t, test.want, w.Code)
+			require.Equal(t, 1, mint.requestCount)
+		})
+	}
+}
+
+func TestGateway_ModuleWorkContext_MethodNotAllowed(t *testing.T) {
+	gw, _ := newWorkContextExchangeHarness(t)
+
+	req := httptest.NewRequest(http.MethodGet, moduleWorkContextPath, nil)
+	req.Header.Set("X-Codefly-Internal-Token", "test-internal-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}

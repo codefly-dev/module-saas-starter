@@ -9,8 +9,10 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -32,13 +34,58 @@ var moduleCapabilitiesSingleton = &ModuleCapabilitiesServer{}
 // ModuleCapabilitiesSingleton returns the shared server instance.
 func ModuleCapabilitiesSingleton() *ModuleCapabilitiesServer { return moduleCapabilitiesSingleton }
 
-// moduleCaller resolves the authenticated module service principal.
+// moduleCaller resolves the authenticated module service principal from the Work
+// Context the caller forwards. The identity is taken from the signed capability
+// rather than from request metadata, so a caller that reaches this listener
+// cannot name a principal it was never issued.
 func moduleCaller(ctx context.Context) (business.ModuleCaller, error) {
-	id, err := callerID(ctx)
-	if err != nil {
-		return business.ModuleCaller{}, err
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
 	}
-	return business.ModuleCaller{PrincipalID: id, BoundOrg: callerOrg(ctx)}, nil
+	values := md.Get(codefly.WorkContextHeaderName)
+	if len(values) == 0 || values[0] == "" {
+		return business.ModuleCaller{}, status.Error(codes.Unauthenticated, "module work context required")
+	}
+	return WorkContextSingleton().VerifyModuleWorkContext(values[0])
+}
+
+// MintModuleWorkContext issues that Work Context. Like MintModuleRegistration it
+// takes none itself — this is where a module obtains its identity, so it
+// authenticates with the registration secret its composition provisioned and the
+// principal it acts as is derived from the prefix that secret is bound to.
+func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, req *gen.ModuleMintWorkContextRequest) (*gen.ModuleMintWorkContextResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	authority, err := service.ModuleAuthorizeWorkContext(req.GetPrefix(), req.GetSecret())
+	if err != nil {
+		if errors.Is(err, business.ErrModuleRegistrationDenied) {
+			return nil, status.Error(codes.PermissionDenied, "module work context denied")
+		}
+		return nil, err
+	}
+	// The signer lives on the Work Context authority, which owns this cluster's
+	// signing key; this RPC lives here so the gateway can broker it from the same
+	// minimal-import proto as the registration exchange.
+	token, signed, err := WorkContextSingleton().StartModuleTask(authority)
+	if err != nil {
+		if errors.Is(err, ErrWorkContextAuthorityUnconfigured) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, mapWorkContextError(err)
+	}
+	// The record is written only once the capability exists, and the capability is
+	// withheld when the record cannot be committed.
+	if err := service.RecordModuleWorkContextMint(ctx, req.GetPrefix(), authority); err != nil {
+		return nil, err
+	}
+	return &gen.ModuleMintWorkContextResponse{
+		Token:       token.Encoded(),
+		ExpiresAt:   timestamppb.New(time.Unix(signed.GetExpiresAtUnix(), 0).UTC()),
+		PrincipalId: authority.PrincipalID,
+		Tenant:      authority.Tenant,
+	}, nil
 }
 
 // MintModuleRegistration issues the credential a composed module presents to the
