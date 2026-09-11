@@ -186,6 +186,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PermissionService/GrantScope":                            "Grant a role at a scope node (inherits to subtree).",
 	"PermissionService/ListRoleAssignments":                   "List assignments in an org.",
 	"PermissionService/ListRoles":                             "List built-in + org-scoped roles.",
+	"PermissionService/ListCollectionAccess":                  "Inspect collection boundaries and active inherited documents/read grants.",
 	"PermissionService/ListShares":                            "List the shares on a specific record.",
 	"PermissionService/RegisterScopeNode":                     "Register a scope node or place a record at one.",
 	"PermissionService/RevokeRole":                            "Revoke a role assignment.",

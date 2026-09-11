@@ -43,29 +43,51 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 ### Data boundaries
 
-Each source ingests into a **data boundary** — the scope node its Entries land in
-— so two teams in one org can see different collections through a grant change
-rather than a code change. The **Boundary** column names that node and summarizes
-the viewer's grants on it (`Read · Write`).
+Each source binds to a collection scope node. Connecting or creating a collection
+creates **no creator, default-team, or organization-wide read grant**. Accounts
+is the authority for `documents/read`; source labels and flat administrative
+roles never substitute for a collection grant.
 
-Naming a boundary needs the caller-scoped accessible-scopes RPC, which is *not*
-part of the published `@codefly-dev/saas-sdk` surface (the SDK deliberately
-excludes the authorization surface), so `DatasourceClient.listAccessibleScopes`
-is **optional** and supplied by the consumer — see the portal's
-`src/features/datasources/datasource-client.ts`. It lives on the client, rather
-than as a panel prop, so that a gateway-bound client can supply it itself once
-the RPC ships in the SDK, with no wiring by the consuming solution.
+The host's `/admin/datasources` picker lists existing collections, their active
+read grants (including inherited grants), and the creator's current read access.
+Administrators can choose a member or team and grant a role containing only
+`documents/read`, or revoke a displayed grant. Revoking an inherited grant removes
+that role at its ancestor and all descendants; the confirmation names this impact.
+Accounts checks admin authority and emits its transactional grant/revoke audit and
+lifecycle events. The host audit page resolves actor names, and grant rows display
+the granting actor. The host adapter supplies `listCollections`,
+`listGrantSubjects`, `grantCollectionRead`, and `revokeCollectionRead` to the
+transport-free `CollectionGrants` component. Gateway-bound source panels link to
+that host action; admin permission APIs are not added to the public SDK.
 
-The column **never renders a missing grant as denial** — it falls back to the
-boundary id and says nothing further. That holds even when the lookup succeeded
-and returned nothing, because the RPC reports *scope grants* only, and a scope
-grant is one of several paths to authority: an org admin authorized through flat
-RBAC (`*:*`) operates every source without any scope-grant row existing. An empty
-result is therefore the normal state for a tenant that grants no boundaries, and
-labelling it "no access" would be false for the very admin who connected the
-source. The lookup's resource vocabulary is likewise a documented default, not a
-verified fact — if it does not match how a deployment writes its grants, the
-column degrades to ids rather than reporting anything untrue.
+`createDatasourceClient` queries the SDK's caller-scoped `ListMyAccessibleScopes`
+with `documents/read`, follows every page, and propagates failures. No readable
+collection and permission-service failure have separate states; neither is an
+empty search result or proof of an indexing failure.
+
+A consuming collection or chat page can wrap **all** private state beneath
+`CollectionReadBoundary` (inside its React Query provider), passing `client`,
+`orgId`, and the collection's `nodeId`. It unmounts its children on denied or
+failed permission refreshes. Permission queries refresh every five seconds,
+including in background tabs, and on focus; local grant mutations invalidate
+them immediately in the same query client. Server-side document/search/stream
+requests must still enforce current Accounts grants. Browser timers can be
+throttled, so this polling is not an instantaneous revocation guarantee.
+
+The consuming page owns cancellation and deletion of any private query caches,
+stream buffers, persisted history, or state outside the boundary. Dispose those
+on unmount and reauthorize before restoring content. Do not keep private content
+in an ancestor of the boundary. Render "No indexed content" only inside an
+allowed boundary after a successful empty content response. This repository has
+no consuming collection or chat screen; its wrapper tests exercise state disposal,
+while end-to-end ingestion and those screens require verification in a consuming
+solution.
+
+The `dev-admin` fixture provisions a `Wiki` collection and a `Collection reader`
+role via Accounts' registration/grant service paths. Only `admin@acme.com` and
+`bob@acme.com` receive that grant. Select this existing collection when connecting
+a demo source; other fixture viewers remain ungranted. Reseeding reconverges the
+declared grants, so test revocation without restarting the fixture runtime.
 
 ## Installing from a solution
 

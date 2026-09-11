@@ -327,23 +327,11 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(client.listAccessibleScopes).toHaveBeenCalledWith("org-1");
 	});
 
-	it("never renders a missing grant as denial", async () => {
-		// The lookup reports scope grants only. An org admin authorized through
-		// flat RBAC holds no scope-grant row, so an empty result is the normal
-		// state — calling it "No access" would be false for the admin who
-		// connected the source.
-		const client = fakeClient({
-			listSources: vi.fn(async () => [sampleSource]),
-			listAccessibleScopes: vi.fn(async () => []),
-		});
-		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-
-		// The boundary stays identifiable by id, with no claim about authority.
-		expect(await screen.findByText("11111111")).toBeTruthy();
-		await waitFor(() => expect(client.listAccessibleScopes).toHaveBeenCalled());
-		expect(screen.queryByText("No access")).toBeNull();
-		expect(screen.queryByText(/denied|no grant/i)).toBeNull();
-	});
+	it("distinguishes no readable collection from empty indexed content", async () => {
+        const client = fakeClient({listSources: vi.fn(async () => [sampleSource]), listAccessibleScopes: vi.fn(async () => [])});
+        renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+        expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+    });
 
 	it("refetches boundaries after a source is connected", async () => {
 		// Connecting resolves the target collection to a boundary node, so a

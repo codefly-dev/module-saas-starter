@@ -130,6 +130,7 @@ describe("createDatasourceClient", () => {
 		});
 		const operations = {
 			listSources: () => client.listSources("org-1"),
+            listAccessibleScopes: () => client.listAccessibleScopes!("org-1"),
 			listActivity: () => client.listActivity!("org-1", "ds-1"),
 			addGitHubSource: () =>
 				client.addGitHubSource({
@@ -356,4 +357,12 @@ it("serializes a replacement credential only for reconnect on the existing sourc
  expect(calls[0].url).toContain("saas.accounts.v1.DatasourceService/SyncSource");
  expect(calls[0].body).toEqual({ orgId: "org-1", id: "source-1", accessToken: "test-only-replacement" });
  expect(calls[1].body).toEqual({ orgId: "org-1", id: "source-1" });
+});
+
+it("connects to the selected node without deriving authority from its label", async () => {
+ const {calls} = stubFetch({});
+ const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token"});
+ await client.addGitHubSource({orgId: "org-1", repo: "acme/example", paths: [], branch: "main", targetCollection: "Wiki", boundaryNodeId: "11111111-1111-1111-1111-111111111111", accessToken: "test-pat", webhookSecret: ""});
+ expect(calls[0].body).toMatchObject({boundaryNodeId: "11111111-1111-1111-1111-111111111111"});
+ expect(calls[0].body).not.toHaveProperty("collectionLabel");
 });

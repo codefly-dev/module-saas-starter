@@ -1,6 +1,6 @@
 {
 	"name": "@codefly-dev/saas-ui",
-	"version": "0.2.3",
+	"version": "0.2.4",
 	"description": "Reusable SaaS-domain frontend components (datasources, \u2026) the portal and solutions both import, built on @codefly-dev/ui primitives and driven by an injected typed client.",
 	"repository": {
 		"type": "git",
