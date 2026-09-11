@@ -315,28 +315,53 @@ with a queue it re-imposes the rebase race it was meant to replace.
 
 Two consequences worth knowing before you lose time to them:
 
-- **`gh pr merge` silently does nothing here.** With `--squash` it prints
-  `! The merge strategy for main is set by the merge queue` and exits 0 having
-  merged nothing; with no flag it prints nothing and still does nothing. Arming
-  auto-merge does not enqueue either. Nothing reports an error, so to anything
-  checking exit codes it reads as a successful merge. Enqueue explicitly:
+- **Verify queue membership after requesting a merge.** `gh 2.100.0` documents
+  that `gh pr merge` enqueues when required checks have passed and enables
+  auto-merge otherwise. A successful exit alone does not establish that the PR
+  is queued or merged. Set `PR_NUMBER` to the pull request number and inspect
+  its state:
 
   ```bash
-  PRID=$(gh api graphql -f query='{repository(owner:"codefly-dev",name:"module-saas-starter")
-    {pullRequest(number:N){id}}}' --jq '.data.repository.pullRequest.id')
-  gh api graphql -f query="mutation{enqueuePullRequest(input:{pullRequestId:\"$PRID\"})
-    {mergeQueueEntry{position state}}}"
+  PR_NUMBER=626 # replace with the pull request number
+  gh api graphql -f query='query($number:Int!){repository(owner:"codefly-dev",name:"module-saas-starter")
+    {pullRequest(number:$number){id state autoMergeRequest{enabledAt} mergeQueueEntry{position state}}}}' \
+    -F number="$PR_NUMBER" --jq '.data.repository.pullRequest'
+  ```
+
+  `state: MERGED` confirms completion; a non-null `mergeQueueEntry` confirms
+  queue membership. An `autoMergeRequest` alone confirms neither. If the PR
+  is open, eligible, and has no queue entry, explicitly request enqueue using
+  its id (this can fail if requirements are unmet), then repeat the lookup:
+
+  ```bash
+  PRID=$(gh api graphql -f query='query($number:Int!){repository(owner:"codefly-dev",name:"module-saas-starter")
+    {pullRequest(number:$number){id}}}' -F number="$PR_NUMBER" \
+    --jq '.data.repository.pullRequest.id') &&
+  gh api graphql -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})
+    {mergeQueueEntry{position state}}}' -f id="$PRID"
   ```
 
 - **Every required check must run on `merge_group`.** A required context that
   never reports leaves its entry queued until the queue evicts it, and entries
   merge in order, so one missing context stalls every merge in the repository —
   and no pull request run shows it, because the same job is green there. The
-  `release-contract` gate enforces this for the contexts the tree declares in
-  `REQUIRED_CONTEXTS`, which is its own copy of a list that really lives in the
-  ruleset — reconcile the two with `node scripts/ci/release-gates.mjs contexts`
-  whenever either moves. See [RELEASE_GATES.md § The contract
-  test](./RELEASE_GATES.md#the-contract-test).
+  `release-contract` gate checks publication dependencies and action pins; it
+  does **not** enforce merge-queue trigger coverage or compare required check
+  names with the live ruleset. Whenever workflows or required checks change,
+  read the effective required contexts:
+
+  ```bash
+  gh api repos/codefly-dev/module-saas-starter/rules/branches/main \
+    --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context'
+  ```
+
+  Compare each context with the reporting job's `name` (or job id when unnamed)
+  in `.github/workflows/`, including any matrix-expanded name. Check that its
+  workflow subscribes to `merge_group` and that job conditions and dependencies
+  permit it to report on that event. Confirm those contexts actually report on
+  the queue entry's merged commit; a green PR run or `release-contract` alone
+  cannot establish this. See [RELEASE_GATES.md § The contract
+  test](./RELEASE_GATES.md#the-contract-test) for the existing guard's scope.
 
 ## Cutting a release
 
