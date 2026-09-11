@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 31)
-	require.Len(t, catalog.GetMethods(), 197)
+	require.Len(t, catalog.GetMethods(), 198)
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -47,6 +47,12 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, []catalogv1.Protocol{catalogv1.Protocol_PROTOCOL_GRPC, catalogv1.Protocol_PROTOCOL_CONNECT}, readableSources.GetProtocols())
 	require.Equal(t, "saas.accounts.v1.ListReadableSourceCollectionsRequest", readableSources.GetInputType())
 	require.Equal(t, "saas.accounts.v1.ListReadableSourceCollectionsResponse", readableSources.GetOutputType())
+
+	collectionAccess := methods["/saas.accounts.v1.PermissionService/ListCollectionAccess"]
+	require.NotNil(t, collectionAccess)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, collectionAccess.GetPolicy().GetExposure())
+	require.Equal(t, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, collectionAccess.GetPolicy().GetTenant())
+	require.Equal(t, "/v1/collection-access", collectionAccess.GetHttpBindings()[0].GetPath())
 
 	authenticate := methods["/saas.accounts.v1.AuthService/Authenticate"]
 	require.NotNil(t, authenticate)

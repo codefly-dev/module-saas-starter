@@ -462,19 +462,9 @@
     "services/accounts/code/pkg/business/events_pubsub.go": "2880722c19244db3286a387c68a0d06a72da14bdccff9158021bf7f7435f1844",
     "services/accounts/code/pkg/business/execution_custody.go": "a822164f80b3676c6fa81f90a1405f57c43553fe1d3f13a0cb1449c36f58311e",
     "services/accounts/code/pkg/business/features.go": "3328186765efff9690a2ef59e56a7278409b1002e46390779b5337c2659f0c78",
-<<<<<<< HEAD
-    "services/accounts/code/pkg/business/fixture_collection_test.go": "353983a0c83b4db5b05b167b49a4423cad5c6eacd3551017d45b6f0e1fbcf65c",
+    "services/accounts/code/pkg/business/fixture_collection_test.go": "b5e14b39b65d11a105ce2082ae076d9eb3b656a4e138846a4b8b97d57320b18a",
     "services/accounts/code/pkg/business/fixture_org_ids_test.go": "79a8d180972fb75418bed2715dcc033396736a3ceb10db12b48c4ed95beedd90",
     "services/accounts/code/pkg/business/fixture_user_ids_test.go": "c2a369b091856644554569b9d4739b676fa6ba74e1aff8f01b2b4b341edae331",
-||||||| parent of 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
-    "services/accounts/code/pkg/business/fixture_collection_test.go": "353983a0c83b4db5b05b167b49a4423cad5c6eacd3551017d45b6f0e1fbcf65c",
-    "services/accounts/code/pkg/business/fixture_org_ids_test.go": "1541d444b2e805b6c900dd85529b7eac54af4d91c5a88ad700c03194488862db",
-    "services/accounts/code/pkg/business/fixture_user_ids_test.go": "17bbf43e68b9ee42890dc32b46e3b4142b648a6625f3d1533e16e7b646dea8f2",
-=======
-    "services/accounts/code/pkg/business/fixture_collection_test.go": "b5e14b39b65d11a105ce2082ae076d9eb3b656a4e138846a4b8b97d57320b18a",
-    "services/accounts/code/pkg/business/fixture_org_ids_test.go": "1541d444b2e805b6c900dd85529b7eac54af4d91c5a88ad700c03194488862db",
-    "services/accounts/code/pkg/business/fixture_user_ids_test.go": "17bbf43e68b9ee42890dc32b46e3b4142b648a6625f3d1533e16e7b646dea8f2",
->>>>>>> 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
     "services/accounts/code/pkg/business/gdpr.go": "f2fb030ba2396d4d64803905724f96005359e9549f19e42cc3f9b19884ba0bd3",
     "services/accounts/code/pkg/business/gdpr_authorization_test.go": "f0b65a4aab55c8a1f4e0402a4924b70fb6532373cfc803e6c8b94bd8f89c51e5",
     "services/accounts/code/pkg/business/gdpr_availability_test.go": "b96d30667234c6a7dccd6d04920422b261aa5f320fc4952b3e94ebb3ed320006",
@@ -560,7 +550,7 @@
     "services/accounts/code/pkg/business/rpc_policy_matrix.go": "22fa98916318fc1f04bc9b51ae9bfbc00dccd970ab61dd552c190c3d45ed8851",
     "services/accounts/code/pkg/business/service.go": "f4815f67835da8eeb7741e07f692c739f13a8f0848bb23568cda21007ece9cd7",
     "services/accounts/code/pkg/business/service_catalog.go": "40d80216aa9d956dafb962c10c00897e4da2afedd0a445756f63345a91399222",
-    "services/accounts/code/pkg/business/service_catalog_test.go": "d111f542737c29647792ebeff3840adb5937a9a294e356a96239426559dff031",
+    "services/accounts/code/pkg/business/service_catalog_test.go": "0b480a70b6f1386e7d7ef9df805bb802c9aa96c7d31e8fbf6c649c9313e8f0b8",
     "services/accounts/code/pkg/business/service_test.go": "67b51744b431dced51370ad98bfceff4dadf76210a92b5e77a69dcf9e2a396e9",
     "services/accounts/code/pkg/business/service_vocabulary.go": "8c24be27169f7d6c63281e382a116cfce917dca076dbb98b038bdabff105c2dd",
     "services/accounts/code/pkg/business/service_vocabulary_composition_test.go": "73749425e7a5be30c82d92ce7dc412e55cdd83c4538c0ac74528073277d3093a",
@@ -1182,19 +1172,9 @@
     "services/frontend/code/instrumentation-client.ts": "f523db1ab7275c868635813feaa310a4755f99ef6cefddecf99cc222c3ca0426",
     "services/frontend/code/instrumentation.ts": "d5860d320f6b621aaffce068b76d7881b850f31225efd9b9ebfcd643ca747b03",
     "services/frontend/code/next.config.mjs": "de71a72b183b357811459d13c36397ec0ac6df09f613172e3b8f3d2a0595d652",
-<<<<<<< HEAD
-    "services/frontend/code/package.json": "aaec6e396771a840083319590153fd6654d332430f72e6f161c8e8428ec32d3f",
+    "services/frontend/code/package.json": "27381906f0a2c724ac22ccaaa74dfb12756adb13619965b7208b21ba8de567cd",
     "services/frontend/code/packages/codefly-ui/ARCHITECTURE.md": "b5176d4559b418b4cb0d34e92d35ca5c7944988f907aa403800f0a47fea3fcf9",
     "services/frontend/code/packages/codefly-ui/CATALOG.md": "666a11176894b5061c4c84db0d8b0f204306e9c327c7978cd969e5c7d35611e4",
-||||||| parent of 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
-    "services/frontend/code/package.json": "a412ab2baca01c2014c916f06c5256a27665c33351455ec9a1ed2e7fce8e3302",
-    "services/frontend/code/packages/codefly-ui/ARCHITECTURE.md": "a0b27a166acf4410ccd2145360ed41866e99c33711e00b9a785a2ebd4f888f64",
-    "services/frontend/code/packages/codefly-ui/CATALOG.md": "60fb812993f89988d4b6066539fb7c531331bfeeed95520ad55b19467a8df556",
-=======
-    "services/frontend/code/package.json": "1440856b7d217fb2c229bbc19be8a26bcb0e83aaef7e442b243b6ebdaed0ee1f",
-    "services/frontend/code/packages/codefly-ui/ARCHITECTURE.md": "a0b27a166acf4410ccd2145360ed41866e99c33711e00b9a785a2ebd4f888f64",
-    "services/frontend/code/packages/codefly-ui/CATALOG.md": "60fb812993f89988d4b6066539fb7c531331bfeeed95520ad55b19467a8df556",
->>>>>>> 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
     "services/frontend/code/packages/codefly-ui/README.md": "e85f4e6a1fa28e980da8aa417931e545c2fbe8063811ffaf462b45b8f4b65d97",
     "services/frontend/code/packages/codefly-ui/TOKENS.md": "058d38e51ab6e26b285e02ad9c8fb7165c59af3c0b2957858574442b72612337",
     "services/frontend/code/packages/codefly-ui/package.json": "392f8446c546cbf172c233f6e0173640b5aedf0124ff6831f970660948959eb5",
@@ -1423,19 +1403,9 @@
     "services/frontend/code/packages/saas-settings/test/settings.test.ts": "f5b9b1afd9133042d58801c21efacd0d287fb7acc5666303a2d3e3488ccc7530",
     "services/frontend/code/packages/saas-settings/tsconfig.json": "18ea5df4eb6d3247fc7ec16a2aa954e179d7af658749b0fdc6f3fb539e87a348",
     "services/frontend/code/packages/saas-settings/vitest.config.ts": "3dcadc921171a8bab4ddc41bd2a1f9ee34944df4d00d433b001ad343b9349dd1",
-<<<<<<< HEAD
     "services/frontend/code/packages/saas-ui/README.md": "60c87456b74b94049909cc3c4d2ad4dd7fe756350059cbc729d7b35fa9a51b5a",
-    "services/frontend/code/packages/saas-ui/package.json": "b80f95cdc52e61bfcb4b89996efb7e9977b81670c141458a9c8cabadcd2b3b25",
+    "services/frontend/code/packages/saas-ui/package.json": "8e2997fcd33cf5e2126ec64a8a13bdc72bf30c8677a00b08bea4c80e0e5c092e",
     "services/frontend/code/packages/saas-ui/src/__tests__/peer-docs.test.ts": "e6c592bab7470fc5f7dba2e3bd1b4e1f9cc5207a0843917fd866c36a2257e583",
-||||||| parent of 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
-    "services/frontend/code/packages/saas-ui/README.md": "3b7e4361e829c8212b38d9bd07ac8c25877fe0a96a7d6678dc98d34c3cefb07d",
-    "services/frontend/code/packages/saas-ui/package.json": "58d9cd0269e63c4a7e1bbb19dbab286e41eca9ae155e804de10320040c5adea8",
-    "services/frontend/code/packages/saas-ui/src/__tests__/peer-docs.test.ts": "f4136f2d38cb7d496d6fecab18523e1e333de467310d39d689b2d4c44ce82dff",
-=======
-    "services/frontend/code/packages/saas-ui/README.md": "3b7e4361e829c8212b38d9bd07ac8c25877fe0a96a7d6678dc98d34c3cefb07d",
-    "services/frontend/code/packages/saas-ui/package.json": "0f38cb5e6a805b803e916c2513e89fd877c59acb5265127ae17814a5b05965d8",
-    "services/frontend/code/packages/saas-ui/src/__tests__/peer-docs.test.ts": "f4136f2d38cb7d496d6fecab18523e1e333de467310d39d689b2d4c44ce82dff",
->>>>>>> 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
     "services/frontend/code/packages/saas-ui/src/datasources/__tests__/collection-access.test.tsx": "dac0457aed58d2fc13ee4c2491cc1fbcb06334fe44065b67d75be115746d9286",
     "services/frontend/code/packages/saas-ui/src/datasources/__tests__/datasources-panel.test.tsx": "716ceebe16586d4da169972fe3f5ccea915c43367cc16239b09621f70d43d76a",
     "services/frontend/code/packages/saas-ui/src/datasources/__tests__/gateway.test.tsx": "6de3d2b2818913c9594c5655eb8baa7139e29b2cd8c988b23b4d00b9ed2dbad7",
@@ -2046,13 +2016,7 @@
     "services/frontend/code/src/solutions/__tests__/registry.test.ts": "05f46c3a33761a79d9c0ffe71e19cd9afc55e43144ba6e3c069baf455f41db15",
     "services/frontend/code/src/solutions/__tests__/sealed-layers.test.ts": "e5d39c5bfb8045799c372a63ddac56857bba036d94b8cf8037cc931f9caeb744",
     "services/frontend/code/src/solutions/compatibility.ts": "bece9597a93cb5acb2a37fb1ddd57d8102f30b67cd8b70e89aca43878c660b8a",
-<<<<<<< HEAD
-    "services/frontend/code/src/solutions/host-runtime.ts": "2cab09ca1f058f5a03be91d360920dd0f3e3870d23e2b97fbac0d4838ed2042e",
-||||||| parent of 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
-    "services/frontend/code/src/solutions/host-runtime.ts": "7ae49969ee55030640acc635beaf5da7d51aa95e458e328614bbd0393c5ee978",
-=======
-    "services/frontend/code/src/solutions/host-runtime.ts": "e1103483ec4643f30dfe294cfcc11e61589db52af4b8ee0bcda2760ea5b443dd",
->>>>>>> 5d917a19 (fix: refresh SDK contract and assert canonical actor identities)
+    "services/frontend/code/src/solutions/host-runtime.ts": "1061df1bee602c8e02cd0f2546dbe461829f475687c42056d4b2551a8517cac9",
     "services/frontend/code/src/solutions/registration-authority.ts": "63bf051ddf17305cda30965d1640c5790e6e184dec369912d1627c7e5f47220c",
     "services/frontend/code/src/solutions/registry.ts": "d376975cb182de63c8cdb194e0b7fcb4943249657e5d9d198572d2c992aed71f",
     "services/frontend/code/src/test/codefly-endpoints.ts": "5a843d3a420ef78b6e8be5c801dcedd9e443d5e4523107d386b4fa7f00f3b92a",
