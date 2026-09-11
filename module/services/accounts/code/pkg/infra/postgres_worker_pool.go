@@ -28,7 +28,7 @@ func newWorkerPoolFromURL(
 		return nil, errors.New("worker pool role, application name, and log scope are required")
 	}
 	w := wool.Get(ctx).In(worker.logScope)
-	config, err := pgxpool.ParseConfig(connectionURL)
+	config, err := configureConnection(connectionURL, nil)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to parse connection string")
 	}

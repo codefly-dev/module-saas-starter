@@ -56,6 +56,15 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 		return nil, w.Wrapf(err, "failed to get read-write connection string")
 	}
 
+	return NewPostgresStoreWithCapabilities(ctx, readOnlyConnection, readWriteConnection)
+}
+
+// NewPostgresStoreWithCapabilities composes the same production reader/writer
+// boundary from primitive-projected connection secrets. It preserves verified
+// identity, distinct roles, startup pings and the rotating credential hook.
+func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, readWriteConnection string) (*PostgresStore, error) {
+	w := wool.Get(ctx).In("NewPostgresStoreWithCapabilities")
+
 	// One token-resolution path for every pool. In external-identity mode the
 	// database password is a rotating token; the reader, writer, and legacy
 	// pools all attach this same hook so a reconnect after token expiry presents
@@ -112,6 +121,13 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 	writerConfig, err := configureConnection(readWriteConnection, hook)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse read-write Postgres capability: %w", err)
+	}
+	profile, err := DatabaseTransportProfile()
+	if err != nil {
+		return nil, nil, err
+	}
+	if profile == "local-identity-proxy" && readerConfig.ConnConfig.Host == writerConfig.ConnConfig.Host {
+		return nil, nil, errors.New("reader and writer require distinct private identity sockets")
 	}
 	// Distinct non-owner reader/writer roles are the physical separation the RLS
 	// boundary depends on; keep the check service-postgres's Open enforced.
@@ -173,7 +189,11 @@ func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool
 	if strings.TrimSpace(connectionURL) == "" {
 		return nil, errors.New("postgres connection URL is required")
 	}
-	config, err := pgxpool.ParseConfig(connectionURL)
+	profile, err := DatabaseTransportProfile()
+	if err != nil {
+		return nil, err
+	}
+	config, err := parseDatabaseTransport(connectionURL, profile, hook != nil)
 	if err != nil {
 		return nil, err
 	}
