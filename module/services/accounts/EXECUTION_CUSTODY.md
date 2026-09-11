@@ -295,10 +295,11 @@ wired and `ACCOUNTS_REVOCATION_FAIL_OPEN` to be false.
 
 The existing `security` workspace configuration supplies
 `EXECUTION_CUSTODY_CONFIG_FILE`, an absolute private JSON projection. Empty leaves
-both listeners disabled. The JSON shape is:
+all private listeners disabled. The JSON shape is:
 
 ```json
 {
+  "enable_tenant": false,
   "tls_cert_file": "/var/run/accounts/custody/tls.crt",
   "tls_key_file": "/var/run/accounts/custody/tls.key",
   "client_ca_file": "/var/run/accounts/custody/client-ca.crt",
@@ -327,7 +328,7 @@ and consumer policy are snapshotted at startup; roll Accounts after changing
 them. Policy changes fence old bindings; certificate replacement retaining the
 same URI can preserve worker access within the original horizon.
 
-The authoritative topology declares two module-facing TCP endpoints, resolved
+The authoritative topology declares three module-facing TCP endpoints, resolved
 by exact endpoint name through the Codefly SDK. No fixed runtime port is embedded
 in the process and no default consumer network edge is granted:
 
@@ -335,10 +336,11 @@ in the process and no default consumer network edge is granted:
 |---|---:|---|
 | `accounts/custody` |9443| TLS1.3 server identity; real owner JWT for Register/Recover, verified worker URI client certificate for Exchange |
 | `accounts/revision` |9444| TLS1.3 server identity plus the existing separate `x-codefly-internal-token`; canonical internal WorkContext RPC policy, no caller certificate required; tenant issuance/exchange denied |
+| `accounts/tenant` |9445| Opt-in `enable_tenant: true`; native gRPC over TLS1.3 (ALPN h2), real owner access JWT and canonical tenant WorkContext policy; internal revision/evidence RPCs denied |
 
 The revision listener uses the already configured `CODEFLY_INTERNAL_TOKEN`
 (minimum32 characters), including the existing previous-token overlap policy.
-It does not accept that token as owner or worker custody authority. Both listeners
+It does not accept that token as owner or worker custody authority. All enabled listeners
 use the projected server certificate; its DNS SANs must cover their private
 route(s). Compositions declare only required endpoint dependencies and render
 network policy. Preserve TLS through a TCP passthrough; never synthesize client
@@ -434,3 +436,38 @@ record after store reconstruction, and opens all three fixed worker pools with
 custody denied. It is an Accounts local-socket/role proof, not a Cloud SQL IAM,
 managed proxy, remote TLS or full hosted-process acceptance result. The exact
 normal image must include this follow-up before consuming the proxy profile.
+
+## Opt-in normal tenant WorkContext TLS
+
+The `enable_tenant` projection defaults to false, preserving existing deployments.
+When true, the normal host mounts the existing canonical owner-authenticated
+WorkContext gRPC constructor separately from revision. The original minter,
+Vault signing key, PostgreSQL authority and Redis revoker remain shared. The
+caller uses `accounts/tenant` discovery as a `DNS:port` native gRPC target with
+verified TLS1.3 and the server CA; each tenant call supplies the original Accounts
+access JWT in `authorization: Bearer ...`. No client certificate or internal
+credential substitutes for the owner JWT. StartTask and ExchangeAudience retain
+all existing tenant, owner, current-authority, actor and bounded-parent checks.
+The listener exposes the canonical tenant WorkContext methods; it is not a new
+renewal protocol. Internal revision/evidence methods remain denied.
+
+Bind all enabled private endpoints before serving any of them. A failed endpoint
+bind closes earlier listeners and fails startup. Shutdown concurrently drains
+both gRPC listeners and the custody HTTP server with a shared five-second bound;
+forced stop remains the timeout fallback. Normal login, registration, JWKS,
+REST/Connect and legacy internal listeners are unchanged. A composing consumer
+must explicitly declare narrow reachability to tenant; no public route or default
+consumer edge is added. The projected server SAN must match its private DNS.
+Do not point a tenant client at revision or infer native gRPC support from a
+browser HTTPS route.
+
+Focused local proof: `python3 qualification/execution-custody/run.py --tenant-mount`
+from the repository root. It provisions disposable loopback PostgreSQL/Vault and
+Redis, then exercises the actual normal-host projection, construction and
+start/shutdown functions with real JWT sessions and native grpc-go clients.
+Only endpoint discovery is replaced by allocated loopback sockets. It covers
+explicit opt-in, bind rollback, real StartTask/ExchangeAudience, missing/forged
+and revision-only credentials, TLS CA/hostname/version/plaintext denial,
+internal/tenant exposure separation, shutdown/rebind with the same original
+parent, and actual Redis session revocation. This proves the mount, not complete
+managed bootstrap, a proxy/database transport, or an external IdP ceremony.
