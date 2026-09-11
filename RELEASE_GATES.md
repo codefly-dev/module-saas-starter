@@ -181,10 +181,47 @@ ecosystem's `open-pull-requests-limit` open indefinitely, silently starving ever
 later update behind it. That is why npm, pip and the five in-module `go.mod`
 files are absent: they are base files, owned by the canonical module.
 
-The mirror rule closes the other gap: a manifest that is *not* base-tracked must
-be configured, so an ecosystem nobody wired up fails the gate instead of quietly
+The mirror rule closes the other gap: a non-generated manifest that is *not*
+base-tracked must be configured, so an ecosystem nobody wired up fails the gate instead of quietly
 receiving nothing. An entry pointing at a directory with no manifest of its
 ecosystem fails too, since it can never open a pull request.
+
+Agent-generated `module/services/*/builder/Dockerfile` recipes must **not** be
+configured in Dependabot: agents replace them before building. The coverage gate
+rejects those entries. `scripts/ci/build-images.json` records the expected build
+images and the owning agent source for Go,
+Next.js and the Postgres migration builder (including telemetry's generated Go
+recipe, which is not checked in).
+
+The weekly `build-images.yml` monitor compares registry digests for the effective
+tags, their current release lines, and latest release lines. An available update
+fails that monitoring run and writes a summary linking the authoritative agent
+source; it creates no generated-file PR. Vendor runtime images remain covered by
+the Codefly supply-chain audit. This monitor requires Docker Buildx and registry
+access; it does not qualify or automatically adopt an upgrade.
+
+To upgrade an image:
+
+1. Update the owning service agent's template/constants and qualify its release.
+2. Adopt that release in `module/deployment/topology.bindings.codefly.yaml`,
+   regenerate service manifests, refresh the base manifest, and update the
+   expected images in `scripts/ci/build-images.json` in the same PR.
+3. Run `codefly ci run --all` and boot the graph with `codefly run service`
+   before adopting a runtime/compiler major. A successful build alone does not
+   establish runtime compatibility. Do not bump Node or Go majors by editing a
+   generated recipe.
+
+CI rejects generated-only recipe edits and proposed images that disagree with
+that contract before planning service CI. Changes to the image contract force the full service graph
+through CI. After the canonical build, `build-images.mjs evidence` compares the
+versioned `build-recipes/<agent-version>/recipe.codefly.json` inputs with the contract and requires BuildKit `FROM` records with
+matching digests. A successful build of an overwritten proposal therefore fails
+the image check. The `effective-build-images` artifact retains the build log,
+Codefly report, regenerated recipe text, agent pins, tags and resolved digests,
+including evidence from failed builds. Floating tags (currently the migration
+builder's Alpine 3.21) record the digest from the build log, never a later registry
+lookup. Missing digest evidence fails closed; changes to BuildKit's log format
+may require updating the evidence reader.
 
 The same check fails if `authz-coverage` — or any other gate in `REQUIRED_GATES`
 — is dropped from the aggregate's `needs` or removed from the workflow, if the

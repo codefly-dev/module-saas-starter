@@ -17,7 +17,7 @@
 // The mirror failure is silence: a manifest that is neither base-tracked nor
 // configured receives no updates at all and reports nothing at all.
 //
-// So: every non-base-tracked dependency manifest must be configured, every
+// So: every non-generated, non-base-tracked dependency manifest must be configured, every
 // base-tracked one must not be, and no entry may point at a directory holding
 // no manifest of its ecosystem.
 
@@ -121,6 +121,9 @@ export function discoverManifests(root = REPOSITORY_ROOT) {
   return found.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+export const isGeneratedRecipe = (manifest) =>
+  manifest.ecosystem === "docker" && /^module\/services\/[^/]+\/(?:builder|build-recipes)\/(?:.*\/)?Dockerfile(?:\..+)?$/.test(manifest.path);
+
 const key = (ecosystem, directory) => `${ecosystem} ${directory}`;
 const spell = (directory) => (directory === "" ? "/" : `/${directory}`);
 
@@ -162,6 +165,10 @@ export function coverageErrors({ entries, manifests, baseTracked, hasWorkflows }
         continue;
       }
       for (const manifest of here) {
+        if (isGeneratedRecipe(manifest)) {
+          errors.push(`${manifest.path} is agent-generated; update the owning service agent, then topology bindings (see RELEASE_GATES.md)`);
+          continue;
+        }
         if (!baseTracked.has(manifest.path)) continue;
         errors.push(
           `${CONFIG_PATH}: ${ecosystem} is configured at ${spell(directory)}, whose ${manifest.path} ` +
@@ -174,7 +181,7 @@ export function coverageErrors({ entries, manifests, baseTracked, hasWorkflows }
   }
 
   for (const manifest of manifests) {
-    if (baseTracked.has(manifest.path)) continue;
+    if (baseTracked.has(manifest.path) || isGeneratedRecipe(manifest)) continue;
     if (configured.has(key(manifest.ecosystem, manifest.directory))) continue;
     errors.push(
       `${CONFIG_PATH}: ${manifest.path} is not base-tracked and no ${manifest.ecosystem} entry ` +
@@ -218,7 +225,7 @@ function check() {
     console.error("dependabot-coverage: the configuration does not match the tree:");
     errors.forEach((error) => console.error(`    ${error}`));
     console.error(
-      `\nFAIL: ${errors.length} coverage defect(s). Every non-base-tracked dependency manifest must ` +
+      `\nFAIL: ${errors.length} coverage defect(s). Every non-generated, non-base-tracked dependency manifest must ` +
         "be configured, every base-tracked one must not be, and no entry may point at a directory " +
         "holding no manifest of its ecosystem.",
     );

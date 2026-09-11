@@ -89,8 +89,8 @@ test("a non-base-tracked manifest with no entry is an error", () => {
 test("a manifest covered by its own entry is not an error", () => {
   assert.deepEqual(
     run({
-      entries: [entry("docker", "module/services/store/builder")],
-      manifests: [manifest("docker", "module/services/store/builder", "Dockerfile")],
+      entries: [entry("docker", "images")],
+      manifests: [manifest("docker", "images", "Dockerfile")],
     }),
     [],
   );
@@ -238,4 +238,18 @@ test("requirements files are recognised as pip manifests", () => {
     discoverManifests(root).map((m) => m.ecosystem),
     ["pip", "pip"],
   );
+});
+
+test("generated recipes must not receive Dependabot edits", () => {
+  const recipe = manifest("docker", "module/services/store/builder", "Dockerfile");
+  assert.deepEqual(run({ manifests: [recipe] }), []);
+  const errors = run({ entries: [entry("docker", recipe.directory)], manifests: [recipe] });
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /agent-generated/);
+});
+
+test("versioned build recipe copies are also agent-generated", () => {
+  const recipe = manifest("docker", "module/services/store/build-recipes/1.0.0/builder", "Dockerfile");
+  assert.deepEqual(run({ manifests: [recipe] }), []);
+  assert.match(run({ entries: [entry("docker", recipe.directory)], manifests: [recipe] })[0], /agent-generated/);
 });

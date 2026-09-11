@@ -1,0 +1,35 @@
+{
+  "go-grpc": {
+    "source": "https://github.com/codefly-dev/service-go-grpc/blob/main/templates/builder/Dockerfile.tmpl",
+    "images": [
+      "golang:1.27.0-alpine3.23@sha256:3747dcba41c8b0db3211fda4db61638b980e17ac5bb3c94460a975a9cfe19395",
+      "alpine:3.23.5@sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40"
+    ],
+    "watch": [
+      "golang:1.27-alpine3.23",
+      "golang:alpine",
+      "alpine:3.23",
+      "alpine:latest"
+    ]
+  },
+  "nextjs": {
+    "source": "https://github.com/codefly-dev/service-nextjs/blob/main/builder.go",
+    "images": [
+      "node:24.17.0-alpine3.23@sha256:7c70d1235c0b4c2bc9eeed5393d19f1bbdde6885ba0d58ba62bb385d7b0f3ff1"
+    ],
+    "watch": [
+      "node:24-alpine3.23",
+      "node:alpine"
+    ]
+  },
+  "postgres": {
+    "source": "https://github.com/codefly-dev/service-postgres/blob/main/templates/builder/Dockerfile.tmpl",
+    "images": [
+      "alpine:3.21"
+    ],
+    "watch": [
+      "alpine:3.21",
+      "alpine:latest"
+    ]
+  }
+}
