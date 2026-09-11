@@ -42,7 +42,7 @@ export const CODEFLY_KIT_VERSION = "0.2.4";
  * `kit-shared-version` invariant, checked per package rather than against one
  * shared constant).
  */
-export const CODEFLY_SAAS_SDK_VERSION = "0.2.3";
+export const CODEFLY_SAAS_SDK_VERSION = "0.2.4";
 
 /**
  * The exact versions this host publishes into the Module-Federation shared
