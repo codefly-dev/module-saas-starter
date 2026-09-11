@@ -9,6 +9,7 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	"accounts/pkg/jobs"
 )
 
 // datasourceConnectHandler exposes the tenant-facing datasource management
@@ -178,8 +179,16 @@ func (h *datasourceConnectHandler) SyncSource(
 	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
 		return nil, translateGRPCError(err)
 	}
-	jobID, err := h.svc.SyncDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id)
+	jobID, err := h.svc.SyncDatasourceSource(ctx, actorID, req.Msg.OrgId, req.Msg.Id, req.Msg.AccessToken)
 	if err != nil {
+		var failure *jobs.ProcessingError
+		if errors.As(err, &failure) {
+			code := connect.CodeFailedPrecondition
+			if failure.Retryable {
+				code = connect.CodeUnavailable
+			}
+			return nil, connect.NewError(code, errors.New(failure.Failure.Message))
+		}
 		if errors.Is(err, business.ErrDatasourceSourceNotFound) {
 			return nil, connect.NewError(connect.CodeNotFound, err)
 		}

@@ -12,9 +12,10 @@ sources:
       module: saas-starter
       service: accounts
       endpoint: connect
-      contract-digest: sha256:fc379d37ba94988a62d960e90281b19d901e4722fc7d26d9381fe5da689145c8
+      contract-digest: sha256:48f9c5a08e25240a53a46dc3b7c97b406fd9676cb6a198771d121d694271b569
       services:
         - APIKeyService
+        - AccessibleScopeService
         - AuditService
         - AuthService
         - BillingService
@@ -47,5 +48,5 @@ sources:
       as: accounts
 generated-by:
     codefly: development
-    companion: ghcr.io/codefly-dev/proto:0.0.14
+    companion: codeflydev/proto:0.0.13
     facade: true

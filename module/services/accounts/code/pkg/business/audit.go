@@ -8,10 +8,13 @@ import (
 	"time"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/eventcatalog"
+	"accounts/pkg/events"
 	"accounts/pkg/jobs"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // AuditEntry is the domain representation of an audit event. EventType is the
@@ -124,6 +127,7 @@ type TxAuditEmitter interface {
 type DurableAuditEmitter struct {
 	store       Store
 	producer    jobs.Producer
+	transport   events.Transport
 	teeExternal bool
 }
 
@@ -136,6 +140,14 @@ type DurableAuditEmitterOption func(*DurableAuditEmitter)
 // on the synchronous mutation path (see AuditExportQueue in audit_jobs.go).
 func WithExternalTee() DurableAuditEmitterOption {
 	return func(e *DurableAuditEmitter) { e.teeExternal = true }
+}
+
+// WithDomainEventTransport publishes an external-visibility domain event beside
+// each org-scoped audit row, in the same transaction. That event is what an
+// outbound webhook subscription is fanned out from; without a transport wired the
+// emitter still records audit, and nothing is delivered.
+func WithDomainEventTransport(transport events.Transport) DurableAuditEmitterOption {
+	return func(e *DurableAuditEmitter) { e.transport = transport }
 }
 
 func NewDurableAuditEmitter(store Store, producer jobs.Producer, opts ...DurableAuditEmitterOption) (*DurableAuditEmitter, error) {
@@ -174,8 +186,8 @@ func (e *DurableAuditEmitter) normalize(ctx context.Context, entry *AuditEntry) 
 	}
 }
 
-// write inserts the audit row and fans out the webhook outbox using whatever
-// transaction is already on ctx (getQueryExecutor / EnqueueJob both pick it up).
+// write inserts the audit row and publishes its domain event using whatever
+// transaction is already on ctx (getQueryExecutor / Publish both pick it up).
 func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error {
 	if entry.IdempotencyKey != "" {
 		reserved, err := e.store.ReserveAuditIdempotency(ctx, entry.OrgID, string(entry.EventType), entry.IdempotencyKey)
@@ -202,20 +214,8 @@ func (e *DurableAuditEmitter) write(ctx context.Context, entry AuditEntry) error
 	// write runs inside its mutation's transaction, and that transaction is the
 	// control plane for platform-admin and other privileged writes, where RLS
 	// would not scope this read at all.
-	subscriptions, err := e.store.GetActiveWebhookSubscriptions(ctx, entry.OrgID, string(entry.EventType))
-	if err != nil {
+	if err := e.publishDomainEvent(ctx, entry); err != nil {
 		return err
-	}
-	for _, subscription := range subscriptions {
-		delivery, payload, err := newWebhookDelivery(entry, subscription.ID)
-		if err != nil {
-			return err
-		}
-		if err := createOutboundWebhookDelivery(
-			ctx, e.store, e.producer, entry.OrgID, delivery, payload,
-		); err != nil {
-			return err
-		}
 	}
 	if e.teeExternal {
 		if err := enqueueAuditExport(ctx, e.producer, entry); err != nil {
@@ -512,4 +512,55 @@ func (s *Service) emitEntryTx(ctx context.Context, entry AuditEntry) error {
 		return nil
 	}
 	return fmt.Errorf("audit: emitter %T cannot write %q on the caller's transaction (implement TxAuditEmitter)", s.audit, entry.EventType)
+}
+
+// publishDomainEvent writes the external domain event that carries this audit
+// record to its subscribers. The relay resolves matching webhook subscriptions
+// after commit and dispatches them; the audit spine itself is never a delivery
+// channel, so the event is a sibling of the record, not a re-read of it.
+//
+// The envelope id is the audit record's id, which is the X-Webhook-Event-ID an
+// endpoint deduplicates on, so a delivery is identified the same way it was
+// before webhooks moved onto subscriptions.
+//
+// Only a type the catalog declares external is published: eligibility to leave
+// the platform is granted by declaration. A platform-scope record never reaches
+// here — the caller returns early when the entry has no organization — so an
+// event is always tenant-scoped.
+//
+// No partition key is set, and that is deliberate rather than an omission. A
+// partition key is a promise of FIFO within it, and publish_domain_event buys
+// that promise with a per-partition advisory lock held until the producer's
+// transaction commits. Keying it on the organization would serialize every
+// audited mutation in that organization against every other one — for an
+// ordering nothing consumes: an outbound webhook is dispatched in
+// subscription-id order, and the platform namespace is not subscribable by a
+// module, so no ordered subscriber can exist for these types.
+func (e *DurableAuditEmitter) publishDomainEvent(ctx context.Context, entry AuditEntry) error {
+	if e.transport == nil || !eventcatalog.IsExternalPublished(string(entry.EventType)) {
+		return nil
+	}
+	data, err := AuditEventWebhookData(entry)
+	if err != nil {
+		return err
+	}
+	return e.transport.Publish(ctx, moduleTx(ctx), &events.EventEnvelope{
+		Id:               entry.ID,
+		Type:             string(entry.EventType),
+		Source:           domainEventSource,
+		Subject:          entry.ResourceID,
+		Specversion:      "1.0",
+		Datacontenttype:  "application/json",
+		Time:             timestamppb.New(entry.CreatedAt.UTC()),
+		Data:             data,
+		TenantId:         entry.OrgID,
+		ActorPrincipalId: entry.ActorID,
+		// The registered contract version of this event. It is the CloudEvents
+		// attribute EVENTS.md defines as the minor within the dataschema major, so
+		// a subscriber reading the envelope — rather than digging into data — is
+		// what it has to tell a revised payload by. Leaving it unset defaults the
+		// stored event and its delivery job to 1, which would say "v1" for the
+		// saas.webhook.* types revised to v2 while the payload said otherwise.
+		SchemaVersion: uint32(entry.SchemaVersion),
+	})
 }

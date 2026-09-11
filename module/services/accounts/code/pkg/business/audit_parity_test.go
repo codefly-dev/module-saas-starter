@@ -27,8 +27,13 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventDatasourceBlobFetched,
 	EventDatasourceBranchDeleted,
 	EventDatasourceChangeSetCompiled,
+	// SyncDatasourceSource emits this only when replacing a credential; the
+	// RPC policy declares the sync-request event common to every invocation.
+	EventDatasourceCredentialUpdated,
 	EventDatasourceForcePushReconciled,
 	EventDatasourceSnapshotTooLarge,
+	EventDatasourceSyncCompleted,
+	EventDatasourceSyncFailed,
 	EventDatasourceSourceRecovered,
 	EventDocumentDeleted,
 	EventDocumentIngested,

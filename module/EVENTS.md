@@ -213,11 +213,26 @@ behind the [Transport port](#transport-port).
   on `event.id`.
 - **Replay.** `ReplayEvents(type, tenant, since)` re-fans-out from `domain_events`
   so a consumer that attaches later gets history up to `retention`. It reuses the
-  `replay_job_message` semantics and its MFA gate for operators.
+  `replay_job_message` semantics and its MFA gate for operators. A webhook
+  subscriber that already holds delivery history for an event is **not** sent a
+  second copy: the delivery is deduplicated on (subscription, event), which is
+  what makes a replay safe to run twice, and the relay reports how many were
+  dropped that way. Re-sending to an endpoint that already received one is the
+  `ReplayDelivery` RPC ([WEBHOOKS.md](./WEBHOOKS.md)), which mints a new delivery
+  for the same event id — so replaying a window re-delivers to module queues and
+  to endpoints that had never seen the event, and nothing else.
 - **Webhooks are a subscriber kind.** An outbound webhook is an
   `event_subscriptions` row with `delivery = webhook` and the existing
   [WEBHOOKS.md](./WEBHOOKS.md) dispatcher as its consumer. `visibility: external`
   on the catalog is what makes a type eligible. One model instead of two.
+  Such a row carries an `org_id` and the endpoint registration it belongs to
+  instead of a subscriber principal, and it is derived from that registration
+  rather than granted: registering an endpoint for a set of event names creates
+  the rows in the same transaction, and deleting it cascades them away. The relay
+  confines delivery to the subscription's own organization, because a type
+  pattern says nothing about ownership and the relay resolves subscriptions with
+  RLS bypassed. Every audit event type is declared `external` and published beside
+  its audit record, which is what an endpoint subscribes to.
 
 ## Transport port
 
@@ -257,7 +272,12 @@ type Transport interface {
   a `consumes` entry (admin-consented, like a permission) or at runtime by a
   caller holding `events:subscribe` on the type's namespace. A `visibility:
   internal` type can never be subscribed by a solution principal; only `external`
-  types are eligible for webhook delivery.
+  types are eligible for webhook delivery. `external` is eligibility to leave the
+  platform, not a licence for a module to read the stream: the platform's own
+  `saas.*` namespace — the audit spine, published so an organization's endpoints
+  can receive it — is refused to a module principal outright. That is the tenant's
+  grant over its own records, made through an endpoint it configured, and a module
+  does not inherit it by declaring a queue.
 - **Deliver.** Every delivered job carries `tenant_id`, `boundary_id`, and
   `actor_principal_id`. A consumer that writes must mint its own authority (an
   installation Work Context at lease time) — the event is a trigger, never a
@@ -313,8 +333,8 @@ No big bang. The existing string topics are reclassified, not rewritten:
    `installation.created / revoked`, `scope.granted / revoked`,
    `datasource.source.changed`. Per-file datasource operations stay commands on
    the `datasource` queue.
-2. Move the outbound webhook dispatcher onto subscriptions with
-   `delivery = webhook` ([WEBHOOKS.md](./WEBHOOKS.md)).
+2. ~~Move the outbound webhook dispatcher onto subscriptions with
+   `delivery = webhook`~~ ([WEBHOOKS.md](./WEBHOOKS.md)) — done.
 3. The command-vs-event rule is recorded in [JOBS.md](./JOBS.md).
 
 ## Phasing

@@ -85,6 +85,10 @@ const (
 	datasourceIngestMaxAttempts   = 24
 	datasourceIngestContentType   = "application/octet-stream"
 
+	// datasourceRequestContentType types the body every datasource *request* job
+	// carries (see datasourceRequestBody).
+	datasourceRequestContentType = "application/json"
+
 	// The internal sync-request queue. SyncSource enqueues one request here and
 	// returns; a leased worker performs the actual repo pull off-request, so a
 	// large repo cannot block or time out the RPC and gets the jobs framework's
@@ -876,20 +880,57 @@ func (s *Service) DeleteDatasourceSource(ctx context.Context, actorID, orgID, id
 // (regardless of cursor equality), serialized behind any in-flight delivery for
 // the same source; other providers keep the full-refetch sync path. The Source
 // must belong to orgID.
-func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string) (string, error) {
+func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id string, replacementToken ...string) (jobID string, resultErr error) {
 	w := wool.Get(ctx).In("SyncDatasourceSource")
 	source, err := s.GetDatasourceSource(ctx, orgID, id)
 	if err != nil {
 		return "", err
 	}
+	defer func() {
+		if resultErr != nil {
+			s.emit(ctx, actorID, "user", EventDatasourceSyncFailed, "datasource", source.ID, source.OrgID, datasourceFailureFields(resultErr, source.Repo, "manual"))
+		}
+	}()
 	if s.datasourceJobs == nil {
 		return "", w.NewError("datasource connector is not configured")
 	}
 
+	if len(replacementToken) > 0 && replacementToken[0] != "" && (source.Provider != DatasourceProviderGitHub || len(replacementToken[0]) > 4096) {
+		return "", w.NewError("a replacement PAT of at most 4096 bytes is supported only for GitHub sources")
+	}
 	var job *jobsv1.NewJob
 	if source.Provider == DatasourceProviderGitHub {
-		if err := s.checkGitHubSyncPreflight(ctx, source); err != nil {
+		if s.datasourceCipher == nil {
+			return "", w.NewError("datasource secret cipher is not configured")
+		}
+		var token string
+		if len(replacementToken) > 0 {
+			token = strings.TrimSpace(replacementToken[0])
+		}
+		replacing := token != ""
+		if !replacing {
+			if err := s.checkGitHubSyncPreflight(ctx, source); err != nil {
+				return "", err
+			}
+		} else if err := s.validateGitHubSource(ctx, source.Repo, source.Branch, token); err != nil {
 			return "", err
+		}
+		if replacing {
+			encrypted, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), token)
+			if err != nil {
+				return "", jobs.NewProcessingError("datasource.credential_store_unavailable", "Could not securely save the replacement credential. Retry shortly.", true)
+			}
+			if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+				if _, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id); err != nil {
+					return err
+				}
+				if err := s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted); err != nil {
+					return err
+				}
+				return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID, map[string]any{"repo": source.Repo})
+			}); err != nil {
+				return "", err
+			}
 		}
 		job = &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
@@ -899,7 +940,9 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			Source:         datasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
-			SchemaVersion:  datasourceChangeSetSchemaVersion,
+			SchemaVersion:  datasourceReconcileSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceDeliveryMaxAttempts,
 			Attributes: map[string]string{
 				attrSourceID:      source.ID,
@@ -920,6 +963,8 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			// already-terminal request.
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceSyncRequestSchemaVersion,
+			Payload:        datasourceRequestBody(),
+			ContentType:    datasourceRequestContentType,
 			MaxAttempts:    datasourceSyncRequestMaxAttempts,
 			Attributes:     map[string]string{attrSourceID: source.ID},
 		}
@@ -929,9 +974,18 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	if err != nil {
 		return "", w.Wrapf(err, "enqueue sync request")
 	}
-	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID)
+	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID, map[string]any{"job_id": response.GetJobId(), "repo": source.Repo})
 	return response.GetJobId(), nil
 }
+
+// datasourceRequestBody is the body every datasource *request* job carries —
+// the forced and periodic reconcile requests and the generic sync request. A
+// request has no data of its own (its attributes name the source and the mode),
+// but a job is a message: saas.jobs.v1 validates content_type (min_len 1) and
+// job_messages.payload is NOT NULL, so a request declares an empty JSON object
+// rather than nothing. Returned fresh per call so no consumer can mutate a
+// shared backing array into another job's payload.
+func datasourceRequestBody() []byte { return []byte("{}") }
 
 // RunDatasourceSync performs the actual pull for one Source, dispatched by
 // provider. It is invoked by the leased sync worker, never by request traffic.

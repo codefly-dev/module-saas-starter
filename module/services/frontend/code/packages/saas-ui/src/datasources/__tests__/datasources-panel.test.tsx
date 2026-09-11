@@ -12,7 +12,11 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectGitHubForm } from "../connect-github-form.js";
 import { DatasourcesPanel } from "../datasources-panel.js";
-import type { DatasourceClient, DatasourceView } from "../types.js";
+import type {
+	AccessibleScopeView,
+	DatasourceClient,
+	DatasourceView,
+} from "../types.js";
 
 afterEach(cleanup);
 
@@ -48,6 +52,8 @@ const sampleSource: DatasourceView = {
 	webhookConfigured: true,
 	status: "active",
 	lastSyncedAt: undefined,
+	// Deliberately omits lastIngestedAt/lastIngestedCommit: they are optional, so
+	// a consumer's own adapter keeps compiling without them.
 	createdAt: undefined,
 };
 
@@ -84,6 +90,109 @@ describe("DatasourcesPanel", () => {
 			await screen.findByText("codefly-dev/module-saas-starter"),
 		).toBeTruthy();
 		expect(client.listSources).toHaveBeenCalledWith("org-1");
+	});
+
+	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {
+		// A tenant pressing "Sync now" on a github source dispatches a forced
+		// reconcile, which advances this same clock — so a label naming the
+		// webhook would attribute the user's own manual pull to a delivery.
+		const ingested: DatasourceView = {
+			...sampleSource,
+			lastIngestedAt: "2026-09-08T11:30:00.000Z",
+			lastIngestedCommit: "9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [ingested]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const line = await screen.findByText(/last ingest/i);
+		expect(line.textContent).not.toMatch(/webhook/i);
+		// The short commit git itself would print, not the full 40-char sha.
+		expect(line.textContent).toContain("9f2c1ab");
+		expect(line.textContent).not.toContain(
+			"9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
+		);
+	});
+
+	it("renders the ingest time of day, not just its date", async () => {
+		const at = "2026-09-08T11:30:00.000Z";
+		const ingested: DatasourceView = { ...sampleSource, lastIngestedAt: at };
+		const client = fakeClient({ listSources: vi.fn(async () => [ingested]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const line = await screen.findByText(/last ingest/i);
+		// Exactly what a date-only render produces. The clock moves on every
+		// delivery, so a date cannot separate a source that ingested minutes ago
+		// from one whose ingest stopped shortly after midnight.
+		expect(line.textContent).not.toBe(
+			`last ingest ${new Date(at).toLocaleString()}`,
+		);
+		expect(line.textContent).toContain(
+			new Intl.DateTimeFormat(undefined, { timeStyle: "short" }).format(
+				new Date(at),
+			),
+		);
+	});
+
+	it("distinguishes two ingests a minute apart", async () => {
+		// One minute keeps both on the same local date in every real timezone, so
+		// this fails for a date-only render and for nothing else.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [
+				{ ...sampleSource, lastIngestedAt: "2026-09-08T11:30:00.000Z" },
+				{ ...secondSource, lastIngestedAt: "2026-09-08T11:31:00.000Z" },
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const lines = await screen.findAllByText(/last ingest/i);
+		expect(lines).toHaveLength(2);
+		expect(lines[0].textContent).not.toBe(lines[1].textContent);
+	});
+
+	it('drops the sync clock\'s "Never" when there is an ingest to show', async () => {
+		// A github source never sets last_synced_at — the compiler advances the
+		// ingest clock instead — so keeping "Never" above live provenance would
+		// tell the reader a healthy source has never synced.
+		const ingested: DatasourceView = {
+			...sampleSource,
+			lastSyncedAt: undefined,
+			lastIngestedAt: "2026-09-08T11:30:00.000Z",
+			lastIngestedCommit: "9f2c1ab7d4e5f60718293a4b5c6d7e8f90a1b2c3",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [ingested]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await screen.findByText(/last ingest/i);
+		expect(screen.queryByText("Never")).toBeNull();
+	});
+
+	it("keeps the sync clock for a provider that pulls", async () => {
+		// An api/crawler/upload source advances last_synced_at and never ingests,
+		// so its cell keeps the column's own value — including "Never".
+		const pulled: DatasourceView = {
+			...sampleSource,
+			lastSyncedAt: "2026-09-08T11:30:00.000Z",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [pulled]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			await screen.findByText(
+				new Date("2026-09-08T11:30:00.000Z").toLocaleString(),
+			),
+		).toBeTruthy();
+		expect(screen.queryByText(/last ingest/i)).toBeNull();
+	});
+
+	it("shows no ingest line for a source whose first delivery has not landed", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await screen.findByText("codefly-dev/module-saas-starter");
+		expect(screen.queryByText(/last ingest/i)).toBeNull();
+		expect(screen.getByText("Never")).toBeTruthy();
 	});
 
 	it("submits the connect form through addGitHubSource", async () => {
@@ -195,6 +304,106 @@ describe("DatasourcesPanel", () => {
 	});
 });
 
+describe("DatasourcesPanel boundary column", () => {
+	const boundaryId = sampleSource.boundaryNodeId;
+
+	it("names the boundary and summarizes the caller's grants on it", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => [
+				{
+					nodeId: boundaryId,
+					label: "Docs",
+					kind: "collection",
+					actions: ["write", "read"],
+				},
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Docs")).toBeTruthy();
+		// Ordered read-then-write regardless of the order the lookup reported.
+		expect(screen.getByText("Read · Write")).toBeTruthy();
+		expect(client.listAccessibleScopes).toHaveBeenCalledWith("org-1");
+	});
+
+	it("never renders a missing grant as denial", async () => {
+		// The lookup reports scope grants only. An org admin authorized through
+		// flat RBAC holds no scope-grant row, so an empty result is the normal
+		// state — calling it "No access" would be false for the admin who
+		// connected the source.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		// The boundary stays identifiable by id, with no claim about authority.
+		expect(await screen.findByText("11111111")).toBeTruthy();
+		await waitFor(() => expect(client.listAccessibleScopes).toHaveBeenCalled());
+		expect(screen.queryByText("No access")).toBeNull();
+		expect(screen.queryByText(/denied|no grant/i)).toBeNull();
+	});
+
+	it("refetches boundaries after a source is connected", async () => {
+		// Connecting resolves the target collection to a boundary node, so a
+		// boundary answer held from before the add is stale. Without invalidating
+		// it the new row renders an opaque id for a boundary the caller holds.
+		let scopes: AccessibleScopeView[] = [];
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => scopes),
+			addGitHubSource: vi.fn(async () => {
+				scopes = [
+					{
+						nodeId: boundaryId,
+						label: "Docs",
+						kind: "collection",
+						actions: ["read"],
+					},
+				];
+			}),
+		});
+		await openConnectForm(client);
+		expect(await screen.findByText("11111111")).toBeTruthy();
+
+		fireEvent.click(screen.getByRole("button", { name: /^validate and connect$/i }));
+
+		await waitFor(() => expect(screen.getByText("Docs")).toBeTruthy());
+	});
+
+	it("never claims no access when the boundary could not be looked up", async () => {
+		// A client with no listAccessibleScopes — a gateway-bound remote, whose SDK
+		// does not carry the accessible-scopes RPC. Absence of a grant is unknown
+		// here, so asserting "No access" would be a false statement about authority.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("11111111")).toBeTruthy();
+		expect(screen.queryByText("No access")).toBeNull();
+	});
+
+	it("degrades to the boundary id when the lookup fails", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => {
+				throw new Error("accessible-scopes unserved");
+			}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		// The panel still lists its sources: an unresolved boundary is a degraded
+		// cell, not a failed panel.
+		expect(
+			await screen.findByText("codefly-dev/module-saas-starter"),
+		).toBeTruthy();
+		expect(screen.getByText("11111111")).toBeTruthy();
+		expect(screen.queryByText("No access")).toBeNull();
+	});
+});
+
 describe("ConnectGitHubForm", () => {
 	it("gives each instance distinct field ids so two forms don't collide", () => {
 		const noop = () => {};
@@ -296,3 +505,17 @@ it.each(["first", "second"])(
 		expect(onSyncEnqueued).toHaveBeenCalledExactlyOnceWith("job-2");
 	},
 );
+
+ it("reconnects the same source without creating or deleting a source", async () => {
+  const client = fakeClient({listSources: vi.fn(async () => [sampleSource])});
+  renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+  fireEvent.click(await screen.findByRole("button", {name: "Reconnect"}));
+  const token = screen.getByLabelText("New GitHub PAT");
+  expect(token.getAttribute("type")).toBe("password");
+  fireEvent.change(token, {target:{value:"replacement-test-token"}});
+  fireEvent.click(screen.getByRole("button", {name:"Reconnect and sync"}));
+  await waitFor(() => expect(client.syncSource).toHaveBeenCalledWith("org-1", "ds-1", "replacement-test-token"));
+  expect(client.addGitHubSource).not.toHaveBeenCalled();
+  expect(client.deleteSource).not.toHaveBeenCalled();
+  expect((await screen.findByRole("status")).textContent).toContain("Credential replaced");
+ });

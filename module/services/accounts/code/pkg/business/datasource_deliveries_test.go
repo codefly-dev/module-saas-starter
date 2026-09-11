@@ -656,6 +656,19 @@ func TestRunDatasourceReconcile_SchedulesDueSourcesOnly(t *testing.T) {
 	if job.GetAttributes()["datasource.source_id"] != due.ID {
 		t.Fatalf("reconcile enqueued for %q, want the due source %q", job.GetAttributes()["datasource.source_id"], due.ID)
 	}
+	// The periodic sweep builds its own job, and it is a message on exactly the
+	// same terms as the manual "Sync now" request: the platform validates
+	// content_type (min_len 1) on every enqueue. A sweep job that declares none
+	// is refused, and RunDatasourceReconcile logs and continues WITHOUT bumping
+	// the schedule — so the same due batch fails forever and nothing behind it is
+	// ever reconciled, at WARN level with no other symptom.
+	if job.GetContentType() != "application/json" || string(job.GetPayload()) != "{}" {
+		t.Fatalf("reconcile sweep body = %q/%q, want an empty JSON object; an undeclared content type is refused before the sweep can reschedule",
+			job.GetContentType(), job.GetPayload())
+	}
+	if job.GetSchemaVersion() != 1 {
+		t.Fatalf("schema version = %d, want the reconcile request's (1), not the change set's (2)", job.GetSchemaVersion())
+	}
 }
 
 func TestReconcile_RecoversDegradedSourceWhenManifestFitsAgain(t *testing.T) {

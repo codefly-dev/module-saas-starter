@@ -1,6 +1,7 @@
 "use client";
 
 import { timestampDate } from "@bufbuild/protobuf/wkt";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createColumnHelper,
@@ -30,6 +31,20 @@ import { orgMutations } from "../service/mutations";
 import { orgQueries } from "../service/queries";
 
 const col = createColumnHelper<OrgMembership>();
+
+// A membership change the server refuses on principle — the organization would
+// be left with no owner or admin — carries a reason the admin can act on. A
+// generic "Failed to remove member" would send them looking for an outage
+// instead of at the rule they hit.
+//
+// Deliberately only FailedPrecondition. Other codes carry wrapped internal
+// messages (a quota rejection reads "AddOrgMember: cannot add member: …"), and
+// a call path is not something to render to a user.
+export function memberErrorMessage(error: unknown, fallback: string): string {
+	if (!(error instanceof ConnectError)) return fallback;
+	if (error.code !== Code.FailedPrecondition) return fallback;
+	return error.rawMessage || fallback;
+}
 
 interface OrgMembersPanelProps {
 	orgId: string;
@@ -62,7 +77,8 @@ export function OrgMembersPanel({
 			queryClient.invalidateQueries({ queryKey: ["org-members", orgId] });
 			setNewUserId("");
 		},
-		onError: () => toast.error("Failed to add member"),
+		onError: (error) =>
+			toast.error(memberErrorMessage(error, "Failed to add member")),
 	});
 
 	const removeMutation = useMutation({
@@ -71,7 +87,8 @@ export function OrgMembersPanel({
 			toast.success("Member removed");
 			queryClient.invalidateQueries({ queryKey: ["org-members", orgId] });
 		},
-		onError: () => toast.error("Failed to remove member"),
+		onError: (error) =>
+			toast.error(memberErrorMessage(error, "Failed to remove member")),
 	});
 
 	const columns = useMemo(

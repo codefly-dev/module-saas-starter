@@ -34,10 +34,25 @@ func quotaStatusError(err error) error {
 	return err
 }
 
+// orgMembershipStatusError maps the administrative-continuity invariant to a
+// precondition failure. A rejected demotion is not a quota problem and not an
+// internal one: the caller asked for a state the organization may not be left
+// in, and the message says which.
+func orgMembershipStatusError(err error) error {
+	if errors.Is(err, business.ErrOrgAdminContinuity) {
+		// The sentinel's own text, not the wrapped chain: the message is shown
+		// to the caller, and the internal call path is not theirs to read.
+		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
+	}
+	return quotaStatusError(err)
+}
+
 func invitationStatusError(err error) error {
 	switch {
 	case err == nil:
 		return nil
+	case errors.Is(err, business.ErrOrgAdminContinuity):
+		return status.Error(codes.FailedPrecondition, business.ErrOrgAdminContinuity.Error())
 	case errors.Is(err, business.ErrInvitationUnavailable):
 		return status.Error(codes.NotFound, err.Error())
 	case errors.Is(err, business.ErrInvitationEmailMismatch):
@@ -345,7 +360,7 @@ func (s *OrgServer) AddMember(ctx context.Context, req *gen.AddOrgMemberRequest)
 		return nil, err
 	}
 	if err := service.AddOrgMember(ctx, actorID, req); err != nil {
-		return nil, quotaStatusError(err)
+		return nil, orgMembershipStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -362,7 +377,7 @@ func (s *OrgServer) RemoveMember(ctx context.Context, req *gen.RemoveOrgMemberRe
 		return nil, err
 	}
 	if err := service.RemoveOrgMember(ctx, actorID, req); err != nil {
-		return nil, err
+		return nil, orgMembershipStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }
@@ -671,34 +686,6 @@ func (s *PermServer) ListAccessibleScopes(ctx context.Context, req *gen.ListAcce
 		return nil, err
 	}
 	return service.ListAccessibleScopes(ctx, req)
-}
-
-// ListMyAccessibleScopes is the authenticated, caller-scoped companion to
-// ListAccessibleScopes: the subject is the bearer's own principal, so there is no
-// subject_id in the request and it can never disclose another principal's
-// boundaries. A normal org member reaches it through the gateway. It funnels into
-// the same business method as the internal RPC, so the two resolve the identical
-// grant + share union.
-func (s *PermServer) ListMyAccessibleScopes(ctx context.Context, req *gen.ListMyAccessibleScopesRequest) (*gen.ListAccessibleScopesResponse, error) {
-	if err := Validate(req); err != nil {
-		return nil, err
-	}
-	actorID, err := requireAuth(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := requireOrgMember(ctx, actorID, req.OrgId); err != nil {
-		return nil, err
-	}
-	return service.ListAccessibleScopes(ctx, &gen.ListAccessibleScopesRequest{
-		SubjectId:    actorID,
-		SubjectKind:  gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
-		ResourceType: req.ResourceType,
-		Action:       req.Action,
-		OrgId:        req.OrgId,
-		PageSize:     req.PageSize,
-		PageToken:    req.PageToken,
-	})
 }
 
 // The scope-tree and share management RPCs below are deliberately org-admin

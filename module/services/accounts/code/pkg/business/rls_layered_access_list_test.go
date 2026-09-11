@@ -27,6 +27,21 @@ func listScopePaths(t *testing.T, ctx context.Context, orgID, subjectID string, 
 	return set
 }
 
+// listScopeLabels returns the human label ListAccessibleScopes reports per scope
+// path, so a caller can name a boundary rather than render its encoded path.
+func listScopeLabels(t *testing.T, ctx context.Context, orgID, subjectID string, kind gen.SubjectKind, resourceType, action string) map[string]string {
+	t.Helper()
+	resp, err := testService.ListAccessibleScopes(ctx, &gen.ListAccessibleScopesRequest{
+		OrgId: orgID, SubjectId: subjectID, SubjectKind: kind, ResourceType: resourceType, Action: action,
+	})
+	require.NoError(t, err)
+	labels := map[string]string{}
+	for _, s := range resp.GetScopes() {
+		labels[s.GetScopePath()] = s.GetLabel()
+	}
+	return labels
+}
+
 // TestListAccessibleScopes_GrantRevokeAndShare proves the acceptance behaviors:
 // a grant makes a boundary (and its whole subtree) appear for the granted
 // subject and disappear on revoke; a team grant is inherited by a member; and a
@@ -71,6 +86,13 @@ func TestListAccessibleScopes_GrantRevokeAndShare(t *testing.T) {
 	require.True(t, granted["sol.col"], "the granted collection must be listed")
 	require.True(t, granted["sol.col.doc_1"], "the subtree record must be listed")
 	require.False(t, granted["sol"], "the ancestor solution node is not below the grant")
+
+	// The human name travels with the node. scope_path is a machine-encoded ltree
+	// label — for a minted boundary it is the node's own UUID — so without the
+	// label a client has nothing to render but an opaque id.
+	labels := listScopeLabels(t, ctx, org, owner, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", "read")
+	require.Equal(t, "Collection", labels["sol.col"])
+	require.Equal(t, "Doc 1", labels["sol.col.doc_1"])
 
 	// Revoke in the same shape: the boundary disappears again.
 	require.NoError(t, testService.RevokeScope(ctx, owner, &gen.RevokeScopeRequest{

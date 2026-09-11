@@ -44,12 +44,24 @@ breaking:
     # audit_export.proto is deleted; waive only the file-deletion rule for it.
     FILE_NO_DELETE:
       - saas/accounts/v1/audit_export.proto
-    # Only AuditExportJob was dropped from jobs.proto; waive only message
-    # deletion for that file. PrivacyExportJob's fields, and every other rule,
-    # stay guarded. buf ignores are path-scoped, so this cannot be narrowed to
-    # the single message — the comment records the intended scope.
+    # buf ignores are path-scoped, so neither entry can be narrowed to the single
+    # message — the comments record the intended scope.
     MESSAGE_NO_DELETE:
+      # AccessibleScope, ListAccessibleScopesResponse and ListMyAccessibleScopesRequest
+      # moved to accessible_scopes.proto (issue #577) so a published client can bind
+      # the caller-scoped read without also carrying the administrative authz surface.
+      # Same package, same fully-qualified names, same wire format.
+      - saas/accounts/v1/authorization.proto
+      # Only AuditExportJob was dropped from jobs.proto. PrivacyExportJob's fields,
+      # and every other rule, stay guarded.
       - saas/exports/v1/jobs.proto
+    # ListMyAccessibleScopes moved from PermissionService to the new
+    # AccessibleScopeService in accessible_scopes.proto (issue #577), which changes
+    # its Connect/gRPC procedure path. Its REST route (GET /v1/accessible-scopes) is
+    # unchanged, and the pinned catalog-count tests plus the generator drift gate
+    # still fail on any RPC that disappears without the catalogs moving with it.
+    RPC_NO_DELETE:
+      - saas/accounts/v1/authorization.proto
     # target_collection (a free-text string that was neither resolvable nor
     # grantable) is replaced by a scope-node boundary binding across the three
     # datasource messages (issue #473). Waive only field deletion for this file;

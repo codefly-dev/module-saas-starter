@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -14,6 +15,12 @@ import (
 )
 
 var canonicalWebhookEventType = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
+
+// ErrWebhookDeliveryExists reports that this endpoint already has history for
+// this event. It is the delivery-side half of the at-least-once contract: a
+// replayed event re-enters fan-out with the id it was published under, and the
+// endpoint has already been told about it.
+var ErrWebhookDeliveryExists = errors.New("webhooks: delivery history already exists for this event and subscription")
 
 // WebhookSubscription is the domain representation of a webhook subscription.
 type WebhookSubscription struct {
@@ -60,9 +67,12 @@ type webhookPayload struct {
 	DeliveryID string          `json:"delivery_id"`
 }
 
-func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelivery, []byte, error) {
-	deliveryID := NewIDString()
-	data, err := json.Marshal(map[string]any{
+// AuditEventWebhookData is the `data` member of the webhook body for one audit
+// record. It is the domain event's payload: the emitter publishes these bytes as
+// the envelope data, and the relay wraps them in the delivery envelope below, so
+// the body an endpoint receives is unchanged by the move to subscriptions.
+func AuditEventWebhookData(entry AuditEntry) ([]byte, error) {
+	return json.Marshal(map[string]any{
 		"event_type": string(entry.EventType),
 		// The registered version of this event's contract. A subscriber reads
 		// actor_id and actor_type out of this envelope, so when a field's
@@ -77,14 +87,27 @@ func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelive
 		"organization_id": entry.OrgID,
 		"payload":         RedactPayload(entry.EventType, entry.Payload),
 	})
-	if err != nil {
-		return nil, nil, err
-	}
+}
+
+// NewDomainEventWebhookDelivery renders the pending delivery and the exact bytes
+// that will be signed for one event delivered to one endpoint. Every attempt and
+// every replay signs the persisted bytes rather than re-marshalling, so this is
+// the only place the body is built.
+//
+// eventID is the envelope id, which is also the audit record's id: it is the
+// X-Webhook-Event-ID an endpoint deduplicates on, so it stays stable across the
+// move from inline fan-out to relay fan-out.
+func NewDomainEventWebhookDelivery(
+	eventID, eventType, subscriptionID string,
+	occurred time.Time,
+	data []byte,
+) (*WebhookDelivery, []byte, error) {
+	deliveryID := NewIDString()
 	payload, err := json.Marshal(webhookPayload{
-		EventID:    entry.ID,
-		EventType:  string(entry.EventType),
+		EventID:    eventID,
+		EventType:  eventType,
 		Data:       data,
-		Timestamp:  entry.CreatedAt.UTC().Format(time.RFC3339Nano),
+		Timestamp:  occurred.UTC().Format(time.RFC3339Nano),
 		DeliveryID: deliveryID,
 	})
 	if err != nil {
@@ -93,9 +116,9 @@ func newWebhookDelivery(entry AuditEntry, subscriptionID string) (*WebhookDelive
 	return &WebhookDelivery{
 		ID:             deliveryID,
 		SubscriptionID: subscriptionID,
-		EventID:        entry.ID,
-		OutboxEventID:  entry.ID,
-		EventType:      string(entry.EventType),
+		EventID:        eventID,
+		OutboxEventID:  eventID,
+		EventType:      eventType,
 		Payload:        string(payload),
 		Status:         "pending",
 	}, payload, nil
@@ -156,6 +179,12 @@ func (s *Service) CreateSubscription(ctx context.Context, actor AuditActor, orgI
 	// passes (org_id matches the current_org_id setting).
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
 		if err := s.store.CreateWebhookSubscription(ctx, sub); err != nil {
+			return err
+		}
+		// The registration is what a customer edits; its subscriptions are derived
+		// from it in the same transaction, so an endpoint is never registered
+		// without the rows the relay fans out over.
+		if err := s.store.SyncWebhookEventSubscriptions(ctx, orgID, sub.ID, sub.Events); err != nil {
 			return err
 		}
 		return s.emitTx(ctx, actor.ID, actor.Type, EventWebhookCreated, "webhook_subscription", sub.ID, orgID, actor.provenance())

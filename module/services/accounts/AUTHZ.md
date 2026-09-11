@@ -50,6 +50,14 @@ Until installation identity (#474) lands there is no org-root/solution node to
 parent under, so a minted `collection` node is registered as a **root**; it will
 be reparented under the org's solution node when that identity exists.
 
+Who *triggered* a source's sync is not a datasource field. `ListSources` and
+`GetSource` project `Datasource` to any org member under no declared permission,
+while `SyncSource` is org-admin only and reading its actor goes through
+`QueryAuditLog`'s `audit:read` gate — so a `last_synced_by` column would route
+audit-classified provenance around that gate, and would flatten the impersonation
+chain the audit row keeps. The audit trail is the record; see
+[ADR 0008](../../docs/adr/0008-datasource-sync-actor-provenance.md).
+
 ## Listing what a subject may see
 
 `PermissionService.ListAccessibleScopes(subject, kind, resource_type, action)`

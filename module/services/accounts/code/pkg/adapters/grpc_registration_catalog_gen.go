@@ -13,6 +13,7 @@ import (
 // the catalog-complete Connect listener and are intentionally omitted here.
 func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcServer) {
 	gen.RegisterAPIKeyServiceServer(registrar, server.APIKey)
+	gen.RegisterAccessibleScopeServiceServer(registrar, AccessibleScopeSingleton())
 	gen.RegisterAuditServiceServer(registrar, server.Audit)
 	gen.RegisterAuthServiceServer(registrar, server.Auth)
 	gen.RegisterDelegationServiceServer(registrar, DelegationSingleton())
@@ -35,6 +36,7 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 
 var catalogGRPCServiceNames = []string{
 	"saas.accounts.v1.APIKeyService",
+	"saas.accounts.v1.AccessibleScopeService",
 	"saas.accounts.v1.AuditService",
 	"saas.accounts.v1.AuthService",
 	"saas.accounts.v1.DelegationService",

@@ -2,6 +2,7 @@ package business
 
 import (
 	"accounts/pkg/datasource/github"
+	"accounts/pkg/jobs"
 	"context"
 	"errors"
 	"strings"
@@ -62,7 +63,8 @@ func (s *Service) checkGitHubSyncPreflight(ctx context.Context, source *Datasour
 	defer cancel()
 	token, err := s.datasourceCipher.DecryptSecret(preflightCtx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
-		if errors.Is(err, ErrInvalidSecretEnvelope) {
+		var failure *jobs.ProcessingError
+		if errors.As(datasourceCredentialError(err), &failure) && !failure.Retryable {
 			return status.Error(codes.FailedPrecondition, "Stored GitHub credential is invalid. Reconnect the source.")
 		}
 		if ctx.Err() != nil {

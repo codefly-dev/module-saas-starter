@@ -349,6 +349,12 @@ func (s *Service) AcceptInvitation(
 			if fresh.Status != "pending" || time.Now().After(fresh.ExpiresAt) {
 				return ErrInvitationUnavailable
 			}
+			// The invitation's role is authoritative and overwrites any
+			// membership the accepting user already holds, so redemption is a
+			// demotion path like any other.
+			if err := s.requireOrgAdminContinuity(ctx, inv.OrgID, userID, inv.Role); err != nil {
+				return err
+			}
 			if err := s.store.AddOrgMember(ctx, inv.OrgID, userID, inv.Role); err != nil {
 				return w.Wrapf(err, "cannot add member to organization")
 			}

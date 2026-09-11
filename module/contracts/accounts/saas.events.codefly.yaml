@@ -1,0 +1,557 @@
+# Generated from the audit registry by RenderAuditEventsContribution.
+# Edit pkg/business/audit_registry.go and re-run
+# `go test ./pkg/business -run AuditEventsContribution -update`.
+#
+# It is passed to module-compose as --base-events: the namespace below is
+# reserved against downstream contributions, and only the module that owns the
+# reservation may publish under it.
+#
+# Every audit event type is an external domain event so an outbound webhook can
+# subscribe to it (EVENTS.md, "Webhooks are a subscriber kind").
+#
+# No partition is declared. A partition is a promise of FIFO within it, and the
+# publish path buys that promise with a per-partition advisory lock held until
+# the producing mutation commits — which on a per-tenant partition would
+# serialize every audited mutation in an organization. Nothing consumes the
+# ordering: an outbound webhook is dispatched in subscription-id order, and the
+# platform namespace is not subscribable by a module.
+schema: codefly/saas/events-contribution/v1
+namespace: saas
+queues: []
+publishes:
+  - type: saas.activation.achieved
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.api_key.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.api_key.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.approval.approved
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.approval.asked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.approval.cancelled
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.approval.denied
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.approval.escalated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.approval.timeout
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.auth.login
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.auth.magic_link_login
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.auth.mfa_challenge_completed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.auth.mfa_challenge_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.auth.organization_switched
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.auth.sso_jit_provisioned
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.billing.checkout_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.billing.free_plan_selected
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.billing.portal_opened
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.consent.preferences_updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.consent.terms_accepted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.dashboard.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.dashboard.deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.dashboard.shared
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.dashboard.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.blob_fetched
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.branch_deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.change_set_compiled
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.credential.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.force_push_reconciled
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.snapshot_too_large
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.source.added
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.source.recovered
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.source.removed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.source.synced
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.sync.completed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.datasource.sync.failed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.delegation.approved
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.delegation.auto_approved
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.delegation.denied
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.delegation.requested
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.ingested
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.quarantine_released
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.quarantined
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.renamed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.subscribed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.unsubscribed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.version_minted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.entitlement.override
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.event.replayed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.event.subscription_created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.event.subscription_revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.feature_flag.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.gdpr.deletion_completed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.gdpr.deletion_requested
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.gdpr.export_requested
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.installation.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.installation.ownership_transferred
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.installation.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.invitation.accepted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.invitation.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.invitation.resent
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.invitation.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.job.replayed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.backup_code_used
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.backup_codes_generated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.device_revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.totp_setup_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.totp_verified
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.webauthn_registered
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.webauthn_registration_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.mfa.webauthn_used
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.module.registration_minted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.module.work_context_minted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.onboarding.step_completed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.onboarding.step_skipped
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.org.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.org.generic_settings_updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.org.member_added
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.org.member_removed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.org.settings_updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.platform.role_granted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.platform.role_revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.platform.user_impersonated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.principal.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.principal.disabled
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.principal.enabled
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.principal.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.record.share_revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.record.shared
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.role.assigned
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.role.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.role.deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.role.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.role.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.scope.granted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.scope.node_registered
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.scope.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.session.revoked
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.settings.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.solution.registration_deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.solution.registration_minted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.solution.registration_updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.sso.disabled
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.sso.setup.started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.team.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.team.deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.team.member_added
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.team.member_removed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.team.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.user.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.user.deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.user.identity_added
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.user.registered
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.user.suspended
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.user.unsuspended
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.user.updated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.approved
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.converted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.invited
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.joined
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.pending
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.rejected
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.reviewed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.waitlist.verified
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.webhook.created
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.webhook.deleted
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.webhook.replayed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.webhook.secret_rotated
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.work_context.audience_exchanged
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.work_context.child_session_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.work_context.renewed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.work_context.root_session_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.work_context.task_started
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
