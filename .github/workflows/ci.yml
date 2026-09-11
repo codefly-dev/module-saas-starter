@@ -88,7 +88,10 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
-          cache: false
+          cache-dependency-path: |
+            go.sum
+            module/tools/go.sum
+            module/services/*/code/go.sum
       - name: Enforce the sidecar header-lockstep invariant
         working-directory: module/services/auth-gateway/code
         run: go test -run TestUntrustedHeaders_SupersetOfStampedHeaders .
@@ -106,7 +109,7 @@ jobs:
         with:
           node-version: 24
       - name: Test the release-gate contract
-        run: node --test scripts/ci/release-gates.test.mjs
+        run: node --test scripts/ci/release-gates.test.mjs scripts/ci/ci-performance.test.mjs
       - name: Test the release announcement
         run: node --test scripts/ci/announce-release.test.mjs
       - name: Require every artifact-writing job to depend on the release gates
@@ -193,7 +196,10 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
-          cache: false
+          cache-dependency-path: |
+            go.sum
+            module/tools/go.sum
+            module/services/*/code/go.sum
       - name: Validate module agent
         env:
           GOWORK: "off"
@@ -375,8 +381,8 @@ jobs:
             echo "has_work=${has_work}"
           } >> "${GITHUB_OUTPUT}"
 
-  codefly-quality:
-    name: Codefly quality
+  codefly-quality-phases:
+    name: Codefly quality (${{ matrix.phase }})
     needs: codefly-plan
     # Always run on release tags: a release must exercise the full topology
     # whatever the affected-service plan says, and release-gates counts a skip
@@ -384,6 +390,10 @@ jobs:
     if: ${{ needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        phase: ["verify,sync-drift", lint, compile, test]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -391,20 +401,17 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
+          cache-dependency-path: |
+            go.sum
+            module/tools/go.sum
+            module/services/*/code/go.sum
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
         run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
-      - name: Reclaim runner disk space
-        shell: bash
-        run: |
-          # Free the unused hosted-runner toolchains for the test-phase images.
-          # No `docker system prune` here: the daemon starts empty on ephemeral
-          # runners and pruning only discards the pre-baked layers we can reuse.
-          sudo rm -rf \
-            /opt/ghc \
-            /usr/local/lib/android \
-            /usr/share/dotnet
+      - name: Ensure runner disk space
+        if: matrix.phase == 'test'
+        run: bash scripts/ci/ensure-disk-space.sh
       - name: Make host.docker.internal resolvable on the Linux runner
         shell: bash
         run: |
@@ -419,9 +426,10 @@ jobs:
           if ! grep -q 'host.docker.internal' /etc/hosts; then
             echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts
           fi
-      - name: Verify, sync-drift, lint, compile, test
+      - name: Run quality phase
         shell: bash
         env:
+          CI_PHASE: ${{ matrix.phase }}
           SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
           # Affected services resolved once by codefly-plan; empty on full runs
@@ -439,9 +447,12 @@ jobs:
             selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
-          codefly ci run "${selection_args[@]}" \
-            --phase verify,sync-drift \
-            --output .codefly/ci/pre-audit
+          if [[ "${CI_PHASE}" == "verify,sync-drift" ]]; then
+            codefly ci run "${selection_args[@]}" \
+              --phase "${CI_PHASE}" \
+              --output .codefly/ci/pre-audit
+            exit 0
+          fi
 
           validation_selection_args=()
           for service in ${AFFECTED_SERVICES}; do
@@ -452,9 +463,22 @@ jobs:
 
           if (( ${#validation_selection_args[@]} )); then
             codefly ci run "${validation_selection_args[@]}" \
-              --phase lint,compile,test \
+              --phase "${CI_PHASE}" \
               --output .codefly/ci/validation
           fi
+
+  # Preserve the required check name configured in the repository ruleset.
+  codefly-quality:
+    name: Codefly quality
+    needs: [codefly-plan, codefly-quality-phases]
+    if: ${{ !cancelled() && (needs.codefly-plan.outputs.has_work == 'true' || startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/module-package/v')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every quality phase
+        env:
+          QUALITY_RESULT: ${{ needs.codefly-quality-phases.result }}
+        run: test "${QUALITY_RESULT}" = success
 
   codefly-supply-chain:
     name: Codefly supply chain
@@ -472,6 +496,10 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
+          cache-dependency-path: |
+            go.sum
+            module/tools/go.sum
+            module/services/*/code/go.sum
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
@@ -482,13 +510,8 @@ jobs:
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
         with:
           syft-version: v1.50.0
-      - name: Reclaim runner disk space
-        shell: bash
-        run: |
-          sudo rm -rf \
-            /opt/ghc \
-            /usr/local/lib/android \
-            /usr/share/dotnet
+      - name: Ensure runner disk space
+        run: bash scripts/ci/ensure-disk-space.sh
       - name: Audit and SBOM
         shell: bash
         env:
@@ -544,24 +567,16 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: "1.27.0"
+          cache-dependency-path: |
+            go.sum
+            module/tools/go.sum
+            module/services/*/code/go.sum
       - name: Install Codefly
         env:
           GOPRIVATE: github.com/codefly-dev/*
         run: go install github.com/codefly-dev/cli/cmd/codefly@v0.1.145
-      - name: Reclaim runner disk space
-        shell: bash
-        run: |
-          # The full topology produces several Docker images, including two
-          # independent Next.js applications. Free the unused hosted-runner
-          # toolchains so every affected image fits alongside the layers that
-          # the parallel service builds share. No `docker system prune`: it
-          # would discard the pre-baked base layers this build reuses, and
-          # there is no cross-run cache to protect until `codefly build` grows
-          # `cache-from`/`cache-to` (see #194 item E).
-          sudo rm -rf \
-            /opt/ghc \
-            /usr/local/lib/android \
-            /usr/share/dotnet
+      - name: Ensure runner disk space
+        run: bash scripts/ci/ensure-disk-space.sh
       - name: Build affected service images
         shell: bash
         env:

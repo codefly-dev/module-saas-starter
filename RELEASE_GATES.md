@@ -22,6 +22,18 @@ For a service concern, the rule is unchanged: extend the generic Codefly/Core
 contract and the applicable plugin; never add a service-specific implementation
 to provider YAML.
 
+Quality phases run in four independent matrix jobs: `verify,sync-drift`,
+`lint`, `compile`, and `test`. Each uses a fresh checkout and the same affected
+service plan. All four must succeed for `codefly-quality` to succeed; matrix
+fail-fast is disabled so one failed phase does not cancel the other evidence.
+The release aggregate still requires the complete quality result. Disk setup
+checks for 12 GiB free under Docker's storage directory and removes unused
+runner toolchains only when below that threshold. Go caches include the
+checksums of the root, tools, and service modules.
+
+Measured bottlenecks, remaining work toward a five-minute gate, and validation
+limits are recorded in [CI_PERFORMANCE.md](./CI_PERFORMANCE.md).
+
 For version tags, successful completion of this gate — together with every other
 mandatory check, through the aggregate described in [Publication
 gating](#publication-gating) — unlocks the immutable module-package publication
