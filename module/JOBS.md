@@ -251,13 +251,15 @@ offers replay only for dead letters. Both the request field and
 `Idempotency-Key` transport header use the same browser-generated key.
 
 Worker unit tests run with the race detector and cover success, typed retry and
-permanent failure, untyped-error and panic redaction, heartbeat, metrics, and
-deadline shutdown. Fresh-PostgreSQL tests cover operations snapshots,
-pagination, lifecycle detail, worker-only replay authority, exact duplicate,
-fingerprint conflict, non-dead-letter refusal, missing jobs, immutable lineage,
-and server-side payload copying. Each existing workload migrates independently
-through a generated payload adapter so moving one workload does not change the
-delivery semantics of another.
+permanent failure, untyped-error and panic redaction in both durable history and
+the log sink, the bounded failure report, the recovered panic value and stack
+behind the opt-in, lease loss and deadline shutdown not being reported as
+handler failures, heartbeat, and metrics. Fresh-PostgreSQL tests cover
+operations snapshots, pagination, lifecycle detail, worker-only replay
+authority, exact duplicate, fingerprint conflict, non-dead-letter refusal,
+missing jobs, immutable lineage, and server-side payload copying. Each existing
+workload migrates independently through a generated payload adapter so moving
+one workload does not change the delivery semantics of another.
 
 ## Stripe workload adapter
 
@@ -276,7 +278,15 @@ graceful shutdown. A thin billing handler validates the immutable routing
 contract, decodes and validates the generated payload, checks the inner event
 ID against the outer idempotency key, and invokes the existing monotonic Stripe
 projector. Malformed contracts are permanent safe failures; arbitrary provider
-or projection errors remain retryable and are redacted by the worker.
+or projection errors remain retryable and are redacted by the worker in durable
+history and in its logs alike. A failed handler is reported once, below the
+lease-loss and shutdown returns so neither is blamed on the handler, carrying
+only the bounded classification: queue, topic, job id, attempt, failure code,
+retryable, and panicked. The unredacted cause — arbitrary error text, or a
+recovered panic value with its stack — is attached only when a worker is
+configured with `UnsafeLogHandlerCause`, which is off by default because a
+transport error carries the full target URL including any secret in its path or
+query.
 
 Database authority is deliberately split: `app_job_worker` owns durable receipt
 and job lifecycle, while `app_billing_worker` can only read billing catalogs and

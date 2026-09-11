@@ -68,7 +68,8 @@ function gatewayBase(): string | null {
 
 /**
  * Generic solution proxy. Forwards a browser request to the API gateway's
- * runtime solution passthrough (/solutions/{alias}/…), attaching the first-party
+ * root for platform Connect procedures or its runtime solution passthrough
+ * (/solutions/{alias}/…) for other paths, attaching the first-party
  * trust headers and carrying the caller's identity (bearer and/or session
  * cookie). The browser never reaches a solution service directly, and this route
  * names no specific solution — it only resolves whatever registered at runtime.
@@ -112,7 +113,13 @@ async function handler(
 
 	const suffix = (path ?? []).map(encodeURIComponent).join("/");
 	const search = new URL(request.url).search;
-	const target = `${base}/solutions/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
+	const platformProcedure =
+		/^saas\.[A-Za-z_][A-Za-z0-9_]*\.v1\.[A-Za-z_][A-Za-z0-9_]*\/[A-Za-z_][A-Za-z0-9_]*$/.test(
+			suffix,
+		);
+	const target = platformProcedure
+		? `${base}/${suffix}${search}`
+		: `${base}/solutions/${encodeURIComponent(solution.backend.serviceAlias)}/${suffix}${search}`;
 
 	const headers = new Headers();
 	// First-party trust headers, resolved server-side from Codefly config — the

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +23,52 @@ import { parseWorkflowYaml } from "./workflow-yaml.mjs";
 
 const REPOSITORY_ROOT = join(import.meta.dirname, "..", "..");
 const CI_WORKFLOW = join(REPOSITORY_ROOT, ".github", "workflows", "ci.yml");
+
+test("dependency remediation can dispatch the required CI workflow", () => {
+  const audit = parseWorkflowYaml(readFileSync(join(REPOSITORY_ROOT, ".github/workflows/dep-audit.yml"), "utf8"));
+  const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  assert.equal(audit.permissions.actions, "write");
+  assert.ok(Object.hasOwn(ci.on, "workflow_dispatch"));
+});
+
+test("dependency remediation dispatches CI after new and updated PRs, and propagates failures", () => {
+  const audit = parseWorkflowYaml(readFileSync(join(REPOSITORY_ROOT, ".github/workflows/dep-audit.yml"), "utf8"));
+  const script = audit.jobs.remediate.steps.find(step => step.name === "Open or update the remediation pull request").run;
+  const stubs = `
+    git() {
+      if [[ "$1" == diff ]]; then return "$DIFF_STATUS"; fi
+      echo "git $*"
+    }
+    node() { echo "node $*"; }
+    gh() {
+      if [[ "$1 $2" == "pr list" ]]; then
+        echo "$EXISTING_PR"
+      else
+        echo "gh $*"
+        if [[ "$1" == workflow ]]; then return "$DISPATCH_STATUS"; fi
+      fi
+    }
+  `;
+  for (const existing of ["", "123"]) {
+    for (const changed of [false, true]) {
+      for (const dispatchStatus of [0, 17]) {
+        const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", stubs + script], {
+          encoding: "utf8",
+          env: { ...process.env, DIFF_STATUS: changed ? "1" : "0", EXISTING_PR: existing, DISPATCH_STATUS: String(dispatchStatus) },
+        });
+        assert.equal(result.status, changed ? dispatchStatus : 0, result.stderr);
+        const lines = result.stdout.trim().split("\n");
+        const dispatch = "gh workflow run ci.yml --ref chore/dep-audit-remediation";
+        assert.equal(lines.filter(line => line === dispatch).length, changed ? 1 : 0);
+        assert.equal(lines.some(line => line.startsWith("gh pr create ")), changed && !existing);
+        if (changed) {
+          assert.ok(lines.indexOf("git push --force origin chore/dep-audit-remediation") < lines.indexOf(dispatch));
+          if (!existing) assert.ok(lines.findIndex(line => line.startsWith("gh pr create ")) < lines.indexOf(dispatch));
+        }
+      }
+    }
+  }
+});
 
 const MODULE_TAG = "refs/tags/module-package/v1.2.3";
 const DEPLOY_TAG = "refs/tags/v0.0.99";
