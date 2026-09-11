@@ -39,6 +39,7 @@ var relationsByScope = map[relationScope][]string{
 		"plan_entitlements",
 		"plans",
 		"platform_admins",
+		"solution_registrations",
 	},
 	relationScopeTenant: {
 		"actor_chain_journal",
@@ -73,6 +74,10 @@ var relationsByScope = map[relationScope][]string{
 		"scope_nodes",
 		"subscriptions",
 		"team_members",
+		// Forensic record of team memberships that predate the parent-org
+		// invariant. Request traffic has no grant at all; an operator reads it
+		// through the control plane.
+		"team_membership_quarantine",
 		"teams",
 		"usage_events",
 		"usage_totals",
@@ -132,6 +137,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"analytics_deliveries":    {},
 	"email_delivery_events":   {},
 	"event_subscriptions":     {}, // platform relation; request traffic has no direct access
+	"solution_registrations":  {}, // platform relation; request traffic has no direct access
 	"job_attempts":            {},
 	"job_messages":            {},
 	"job_state_transitions":   {},
@@ -169,6 +175,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"scope_nodes":                          {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"subscriptions":                        {selectRows: true, insertRows: true, updateRows: true},
 	"team_members":                         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"team_membership_quarantine":           {},
 	"teams":                                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"usage_events":                         {selectRows: true, insertRows: true},
 	"usage_totals":                         {selectRows: true, insertRows: true, updateRows: true},
@@ -402,6 +409,12 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			// never row-deletes — retention and revocation are soft.
 			if relation == "domain_events" || relation == "event_subscriptions" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
+			}
+			// team_membership_quarantine records what migration 127 removed. Only
+			// the migration writes it, and it is evidence of a repair — the
+			// runtime reads it and must not be able to edit the record away.
+			if relation == "team_membership_quarantine" {
+				want = relationPrivileges{selectRows: true}
 			}
 
 			var got relationPrivileges

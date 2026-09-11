@@ -72,6 +72,9 @@
       "name": "GDPRService"
     },
     {
+      "name": "SolutionRegistryService"
+    },
+    {
       "name": "SSOAdminService"
     },
     {

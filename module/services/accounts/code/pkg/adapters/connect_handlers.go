@@ -158,6 +158,9 @@ func connectCodeFromGRPC(c codes.Code) connect.Code {
 // callerID extracts the authenticated user id from request headers/context.
 // Returns a gRPC Unauthenticated error if not present.
 func callerID(ctx context.Context) (string, error) {
+	if identity, ok := auth.VerifiedRequestIdentity(ctx); ok {
+		return identity.EffectiveSubjectID(), nil
+	}
 	w := wool.Get(ctx).In("callerID")
 	w.GRPC().Inject()
 	// GRPC().Inject() copies forwarded metadata over the stamped identity, and a

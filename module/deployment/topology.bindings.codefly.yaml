@@ -167,6 +167,19 @@ services:
       - service: auth-gateway
         endpoints:
           - rest
+    # Solution self-registration mutates what the nav renders and what the
+    # solution page loads as a Module-Federation remote — host-origin script
+    # execution — on the same port that serves every browser-facing page. Only a
+    # path match can separate the two, and only in the mesh's L7 layer.
+    internal_http_routes:
+      # Read by the proxy over pod-local loopback, which the mesh never captures.
+      - path: /api/internal/solutions
+        methods:
+          - GET
+      - path: /api/solutions/register
+        methods:
+          - DELETE
+          - POST
     public_egress_ports:
       - 443
     spec:
@@ -178,10 +191,10 @@ services:
         local-dogfood: development
         production: production
       mode: ssr
-      # White-label skin delivery (obin-ai/lodestar#70). The module ships only
+      # White-label skin delivery. The module ships only
       # the MECHANISM: the SSR resolver in src/lib/skin reads a skin descriptor
       # per request from the mounted ConfigMap and applies it on <html>. No skin
-      # DATA ships here — obin-fleet supplies the frontend-skin ConfigMap per
+      # DATA ships here — the consumer's fleet control plane supplies the frontend-skin ConfigMap per
       # environment; the compiled default stays brand-neutral. config-mounts is
       # consumed once codefly-dev/service-nextjs#100 renders it and the pin is
       # bumped; the mount is optional so an env with no ConfigMap keeps the

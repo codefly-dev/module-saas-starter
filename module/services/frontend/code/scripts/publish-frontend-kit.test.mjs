@@ -14,7 +14,7 @@ describe("frontend kit publish set", () => {
 
 	// Every package the host shares as a Module-Federation singleton must be
 	// installable by a solution remote, or the remote cannot mount the host's
-	// instance (core-solutions' wiki hand-rolled a sources list because
+	// instance (a consuming solution hand-rolled a sources list because
 	// `<DatasourcesPanel>` was shared but never published).
 	it("publishes the SaaS-domain panels and the SDK the host shares", () => {
 		expect(PACKAGES).toContain("@codefly-dev/saas-ui");

@@ -1,14 +1,62 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-// Both routes read the cluster-internal secret via the Codefly SDK. vi.mock is
-// hoisted above module init, so the stub must be created with vi.hoisted.
-const { getWorkspaceSecret } = vi.hoisted(() => ({
+// Both routes read the cluster-internal secret via the Codefly SDK, and the
+// registry reaches the gateway through service discovery. vi.mock is hoisted
+// above module init, so the stubs must be created with vi.hoisted.
+const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
 	getWorkspaceSecret:
 		vi.fn<(name: string, key: string) => string | undefined>(),
+	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(() => []),
 }));
-vi.mock("codefly", () => ({ getWorkspaceSecret }));
+vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
+
+const GATEWAY = "http://gateway.internal:8080";
+
+// Registrations live in the durable registry behind the gateway rather than in
+// this process, so the suite stands one in for it.
+function fakeGateway() {
+	const stored = new Map<string, string>();
+	let revision = 0;
+	const respond = (body: unknown, status = 200) =>
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { "content-type": "application/json" },
+		});
+	return vi.fn(async (input: string | URL, init?: RequestInit) => {
+		const url = new URL(String(input));
+		if (url.pathname === "/solutions/_frontend") {
+			const body = JSON.parse(String(init?.body ?? "{}"));
+			stored.set(body.id, body.manifest);
+			revision += 1;
+			return respond({ ok: true, id: body.id, revision, status: "active" });
+		}
+		if (url.pathname === "/solutions/_register" && init?.method === "DELETE") {
+			stored.delete(url.searchParams.get("id") ?? "");
+			revision += 1;
+			return respond({ ok: true, revision });
+		}
+		if (url.pathname === "/solutions/_registry") {
+			return respond({
+				revision,
+				leaseSeconds: 120,
+				solutions: [...stored].map(([id, manifest]) => ({
+					id,
+					status: "active",
+					manifest,
+				})),
+			});
+		}
+		return respond({ error: "unexpected" }, 500);
+	});
+}
+
+function resetRegistryCache() {
+	const g = globalThis as Record<string, unknown>;
+	g.__solutionSnapshot = null;
+	g.__solutionSnapshotInFlight = null;
+}
 
 import { GET } from "@/app/api/internal/solutions/route";
 import {
@@ -74,6 +122,14 @@ async function register(): Promise<void> {
 }
 
 describe("internal solution detail lookup", () => {
+	beforeEach(() => {
+		resetRegistryCache();
+		getEndpoints.mockReturnValue([
+			{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
+		]);
+		vi.stubGlobal("fetch", fakeGateway());
+	});
+
 	afterEach(async () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		await DELETE(
@@ -83,6 +139,8 @@ describe("internal solution detail lookup", () => {
 			}),
 		);
 		getWorkspaceSecret.mockReset();
+		vi.unstubAllGlobals();
+		resetRegistryCache();
 	});
 
 	it("rejects a caller with no internal token", async () => {

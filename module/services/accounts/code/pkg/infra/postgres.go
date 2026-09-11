@@ -301,7 +301,7 @@ func tokenFileBeforeConnect() beforeConnectHook {
 // be cancelled portably; spawning a goroutine per connection would only return
 // early while leaking blocked readers during a storage failure. The projected
 // file is local, so check cancellation before and after the bounded read instead.
-// The sidecar contract (infra-base #59) is to publish each new token with an
+// The sidecar contract (platform infrastructure) is to publish each new token with an
 // atomic rename; without it a read could observe a partial write, which would
 // surface as an authentication failure.
 func readTokenFile(ctx context.Context, path string) (string, error) {
@@ -546,6 +546,23 @@ func (s *PostgresStore) RegisterUser(ctx context.Context, user *gen.User, identi
 			return status.Errorf(codes.AlreadyExists,
 				"email %s is already registered",
 				user.PrimaryEmail)
+		}
+
+		// The uuid is caller-supplied, so the insert below can collide on the
+		// primary key. Deleted users keep their row, so this deliberately does
+		// not filter on status.
+		var uuidTaken bool
+		err = executor.QueryRow(ctx, `
+            SELECT EXISTS (SELECT 1 FROM users WHERE uuid = $1)`,
+			user.Uuid,
+		).Scan(&uuidTaken)
+		if err != nil {
+			return w.Wrapf(err, "failed to check existing user id")
+		}
+		if uuidTaken {
+			return status.Errorf(codes.AlreadyExists,
+				"user id %s is already registered",
+				user.Uuid)
 		}
 
 		// Create new user

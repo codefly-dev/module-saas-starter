@@ -279,6 +279,34 @@ file. It guards the canonical artifact that seeds every other consumer, so it
 must run here rather than in a consumer copy — the same reason every job in
 [Repository-specific gates](#repository-specific-gates) lives in provider YAML.
 
+## Naming and confidentiality
+
+This repository is **public**, and it sits below its consumers in the dependency
+graph: it must carry no documentation-level or build-time knowledge of who
+composes it. `AGENTS.md` §"Naming and confidentiality" has said so since the repo
+was created, but nothing enforced it, and ~380 violating lines accumulated across
+68 files — including a consumer's domain baked into a wire-format constant and a
+design doc whose own filename named a private product.
+
+`tools/naming-gate.mjs check` scans every tracked file's **contents and its
+path** for real customer, product, and consumer names, and fails the build on a
+hit. The forbidden terms live in `tools/naming-terms.json` as SHA-256 digests
+rather than literals — a plaintext list would itself be the worst violation in
+the tree. That is not secrecy (short digests are dictionary-attackable); it only
+avoids stating the relationship.
+
+Locally:
+
+```sh
+node module/tools/naming-gate.mjs check
+node module/tools/naming-gate.mjs hash <term>   # digest for a new terms entry
+```
+
+A genuine exception — a copyright holder, a CODEOWNERS handle — goes in
+`tools/naming-allowlist.json` with a `reason` and a `ticket`. An entry missing
+either is ignored, so an exemption cannot take effect without a reviewable
+justification.
+
 ## Authorization coverage
 
 The generated authorization catalog

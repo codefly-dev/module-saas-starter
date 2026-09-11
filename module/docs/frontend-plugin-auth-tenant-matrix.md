@@ -3,7 +3,7 @@
 Status: active (`FP-031`, `FP-033`)
 Applies to: every backend reached through the generic frontend plugin BFF
 
-This is the canonical security matrix for Warden, Mind, Codefly-owned products,
+This is the canonical security matrix for every consuming solution, Codefly-owned products,
 and future frontend plugins. It separates the guarantees owned by the browser
 runtime and SaaS Starter BFF from authorization decisions that only the product
 backend can make. A frontend visibility test, fetch mock, or decoded browser JWT

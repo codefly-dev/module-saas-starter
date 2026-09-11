@@ -104,8 +104,8 @@ All seven groups **HOLD**; no weakenings found.
 
 - **Charter status column stale**: every ⏳ HIGH/MEDIUM item has merged
   (#216–#231); only this validation issue remains open from the epic.
-- **`Decide` gate stricter than documented**: the charter and
-  `SECURITY_HARDENING_PLAN.md` (§B.3, pass-1 table) describe
+- **`Decide` gate stricter than documented**: the charter and the consuming
+  platform's hardening plan (§B.3, pass-1 table) describe
   `requireInternalOrOrgMember` / "org-bound"; the shipped gate is
   `requireInternalCredential` only (`principal_rpcs.go:167`), and
   `requireInternalOrOrgMember` does not exist. Stricter is fine — but the plan

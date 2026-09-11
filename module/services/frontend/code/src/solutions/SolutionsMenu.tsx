@@ -37,9 +37,14 @@ async function refresh(): Promise<void> {
 		const response = await fetch("/api/solutions/register", {
 			cache: "no-store",
 		});
-		const data: { solutions?: SolutionNav[] } = response.ok
-			? await response.json()
-			: { solutions: [] };
+		if (!response.ok) {
+			// The listing answers 503 when this replica cannot read the registry.
+			// Treating that as "no solutions" would empty a working nav on a
+			// blip: an unreadable registry is not an empty one, which is the
+			// whole reason the route distinguishes them.
+			return;
+		}
+		const data: { solutions?: SolutionNav[] } = await response.json();
 		const next = data.solutions ?? [];
 		// Keep the reference stable when nothing changed so subscribers don't
 		// re-render on every poll (useSyncExternalStore compares by identity).

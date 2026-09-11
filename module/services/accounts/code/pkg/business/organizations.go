@@ -143,7 +143,7 @@ func (s *Service) ConvergeFixtureOrgMember(ctx context.Context, req *gen.AddOrgM
 func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.RemoveOrgMemberRequest) error {
 	w := wool.Get(ctx).In("RemoveOrgMember")
 
-	// Lock, last-admin guard, membership delete, dependent-access delete, and
+	// Lock, last-admin guard, dependent-access delete, membership delete, and
 	// the audit event all run inside one org-scoped WithOrgTx: org_members RLS
 	// + organizations RLS both let the queries through, and the record cannot
 	// commit describing a removal whose dependent access is still standing.
@@ -174,11 +174,17 @@ func (s *Service) RemoveOrgMember(ctx context.Context, actorID string, req *gen.
 		if targetIsAdmin && adminCount <= 1 {
 			return w.NewError("cannot remove the last admin/owner from the organization")
 		}
-		if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
-			return err
-		}
+		// Dependent access before the parent row: migration 127 made team_members
+		// a child of organization_members with ON DELETE CASCADE, so deleting the
+		// membership first would leave this statement nothing to find and its
+		// reported count permanently zero. Removing explicitly keeps that count
+		// truthful; the cascade stays as the backstop for any writer that does
+		// not come through here.
 		if _, err := s.store.RemoveOrgTeamMemberships(ctx, req.OrgId, req.UserId); err != nil {
 			return w.Wrapf(err, "cannot remove dependent team memberships")
+		}
+		if err := s.store.RemoveOrgMember(ctx, req.OrgId, req.UserId); err != nil {
+			return err
 		}
 		return s.emitTx(ctx, actorID, "user", EventOrgMemberRemoved, "organization", req.OrgId, req.OrgId)
 	}); err != nil {

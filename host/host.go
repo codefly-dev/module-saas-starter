@@ -1,6 +1,6 @@
 // Package host implements policy.PermissionsBackend and
 // policy.EscalationGrantor backed by a saas-starter API
-// instance. Hosts (codefly CLI, Mind) use this to wire the
+// instance. Hosts (codefly CLI, aggregating tools) use this to wire the
 // abstract policy interfaces in core/policy to their concrete
 // saas-starter deployment.
 //

@@ -101,7 +101,7 @@ YAML directly.
 
 Branding and base appearance are application data, never plugin side effects.
 The resolved appearance contract supplies an SSR-projected light/dark semantic
-token set, fonts, radius, and default theme. Warden-enabled applications
+token set, fonts, radius, and default theme. Plugin-enabled applications
 override identity and appearance only in `frontend.config.ts`. The host may
 apply the current organization's validated logo, favicon, and primary color as
 a narrow runtime overlay; no plugin can contribute branding or arbitrary CSS.

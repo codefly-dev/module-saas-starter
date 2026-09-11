@@ -60,11 +60,12 @@ Persistence is `localStorage` **today**; the durable home is decided in [#375]
 (a dedicated store vs settings-composed), not assumed. The *authoring
 intelligence* (natural language → spec) is **not** in this module — it knows
 nothing about it beyond the tool contract (#320) and the external-driver channel
-(#368). The chat/NL agent already exists as a self-contained prototype in
-`obin-ai/module-robin` (epic #16, complete); the goal is **convergence** — robin's
-chat drives *this* host's real dashboards through #368's channel, retiring robin's
-private store — and that end-to-end roadmap lives in **lodestar** (obin-ai), not
-here. Dependency direction stays obin→codefly.
+(#368). The chat/NL agent already exists as a self-contained prototype in a separate
+agent-runtime module owned by a consuming organization; the goal is
+**convergence** — that agent's chat drives *this* host's real dashboards through
+#368's channel, retiring its private store — and that end-to-end roadmap lives in
+the consumer's own design repository, not here. Dependency direction stays
+consumer→codefly.
 
 [#289]: https://github.com/codefly-dev/module-saas-starter/issues/289
 [#317]: https://github.com/codefly-dev/module-saas-starter/issues/317

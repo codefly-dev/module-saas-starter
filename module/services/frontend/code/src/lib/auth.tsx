@@ -382,6 +382,14 @@ interface AuthContextType extends AuthState {
 	) => boolean;
 	logout: () => Promise<void>;
 	switchOrganization: (organizationId: string) => Promise<void>;
+	// Installs an impersonation access token as the active session. The admin's
+	// own refresh cookie is untouched, so it remains the way back out.
+	enterImpersonation: (accessToken: string) => void;
+	// Leaves an impersonated session by re-exchanging the admin's refresh cookie.
+	// The restored session is minted from that cookie alone, so it carries no
+	// trace of the target; a cookie that no longer works logs out rather than
+	// leaving the impersonation token installed.
+	exitImpersonation: () => Promise<void>;
 	getToken: () => string | null;
 }
 
@@ -412,8 +420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				// Secure omitted over plaintext http so local dev (http://localhost)
 				// can still set the cookie; a Secure cookie is dropped on http.
 				const secure =
-					typeof window !== "undefined" &&
-					window.location.protocol === "https:"
+					typeof window !== "undefined" && window.location.protocol === "https:"
 						? "; Secure"
 						: "";
 				document.cookie = `codefly_session=1; path=/; SameSite=Lax${secure}`;
@@ -827,6 +834,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		});
 	}, [state.accessToken]);
 
+	const enterImpersonation = useCallback(
+		(accessToken: string) => {
+			if (!accessToken)
+				throw new Error("Impersonation returned no access token");
+			applyAccessToken(accessToken);
+		},
+		[applyAccessToken],
+	);
+
+	const exitImpersonation = useCallback(async () => {
+		const outcome = await exchangeRefreshCookie();
+		if (outcome.status === "ok") {
+			setTokens(outcome.accessToken, outcome.refreshToken);
+			return;
+		}
+		// A transient failure (gateway 5xx, network) says nothing about the
+		// admin's session: the httpOnly refresh cookie is untouched and almost
+		// certainly still valid. Logging out here would turn a hiccup into a
+		// re-authentication, so surface it and leave the impersonated session
+		// intact for the operator to retry. Only an actively rejected session
+		// ("expired") justifies tearing down credentials.
+		if (outcome.status === "unavailable") {
+			throw new Error("Could not restore your session — please try again.");
+		}
+		await logout();
+	}, [logout, setTokens]);
+
+	// The 401 handler below must know whether the session it is repairing is an
+	// impersonated one. A ref keeps that current without re-registering the
+	// handler on every token change.
+	const impersonatingRef = useRef(false);
+	useEffect(() => {
+		impersonatingRef.current = state.impersonation.isImpersonating;
+	}, [state.impersonation.isImpersonating]);
+
 	useEffect(() => {
 		// Always attempt a refresh on load: the refresh token lives in an httpOnly
 		// cookie the browser sends automatically (credentials: "include").
@@ -882,9 +924,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		// access token expired (or was revoked) while the page stayed open. This
 		// single handler is where every dead-session 401 converges.
 		setRefreshHandler(async () => {
+			const wasImpersonating = impersonatingRef.current;
 			const outcome = await exchangeRefreshCookie();
 			if (outcome.status === "ok") {
 				setTokens(outcome.accessToken, outcome.refreshToken);
+				// An impersonation token carries no refresh half of its own, so
+				// this cookie is the admin's and the session just restored is the
+				// admin's too. The request that triggered the refresh was issued
+				// as the target; replaying it with the token we just installed
+				// would execute it with the admin's authority — including the
+				// platform grants impersonation deliberately withholds — and audit
+				// it as an ordinary, un-impersonated action. Fail that one request
+				// instead; the operator is now back in their own session.
+				if (wasImpersonating) return null;
 				return outcome.accessToken;
 			}
 			if (outcome.status === "unavailable") {
@@ -949,6 +1001,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
+			enterImpersonation,
+			exitImpersonation,
 			getToken,
 		}),
 		[
@@ -963,6 +1017,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			setTokensFromMagicLink,
 			logout,
 			switchOrganization,
+			enterImpersonation,
+			exitImpersonation,
 			getToken,
 		],
 	);

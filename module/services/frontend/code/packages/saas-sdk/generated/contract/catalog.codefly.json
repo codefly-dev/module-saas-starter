@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:0d06958b8e6c547cca095c0ee38b8f833a1c17e884fd372f3055496bb719629b",
+      "digest": "sha256:143cbbe69cdbc0d8ad437377e865e3694018849a709b866851640fd66fd6d4ba",
       "services": [
         {
           "name": "APIKeyService",
@@ -172,9 +172,15 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions",
+            "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
-            "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+            "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
+            "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe",
+            "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
           ]
         },
         {
@@ -240,12 +246,14 @@
           "name": "PlatformAdminService",
           "fullName": "saas.accounts.v1.PlatformAdminService",
           "procedures": [
+            "/saas.accounts.v1.PlatformAdminService/GetEventOperations",
             "/saas.accounts.v1.PlatformAdminService/GetJob",
             "/saas.accounts.v1.PlatformAdminService/GetJobOperations",
             "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements",
             "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
             "/saas.accounts.v1.PlatformAdminService/ImpersonateUser",
             "/saas.accounts.v1.PlatformAdminService/ListActiveSessions",
+            "/saas.accounts.v1.PlatformAdminService/ListEventSubscriptions",
             "/saas.accounts.v1.PlatformAdminService/ListFeatureFlags",
             "/saas.accounts.v1.PlatformAdminService/ListJobs",
             "/saas.accounts.v1.PlatformAdminService/ListPlatformAdmins",
@@ -279,6 +287,15 @@
             "/saas.accounts.v1.SSOAdminService/Disable",
             "/saas.accounts.v1.SSOAdminService/GetSSO",
             "/saas.accounts.v1.SSOAdminService/StartSetup"
+          ]
+        },
+        {
+          "name": "SolutionRegistryService",
+          "fullName": "saas.accounts.v1.SolutionRegistryService",
+          "procedures": [
+            "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+            "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
+            "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
           ]
         },
         {

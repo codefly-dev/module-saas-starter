@@ -94,7 +94,7 @@ func TestGatewayHandlerHasNoMetricsRouteWhenTelemetryIsDisabled(t *testing.T) {
 		Method:  http.MethodGet,
 		Path:    "/health",
 	}}, nil)
-	gateway := NewGateway(nil, matcher, nil, nil)
+	gateway := NewGateway(nil, matcher, nil, nil, newFakeSolutionRegistry())
 	request := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	recorder := httptest.NewRecorder()
 
@@ -186,7 +186,7 @@ func startInstrumentedGateway(t *testing.T, metrics *otelMetrics) *httptest.Serv
 		Method:  http.MethodGet,
 		Path:    "/health",
 	}}, nil)
-	gateway := NewGateway(nil, matcher, nil, nil)
+	gateway := NewGateway(nil, matcher, nil, nil, newFakeSolutionRegistry())
 	server := httptest.NewServer(newGatewayHTTPHandler(gateway, metrics))
 	t.Cleanup(server.Close)
 	return server

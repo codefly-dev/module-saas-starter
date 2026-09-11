@@ -146,6 +146,9 @@ func (*CacheInvalidator) InvalidateMembership(ctx context.Context, orgID, userID
 // metadata (populated by the auth sidecar). Returns codes.Unauthenticated
 // if the caller is anonymous.
 func requireAuth(ctx context.Context) (string, error) {
+	if identity, ok := auth.VerifiedRequestIdentity(ctx); ok {
+		return identity.EffectiveSubjectID(), nil
+	}
 	w := wool.Get(ctx)
 	w.GRPC().Inject()
 	// The authenticated gateway identity is carried as X-User-Id/user.id.
@@ -160,6 +163,18 @@ func requireAuth(ctx context.Context) (string, error) {
 		return "", status.Error(codes.Unauthenticated, "authentication required")
 	}
 	return actorID, nil
+}
+
+// platformRole resolves the platform role an authorization decision may use.
+// An impersonated request has none. The effective subject's platform grants are
+// not the actor's to borrow, and the actor's own grants are deliberately left
+// behind when they step into someone else's session — so both directions of
+// that leak close here, at the one lookup every platform gate shares.
+func platformRole(ctx context.Context, actorID string) (string, error) {
+	if auth.ImpersonatedRequest(ctx) {
+		return "", nil
+	}
+	return service.Store().GetPlatformRole(ctx, actorID)
 }
 
 // requireOrgMember verifies that actorID is a member of orgID. Returns
@@ -208,7 +223,7 @@ func requireOrgPermission(ctx context.Context, actorID, orgID, resource, action 
 // Platform super_admin bypasses the check. Cache-backed same as above.
 func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	// Platform super_admin always passes.
-	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
+	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		return nil
 	}
 	if orgID == "" {
@@ -235,7 +250,7 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 	if orgID == "" {
 		return status.Error(codes.InvalidArgument, "org_id required")
 	}
-	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
+	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		return nil
 	}
 
@@ -278,7 +293,7 @@ func requireBillingAdmin(ctx context.Context, actorID, orgID string) error {
 // Service methods (AddTeamMember etc.) skip a redundant WithControlPlane
 // → 3 transactions per request instead of 4.
 func requireTeamAdmin(ctx context.Context, actorID, teamID string) (string, error) {
-	if role, err := service.Store().GetPlatformRole(ctx, actorID); err == nil && role == "super_admin" {
+	if role, err := platformRole(ctx, actorID); err == nil && role == "super_admin" {
 		// Even for super_admin we still need to resolve the org so
 		// the downstream WithOrgTx is correctly scoped.
 		var orgID string
@@ -365,7 +380,7 @@ func requireTeamMember(ctx context.Context, actorID, teamID string) (string, err
 // billing, or super_admin). Used for endpoints that should only be
 // reachable from the admin console.
 func requirePlatformAdmin(ctx context.Context, actorID string) error {
-	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	role, err := platformRole(ctx, actorID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
 	}
@@ -381,7 +396,7 @@ func requirePlatformAdmin(ctx context.Context, actorID string) error {
 // same minimum their business method enforces, so dropping the business check
 // alone cannot re-expose an endpoint.
 func requirePlatformRole(ctx context.Context, actorID, minRole string) error {
-	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	role, err := platformRole(ctx, actorID)
 	if err != nil {
 		return status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
 	}

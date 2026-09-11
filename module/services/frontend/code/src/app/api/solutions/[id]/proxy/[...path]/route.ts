@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
+const MAX_RESUME_BYTES = 1024;
 
 interface RouteContext {
 	params: Promise<{ id: string; path?: string[] }>;
@@ -82,7 +83,25 @@ async function handler(
 		return new Response("cross-origin request rejected", { status: 403 });
 	}
 
-	const solution = findSolution(id);
+	// A cursor is only an observation hint. It never supplies identity or
+	// authorizes a retry. Keep its carrier bounded before contacting the gateway.
+	const resume =
+		request.method === "GET" ? request.headers.get("last-event-id") : null;
+	if (
+		resume !== null &&
+		(new TextEncoder().encode(resume).length > MAX_RESUME_BYTES ||
+			/[\u0000-\u001f\u007f]/.test(resume))
+	) {
+		return new Response("invalid event cursor", { status: 400 });
+	}
+
+	const solution = await findSolution(id);
+	// Distinguish a solution that is not registered from a registry this
+	// replica cannot read: the first is permanent for the caller, the second is
+	// worth retrying.
+	if (solution === "unavailable") {
+		return new Response("solution registry unavailable", { status: 503 });
+	}
 	if (!solution) {
 		return new Response("solution not registered", { status: 404 });
 	}
@@ -121,7 +140,17 @@ async function handler(
 	}
 	headers.set("accept", request.headers.get("accept") ?? "application/json");
 
-	const init: RequestInit = { method: request.method, headers };
+	if (resume !== null) headers.set("last-event-id", resume);
+
+	// Preserve the browser connection lifetime and avoid cached observations or
+	// forwarding its credentials through a gateway redirect. Never retry here.
+	const init: RequestInit = {
+		method: request.method,
+		headers,
+		signal: request.signal,
+		cache: "no-store",
+		redirect: "error",
+	};
 	if (request.method !== "GET" && request.method !== "HEAD") {
 		init.body = await request.arrayBuffer();
 	}
@@ -130,6 +159,9 @@ async function handler(
 	try {
 		upstream = await fetch(target, init);
 	} catch (err) {
+		if (request.signal?.aborted) {
+			return new Response(null, { status: 499 });
+		}
 		// The gateway resolved but is unreachable (DNS, refused, reset). Distinct
 		// from an unresolvable endpoint above so an operator can tell "no gateway
 		// configured" from "gateway down".
@@ -144,6 +176,15 @@ async function handler(
 	const upstreamContentType = upstream.headers.get("content-type");
 	if (upstreamContentType) {
 		responseHeaders.set("content-type", upstreamContentType);
+	}
+	if (
+		upstreamContentType?.split(";")[0].trim().toLowerCase() ===
+		"text/event-stream"
+	) {
+		// This authenticated stream must stay incremental. Preserve its bytes and
+		// EOF; the solution decides whether an event is terminal or needs a reset.
+		responseHeaders.set("cache-control", "no-store, no-transform");
+		responseHeaders.set("x-accel-buffering", "no");
 	}
 	const upstreamRequestID = upstream.headers.get("x-request-id");
 	if (upstreamRequestID) {

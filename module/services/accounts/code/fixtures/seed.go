@@ -19,6 +19,7 @@ import (
 
 	"github.com/codefly-dev/core/wool"
 	codefly "github.com/codefly-dev/sdk-go"
+	"github.com/google/uuid"
 	"gopkg.in/yaml.v3"
 )
 
@@ -41,6 +42,7 @@ type fixtureFile struct {
 }
 
 type fixtureUser struct {
+	ID           string `yaml:"id"`
 	Email        string `yaml:"email"`
 	Name         string `yaml:"name"`
 	Role         string `yaml:"role"`
@@ -288,6 +290,7 @@ func loadFixtureFile(path string) (*fixtureFile, error) {
 }
 
 func validateFixture(f *fixtureFile) error {
+	userIDIndexes := make(map[string]int, len(f.Users))
 	for i, u := range f.Users {
 		if u.Email == "" {
 			return fmt.Errorf("user[%d]: email is required", i)
@@ -298,6 +301,33 @@ func validateFixture(f *fixtureFile) error {
 		if u.ProviderID == "" {
 			return fmt.Errorf("user[%d] (%s): provider_id is required", i, u.Email)
 		}
+		if u.ID == "" {
+			continue
+		}
+		id, err := business.ParseID(u.ID)
+		if err != nil {
+			return fmt.Errorf("user[%d] (%s): %w", i, u.Email, err)
+		}
+		// The all-zero uuid is the absent-principal sentinel: a user seeded
+		// with it can never hold a session, and the failure would surface at
+		// login rather than here.
+		if id == uuid.Nil {
+			return fmt.Errorf("user[%d] (%s): id must not be the nil uuid", i, u.Email)
+		}
+		// uuid.Parse also accepts the 32-hex, braced and urn: spellings. The
+		// frontend parses the raw yaml against a schema that takes only the
+		// dashed form, so any other spelling seeds here and 500s the fixture
+		// route that the dev login page reads.
+		if len(u.ID) != len(uuid.Nil.String()) {
+			return fmt.Errorf("user[%d] (%s): id must be the dashed uuid form, not %q", i, u.Email, u.ID)
+		}
+		if previous, exists := userIDIndexes[id.String()]; exists {
+			return fmt.Errorf("user[%d] (%s): id %s collides with user[%d]", i, u.Email, id, previous)
+		}
+		userIDIndexes[id.String()] = i
+		// Store the canonical form so the drift check in seedUsers compares
+		// against the store's rendering of the same uuid.
+		f.Users[i].ID = id.String()
 	}
 	organizationSlugIndexes := make(map[string]int, len(f.Organizations))
 	for i, org := range f.Organizations {
@@ -405,6 +435,17 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			return nil, w.Wrapf(err, "cannot look up fixture user %s", u.Email)
 		}
 		if existing != nil {
+			// A database seeded before this user declared an id keeps the uuid
+			// it was given, and a seed cannot rewrite a primary key that other
+			// rows reference. Report the drift rather than refusing to run:
+			// configuration naming the declared id silently matches nothing
+			// here, but aborting would strand every such database instead.
+			if u.ID != "" && existing.Uuid != u.ID {
+				w.Error("fixture user id drift: this database keeps its own uuid, so configuration naming the declared id matches no principal here; reseed against an empty store to adopt the declared id",
+					wool.Field("email", u.Email),
+					wool.Field("declared_id", u.ID),
+					wool.Field("stored_id", existing.Uuid))
+			}
 			userIDs[u.Email] = existing.Uuid
 			// Fixtures are desired state, not create-only samples. Converge the
 			// platform role on every activation so authentication and admin
@@ -427,7 +468,32 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 			continue
 		}
 
-		userID := business.NewIDString()
+		// A declared id makes the principal quotable in committed
+		// configuration; without one every reseed mints a fresh uuid.
+		userID := u.ID
+		if userID != "" {
+			var taken bool
+			if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+				var checkErr error
+				taken, checkErr = service.Store().UserIDExists(ctx, userID)
+				return checkErr
+			}); err != nil {
+				return nil, w.Wrapf(err, "cannot check the declared id of fixture user %s", u.Email)
+			}
+			if taken {
+				// Another row holds this uuid — a deleted user keeps its row, so
+				// erasing an identity leaves its id claimed. The declared id
+				// cannot be honoured either way, and the same reasoning as a
+				// drifting id applies: report it, but let the service start.
+				w.Error("fixture user declares an id another user already holds; seeding with a fresh uuid, so configuration naming the declared id matches no principal here",
+					wool.Field("email", u.Email),
+					wool.Field("declared_id", userID))
+				userID = ""
+			}
+		}
+		if userID == "" {
+			userID = business.NewIDString()
+		}
 		identityID := business.NewIDString()
 		user := &gen.User{
 			Uuid:         userID,

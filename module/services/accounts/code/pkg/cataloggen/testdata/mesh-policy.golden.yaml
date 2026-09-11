@@ -15,9 +15,10 @@ metadata:
   name: allow-accounts-internal-authority
   namespace: saas-starter
 spec:
-  selector:
-    matchLabels:
-      app: accounts
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: accounts
   action: ALLOW
   rules:
     - from:
@@ -54,11 +55,50 @@ spec:
               - /saas.accounts.v1.PrincipalService/EnableAgentPrincipal
               - /saas.accounts.v1.PrincipalService/GetAgentPrincipal
               - /saas.accounts.v1.PrincipalService/GetPrincipal
+              - /saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration
+              - /saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations
+              - /saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration
               - /saas.accounts.v1.UsageService/ConsumeUsage
               - /saas.accounts.v1.WorkContextService/AuthorizeEvidenceRead
               - /saas.accounts.v1.WorkContextService/CheckAuthorizationRevision
               - /saas.accounts.v1.WorkContextService/ConsumeSingleUse
               - /saas.accounts.v1.WorkContextService/StartInstallationTask
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-frontend-internal-http
+  namespace: saas-starter
+spec:
+  targetRefs:
+    - kind: Service
+      group: ""
+      name: frontend
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+      to:
+        - operation:
+            paths:
+              - "*/api/internal/solutions"
+              - "/api/internal/solutions"
+            methods:
+              - GET
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+      to:
+        - operation:
+            paths:
+              - "*/api/solutions/register"
+              - "/api/solutions/register"
+            methods:
+              - DELETE
+              - POST
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: Gateway

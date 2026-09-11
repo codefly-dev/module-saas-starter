@@ -430,6 +430,9 @@ func (s *TeamServer) AddMember(ctx context.Context, req *gen.AddTeamMemberReques
 	// WithControlPlane lookup. 4 transactions/request → 3.
 	ctx = business.WithCachedTeamOrgID(ctx, req.TeamId, orgID)
 	if err := service.AddTeamMember(ctx, actorID, req); err != nil {
+		if errors.Is(err, business.ErrTeamMemberNotInParentOrganization) {
+			return nil, status.Error(codes.FailedPrecondition, business.ErrTeamMemberNotInParentOrganization.Error())
+		}
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -1665,7 +1668,7 @@ func (s *PlatformAdminServer) UpsertFeatureFlag(ctx context.Context, req *gen.Up
 	if err != nil {
 		return nil, err
 	}
-	role, err := service.Store().GetPlatformRole(ctx, actorID)
+	role, err := platformRole(ctx, actorID)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot resolve platform role: %v", err)
 	}

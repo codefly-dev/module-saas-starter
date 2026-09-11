@@ -285,6 +285,15 @@
       ]
     },
     {
+      "name": "SolutionRegistryService",
+      "full_name": "saas.accounts.v1.SolutionRegistryService",
+      "procedures": [
+        "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+        "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
+        "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration"
+      ]
+    },
+    {
       "name": "TeamService",
       "full_name": "saas.accounts.v1.TeamService",
       "procedures": [
@@ -7844,6 +7853,136 @@
       },
       "policy_tier": "org_admin",
       "description": "Mint WorkOS portal link.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "DeleteSolutionRegistration",
+      "input_type": "saas.accounts.v1.DeleteSolutionRegistrationRequest",
+      "output_type": "saas.accounts.v1.SolutionRegistration",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.solution.registration_deleted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Deregister a solution and leave a tombstone that blocks resurrection.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "ListSolutionRegistrations",
+      "input_type": "saas.accounts.v1.ListSolutionRegistrationsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionRegistrationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Read the solution registry snapshot a replica rebuilds its cache from.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration",
+      "service": "SolutionRegistryService",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "PutSolutionRegistration",
+      "input_type": "saas.accounts.v1.PutSolutionRegistrationRequest",
+      "output_type": "saas.accounts.v1.SolutionRegistration",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.solution.registration_updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Write or renew one half of a solution's durable runtime registration.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

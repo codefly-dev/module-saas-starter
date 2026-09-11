@@ -50,7 +50,7 @@ async function globalSetup(): Promise<void> {
 	// NOT hardcoded: `readyService: "accounts"` makes the SDK resolve the accounts service's
 	// REST address from codefly (`codefly get endpoints accounts --type rest`),
 	// so this works in ANY consumer workspace — the port is a workspace
-	// hash and differs between, e.g., the canonical starter and warden.
+	// hash and differs between, e.g., the canonical starter and a consuming solution.
 	deps = await withDependencies({
 		service: "frontend",
 		fixture: "dev-admin",

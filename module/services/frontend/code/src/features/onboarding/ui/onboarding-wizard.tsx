@@ -39,7 +39,7 @@ import { useAuth } from "@/lib/auth";
 
 /**
  * Derive workspace placeholders from the signed-in user's email domain
- * (alice@obin.ai -> "Obin" / "obin") so the suggestion reflects the operator's
+ * (alice@acme.com -> "Acme" / "acme") so the suggestion reflects the operator's
  * org instead of a generic "Acme". Falls back to the generic sample when no
  * email is available.
  */

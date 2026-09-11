@@ -26,6 +26,7 @@ func registerCatalogGRPCServices(registrar grpc.ServiceRegistrar, server *GrpcSe
 	gen.RegisterPermissionServiceServer(registrar, server.Perm)
 	gen.RegisterPlatformAdminServiceServer(registrar, server.PlatformAdmin)
 	gen.RegisterPrincipalServiceServer(registrar, PrincipalSingleton())
+	gen.RegisterSolutionRegistryServiceServer(registrar, SolutionRegistrySingleton())
 	gen.RegisterTeamServiceServer(registrar, server.Team)
 	gen.RegisterUsageServiceServer(registrar, UsageSingleton())
 	gen.RegisterUserServiceServer(registrar, server.User)
@@ -47,6 +48,7 @@ var catalogGRPCServiceNames = []string{
 	"saas.accounts.v1.PermissionService",
 	"saas.accounts.v1.PlatformAdminService",
 	"saas.accounts.v1.PrincipalService",
+	"saas.accounts.v1.SolutionRegistryService",
 	"saas.accounts.v1.TeamService",
 	"saas.accounts.v1.UsageService",
 	"saas.accounts.v1.UserService",

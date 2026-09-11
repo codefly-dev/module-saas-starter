@@ -18,5 +18,13 @@ export async function GET(request: Request): Promise<Response> {
 	if (!isTrustedInternalCall(request)) {
 		return Response.json({ error: "unauthorized" }, { status: 401 });
 	}
-	return Response.json({ solutions: loadSolutions().map(detailProjection) });
+	const registered = await loadSolutions();
+	// An unreadable registry is not an empty one. Answering with an empty list
+	// would let the proxy derive a CSP carrying no solution origins and silently
+	// block every registered remote, which looks identical to "nothing is
+	// registered" from the browser.
+	if (registered === "unavailable") {
+		return Response.json({ error: "registry_unavailable" }, { status: 503 });
+	}
+	return Response.json({ solutions: registered.map(detailProjection) });
 }

@@ -5771,6 +5771,118 @@
       "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
     },
     {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/DeleteSolutionRegistration",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "DeleteSolutionRegistration",
+      "input_type": "saas.accounts.v1.DeleteSolutionRegistrationRequest",
+      "output_type": "saas.accounts.v1.SolutionRegistration",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.solution.registration_deleted"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "policy_sha256": "f7ede710e2635a205b5ffc3e8079f7702560255d5b4c875d7b6af8e041998023",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/ListSolutionRegistrations",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "ListSolutionRegistrations",
+      "input_type": "saas.accounts.v1.ListSolutionRegistrationsRequest",
+      "output_type": "saas.accounts.v1.ListSolutionRegistrationsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "policy_sha256": "45df71bfa7f313b565b0e8c314557847bab913990d43ba59b97d755412b4a4fd",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
+      "procedure": "/saas.accounts.v1.SolutionRegistryService/PutSolutionRegistration",
+      "full_service": "saas.accounts.v1.SolutionRegistryService",
+      "method": "PutSolutionRegistration",
+      "input_type": "saas.accounts.v1.PutSolutionRegistrationRequest",
+      "output_type": "saas.accounts.v1.SolutionRegistration",
+      "client_streaming": false,
+      "server_streaming": false,
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.solution.registration_updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "source_proto": "saas/accounts/v1/solution_registry_service.proto",
+      "policy_sha256": "1186e85b490827dcfb7569fc99d65525ad21c30b1fa9652f67bbe7af76670371",
+      "rate_limit_backend_failure_mode": "RATE_LIMIT_BACKEND_FAILURE_MODE_FAIL_OPEN"
+    },
+    {
       "procedure": "/saas.accounts.v1.TeamService/AddMember",
       "full_service": "saas.accounts.v1.TeamService",
       "method": "AddMember",

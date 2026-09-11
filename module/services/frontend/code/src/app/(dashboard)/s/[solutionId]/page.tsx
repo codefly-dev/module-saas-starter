@@ -12,7 +12,13 @@ export default async function SolutionPage({
 	params: Promise<{ solutionId: string }>;
 }) {
 	const { solutionId } = await params;
-	const solution = findSolution(solutionId);
+	const solution = await findSolution(solutionId);
+	// "unavailable" means this replica cannot read the registry, which is not
+	// the same as the solution not existing. Rendering a 404 for it would tell
+	// the user the page is gone when it is only unreachable.
+	if (solution === "unavailable") {
+		throw new Error("solution registry unavailable");
+	}
 	if (!solution) {
 		notFound();
 	}

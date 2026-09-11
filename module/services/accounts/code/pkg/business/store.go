@@ -40,6 +40,9 @@ type Store interface {
 	RegisterUser(ctx context.Context, user *gen.User, identity *gen.UserIdentity) error
 	GetUserByIdentity(ctx context.Context, id *gen.UserIdentity) (*gen.User, error)
 	GetUser(ctx context.Context, id string) (*gen.User, error)
+	// UserIDExists reports whether any users row already holds this uuid.
+	// A deleted user keeps its row, so its primary key stays taken.
+	UserIDExists(ctx context.Context, id string) (bool, error)
 	GetUserByEmail(ctx context.Context, email string) (*gen.User, error)
 	GetOrganizationMemberPrimaryEmail(ctx context.Context, userID string) (string, error)
 	ListUsers(ctx context.Context, orgID string, statusFilter string, pageSize int32, pageToken string) ([]*gen.User, string, error)
@@ -405,6 +408,23 @@ type Store interface {
 	RevokeEventSubscription(ctx context.Context, subscriptionID, subscriberPrincipalID string) (bool, error)
 	ListEventSubscriptions(ctx context.Context, subscriberPrincipalID string) ([]*EventSubscription, error)
 	CountLiveEventSubscriptions(ctx context.Context) (int, error)
+
+	// Solution registry (issue #534). solution_registrations is a control-plane
+	// -owned platform relation with no tenant column, so all four run under
+	// WithControlPlane; request traffic has no access to it at all.
+	//
+	//   - GetSolutionRegistrationForUpdate returns nil when no record exists and
+	//     row-locks the record when one does, so the read-decide-write that
+	//     implements compare-and-swap cannot interleave with a concurrent write.
+	//   - NextSolutionRegistryRevision draws the next registry-wide revision.
+	//   - SaveSolutionRegistration persists the whole record at the revision it
+	//     carries; a tombstoned record is written with both halves cleared.
+	//   - ListSolutionRegistrations returns the snapshot plus the highest
+	//     revision in the registry, tombstones included.
+	GetSolutionRegistrationForUpdate(ctx context.Context, solutionID string) (*SolutionRegistration, error)
+	NextSolutionRegistryRevision(ctx context.Context) (int64, error)
+	SaveSolutionRegistration(ctx context.Context, record *SolutionRegistration) error
+	ListSolutionRegistrations(ctx context.Context, includeTombstoned bool) ([]*SolutionRegistration, int64, error)
 
 	// Organization Settings (branding)
 	GetOrgSettings(ctx context.Context, orgID string) (*OrgSettings, error)

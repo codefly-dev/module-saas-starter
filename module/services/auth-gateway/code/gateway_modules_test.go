@@ -359,7 +359,8 @@ func TestGateway_Module_CatalogAlwaysWins(t *testing.T) {
 	// Force a shadowing registration directly into the registry.
 	u, err := url.Parse(upstream)
 	require.NoError(t, err)
-	gw.modules.set("users", u)
+	_, claimed := gw.modules.claim("users", u)
+	require.True(t, claimed)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
 	req.Header.Set("authorization", "Bearer "+signValidToken(t, priv))

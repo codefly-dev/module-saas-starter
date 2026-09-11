@@ -28,7 +28,14 @@ func PlatformRoleRank(role string) int {
 }
 
 // requirePlatformRole checks that the actor has at least the given platform role.
+// An impersonated request holds no platform authority at all: the effective
+// subject's grants are not the actor's to borrow, and the actor's own grants do
+// not follow them into someone else's session. Denying here also denies nested
+// impersonation, since ImpersonateUser sits behind this gate.
 func (s *Service) requirePlatformRole(ctx context.Context, actorID, minRole string) error {
+	if auth.ImpersonatedRequest(ctx) {
+		return fmt.Errorf("platform authority is unavailable to an impersonated session")
+	}
 	role, err := s.store.GetPlatformRole(ctx, actorID)
 	if err != nil {
 		return err
@@ -108,10 +115,18 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 	return nil
 }
 
-// ImpersonateUser issues a token as another user (support+ only).
-// UserID on the minted Identity stays as the actor (for audit), ActingAsUserID
-// points at the target — downstream business logic authorises against the
-// target, audit logs against the actor.
+// ImpersonateUser issues a token whose real actor is the calling platform admin
+// and whose effective subject is the target (support+ only). The minted Identity
+// keeps the actor as UserID and names the target through ActingAsUserID; every
+// transport projects that pair onto auth.RequestIdentity, so downstream
+// authorization runs as the target while audit stays attributable to the actor.
+//
+// The session is deliberately narrow. It carries no platform role, and
+// requirePlatformRole denies platform authority to any request already acting as
+// someone else — which is also what forbids impersonating from inside an
+// impersonated session. The target must be an active account: a suspended or
+// deleted user cannot be stepped into, so a support session can never outlive the
+// account's own lifecycle. The token TTL is capped independently by the minter.
 func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.ImpersonateUserRequest) (*gen.ImpersonateUserResponse, error) {
 	w := wool.Get(ctx).In("ImpersonateUser")
 
@@ -122,21 +137,34 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
-	// Cross-tenant lookup: a platform admin impersonating any user
-	// needs to see all their orgs + role regardless of caller's
-	// tenant. WithControlPlane elevates for the read; the impersonation
-	// session that gets minted carries the resolved orgID so
-	// downstream tenant-scoped ops run correctly under the target's
-	// org.
-	var orgs []*gen.Organization
+	// Cross-tenant lookups: a platform admin impersonating any user needs to see
+	// the target's account state, orgs and role regardless of the caller's own
+	// tenant. WithControlPlane elevates for the reads; the impersonation session
+	// that gets minted carries the resolved orgID so downstream tenant-scoped ops
+	// run correctly under the target's org.
+	var (
+		target *gen.User
+		orgs   []*gen.Organization
+	)
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		t, err := s.store.GetUser(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
+		target = t
 		os, err := s.store.ListOrganizationsForUser(ctx, req.UserId)
 		orgs = os
 		return err
 	}); err != nil {
-		return nil, w.Wrapf(err, "cannot list orgs for target user")
+		return nil, w.Wrapf(err, "cannot resolve target user")
+	}
+	if target.GetStatus() != gen.UserStatus_USER_STATUS_ACTIVE {
+		return nil, w.NewError("target user is not active")
 	}
 
+	// The target's organizations come back ordered by name, so a target in
+	// several organizations always yields the same session org rather than
+	// whichever row the planner returned first.
 	orgID := ""
 	orgRole := ""
 	if len(orgs) > 0 {
@@ -173,9 +201,6 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		}
 	}
 
-	// The minted Identity names the actor as UserID (audit correlation) and
-	// the target via ActingAsUserID. Downstream services read ActingAsUserID
-	// for authz decisions when present.
 	// PlatformRole is intentionally EMPTY on an impersonation token. It used to
 	// carry the TARGET's platform role, so a `support` admin impersonating a
 	// `super_admin` inherited super-admin — a privilege escalation. Impersonation

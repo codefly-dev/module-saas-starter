@@ -42,8 +42,10 @@ type Gateway struct {
 	selfHandler       http.Handler        // handler for "self" routes (health checks)
 	rateLimiter       *RateLimiter
 	requiredUpstreams []string
-	solutions         *upstreamRegistry // runtime-registered solution upstreams
-	modules           *upstreamRegistry // runtime-registered composed-module REST upstreams
+	// solutions is this replica's view of the durable solution registry: the
+	// authority is accounts, and the cache converges on it (#534).
+	solutions *solutionRegistryCache
+	modules   *upstreamRegistry // runtime-registered composed-module REST upstreams
 	// moduleTransport re-validates a federated module upstream's resolved address
 	// at dial time (SSRF / DNS-rebinding defense). Only federated module routes
 	// use it; catalog and solution upstreams are static trusted config and keep
@@ -54,15 +56,23 @@ type Gateway struct {
 
 // NewGateway constructs a gateway with explicit route matching.
 // upstreams maps service names (from routes.codefly.yaml) to their URLs.
-// rateLimiter may be nil to disable rate limiting.
-func NewGateway(authz *ExtAuthz, matcher *RouteMatcher, upstreams map[string]*url.URL, rateLimiter *RateLimiter) *Gateway {
+// rateLimiter may be nil to disable rate limiting. solutionRegistry is the
+// durable registry client; a nil one leaves the solution surface answering
+// "registry unavailable" rather than silently serving an empty registry.
+func NewGateway(
+	authz *ExtAuthz,
+	matcher *RouteMatcher,
+	upstreams map[string]*url.URL,
+	rateLimiter *RateLimiter,
+	solutionRegistry solutionRegistryClient,
+) *Gateway {
 	g := &Gateway{
 		authz:             authz,
 		matcher:           matcher,
 		upstreams:         upstreams,
 		rateLimiter:       rateLimiter,
 		requiredUpstreams: matcher.RequiredServices(),
-		solutions:         newUpstreamRegistry(),
+		solutions:         newSolutionRegistryCache(solutionRegistry),
 		modules:           newUpstreamRegistry(),
 		moduleTransport:   newModuleUpstreamTransport(net.DefaultResolver),
 	}

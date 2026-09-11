@@ -1,14 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
-// The route reads the cluster-internal secret via the Codefly SDK. vi.mock is
-// hoisted above module init, so the stub must be created with vi.hoisted.
-const { getWorkspaceSecret } = vi.hoisted(() => ({
+// The route reads the cluster-internal secret via the Codefly SDK, and the
+// registry reaches the gateway through service discovery. vi.mock is hoisted
+// above module init, so the stubs must be created with vi.hoisted.
+const { getWorkspaceSecret, getEndpoints } = vi.hoisted(() => ({
 	getWorkspaceSecret:
 		vi.fn<(name: string, key: string) => string | undefined>(),
+	getEndpoints: vi.fn<() => Array<Record<string, unknown>>>(() => []),
 }));
-vi.mock("codefly", () => ({ getWorkspaceSecret }));
+vi.mock("codefly", () => ({ getWorkspaceSecret, getEndpoints }));
 
 import { DELETE, GET, POST } from "@/app/api/solutions/register/route";
 import {
@@ -18,6 +20,54 @@ import {
 } from "@/solutions/registry";
 
 const TOKEN = "internal-test-token";
+const GATEWAY = "http://gateway.internal:8080";
+
+// A stand-in for the durable registry behind the gateway: enough of the wire
+// contract for the route to be exercised end to end, with the revision counter
+// that makes a write observable.
+function fakeGateway() {
+	const stored = new Map<string, string>();
+	let revision = 0;
+	const respond = (body: unknown, status = 200) =>
+		new Response(JSON.stringify(body), {
+			status,
+			headers: { "content-type": "application/json" },
+		});
+	return vi.fn(async (input: string | URL, init?: RequestInit) => {
+		const url = new URL(String(input));
+		if (url.pathname === "/solutions/_frontend") {
+			const body = JSON.parse(String(init?.body ?? "{}"));
+			stored.set(body.id, body.manifest);
+			revision += 1;
+			return respond({ ok: true, id: body.id, revision, status: "active" });
+		}
+		if (url.pathname === "/solutions/_register" && init?.method === "DELETE") {
+			stored.delete(url.searchParams.get("id") ?? "");
+			revision += 1;
+			return respond({ ok: true, revision });
+		}
+		if (url.pathname === "/solutions/_registry") {
+			return respond({
+				revision,
+				leaseSeconds: 120,
+				solutions: [...stored].map(([id, manifest]) => ({
+					id,
+					status: "active",
+					manifest,
+				})),
+			});
+		}
+		return respond({ error: "unexpected" }, 500);
+	});
+}
+
+// registry.ts caches its snapshot on globalThis so every Next module graph in a
+// process shares one; drop it between tests or a stale snapshot leaks across.
+function resetRegistryCache() {
+	const g = globalThis as Record<string, unknown>;
+	g.__solutionSnapshot = null;
+	g.__solutionSnapshotInFlight = null;
+}
 
 function manifestBody(id = "audit") {
 	return {
@@ -46,6 +96,14 @@ function postRequest(body: unknown, token?: string): Request {
 }
 
 describe("solutions register route auth", () => {
+	beforeEach(() => {
+		resetRegistryCache();
+		getEndpoints.mockReturnValue([
+			{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
+		]);
+		vi.stubGlobal("fetch", fakeGateway());
+	});
+
 	afterEach(async () => {
 		getWorkspaceSecret.mockReset();
 		// Clean any registration this suite added.
@@ -57,6 +115,8 @@ describe("solutions register route auth", () => {
 			}),
 		);
 		getWorkspaceSecret.mockReset();
+		vi.unstubAllGlobals();
+		resetRegistryCache();
 	});
 
 	it("rejects a POST with no internal token", async () => {
@@ -81,7 +141,55 @@ describe("solutions register route auth", () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		const res = await POST(postRequest(manifestBody(), TOKEN));
 		expect(res.status).toBe(200);
-		await expect(res.json()).resolves.toMatchObject({ ok: true, id: "audit" });
+		// The revision the write landed at comes back, so a registrant can hold
+		// it and drive its own compare-and-swap next time.
+		await expect(res.json()).resolves.toMatchObject({
+			ok: true,
+			id: "audit",
+			status: "active",
+			revision: 1,
+		});
+	});
+
+	it("relays a registry conflict rather than reporting success", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("conflict", { status: 409 })),
+		);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(409);
+	});
+
+	it("relays a foreign-publisher refusal", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response("forbidden", { status: 403 })),
+		);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(403);
+	});
+
+	it("reports a registry outage instead of a phantom success", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("gateway unreachable");
+			}),
+		);
+		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(503);
+	});
+
+	it("answers 503, not an empty list, when the registry cannot be read", async () => {
+		getWorkspaceSecret.mockReturnValue(TOKEN);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("gateway unreachable");
+			}),
+		);
+		resetRegistryCache();
+		expect((await GET()).status).toBe(503);
 	});
 
 	it("rejects an authenticated POST carrying an unsafe manifest", async () => {
@@ -119,7 +227,9 @@ describe("solutions register route auth", () => {
 				{
 					id: "activity",
 					layout: "grid",
-					widgets: [{ id: "logins", metric: "logins", visualization: "line" }],
+					widgets: [
+						{ id: "logins", metric: "logins", visualization: "line" },
+					],
 				},
 			],
 		};
@@ -149,12 +259,15 @@ describe("solutions register route auth", () => {
 		getWorkspaceSecret.mockReturnValue(TOKEN);
 		expect((await POST(postRequest(manifestBody(), TOKEN))).status).toBe(200);
 
-		const stored = findSolution("audit");
+		const stored = await findSolution("audit");
 		expect(stored).not.toBeNull();
+		expect(stored).not.toBe("unavailable");
 		const projected = navProjection(stored as SolutionManifest);
 		projected.nav.title = "Tampered";
 
-		expect(findSolution("audit")?.nav.title).toBe("Audit");
+		expect((await findSolution("audit")) as SolutionManifest).toMatchObject({
+			nav: { title: "Audit" },
+		});
 		const listed = (await GET().then((r) => r.json())) as {
 			solutions: Array<{ id: string; nav: { title: string } }>;
 		};
