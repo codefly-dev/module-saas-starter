@@ -147,14 +147,41 @@ const FORBIDDEN_MODULES = [
 	"saas/accounts/v1/invitations_pb",
 ];
 
-// The generated tree is assembled from two sources: `codefly generate client`
-// writes `saas/**` and deletes everything else, while the third-party
-// descriptors those bindings still import relatively — `buf/validate`,
-// `google/api`, and the `google/protobuf` files those two reach — are kept in
-// the tree by hand and restored after each regeneration (see README). Nothing
-// else proves that restore happened: `tsconfig.json` compiles from `src` only,
-// so tsc never opens a generated file the public API does not reach, and a
-// dangling import in one of those is invisible until a consumer imports it.
+// A bare list of unresolved specifiers has twice been read as a protoc-gen-es
+// version difference, which it is not — both the healthy and the broken tree are
+// stamped v2.2.3. Name the descriptor trees that went missing and the one thing
+// worth checking, so the next failure points at the binary that produced it.
+function diagnoseDangling(dangling: string[]): string | undefined {
+	if (dangling.length === 0) return undefined;
+	const trees = [
+		...new Set(
+			dangling.map((entry) =>
+				entry
+					.slice(entry.indexOf("-> ") + 3)
+					.replace(/^(?:\.\.\/)+/, "")
+					.replace(/\/[^/]+$/, ""),
+			),
+		),
+	].sort();
+	return [
+		`${dangling.length} generated imports resolve to files that were never emitted.`,
+		`Descriptor trees missing from the generated tree: ${trees.join(", ")}.`,
+		"This is which codefly binary generated the tree, not the protoc-gen-es version:",
+		"compare `codefly version` against the pin in .github/workflows/ci.yml and regenerate.",
+		"See the README's 'Regenerating the client' and codefly-dev/core#438.",
+	].join(" ");
+}
+
+// `codefly generate client` emits the third-party descriptors its bindings
+// import relatively — `buf/validate`, `google/api`, and the `google/protobuf`
+// files those two reach — alongside `saas/**`. Whether it emits them depends on
+// which codefly binary ran: a core that generates from a marked descriptor set
+// skips every foreign-namespace file, and the two with no package to fall back
+// to (`buf/validate`, `google/api`) stay imported by relative path after the
+// clean step has removed them (see README, and codefly-dev/core#438). Nothing
+// else catches that: `tsconfig.json` compiles from `src` only, so tsc never
+// opens a generated file the public API does not reach, and a dangling import in
+// one of those is invisible until a consumer imports it.
 describe("@codefly-dev/saas-sdk generated tree integrity", () => {
 	it("resolves every relative import in the generated bindings", () => {
 		const dangling: string[] = [];
@@ -166,7 +193,7 @@ describe("@codefly-dev/saas-sdk generated tree integrity", () => {
 				dangling.push(`${relative(generatedGenRoot, file)} -> ${specifier}`);
 			}
 		}
-		expect(dangling).toEqual([]);
+		expect(dangling, diagnoseDangling(dangling)).toEqual([]);
 	});
 });
 
