@@ -121,6 +121,54 @@ organizations:
 	require.Equal(t, seededID, seededOrgIDFor(t, ctx, owner, "Pinned Org"))
 }
 
+// A refusal must land before the seed writes anything. seedUsers commits each
+// user in its own transaction and deliberately skips personal-org creation
+// (otherwise fixture users land in two orgs and ensureOrg picks the wrong one),
+// so a refusal raised once organizations are being seeded would leave the new
+// fixture users belonging to no organization at all.
+func TestFixtureSeedRefusesBeforeWritingAnyUser(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+	fixturePath := filepath.Join(t.TempDir(), "preflight-org-ids.yaml")
+	t.Setenv("DEV_FIXTURE_PATH", fixturePath)
+
+	writeFixture := func(pinned, extraUser string) {
+		t.Helper()
+		contents := fmt.Sprintf(`users:
+  - email: owner@fixture.test
+    provider: email
+    provider_id: fixture-org-owner
+%sorganizations:
+  - id: %s
+    name: Pinned Org
+    owner: owner@fixture.test
+`, extraUser, pinned)
+		require.NoError(t, os.WriteFile(fixturePath, []byte(contents), 0o600))
+	}
+
+	writeFixture("00000000-0000-7000-8000-00000000f301", "")
+	require.NoError(t, fixtures.Seed(ctx, testService, "preflight-org-ids"))
+
+	// Redeclare the organization's id AND introduce a new user in the same
+	// edit. The seed must refuse, and the new user must not have been created.
+	writeFixture("00000000-0000-7000-8000-00000000f302", `  - email: newcomer@fixture.test
+    provider: email
+    provider_id: fixture-org-newcomer
+`)
+	require.Error(t, fixtures.Seed(ctx, testService, "preflight-org-ids"))
+
+	var newcomer *gen.User
+	require.NoError(t, testStore.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		newcomer, err = testStore.GetUserByIdentity(ctx, &gen.UserIdentity{
+			Provider: "email", ProviderId: "fixture-org-newcomer",
+		})
+		return err
+	}))
+	require.Nil(t, newcomer,
+		"the seed refused, so it must not have written a user first — a user seeded here would belong to no organization")
+}
+
 // Another organization already holds the declared id. The seeder must refuse
 // rather than mint a fresh uuid: for a fixture's own organization the holder is
 // the same organization under an owner who is no longer a member, so seeding a

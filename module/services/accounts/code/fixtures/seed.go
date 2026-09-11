@@ -239,6 +239,15 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 		wool.Field("roles", len(f.Roles)),
 		wool.Field("assignments", len(f.Assignments)))
 
+	// Every condition that can make this seed refuse is checked before the
+	// first write. seedUsers commits each user in its own transaction and
+	// deliberately skips personal-org creation, so a refusal raised later —
+	// once organizations are being seeded — would leave fixture users
+	// belonging to no organization at all. Decide first, then write.
+	if err := validateOrganizationPreconditions(ctx, service, f.Organizations); err != nil {
+		return err
+	}
+
 	userIDs, err := seedUsers(ctx, w, service, f.Users)
 	if err != nil {
 		return err
@@ -557,6 +566,66 @@ func seedUsers(ctx context.Context, w *wool.Wool, service *business.Service, use
 	return userIDs, nil
 }
 
+// validateOrganizationPreconditions decides, before any row is written,
+// whether every declared organization id can actually be honoured.
+//
+// It keys off the slug rather than the owner's membership list, which is what
+// lets it run this early: idx_organizations_slug is UNIQUE on LOWER(slug), so
+// the slug alone says whether creating this organization would collide and
+// with which id — no owner, and therefore no seeded users, required.
+//
+// Two ways a declared id cannot be delivered, and both are fatal because the
+// id's whole purpose is to be quotable by committed configuration:
+//
+//   - the organization already exists under a different uuid (a database
+//     seeded before the id was declared). A seed cannot rewrite a primary key
+//     that memberships, teams and tenant rows reference.
+//   - the id is held by some other organization, so this one cannot take it.
+//
+// seedOrganizations re-checks the second case at the point of writing. That is
+// not redundant: this pass and the write are separate transactions, so a
+// concurrent seeder can still claim the id in between.
+func validateOrganizationPreconditions(ctx context.Context, service *business.Service, orgs []fixtureOrg) error {
+	for _, org := range orgs {
+		if org.ID == "" {
+			continue
+		}
+		slug := business.Slugify(org.Name)
+		var holder *gen.Organization
+		var taken bool
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			var lookupErr error
+			if holder, lookupErr = service.Store().GetOrganizationBySlug(ctx, slug); lookupErr != nil {
+				return lookupErr
+			}
+			if holder != nil {
+				return nil
+			}
+			taken, lookupErr = service.Store().OrganizationIDExists(ctx, org.ID)
+			return lookupErr
+		}); err != nil {
+			return fmt.Errorf("cannot check the declared id of fixture organization %q: %w", org.Name, err)
+		}
+		if holder != nil && holder.Id != org.ID {
+			return fmt.Errorf(
+				"fixture organization %q declares id %s but this database already holds it as %s: "+
+					"a seed cannot rewrite a primary key that memberships, teams and tenant rows reference, "+
+					"and continuing would leave configuration naming the declared id (a module principal's tenant, say) "+
+					"matching no organization here. Reseed against an empty store to adopt the declared id",
+				org.Name, org.ID, holder.Id)
+		}
+		if taken {
+			return fmt.Errorf(
+				"fixture organization %q declares id %s, which another organization in this database already holds: "+
+					"the declared id cannot be honoured, and seeding a second organization of the same name would "+
+					"collide on the unique organization slug. Reseed against an empty store, or give this "+
+					"organization an id no other organization holds",
+				org.Name, org.ID)
+		}
+	}
+	return nil
+}
+
 // seedOrganizations creates orgs from the fixture, idempotently. On re-run,
 // looks up existing orgs by querying the owner's org list.
 func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Service, orgs []fixtureOrg, userIDs map[string]string) (map[string]string, error) {
@@ -656,6 +725,15 @@ func seedOrganizations(ctx context.Context, w *wool.Wool, service *business.Serv
 			}
 			orgResp, err := service.CreateFixtureOrganization(ctx, ownerID, &gen.CreateOrganizationRequest{Name: org.Name}, orgID)
 			if err != nil {
+				// The primary key, not the check above, is what actually
+				// guarantees the declared id is unique: the two run in
+				// separate transactions, so a concurrent seeder can claim the
+				// id in between and this insert is where that surfaces — as an
+				// organizations_pkey violation from the driver. Name the
+				// declared id so that error is readable without a stack trace.
+				if orgID != "" {
+					return nil, w.Wrapf(err, "cannot create fixture organization %s with declared id %s (another writer may have claimed it)", org.Name, orgID)
+				}
 				return nil, w.Wrapf(err, "cannot create fixture organization %s", org.Name)
 			}
 			orgIDs[org.Name] = orgResp.GetOrganization().GetId()

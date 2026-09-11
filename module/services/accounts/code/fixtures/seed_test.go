@@ -199,18 +199,22 @@ func TestModuleFixtureOrganizationsDeclareStableIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Counted in the outer loop, never from inside a subtest closure: a
+	// counter written by t.Run bodies and read after the loop is correct only
+	// while the subtests are synchronous, and becomes a data race and a
+	// spurious failure the moment someone adds t.Parallel.
 	checked := 0
 	for _, entry := range entries {
+		fixture, err := loadFixtureFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
+		if err != nil {
+			t.Fatalf("%s: %v", entry.Name(), err)
+		}
+		checked += len(fixture.Organizations)
 		t.Run(entry.Name(), func(t *testing.T) {
-			fixture, err := loadFixtureFile(filepath.Join("..", "..", "..", "..", "fixtures", entry.Name()))
-			if err != nil {
-				t.Fatal(err)
-			}
 			for _, org := range fixture.Organizations {
 				if org.ID == "" {
 					t.Fatalf("fixture organization %s declares no id", org.Name)
 				}
-				checked++
 			}
 		})
 	}

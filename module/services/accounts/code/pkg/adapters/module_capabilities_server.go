@@ -65,6 +65,18 @@ func (s *ModuleCapabilitiesServer) MintModuleWorkContext(ctx context.Context, re
 		}
 		return nil, err
 	}
+	// The declared tenant is checked against the database before anything is
+	// signed. Everything upstream validates its *form* only, and the capability
+	// seals the tenant, so an id that names no organization would mint cleanly
+	// and then bind every call to a tenant that is not there — silently, since
+	// the audit and event tables carry no foreign key to organizations. Fail
+	// closed here instead: a module cannot act on a tenant that does not exist.
+	if err := service.VerifyModuleTenant(ctx, authority); err != nil {
+		if errors.Is(err, business.ErrModuleTenantUnknown) {
+			return nil, status.Error(codes.FailedPrecondition, err.Error())
+		}
+		return nil, err
+	}
 	// The signer lives on the Work Context authority, which owns this cluster's
 	// signing key; this RPC lives here so the gateway can broker it from the same
 	// minimal-import proto as the registration exchange.

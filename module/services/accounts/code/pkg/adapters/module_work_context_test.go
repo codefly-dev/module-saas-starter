@@ -30,14 +30,37 @@ type recordingModuleStore struct {
 	business.Store
 	controlPlaneCalls int
 	controlPlaneErr   error
+	// tenantExists answers the declared tenant's existence check. Default it
+	// to true wherever a mint is expected to succeed: the check is a real
+	// database read in production, and a fake that reported "absent" would
+	// make every mint fail closed.
+	tenantExists    bool
+	tenantChecks    int
+	tenantCheckedID string
 }
 
+// WithControlPlane serves two callers in the mint flow, in this order: the
+// declared tenant's existence check, then the issuance record. controlPlaneErr
+// targets the record — the case the tests using it are about — so it is
+// applied only once the tenant check has run.
 func (s *recordingModuleStore) WithControlPlane(ctx context.Context, fn func(ctx context.Context) error) error {
 	s.controlPlaneCalls++
-	if s.controlPlaneErr != nil {
+	if s.controlPlaneErr != nil && s.tenantChecks > 0 {
 		return s.controlPlaneErr
 	}
 	return fn(ctx)
+}
+
+func (s *recordingModuleStore) OrganizationIDExists(_ context.Context, id string) (bool, error) {
+	s.tenantChecks++
+	s.tenantCheckedID = id
+	return s.tenantExists, nil
+}
+
+// recordAttempts is the control-plane transactions that were the issuance
+// record rather than the tenant check.
+func (s *recordingModuleStore) recordAttempts() int {
+	return s.controlPlaneCalls - s.tenantChecks
 }
 
 // installModuleWorkContextAuthority configures the shared issuer with a
@@ -71,7 +94,7 @@ func installModuleWorkContextService(t *testing.T, declaredSecrets, declaredPrin
 	t.Helper()
 	previous := service
 	t.Cleanup(func() { service = previous })
-	store := &recordingModuleStore{}
+	store := &recordingModuleStore{tenantExists: true}
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
 	secrets, err := business.ParseRegistrationSecrets(declaredSecrets)
@@ -154,7 +177,7 @@ func TestMintModuleWorkContextRecordsNothingWhenSigningFails(t *testing.T) {
 	_, err := mintModuleWorkContext(t, "documents", "documents-secret")
 
 	require.Equal(t, codes.FailedPrecondition, status.Code(err))
-	require.Zero(t, store.controlPlaneCalls, "a mint that never signed must not record an issuance")
+	require.Zero(t, store.recordAttempts(), "a mint that never signed must not record an issuance")
 }
 
 // The converse: a capability whose issuance cannot be recorded is withheld.
@@ -167,7 +190,46 @@ func TestMintModuleWorkContextWithholdsTheCapabilityWhenTheRecordFails(t *testin
 
 	require.Error(t, err)
 	require.Nil(t, resp)
-	require.Equal(t, 1, store.controlPlaneCalls)
+	require.Equal(t, 1, store.recordAttempts())
+}
+
+// A declared tenant that names no organization must not mint. Everything
+// upstream validates the tenant's form only — ParseModulePrincipalRegistry runs
+// at boot with no database, ModuleAuthorizeWorkContext takes no ctx and copies
+// the value through, and authorizeTenant compares the sealed tenant against
+// itself — so without this check a typo'd or wrong-environment uuid signs
+// cleanly and binds every later call to a tenant that is not there. It stays
+// silent too: audit_events.org_id and domain_events.tenant_id have no foreign
+// key to organizations, so the writes land without complaint.
+func TestMintModuleWorkContextRefusesATenantThatNamesNoOrganization(t *testing.T) {
+	store := installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	installModuleWorkContextAuthority(t)
+	store.tenantExists = false
+
+	resp, err := mintModuleWorkContext(t, "documents", "documents-secret")
+
+	require.Error(t, err)
+	require.Nil(t, resp, "no capability may be handed out for a tenant that does not exist")
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Contains(t, err.Error(), moduleWorkContextTenant,
+		"the operator has to be told which tenant could not be resolved")
+	require.Equal(t, moduleWorkContextTenant, store.tenantCheckedID)
+	require.Zero(t, store.recordAttempts(),
+		"an issuance that was refused must not reach the audit spine")
+}
+
+// The check runs against the tenant the grant declares, not one the caller
+// names: a module cannot get itself admitted by asking for a tenant that does
+// exist.
+func TestMintModuleWorkContextChecksTheDeclaredTenantNotARequestedOne(t *testing.T) {
+	store := installModuleWorkContextService(t, "documents:"+registrationDigest("documents-secret"), documentsPrincipals)
+	installModuleWorkContextAuthority(t)
+
+	_, err := mintModuleWorkContext(t, "documents", "documents-secret")
+
+	require.NoError(t, err)
+	require.Equal(t, 1, store.tenantChecks)
+	require.Equal(t, moduleWorkContextTenant, store.tenantCheckedID)
 }
 
 // A deployment that never wired the signing key is the operator's problem, not a

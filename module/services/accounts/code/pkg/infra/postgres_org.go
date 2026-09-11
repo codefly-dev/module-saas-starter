@@ -9,15 +9,24 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // OrganizationIDExists reports whether any organizations row already holds this
-// id. The id is caller-supplied only by the fixture seeder, whose declared ids
-// must not collide with an organization this database already has.
+// id. Callers pass a caller-chosen id — the fixture seeder's declared ids, and
+// the tenant a module principal grant declares — so the id is parsed here
+// rather than handed straight to Postgres: organizations.id is a UUID column,
+// and a malformed value would come back as "invalid input syntax for type
+// uuid" from the driver, which tells the operator nothing about which id or
+// why. This is the first check that runs on a declared id, so it is the error
+// message the operator actually sees.
 func (s *PostgresStore) OrganizationIDExists(ctx context.Context, id string) (bool, error) {
 	w := wool.Get(ctx).In("OrganizationIDExists")
+	if _, err := uuid.Parse(id); err != nil {
+		return false, w.Wrapf(err, "organization id %q is not a uuid", id)
+	}
 	executor := s.getQueryExecutor(ctx)
 
 	var exists bool
@@ -27,6 +36,29 @@ func (s *PostgresStore) OrganizationIDExists(ctx context.Context, id string) (bo
 		return false, w.Wrapf(err, "failed to check organization id")
 	}
 	return exists, nil
+}
+
+// GetOrganizationBySlug resolves the organization holding a slug, or (nil, nil)
+// when the slug is free. idx_organizations_slug is UNIQUE on LOWER(slug), so
+// the match is exact and at most one row can answer.
+func (s *PostgresStore) GetOrganizationBySlug(ctx context.Context, slug string) (*gen.Organization, error) {
+	w := wool.Get(ctx).In("GetOrganizationBySlug")
+	executor := s.getQueryExecutor(ctx)
+
+	var org gen.Organization
+	var createdAt time.Time
+	err := executor.QueryRow(ctx, `
+		SELECT id, name, slug, owner_id, created_at
+		FROM organizations WHERE LOWER(slug) = LOWER($1)`, slug,
+	).Scan(&org.Id, &org.Name, &org.Slug, &org.OwnerId, &createdAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, w.Wrapf(err, "failed to get organization by slug")
+	}
+	org.CreatedAt = timestamppb.New(createdAt)
+	return &org, nil
 }
 
 func (s *PostgresStore) CreateOrganization(ctx context.Context, org *gen.Organization) error {
