@@ -18,6 +18,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -35,10 +37,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-func custodyTLS(t *testing.T) (*tls.Config, *tls.Config, *tls.Config) {
+func custodyTLS(t *testing.T) (*tls.Config, *tls.Config, *tls.Config, []byte) {
 	t.Helper()
 	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -66,7 +71,7 @@ func custodyTLS(t *testing.T) (*tls.Config, *tls.Config, *tls.Config) {
 		require.NoError(t, err)
 		return pair
 	}
-	return &tls.Config{Certificates: []tls.Certificate{cert(2, "")}, ClientCAs: pool}, &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert(3, "spiffe://example.test/worker")}}, &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert(4, "spiffe://example.test/other")}}
+	return &tls.Config{Certificates: []tls.Certificate{cert(2, "")}, ClientCAs: pool}, &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert(3, "spiffe://example.test/worker")}}, &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert(4, "spiffe://example.test/other")}}, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
 func TestExecutionCustodyReal(t *testing.T) {
@@ -126,7 +131,7 @@ func TestExecutionCustodyReal(t *testing.T) {
 	policy := ExecutionConsumerPolicy{WorkerURI: "spiffe://example.test/worker", ParentAudience: "example.facade", TaskAudience: "example.tasks", Audience: "example.model", Profile: input.Binding.Profile, ResourceKind: "example.model", ResourceID: "example-profile", InvokeAction: "invoke", ReadAction: "read", TaskResourceKind: "example.tasks", TaskActions: []string{"execute", "read", "start"}}
 	cipher := infra.NewVaultClientDirect(os.Getenv("CUSTODY_TEST_VAULT"), os.Getenv("CUSTODY_TEST_VAULT_TOKEN"))
 	config := ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: cipher, Consumers: map[string]ExecutionConsumerPolicy{"example": policy}}
-	serverTLS, workerTLS, otherTLS := custodyTLS(t)
+	serverTLS, workerTLS, otherTLS, caPEM := custodyTLS(t)
 	serve := func() (*httptest.Server, *wire.Client, *wire.Client, *wire.Client) {
 		server, err := NewExecutionCustodyServer(config, serverTLS)
 		require.NoError(t, err)
@@ -382,6 +387,122 @@ func TestExecutionCustodyReal(t *testing.T) {
 path "transit/decrypt/api-keys" { capabilities = ["update"] }`)
 		_, err := worker.Exchange(ctx, exchange)
 		failure(t, err, "Unavailable")
+	})
+	t.Run("real_accounts_subprocess_restart_and_owner_recovery", func(t *testing.T) {
+		binary := os.Getenv("CUSTODY_TEST_BINARY")
+		require.NotEmpty(t, binary)
+		dir := t.TempDir()
+		require.NoError(t, os.Chmod(dir, 0700))
+		write := func(name string, data []byte) string {
+			path := filepath.Join(dir, name)
+			require.NoError(t, os.WriteFile(path, data, 0600))
+			return path
+		}
+		signingDER, err := x509.MarshalPKCS8PrivateKey(key)
+		require.NoError(t, err)
+		tlsDER, err := x509.MarshalPKCS8PrivateKey(serverTLS.Certificates[0].PrivateKey)
+		require.NoError(t, err)
+		cfg := map[string]any{
+			"reader_url": os.Getenv("CUSTODY_TEST_READER"), "writer_url": os.Getenv("CUSTODY_TEST_WRITER"), "vault_url": os.Getenv("CUSTODY_TEST_VAULT"), "vault_token": os.Getenv("CUSTODY_TEST_VAULT_TOKEN"),
+			"signing_key_file": write("signing.pem", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: signingDER})),
+			"tls_cert_file":    write("server.pem", pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverTLS.Certificates[0].Certificate[0]})),
+			"tls_key_file":     write("server-key.pem", pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: tlsDER})),
+			"client_ca_file":   write("ca.pem", caPEM), "internal_credential_file": write("revision", []byte(strings.Repeat("r", 48))),
+			"owner_token_file": filepath.Join(dir, "owner-token"), "state_file": filepath.Join(dir, "state.json"), "owner_id": owner, "org_id": org, "issuer": "example.work", "auth_issuer": "example.accounts", "auth_audience": "example.accounts", "consumers": map[string]ExecutionConsumerPolicy{"example": policy},
+		}
+		data, err := json.Marshal(cfg)
+		require.NoError(t, err)
+		configPath := write("config.json", data)
+		launch := func() (*exec.Cmd, map[string]string) {
+			_ = os.Remove(filepath.Join(dir, "state.json"))
+			process := exec.Command(binary, "--local-qualification", "--config", configPath, "--max-runtime", "2m")
+			// Do not project test administrator credentials into the broker process.
+			process.Env = []string{}
+			require.NoError(t, process.Start())
+			var state map[string]string
+			until := time.Now().Add(10 * time.Second)
+			for time.Now().Before(until) {
+				raw, err := os.ReadFile(filepath.Join(dir, "state.json"))
+				if err == nil && json.Unmarshal(raw, &state) == nil {
+					return process, state
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			_ = process.Process.Kill()
+			_ = process.Wait()
+			t.Fatal("Accounts process readiness unavailable")
+			return nil, nil
+		}
+		process, state := launch()
+		defer func() {
+			if process != nil {
+				_ = process.Process.Signal(os.Interrupt)
+				_ = process.Wait()
+			}
+		}()
+		ownerToken, err := os.ReadFile(filepath.Join(dir, "owner-token"))
+		require.NoError(t, err)
+		connection, err := grpc.NewClient(state["tenant_grpc"], grpc.WithTransportCredentials(credentials.NewTLS(workerTLS)))
+		require.NoError(t, err)
+		tenant := gen.NewWorkContextServiceClient(connection)
+		call, cancel := context.WithTimeout(metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+string(ownerToken))), 3*time.Second)
+		original, err := tenant.StartTask(call, start)
+		cancel()
+		require.NoError(t, err)
+		require.NoError(t, connection.Close())
+		verify, err := codefly.NewWorkContextVerifier(codefly.WorkContextVerifierOptions{PublicKeys: map[string]ed25519.PublicKey{jwt.KeyID(): key.Public().(ed25519.PublicKey)}})
+		require.NoError(t, err)
+		tok, err := codefly.ParseWorkContextToken(original.Token)
+		require.NoError(t, err)
+		claims, err := verify.Verify(tok, codefly.WorkContextExpectations{Issuer: "example.work"})
+		require.NoError(t, err)
+		client, err := wire.NewClient(state["broker_url"], &http.Transport{TLSClientConfig: workerTLS})
+		require.NoError(t, err)
+		input := wire.RegisterRequest{Binding: input.Binding, ParentToken: original.Token, TaskExpiresAt: claims.ExpiresAtUnix - 20}
+		input.Binding.AdmissionID = "process-" + uuid.NewString()
+		registered, err := client.Register(ctx, string(ownerToken), input)
+		require.NoError(t, err)
+		immutable := wire.RecoverRequest{Binding: input.Binding, TaskExpiresAt: input.TaskExpiresAt}
+		// The caller deliberately discards all original parent bytes before restart.
+		input.ParentToken = ""
+		original = nil
+		require.NoError(t, process.Process.Signal(os.Interrupt))
+		require.NoError(t, process.Wait())
+		process = nil
+		process, state = launch()
+		replacement, err := wire.NewClient(state["broker_url"], &http.Transport{TLSClientConfig: workerTLS})
+		require.NoError(t, err)
+		ownerToken, err = os.ReadFile(filepath.Join(dir, "owner-token"))
+		require.NoError(t, err)
+		recovered, err := replacement.Recover(ctx, string(ownerToken), immutable)
+		require.NoError(t, err)
+		require.True(t, recovered == registered, "subprocess recovery replaced original child")
+		child, err := replacement.Exchange(ctx, wire.ExchangeRequest{Reference: recovered.Reference, Binding: recovered.Binding, Audience: policy.Audience, Lookup: true})
+		require.NoError(t, err)
+		tok, err = codefly.ParseWorkContextToken(child.Token)
+		require.NoError(t, err)
+		bounded, err := verify.Verify(tok, codefly.WorkContextExpectations{Issuer: "example.work", Audience: policy.Audience})
+		require.NoError(t, err)
+		require.LessOrEqual(t, bounded.ExpiresAtUnix, recovered.ExpiresAt)
+		revisionConn, err := grpc.NewClient(state["internal_grpc"], grpc.WithTransportCredentials(credentials.NewTLS(workerTLS)))
+		require.NoError(t, err)
+		defer revisionConn.Close()
+		revisionClient := gen.NewWorkContextServiceClient(revisionConn)
+		revisionCall := metadata.NewOutgoingContext(ctx, metadata.Pairs("x-codefly-internal-token", strings.Repeat("r", 48)))
+		_, err = revisionClient.CheckAuthorizationRevision(revisionCall, &gen.CheckAuthorizationRevisionRequest{OrgId: org, OwnerPrincipalId: owner, AuthorizationRevision: claims.AuthorizationRevision, Subjects: []*gen.WorkContextRevisionSubject{{PrincipalId: owner, Scopes: start.AuthorityScopes}, {PrincipalId: actor, Scopes: start.AuthorityScopes}}})
+		require.NoError(t, err)
+		httpClient := &http.Client{Transport: &http.Transport{TLSClientConfig: workerTLS}, Timeout: 3 * time.Second}
+		response, err := httpClient.Get(state["jwks_url"])
+		require.NoError(t, err)
+		defer response.Body.Close()
+		require.Equal(t, 200, response.StatusCode)
+		var jwks struct {
+			Keys []json.RawMessage `json:"keys"`
+		}
+		require.NoError(t, json.NewDecoder(response.Body).Decode(&jwks))
+		require.Len(t, jwks.Keys, 1)
+		_, err = gen.NewWorkContextServiceClient(revisionConn).StartTask(metadata.NewOutgoingContext(ctx, metadata.Pairs("x-codefly-internal-token", strings.Repeat("r", 48))), start)
+		require.Error(t, err)
 	})
 	t.Run("stale_authorization_revision", func(t *testing.T) {
 		sql(`UPDATE organization_authorization_revisions SET revision=$2 WHERE org_id=$1`, org, int64(parent.AuthorizationRevision)+1)

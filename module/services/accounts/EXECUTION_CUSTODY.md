@@ -215,3 +215,67 @@ pins and evidence for both candidates. Public image/package publication, managed
 private route/workload certificate issuance, database/Vault identity and transport,
 retention scheduling, managed restart/restore and signed-in hosted composition
 remain reviewed production gates. No hosting readiness follows from this PR.
+
+
+## Actual local process for a joined consumer proof
+
+Build the owning executable from `code/`:
+
+```sh
+go build -trimpath -o /absolute/private/output/accounts-custody ./cmd/custody-qualification
+/absolute/private/output/accounts-custody --local-qualification \
+  --config /absolute/private/fixture/config.json --max-runtime 15m
+```
+
+This explicitly local executable is not a production bootstrap. It refuses
+non-loopback PostgreSQL/Vault URLs, always binds fresh loopback ports and exits
+within at most 30 minutes. It performs no migration, seed, grant or Vault admin
+operation. The fixture owner must provision the owning migrations, existing
+organization/member/principal/RBAC facts and scoped Vault transit credential
+before starting it. The qualification runner demonstrates that setup against
+actual local services; it does not synthesize owner headers or a custody server.
+
+The JSON config (a regular 0600 file) supplies:
+
+- `reader_url`, `writer_url`: distinct primitive runtime database identities;
+  only loopback PostgreSQL URLs with `sslmode`/`pool_max_conns` query options.
+- `vault_url`, `vault_token`: local initialized/unsealed Vault and the real
+  scoped transit-only token. Never the bootstrap administrator token.
+- `signing_key_file`: 0600 PKCS8 PEM Ed25519 private key, retained across process
+  replacements. Work Context and owner access signatures use the same public
+  key with the minter's canonical derived key ID, but distinct issuer/audience
+  verification settings.
+- `tls_cert_file`, `tls_key_file`, `client_ca_file`: verified server TLS
+  certificate/key and worker client CA. Private keys must be regular 0600 files.
+  Worker certificate URI SAN must match the selected consumer policy.
+- `internal_credential_file`: a separate private revision credential of at least
+  32 characters. It has no tenant mint, custody registration or worker exchange
+  authority.
+- `owner_id`, `org_id`: existing fixture membership for the real JWTMinter's
+  admission session; `issuer`, `auth_issuer`, `auth_audience`: exact trust values.
+- `consumers`: map of configured ExecutionConsumerPolicy values. JSON policy
+  keys are `WorkerURI`, `ParentAudience`, `TaskAudience`, `Audience`, `Profile`,
+  `ResourceKind`, `ResourceID`, `InvokeAction`, `ReadAction`, `TaskResourceKind`
+  and `TaskActions`. Task actions must match the independently qualified
+  consumer's supported canonical action set.
+- `owner_token_file`, `state_file`: absolute output paths in a 0700 directory.
+  Both are atomically written 0600. The owner token is a real Accounts access
+  JWT for **admission only**, never projected into a replacement worker.
+
+State is non-secret JSON with `broker_url`, `tenant_grpc`, `internal_grpc` and
+`jwks_url`. Listeners use verified TLS. The tenant gRPC listener serves canonical
+WorkContextService under the actual existing owner JWT policy; obtain the
+original parent through its authenticated StartTask RPC. The separate internal
+gRPC listener serves the canonical current-revision/evidence policies and rejects
+tenant issuance. `/v1/auth/.well-known/jwks.json` on the broker's TLS listener
+returns the canonical public key set. No parent token is written by the process.
+
+On restart, reuse the same database/Vault/signing inputs, then read the fresh
+listener state and admission token. Original registration recovery uses only its
+persisted non-secret input through Recover. Workers use the same retained opaque
+binding and their mTLS identity to request children. The local acceptance launches
+this executable as an actual OS subprocess, obtains its parent via authenticated
+gRPC, registers custody, discards the request/parent, terminates the process,
+launches a replacement and recovers the byte-identical original Task child before
+requesting a bounded lookup child. This supplements the earlier component proof;
+consumer Task/worker/model process counts remain the consumer's joined proof.

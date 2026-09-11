@@ -76,12 +76,14 @@ GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO custody_writer;
 REVOKE ALL ON execution_custody FROM custody_reader,custody_writer;
 GRANT app_tenant,app_control_plane TO custody_writer;
 ''')
-            env={**os.environ,'CUSTODY_TEST_ADMIN':dsn,'CUSTODY_TEST_READER':dsn.replace('postgres@','custody_reader@'),'CUSTODY_TEST_WRITER':dsn.replace('postgres@','custody_writer@'),'CUSTODY_TEST_VAULT':vurl,'CUSTODY_TEST_VAULT_TOKEN':credential,'CUSTODY_TEST_VAULT_ROOT':root,'GOCACHE':os.environ.get('GOCACHE','/private/tmp/robin-accounts-go-cache')}
+            binary=d/'accounts-custody'
+            subprocess.run(['go','build','-trimpath','-o',str(binary),'./cmd/custody-qualification'],cwd=ROOT/'module/services/accounts/code',check=True)
+            env={**os.environ,'CUSTODY_TEST_BINARY':str(binary),'CUSTODY_TEST_ADMIN':dsn,'CUSTODY_TEST_READER':dsn.replace('postgres@','custody_reader@'),'CUSTODY_TEST_WRITER':dsn.replace('postgres@','custody_writer@'),'CUSTODY_TEST_VAULT':vurl,'CUSTODY_TEST_VAULT_TOKEN':credential,'CUSTODY_TEST_VAULT_ROOT':root,'GOCACHE':os.environ.get('GOCACHE','/private/tmp/robin-accounts-go-cache')}
             print('Real PostgreSQL/Vault initialized; running authenticated broker acceptance.',flush=True)
             subprocess.run(['go','test','-race','-count=1','./pkg/adapters','-run','TestExecutionCustodyReal','-v'],cwd=ROOT/'module/services/accounts/code',env=env,check=True)
             sql((ROOT/'module/services/store/migrations/131_execution_custody.down.sql').read_text())
             sql((ROOT/'module/services/store/migrations/131_execution_custody.up.sql').read_text())
-            print(json.dumps({'source':source,'dirty':dirty,'migration_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in migrations},'local_only':True,'postgres_image':cmd('docker','image','inspect',PG,'--format','{{.Id}}'),'vault_image':VAULT,'vault_restart':True,'migrations':len(migrations),'paid_calls':0}))
+            print(json.dumps({'source':source,'dirty':dirty,'migration_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in migrations},'local_only':True,'subprocess_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'postgres_image':cmd('docker','image','inspect',PG,'--format','{{.Id}}'),'vault_image':VAULT,'vault_restart':True,'migrations':len(migrations),'paid_calls':0}))
         finally:
             for name in reversed(names):subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 if __name__=='__main__':main()
