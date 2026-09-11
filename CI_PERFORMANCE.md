@@ -64,11 +64,34 @@ approximately 408 MB Go cache keyed only to the root module's checksum file.
    digest instead of compiling the same pinned CLI independently in every job.
    The archive digest was checked against the downloaded v0.1.145 release.
 
-These changes are not a measured sub-five-minute result. Standalone phases
-start cold and cannot reuse installs or compiler output from earlier phases in
-the same run. Hosted measurements must establish their actual duration, disk
-peak, and cache restore/save cost. No tests, audits, SBOMs, image builds, or
+Standalone phases start cold and cannot reuse installs or compiler output from
+earlier phases in the same run. No tests, audits, SBOMs, image builds, or
 release requirements were removed.
+
+## Hosted result
+
+One complete hosted run on commit `b0b521e4`,
+[run 34553269981](https://github.com/codefly-dev/module-saas-starter/actions/runs/34553269981),
+succeeded in **6m19s** from workflow creation to the release gate, with every
+mandatory gate green. This is a single run, not a repeated benchmark, and it
+does not establish cold-versus-warm cache behaviour or the disk peak of a
+full-topology build.
+
+| Work | Baseline samples | This run |
+| --- | ---: | ---: |
+| Combined quality / longest parallel phase | 8m31s-10m13s | 4m50s (test) |
+| Quality aggregate | n/a | 2s |
+| Build job | 6m00s-7m07s | 5m22s |
+| SDK boundary job | 2m11s-2m32s | 55s |
+| Authorization coverage job | 1m45s-1m46s | 24s |
+| CLI installation | up to 86s compiling | 1-2s download and verify |
+| Disk preparation | 26-133s | 0-2s |
+
+The other three quality phases finished well inside the test lane: 1m23s for
+verify/sync-drift, 2m04s lint, 2m51s compile. Against the 9m25s and 11m00s
+samples above that is roughly 33-43% faster, but the five-minute target is
+still unmet and the build job is now the critical path, which is what the
+remaining work below addresses.
 
 ## Remaining work to reach five minutes
 
@@ -103,4 +126,5 @@ checks the complete gate contract, phase selection and failure propagation,
 and disk cleanup's sufficient-space, recovery, and exhaustion cases using fake
 commands. `node scripts/ci/release-gates.mjs check` validates publication
 dependencies and action pins. `actionlint .github/workflows/ci.yml` validates
-the provider workflow. Full hosted CI has not run with these local changes.
+the provider workflow. Full hosted CI has run with these changes; see
+"Hosted result" above.
