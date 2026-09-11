@@ -389,7 +389,12 @@ bounded fixture bootstrap. Unknown profiles fail startup.
 `verified-tls` requires explicit PostgreSQL user, database and TCP hostname,
 `sslmode=verify-full`, actual driver certificate/hostname verification on every
 fallback, and no ambiguous endpoint/user/database/role query override or ambient
-`PG*` setting. The normal direct credential hook remains in force.
+`PG*` setting. Only lowercase `sslmode`, `sslrootcert`, `sslcert`, `sslkey`,
+`connect_timeout`, the documented pgx pool size/lifetime/health settings and
+`application_name` are accepted. Parsed PostgreSQL runtime parameters may contain
+only that application label. Role/session-authorization/options aliases in any
+case and NUL-containing values are rejected. The normal direct credential hook
+remains in force.
 
 `local-identity-proxy` requires each existing Codefly store/postgres read-only and
 read-write secret to contain a hostless URL of this form:

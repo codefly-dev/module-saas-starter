@@ -81,6 +81,23 @@ func TestAccountsDefaultAndVerifiedTransport(t *testing.T) {
 			t.Fatal("unverified TLS accepted")
 		}
 	}
+	for _, query := range []string{
+		"ROLE=app_control_plane", "Role=app_control_plane", "role=app_control_plane",
+		"session_authorization=proxy_admin", "SESSION_AUTHORIZATION=proxy_admin",
+		"%73ession_authorization=proxy_admin", "Options=-c+role%3Dapp_control_plane",
+		"options=-c+role%3Dapp_control_plane", "HOST=%2Fdb%2Fw", "search_path=private",
+		"application_name=label%00role%00app_control_plane",
+	} {
+		t.Run(query, func(t *testing.T) {
+			if _, err := parseDatabaseTransport(verified+"&"+query, "verified-tls", false); err == nil {
+				t.Fatal("unsupported session or driver parameter accepted")
+			}
+		})
+	}
+	labelled, err := parseDatabaseTransport(verified+"&application_name=accounts&pool_max_conns=4&connect_timeout=3", "verified-tls", false)
+	if err != nil || labelled.ConnConfig.RuntimeParams["application_name"] != "accounts" || labelled.MaxConns != 4 {
+		t.Fatal("supported explicit settings rejected")
+	}
 	if _, err := parseDatabaseTransport(verified, "unknown", false); err == nil {
 		t.Fatal("unknown transport accepted")
 	}

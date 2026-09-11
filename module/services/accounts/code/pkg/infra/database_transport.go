@@ -86,15 +86,30 @@ func parseDatabaseTransport(connection, profile string, tokenHook bool) (*pgxpoo
 	if u.Hostname() == "" || strings.Contains(u.Hostname(), ",") || q.Get("sslmode") != "verify-full" {
 		return nil, invalid
 	}
-	for key := range q {
+	// pgx treats unrecognized query keys as PostgreSQL startup parameters. A
+	// denylist misses case aliases such as ROLE and session_authorization.
+	// Only canonical driver settings and a non-authorizing label are supported.
+	for key, values := range q {
+		if strings.ContainsRune(values[0], '\x00') {
+			return nil, invalid
+		}
 		switch key {
-		case "host", "hostaddr", "port", "user", "password", "dbname", "database", "service", "servicefile", "options", "role":
+		case "sslmode", "sslrootcert", "sslcert", "sslkey", "connect_timeout",
+			"pool_max_conns", "pool_min_conns", "pool_min_idle_conns",
+			"pool_max_conn_lifetime", "pool_max_conn_idle_time",
+			"pool_health_check_period", "pool_max_conn_lifetime_jitter", "application_name":
+		default:
 			return nil, invalid
 		}
 	}
 	cfg, err := pgxpool.ParseConfig(connection)
 	if err != nil || cfg.ConnConfig.Host != u.Hostname() || cfg.ConnConfig.Database != strings.TrimPrefix(u.Path, "/") || cfg.ConnConfig.User != u.User.Username() || cfg.ConnConfig.TLSConfig == nil || cfg.ConnConfig.TLSConfig.InsecureSkipVerify || cfg.ConnConfig.TLSConfig.ServerName != u.Hostname() {
 		return nil, invalid
+	}
+	for key, value := range cfg.ConnConfig.RuntimeParams {
+		if key != "application_name" || value != q.Get("application_name") {
+			return nil, invalid
+		}
 	}
 	for _, fallback := range cfg.ConnConfig.Fallbacks {
 		if fallback.TLSConfig == nil || fallback.TLSConfig.InsecureSkipVerify || fallback.TLSConfig.ServerName != u.Hostname() {
