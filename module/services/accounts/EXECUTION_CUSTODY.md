@@ -471,3 +471,30 @@ and revision-only credentials, TLS CA/hostname/version/plaintext denial,
 internal/tenant exposure separation, shutdown/rebind with the same original
 parent, and actual Redis session revocation. This proves the mount, not complete
 managed bootstrap, a proxy/database transport, or an external IdP ceremony.
+
+### Private HTTPS signing JWKS
+
+The normal custody host also serves `GET /v1/auth/.well-known/jwks.json` on
+its existing private HTTPS custody listener (default TCP 9443). This reuses the
+ordinary REST JWKS handler and the normal JWT minter's public verification set:
+the current signing key plus configured rotation overlap keys. The issuer remains
+`saas-starter`. The endpoint returns the standard top-level `keys` document,
+with the same 60-second cache policy as ordinary REST. It needs no owner JWT or
+worker certificate because it exposes public verification material only; TLS
+still verifies any client certificate that is supplied. Other methods on this
+exact path are rejected; custody POST authentication and worker mTLS are unchanged.
+
+Consumers must use HTTPS, verify the Accounts server CA and hostname, and use
+TLS 1.3. Composition supplies the existing private custody DNS, matching SAN and
+CA projection, and an explicit network edge for each verifier. Neither the tenant
+9445 native gRPC endpoint nor the revision 9444 endpoint is a JWKS HTTP origin.
+The ordinary REST endpoint remains supported through its separately configured
+host/gateway transport; its existence alone does not establish a deployed HTTPS
+origin. No new public gateway route or default downstream dependency is added.
+
+`qualification/execution-custody/run.py --tenant-mount` exercises the normal
+host's HTTPS route without a caller credential, verifies an actual tenant-issued
+Work Context with the fetched key set, checks prior-key publication and absence
+of private fields, and rejects wrong CA/hostname/TLS version, wrong HTTP methods
+and unauthenticated custody operations. This is local evidence, not managed boot
+or live certificate/registration evidence.

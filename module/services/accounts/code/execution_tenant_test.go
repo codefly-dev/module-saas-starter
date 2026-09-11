@@ -9,11 +9,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +79,9 @@ func TestExecutionTenantReal(t *testing.T) {
 	require.NoError(t, err)
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
-	jwt := minter.New(minter.Config{Issuer: "saas-starter", Audience: "saas-starter"}, key, pgauth.NewSessionStore(store))
+	previousPublic, previousKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	jwt := minter.New(minter.Config{Issuer: "saas-starter", Audience: "saas-starter", AdditionalVerificationKeys: []ed25519.PublicKey{previousPublic}}, key, pgauth.NewSessionStore(store))
 	redis, closeRedis, err := cache.NewRedis(os.Getenv("CUSTODY_TEST_REDIS"))
 	require.NoError(t, err)
 	defer closeRedis()
@@ -195,6 +199,58 @@ func TestExecutionTenantReal(t *testing.T) {
 		require.NotEmpty(t, parent.Token)
 		_, e := tenant.ExchangeAudience(ownerContext(), &gen.ExchangeWorkContextAudienceRequest{OrgId: org, ParentWorkContextToken: parent.Token, Audience: "example.tasks", TtlSeconds: 60, AttenuatedScopes: start.AuthorityScopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT})
 		require.NoError(t, e)
+	})
+	t.Run("private_https_jwks_uses_normal_signer_and_rotation_set", func(t *testing.T) {
+		client := &http.Client{Transport: &http.Transport{TLSClientConfig: trusted.Clone()}, Timeout: time.Second}
+		defer client.CloseIdleConnections()
+		url := "https://" + addresses["custody"] + "/v1/auth/.well-known/jwks.json"
+		response, e := client.Get(url) // Verification keys need no owner/worker credential.
+		require.NoError(t, e)
+		defer response.Body.Close()
+		require.Equal(t, http.StatusOK, response.StatusCode)
+		require.Equal(t, "application/json", response.Header.Get("Content-Type"))
+		require.Equal(t, "public, max-age=60, must-revalidate", response.Header.Get("Cache-Control"))
+		var document struct {
+			Keys []map[string]string `json:"keys"`
+		}
+		require.NoError(t, json.NewDecoder(response.Body).Decode(&document))
+		require.Len(t, document.Keys, 2)
+		keys := map[string]ed25519.PublicKey{}
+		for _, entry := range document.Keys {
+			require.Len(t, entry, 6) // Only kty/crv/alg/use/kid/x; no private key material.
+			require.Equal(t, "Ed25519", entry["crv"])
+			public, e := base64.RawURLEncoding.DecodeString(entry["x"])
+			require.NoError(t, e)
+			keys[entry["kid"]] = ed25519.PublicKey(public)
+		}
+		require.Equal(t, previousPublic, keys[minter.New(minter.Config{}, previousKey, nil).KeyID()])
+		verifier, e := codefly.NewWorkContextVerifier(codefly.WorkContextVerifierOptions{PublicKeys: keys})
+		require.NoError(t, e)
+		token, e := codefly.ParseWorkContextToken(parent.Token)
+		require.NoError(t, e)
+		claims, e := verifier.Verify(token, codefly.WorkContextExpectations{Issuer: "saas-starter", Audience: "example.facade"})
+		require.NoError(t, e)
+		require.Equal(t, org, claims.TenantId)
+		for _, method := range []string{http.MethodPost, http.MethodHead} {
+			request, e := http.NewRequest(method, url, nil)
+			require.NoError(t, e)
+			reply, e := client.Do(request)
+			require.NoError(t, e)
+			require.Equal(t, http.StatusMethodNotAllowed, reply.StatusCode)
+			require.NoError(t, reply.Body.Close())
+		}
+		for _, path := range []string{"/private/v1/execution-custody/register", "/private/v1/execution-custody/recover", "/private/v1/execution-custody/exchange"} {
+			reply, e := client.Post("https://"+addresses["custody"]+path, "application/json", strings.NewReader("{}"))
+			require.NoError(t, e)
+			require.Equal(t, http.StatusUnauthorized, reply.StatusCode)
+			require.NoError(t, reply.Body.Close())
+		}
+		for _, tc := range []*tls.Config{{RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS13}, {RootCAs: roots, ServerName: "wrong.example", MinVersion: tls.VersionTLS13}, {RootCAs: roots, MinVersion: tls.VersionTLS12, MaxVersion: tls.VersionTLS12}} {
+			untrusted := &http.Client{Transport: &http.Transport{TLSClientConfig: tc}, Timeout: time.Second}
+			_, e := untrusted.Get(url)
+			require.Error(t, e)
+			untrusted.CloseIdleConnections()
+		}
 	})
 	t.Run("missing_forged_and_revision_credentials_denied", func(t *testing.T) {
 		for _, call := range []context.Context{ctx, metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer invalid")), metadata.NewOutgoingContext(ctx, metadata.Pairs("x-codefly-internal-token", internal, "x-user-id", owner, "x-org-id", org))} {

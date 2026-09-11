@@ -113,6 +113,8 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	if err != nil {
 		return nil, err
 	}
+	// Public verification material on the existing private TLS listener only.
+	mountExecutionJWKS(broker, minter)
 	revision, err := adapters.NewCustodyWorkContextGRPC(authority, minter, true, tc)
 	if err != nil {
 		return nil, err
