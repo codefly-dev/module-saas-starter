@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2328,
+  "fileCount": 2330,
   "files": {
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "9663fcdd6753b5823959d3280e71a30dff1708e728c92f4a74e3d377fe7aa331",
@@ -137,6 +137,7 @@
     "docs/adr/0005-python-settings-delivery.md": "47050d495416693bcaac729adf97f6324138bc78d27ec4f3cdeb5c2bd44bedc0",
     "docs/adr/0006-audit-sink-and-retention-tiers.md": "9f7bc5ed95d0f22b98ab701ec7f4c21028d22f8e4fcf56a2b4354828b52a1997",
     "docs/adr/0007-dashboard-storage-and-ownership.md": "94d3dffbd5b6a2d51b26682d4c0873ec283006fd20744348db85f005adf7ed9b",
+    "docs/adr/0008-datasource-sync-actor-provenance.md": "f3293e3aef53307bf5fb14903dec127d9a6f81c9417ae737068c273e9adafa1a",
     "docs/composition-v2-migration.md": "667398399d801ce310b1e34b954ce8ae85d1978d7f2f77dbad567adb669b06ba",
     "docs/frontend-plugin-architecture.md": "2fbda3c91d31ec682fd13702ed829a43d44342244a6a870deddd8bbc037b20b1",
     "docs/frontend-plugin-auth-tenant-matrix.md": "4ab9523966fa7c326beef0c23d3518a839245120115342e08b7b5b7674b5c960",
@@ -166,7 +167,7 @@
     "policies/method_permissions/data.json": "b7dcfa74a0d3614a59054c2f63a52406f9a44aba5f5a9c04844ddc209384946b",
     "public/site.config.json": "4a6e76802a6ac46298b0f8ce7fbbb687ca670f1259474f4a8b32c335937916f1",
     "services/README.md": "34d7ac4be959ce756ae67946f3b8b6479ac472b6cbbf8ebd33015eb0ff9ca244",
-    "services/accounts/AUTHZ.md": "b5fc48f8b096c9d946cc76c94b0850fa50c889267b46d5bc6f1eedb7264a6cbb",
+    "services/accounts/AUTHZ.md": "32a1767cf3dad5e618c7e1b40f66aadd4f81ef5022d831c6b2f3ef4ffca4ff22",
     "services/accounts/AUTHZ_MATRIX.md": "f280af31f0c3d56d81a127191aaecd974ce72a4deab80f3f52a32bf654aff716",
     "services/accounts/AUTHZ_SUBSTITUTION_MATRIX.md": "e7ae3b719a39fd4be7cd7241728409f52d885858d3e9d42a79ce3b0d7738b22b",
     "services/accounts/GETTING_STARTED.md": "643bde7b68eb6bbe72988fde4c25a17512601f720f234043a51a7a521b5949c9",
@@ -574,6 +575,7 @@
     "services/accounts/code/pkg/cataloggen/authz_methods_test.go": "18d4b8f41fc745dcf48f27a0e79f1efb225bbcf55ad743385d4bc5054dac5258",
     "services/accounts/code/pkg/cataloggen/connect_registration.go": "3cab1c80e37fe4515fe002de358ef5a64b0cc0aab85401a7b6079ce97931ab30",
     "services/accounts/code/pkg/cataloggen/connect_registration_test.go": "3f8b02c1783095e43e97fc269dbbb9010a4843173ae7f0060f7c981ef67d2926",
+    "services/accounts/code/pkg/cataloggen/datasource_sync_actor_test.go": "39c1fe3a3e9e1891906609185c1986e48ee383ad72d1ab94bc45ecd36e533a88",
     "services/accounts/code/pkg/cataloggen/deployment_topology.go": "28cfe46b29c54fbbb412f5d86f14ba43e80af34aa9f199a9bb11791e69bb1a29",
     "services/accounts/code/pkg/cataloggen/deployment_topology_test.go": "6169e47f1926a40726e658e0157bedf00b9519ec9ba6ce39a3b7cfd9cb9ce416",
     "services/accounts/code/pkg/cataloggen/frontend_catalog.go": "de43b6122c05006de69c75edeb61e0eff9ad351dd316c5e992a9cc2a3c2ec36c",
