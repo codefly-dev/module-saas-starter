@@ -73,14 +73,9 @@ describe("useAuditLog", () => {
 		vi.mocked(useAuditService).mockReturnValue({
 			queryAuditLog,
 		} as unknown as ReturnType<typeof useAuditService>);
-		const client = new QueryClient();
-		const wrapper = ({ children }: { children: ReactNode }) => (
-			<QueryClientProvider client={client}>{children}</QueryClientProvider>
-		);
-
 		const { result } = renderHook(
 			() => useAuditLog({ orgId: "" }, { enabled: false }),
-			{ wrapper },
+			{ wrapper: wrapper() },
 		);
 
 		expect(result.current.fetchStatus).toBe("idle");
@@ -89,6 +84,8 @@ describe("useAuditLog", () => {
 });
 
 describe("usePrincipalDirectory", () => {
+	const ACTORS = ["p-1", "p-2"];
+
 	it("walks the cursor so a multi-page org resolves in one query", async () => {
 		const listPrincipals = vi
 			.fn()
@@ -104,13 +101,14 @@ describe("usePrincipalDirectory", () => {
 			listPrincipals,
 		} as unknown as ReturnType<typeof usePrincipalService>);
 
-		const { result } = renderHook(() => usePrincipalDirectory("org-1"), {
-			wrapper: wrapper(),
-		});
+		const { result } = renderHook(
+			() => usePrincipalDirectory("org-1", ACTORS),
+			{ wrapper: wrapper() },
+		);
 
-		await waitFor(() => expect(result.current.size).toBe(2));
-		expect(result.current.get("p-1")).toBe("Ada Lovelace");
-		expect(result.current.get("p-2")).toBe("deploy-bot");
+		await waitFor(() => expect(result.current.directory.size).toBe(2));
+		expect(result.current.directory.get("p-1")).toBe("Ada Lovelace");
+		expect(result.current.directory.get("p-2")).toBe("deploy-bot");
 		expect(listPrincipals).toHaveBeenNthCalledWith(1, {
 			orgId: "org-1",
 			pageSize: 200,
@@ -123,9 +121,31 @@ describe("usePrincipalDirectory", () => {
 		});
 	});
 
-	// The walk is bounded: an org past the ceiling leaves its oldest principals
-	// unresolved (they render as truncated ids) rather than issuing an unbounded
-	// fan of requests behind a page render.
+	// The feed names 8 actors; walking the whole org to do it put up to 1000
+	// rows and 5 sequential round-trips on the dashboard's hot path.
+	it("stops walking once every requested actor is named", async () => {
+		const listPrincipals = vi.fn().mockResolvedValue({
+			principals: [
+				{ id: "p-1", displayName: "Ada Lovelace" },
+				{ id: "p-2", displayName: "deploy-bot" },
+			],
+			nextPageToken: "cursor-1",
+		});
+		vi.mocked(usePrincipalService).mockReturnValue({
+			listPrincipals,
+		} as unknown as ReturnType<typeof usePrincipalService>);
+
+		const { result } = renderHook(
+			() => usePrincipalDirectory("org-1", ACTORS),
+			{ wrapper: wrapper() },
+		);
+
+		await waitFor(() => expect(result.current.directory.size).toBe(2));
+		expect(listPrincipals).toHaveBeenCalledTimes(1);
+	});
+
+	// The walk is bounded: an actor outside the newest 1000 principals stays
+	// unresolved rather than issuing an unbounded fan of requests.
 	it("stops walking at the page ceiling", async () => {
 		let page = 0;
 		const listPrincipals = vi.fn(async () => {
@@ -139,28 +159,57 @@ describe("usePrincipalDirectory", () => {
 			listPrincipals,
 		} as unknown as ReturnType<typeof usePrincipalService>);
 
-		const { result } = renderHook(() => usePrincipalDirectory("org-1"), {
-			wrapper: wrapper(),
-		});
+		const { result } = renderHook(
+			() => usePrincipalDirectory("org-1", ["missing-actor"]),
+			{ wrapper: wrapper() },
+		);
 
-		await waitFor(() => expect(result.current.size).toBe(5));
+		await waitFor(() => expect(result.current.directory.size).toBe(5));
 		expect(listPrincipals).toHaveBeenCalledTimes(5);
 	});
 
+	// A failed walk must be distinguishable from an org with no names, or the
+	// surface silently renders every actor as an id with nothing to act on.
+	it("reports a failed walk rather than an empty directory", async () => {
+		vi.mocked(usePrincipalService).mockReturnValue({
+			listPrincipals: vi.fn().mockRejectedValue(new Error("permission denied")),
+		} as unknown as ReturnType<typeof usePrincipalService>);
+
+		const { result } = renderHook(
+			() => usePrincipalDirectory("org-1", ACTORS),
+			{ wrapper: wrapper() },
+		);
+
+		await waitFor(() => expect(result.current.failed).toBe(true));
+		expect(result.current.directory.size).toBe(0);
+	});
+
 	// ListPrincipals rejects an empty org_id, and the audit surfaces render
-	// before the tenant binding resolves. An empty directory is a legible
-	// intermediate state; a failed RPC is not.
+	// before the tenant binding resolves.
 	it("does not query until its organization binding is resolved", () => {
 		const listPrincipals = vi.fn();
 		vi.mocked(usePrincipalService).mockReturnValue({
 			listPrincipals,
 		} as unknown as ReturnType<typeof usePrincipalService>);
 
-		const { result } = renderHook(() => usePrincipalDirectory(""), {
+		const { result } = renderHook(() => usePrincipalDirectory("", ACTORS), {
 			wrapper: wrapper(),
 		});
 
 		expect(listPrincipals).not.toHaveBeenCalled();
-		expect(result.current.size).toBe(0);
+		expect(result.current.directory.size).toBe(0);
+	});
+
+	it("does not query when there is no actor to name", () => {
+		const listPrincipals = vi.fn();
+		vi.mocked(usePrincipalService).mockReturnValue({
+			listPrincipals,
+		} as unknown as ReturnType<typeof usePrincipalService>);
+
+		renderHook(() => usePrincipalDirectory("org-1", []), {
+			wrapper: wrapper(),
+		});
+
+		expect(listPrincipals).not.toHaveBeenCalled();
 	});
 });

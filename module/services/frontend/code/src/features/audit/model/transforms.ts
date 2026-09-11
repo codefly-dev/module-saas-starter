@@ -46,19 +46,30 @@ export function auditEventAction(eventType: string): string {
 	return dot === -1 ? eventType : eventType.slice(dot + 1);
 }
 
-// resolveActorName renders an audit row's actor as a person, service, or agent
+export interface ResolvedActor {
+	label: string;
+	// Whether `label` is a principal's name rather than a fallback. Presence in
+	// the directory is NOT the same question: principals.display_name is NOT
+	// NULL but otherwise unconstrained, so a row can carry "". Callers that
+	// style or sort by "did this resolve" must read this, not `directory.has`,
+	// or the two answers drift apart on exactly that row.
+	resolved: boolean;
+}
+
+// resolveActor renders an audit row's actor as a person, service, or agent
 // rather than as an opaque id. A principal that is revoked, cross-org, or past
 // the directory's page walk is absent from the map, so the fallback is the
 // truncated id: an unresolved actor must still read as *an* actor.
-export function resolveActorName(
+export function resolveActor(
 	actorId: string,
 	directory: PrincipalDirectory,
-): string {
+): ResolvedActor {
 	const displayName = directory.get(actorId);
-	if (displayName) return displayName;
+	if (displayName) return { label: displayName, resolved: true };
 	// A row with no actor id is automated work the server attributed to no
 	// principal; truncating "" would leave the cell blank.
-	return actorId ? truncateUUID(actorId) : "System";
+	if (!actorId) return { label: "System", resolved: false };
+	return { label: truncateUUID(actorId), resolved: false };
 }
 
 // formatActorType renders the audit row's actor_type facet — one of user,

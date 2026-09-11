@@ -17,7 +17,10 @@ const useAuditLogMock = vi.fn();
 const principalDirectory = new Map<string, string>();
 vi.mock("@/features/audit/service/queries", () => ({
 	useAuditLog: (...args: unknown[]) => useAuditLogMock(...args),
-	usePrincipalDirectory: () => principalDirectory,
+	usePrincipalDirectory: () => ({
+		directory: principalDirectory,
+		failed: false,
+	}),
 }));
 
 import {

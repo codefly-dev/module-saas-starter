@@ -42,24 +42,38 @@ export function useAuditLog(
 	});
 }
 
-// ListPrincipals caps a page at 200 and returns every kind in the org — humans
-// via membership, services and agents via direct org_id — so walking the cursor
-// resolves a whole audit page's actors without a per-row query. The walk is
-// bounded rather than exhaustive: past the ceiling an actor simply stays
-// unresolved, which is the same fallback a revoked or cross-org principal gets.
+// ListPrincipals has no id filter, so a name lookup walks the org's principals
+// newest-first until every actor it was asked about is named. Pages are capped
+// at 200 server-side; the walk stops at PRINCIPAL_PAGE_LIMIT pages, so an actor
+// outside the 1000 most recently created principals stays unresolved and falls
+// back to its truncated id. In practice an audit page's actors are recent and
+// page one answers it, which is what keeps this off the dashboard's hot path.
 const PRINCIPAL_PAGE_SIZE = 200;
 const PRINCIPAL_PAGE_LIMIT = 5;
 
 const EMPTY_DIRECTORY: PrincipalDirectory = new Map();
 
-// usePrincipalDirectory resolves the org's principal ids to display names for
-// the audit surfaces. It returns the directory itself, empty until the walk
-// lands, because every consumer already renders a fallback for an id it cannot
-// resolve — an in-flight directory is just one more unresolved actor.
-export function usePrincipalDirectory(orgId: string): PrincipalDirectory {
+export interface PrincipalDirectoryResult {
+	directory: PrincipalDirectory;
+	// A failed walk is not an org with no names: without this the surface
+	// renders every actor as an id and gives the reader nothing to act on.
+	failed: boolean;
+}
+
+// usePrincipalDirectory names the actors in `actorIds` for the audit surfaces.
+// The directory is empty until the walk lands, because every consumer already
+// renders a fallback for an id it cannot resolve — an in-flight directory is
+// just one more unresolved actor.
+export function usePrincipalDirectory(
+	orgId: string,
+	actorIds: readonly string[],
+): PrincipalDirectoryResult {
 	const svc = usePrincipalService();
-	const { data } = useQuery({
-		queryKey: ["principal-directory", orgId],
+	// Sorted and deduped so the query key is stable across renders that pass an
+	// equal-but-new array, and so it identifies the question being asked.
+	const wanted = Array.from(new Set(actorIds.filter(Boolean))).sort();
+	const { data, isError } = useQuery({
+		queryKey: ["principal-directory", orgId, wanted.join(",")],
 		queryFn: async (): Promise<PrincipalDirectory> => {
 			const directory = new Map<string, string>();
 			let pageToken = "";
@@ -73,14 +87,15 @@ export function usePrincipalDirectory(orgId: string): PrincipalDirectory {
 					directory.set(p.id, p.displayName);
 				}
 				if (!res.nextPageToken) break;
+				if (wanted.every((id) => directory.has(id))) break;
 				pageToken = res.nextPageToken;
 			}
 			return directory;
 		},
-		enabled: orgId !== "",
+		enabled: orgId !== "" && wanted.length > 0,
 		staleTime: 5 * 60 * 1000,
 	});
-	return data ?? EMPTY_DIRECTORY;
+	return { directory: data ?? EMPTY_DIRECTORY, failed: isError };
 }
 
 // auditEventTypesQuery is the single react-query descriptor for the server-owned

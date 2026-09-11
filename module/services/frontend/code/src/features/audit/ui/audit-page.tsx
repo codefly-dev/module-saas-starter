@@ -36,7 +36,6 @@ export function AuditPage() {
 	const namespace = namespaceFilter === "all" ? undefined : namespaceFilter;
 
 	const { organizationId } = useAuth();
-	const actorNames = usePrincipalDirectory(organizationId ?? "");
 
 	const { data: eventTypes } = useAuditEventTypes();
 	const { data, isLoading } = useAuditLog({
@@ -45,6 +44,12 @@ export function AuditPage() {
 		namespace,
 		pageSize: 100,
 	});
+	const events = useMemo(() => data?.events ?? [], [data]);
+	const { directory: actorNames, failed: actorNamesFailed } =
+		usePrincipalDirectory(
+			organizationId ?? "",
+			events.map((e) => e.actorId),
+		);
 	const exportMutation = useExportAuditLog();
 
 	const {
@@ -228,11 +233,18 @@ export function AuditPage() {
 				kind: "node",
 				span: "full",
 				node: (
-					<AuditTable
-						events={data?.events ?? []}
-						isLoading={isLoading}
-						actorNames={actorNames}
-					/>
+					<div className="space-y-2">
+						{actorNamesFailed ? (
+							<p className="text-xs text-muted-foreground">
+								Actor names could not be loaded; actors are shown by id.
+							</p>
+						) : null}
+						<AuditTable
+							events={events}
+							isLoading={isLoading}
+							actorNames={actorNames}
+						/>
+					</div>
 				),
 			},
 		],

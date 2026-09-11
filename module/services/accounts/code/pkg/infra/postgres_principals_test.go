@@ -298,6 +298,55 @@ func TestPrincipal_ListPrincipals_AllKinds_IncludesHumansViaOrgMembership(t *tes
 		"empty kind filter must surface humans via organization_members join")
 }
 
+// Paging must be lossless. The cursor used to carry only the row id while the
+// query ordered by (created_at, id): ids are random v4 UUIDs, uncorrelated with
+// created_at, so `WHERE id < $cursor` selected an arbitrary slice of the table
+// instead of the rows following the cursor. Page 2 came back short, which read
+// as "end of list", and the principals in between were never returned at all.
+// Every row shares one created_at here so the id tiebreak is load-bearing too:
+// a cursor carrying only the timestamp would skip the rest of the tied block.
+func TestPrincipal_ListPrincipals_PagesWithoutSkippingOrRepeating(t *testing.T) {
+	owner := seedUser(t)
+	orgID := seedOrg(t, owner)
+
+	const seeded = 7
+	sharedCreatedAt := time.Now().UTC().Truncate(time.Microsecond)
+	want := map[string]bool{}
+	for i := range seeded {
+		id := business.NewIDString()
+		identifier := fmt.Sprintf("test.codefly.dev/paging-%d-%d:1.0.0", time.Now().UnixNano(), i)
+		require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+			_, err := tx.Exec(ctx,
+				`INSERT INTO principals (id, kind, display_name, org_id, agent_identifier, created_at)
+				 VALUES ($1, 'agent', $2, $3, $4, $5)`,
+				id, "paging agent "+identifier, orgID, identifier, sharedCreatedAt)
+			return err
+		}))
+		want[id] = true
+	}
+
+	scoped := testStore.As(business.Identity{UserID: owner, OrgID: orgID, Kind: business.PrincipalKindHuman})
+	seen := map[string]int{}
+	pageToken := ""
+	for page := 0; page < seeded+2; page++ {
+		got, next, err := scoped.ListPrincipals(testCtx, business.PrincipalKindAgent, 2, pageToken)
+		require.NoError(t, err)
+		for _, pr := range got {
+			seen[pr.ID]++
+		}
+		if next == "" {
+			break
+		}
+		pageToken = next
+	}
+
+	for id := range want {
+		require.Equal(t, 1, seen[id],
+			"principal %s must appear exactly once across the paged walk", id)
+	}
+}
+
 func TestPrincipal_ListPrincipals_RejectsBadKind(t *testing.T) {
 	owner := seedUser(t)
 	orgID := seedOrg(t, owner)

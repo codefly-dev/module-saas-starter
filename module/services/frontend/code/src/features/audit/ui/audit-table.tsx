@@ -14,7 +14,7 @@ import { DataTable } from "@/shared/ui/data-table";
 import {
 	formatActorType,
 	formatAuditAction,
-	resolveActorName,
+	resolveActor,
 } from "../model/transforms";
 import type { AuditEvent, PrincipalDirectory } from "../model/types";
 
@@ -59,19 +59,25 @@ export function AuditTable({
 			}),
 			col.accessor("actorId", {
 				header: "Actor",
+				// The column renders a name but accesses an id, so the default
+				// sort would order rows by raw uuid — visibly arbitrary against
+				// the names on screen. Sort by what the cell actually shows.
+				sortingFn: (a, b) =>
+					resolveActor(a.original.actorId, actorNames).label.localeCompare(
+						resolveActor(b.original.actorId, actorNames).label,
+					),
 				cell: (info) => {
-					const actorId = info.getValue();
-					const resolved = actorNames.has(actorId);
+					const actor = resolveActor(info.getValue(), actorNames);
 					return (
 						<div className="flex flex-col gap-1">
 							<span
 								className={
-									resolved
+									actor.resolved
 										? "text-foreground"
 										: "font-mono text-xs text-muted-foreground"
 								}
 							>
-								{resolveActorName(actorId, actorNames)}
+								{actor.label}
 							</span>
 							{info.row.original.actorType ? (
 								<span className="text-[10px] uppercase tracking-wide text-muted-foreground">

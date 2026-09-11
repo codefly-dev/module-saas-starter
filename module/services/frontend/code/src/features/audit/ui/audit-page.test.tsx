@@ -1,4 +1,4 @@
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
@@ -83,5 +83,70 @@ describe("AuditPage admin container", () => {
 		renderInApp(<AuditPage />);
 		expect(await screen.findByText("a3f81c2e...")).toBeTruthy();
 		expect(screen.getByText("agent")).toBeTruthy();
+	});
+
+	// The Actor column accesses actorId but renders a name, so the default
+	// sort ordered rows by raw uuid — an order with no relation to the names
+	// on screen.
+	it("sorts the Actor column by the name it renders, not by the raw id", async () => {
+		server.use(
+			http.post(rpc("AuditService", "QueryAuditLog"), () =>
+				HttpResponse.json({
+					events: [
+						auditEvent({
+							id: "evt-1",
+							actorId: "00000000-0000-4000-8000-00000000000a",
+						}),
+						auditEvent({
+							id: "evt-2",
+							actorId: "ffffffff-0000-4000-8000-00000000000f",
+						}),
+					],
+					totalCount: 2,
+				}),
+			),
+			http.post(rpc("PrincipalService", "ListPrincipals"), () =>
+				HttpResponse.json({
+					principals: [
+						{
+							id: "00000000-0000-4000-8000-00000000000a",
+							displayName: "Zoe Zephyr",
+						},
+						{
+							id: "ffffffff-0000-4000-8000-00000000000f",
+							displayName: "Adam Ant",
+						},
+					],
+					nextPageToken: "",
+				}),
+			),
+		);
+		renderInApp(<AuditPage />);
+		await screen.findByText("Zoe Zephyr");
+
+		fireEvent.click(screen.getByText("Actor"));
+
+		const names = screen
+			.getAllByRole("row")
+			.slice(1)
+			.map((row) => within(row).getByText(/Zoe Zephyr|Adam Ant/).textContent);
+		expect(names).toEqual(["Adam Ant", "Zoe Zephyr"]);
+	});
+
+	// A failed directory walk used to be indistinguishable from an org with no
+	// names: every actor rendered as an id with nothing to act on.
+	it("says so when the actor directory cannot be loaded", async () => {
+		server.use(
+			http.post(rpc("AuditService", "QueryAuditLog"), () =>
+				HttpResponse.json({ events: [auditEvent()], totalCount: 1 }),
+			),
+			http.post(rpc("PrincipalService", "ListPrincipals"), () =>
+				HttpResponse.json({ code: "permission_denied" }, { status: 403 }),
+			),
+		);
+		renderInApp(<AuditPage />);
+		expect(
+			await screen.findByText(/Actor names could not be loaded/),
+		).toBeTruthy();
 	});
 });

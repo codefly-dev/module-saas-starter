@@ -2,8 +2,10 @@ package infra
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
@@ -308,10 +310,12 @@ func (s *PostgresStore) EnableAgentPrincipal(ctx context.Context, id string) (bo
 // ListPrincipals returns paginated principals in the org, optionally
 // filtered by kind. The empty kind matches all kinds.
 //
-// Pagination is cursor-based via the principal id (lexicographic):
-// pageToken is the last id from the previous page. NULL token =
-// first page. Stable order by created_at DESC, id DESC for tie-break
-// reproducibility.
+// Pagination is keyset-based on the full sort key: pageToken is an
+// opaque encoding of the last row's (created_at, id) from the
+// previous page, empty for the first page. Order is created_at DESC,
+// id DESC, and the cursor compares row-wise against both — a cursor
+// carrying only the id cannot express "the rows after this one",
+// because ids are random UUIDs with no relation to created_at.
 //
 // **Why we don't filter by revoked_at here.** The list is for admin
 // UI which needs to show both active AND revoked principals (so the
@@ -375,8 +379,17 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	// failed. Wrapping makes the cursor apply to the union result for every kind.
 	query = `SELECT ` + principalColumns + ` FROM (` + query + `) AS principals`
 	if pageToken != "" {
-		query += fmt.Sprintf(` WHERE id < $%d`, len(args)+1)
-		args = append(args, pageToken)
+		cursorCreatedAt, cursorID, err := decodePrincipalPageToken(pageToken)
+		if err != nil {
+			return nil, "", w.Wrapf(err, "invalid page token")
+		}
+		// Row-wise comparison against the FULL sort key. Comparing id alone
+		// skips and duplicates rows: ids are random v4 UUIDs, uncorrelated with
+		// created_at, so `id < $cursor` selects an arbitrary fraction of the
+		// whole table rather than the rows that follow the cursor in sort order.
+		query += fmt.Sprintf(` WHERE (created_at, id) < ($%d::timestamptz, $%d::uuid)`,
+			len(args)+1, len(args)+2)
+		args = append(args, cursorCreatedAt, cursorID)
 	}
 
 	query += fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, len(args)+1)
@@ -403,9 +416,35 @@ func (s *PostgresStore) ListPrincipals(ctx context.Context, orgID, kind string, 
 	nextToken := ""
 	if int32(len(principals)) > pageSize {
 		principals = principals[:pageSize]
-		nextToken = principals[len(principals)-1].ID
+		last := principals[len(principals)-1]
+		nextToken = encodePrincipalPageToken(last.CreatedAt, last.ID)
 	}
 	return principals, nextToken, nil
+}
+
+// The page token carries the whole ORDER BY key — created_at and id — because
+// a keyset cursor that omits part of its sort key cannot express "the rows
+// after this one". Encoded opaquely so the shape stays the store's to change.
+func encodePrincipalPageToken(createdAt time.Time, id string) string {
+	return base64.RawURLEncoding.EncodeToString(
+		[]byte(createdAt.UTC().Format(time.RFC3339Nano) + "|" + id),
+	)
+}
+
+func decodePrincipalPageToken(token string) (time.Time, string, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("page token is not valid base64: %w", err)
+	}
+	createdAt, id, found := strings.Cut(string(raw), "|")
+	if !found {
+		return time.Time{}, "", errors.New("page token is missing its id segment")
+	}
+	ts, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return time.Time{}, "", fmt.Errorf("page token carries an unparseable timestamp: %w", err)
+	}
+	return ts, id, nil
 }
 
 // isUniqueViolation reports whether err is a Postgres unique-key

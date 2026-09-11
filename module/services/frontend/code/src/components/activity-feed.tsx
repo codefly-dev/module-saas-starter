@@ -28,7 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
 	auditEventAction,
 	formatActorType,
-	resolveActorName,
+	resolveActor,
 } from "@/features/audit/model/transforms";
 import type { AuditEvent } from "@/features/audit/model/types";
 import {
@@ -73,9 +73,11 @@ export function ActivityFeed({
 		},
 	);
 
-	const actorNames = usePrincipalDirectory(resolvedOrgId);
-
 	const events: AuditEvent[] = data?.events ?? [];
+	const { directory: actorNames } = usePrincipalDirectory(
+		resolvedOrgId,
+		events.map((e) => e.actorId),
+	);
 
 	if (!isLoading && events.length === 0) return null;
 
@@ -118,7 +120,7 @@ export function ActivityFeed({
 											<span className="font-medium">
 												{isYou
 													? "You"
-													: resolveActorName(e.actorId, actorNames)}
+													: resolveActor(e.actorId, actorNames).label}
 											</span>{" "}
 											{e.actorType && e.actorType !== "user" ? (
 												// Only a non-human actor earns the tag: the sentence
