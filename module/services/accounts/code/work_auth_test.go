@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
+	"os"
 	"testing"
 	"time"
+
+	"accounts/pkg/business"
 
 	"github.com/stretchr/testify/require"
 )
@@ -371,5 +376,80 @@ func TestRequireLocalForDevFixtureProvider(t *testing.T) {
 	for _, provider := range []string{"workos", "oidc", "header-jwt", ""} {
 		require.NoError(t, requireLocalForDevFixtureProvider(provider, false),
 			"%q must be allowed regardless of environment", provider)
+	}
+}
+
+type federationTestMinter struct{}
+
+func (federationTestMinter) MintModuleRegistration(string) (string, time.Time, error) {
+	return "registration-token", time.Time{}, nil
+}
+
+func TestConfigureModuleIdentity(t *testing.T) {
+	const tenant = "55555555-5555-4555-8555-555555555555"
+	const plainKey = "MODULE_IDENTITY_SECRETS"
+	const publicKey = "CODEFLY__WORKSPACE_CONFIGURATION__FEDERATION__MODULE_IDENTITY_SECRETS"
+	const secretKey = "CODEFLY__WORKSPACE_SECRET_CONFIGURATION__FEDERATION__MODULE_IDENTITY_SECRETS"
+	identityDigest := sha256.Sum256([]byte("identity-secret"))
+	declaration := fmt.Sprintf("documents:%x", identityDigest)
+	for name, test := range map[string]struct {
+		key        string
+		value      string
+		authorized bool
+		invalid    bool
+	}{
+		"public configuration": {publicKey, declaration, true, false},
+		"secret configuration": {secretKey, declaration, true, false},
+		"plain environment":    {plainKey, declaration, true, false},
+		"absent":               {},
+		"empty":                {publicKey, "", false, false},
+		"whitespace":           {publicKey, "  ", false, false},
+		"empty map":            {publicKey, ",", false, false},
+		"missing prefix":       {publicKey, fmt.Sprintf("billing:%x", identityDigest), false, false},
+		"malformed":            {publicKey, "documents:not-a-digest", false, true},
+		"duplicate":            {publicKey, declaration + "," + declaration, false, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, key := range []string{plainKey, publicKey, secretKey} {
+				t.Setenv(key, "")
+				require.NoError(t, os.Unsetenv(key))
+			}
+			if test.key != "" {
+				t.Setenv(test.key, test.value)
+			}
+			service, err := business.NewService(nil)
+			require.NoError(t, err)
+			service.SetModuleRegistrar(federationTestMinter{}, map[string][sha256.Size]byte{
+				"documents": sha256.Sum256([]byte("registration-secret")),
+			})
+			registry, err := business.ParseModulePrincipalRegistry(
+				`{"documents":{"tenant":"` + tenant + `"}}`)
+			require.NoError(t, err)
+			service.SetModuleCapabilities(nil, nil, registry)
+
+			err = configureModuleIdentity(service)
+			if test.invalid {
+				require.ErrorContains(t, err, "read module identity secrets")
+			} else {
+				require.NoError(t, err)
+			}
+			_, err = service.ModuleAuthorizeWorkContext("documents", "registration-secret")
+			require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
+			authority, err := service.ModuleAuthorizeWorkContext("documents", "identity-secret")
+			if !test.authorized {
+				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, business.ModulePrincipalID("documents"), authority.PrincipalID)
+			require.Equal(t, tenant, authority.Tenant)
+
+			t.Setenv(test.key, "")
+			require.NoError(t, configureModuleIdentity(service))
+			for _, secret := range []string{"identity-secret", "registration-secret"} {
+				_, err = service.ModuleAuthorizeWorkContext("documents", secret)
+				require.ErrorIs(t, err, business.ErrModuleRegistrationDenied)
+			}
+		})
 	}
 }

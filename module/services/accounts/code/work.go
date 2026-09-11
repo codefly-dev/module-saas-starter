@@ -344,15 +344,8 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("read module registration secrets: %w", err)
 	}
 	service.SetModuleRegistrar(minter, moduleRegistrationSecrets)
-	moduleIdentityDeclaration := strings.TrimSpace(workspaceEnv("federation", "MODULE_IDENTITY_SECRETS"))
-	if moduleIdentityDeclaration == "" {
-		wool.Get(ctx).Warn("MODULE_IDENTITY_SECRETS is empty: module Work Context exchange falls back to MODULE_REGISTRATION_SECRETS; registration secret holders can obtain module identities")
-	} else {
-		moduleIdentitySecrets, err := business.ParseRegistrationSecrets(moduleIdentityDeclaration)
-		if err != nil {
-			return nil, fmt.Errorf("read module identity secrets: %w", err)
-		}
-		service.SetModuleIdentitySecrets(moduleIdentitySecrets)
+	if err := configureModuleIdentity(service); err != nil {
+		return nil, err
 	}
 
 	// Solution registration: the same issuer, a separate declaration. A solution
@@ -1814,4 +1807,13 @@ func (n *billingNotifier) CreateBillingNotification(
 		IdempotencyKey: message.DeliveryKey,
 	})
 	return err
+}
+
+func configureModuleIdentity(service *business.Service) error {
+	secrets, err := business.ParseRegistrationSecrets(workspaceEnv("federation", "MODULE_IDENTITY_SECRETS"))
+	if err != nil {
+		return fmt.Errorf("read module identity secrets: %w", err)
+	}
+	service.SetModuleIdentitySecrets(secrets)
+	return nil
 }

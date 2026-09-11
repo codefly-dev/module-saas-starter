@@ -214,10 +214,6 @@ type ModuleWorkContextAuthority struct {
 // module can never name a tenant it was not granted by asking for it.
 func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkContextAuthority, error) {
 	authority := s.moduleIdentity
-	// Older compositions only provision registration secrets until the CLI floor moves.
-	if authority == nil {
-		authority = s.moduleRegistrar
-	}
 	if authority == nil ||
 		!registrationIdentityPattern.MatchString(prefix) ||
 		!authority.authorize(prefix, secret) {
