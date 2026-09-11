@@ -40,3 +40,11 @@ func TestCustodyProjectionSupportsPrivateAtomicMount(t *testing.T) {
 		t.Fatal("world-readable projection accepted")
 	}
 }
+
+func TestCustodyRequiresExplicitDatabaseTransport(t *testing.T) {
+	t.Setenv("EXECUTION_CUSTODY_CONFIG_FILE", "/not-read-before-transport-check")
+	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "")
+	if _, err := configuredExecutionCustody(nil, nil, nil, "", nil, true, false); err == nil || err.Error() != "execution custody requires explicit verified-tls or local-identity-proxy database transport" {
+		t.Fatal("unspecified hosted database transport accepted")
+	}
+}

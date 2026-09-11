@@ -374,3 +374,58 @@ image publication. Managed database migration/identity, durable initialized Vaul
 private DNS/network/TLS, workload credential projection and actual signed-in
 consumer join remain required. No cloud, IAM or production credential action is
 performed by this source change.
+
+
+## Explicit database transport for hosted custody
+
+The existing `security` workspace group supplies `ACCOUNTS_DATABASE_TRANSPORT`
+(environment fallback uses that same name). Values are `verified-tls` and
+`local-identity-proxy`. An empty value preserves existing normal Accounts consumer
+behavior: the Codefly connection URL is parsed by pgx, including its legacy
+settings. **Empty does not assert verified TLS and cannot enable the private
+hosted custody/revision mount.** Existing local qualification uses its separately
+bounded fixture bootstrap. Unknown profiles fail startup.
+
+`verified-tls` requires explicit PostgreSQL user, database and TCP hostname,
+`sslmode=verify-full`, actual driver certificate/hostname verification on every
+fallback, and no ambiguous endpoint/user/database/role query override or ambient
+`PG*` setting. The normal direct credential hook remains in force.
+
+`local-identity-proxy` requires each existing Codefly store/postgres read-only and
+read-write secret to contain a hostless URL of this form:
+
+```text
+postgresql://principal@/database?host=%2Fprivate%2Fsocket&port=5432&sslmode=disable&passfile=%2Fdev%2Fnull
+```
+
+The Unix directory must be absolute, normalized and short enough for the local
+socket. User/database/port must be explicit; passwords (including empty userinfo
+passwords), unknown/duplicate parameters, URL roles, service/passfile overrides,
+TCP/driver fallback, ambient `PG*` environment and `POSTGRES_TOKEN_FILE` are denied.
+The parsed driver's socket/user/database/port must exactly match the projection,
+with no TLS or password on that local hop. Reader and writer must use distinct
+private sockets and distinct non-owner principals. There is no application cloud
+SDK or token minting. The platform owns each proxy's fixed principal, verified
+remote TLS/IAM, private routes, mounted socket ownership and reconnect lifecycle.
+
+Every normal Accounts pool uses the selected parser: scoped reader/writer,
+legacy request pool and billing/webhook/job worker pools. The existing factory
+and fixed `SET ROLE` boundaries still own authority; a connection URL cannot select
+a privileged role. Changing transport is an explicit deployment change, not a
+fallback after a failed TLS or identity connection.
+
+Local Accounts proof (requires local `initdb`/`pg_ctl`):
+
+```sh
+cd module/services/accounts/code
+go test -race pkg/infra/database_transport.go pkg/infra/database_transport_test.go
+go test -race -tags=integration ./pkg/adapters -run TestAccountsLocalProxyStore -count=1 -v
+```
+
+The second test creates a disposable Unix-only PostgreSQL server, applies all127
+unchanged migrations, opens Accounts' actual factory with two socket/principal
+bindings, checks direct/tenant custody denial, recovers the original private
+record after store reconstruction, and opens all three fixed worker pools with
+custody denied. It is an Accounts local-socket/role proof, not a Cloud SQL IAM,
+managed proxy, remote TLS or full hosted-process acceptance result. The exact
+normal image must include this follow-up before consuming the proxy profile.
