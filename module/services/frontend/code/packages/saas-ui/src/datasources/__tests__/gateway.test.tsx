@@ -30,6 +30,7 @@ interface FetchCall {
 	url: string;
 	/** Snapshotted at call time — the interceptor mutates req.header in place on retry. */
 	authorization: string | null;
+	body: unknown;
 }
 
 function stubFetchSequence(replies: FetchReply[]): { calls: FetchCall[] } {
@@ -40,6 +41,7 @@ function stubFetchSequence(replies: FetchReply[]): { calls: FetchCall[] } {
 		vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
 			calls.push({
 				url: String(input),
+				body: JSON.parse(typeof init.body === "string" ? init.body : new TextDecoder().decode(init.body as Uint8Array)),
 				authorization: new Headers(init.headers).get("authorization"),
 			});
 			const r = replies[Math.min(i, replies.length - 1)];
@@ -234,4 +236,48 @@ describe("DatasourcesPanel gateway binding", () => {
 			expect(screen.getByText(/no data sources connected/i)).toBeTruthy(),
 		);
 	});
+});
+
+it("uses GitHub's dispatch clock instead of reporting Never", async () => {
+	const github = {
+		...oneSource.datasources[0],
+		lastIngestedAt: "2026-09-11T14:00:00Z",
+	};
+	stubFetch({ datasources: [github] });
+	const client = createDatasourceClient({
+		apiBase: "http://example.test",
+		getAccessToken: () => "viewer",
+	});
+	expect((await client.listSources("org-1"))[0].lastSyncedAt).toBe(
+		"2026-09-11T14:00:00.000Z",
+	);
+});
+it("reads source-specific typed audit history", async () => {
+	stubFetch({
+		events: [
+			{
+				id: "a1",
+				eventType: "saas.datasource.sync.completed",
+				actorId: "worker",
+				createdAt: "2026-09-11T14:00:00Z",
+				payload: { processed: 45, job_id: "j1" },
+			},
+		],
+	});
+	const client = createDatasourceClient({
+		apiBase: "http://example.test",
+		getAccessToken: () => "viewer",
+	});
+	const events = await client.listActivity!("org-1", "s1");
+	expect(events[0].fields).toEqual({ processed: 45, job_id: "j1" });
+});
+
+it("serializes a replacement credential only for reconnect on the existing source", async () => {
+ const { calls } = stubFetch({ jobId: "job-1" });
+ const client = createDatasourceClient({ apiBase: "http://example.test", getAccessToken: () => "viewer" });
+ await expect(client.syncSource("org-1", "source-1", "test-only-replacement")).resolves.toBe("job-1");
+ await client.syncSource("org-1", "source-1");
+ expect(calls[0].url).toContain("saas.accounts.v1.DatasourceService/SyncSource");
+ expect(calls[0].body).toEqual({ orgId: "org-1", id: "source-1", accessToken: "test-only-replacement" });
+ expect(calls[1].body).toEqual({ orgId: "org-1", id: "source-1" });
 });

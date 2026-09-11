@@ -505,3 +505,17 @@ it.each(["first", "second"])(
 		expect(onSyncEnqueued).toHaveBeenCalledExactlyOnceWith("job-2");
 	},
 );
+
+ it("reconnects the same source without creating or deleting a source", async () => {
+  const client = fakeClient({listSources: vi.fn(async () => [sampleSource])});
+  renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+  fireEvent.click(await screen.findByRole("button", {name: "Reconnect"}));
+  const token = screen.getByLabelText("New GitHub PAT");
+  expect(token.getAttribute("type")).toBe("password");
+  fireEvent.change(token, {target:{value:"replacement-test-token"}});
+  fireEvent.click(screen.getByRole("button", {name:"Reconnect and sync"}));
+  await waitFor(() => expect(client.syncSource).toHaveBeenCalledWith("org-1", "ds-1", "replacement-test-token"));
+  expect(client.addGitHubSource).not.toHaveBeenCalled();
+  expect(client.deleteSource).not.toHaveBeenCalled();
+  expect((await screen.findByRole("status")).textContent).toContain("Credential replaced");
+ });

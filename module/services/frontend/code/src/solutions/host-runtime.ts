@@ -33,7 +33,7 @@ export const SOLUTION_HOST_CONTRACT_MAJOR = 1;
  * keep single. The `kit-shared-version` test pins this to the packages' actual
  * versions so a bump can't drift it silently.
  */
-export const CODEFLY_KIT_VERSION = "0.2.2";
+export const CODEFLY_KIT_VERSION = "0.2.3";
 
 /**
  * `@codefly-dev/saas-sdk` tracks the published accounts/connect API contract,

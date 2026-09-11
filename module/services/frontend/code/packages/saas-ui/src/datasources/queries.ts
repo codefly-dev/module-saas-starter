@@ -34,6 +34,7 @@ export function useListSources(client: DatasourceClient, orgId: string) {
 		queryKey: sourcesKey(orgId),
 		queryFn: () => client.listSources(orgId),
 		enabled: !!orgId,
+        refetchInterval: 5000,
 	});
 }
 

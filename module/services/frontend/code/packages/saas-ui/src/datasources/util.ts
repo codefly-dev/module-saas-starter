@@ -24,7 +24,7 @@ function parseInstant(iso: string | undefined): Date | undefined {
 }
 
 export function formatSyncedAt(iso: string | undefined): string {
-	return parseInstant(iso)?.toLocaleDateString() ?? "Never";
+	return parseInstant(iso)?.toLocaleString() ?? "Never";
 }
 
 /**

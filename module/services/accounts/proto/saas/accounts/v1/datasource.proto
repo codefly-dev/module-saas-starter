@@ -331,6 +331,9 @@ message GetSourceResponse {
 message SyncSourceRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string id = 2 [(buf.validate.field).string.uuid = true];
+  // Optional replacement PAT: validate and encrypt for this existing GitHub
+  // source before queuing sync. Empty keeps the saved credential. Never returned.
+  string access_token = 3 [(buf.validate.field).string.max_len = 4096];
 }
 
 message SyncSourceResponse {
@@ -470,7 +473,7 @@ service DatasourceService {
       }
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
-      request_sensitivity: SENSITIVITY_INTERNAL
+      request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_INTERNAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };

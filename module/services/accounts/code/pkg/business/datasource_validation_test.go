@@ -4,6 +4,7 @@ import (
 	"accounts/pkg/business"
 	"accounts/pkg/datasource/github"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
+	"accounts/pkg/jobs"
 	"context"
 	"errors"
 	"strings"
@@ -91,6 +92,8 @@ func TestGitHubSyncPreflightKeepsTransientFailuresDurable(t *testing.T) {
 		{"rate limit", github.ErrRateLimited, nil, codes.OK},
 		{"vault unavailable", nil, errors.New("private vault response"), codes.OK},
 		{"vault timeout", nil, context.DeadlineExceeded, codes.OK},
+		{"vault rejected ciphertext", nil, vaultStatusError(400), codes.FailedPrecondition},
+		{"vault forbidden", nil, vaultStatusError(403), codes.OK},
 		{"bad credential", github.ErrUnauthorized, nil, codes.FailedPrecondition},
 		{"permissions", github.ErrForbidden, nil, codes.FailedPrecondition},
 		{"missing ref", github.ErrNotFound, nil, codes.FailedPrecondition},
@@ -182,5 +185,81 @@ func TestGitHubTransientPreflightDoesNotHideEnqueueFailure(t *testing.T) {
 	id, err := svc.SyncDatasourceSource(context.Background(), "actor", testOrg, source.ID)
 	if err == nil || id != "" {
 		t.Fatalf("acknowledged a repair that was not persisted: id %q, error %v", id, err)
+	}
+}
+
+type vaultStatusError int
+
+func (e vaultStatusError) Error() string       { return "provider-body-secret" }
+func (e vaultStatusError) HTTPStatusCode() int { return int(e) }
+
+type brokenDatasourceCipher struct {
+	purposeCipher
+	err error
+}
+
+func (c brokenDatasourceCipher) DecryptSecret(context.Context, string, string) (string, error) {
+	return "", c.err
+}
+
+func TestGitHubReconnectPreservesSourceAndRejectsInvalidReplacement(t *testing.T) {
+	store := newDatasourceFakeStore()
+	producer := &recordingProducer{}
+	client := &validationGitHub{}
+	svc, audit := newDatasourceService(store, producer, client)
+	source := addSource(t, svc, business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "docs", AccessToken: "old"})
+	original := source.CredentialSecretRef
+	svc.SetDatasourceConnector(brokenDatasourceCipher{err: vaultStatusError(400)}, producer, "")
+	svc.SetDatasourceGitHubClientFactory(func(token string) business.GitHubContentClient {
+		if token != "replacement" {
+			t.Fatal("did not validate replacement")
+		}
+		return client
+	})
+	client.branchErr = github.ErrUnauthorized
+	if _, err := svc.SyncDatasourceSource(context.Background(), "actor", testOrg, source.ID, "replacement"); err == nil {
+		t.Fatal("accepted invalid replacement")
+	}
+	current, _ := store.GetDatasourceSource(context.Background(), testOrg, source.ID)
+	if current.CredentialSecretRef != original || len(producer.jobs) != 0 {
+		t.Fatal("invalid replacement mutated source")
+	}
+	client.branchErr = nil
+	if _, err := svc.SyncDatasourceSource(context.Background(), "actor", testOrg, source.ID, "replacement"); err != nil {
+		t.Fatal(err)
+	}
+	current, _ = store.GetDatasourceSource(context.Background(), testOrg, source.ID)
+	if len(store.sources) != 1 || current.ID != source.ID || current.BoundaryNodeID != source.BoundaryNodeID || current.CredentialSecretRef == original || len(producer.jobs) != 1 {
+		t.Fatal("source identity or recovery failed")
+	}
+	if _, err := svc.SyncDatasourceSource(context.Background(), "actor", "foreign-org", source.ID, "replacement"); err == nil {
+		t.Fatal("replaced another tenant source")
+	}
+	if !auditHas(audit, business.EventDatasourceCredentialUpdated) {
+		t.Fatal("credential replacement was not audited")
+	}
+}
+
+func TestGitHubCredentialFailureRetryAndAudit(t *testing.T) {
+	for _, tc := range []struct {
+		code  int
+		retry bool
+	}{{400, false}, {503, true}, {403, true}} {
+		store := newDatasourceFakeStore()
+		producer := &recordingProducer{}
+		svc, audit := newDatasourceService(store, producer, nil)
+		source := addSource(t, svc, business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "docs", AccessToken: "old"})
+		svc.SetDatasourceConnector(brokenDatasourceCipher{err: vaultStatusError(tc.code)}, producer, "")
+		err := svc.NewDatasourceDeliveryJobHandler()(context.Background(), &jobsv1.JobEnvelope{Id: "job", Queue: business.DatasourceDeliveryQueue, Topic: "datasource.github.reconcile", AttemptCount: 2, Attributes: map[string]string{"datasource.source_id": source.ID}})
+		var processing *jobs.ProcessingError
+		if !errors.As(err, &processing) || processing.Retryable != tc.retry {
+			t.Fatalf("status %d: wrong retry policy: %v", tc.code, err)
+		}
+		if strings.Contains(err.Error(), "provider-body-secret") {
+			t.Fatal("secret leaked")
+		}
+		if !auditHas(audit, business.EventDatasourceSyncFailed) {
+			t.Fatal("failure missing from audit")
+		}
 	}
 }
