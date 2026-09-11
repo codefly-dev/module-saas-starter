@@ -73,6 +73,53 @@ func TestBuildEventCatalogRejectsNamespaceOwnership(t *testing.T) {
 	}
 }
 
+// TestBuildEventCatalogRejectsUnknownPartitionField is the global-lock
+// regression. A partition template is substituted into a live partition key at
+// publish time, and that key is what publish_domain_event takes its advisory
+// lock on. An unknown placeholder is not caught by substitution — it survives
+// verbatim, so every tenant resolves the SAME literal key, collapsing the whole
+// deployment onto one lock and interleaving unrelated tenants into one FIFO
+// order. Compose is where a typo has to die.
+func TestBuildEventCatalogRejectsUnknownPartitionField(t *testing.T) {
+	contribution := documentsContribution()
+	contribution.Publishes[0].Partition = "{org_id}"
+	contribution.Consumes = nil
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("expected unknown-partition-field error, got %v", err)
+	}
+}
+
+// TestBuildEventCatalogRejectsCrossTenantPartition guards the same blast radius
+// from the other direction: a template made only of resolvable fields can still
+// name a key shared by every tenant. "{boundary_id}" resolves fine and puts two
+// tenants that happen to use the same boundary id into one ordering domain.
+func TestBuildEventCatalogRejectsCrossTenantPartition(t *testing.T) {
+	contribution := documentsContribution()
+	contribution.Publishes[0].Partition = "{boundary_id}"
+	contribution.Consumes = nil
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "without {tenant_id}") {
+		t.Fatalf("expected cross-tenant-partition error, got %v", err)
+	}
+}
+
+// TestBuildEventCatalogAcceptsNoPartition pins that declaring no partition stays
+// legal — it is how a producer says the type is unordered, which is what keeps
+// it from paying for an advisory lock it does not need.
+func TestBuildEventCatalogAcceptsNoPartition(t *testing.T) {
+	contribution := documentsContribution()
+	contribution.Publishes[0].Partition = ""
+	contribution.Consumes[0].Delivery = "unordered"
+	catalog, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err != nil {
+		t.Fatalf("an unordered type must compose: %v", err)
+	}
+	if catalog.Publishes[0].Partition != "" {
+		t.Fatalf("expected no partition, got %q", catalog.Publishes[0].Partition)
+	}
+}
+
 func TestBuildEventCatalogRejectsUnresolvedSchema(t *testing.T) {
 	contribution := documentsContribution()
 	contribution.Publishes[0].Schema = "documents/events/v1/entry.proto#Missing"

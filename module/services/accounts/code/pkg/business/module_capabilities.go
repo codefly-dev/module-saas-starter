@@ -746,7 +746,8 @@ func mapPublishError(err error) error {
 // the caller's tenant and returns the accepted envelope id. Authority is
 // namespace + tenant: the event type's namespace (the segment before the first
 // dot) must be one the principal declares, and the event is published for a
-// tenant the caller may act on. The insert joins the WithOrgTx transaction so
+// tenant the caller may act on, and the type must be declared in the composed
+// catalog. The insert joins the WithOrgTx transaction so
 // the security-definer publish gate re-checks tenant == current_org under the
 // app_tenant role; the relay fans the event out to matching subscriptions after
 // commit. Publishing is deliberately not audited per-event — the durable event
@@ -777,14 +778,26 @@ func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, t
 	// envelope: a caller cannot smuggle another tenant's scope past the namespace
 	// gate. The DB gate re-checks it under the app_tenant role regardless.
 	envelope.TenantId = tenant
-	// Ordered delivery partitions on the envelope's partition key; an empty key
-	// makes eventOrdering return nil, so an ordered subscription would silently
-	// lose per-partition ordering. A module caller that omits the key must still
-	// get tenant-ordered delivery, so default it to the tenant — the same
-	// partition first-party producers use — while preserving a finer-grained key
-	// the caller set deliberately (e.g. per-aggregate ordering within a tenant).
+	// Publish authority (the namespace grant) is deployment configuration, while
+	// the catalog is compiled into this binary, so the two can disagree: a
+	// principal may hold a namespace whose types this build was never composed
+	// with. Refusing the publish is the only way that disagreement is visible.
+	// Accepting it would silently drop the type's whole contract — its declared
+	// partition, its visibility, its retention — and the producer that declared
+	// it needs ordering would get none, with nothing anywhere reporting why.
+	declared, inCatalog := eventcatalog.LookupPublished(envelope.GetType())
+	if !inCatalog {
+		return "", status.Errorf(codes.FailedPrecondition, "event type %q is not declared in this deployment's event catalog; add it to the module's events contribution and recompose", envelope.GetType())
+	}
+	// The declared partition template is the ordering domain, and it is what a
+	// caller that omits the key gets. Ordering is not free — publish_domain_event
+	// holds a transaction-scoped advisory lock on the partition until the
+	// producing transaction commits — so a type that declares no partition
+	// publishes unordered rather than inheriting one it never promised. A key the
+	// caller set deliberately (e.g. per-aggregate ordering within a tenant) wins
+	// over the declaration.
 	if envelope.GetPartitionKey() == "" {
-		envelope.PartitionKey = tenant
+		envelope.PartitionKey = eventcatalog.ResolvePartition(declared.Partition, tenant, envelope.GetBoundaryId())
 	}
 
 	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {
@@ -815,6 +828,17 @@ func (s *Service) ModuleSubscribe(ctx context.Context, caller ModuleCaller, type
 	for _, internalType := range eventcatalog.InternalPublishedTypes() {
 		if events.Matches(typePattern, internalType) {
 			return nil, status.Errorf(codes.PermissionDenied, "type pattern %q matches internal event %q, which is not subscribable", typePattern, internalType)
+		}
+	}
+	// Ordered delivery is only meaningful over a type that declares a partition;
+	// without one the relay hands deliveries out unordered and says nothing. A
+	// subscriber that asked for FIFO has to be told here, at subscribe time,
+	// rather than discovering the reordering in production.
+	if delivery == string(events.DeliveryOrdered) {
+		for _, unorderedType := range eventcatalog.UnorderedPublishedTypes() {
+			if events.Matches(typePattern, unorderedType) {
+				return nil, status.Errorf(codes.FailedPrecondition, "type pattern %q matches event %q, which declares no partition; ordered delivery cannot be provided for it", typePattern, unorderedType)
+			}
 		}
 	}
 

@@ -55,3 +55,43 @@ func InternalPublishedTypes() []string {
 	}
 	return out
 }
+
+// UnorderedPublishedTypes returns the types of every published event that
+// declares no partition. Such a type has no ordering domain at all, so an
+// ordered subscription to it cannot be honoured: the relay orders a delivery
+// only when the event carries a partition key, and silently treats the rest as
+// unordered. The Subscribe authority gate consults this so a subscriber is told
+// at subscribe time, rather than discovering reordered deliveries in production.
+// The list is small; callers match their pattern against it directly.
+func UnorderedPublishedTypes() []string {
+	var out []string
+	for _, e := range published {
+		if e.Partition == "" {
+			out = append(out, e.Type)
+		}
+	}
+	return out
+}
+
+// ResolvePartition substitutes one envelope's scope fields into the partition
+// template a published event declares ("{tenant_id}", "{tenant_id}/{boundary_id}").
+// An empty template is a type that declares no ordering domain and resolves to
+// the empty key.
+//
+// The empty key is load-bearing, not a fallback: publish_domain_event takes a
+// transaction-scoped advisory lock on any non-empty partition, held until the
+// producing transaction commits, so inventing a partition an event never
+// declared serializes every publish sharing it for an ordering nobody consumes.
+// Callers resolve against a declaration they looked up, so that a type missing
+// from the catalog is a decision the caller makes explicitly rather than a
+// silent slide into "unordered" — see LookupPublished.
+//
+// Templates are validated at compose time: every placeholder names a field this
+// substitutes, and every non-empty template carries {tenant_id}, so a resolved
+// key is always scoped to one tenant.
+func ResolvePartition(template, tenantID, boundaryID string) string {
+	if template == "" {
+		return ""
+	}
+	return strings.NewReplacer("{tenant_id}", tenantID, "{boundary_id}", boundaryID).Replace(template)
+}

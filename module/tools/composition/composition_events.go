@@ -28,7 +28,37 @@ var (
 	versionDirPattern  = regexp.MustCompile(`^v([0-9]+)$`)
 	eventVisibilitySet = map[string]struct{}{"internal": {}, "tenant": {}, "external": {}}
 	eventDeliverySet   = map[string]struct{}{"ordered": {}, "unordered": {}}
+	// eventPartitionPlaceholder matches one {...} substitution in a partition
+	// template. Anything a producer writes between braces must name an envelope
+	// scope field the publisher can actually resolve.
+	eventPartitionPlaceholder = regexp.MustCompile(`\{([^{}]*)\}`)
+	eventPartitionFieldSet    = map[string]struct{}{"tenant_id": {}, "boundary_id": {}}
 )
+
+// validatePartitionTemplate rejects a partition declaration the publisher cannot
+// honour. The template is substituted into a live partition key at publish time,
+// and that key is what publish_domain_event takes its advisory lock on, so an
+// unresolvable template is not a cosmetic error: an unknown placeholder survives
+// substitution verbatim and yields the same literal key for every tenant, which
+// collapses the whole deployment onto one lock and interleaves unrelated
+// tenants' events into a single FIFO order. Requiring {tenant_id} is the same
+// guarantee stated positively — a partition is an ordering domain within one
+// tenant, never across tenants. An empty declaration is valid and means the type
+// is unordered.
+func validatePartitionTemplate(eventType, template string) error {
+	if template == "" {
+		return nil
+	}
+	for _, match := range eventPartitionPlaceholder.FindAllStringSubmatch(template, -1) {
+		if _, known := eventPartitionFieldSet[match[1]]; !known {
+			return fmt.Errorf("event type %q declares partition %q naming unknown field %q; use {tenant_id} and {boundary_id}", eventType, template, match[1])
+		}
+	}
+	if !strings.Contains(template, "{tenant_id}") {
+		return fmt.Errorf("event type %q declares partition %q without {tenant_id}; a partition orders events within one tenant, so its key must be tenant-scoped", eventType, template)
+	}
+	return nil
+}
 
 // EventsContribution is one module's declaration of the domain events it
 // publishes and consumes, a sibling of PermissionsContribution. It is discovered
@@ -145,6 +175,9 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 			}
 			if _, exists := eventVisibilitySet[published.Visibility]; !exists {
 				return eventCatalog{}, fmt.Errorf("event type %q has invalid visibility %q", published.Type, published.Visibility)
+			}
+			if err := validatePartitionTemplate(published.Type, published.Partition); err != nil {
+				return eventCatalog{}, err
 			}
 			if _, duplicate := publishedTypes[published.Type]; duplicate {
 				return eventCatalog{}, fmt.Errorf("event type %q is published by more than one namespace", published.Type)

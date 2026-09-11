@@ -173,21 +173,25 @@ func TestModulePublishEventNamespaceAndTenantAuthority(t *testing.T) {
 	}
 }
 
-// TestModulePublishEventDefaultsPartitionKeyToTenant guards ordered delivery: a
-// caller that omits the partition key must still get tenant-partitioned events
-// (an empty key disables ordering downstream), while a deliberately-set finer
-// key is left untouched.
-func TestModulePublishEventDefaultsPartitionKeyToTenant(t *testing.T) {
+// TestModulePublishEventPartitionKeyFollowsTheCatalog pins where a publish's
+// ordering domain comes from when the caller does not name one: the event
+// type's declared partition template, not the tenant. A partition is paid for
+// with an advisory lock held for the producing transaction, so a type must not
+// inherit an ordering nobody asked for. A key the caller set deliberately still
+// wins over the declaration.
+func TestModulePublishEventPartitionKeyFollowsTheCatalog(t *testing.T) {
 	svc := newEventService(t, fakeTxStore{}, events.NewFakeTransport(nil, time.Second))
 	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: moduleTenantA}
 
-	env := demoEnvelope("scope.granted")
-	env.PartitionKey = ""
-	if _, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, env); err != nil {
+	// scope.granted declares partition "{tenant_id}", which resolves to the
+	// publishing tenant.
+	declared := demoEnvelope("scope.granted")
+	declared.PartitionKey = ""
+	if _, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, declared); err != nil {
 		t.Fatalf("publish with empty partition key: %v", err)
 	}
-	if env.GetPartitionKey() != moduleTenantA {
-		t.Fatalf("empty partition key must default to tenant, got %q", env.GetPartitionKey())
+	if declared.GetPartitionKey() != moduleTenantA {
+		t.Fatalf("declared {tenant_id} partition must resolve to the tenant, got %q", declared.GetPartitionKey())
 	}
 
 	fine := demoEnvelope("scope.granted")
@@ -197,6 +201,43 @@ func TestModulePublishEventDefaultsPartitionKeyToTenant(t *testing.T) {
 	}
 	if fine.GetPartitionKey() != "scope/aggregate-7" {
 		t.Fatalf("explicit partition key must be preserved, got %q", fine.GetPartitionKey())
+	}
+}
+
+// TestModulePublishEventUncataloguedTypeRefused is the fail-closed guard on the
+// disagreement between two artifacts that ship separately: the namespace grant
+// is deployment configuration, the catalog is compiled into this binary. A
+// principal can therefore hold a namespace this build was never composed with.
+// Publishing anyway would drop the type's entire contract — declared partition,
+// visibility, retention — and a producer that asked for ordering would silently
+// get none, so the publish is refused instead.
+func TestModulePublishEventUncataloguedTypeRefused(t *testing.T) {
+	transport := events.NewFakeTransport(nil, time.Second)
+	svc := newEventService(t, fakeTxStore{}, transport)
+	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: moduleTenantA}
+
+	// In the caller's granted namespace, but absent from the composed catalog.
+	env := demoEnvelope("scope.unregistered")
+	env.PartitionKey = ""
+	_, err := svc.ModulePublishEvent(context.Background(), caller, moduleTenantA, env)
+	requireCode(t, err, codes.FailedPrecondition)
+
+	// The refusal is before the transport, so nothing was durably published.
+	if got, _ := transport.Claim(context.Background(), "events.demo.a", 10); len(got) != 0 {
+		t.Fatalf("a refused publish must not reach the transport, got %d deliveries", len(got))
+	}
+}
+
+// TestModuleSubscribeOrderedOnPartitionedTypeAllowed guards the ordering gate
+// against over-rejecting: every catalogued type declares a partition today, so
+// an ordered subscription to one must still be accepted. The gate exists for
+// types that declare none, which the relay can only ever deliver unordered.
+func TestModuleSubscribeOrderedOnPartitionedTypeAllowed(t *testing.T) {
+	svc := newEventService(t, &fakeSubStore{}, events.NewFakeTransport(nil, time.Second))
+	caller := business.ModuleCaller{PrincipalID: modulePrincSvc, BoundOrg: moduleTenantA}
+
+	if _, err := svc.ModuleSubscribe(context.Background(), caller, "scope.granted", "reference.ingest", "ordered"); err != nil {
+		t.Fatalf("ordered subscribe to a partitioned type must be accepted: %v", err)
 	}
 }
 
