@@ -137,14 +137,15 @@ const FORBIDDEN_MODULES = [
 	"saas/accounts/v1/invitations_pb",
 ];
 
-// The generated tree is assembled from two sources: `codefly generate client`
-// writes `saas/**` and deletes everything else, while the third-party
-// descriptors those bindings still import relatively — `buf/validate`,
-// `google/api`, and the `google/protobuf` files those two reach — are kept in
-// the tree by hand and restored after each regeneration (see README). Nothing
-// else proves that restore happened: `tsconfig.json` compiles from `src` only,
-// so tsc never opens a generated file the public API does not reach, and a
-// dangling import in one of those is invisible until a consumer imports it.
+// `codefly generate client` emits the third-party descriptors its bindings
+// import relatively — `buf/validate`, `google/api`, and the `google/protobuf`
+// files those two reach — alongside `saas/**`. Which of them it should emit
+// depends on the protoc-gen-es version behind the remote BSR plugin, and its
+// clean step does not track that, so it can delete a descriptor tree the
+// bindings still import (see README, and codefly-dev/core#438). Nothing else
+// catches that: `tsconfig.json` compiles from `src` only, so tsc never opens a
+// generated file the public API does not reach, and a dangling import in one of
+// those is invisible until a consumer imports it.
 describe("@codefly-dev/saas-sdk generated tree integrity", () => {
 	it("resolves every relative import in the generated bindings", () => {
 		const dangling: string[] = [];
