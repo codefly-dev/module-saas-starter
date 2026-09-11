@@ -12,7 +12,11 @@ import type { ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectGitHubForm } from "../connect-github-form.js";
 import { DatasourcesPanel } from "../datasources-panel.js";
-import type { DatasourceClient, DatasourceView } from "../types.js";
+import type {
+	AccessibleScopeView,
+	DatasourceClient,
+	DatasourceView,
+} from "../types.js";
 
 afterEach(cleanup);
 
@@ -192,6 +196,106 @@ describe("DatasourcesPanel", () => {
 			).toHaveLength(2),
 		);
 		expect(syncSource).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("DatasourcesPanel boundary column", () => {
+	const boundaryId = sampleSource.boundaryNodeId;
+
+	it("names the boundary and summarizes the caller's grants on it", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => [
+				{
+					nodeId: boundaryId,
+					label: "Docs",
+					kind: "collection",
+					actions: ["write", "read"],
+				},
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Docs")).toBeTruthy();
+		// Ordered read-then-write regardless of the order the lookup reported.
+		expect(screen.getByText("Read · Write")).toBeTruthy();
+		expect(client.listAccessibleScopes).toHaveBeenCalledWith("org-1");
+	});
+
+	it("never renders a missing grant as denial", async () => {
+		// The lookup reports scope grants only. An org admin authorized through
+		// flat RBAC holds no scope-grant row, so an empty result is the normal
+		// state — calling it "No access" would be false for the admin who
+		// connected the source.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		// The boundary stays identifiable by id, with no claim about authority.
+		expect(await screen.findByText("11111111")).toBeTruthy();
+		await waitFor(() => expect(client.listAccessibleScopes).toHaveBeenCalled());
+		expect(screen.queryByText("No access")).toBeNull();
+		expect(screen.queryByText(/denied|no grant/i)).toBeNull();
+	});
+
+	it("refetches boundaries after a source is connected", async () => {
+		// Connecting resolves the target collection to a boundary node, so a
+		// boundary answer held from before the add is stale. Without invalidating
+		// it the new row renders an opaque id for a boundary the caller holds.
+		let scopes: AccessibleScopeView[] = [];
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => scopes),
+			addGitHubSource: vi.fn(async () => {
+				scopes = [
+					{
+						nodeId: boundaryId,
+						label: "Docs",
+						kind: "collection",
+						actions: ["read"],
+					},
+				];
+			}),
+		});
+		await openConnectForm(client);
+		expect(await screen.findByText("11111111")).toBeTruthy();
+
+		fireEvent.click(screen.getByRole("button", { name: /^validate and connect$/i }));
+
+		await waitFor(() => expect(screen.getByText("Docs")).toBeTruthy());
+	});
+
+	it("never claims no access when the boundary could not be looked up", async () => {
+		// A client with no listAccessibleScopes — a gateway-bound remote, whose SDK
+		// does not carry the accessible-scopes RPC. Absence of a grant is unknown
+		// here, so asserting "No access" would be a false statement about authority.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("11111111")).toBeTruthy();
+		expect(screen.queryByText("No access")).toBeNull();
+	});
+
+	it("degrades to the boundary id when the lookup fails", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => {
+				throw new Error("accessible-scopes unserved");
+			}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		// The panel still lists its sources: an unresolved boundary is a degraded
+		// cell, not a failed panel.
+		expect(
+			await screen.findByText("codefly-dev/module-saas-starter"),
+		).toBeTruthy();
+		expect(screen.getByText("11111111")).toBeTruthy();
+		expect(screen.queryByText("No access")).toBeNull();
 	});
 });
 

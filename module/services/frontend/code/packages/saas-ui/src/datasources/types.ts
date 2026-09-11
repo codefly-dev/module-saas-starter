@@ -24,6 +24,20 @@ export interface DatasourceView {
 	createdAt: string | undefined;
 }
 
+/**
+ * A data boundary (scope node) the caller may act on, as reported by the
+ * accessible-scopes RPC. `scopePath` is deliberately absent: for a
+ * machine-minted boundary it is the node's own UUID re-encoded as an ltree
+ * label, so it never reads as a name — `label` is the only human-facing one.
+ */
+export interface AccessibleScopeView {
+	nodeId: string;
+	label: string;
+	kind: string;
+	/** Actions the caller holds on the node, e.g. `["read", "write"]`. */
+	actions: string[];
+}
+
 /** The connect form's resolved output, ready for `addGitHubSource`. */
 export interface ConnectGitHubInput {
 	orgId: string;
@@ -41,4 +55,12 @@ export interface DatasourceClient {
 	/** Enqueues an async pull; resolves to the durable job id. */
 	syncSource(orgId: string, id: string): Promise<string>;
 	deleteSource(orgId: string, id: string): Promise<void>;
+	/**
+	 * Enumerates the org's data boundaries the caller may act on, so a source's
+	 * boundary renders as a name plus the caller's grants on it rather than a raw
+	 * node id. Optional: the accessible-scopes RPC is not part of the published
+	 * SDK surface, so a client that cannot reach it omits this and the panel
+	 * falls back to the boundary id.
+	 */
+	listAccessibleScopes?(orgId: string): Promise<AccessibleScopeView[]>;
 }

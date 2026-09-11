@@ -7,14 +7,25 @@ import { type ReactNode, useMemo, useState } from "react";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import {
+	useAccessibleScopes,
 	useAddGitHubSource,
 	useDeleteSource,
 	useListSources,
 	useSyncSource,
 } from "./queries.js";
 import type { ConnectGitHubValues } from "./schema.js";
-import type { DatasourceClient, DatasourceView } from "./types.js";
-import { cn, formatSyncedAt, parsePaths } from "./util.js";
+import type {
+	AccessibleScopeView,
+	DatasourceClient,
+	DatasourceView,
+} from "./types.js";
+import {
+	cn,
+	formatGrants,
+	formatSyncedAt,
+	parsePaths,
+	shortBoundaryId,
+} from "./util.js";
 
 interface DatasourcesPanelBaseProps {
 	orgId: string;
@@ -99,6 +110,7 @@ function DatasourcesPanelView({
 	const [actionError, setActionError] = useState<string | null>(null);
 
 	const list = useListSources(client, orgId);
+	const scopes = useAccessibleScopes(client, orgId);
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -156,6 +168,11 @@ function DatasourcesPanelView({
 	};
 
 	const sources = list.data ?? [];
+	const boundaries = useMemo(() => {
+		const byNode = new Map<string, AccessibleScopeView>();
+		for (const scope of scopes.data ?? []) byNode.set(scope.nodeId, scope);
+		return byNode;
+	}, [scopes.data]);
 
 	return (
 		<div className={cn("space-y-4", className)}>
@@ -205,6 +222,7 @@ function DatasourcesPanelView({
 			) : (
 				<SourcesTable
 					sources={sources}
+					boundaries={boundaries}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
 					onSync={handleSync}
@@ -266,12 +284,14 @@ const cellClass = "px-3 py-2 align-middle";
 
 function SourcesTable({
 	sources,
+	boundaries,
 	syncingIds,
 	deletingIds,
 	onSync,
 	onDelete,
 }: {
 	sources: DatasourceView[];
+	boundaries: ReadonlyMap<string, AccessibleScopeView>;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
@@ -285,6 +305,7 @@ function SourcesTable({
 						<th className={headerClass}>Repository</th>
 						<th className={headerClass}>Paths</th>
 						<th className={headerClass}>Branch</th>
+						<th className={headerClass}>Boundary</th>
 						<th className={headerClass}>Webhook</th>
 						<th className={headerClass}>Last sync</th>
 						<th className={cn(headerClass, "text-right")}>Actions</th>
@@ -302,6 +323,12 @@ function SourcesTable({
 								)}
 							</td>
 							<td className={cellClass}>{source.branch || "default"}</td>
+							<td className={cellClass}>
+								<BoundaryCell
+									nodeId={source.boundaryNodeId}
+									scope={boundaries.get(source.boundaryNodeId)}
+								/>
+							</td>
 							<td className={cellClass}>
 								{source.webhookConfigured ? "Configured" : "None"}
 							</td>
@@ -334,4 +361,36 @@ function SourcesTable({
 			</table>
 		</div>
 	);
+}
+
+/**
+ * A source's data boundary: the collection its Entries land in, named where the
+ * caller could resolve it, plus the grants it holds there. Falls back to the node
+ * id so the boundary is always identifiable.
+ *
+ * Absence is deliberately never rendered as denial. The lookup reports scope
+ * grants only, and a scope grant is one of several paths to authority — flat
+ * RBAC (an org admin's `*:*`) authorizes the datasource RPCs without ever
+ * creating a scope-grant row, so an empty result is the normal state for a
+ * tenant that grants no boundaries. "No access" here would therefore be false
+ * for the very admin who connected the source.
+ */
+function BoundaryCell({
+	nodeId,
+	scope,
+}: {
+	nodeId: string;
+	scope: AccessibleScopeView | undefined;
+}) {
+	if (scope) {
+		return (
+			<div className="space-y-0.5">
+				<div>{scope.label || shortBoundaryId(nodeId)}</div>
+				<div className="text-xs text-muted-foreground">
+					{formatGrants(scope.actions)}
+				</div>
+			</div>
+		);
+	}
+	return <div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>;
 }

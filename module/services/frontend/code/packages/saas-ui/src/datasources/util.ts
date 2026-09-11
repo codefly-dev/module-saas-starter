@@ -22,3 +22,28 @@ export function formatSyncedAt(iso: string | undefined): string {
 	const date = new Date(iso);
 	return Number.isNaN(date.getTime()) ? "Never" : date.toLocaleDateString();
 }
+
+/**
+ * Boundary node ids are UUIDs; the leading group is enough to tell two
+ * boundaries apart in a table cell when no name could be resolved.
+ */
+export function shortBoundaryId(nodeId: string): string {
+	return nodeId.split("-")[0] || nodeId;
+}
+
+/**
+ * "read" + "write" -> "Read · Write", in a stable order. An action outside the
+ * known order sorts last rather than first: `indexOf` returns -1 for it, which
+ * would otherwise rank an unrecognized grant ahead of `read`.
+ */
+export function formatGrants(actions: string[]): string {
+	const order = ["read", "write"];
+	const rank = (action: string) => {
+		const at = order.indexOf(action);
+		return at === -1 ? order.length : at;
+	};
+	return [...actions]
+		.sort((a, b) => rank(a) - rank(b))
+		.map((action) => action.charAt(0).toUpperCase() + action.slice(1))
+		.join(" · ");
+}

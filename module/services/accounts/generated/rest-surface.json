@@ -266,7 +266,7 @@
       "method": "GET",
       "path": "/v1/accessible-scopes",
       "match": "GATEWAY_MATCH_EXACT",
-      "procedure": "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes",
+      "procedure": "/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

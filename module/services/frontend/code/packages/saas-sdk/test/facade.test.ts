@@ -1,6 +1,7 @@
 import { createRouterTransport, type Transport } from "@connectrpc/connect";
 import { describe, expect, it } from "vitest";
 import { accounts } from "../generated/typescript/src/accounts_facade.js";
+import { AccessibleScopeService } from "../generated/typescript/src/gen/saas/accounts/v1/accessible_scopes_pb.js";
 import { AuditService } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 import {
 	DatasourceProvider,
@@ -9,7 +10,7 @@ import {
 import { WebhookService } from "../generated/typescript/src/gen/saas/accounts/v1/webhooks_pb.js";
 
 interface Call {
-	service: "datasource" | "webhook" | "audit";
+	service: "datasource" | "webhook" | "audit" | "accessibleScope";
 	method: string;
 	orgId?: string;
 	repo?: string;
@@ -17,9 +18,9 @@ interface Call {
 
 /**
  * A gateway that answers one method on each public service and records which
- * handler ran. Registering all three services means a facade accessor bound to
- * the wrong service reaches the wrong handler (or none), so the recorded
- * `service` proves routing rather than mere object construction.
+ * handler ran. Registering every service means a facade accessor bound to the
+ * wrong service reaches the wrong handler (or none), so the recorded `service`
+ * proves routing rather than mere object construction.
  */
 function gateway(): { transport: Transport; calls: Call[] } {
 	const calls: Call[] = [];
@@ -54,6 +55,16 @@ function gateway(): { transport: Transport; calls: Call[] } {
 				return {};
 			},
 		});
+		service(AccessibleScopeService, {
+			listMyAccessibleScopes(req) {
+				calls.push({
+					service: "accessibleScope",
+					method: "listMyAccessibleScopes",
+					orgId: req.orgId,
+				});
+				return { scopes: [{ nodeId: "node_1", scopePath: "root.a", kind: "collection" }] };
+			},
+		});
 	});
 	return { transport, calls };
 }
@@ -63,8 +74,9 @@ describe("accounts facade", () => {
 		const { transport } = gateway();
 		const client = accounts.New(transport);
 
-		// The generated facade restricts to the three services requested via
+		// The generated facade restricts to the services requested via
 		// `--services`; each accessor returns a bound Connect client.
+		expect(typeof client.accessibleScope).toBe("function");
 		expect(typeof client.audit).toBe("function");
 		expect(typeof client.datasource).toBe("function");
 		expect(typeof client.webhook).toBe("function");
@@ -104,11 +116,17 @@ describe("accounts facade", () => {
 		});
 		await client.webhook().listSubscriptions({ orgId: "org_1" });
 		await client.audit().aggregateAuditLog({ orgId: "org_1" });
+		await client.accessibleScope().listMyAccessibleScopes({
+			orgId: "org_1",
+			resourceType: "entry",
+			action: "read",
+		});
 
 		expect(calls.map((call) => [call.service, call.method])).toEqual([
 			["datasource", "addGitHubSource"],
 			["webhook", "listSubscriptions"],
 			["audit", "aggregateAuditLog"],
+			["accessibleScope", "listMyAccessibleScopes"],
 		]);
 	});
 });
