@@ -89,3 +89,11 @@ browser evidence in that environment. A real fixture-identity SaaS smoke run,
 required CI and reviewed visual baselines remain release prerequisites. These
 requirements remain in the original work item; this document does not defer them
 out of scope or claim the issue can close on the component migration alone.
+
+An additional matrix used the repository's two existing generic skin fixtures:
+seven representative surfaces × two fixtures × light/dark × mobile/desktop
+(56 Axe checks). It found and then verified fixes for inactive-tab opacity and
+fixture text-token contrast; the rerun has no WCAG A/AA violations. Runtime
+switching also reached an already-open Sheet portal and preserved a mounted
+Tabs draft. These fixtures supplement, but do not replace, validation with
+externally supplied skin packages.
