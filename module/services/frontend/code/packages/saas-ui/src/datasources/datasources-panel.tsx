@@ -118,24 +118,23 @@ function DatasourcesPanelView({
 		);
 	};
 
-	const handleSync = (source: DatasourceView) => {
+	const handleSync = async (source: DatasourceView) => {
 		setSyncNotice(null);
 		setActionError(null);
 		setSyncingIds((prev) => new Set(prev).add(source.id));
-		syncMutation.mutate(
-			{ orgId, id: source.id },
-			{
-				onSuccess: (jobId) => {
-					setSyncNotice(
-						`Sync queued for ${source.repo}. Ingestion runs in the background; documents will appear in Collection when ready.`,
-					);
-					onSyncEnqueued?.(jobId);
-				},
-				onError: (error) =>
-					setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`),
-				onSettled: () => setSyncingIds((prev) => without(prev, source.id)),
-			},
-		);
+		// Per-call callbacks on a shared mutation only observe the latest call.
+		// Await each request so every row reports its result and clears pending.
+		try {
+			const jobId = await syncMutation.mutateAsync({ orgId, id: source.id });
+			setSyncNotice(
+				`Sync queued for ${source.repo}. Ingestion runs in the background; documents will appear in Collection when ready.`,
+			);
+			onSyncEnqueued?.(jobId);
+		} catch (error) {
+			setActionError(`Couldn't sync ${source.repo}: ${messageOf(error)}`);
+		} finally {
+			setSyncingIds((prev) => without(prev, source.id));
+		}
 	};
 
 	const handleDelete = (source: DatasourceView) => {

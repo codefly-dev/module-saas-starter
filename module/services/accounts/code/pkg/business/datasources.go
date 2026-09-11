@@ -888,14 +888,7 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 
 	var job *jobsv1.NewJob
 	if source.Provider == DatasourceProviderGitHub {
-		if s.datasourceCipher == nil {
-			return "", w.NewError("datasource secret cipher is not configured")
-		}
-		token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
-		if err != nil {
-			return "", w.NewError("Stored GitHub credential could not be read. Reconnect the source.")
-		}
-		if err := s.validateGitHubSource(ctx, source.Repo, source.Branch, token); err != nil {
+		if err := s.checkGitHubSyncPreflight(ctx, source); err != nil {
 			return "", err
 		}
 		job = &jobsv1.NewJob{

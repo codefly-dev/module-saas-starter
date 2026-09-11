@@ -28,7 +28,8 @@ const maxFileBytes = 5 * 1024 * 1024
 // ErrNotFound is returned when GitHub answers 404 for a repo, ref, or path.
 var ErrNotFound = errors.New("github: not found")
 var ErrUnauthorized = errors.New("github: unauthorized")
-var ErrForbidden = errors.New("github: forbidden or rate limited")
+var ErrForbidden = errors.New("github: forbidden")
+var ErrRateLimited = errors.New("github: rate limited")
 
 // ErrFileTooLarge is returned when a file exceeds what the contents API can
 // return inline (GitHub caps it at 1 MiB; files above that come back with
@@ -223,10 +224,6 @@ func (c *Client) GetBlob(ctx context.Context, repo, blobSHA string, max int64) (
 		return nil, err
 	}
 	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
-		return nil, ErrUnauthorized
-	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests:
-		return nil, ErrForbidden
 	case resp.StatusCode == http.StatusNotFound:
 		return nil, ErrNotFound
 	case resp.StatusCode < 200 || resp.StatusCode >= 300:
@@ -308,10 +305,23 @@ func (c *Client) getJSON(ctx context.Context, path string, into any) error {
 	if err != nil {
 		return err
 	}
+	// Secondary limits can omit Retry-After; GitHub identifies those in its
+	// structured message. Inspect it for classification only, never expose it.
+	var failure struct {
+		Message string `json:"message"`
+	}
+	if resp.StatusCode == http.StatusForbidden {
+		_ = json.Unmarshal(body, &failure)
+	}
 	switch {
 	case resp.StatusCode == http.StatusUnauthorized:
 		return ErrUnauthorized
-	case resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests:
+	case resp.StatusCode == http.StatusTooManyRequests ||
+		(resp.StatusCode == http.StatusForbidden &&
+			(resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0" ||
+				strings.Contains(strings.ToLower(failure.Message), "rate limit"))):
+		return ErrRateLimited
+	case resp.StatusCode == http.StatusForbidden:
 		return ErrForbidden
 	case resp.StatusCode == http.StatusNotFound:
 		return ErrNotFound

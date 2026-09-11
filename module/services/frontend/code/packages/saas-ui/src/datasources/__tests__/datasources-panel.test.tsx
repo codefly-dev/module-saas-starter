@@ -1,6 +1,7 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -238,3 +239,60 @@ it("shows a rejected credential as an actionable message", async () => {
 	expect(text).not.toContain("rpc error");
 	expect(text).not.toContain("[failed_precondition]");
 });
+
+it.each(["first", "second"])(
+	"settles concurrent syncs when %s finishes first",
+	async (finishFirst) => {
+		let rejectFirst!: (error: Error) => void;
+		let resolveSecond!: (id: string) => void;
+		const first = new Promise<string>((_, reject) => {
+			rejectFirst = reject;
+		});
+		const second = new Promise<string>((resolve) => {
+			resolveSecond = resolve;
+		});
+		const onSyncEnqueued = vi.fn();
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource, secondSource]),
+			syncSource: vi.fn((_, id) => (id === sampleSource.id ? first : second)),
+		});
+		renderWithClient(
+			<DatasourcesPanel
+				client={client}
+				orgId="org-1"
+				onSyncEnqueued={onSyncEnqueued}
+			/>,
+		);
+		await screen.findByText(sampleSource.repo);
+		const buttons = screen.getAllByRole("button", { name: /^Sync$/ });
+		fireEvent.click(buttons[0]);
+		fireEvent.click(buttons[1]);
+		const reject = () =>
+			rejectFirst(
+				new ConnectError(
+					"GitHub rejected the access token (401)",
+					Code.FailedPrecondition,
+				),
+			);
+		const resolve = () => resolveSecond("job-2");
+		await act(async () => {
+			(finishFirst === "first" ? reject : resolve)();
+		});
+		await waitFor(() =>
+			expect(screen.getAllByRole("button", { name: /^Syncing/ })).toHaveLength(
+				1,
+			),
+		);
+		await act(async () => {
+			(finishFirst === "first" ? resolve : reject)();
+		});
+		await waitFor(() =>
+			expect(
+				screen.queryAllByRole("button", { name: /^Syncing/ }),
+			).toHaveLength(0),
+		);
+		expect(screen.getByRole("alert").textContent).toContain("401");
+		expect(screen.getByRole("status").textContent).toContain(secondSource.repo);
+		expect(onSyncEnqueued).toHaveBeenCalledExactlyOnceWith("job-2");
+	},
+);

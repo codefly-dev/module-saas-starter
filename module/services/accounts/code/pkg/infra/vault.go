@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"accounts/pkg/business"
 	"accounts/pkg/vaultconnection"
 	"context"
 	"encoding/base64"
@@ -123,12 +124,12 @@ func (v *VaultClient) EncryptSecret(ctx context.Context, purpose, plaintext stri
 // purpose embedded inside the ciphertext.
 func (v *VaultClient) DecryptSecret(ctx context.Context, purpose, envelope string) (string, error) {
 	if purpose == "" || !strings.HasPrefix(envelope, secretEnvelopePrefix) {
-		return "", fmt.Errorf("unsupported secret envelope")
+		return "", fmt.Errorf("unsupported secret envelope: %w", business.ErrInvalidSecretEnvelope)
 	}
 	encoded := strings.TrimPrefix(envelope, secretEnvelopePrefix)
 	ciphertext, err := base64.RawURLEncoding.DecodeString(encoded)
 	if err != nil || len(ciphertext) == 0 {
-		return "", fmt.Errorf("invalid secret envelope")
+		return "", fmt.Errorf("invalid secret envelope: %w", business.ErrInvalidSecretEnvelope)
 	}
 	body, err := json.Marshal(map[string]string{"ciphertext": string(ciphertext)})
 	if err != nil {
@@ -152,10 +153,10 @@ func (v *VaultClient) DecryptSecret(ctx context.Context, purpose, envelope strin
 		Value   string `json:"value"`
 	}
 	if err := json.Unmarshal(plaintext, &payload); err != nil {
-		return "", fmt.Errorf("decode secret payload: %w", err)
+		return "", fmt.Errorf("decode secret payload: %w", business.ErrInvalidSecretEnvelope)
 	}
 	if payload.Purpose != purpose || payload.Value == "" {
-		return "", fmt.Errorf("secret purpose mismatch")
+		return "", fmt.Errorf("secret purpose mismatch: %w", business.ErrInvalidSecretEnvelope)
 	}
 	return payload.Value, nil
 }
