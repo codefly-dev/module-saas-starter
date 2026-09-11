@@ -128,6 +128,15 @@ message AggregateAuditLogRequest {
   // namespace scopes the aggregation to one module's event types, matching
   // QueryAuditLogRequest.namespace.
   string namespace = 13;
+  // Exact registered resource boundary. Requires org_id, resource, event_type
+  // and current read access to this resource in addition to audit:read.
+  string resource_id = 14;
+  // String-valued JSONB containment, ANDed with every other filter.
+  map<string, string> payload_contains = 15;
+  // Document event collection: current documents/read authorization plus an
+  // exact payload.boundary predicate. Requires a registered saas.document.*
+  // event with a boundary field; never a caller-supplied grant.
+  string collection_id = 16;
 }
 
 message AuditAggregateBucket {
@@ -142,6 +151,10 @@ message AuditAggregateBucket {
   // is omitted for a group where the metric is undefined (min/avg/max/percentile
   // over zero numeric values) — absence means "no data", not zero.
   map<string, double> metrics = 4;
+  // Number of non-null observations used by each source metric, before
+  // distinct reduction. Less than count means partial telemetry. Missing on
+  // older servers; clients must not assume completeness in that case.
+  map<string, int64> samples = 5;
 }
 
 message AggregateAuditLogResponse {

@@ -70,6 +70,10 @@ interface MetricBase {
 	description?: string;
 	event?: EventDef;
 	category?: string;
+	resource?: string;
+	resourceId?: string;
+	collectionId?: string;
+	payloadContains?: Record<string, string>;
 	groupBy: GroupBy;
 	bucket?: Bucket;
 	chart: ChartKind;

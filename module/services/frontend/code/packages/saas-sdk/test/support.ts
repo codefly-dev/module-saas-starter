@@ -9,6 +9,7 @@ export interface FakeBucket {
 	key: string;
 	count: number;
 	metrics?: Record<string, number>;
+	samples?: Record<string, bigint>;
 }
 
 function response(buckets: FakeBucket[]) {
@@ -17,6 +18,14 @@ function response(buckets: FakeBucket[]) {
 			key: bucket.key,
 			count: BigInt(bucket.count),
 			metrics: bucket.metrics,
+			samples:
+				bucket.samples ??
+				Object.fromEntries(
+					Object.keys(bucket.metrics ?? {}).map((key) => [
+						key,
+						BigInt(bucket.count),
+					]),
+				),
 		})),
 	});
 }

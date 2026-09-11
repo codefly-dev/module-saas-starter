@@ -38,7 +38,10 @@ describe("metricIdentity", () => {
 		// description is the card's rendered subtitle, so two otherwise-identical
 		// cards with different subtitles are distinct panels.
 		const plain = base;
-		const described: MetricDef = { ...base, description: "Successful sign-ins" };
+		const described: MetricDef = {
+			...base,
+			description: "Successful sign-ins",
+		};
 		expect(metricIdentity(plain)).not.toBe(metricIdentity(described));
 	});
 
@@ -63,4 +66,24 @@ describe("metricIdentity", () => {
 		};
 		expect(metricIdentity(single)).not.toBe(metricIdentity(multi));
 	});
+});
+
+it("distinguishes scope filters while preserving predicate order independence", () => {
+	expect(metricIdentity({ ...base, resourceId: "source-a" })).not.toBe(
+		metricIdentity({ ...base, resourceId: "source-b" }),
+	);
+	expect(metricIdentity({ ...base, collectionId: "collection-a" })).not.toBe(
+		metricIdentity({ ...base, collectionId: "collection-b" }),
+	);
+	expect(
+		metricIdentity({
+			...base,
+			payloadContains: { run: "a", outcome: "returned" },
+		}),
+	).toBe(
+		metricIdentity({
+			...base,
+			payloadContains: { outcome: "returned", run: "a" },
+		}),
+	);
 });

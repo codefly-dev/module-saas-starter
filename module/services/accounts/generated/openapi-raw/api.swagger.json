@@ -542,6 +542,27 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "resourceId",
+            "description": "Exact registered resource boundary. Requires org_id, resource, event_type\nand current read access to this resource in addition to audit:read.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "payloadContains",
+            "description": "String-valued JSONB containment, ANDed with every other filter.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "collectionId",
+            "description": "Document event collection: current documents/read authorization plus an\nexact payload.boundary predicate. Requires a registered saas.document.*\nevent with a boundary field; never a caller-supplied grant.",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -5868,6 +5889,14 @@
             "format": "double"
           },
           "description": "metrics maps each requested metric and derived alias to its value. An alias\nis omitted for a group where the metric is undefined (min/avg/max/percentile\nover zero numeric values) — absence means \"no data\", not zero."
+        },
+        "samples": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          },
+          "description": "Number of non-null observations used by each source metric, before\ndistinct reduction. Less than count means partial telemetry. Missing on\nolder servers; clients must not assume completeness in that case."
         }
       }
     },

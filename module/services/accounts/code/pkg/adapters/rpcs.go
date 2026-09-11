@@ -1222,12 +1222,18 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 	}
 
 	q := business.AuditQuery{
-		OrgID:     req.OrgId,
-		ActorID:   req.ActorId,
-		EventType: req.EventType,
-		Category:  req.Category,
-		Namespace: req.Namespace,
-		Resource:  req.Resource,
+		OrgID:        req.OrgId,
+		ActorID:      req.ActorId,
+		EventType:    req.EventType,
+		Category:     req.Category,
+		Namespace:    req.Namespace,
+		Resource:     req.Resource,
+		ResourceID:   req.ResourceId,
+		CollectionID: req.CollectionId,
+	}
+	q.PayloadContains = make(map[string]any, len(req.PayloadContains))
+	for k, v := range req.PayloadContains {
+		q.PayloadContains[k] = v
 	}
 	if req.From != nil {
 		t := req.From.AsTime()
@@ -1266,7 +1272,7 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	buckets, err := service.AggregateAuditLog(ctx, q, spec)
+	buckets, err := service.AggregateAuditLogForReader(ctx, actorID, q, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -1277,6 +1283,7 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 			Count:   b.Count,
 			Keys:    b.Keys,
 			Metrics: b.Metrics,
+			Samples: b.Samples,
 		})
 	}
 	return &gen.AggregateAuditLogResponse{Buckets: out}, nil

@@ -202,6 +202,7 @@ describe("Dashboard", () => {
 								keys: ["2026-08-01"],
 								count: "128",
 								metrics: { value: 4200 },
+								samples: { value: "128" },
 							},
 						],
 					});
@@ -235,7 +236,7 @@ describe("Dashboard", () => {
 		expect(sentOp).toBe("percentile");
 	});
 
-	it("averages a non-additive stat across buckets instead of summing them", async () => {
+	it("withholds non-additive scalar totals across buckets", async () => {
 		server.use(
 			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
 				HttpResponse.json({
@@ -276,9 +277,8 @@ describe("Dashboard", () => {
 
 		renderInApp(<Dashboard data={latency} />);
 
-		// Mean of the two daily p95s (4,500) — not their sum (9,000), which is a
-		// meaningless magnitude for a percentile.
-		expect(await screen.findByText("4,500")).toBeTruthy();
+		// Daily percentiles cannot establish an overall percentile.
+		expect(await screen.findByText("Total unavailable")).toBeTruthy();
 		expect(screen.queryByText("9,000")).toBeNull();
 	});
 
@@ -324,9 +324,9 @@ describe("Dashboard", () => {
 
 		renderInApp(<Dashboard data={latency} />);
 
-		// Only the day with data contributes; the omitted day is not a phantom 0,
-		// so the mean stays 4,200 rather than collapsing to 2,100.
-		expect(await screen.findByText("4,200")).toBeTruthy();
+		// Observed chart points survive, but partial telemetry has no total.
+		expect(await screen.findByText("Total unavailable")).toBeTruthy();
+		expect(screen.getByText("Partial telemetry")).toBeTruthy();
 		expect(screen.queryByText("2,100")).toBeNull();
 	});
 

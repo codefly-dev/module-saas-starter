@@ -10,7 +10,12 @@ import {
 // primitives a solution's own remote would render with, so host-rendered and
 // solution-rendered dashboards look identical and there is one charting
 // implementation to maintain.
-import { AreaChart, BarList, LineChart, StatChart } from "@codefly-dev/ui/dashboard";
+import {
+	AreaChart,
+	BarList,
+	LineChart,
+	StatChart,
+} from "@codefly-dev/ui/dashboard";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
@@ -55,19 +60,50 @@ function singleWidgetGraph(graph: DataGraph, widget: MetricWidget): DataGraph {
 // bucket rather than emitting a zero, so an empty series means nothing matched,
 // not a real zero worth plotting.
 function WidgetBody({ widget }: { widget: ResolvedWidget }) {
+	return (
+		<>
+			{widget.series.coverage === "partial" && (
+				<p className="text-sm text-muted-foreground" role="status">
+					Partial telemetry
+				</p>
+			)}
+			<WidgetValues widget={widget} />
+		</>
+	);
+}
+
+function WidgetValues({ widget }: { widget: ResolvedWidget }) {
 	const { series, visualization } = widget;
 	if (series.points.length === 0) {
-		return <p className="text-sm text-muted-foreground">No data yet.</p>;
+		return (
+			<p className="text-sm text-muted-foreground">
+				{series.coverage === "partial"
+					? "Telemetry unavailable or incomplete."
+					: "No data yet."}
+			</p>
+		);
 	}
 	switch (visualization) {
 		case "line":
-			return <LineChart points={series.points} className="text-primary/70" axes />;
+			return (
+				<LineChart points={series.points} className="text-primary/70" axes />
+			);
 		case "area":
-			return <AreaChart points={series.points} className="text-primary/70" axes />;
+			return (
+				<AreaChart points={series.points} className="text-primary/70" axes />
+			);
 		case "bar":
 			return <BarList points={series.points} />;
 		case "number":
-			return <StatChart total={series.total} points={series.points} />;
+			return series.total === null ? (
+				<p className="text-sm text-muted-foreground">
+					{series.coverage === "partial"
+						? "Incomplete telemetry; total unavailable."
+						: "Total unavailable across groups."}
+				</p>
+			) : (
+				<StatChart total={series.total} points={series.points} />
+			);
 		case "table":
 			return (
 				<table className="w-full text-sm">

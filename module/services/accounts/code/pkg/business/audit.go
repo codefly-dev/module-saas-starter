@@ -10,7 +10,10 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/eventcatalog"
 	"accounts/pkg/events"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/jobs"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -269,6 +272,7 @@ type AuditQuery struct {
 	Namespace       string
 	Resource        string
 	ResourceID      string
+	CollectionID    string
 	PayloadContains map[string]any
 	From            *time.Time
 	To              *time.Time
@@ -395,6 +399,7 @@ func (s AuditAggregationSpec) Validate() error {
 // the computed metrics. Key/Count mirror Keys[0] and the group's COUNT(*) for
 // back-compat with the count-only aggregation.
 type AuditAggregateBucket struct {
+	Samples map[string]int64
 	Key     string
 	Count   int64
 	Keys    []string
@@ -422,6 +427,106 @@ func (s *Service) QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry
 		err = s.store.WithOrgTx(ctx, q.OrgID, wrap)
 	}
 	return entries, nextToken, total, err
+}
+
+// AggregateAuditLogForReader additionally gates exact-resource analytics on the
+// reader's current resource grant. The check and query share the tenant tx.
+// Organization-wide audit reads retain their existing audit authority contract.
+func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error) {
+	if q.From != nil && q.To != nil && q.From.After(*q.To) {
+		return nil, status.Error(codes.InvalidArgument, "audit window is reversed")
+	}
+	if err := spec.Validate(); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if q.ResourceID == "" && q.CollectionID == "" {
+		return s.AggregateAuditLog(ctx, q, spec)
+	}
+	if reader == "" || q.OrgID == "" || (q.ResourceID != "" && q.Resource == "") || q.EventType == "" {
+		return nil, status.Error(codes.InvalidArgument, "resource analytics requires reader, organization, resource and event type")
+	}
+	if q.CollectionID != "" {
+		definition, registered := LookupAuditEvent(EventType(q.EventType))
+		hasBoundary := false
+		for _, field := range definition.Fields {
+			if field.Name == "boundary" {
+				hasBoundary = true
+			}
+		}
+		if !registered || !strings.HasPrefix(q.EventType, "saas.document.") || !hasBoundary {
+			return nil, status.Error(codes.InvalidArgument, "collection analytics requires a registered document boundary event")
+		}
+		if boundary, exists := q.PayloadContains["boundary"]; exists && boundary != q.CollectionID {
+			return nil, status.Error(codes.InvalidArgument, "conflicting collection boundary filter")
+		}
+		payload := make(map[string]any, len(q.PayloadContains)+1)
+		for key, value := range q.PayloadContains {
+			payload[key] = value
+		}
+		payload["boundary"] = q.CollectionID
+		q.PayloadContains = payload
+	}
+	var out []AuditAggregateBucket
+	err := s.store.WithOrgTx(ctx, q.OrgID, func(ctx context.Context) error {
+		allowed := true
+		var err error
+		if q.CollectionID != "" {
+			allowed, err = s.canReadAuditCollection(ctx, reader, q.OrgID, q.CollectionID)
+		}
+		if err == nil && allowed && q.ResourceID != "" {
+			allowed, err = s.canReadAuditResource(ctx, reader, q)
+		}
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return status.Error(codes.PermissionDenied, "resource read access required")
+		}
+		out, err = s.store.AggregateAuditLog(ctx, q, spec)
+		return err
+	})
+	return out, err
+}
+
+// Datasources are connected to structural collection nodes, not placed records.
+// Resolve the stored boundary and reuse the same documents/read scope listing
+// that governs collection retrieval; no request-supplied boundary is trusted.
+func (s *Service) canReadAuditResource(ctx context.Context, reader string, q AuditQuery) (bool, error) {
+	if q.Resource != "datasource" {
+		allowed, _, err := s.store.CheckAccess(ctx, reader, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, q.Resource, q.ResourceID, "read")
+		return allowed, err
+	}
+	source, err := s.store.GetDatasourceSource(ctx, q.OrgID, q.ResourceID)
+	if err != nil {
+		return false, err
+	}
+	if source == nil || source.OrgID != q.OrgID || source.BoundaryNodeID == "" {
+		return false, nil
+	}
+	return s.canReadAuditCollection(ctx, reader, q.OrgID, source.BoundaryNodeID)
+}
+
+func (s *Service) canReadAuditCollection(ctx context.Context, reader, orgID, boundaryID string) (bool, error) {
+	cursor := ""
+	for {
+		nodes, err := s.store.ListAccessibleScopes(ctx, orgID, reader, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", cursor, 500)
+		if err != nil {
+			return false, err
+		}
+		for _, node := range nodes {
+			if node.NodeId == boundaryID {
+				return true, nil
+			}
+		}
+		if len(nodes) < 500 {
+			return false, nil
+		}
+		next := nodes[len(nodes)-1].ScopePath
+		if next <= cursor {
+			return false, fmt.Errorf("non-advancing accessible scope cursor")
+		}
+		cursor = next
+	}
 }
 
 // AggregateAuditLog computes grouped metrics over audit events for analytics.

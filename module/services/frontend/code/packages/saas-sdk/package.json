@@ -1,6 +1,6 @@
 {
 	"name": "@codefly-dev/saas-sdk",
-	"version": "0.2.3",
+	"version": "0.3.0",
 	"description": "Typed Connect client, gateway-bound facades, and audit data-graph tooling for the saas-starter public API.",
 	"repository": {
 		"type": "git",
@@ -27,7 +27,8 @@
 	},
 	"scripts": {
 		"build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-		"generate": "codefly generate client --from contracts:../../../../../contracts/api --endpoint accounts/connect --language typescript --services AccessibleScopeService,AuditService,DatasourceService,WebhookService --name saas-sdk --npm-scope @codefly-dev/saas-sdk --module-name accounts --output ./generated",
+		"generate": "node scripts/generate.mjs",
+		"generate:bindings": "cd ../../../../accounts && codefly generate proto --proto ./proto --output . --local --template buf.gen.sdk.yaml",
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"dependencies": {

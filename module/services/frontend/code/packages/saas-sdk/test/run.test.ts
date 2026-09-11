@@ -37,6 +37,7 @@ describe("runMetric", () => {
 				{ key: "user.signed_out.v1", value: 2 },
 			],
 			total: 5,
+			coverage: "complete",
 			groupBy: "event_type",
 			bucket: undefined,
 		});
@@ -93,7 +94,8 @@ describe("runMetric", () => {
 		const series = await runMetric(client, metric, (n) => n, context);
 
 		expect(series.points).toEqual([{ key: "2026-01-01", value: 4.2 }]);
-		expect(series.total).toBe(4.2);
+		expect(series.total).toBeNull();
+		expect(series.coverage).toBe("partial");
 	});
 
 	it("carries the metric's dimension onto the series", async () => {
@@ -157,7 +159,7 @@ describe("runDataGraph", () => {
 		expect(resolved.verified_rate.points).toEqual([{ key: "all", value: 0.8 }]);
 	});
 
-	it("sums and differences point-wise on the union of keys", async () => {
+	it("preserves missing operands in sums and differences", async () => {
 		const { client } = fakeAuditClient((request) =>
 			request.actorId === "a"
 				? [
@@ -194,14 +196,8 @@ describe("runDataGraph", () => {
 
 		const resolved = await runDataGraph(client, graph, context);
 
-		expect(resolved.total.points).toEqual([
-			{ key: "mon", value: 1 },
-			{ key: "tue", value: 7 },
-		]);
-		expect(resolved.gap.points).toEqual([
-			{ key: "mon", value: 1 },
-			{ key: "tue", value: 1 },
-		]);
+		expect(resolved.total.points).toEqual([{ key: "tue", value: 7 }]);
+		expect(resolved.gap.points).toEqual([{ key: "tue", value: 1 }]);
 	});
 
 	it("resolves derived metrics declared before their inputs", async () => {
@@ -447,4 +443,101 @@ describe("runDataGraph", () => {
 		gate.releaseAll();
 		await done;
 	});
+});
+
+it("distinguishes empty, observed zero, partial samples and non-additive totals", async () => {
+	const metric: SourceMetric = {
+		id: "usage",
+		kind: "source",
+		filter: { event: "observed" },
+		groupBy: "time",
+		bucket: "day",
+		aggregation: "sum",
+		field: "payload:usage",
+	};
+	const empty = await runMetric(
+		fakeAuditClient(() => []).client,
+		metric,
+		(n) => n,
+		context,
+	);
+	expect(empty.total).toBeNull();
+	expect(empty.coverage).toBe("empty");
+	const zero = await runMetric(
+		fakeAuditClient(() => [{ key: "a", count: 1, metrics: { value: 0 } }])
+			.client,
+		metric,
+		(n) => n,
+		context,
+	);
+	expect(zero.total).toBe(0);
+	expect(zero.coverage).toBe("complete");
+	const partial = await runMetric(
+		fakeAuditClient(() => [
+			{
+				key: "a",
+				count: 2,
+				metrics: { value: 9 },
+				samples: { value: BigInt(1) },
+			},
+		]).client,
+		metric,
+		(n) => n,
+		context,
+	);
+	expect(partial.points).toEqual([{ key: "a", value: 9 }]);
+	expect(partial.total).toBeNull();
+	expect(partial.coverage).toBe("partial");
+	const grouped = await runMetric(
+		fakeAuditClient(() => [
+			{ key: "a", count: 1, metrics: { value: 9 } },
+			{ key: "b", count: 1, metrics: { value: 1 } },
+		]).client,
+		{ ...metric, aggregation: "avg" },
+		(n) => n,
+		context,
+	);
+	expect(grouped.total).toBeNull();
+});
+
+it("never turns missing or zero-denominator ratios into successful zero results", async () => {
+	const graph: DataGraph = {
+		events: [{ name: "observed", type: "saas.document.ingested" }],
+		metrics: [
+			{
+				id: "a",
+				kind: "source",
+				filter: { event: "observed", actor: "a" },
+				groupBy: "time",
+				bucket: "day",
+				aggregation: "count",
+			},
+			{
+				id: "b",
+				kind: "source",
+				filter: { event: "observed", actor: "b" },
+				groupBy: "time",
+				bucket: "day",
+				aggregation: "count",
+			},
+			{ id: "rate", kind: "derived", operation: "ratio", inputs: ["a", "b"] },
+		],
+		dashboards: [],
+	};
+	const client = fakeAuditClient((q) =>
+		q.actorId === "a"
+			? [
+					{ key: "zero", count: 3 },
+					{ key: "missing", count: 1 },
+					{ key: "real", count: 0 },
+				]
+			: [
+					{ key: "zero", count: 0 },
+					{ key: "real", count: 2 },
+				],
+	).client;
+	const result = await runDataGraph(client, graph, context);
+	expect(result.rate.points).toEqual([{ key: "real", value: 0 }]);
+	expect(result.rate.total).toBeNull();
+	expect(result.rate.coverage).toBe("partial");
 });

@@ -89,12 +89,12 @@ describe("assertDataGraph", () => {
 		).toThrow(/event name 'guardrail_triggered' is declared more than once/);
 	});
 
-	it("rejects an unversioned event type", () => {
+	it("rejects an non-namespaced event type", () => {
 		expect(() =>
 			assertDataGraph(
-				mutated((g) => (rec(arr(g.events)[0]).type = "guardrail.triggered")),
+				mutated((g) => (rec(arr(g.events)[0]).type = "triggered")),
 			),
-		).toThrow(/must be namespaced and versioned/);
+		).toThrow(/must be namespaced/);
 	});
 
 	it("rejects a metric filtering an undeclared event", () => {
@@ -273,4 +273,51 @@ describe("assertDataGraph", () => {
 			assertDataGraph(mutated((g) => (rec(arr(g.dashboards)[0]).widgets = []))),
 		).toThrow(/must declare at least one widget/);
 	});
+});
+
+it("accepts real catalog names with separate major versions and scoped filters", async () => {
+	const { readFileSync } = await import("node:fs");
+	const catalog = JSON.parse(
+		readFileSync(
+			new URL(
+				"../../../../../../deployment/generated/event-catalog.json",
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+	for (const type of [
+		"saas.datasource.sync.completed",
+		"saas.datasource.sync.failed",
+		"saas.document.ingested",
+	]) {
+		expect(catalog.publishes).toContainEqual(
+			expect.objectContaining({ type, major: 1 }),
+		);
+		const value = graph();
+		value.events[0].type = type;
+		const source = value.metrics[0];
+		if (source.kind === "source")
+			source.filter = {
+				event: "guardrail_triggered",
+				resource: "collection",
+				resourceId: "collection-a",
+				payloadContains: { run_id: "run-a" },
+			};
+		expect(() => assertDataGraph(value)).not.toThrow();
+	}
+});
+
+it("validates the configuration-only scoped dashboard", async () => {
+	const { readFileSync } = await import("node:fs");
+	const value = JSON.parse(
+		readFileSync(
+			new URL(
+				"../../../../../../examples/scoped-audit-dashboard.json",
+				import.meta.url,
+			),
+			"utf8",
+		),
+	);
+	expect(() => assertDataGraph(value)).not.toThrow();
 });

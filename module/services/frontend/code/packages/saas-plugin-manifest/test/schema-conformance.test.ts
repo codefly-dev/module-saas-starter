@@ -56,11 +56,11 @@ const OWNED_FIELD_VIOLATIONS: Record<
 	"non-positive expose major": (m) => {
 		arr(rec(m.api).exposes)[0].major = 0;
 	},
-	"unversioned publish type": (m) => {
-		arr(rec(m.events).publishes)[0].type = "guardrail.triggered";
+	"non-namespaced publish type": (m) => {
+		arr(rec(m.events).publishes)[0].type = "triggered";
 	},
-	"unversioned dashboard event type": (m) => {
-		arr(rec(m.dashboard).events)[0].type = "guardrail.triggered";
+	"non-namespaced dashboard event type": (m) => {
+		arr(rec(m.dashboard).events)[0].type = "triggered";
 	},
 	"unsupported metric group_by": (m) => {
 		arr(rec(m.dashboard).metrics)[0].groupBy = "region";

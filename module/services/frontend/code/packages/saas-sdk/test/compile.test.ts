@@ -198,3 +198,42 @@ describe("compileMetric", () => {
 		);
 	});
 });
+
+it("preserves registered names and exact scope predicates without invented aliases", () => {
+	for (const type of [
+		"saas.datasource.sync.completed",
+		"saas.datasource.sync.failed",
+		"saas.document.ingested",
+	]) {
+		const metric: SourceMetric = {
+			id: "jobs",
+			kind: "source",
+			filter: {
+				event: "observed",
+				resource: "collection",
+				resourceId: "collection-a",
+				payloadContains: { run_id: "run-a" },
+			},
+			groupBy: "event_type",
+			aggregation: "count_distinct",
+			field: "payload:job_id",
+		};
+		expect(compileMetric(metric, () => type, { orgId: "org-a" })).toMatchObject(
+			{
+				orgId: "org-a",
+				eventType: type,
+				resource: "collection",
+				resourceId: "collection-a",
+				payloadContains: { run_id: "run-a" },
+				metrics: [{ op: "count_distinct", field: "payload:job_id" }],
+			},
+		);
+		expect(() =>
+			compileMetric(
+				{ ...metric, filter: { ...metric.filter, resource: undefined } },
+				() => type,
+				{ orgId: "org-a" },
+			),
+		).toThrow(/requires/);
+	}
+});

@@ -52,3 +52,26 @@ describe("Dashboard", () => {
 		expect(section.style.getPropertyValue("--primary")).toBe("hotpink");
 	});
 });
+
+it("preserves partial telemetry and unavailable totals from the SDK view", () => {
+	render(
+		<Dashboard
+			data={{
+				widgets: [
+					{
+						id: "partial",
+						visualization: "number",
+						series: {
+							points: [{ key: "observed", value: 4 }],
+							total: null,
+							coverage: "partial",
+						},
+					},
+				],
+			}}
+		/>,
+	);
+	expect(screen.getByRole("status").textContent).toBe("Partial telemetry");
+	expect(screen.getByText("Total unavailable")).toBeTruthy();
+	expect(screen.queryByText("0")).toBeNull();
+});
