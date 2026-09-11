@@ -8,6 +8,12 @@ interface:
   - service: accounts
     endpoint: connect
     visibility: module
+  - service: accounts
+    endpoint: custody
+    visibility: module
+  - service: accounts
+    endpoint: revision
+    visibility: module
   - service: auth-gateway
     endpoint: grpc
     visibility: module
@@ -42,6 +48,10 @@ services:
         api: connect
         visibility: module
         port: 8080
+      - name: custody
+        api: tcp
+        visibility: module
+        port: 9443
       - name: grpc
         api: grpc
         visibility: private
@@ -50,6 +60,10 @@ services:
         api: rest
         visibility: private
         port: 8080
+      - name: revision
+        api: tcp
+        visibility: module
+        port: 9444
     dependencies:
       - service: cache
         endpoints:

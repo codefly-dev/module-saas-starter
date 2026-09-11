@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+  actionCommentErrors,
   actionPinErrors,
   AFFECTED_SCOPED_GATES,
   AGGREGATE_JOB,
@@ -21,6 +23,52 @@ import { parseWorkflowYaml } from "./workflow-yaml.mjs";
 
 const REPOSITORY_ROOT = join(import.meta.dirname, "..", "..");
 const CI_WORKFLOW = join(REPOSITORY_ROOT, ".github", "workflows", "ci.yml");
+
+test("dependency remediation can dispatch the required CI workflow", () => {
+  const audit = parseWorkflowYaml(readFileSync(join(REPOSITORY_ROOT, ".github/workflows/dep-audit.yml"), "utf8"));
+  const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  assert.equal(audit.permissions.actions, "write");
+  assert.ok(Object.hasOwn(ci.on, "workflow_dispatch"));
+});
+
+test("dependency remediation dispatches CI after new and updated PRs, and propagates failures", () => {
+  const audit = parseWorkflowYaml(readFileSync(join(REPOSITORY_ROOT, ".github/workflows/dep-audit.yml"), "utf8"));
+  const script = audit.jobs.remediate.steps.find(step => step.name === "Open or update the remediation pull request").run;
+  const stubs = `
+    git() {
+      if [[ "$1" == diff ]]; then return "$DIFF_STATUS"; fi
+      echo "git $*"
+    }
+    node() { echo "node $*"; }
+    gh() {
+      if [[ "$1 $2" == "pr list" ]]; then
+        echo "$EXISTING_PR"
+      else
+        echo "gh $*"
+        if [[ "$1" == workflow ]]; then return "$DISPATCH_STATUS"; fi
+      fi
+    }
+  `;
+  for (const existing of ["", "123"]) {
+    for (const changed of [false, true]) {
+      for (const dispatchStatus of [0, 17]) {
+        const result = spawnSync("bash", ["-e", "-o", "pipefail", "-c", stubs + script], {
+          encoding: "utf8",
+          env: { ...process.env, DIFF_STATUS: changed ? "1" : "0", EXISTING_PR: existing, DISPATCH_STATUS: String(dispatchStatus) },
+        });
+        assert.equal(result.status, changed ? dispatchStatus : 0, result.stderr);
+        const lines = result.stdout.trim().split("\n");
+        const dispatch = "gh workflow run ci.yml --ref chore/dep-audit-remediation";
+        assert.equal(lines.filter(line => line === dispatch).length, changed ? 1 : 0);
+        assert.equal(lines.some(line => line.startsWith("gh pr create ")), changed && !existing);
+        if (changed) {
+          assert.ok(lines.indexOf("git push --force origin chore/dep-audit-remediation") < lines.indexOf(dispatch));
+          if (!existing) assert.ok(lines.findIndex(line => line.startsWith("gh pr create ")) < lines.indexOf(dispatch));
+        }
+      }
+    }
+  }
+});
 
 const MODULE_TAG = "refs/tags/module-package/v1.2.3";
 const DEPLOY_TAG = "refs/tags/v0.0.99";
@@ -497,6 +545,87 @@ test("a reusable-workflow call on the job itself must be pinned too", () => {
 
 test("an unparsable workflow fails the pin check instead of passing empty", () => {
   const errors = actionPinErrors("w.yml", "jobs: {a: b}\n");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not be parsed/);
+});
+
+// The `github-actions` entry in .github/dependabot.yml rewrites these digests on
+// a schedule. The trailing comment is the only record of which release a digest
+// is, and until now the pin remedy asked for it without ever checking it.
+test("every action the shipped workflows call names its version in a comment", () => {
+  const workflows = join(REPOSITORY_ROOT, ".github", "workflows");
+  for (const file of readdirSync(workflows).filter((f) => /\.ya?ml$/.test(f))) {
+    const text = readFileSync(join(workflows, file), "utf8");
+    assert.deepEqual(actionCommentErrors(`.github/workflows/${file}`, text), []);
+  }
+});
+
+test("a digest with no trailing version comment is rejected", () => {
+  const errors = actionCommentErrors("w.yml", usingWorkflow(`actions/setup-node@${NODE_DIGEST}`));
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /w\.yml:5: uses actions\/setup-node@/);
+  assert.match(errors[0], /no trailing version comment/);
+});
+
+test("any non-empty trailing comment satisfies the rule", () => {
+  for (const ref of [
+    `actions/setup-node@${NODE_DIGEST} # v4`,
+    `actions/setup-node@${NODE_DIGEST} # v4.1.0`,
+    `actions/setup-node@${NODE_DIGEST}   #v4`,
+  ]) {
+    assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow(ref)), [], ref);
+  }
+  // An empty comment records nothing, so it does not count as one.
+  assert.equal(
+    actionCommentErrors("w.yml", usingWorkflow(`actions/setup-node@${NODE_DIGEST} #`)).length,
+    1,
+  );
+});
+
+test("an action in this repository needs no version comment", () => {
+  assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow("./.github/actions/setup")), []);
+});
+
+// A mutable ref is the pin rule's defect, and its remedy already asks for the
+// comment. Reporting it here too would describe one fix as two.
+test("a mutable ref is left to the pin rule rather than reported twice", () => {
+  for (const ref of ["actions/setup-node@v4", "docker://alpine:3.19"]) {
+    assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow(ref)), [], ref);
+    assert.equal(actionPinErrors("w.yml", usingWorkflow(ref)).length, 1, ref);
+  }
+});
+
+test("a pinned container action still names its version", () => {
+  const pinned = `docker://alpine@sha256:${"a".repeat(64)}`;
+  assert.equal(actionCommentErrors("w.yml", usingWorkflow(pinned)).length, 1);
+  assert.deepEqual(actionCommentErrors("w.yml", usingWorkflow(`${pinned} # 3.19`)), []);
+});
+
+test("a reusable-workflow call on the job itself needs its version comment too", () => {
+  const bare = `jobs:\n  a:\n    uses: owner/repo/.github/workflows/ci.yml@${NODE_DIGEST}\n`;
+  assert.equal(actionCommentErrors("w.yml", bare).length, 1);
+  assert.deepEqual(actionCommentErrors("w.yml", `${bare.trimEnd()} # v1\n`), []);
+});
+
+// A `run:` body is a block scalar, not steps. Scanning raw lines would read a
+// `uses:` written inside one as a step and demand a comment for it.
+test("a uses: line inside a run script is not mistaken for a step", () => {
+  const text = [
+    "jobs:",
+    "  a:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    `      - uses: actions/checkout@${NODE_DIGEST} # v7.0.0`,
+    "      - run: |",
+    "          echo 'uses: actions/setup-node@v4'",
+    "          uses: not-a-step/at-all@deadbeef",
+    "",
+  ].join("\n");
+  assert.deepEqual(actionCommentErrors("w.yml", text), []);
+});
+
+test("an unparsable workflow fails the comment check instead of passing empty", () => {
+  const errors = actionCommentErrors("w.yml", "jobs: {a: b}\n");
   assert.equal(errors.length, 1);
   assert.match(errors[0], /could not be parsed/);
 });

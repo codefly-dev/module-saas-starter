@@ -137,6 +137,11 @@ export function ConnectGitHubForm({
 							placeholder="PAT or GitHub App installation token"
 							{...form.register("accessToken")}
 						/>
+						<p className="text-xs text-muted-foreground">
+                            Use a fine-grained PAT restricted to this repository with Contents: Read-only.
+                            Your organization may require approval or SSO authorization.
+                            Repository and branch access are verified before saving.
+                        </p>
 						{errors.accessToken && (
 							<p className={errorClass}>{errors.accessToken.message}</p>
 						)}
@@ -181,7 +186,7 @@ export function ConnectGitHubForm({
 							disabled={isPending}
 							className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50"
 						>
-							{isPending ? "Connecting…" : "Connect"}
+							{isPending ? "Validating GitHub access…" : "Validate and connect"}
 						</button>
 					</div>
 				</form>
