@@ -88,7 +88,7 @@ func TestGatewayAccessibleScopesRoutes(t *testing.T) {
 			for _, prefix := range []string{"saas.accounts.v1", "customers"} {
 				for _, authenticated := range []bool{false, true} {
 					upstream.lastPath = ""
-					procedure := "/" + prefix + ".PermissionService/ListMyAccessibleScopes"
+					procedure := "/" + prefix + ".AccessibleScopeService/ListMyAccessibleScopes"
 					req := httptest.NewRequest(http.MethodPost, procedure, strings.NewReader(`{"orgId":"org-1","resourceType":"datasource","action":"read"}`))
 					req.Header.Set("Content-Type", "application/json")
 					if authenticated {
@@ -98,7 +98,7 @@ func TestGatewayAccessibleScopesRoutes(t *testing.T) {
 					gateway.ServeHTTP(response, req)
 					if authenticated {
 						require.Equal(t, http.StatusOK, response.Code)
-						require.Equal(t, "/saas.accounts.v1.PermissionService/ListMyAccessibleScopes", upstream.lastPath)
+						require.Equal(t, "/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes", upstream.lastPath)
 						require.NotEmpty(t, upstream.lastHeaders.Get("X-User-Id"))
 					} else {
 						require.Equal(t, http.StatusUnauthorized, response.Code)
