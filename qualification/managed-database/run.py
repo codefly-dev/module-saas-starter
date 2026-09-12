@@ -245,6 +245,7 @@ def main():
     p.add_argument('--fresh-package',type=Path)
     p.add_argument('--upgrade-package',type=Path)
     args=p.parse_args();containers=[];tests=[];bootstrap_receipts=[]
+    head=max(int(p.name.split('_')[0]) for p in (ROOT/'module/services/store/migrations').glob('*.up.sql'))
     if bool(args.fresh_package)!=bool(args.upgrade_package):p.error('both packages required together')
     try:
         canonical=start();containers.append(canonical)
@@ -260,15 +261,22 @@ def main():
             for f in (ROOT/'module/services/store/migrations').glob('*.sql'):shutil.copy(f,staged/f.name)
             if args.upgrade_package:bootstrap_receipts.append(bootstrap(canonical,'postgres',args.upgrade_package))
             else:migrate(canonical,'postgres',staged,args.migrate)
-            tests.append({'case':'canonical_upgrade_to_136','passed':True})
+            tests.append({'case':'canonical_upgrade_to_head','passed':True})
             sql(fresh,'CREATE ROLE example_migrator LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS CREATEROLE; ALTER DATABASE users OWNER TO example_migrator;')
             for f in staged.iterdir():f.unlink()
             for f in (ROOT/'module/services/store/baselines/managed-v1').glob('*.sql'):shutil.copy(f,staged/f.name)
-            for f in (ROOT/'module/services/store/migrations').glob('136_*.sql'):shutil.copy(f,staged/f.name)
+            # Everything the baseline does not already contain, which is the same
+            # rule stage.py and bootstrap() state: the baseline installs through
+            # 135, so the fresh profile carries every later migration. Naming one
+            # version here instead would silently drop the next migration anybody
+            # adds from the fresh install, and this equivalence check is exactly
+            # what would then report the two profiles as differing.
+            for f in (ROOT/'module/services/store/migrations').glob('*.sql'):
+                if int(f.name.split('_')[0])>135:shutil.copy(f,staged/f.name)
             if args.fresh_package:bootstrap_receipts.append(bootstrap(fresh,'example_migrator',args.fresh_package))
             else:migrate(fresh,'example_migrator',staged,args.migrate)
-            assert sql(fresh,'SELECT version::text || \':\' || dirty::text FROM schema_migrations').stdout.strip()=='136:false'
-            tests.append({'case':'non_superuser_non_bypass_install_to_136','passed':True})
+            assert sql(fresh,'SELECT version::text || \':\' || dirty::text FROM schema_migrations').stdout.strip()==f'{head}:false'
+            tests.append({'case':'non_superuser_non_bypass_install_to_head','passed':True})
             before=catalog(fresh)
             if args.fresh_package:bootstrap_receipts.append(replay_bootstrap(fresh,'example_migrator'))
             else:run(['docker','exec',fresh,'/tmp/migrate','-path','/tmp/stage','-database','postgres://example_migrator@/users?host=/var/run/postgresql&sslmode=disable','up'])
@@ -309,7 +317,10 @@ def main():
             if args.upgrade_package:
                 run(['docker','cp',str(ROOT/'module/services/store/migrations'),canonical+':/tmp/stage'])
                 run(['docker','cp',str(args.migrate),canonical+':/tmp/migrate'])
-            run(migration_command(canonical,'postgres','down','1'))
+            # Down to 135, not down one step: the case is about rolling back the
+            # explicit-policies upgrade, and every migration added after it has
+            # to come off first for that to be what actually happens.
+            run(migration_command(canonical,'postgres','down',str(head-135)))
             assert sql(canonical,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='135:false'
             assert sql(canonical,"SELECT count(*) FROM pg_policy WHERE polname LIKE '%_explicit_rows'").stdout.strip()=='0'
             assert sql(canonical,"SELECT bool_and(NOT has_schema_privilege(rolname,'public','CREATE')) FROM pg_roles WHERE rolname LIKE 'app_%'").stdout.strip()=='t'
@@ -343,7 +354,8 @@ WHERE member.rolname IN ('example_reader','example_writer','example_ro','example
                 run(['docker','cp',str(staged),fresh+':/tmp/stage'])
                 run(['docker','cp',str(args.migrate),fresh+':/tmp/migrate'])
             policy_before=sql(fresh,'SELECT count(*) FROM pg_policy').stdout
-            r=run(migration_command(fresh,'example_migrator','down','1'),check=False)
+            # Again down to 135, so the step that has to refuse is 136's own.
+            r=run(migration_command(fresh,'example_migrator','down',str(head-135)),check=False)
             assert r.returncode and 'background policy rollback requires' in r.stderr,r.stderr
             assert sql(fresh,'SELECT count(*) FROM pg_policy').stdout==policy_before
             assert sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='135:true'

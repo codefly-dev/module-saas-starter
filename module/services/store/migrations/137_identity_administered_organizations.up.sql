@@ -68,6 +68,19 @@ AS $function$
     ORDER BY held.org_id
 $function$;
 
+-- Narrow the audience before handing the function over, not after. A migration
+-- principal that is not a superuser -- which the managed profile's is, by
+-- construction -- stops being the owner the moment ownership moves, and a
+-- non-owner REVOKE or GRANT touches only the grants that role itself made:
+-- PostgreSQL warns and changes nothing rather than refusing. Done in the other
+-- order this silently leaves the default EXECUTE to PUBLIC in place on exactly
+-- the deployment that has no superuser to fall back on, which for a
+-- SECURITY DEFINER function is the whole audience it exists to narrow.
+-- ALTER FUNCTION ... OWNER TO rewrites the owner's own ACL entry and preserves
+-- every other grant, so the audience set here survives the transfer.
+REVOKE ALL ON FUNCTION public.identity_administered_organizations(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.identity_administered_organizations(UUID) TO app_tenant;
+
 -- Ownership transfer needs CREATE on the schema, which migration 67 denies
 -- app_control_plane; grant it only for the span of the transfer, as the whole
 -- migration runs in one transaction.
@@ -75,5 +88,3 @@ GRANT CREATE ON SCHEMA public TO app_control_plane;
 ALTER FUNCTION public.identity_administered_organizations(UUID)
     OWNER TO app_control_plane;
 REVOKE CREATE ON SCHEMA public FROM app_control_plane;
-REVOKE ALL ON FUNCTION public.identity_administered_organizations(UUID) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.identity_administered_organizations(UUID) TO app_tenant;
