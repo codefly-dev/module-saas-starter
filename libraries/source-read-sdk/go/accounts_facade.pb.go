@@ -26,7 +26,7 @@ type Client struct {
 // New binds the facade to a gateway. Extra connect.ClientOptions are
 // forwarded to every sub-client.
 func New(gw Gateway, opts ...connect.ClientOption) *Client {
-	return &Client{gw: gw, opts: opts}
+	return &Client{gw: gw, opts: append(opts, connect.WithGRPC())}
 }
 
 // ModuleCapabilities returns the typed ModuleCapabilitiesService facade.

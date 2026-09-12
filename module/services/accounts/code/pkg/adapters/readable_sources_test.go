@@ -6,18 +6,29 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"sort"
+	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/stretchr/testify/require"
 )
+
+const sourceA = "019f6bf7-0000-7000-8000-000000000001"
+const sourceB = "019f6bf7-0000-7000-8000-000000000002"
 
 const readOrg = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
 const readOwner = "019f6bf7-5b1c-730d-9687-fe6d4aff31ed"
@@ -28,36 +39,60 @@ type readProjectionStore struct {
 	sources                 []*business.DatasourceSource
 	err                     error
 	scopeCalls, sourceCalls int
+	revision                int
+	expires                 time.Time
 }
 
-func (f *readProjectionStore) WithOrgTx(ctx context.Context, org string, run func(context.Context) error) error {
-	if org != readOrg {
-		return errors.New("unexpected tenant")
+func (f *readProjectionStore) WithSourceReadSnapshot(ctx context.Context, org string, run func(context.Context) error) error {
+	if err := auth.RequireVerifiedDatabaseScope(ctx, org, readOwner); err != nil {
+		return err
 	}
 	return run(ctx)
 }
-func (f *readProjectionStore) ListAccessibleScopes(_ context.Context, org, subject string, kind gen.SubjectKind, resource, action, after string, limit int) ([]*gen.AccessibleScope, error) {
-	f.scopeCalls++
-	if org != readOrg || kind != gen.SubjectKind_SUBJECT_KIND_PRINCIPAL || resource != "documents" || action != "read" {
-		return nil, errors.New("wrong authorization coordinates")
-	}
-	if f.err != nil {
-		return nil, f.err
-	}
-	var out []*gen.AccessibleScope
-	for _, scope := range f.grants[subject] {
-		if scope.ScopePath > after {
-			out = append(out, scope)
-		}
-	}
-	return out[:min(len(out), limit)], nil
+func (f *readProjectionStore) SourceReadRevision(context.Context, string, []string) (string, time.Time, error) {
+	return fmt.Sprint(f.revision), f.expires, f.err
 }
-func (f *readProjectionStore) ListDatasourceSources(_ context.Context, org string) ([]*business.DatasourceSource, error) {
+func (f *readProjectionStore) ListReadableSourcesPage(_ context.Context, org string, subjects []string, after string, limit int) ([]*gen.ReadableSourceCollection, error) {
+	f.scopeCalls++
 	f.sourceCalls++
-	if org != readOrg {
-		return nil, errors.New("unexpected tenant")
+	var out []*gen.ReadableSourceCollection
+	for _, source := range f.sources {
+		if source.OrgID != org {
+			return nil, errors.New("unexpected tenant")
+		}
+		allowed := true
+		for _, subject := range subjects {
+			found := false
+			for _, scope := range f.grants[subject] {
+				if scope.NodeId == source.BoundaryNodeID {
+					found = true
+				}
+			}
+			allowed = allowed && found
+		}
+		if !allowed || source.ID <= after {
+			continue
+		}
+		if source.Provider != "github" {
+			return nil, status.Error(codes.Unimplemented, "unsupported source")
+		}
+		ref := source.Branch
+		if ref != "" && !strings.HasPrefix(ref, "refs/") {
+			ref = "refs/heads/" + ref
+		}
+		out = append(out, &gen.ReadableSourceCollection{SourceId: source.ID, BoundaryId: source.BoundaryNodeID, Origin: source.Provider, Container: source.Repo, Ref: ref, Paths: source.Paths})
 	}
-	return f.sources, f.err
+	sort.Slice(out, func(i, j int) bool { return out[i].SourceId < out[j].SourceId })
+	return out[:min(limit, len(out))], f.err
+}
+
+type sourceReadIdentityAuthority struct{ *workContextAuthorityFake }
+
+func (a sourceReadIdentityAuthority) ResolveWorkContextAuthority(ctx context.Context, org, owner, actor string, permissions []business.WorkContextPermission) (*business.WorkContextAuthorityFacts, error) {
+	if err := auth.RequireVerifiedDatabaseScope(ctx, org, owner); err != nil {
+		return nil, err
+	}
+	return a.workContextAuthorityFake.ResolveWorkContextAuthority(ctx, org, owner, actor, permissions)
 }
 
 func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorityFake, accountsv1connect.ModuleCapabilitiesServiceClient, func(string, string) string) {
@@ -65,8 +100,8 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	previousService, previousAuthority := service, workContextSingleton
 	t.Cleanup(func() { service, workContextSingleton = previousService, previousAuthority; SetInternalToken("") })
 	store := &readProjectionStore{grants: map[string][]*gen.AccessibleScope{readOwner: {{NodeId: "boundary-a", ScopePath: "a"}, {NodeId: "boundary-b", ScopePath: "b"}}}, sources: []*business.DatasourceSource{
-		{ID: "source-a", OrgID: readOrg, Provider: "github", Repo: "acme/handbook", BoundaryNodeID: "boundary-a", Branch: "main", Paths: []string{"docs/"}},
-		{ID: "source-b", OrgID: readOrg, Provider: "github", Repo: "acme/policies", BoundaryNodeID: "boundary-b", Branch: "release"},
+		{ID: sourceA, OrgID: readOrg, Provider: "github", Repo: "acme/handbook", BoundaryNodeID: "boundary-a", Branch: "main", Paths: []string{"docs/"}},
+		{ID: sourceB, OrgID: readOrg, Provider: "github", Repo: "acme/policies", BoundaryNodeID: "boundary-b", Branch: "release"},
 		{ID: "source-denied", OrgID: readOrg, Provider: "github", Repo: "acme/private", BoundaryNodeID: "boundary-denied"},
 	}}
 	var err error
@@ -76,12 +111,16 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
 	workContextSingleton = &WorkContextAuthorityServer{}
-	workContextSingleton.Configure(WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "test-key", PrivateKey: key, Authority: facts})
+	workContextSingleton.Configure(WorkContextAuthorityConfiguration{Issuer: "accounts.test", KeyID: "test-key", PrivateKey: key, Authority: sourceReadIdentityAuthority{facts}})
 	SetInternalToken("source-read-test-perimeter")
-	_, handler := accountsv1connect.NewModuleCapabilitiesServiceHandler(&moduleCapabilitiesConnectHandler{inner: &ModuleCapabilitiesServer{}})
-	server := httptest.NewServer(handler)
+	internal := grpc.NewServer(grpc.UnaryInterceptor(grpcAuthInterceptor(nil, rpcExposureInternal)))
+	gen.RegisterModuleCapabilitiesServiceServer(internal, &ModuleCapabilitiesServer{})
+	t.Cleanup(internal.Stop)
+	server := httptest.NewUnstartedServer(multiplexInternalGRPC(internal, http.NotFoundHandler()))
+	server.EnableHTTP2 = true
+	server.StartTLS()
 	t.Cleanup(server.Close)
-	client := accountsv1connect.NewModuleCapabilitiesServiceClient(server.Client(), server.URL)
+	client := accountsv1connect.NewModuleCapabilitiesServiceClient(server.Client(), server.URL, connect.WithGRPC())
 	mint := func(audience, action string) string {
 		token, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: audience, TenantID: readOrg, OwnerPrincipalID: readOwner,
 			TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222", AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: codefly.WorkContextReplayIdempotent,
@@ -104,17 +143,18 @@ func TestSourceReadSignedConnectProjectionAndRevocation(t *testing.T) {
 	first, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
 	require.NoError(t, err)
 	require.Len(t, first.Msg.Collections, 1)
-	require.Equal(t, "source-a", first.Msg.Collections[0].SourceId)
+	require.Equal(t, sourceA, first.Msg.Collections[0].SourceId)
 	require.Equal(t, "refs/heads/main", first.Msg.Collections[0].Ref)
 	require.Equal(t, []string{"docs/"}, first.Msg.Collections[0].Paths)
 	next := sourceReadRequest(token)
 	next.Msg.PageToken = first.Msg.NextPageToken
 	second, err := client.ListReadableSourceCollections(ctx, next)
 	require.NoError(t, err)
-	require.Equal(t, "source-b", second.Msg.Collections[0].SourceId)
+	require.Equal(t, sourceB, second.Msg.Collections[0].SourceId)
 	require.Empty(t, second.Msg.NextPageToken)
 	// A current grant deletion invalidates a page even with the original token.
 	store.grants[readOwner] = nil
+	store.revision++
 	_, err = client.ListReadableSourceCollections(ctx, next)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
 	empty, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
@@ -163,7 +203,7 @@ func TestSourceReadCompleteScopePaginationAndPartialFailure(t *testing.T) {
 	result, err := client.ListReadableSourceCollections(context.Background(), sourceReadRequest(mint("documents", "read")))
 	require.NoError(t, err)
 	require.Len(t, result.Msg.Collections, 1)
-	require.Equal(t, 2, store.scopeCalls)
+	require.Equal(t, 1, store.scopeCalls)
 	store.err = errors.New("source backend unavailable")
 	result, err = client.ListReadableSourceCollections(context.Background(), sourceReadRequest(mint("documents", "read")))
 	require.Error(t, err)
@@ -172,16 +212,16 @@ func TestSourceReadCompleteScopePaginationAndPartialFailure(t *testing.T) {
 func TestSourceReadIntersectsDelegatedSubjectsAndRejectsUnsupportedSources(t *testing.T) {
 	store, _, _, _ := sourceReadFixture(t)
 	store.grants["actor"] = []*gen.AccessibleScope{{NodeId: "boundary-b", ScopePath: "b"}}
-	r, err := service.ReadableSourceCollections(context.Background(), readOrg, []string{readOwner, "actor"}, &gen.ListReadableSourceCollectionsRequest{})
+	r, err := service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.NoError(t, err)
 	require.Len(t, r.Collections, 1)
-	require.Equal(t, "source-b", r.Collections[0].SourceId)
+	require.Equal(t, sourceB, r.Collections[0].SourceId)
 	store.sources[1].Provider = "unsupported"
-	r, err = service.ReadableSourceCollections(context.Background(), readOrg, []string{readOwner, "actor"}, &gen.ListReadableSourceCollectionsRequest{})
+	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.Error(t, err)
 	require.Nil(t, r)
 	store.sources[1].OrgID = "another-tenant"
-	r, err = service.ReadableSourceCollections(context.Background(), readOrg, []string{readOwner}, &gen.ListReadableSourceCollectionsRequest{})
+	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.Error(t, err)
 	require.Nil(t, r)
 }

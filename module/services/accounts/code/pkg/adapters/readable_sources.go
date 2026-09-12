@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"accounts/pkg/auth"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 
@@ -43,14 +44,15 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	if claims.GetTenantId() == "" {
 		return &gen.ListReadableSourceCollectionsResponse{}, nil
 	}
-	if _, err = authority.requireCurrentAuthority(ctx, claims.GetTenantId(), claims); err != nil {
-		return nil, err
-	}
+	ctx = auth.WithVerifiedDatabaseIdentity(ctx, claims.GetOwnerPrincipalId(), claims.GetTenantId())
 	subjects := []string{claims.GetOwnerPrincipalId()}
 	for _, actor := range claims.GetActorChain() {
 		subjects = append(subjects, actor.GetPrincipalId())
 	}
-	return service.ReadableSourceCollections(ctx, claims.GetTenantId(), subjects, req)
+	return service.ReadableSourceCollections(ctx, claims.GetTenantId(), subjects, req, func(ctx context.Context) error {
+		_, err := authority.requireCurrentAuthority(ctx, claims.GetTenantId(), claims)
+		return err
+	})
 }
 func (h *moduleCapabilitiesConnectHandler) ListReadableSourceCollections(ctx context.Context, req *connect.Request[gen.ListReadableSourceCollectionsRequest]) (*connect.Response[gen.ListReadableSourceCollectionsResponse], error) {
 	ctx = connectCtx(ctx, req.Header())

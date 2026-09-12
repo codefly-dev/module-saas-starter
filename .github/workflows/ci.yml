@@ -221,6 +221,12 @@ jobs:
         env:
           GOWORK: "off"
         run: go test ./...
+      - name: Test source-read SDK and production authority boundary
+        env:
+          GOWORK: "off"
+        run: |
+          (cd libraries/source-read-sdk/go && go test ./... && go vet ./...)
+          bash scripts/ci/test-source-read.sh
       - name: Reject direct Codefly runtime-carrier access
         working-directory: module/tools
         env:
