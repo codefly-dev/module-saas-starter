@@ -86,6 +86,20 @@ template. No new operator or storage primitive is required: only explicit source
 selection and resulting content hashes change. Never choose fresh as a fallback
 for a dirty ledger, unknown installation state or failed upgrade.
 
+External reader/writer logins are distinct from the NOLOGIN/NOINHERIT application
+and access-group roles. The supported access reconciler grants group membership
+without changing externally provisioned login attributes. The reader connection
+uses the access group's SELECT grants through an inheriting membership; Accounts
+does not set a reader session role or accept a DSN role override. Its external
+login must be INHERIT when a new membership is granted, as in the published
+primitive's fixture. On PostgreSQL 16+, verify the actual membership's
+inherit_option, not just rolinherit: changing the latter does not update existing
+edges. Writer-to-access-group membership may inherit, but access-group-to-app
+memberships remain non-inheriting and require explicit SET ROLE. No external
+runtime identity may inherit or assume the migration owner. Verify this effective
+membership contract before hosted qualification; any repair to existing provider
+memberships requires its own reviewed authority and effect.
+
 `sync_webhook_event_subscriptions` retains its existing schema-owner identity:
 no runtime role receives DELETE on event_subscriptions. One SELECT-only policy
 on webhook_subscriptions names the exact retained function owner, resolved from

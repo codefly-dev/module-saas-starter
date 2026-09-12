@@ -28,7 +28,12 @@ and package both profiles using the reviewed schema-plan tool. The local templat
 must name database `users`, groups `example_ro`/`example_rw`, principals
 `example_reader`/`example_writer`, and all five canonical application roles in
 `read-write-roles`. Fresh owner is `example_migrator`; canonical fixture owner is
-`postgres`. Pass `--fresh-package /absolute/fresh --upgrade-package
+`postgres`. External reader/writer fixture logins are LOGIN INHERIT before
+reconciliation; access groups and application roles remain NOLOGIN/NOINHERIT.
+The scoped reader uses its group's SELECT privileges without a session role
+override. PostgreSQL 16 stores inheritance on each membership edge: changing a
+login's INHERIT attribute later does not repair an existing non-inheriting edge.
+Pass `--fresh-package /absolute/fresh --upgrade-package
 /absolute/upgrade` to `run.py`. Packages contain the published managed-bootstrap
 and migrate binaries, immutable `bootstrap/plan.json`/sources, and `binding.json`.
 The suite runs bootstrap as OS UID 65532, checks access-committed receipts and

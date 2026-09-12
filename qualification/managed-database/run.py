@@ -251,7 +251,9 @@ def main():
         fresh=start();containers.append(fresh)
         if args.fresh_package:
             for c in [canonical,fresh]:
-                sql(c,'CREATE ROLE example_reader LOGIN NOINHERIT; CREATE ROLE example_writer LOGIN NOINHERIT;')
+                # External logins inherit their directly granted access group.
+                # The group and all application roles remain NOINHERIT.
+                sql(c,'CREATE ROLE example_reader LOGIN INHERIT; CREATE ROLE example_writer LOGIN INHERIT;')
         with tempfile.TemporaryDirectory(prefix='managed-rls-stage-') as tmp:
             staged=Path(tmp)/'stage';staged.mkdir()
             # Canonical legacy installation, including additive policy upgrade.
@@ -320,6 +322,23 @@ def main():
             for c,label in [(fresh,'fresh'),(canonical,'legacy_after_attribute_reduction')]:
                 assert sql(c,"SELECT bool_and(NOT rolbypassrls AND NOT rolsuper AND NOT rolcanlogin AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolinherit) FROM pg_roles WHERE rolname IN ('app_tenant','app_control_plane','app_billing_worker','app_webhook_worker','app_job_worker')").stdout.strip()=='t'
                 qualify(c,label,tests)
+                if args.fresh_package:
+                    scope="BEGIN; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001'; SET LOCAL app.current_user_id='10000000-0000-0000-0000-000000000001'; "
+                    assert sql(c,scope+'SELECT count(*) FROM organization_authorization_revisions; ROLLBACK;',user='example_reader').stdout.strip()=='1'
+                    assert sql(c,scope+"SELECT count(*) FROM organization_authorization_revisions WHERE org_id='20000000-0000-0000-0000-000000000002'; ROLLBACK;",user='example_reader').stdout.strip()=='0'
+                    assert sql(c,scope+'SELECT count(*) FROM execution_custody; ROLLBACK;',user='example_reader').stdout.strip()=='0'
+                    assert '42501' in sql(c,scope+'UPDATE organization_authorization_revisions SET revision=revision+1;',user='example_reader',check=False).stderr
+                    assert '42501' in sql(c,'SELECT count(*) FROM organization_authorization_revisions;',user='example_writer',check=False).stderr
+                    memberships=json.loads(sql(c,"""SELECT json_agg(x ORDER BY member,granted) FROM (
+SELECT member.rolname member,granted.rolname granted,a.inherit_option,a.set_option,a.admin_option
+FROM pg_auth_members a JOIN pg_roles member ON member.oid=a.member JOIN pg_roles granted ON granted.oid=a.roleid
+WHERE member.rolname IN ('example_reader','example_writer','example_ro','example_rw')) x""").stdout)
+                    assert len(memberships)==7,memberships
+                    for edge in memberships:
+                        assert edge['set_option'] and not edge['admin_option'],edge
+                        assert edge['inherit_option']==(edge['member'] in ['example_reader','example_writer']),edge
+                    tests.append({'profile':label,'case':'ambient_reader_inherits_select_with_tenant_isolation_and_no_write_or_custody_visibility','passed':True})
+                    tests.append({'profile':label,'case':'writer_group_does_not_inherit_application_roles_and_requires_explicit_set_role','passed':True,'memberships':memberships})
             if args.fresh_package:
                 run(['docker','cp',str(staged),fresh+':/tmp/stage'])
                 run(['docker','cp',str(args.migrate),fresh+':/tmp/migrate'])

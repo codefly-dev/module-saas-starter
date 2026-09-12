@@ -2063,7 +2063,7 @@
     "services/store/README.md": "f6a4e256474bc156ab9b3f3122e8c495194ebe5161330fa1e68a8494ed51c2b7",
     "services/store/baselines/managed-v1/135_managed_baseline.down.sql": "8c838516e2dbff9ad2bec5369dc62ad921e0ff8914139d8b5c5ef9fb7f1a3059",
     "services/store/baselines/managed-v1/135_managed_baseline.up.sql": "18646ff5417672f4f17c34503800daf9fb8299515b6ac4128468a97889275c3b",
-    "services/store/baselines/managed-v1/CONTRACT.md": "00cfd3bd6c8b77f151116d38bc102be7d179a5457c93d389a27f3094bdba66ce",
+    "services/store/baselines/managed-v1/CONTRACT.md": "4fcf9c058004a91f32fbed849776b1287027dbc1c712c108691713a13020d0ea",
     "services/store/baselines/managed-v1/provenance.json": "e2ed4114d5714a1298e725efba48822f3e48089659fdd2bdffbf93e978b8b4ac",
     "services/store/code/go.mod": "a0a6ba38f926c810f9bdca0c83399483a3494563b82b402bd8a33612f3b05083",
     "services/store/code/go.sum": "08e294ec88ce85a99ed62ca2bceea8b7c6722e24863ff9daae9efcaf3aeef6fc",
