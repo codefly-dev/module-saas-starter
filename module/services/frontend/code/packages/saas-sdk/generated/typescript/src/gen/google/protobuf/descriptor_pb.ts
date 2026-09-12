@@ -2827,4 +2827,3 @@ export enum SymbolVisibility {
  */
 export const SymbolVisibilitySchema: GenEnum<SymbolVisibility> = /*@__PURE__*/
   enumDesc(file_google_protobuf_descriptor, 1);
-

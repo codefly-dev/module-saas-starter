@@ -139,11 +139,11 @@ describe("plugin manifest validation", () => {
 		});
 	});
 
-	it("rejects a non-versioned event type", () => {
+	it("rejects a non-namespaced event type", () => {
 		expectRejected((manifest) => {
 			(
 				manifest.events as unknown as { publishes: { type: string }[] }
-			).publishes[0].type = "guardrail.triggered";
+			).publishes[0].type = "triggered";
 		});
 	});
 

@@ -43,7 +43,11 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 		case "bar":
 			return <BarList points={series.points} />;
 		case "number":
-			return <StatChart total={series.total} points={series.points} />;
+			return series.total === null ? (
+				<p className="text-sm text-muted-foreground">Total unavailable</p>
+			) : (
+				<StatChart total={series.total} points={series.points} />
+			);
 		case "table":
 			return (
 				<div className="overflow-x-auto">
@@ -68,6 +72,11 @@ function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns:
 	const span = widget.span ? (Math.min(widget.span, columns) as 1 | 2 | 3 | 4) : 1;
 	return (
 		<Card title={widget.title} className={COL_SPAN[span]}>
+			{widget.series.coverage === "partial" && (
+				<p role="status" className="text-sm text-muted-foreground">
+					Partial telemetry
+				</p>
+			)}
 			<WidgetBody widget={widget} />
 		</Card>
 	);

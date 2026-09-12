@@ -18,16 +18,48 @@ import type {
 	MetricSeries,
 } from "./types.js";
 
+/** Refuse scoped results from servers that silently ignore new request fields. */
+export function assertAuditScopeContract(
+	request: {
+		resourceId?: string;
+		collectionId?: string;
+		payloadContains?: unknown;
+	},
+	response: { scopeContractVersion?: number },
+): void {
+	if (
+		(request.resourceId ||
+			request.collectionId ||
+			(request.payloadContains &&
+				Object.keys(request.payloadContains).length > 0)) &&
+		response.scopeContractVersion !== 1
+	) {
+		throw new Error(
+			"Audit server does not acknowledge scope contract version 1",
+		);
+	}
+}
+
 function toSeries(
 	metricId: string,
 	points: MetricPoint[],
 	groupBy: MetricGroupBy,
 	bucket: MetricBucket | undefined,
+	additive = true,
+	partial = false,
 ): MetricSeries {
 	return {
 		metricId,
 		points,
-		total: points.reduce((sum, point) => sum + point.value, 0),
+		total:
+			partial || points.length === 0
+				? null
+				: additive
+					? points.reduce((sum, point) => sum + point.value, 0)
+					: points.length === 1
+						? points[0].value
+						: null,
+		coverage: partial ? "partial" : points.length === 0 ? "empty" : "complete",
 		groupBy,
 		bucket,
 	};
@@ -40,9 +72,9 @@ export async function runMetric(
 	resolveEventType: EventTypeResolver,
 	context: MetricContext,
 ): Promise<MetricSeries> {
-	const response = await client.aggregateAuditLog(
-		compileMetric(metric, resolveEventType, context),
-	);
+	const request = compileMetric(metric, resolveEventType, context);
+	const response = await client.aggregateAuditLog(request);
+	assertAuditScopeContract(request, response);
 	// A plain count reads the bucket's own COUNT(*); every other op is computed
 	// under METRIC_VALUE_ALIAS in the bucket's metrics map. The RPC omits that
 	// alias for a group whose aggregate is undefined (min/avg/max/percentile over
@@ -53,23 +85,41 @@ export async function runMetric(
 			? (bucket: (typeof response.buckets)[number]) => Number(bucket.count)
 			: (bucket: (typeof response.buckets)[number]) =>
 					bucket.metrics[METRIC_VALUE_ALIAS];
+	let partial = false;
 	const points: MetricPoint[] = [];
 	for (const bucket of response.buckets) {
 		const value = readValue(bucket);
-		if (value === undefined) continue;
+		if (value === undefined || !Number.isFinite(value)) {
+			partial = true;
+			continue;
+		}
+		if (
+			metric.aggregation !== "count" &&
+			(bucket.samples[METRIC_VALUE_ALIAS] === undefined ||
+				bucket.samples[METRIC_VALUE_ALIAS] < bucket.count)
+		)
+			partial = true;
 		points.push({ key: bucket.key, value });
 	}
-	return toSeries(metric.id, points, metric.groupBy, metric.bucket);
+	return toSeries(
+		metric.id,
+		points,
+		metric.groupBy,
+		metric.bucket,
+		metric.aggregation === "count" || metric.aggregation === "sum",
+		partial,
+	);
 }
 
 // Combine the resolved series of a derived metric's inputs. Inputs are aligned
-// on the union of their point keys (first-seen order), a key missing from an
-// input counting as 0. Combining series grouped by different dimensions is
+// on the union of their point keys (first-seen order). Missing operands
+// remain unknown and are never substituted with zero. Combining series grouped by different dimensions is
 // meaningless — the keyspaces don't line up — so it is rejected rather than
 // silently producing a series of stray values.
 function combineDerived(
 	metric: DerivedMetric,
 	inputs: MetricSeries[],
+	additive: boolean,
 ): MetricSeries {
 	if (metric.operation === "sum") {
 		if (inputs.length < 2) {
@@ -105,38 +155,52 @@ function combineDerived(
 			}
 		}
 	}
-	const valueAt = (input: MetricSeries, key: string): number =>
-		input.points.find((point) => point.key === key)?.value ?? 0;
-
-	let points: MetricPoint[];
-	switch (metric.operation) {
-		case "sum":
-			points = keys.map((key) => ({
-				key,
-				value: inputs.reduce((sum, input) => sum + valueAt(input, key), 0),
-			}));
-			break;
-		case "difference":
-			points = keys.map((key) => ({
-				key,
-				value: valueAt(inputs[0], key) - valueAt(inputs[1], key),
-			}));
-			break;
-		case "ratio":
-			points = keys.map((key) => {
-				const denominator = valueAt(inputs[1], key);
-				return {
-					key,
-					value: denominator === 0 ? 0 : valueAt(inputs[0], key) / denominator,
-				};
-			});
-			break;
-		default:
-			throw new Error(
-				`derived metric '${metric.id}' has unsupported operation '${metric.operation}'`,
-			);
+	const valueAt = (input: MetricSeries, key: string): number | undefined =>
+		input.points.find((point) => point.key === key)?.value;
+	let partial = inputs.some((input) => input.coverage === "partial");
+	const points: MetricPoint[] = [];
+	for (const key of keys) {
+		const values = inputs.map((input) => valueAt(input, key));
+		if (values.some((value) => value === undefined)) {
+			partial = true;
+			continue;
+		}
+		const present = values as number[];
+		let value: number;
+		switch (metric.operation) {
+			case "sum":
+				value = present.reduce((sum, v) => sum + v, 0);
+				break;
+			case "difference":
+				value = present[0] - present[1];
+				break;
+			case "ratio":
+				if (present[1] === 0) {
+					partial = true;
+					continue;
+				}
+				value = present[0] / present[1];
+				break;
+			default:
+				throw new Error(
+					`derived metric '${metric.id}' has unsupported operation '${metric.operation}'`,
+				);
+		}
+		if (!Number.isFinite(value)) {
+			partial = true;
+			continue;
+		}
+		points.push({ key, value });
 	}
-	return toSeries(metric.id, points, dimension.groupBy, dimension.bucket);
+
+	return toSeries(
+		metric.id,
+		points,
+		dimension.groupBy,
+		dimension.bucket,
+		additive,
+		partial,
+	);
 }
 
 function indexMetrics(metrics: readonly Metric[]): Map<string, Metric> {
@@ -211,6 +275,19 @@ export async function resolveMetrics(
 	// independent source metrics fetch in parallel. `reachableMetrics` proved the
 	// graph acyclic, so a metric's promise is cached before its inputs are
 	// awaited and no promise can ever await itself.
+	const additive = new Map<string, boolean>();
+	const isAdditive = (id: string): boolean => {
+		const cached = additive.get(id);
+		if (cached !== undefined) return cached;
+		const metric = byId.get(id);
+		const result =
+			metric !== undefined &&
+			(metric.kind === "source"
+				? metric.aggregation === "count" || metric.aggregation === "sum"
+				: metric.operation !== "ratio" && metric.inputs.every(isAdditive));
+		additive.set(id, result);
+		return result;
+	};
 	const pending = new Map<string, Promise<MetricSeries>>();
 	const resolve = (id: string): Promise<MetricSeries> => {
 		const cached = pending.get(id);
@@ -223,7 +300,7 @@ export async function resolveMetrics(
 			metric.kind === "source"
 				? runMetric(client, metric, resolveEventType, context)
 				: Promise.all(metric.inputs.map(resolve)).then((inputs) =>
-						combineDerived(metric, inputs),
+						combineDerived(metric, inputs, isAdditive(metric.id)),
 					);
 		pending.set(id, series);
 		return series;

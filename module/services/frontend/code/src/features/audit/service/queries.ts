@@ -1,3 +1,4 @@
+import { assertAuditScopeContract } from "@codefly-dev/saas-sdk";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import type { Client } from "@connectrpc/connect";
@@ -166,6 +167,10 @@ export interface AuditDerivedSpec {
 }
 
 export interface AuditAggregateParams {
+	resource?: string;
+	resourceId?: string;
+	collectionId?: string;
+	payloadContains?: Record<string, string>;
 	orgId?: string;
 	eventType?: string;
 	category?: string;
@@ -190,6 +195,7 @@ export interface AuditAggregateBucket {
 	count: number;
 	keys: string[];
 	metrics: Record<string, number>;
+	samples?: Record<string, number>;
 }
 
 // Bind the client-side aggregate params to the wire request: fill defaults,
@@ -204,6 +210,10 @@ export function toAggregateRequest(
 		eventType: params.eventType ?? "",
 		category: params.category ?? "",
 		namespace: params.namespace ?? "",
+		resource: params.resource ?? "",
+		resourceId: params.resourceId ?? "",
+		collectionId: params.collectionId ?? "",
+		payloadContains: params.payloadContains ?? {},
 		groupBy: params.groupBy ?? "",
 		groupBys: params.groupBys ?? [],
 		bucket: params.bucket ?? "",
@@ -227,10 +237,15 @@ export function toAggregateRequest(
 // double metric values become numbers. Shared with the hook's `select`.
 export function toAggregateBuckets(
 	response: AggregateAuditLogResponse,
+	params: AuditAggregateParams,
 ): AuditAggregateBucket[] {
+	assertAuditScopeContract(params, response);
 	return response.buckets.map((b) => ({
 		key: b.key,
 		count: Number(b.count),
+		samples: Object.fromEntries(
+			Object.entries(b.samples ?? {}).map(([k, v]) => [k, Number(v)]),
+		),
 		keys: b.keys,
 		metrics: Object.fromEntries(
 			Object.entries(b.metrics).map(([k, v]) => [k, Number(v)]),
@@ -247,6 +262,6 @@ export function useAuditAggregate(
 		queryKey: ["audit-aggregate", params],
 		queryFn: () => svc.aggregateAuditLog(toAggregateRequest(params)),
 		enabled: options.enabled,
-		select: toAggregateBuckets,
+		select: (response) => toAggregateBuckets(response, params),
 	});
 }

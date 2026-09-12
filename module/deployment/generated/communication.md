@@ -384,7 +384,23 @@ Every domain event type, who publishes it, and who consumes it. The machine-read
 - **Retention:** 30d
 - **Consumers:** _none_
 
+## saas.document.read
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
 ## saas.document.renamed
+
+- **Publisher:** saas
+- **Visibility:** external
+- **Schema:** `saas/events/v1/events.proto#EventEnvelope` (major v1)
+- **Retention:** 30d
+- **Consumers:** _none_
+
+## saas.document.search
 
 - **Publisher:** saas
 - **Visibility:** external

@@ -280,7 +280,7 @@ func TestAuditAggregationMetrics(t *testing.T) {
 	require.Len(t, blank, 1)
 	_, hasMin := blank[0].Metrics["min_outcome"]
 	require.False(t, hasMin, "min over non-numeric values must be absent, not coerced to 0")
-	require.InDelta(t, 0, blank[0].Metrics["sum_outcome"], 0.001, "empty sum is the additive identity 0")
+	require.NotContains(t, blank[0].Metrics, "sum_outcome", "missing numeric telemetry remains unknown")
 
 	// Multi-dimensional grouping by actor + payload outcome.
 	byActorOutcome, err := testService.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{
@@ -383,7 +383,7 @@ func TestAuditAggregationNumericAndDerivedEdges(t *testing.T) {
 			{Op: "count", Alias: "n"},
 			{Op: "min", Field: "payload:price", Alias: "min_price"},
 			{Op: "min", Field: "payload:missing", Alias: "min_missing"}, // no numeric rows → absent
-			{Op: "sum", Field: "payload:label", Alias: "sum_label"},     // non-numeric → 0
+			{Op: "sum", Field: "payload:label", Alias: "sum_label"},     // non-numeric → absent
 		},
 		Derived: []business.AuditDerivedMetric{
 			{Alias: "ok_ratio", Numerator: "min_price", Denominator: "n"},     // 2.5 / 5

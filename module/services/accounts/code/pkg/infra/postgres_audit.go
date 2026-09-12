@@ -156,6 +156,9 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 }
 
 func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery) ([]business.AuditEntry, string, int32, error) {
+	if q.CollectionID != "" {
+		return nil, "", 0, fmt.Errorf("uncompiled collection filter: reader authorization required")
+	}
 	exec := s.getQueryExecutor(ctx)
 
 	where, args := auditWhere(q, 1)
@@ -254,6 +257,9 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 // (Service) has already validated the spec; the builder still guards its own
 // switches so an unhandled shape fails loud rather than emitting wrong SQL.
 func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQuery, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
+	if q.CollectionID != "" {
+		return nil, fmt.Errorf("uncompiled collection filter: reader authorization required")
+	}
 	exec := s.getQueryExecutor(ctx)
 
 	aq, err := buildAggregateQuery(q, spec)
@@ -276,6 +282,7 @@ func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQ
 		// Column layout is [dim0..dimN, cnt, metric0..metricM].
 		b := business.AuditAggregateBucket{
 			Keys:    make([]string, len(aq.dims)),
+			Samples: make(map[string]int64, len(aq.aliases)),
 			Metrics: make(map[string]float64, len(aq.aliases)+len(spec.Derived)),
 		}
 		for i := range aq.dims {
@@ -286,9 +293,10 @@ func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQ
 			b.Count = c
 		}
 		for i, alias := range aq.aliases {
+			b.Samples[alias], _ = vals[len(aq.dims)+1+len(aq.aliases)+i].(int64)
 			// A NULL aggregate (min/avg/max/percentile over zero numeric rows)
 			// means "no data" — leave the alias absent rather than reporting 0.
-			if v := vals[len(aq.dims)+1+i]; v != nil {
+			if v := vals[len(aq.dims)+1+i]; v != nil && b.Samples[alias] > 0 {
 				b.Metrics[alias] = toFloat(v)
 			}
 		}
@@ -364,6 +372,24 @@ func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSp
 		aliases[i] = m.ResolvedAlias()
 	}
 
+	// Track observations independently of aggregate values, including duplicate
+	// logical ids: distinct reduction is not evidence of missing telemetry.
+	for i, m := range spec.Metrics {
+		expr := "*"
+		var err error
+		switch m.Op {
+		case "", "count":
+		case "count_distinct":
+			expr, err = auditValueExpr(m.Field, addArg)
+		default:
+			expr = auditNumericExpr(m.Field, addArg)
+		}
+		if err != nil {
+			return aggregateQuery{}, err
+		}
+		selectParts = append(selectParts, fmt.Sprintf("COUNT(%s) AS s%d", expr, i))
+	}
+
 	orderBy := "cnt DESC, " + strings.Join(orderDims, ", ")
 	if soleTime {
 		orderBy = "d0 ASC"
@@ -411,10 +437,9 @@ func auditMetricExpr(m business.AuditMetric, addArg func(any) int) (string, erro
 		}
 		return "COUNT(DISTINCT " + expr + ")", nil
 	case "sum":
-		// An empty sum is 0 (additive identity); the others are undefined over
-		// zero numeric rows and stay NULL so scanning omits them — coercing them
-		// to 0 would be indistinguishable from a real 0 datum.
-		return "COALESCE(SUM(" + auditNumericExpr(m.Field, addArg) + "), 0)", nil
+		// Missing numeric telemetry is unknown, including for sum. A real
+		// emitted zero remains zero; an absent field remains SQL NULL.
+		return "SUM(" + auditNumericExpr(m.Field, addArg) + ")", nil
 	case "avg":
 		return "AVG(" + auditNumericExpr(m.Field, addArg) + ")", nil
 	case "min":

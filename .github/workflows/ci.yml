@@ -69,7 +69,18 @@ jobs:
   authz-coverage:
     name: Authorization coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    services:
+      audit-postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: audit-test-only
+          POSTGRES_DB: audit_metrics
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d audit_metrics"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,6 +124,12 @@ jobs:
         run: |
           docker pull postgres@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54
           python3 qualification/managed-database/ci.py /tmp/managed-database-qualification.json
+      - name: Verify scoped audit SQL and current resource authority
+        working-directory: module/services/accounts/code
+        env:
+          AUDIT_METRICS_REQUIRE_DB: "1"
+          AUDIT_METRICS_TEST_DSN: postgres://postgres:audit-test-only@127.0.0.1:${{ job.services.audit-postgres.ports[5432] }}/audit_metrics?sslmode=disable
+        run: go test -race ./internal/auditmetricstest
 
   release-contract:
     name: Release gate contract

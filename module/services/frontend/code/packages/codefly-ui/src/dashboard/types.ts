@@ -23,7 +23,8 @@ export interface SeriesPoint {
 /** A resolved metric series a widget renders. */
 export interface WidgetSeries {
 	points: SeriesPoint[];
-	total: number;
+	total: number | null;
+	coverage?: "complete" | "partial" | "empty";
 }
 
 /** A widget bound to its resolved series. */
@@ -55,7 +56,7 @@ interface ResolvedWidgetLike {
 	id: string;
 	visualization: WidgetVisualization;
 	title?: string;
-	series: { points: SeriesPoint[]; total: number };
+	series: WidgetSeries;
 }
 interface DashboardDataLike {
 	title?: string;

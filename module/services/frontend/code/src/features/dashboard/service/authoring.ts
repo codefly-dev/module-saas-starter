@@ -33,7 +33,7 @@ export interface EventTypeVocabulary {
 // before committing.
 export interface MetricPreview {
 	points: MetricPoint[];
-	total: number;
+	total: number | null;
 }
 
 // PreconditionCode enumerates the pending-channel tokens a driver branches on
@@ -145,7 +145,11 @@ export function createDashboardAuthoring(
 			const res = await audit.aggregateAuditLog(toAggregateRequest(params));
 			return {
 				ok: true,
-				preview: shapeMetricSeries(toAggregateBuckets(res), metric, valueAlias),
+				preview: shapeMetricSeries(
+					toAggregateBuckets(res, params),
+					metric,
+					valueAlias,
+				),
 			};
 		},
 
