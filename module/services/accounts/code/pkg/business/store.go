@@ -177,6 +177,17 @@ type Store interface {
 	//
 	// Call it under LockOrgAdministration — on its own it is only a read.
 	CountOrgAdministrators(ctx context.Context, orgID string, excludeUserID string) (int, int, error)
+	// ListAdministeredOrganizations returns every organization the identity is
+	// an eligible administrator of, each carrying that organization's total
+	// count of eligible administrators and how many of its other members can
+	// still authenticate. Ordered by organization id, because deactivating an
+	// identity locks all of them and the order they are taken in is what keeps
+	// two concurrent deactivations off each other's backs.
+	//
+	// Same eligibility as CountOrgAdministrators, applied to the identity as
+	// well: an identity that cannot authenticate administers nothing, so it
+	// administers no organization either.
+	ListAdministeredOrganizations(ctx context.Context, userID string) ([]OrgAdministration, error)
 	// LockOrgAdministration serializes every change to one organization's
 	// administrative standing, whichever member it names: a role upsert, a
 	// demotion, or a removal. Callers take it before reading the roster the

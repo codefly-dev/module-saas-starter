@@ -453,6 +453,94 @@ membership rows are locked, not `users`: this is the authentication path, and
 locking identities would put invitation redemption in contention with every
 concurrent write to the same users.
 
+### Deactivating an identity is the same invariant, from the other side
+
+Nothing above writes `organization_members` when an identity is deactivated.
+`Service.DeleteUser` is a soft delete and `Service.SuspendUser` a status change;
+both leave every administrative membership row standing while `findIdentity`
+stops admitting the identity at all. Eligibility is what changes, and it changes
+for every organization the identity administers at once — so the decision is not
+a single-organization guard and cannot be expressed as one.
+
+`Service.organizationsStrandedByDeactivation` is that decision. It lists the
+organizations in which the identity is itself an eligible administrator
+(`Store.ListAdministeredOrganizations`), takes each one's `administration:<org>`
+lock in ascending organization id, and **re-reads until the roster comes back
+unchanged with every organization in it already locked** — only then does it
+decide. The locks are held for the rest of the transaction that writes the
+status, which is what serializes a deactivation against a concurrent removal or
+demotion in any of the same organizations.
+
+**One pass is not enough, and the reason is the promotion exemption above.** A
+promotion takes no administration lock, so the identity can be made an
+administrator of an organization the loop has already read past. Deciding on an
+organization whose lock is not held admits exactly the interleaving the lock
+exists to stop: the promotion lands, a demotion in that same organization counts
+this identity — still active, because the deactivating transaction has not
+committed — and commits, and the deactivation then commits on top and leaves the
+organization with nobody. Looping until the locked set covers the roster closes
+it, because the demotion then waits on a lock the deactivation holds and
+re-counts afterwards. `TestPromotionRacingDeactivationCannotStrandAnOrganization`
+places both steps between specific reads rather than racing for them.
+
+The lock order is established in the loop rather than inherited from the query,
+because it is the loop that depends on it. A pass that discovers an organization
+sorting below one already held does acquire out of that order — unavoidable,
+since a transaction-scoped advisory lock cannot be released and retaken — so two
+deactivations that discover each other's organizations mid-loop can deadlock.
+PostgreSQL detects that and aborts one loudly, which is the failure to prefer
+over the silent stranding it replaces, and it takes a promotion landing inside
+both loops to reach at all.
+
+**Stranded takes two conditions, and the second is the point of the rule rather
+than a softening of it** (`OrgAdministration.StrandedByDeactivating`): the
+identity is the organization's only eligible administrator, **and** somebody
+else in that organization can still authenticate. `RegisterUser` gives every
+identity a personal organization it solely owns, so counting administrators
+alone would refuse every deletion on this platform — an ordinary member's
+included. What the invariant protects is the members who would be left in an
+organization nobody can administer, so it asks whether there are any. An
+organization nobody else is in is left empty, not unadministrable.
+
+A user-scoped transaction can resolve none of this on its own:
+`organization_members` is scoped to `app.current_org_id`, which a deactivation
+does not set, and `users` is readable only for the caller's own row. Both fail
+*silently* — zero rows, no error — and "administers nothing" is exactly the
+answer that lets the deactivation through. So request traffic resolves it through
+`identity_administered_organizations`, a `SECURITY DEFINER` function owned by
+`app_control_plane` and scoped to the caller's **own identity** (migration 137),
+and a transaction that has assumed `app_control_plane` evaluates the same
+predicate directly. `ListAdministeredOrganizations` branches on which of the two
+it is in and refuses a transaction that is neither, rather than returning the
+empty answer. It decides that on the **assumed role**, not on `rolbypassrls`:
+the managed profile makes every runtime role `NOBYPASSRLS` (migration 136), so
+an attribute test would refuse every platform-administered deactivation there
+while passing on every profile that still grants it.
+
+**The two entry points differ in what they do with the result, deliberately:**
+
+| Entry point | Disposition |
+| --- | --- |
+| `Service.DeleteUser` | **Refused** — `business.ErrIdentityAdminContinuity`, carried by `IdentityAdminContinuityError`, which names the organizations and maps to `FailedPrecondition`. Offboarding an administrator is a handover first and a deletion second, and the caller is told which organizations are waiting on one. |
+| `Service.SuspendUser` | **Permitted, and recorded.** Suspension is how a compromised account is contained; an invariant about who can administer an organization must not be the reason a credential in somebody else's hands stays live. The stranded organizations go onto the `user.suspended` audit event as `organizations_without_administrator` and into the operator notification. The locks are still taken — they are what makes the recorded list the one that actually committed. |
+
+Reactivation (`Service.UnsuspendUser`) can only raise an eligible-administrator
+count, so it is settled from its argument like a promotion and takes no lock.
+
+**What this does not cover, and cannot.** In-tree, `users.status` is written in
+exactly two places — `PostgresStore.DeleteUser` behind `Service.DeleteUser`, and
+`PostgresStore.UpdateUserStatus` behind `SuspendUser`/`UnsuspendUser` — and both
+go through the guard. `PrivacyWorkflow.Delete` (`pkg/business/gdpr.go`) is the
+exception: the interface is implemented by the host, not here, so an
+implementation that deactivates the identity itself bypasses this entirely, and
+erasure is precisely where an organization's sole administrator is most likely to
+go. The guard is deliberately **not** applied around that call. Erasure runs on
+durable leases with a retry-and-fail ladder, so a precondition refusal there
+would consume attempts and land a legally mandated request in `GDPRFailed`,
+blocked on an unrelated organization's staffing. A host integrating a privacy
+workflow owns that decision and should make the handover before the erasure,
+rather than discover the invariant from a failed job.
+
 ### `organizations.owner_id` is provenance, not authority
 
 `owner_id` is the owner of record. It is written exactly once, when the

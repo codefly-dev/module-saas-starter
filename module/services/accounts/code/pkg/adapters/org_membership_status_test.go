@@ -3,6 +3,7 @@ package adapters
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"google.golang.org/grpc/codes"
@@ -51,5 +52,33 @@ func TestInvitationStatusMapsContinuityToFailedPrecondition(t *testing.T) {
 	}
 	if got, want := status.Convert(err).Message(), business.ErrOrgAdminContinuity.Error(); got != want {
 		t.Fatalf("continuity message = %q, want %q", got, want)
+	}
+}
+
+// Deactivating an identity fails the same invariant from the identity's side,
+// and the caller needs the same code. It needs more than that too: the message
+// has to name the organizations, or the caller is told an administrator
+// handover is required without being told of what.
+func TestUserStatusMapsDeactivationContinuityToFailedPrecondition(t *testing.T) {
+	err := userStatusError(fmt.Errorf("cannot delete user: %w",
+		&business.IdentityAdminContinuityError{Organizations: []string{"org-a", "org-b"}}))
+	if got := status.Code(err); got != codes.FailedPrecondition {
+		t.Fatalf("deactivation status = %s, want %s", got, codes.FailedPrecondition)
+	}
+	message := status.Convert(err).Message()
+	for _, org := range []string{"org-a", "org-b"} {
+		if !strings.Contains(message, org) {
+			t.Fatalf("deactivation message %q does not name %s", message, org)
+		}
+	}
+	if strings.Contains(message, "cannot delete user") {
+		t.Fatalf("deactivation message leaks the internal call path: %q", message)
+	}
+}
+
+func TestUserStatusPreservesUnrelatedFailure(t *testing.T) {
+	want := errors.New("database unavailable")
+	if got := userStatusError(want); !errors.Is(got, want) {
+		t.Fatalf("userStatus replaced unrelated error: %v", got)
 	}
 }
