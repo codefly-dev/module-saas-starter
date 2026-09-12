@@ -733,9 +733,18 @@
       "owner": "@codefly-dev/ui/layout",
       "disposition": "already canonical",
       "reason": "Compatibility re-export; no host presentation implementation.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "SelectableSummary"
+        },
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "EmptySummary"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Caption, header, body, footer, row, head and cell compose the parent stories; selection and empty states covered. Verify external explorer, skins and reviewed visual baselines."
     },
     {
       "source": "src/components/ui/tabs.tsx",
@@ -3653,9 +3662,18 @@
       "owner": "@codefly-dev/ui",
       "disposition": "already canonical",
       "reason": "Owner package implementation.",
-      "stories": [],
-      "coverage": "missing",
-      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "SelectableSummary"
+        },
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "EmptySummary"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Caption, header, body, footer, row, head and cell compose the parent stories; selection and empty states covered. Verify external explorer, skins and reviewed visual baselines."
     },
     {
       "source": "packages/codefly-ui/src/layout/tabs-root.tsx",

@@ -6,6 +6,7 @@ import * as controls from "./controls.stories";
 import * as primitives from "./primitives.stories";
 import * as metrics from "./metrics.stories";
 import * as tables from "./table.stories";
+import * as semanticTables from "./semantic-table.stories";
 
 afterEach(cleanup);
 for (const [section, stories] of Object.entries({
@@ -13,6 +14,7 @@ for (const [section, stories] of Object.entries({
 	primitives,
 	metrics,
 	tables,
+	semanticTables,
 	composites,
 })) {
 	for (const [name, story] of Object.entries(stories)) {

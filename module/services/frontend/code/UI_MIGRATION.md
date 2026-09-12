@@ -111,3 +111,19 @@ The federation test creates a real host and generic consumer runtime sharing the
 layout scope. It verifies that both resolve the host's loaded module instance and
 that the consumer's competing implementation is not loaded. Package tarball
 consumption and runtime share resolution are independent checks.
+
+### Semantic table coverage follow-up
+
+The layout Table family now has owner stories for a selectable membership summary
+and an explicit empty result. The parent stories account for TableCaption,
+TableHeader, TableBody, TableFooter, TableRow, TableHead and TableCell, including
+column/row header scopes, footer totals and controlled checkbox selection. The
+host's table compatibility re-export maps to this same evidence. These two
+stories are additional to the earlier 47-story browser matrix; they have DOM
+render and selection checks but still need external explorer, skin and visual
+review. No full-page/provider coverage is implied.
+
+The remote CI run `34650423895` passed every mandatory gate, including Immutable
+module package and the aggregate Release gates. Publication jobs were skipped
+for this draft PR. This supersedes the earlier remote API-rate-limit failure;
+the local service readiness limitations above remain separate.
