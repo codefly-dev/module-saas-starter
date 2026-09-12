@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 import (
@@ -90,19 +92,22 @@ func runBusinessTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
+	setupDone := testdb.Measure("business-db", "dependency-setup", []string{"store", "vault"}, 5*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithExcludedDependencies("cache", "telemetry"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives
 		// each short-lived flow temporary host ports; the scope also isolates
 		// its named containers and other runtime resources.
 		sdk.WithNamingScope("business-test"),
-		// A clean machine may need to pull Postgres, Vault, and Redis
+		// A clean machine may need to pull Postgres and Vault
 		// before the first integration test. Keep the dependency-start budget
 		// separate from individual test timeouts so cold CI is deterministic.
 		sdk.WithTimeout(5*time.Minute),
 		sdk.WithSilence("store"),
 	)
+	setupDone(err != nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies failed: %v\n", err)
 		return 1
@@ -185,7 +190,10 @@ func runBusinessTests(m *testing.M) int {
 	testService = service
 	testCtx = ctx
 
-	return m.Run()
+	executionDone := testdb.Measure("business-db", "test-execution", nil, 0)
+	exitCode := m.Run()
+	executionDone(exitCode != 0)
+	return exitCode
 }
 
 // clearData resets test data between tests.

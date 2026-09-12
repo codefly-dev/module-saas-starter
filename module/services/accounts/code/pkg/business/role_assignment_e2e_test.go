@@ -1,3 +1,5 @@
+//go:build !pure
+
 package business_test
 
 // E2E test for the full role-assignment chain. This is the integration

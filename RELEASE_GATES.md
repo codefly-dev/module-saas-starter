@@ -31,6 +31,11 @@ checks for 12 GiB free under Docker's storage directory and removes unused
 runner toolchains only when below that threshold. Go caches include the
 checksums of the root, tools, and service modules.
 
+Accounts also exposes a runtime-free pure check and four database targets; see
+[Accounts test targets](module/services/accounts/TESTING.md) for commands, timing
+evidence and the conservative planner handoff. The canonical service gate still
+runs the full default suite.
+
 Measured bottlenecks, remaining work toward a five-minute gate, and validation
 limits are recorded in [CI_PERFORMANCE.md](./CI_PERFORMANCE.md).
 

@@ -1,3 +1,5 @@
+//go:build !pure
+
 package pgbilling_test
 
 import (
@@ -39,13 +41,15 @@ func runBillingStoreTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
+	setupDone := testdb.Measure("billing-db", "dependency-setup", []string{"store"}, 120*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
-		sdk.WithExcludedDependencies("cache", "vault"),
+		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
 		sdk.WithNamingScope("pgbilling-test"),
 		sdk.WithTimeout(120*time.Second),
 		sdk.WithSilence("store"),
 	)
+	setupDone(err != nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
 		return 1
@@ -73,7 +77,10 @@ func runBillingStoreTests(m *testing.M) int {
 	defer pool.Close()
 	testPool = pool
 
-	return m.Run()
+	executionDone := testdb.Measure("billing-db", "test-execution", nil, 0)
+	exitCode := m.Run()
+	executionDone(exitCode != 0)
+	return exitCode
 }
 
 // resetBilling resets only shared billing state. Users and organizations may

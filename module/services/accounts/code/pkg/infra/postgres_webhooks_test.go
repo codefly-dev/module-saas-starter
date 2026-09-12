@@ -1,3 +1,5 @@
+//go:build !pure
+
 package infra_test
 
 import (
@@ -74,12 +76,15 @@ func runPostgresInfraTests(m *testing.M) int {
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 
+	setupDone := testdb.Measure("infra-db", "dependency-setup", []string{"store"}, 90*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
 		sdk.WithNamingScope("test-infra"),
 		sdk.WithTimeout(90*time.Second),
 		sdk.WithSilence("store"),
 	)
+	setupDone(err != nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "WithDependencies: %v\n", err)
 		return 1
@@ -113,7 +118,10 @@ func runPostgresInfraTests(m *testing.M) int {
 	testPool = store.Pool()
 	testCtx = ctx
 
-	return m.Run()
+	executionDone := testdb.Measure("infra-db", "test-execution", nil, 0)
+	exitCode := m.Run()
+	executionDone(exitCode != 0)
+	return exitCode
 }
 
 func TestBillingWorkerPoolUsesLeastPrivilegeBypassRole(t *testing.T) {
