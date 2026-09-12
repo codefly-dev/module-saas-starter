@@ -21,9 +21,9 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 const collection: CollectionAccessView = {
-	nodeId: "wiki-id",
-	label: "Wiki",
-	scopePath: "wiki_path",
+	nodeId: "collection-id",
+	label: "Example Collection",
+	scopePath: "example_path",
 	grants: [],
 };
 const client = (overrides: Partial<DatasourceClient>): DatasourceClient => ({
@@ -58,8 +58,8 @@ describe("collection read access", () => {
 					return readable
 						? [
 								{
-									nodeId: "wiki-id",
-									label: "Wiki",
+									nodeId: "collection-id",
+									label: "Example Collection",
 									kind: "collection",
 									actions: ["read"],
 								},
@@ -72,7 +72,7 @@ describe("collection read access", () => {
 			});
 			render(
 				<QueryClientProvider client={cache}>
-					<CollectionReadBoundary client={api} orgId="org" nodeId="wiki-id">
+					<CollectionReadBoundary client={api} orgId="org" nodeId="collection-id">
 						<PrivateContent />
 					</CollectionReadBoundary>
 				</QueryClientProvider>,
@@ -110,7 +110,7 @@ describe("collection read access", () => {
 				<CollectionReadBoundary
 					client={client({})}
 					orgId="org"
-					nodeId="wiki-id"
+					nodeId="collection-id"
 				>
 					<p>Private</p>
 				</CollectionReadBoundary>
@@ -129,7 +129,7 @@ describe("collection read access", () => {
 			/>,
 		);
 		fireEvent.change(screen.getByLabelText("Existing collection"), {
-			target: { value: "wiki-id" },
+			target: { value: "collection-id" },
 		});
 		expect(screen.getByText(/Readers: No collection read grants/)).toBeTruthy();
 		expect(screen.getByText(/You do not have documents\/read/)).toBeTruthy();
@@ -180,7 +180,7 @@ describe("collection read access", () => {
 		});
 		expect(api.grantCollectionRead).toHaveBeenCalledWith(
 			"org",
-			"wiki_path",
+			"example_path",
 			subject,
 		);
 		await act(async () => {
@@ -194,9 +194,9 @@ it("observes a grant revoked elsewhere while the collection stays open", async (
  vi.useFakeTimers();
  try {
   let readable = true;
-  const api = client({listAccessibleScopes: async () => readable ? [{nodeId: "wiki-id", label: "Wiki", kind: "collection", actions: ["read"]}] : []});
+  const api = client({listAccessibleScopes: async () => readable ? [{nodeId: "collection-id", label: "Example Collection", kind: "collection", actions: ["read"]}] : []});
   const cache = new QueryClient({defaultOptions: {queries: {retry: false}}});
-  render(<QueryClientProvider client={cache}><CollectionReadBoundary client={api} orgId="org" nodeId="wiki-id"><p>Private document</p></CollectionReadBoundary></QueryClientProvider>);
+  render(<QueryClientProvider client={cache}><CollectionReadBoundary client={api} orgId="org" nodeId="collection-id"><p>Private document</p></CollectionReadBoundary></QueryClientProvider>);
   await act(async () => {await vi.advanceTimersByTimeAsync(10);});
   expect(screen.getByText("Private document")).toBeTruthy();
   readable = false;

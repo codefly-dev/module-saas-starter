@@ -46,7 +46,7 @@ roles:
         action: read
 collections:
   - org: ExampleCorp
-    label: Wiki
+    label: Example Collection
     role: Collection reader
     readers:
       - reader@example.com

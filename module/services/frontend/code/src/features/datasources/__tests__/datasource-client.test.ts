@@ -109,10 +109,10 @@ it("uses Accounts to create an exact read role and grant the selected team", asy
   const response = String(url).endsWith("/CreateRole") ? {role: {id: "role-id"}} : {};
   return new Response(JSON.stringify(response), {headers: {"content-type": "application/json"}});
  }));
- await datasourceClient.grantCollectionRead!("org-1", "root.wiki", {id: "team-id", kind: "team", label: "Example Team"});
+ await datasourceClient.grantCollectionRead!("org-1", "root.example", {id: "team-id", kind: "team", label: "Example Team"});
  expect(calls.map(call => call.url.split("/").at(-1))).toEqual(["ListRoles", "CreateRole", "GrantScope"]);
  expect(calls[1].body.permissions).toEqual([{resource: "documents", action: "read"}]);
- expect(calls[2].body).toMatchObject({orgId: "org-1", scopePath: "root.wiki", subjectId: "team-id", subjectKind: "SUBJECT_KIND_TEAM", roleId: "role-id"});
+ expect(calls[2].body).toMatchObject({orgId: "org-1", scopePath: "root.example", subjectId: "team-id", subjectKind: "SUBJECT_KIND_TEAM", roleId: "role-id"});
 });
 
 it("propagates permission-service failure rather than reporting no grants", async () => {

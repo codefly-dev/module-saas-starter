@@ -362,7 +362,7 @@ it("serializes a replacement credential only for reconnect on the existing sourc
 it("connects to the selected node without deriving authority from its label", async () => {
  const {calls} = stubFetch({});
  const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token"});
- await client.addGitHubSource({orgId: "org-1", repo: "acme/example", paths: [], branch: "main", targetCollection: "Wiki", boundaryNodeId: "11111111-1111-1111-1111-111111111111", accessToken: "test-pat", webhookSecret: ""});
+ await client.addGitHubSource({orgId: "org-1", repo: "acme/example", paths: [], branch: "main", targetCollection: "Example Collection", boundaryNodeId: "11111111-1111-1111-1111-111111111111", accessToken: "test-pat", webhookSecret: ""});
  expect(calls[0].body).toMatchObject({boundaryNodeId: "11111111-1111-1111-1111-111111111111"});
  expect(calls[0].body).not.toHaveProperty("collectionLabel");
 });

@@ -395,14 +395,14 @@ func TestListCollectionAccess_ReadGrantsAndTenantIsolation(t *testing.T) {
 	orgID, actorID, roleID := layeredFixture(t, "documents", "read")
 	otherOrg, _, _ := layeredFixture(t, "documents", "read")
 	registerNode(t, orgID, "root", "solution", "", "")
-	registerNode(t, orgID, "root.wiki", "collection", "", "")
+	registerNode(t, orgID, "root.example", "collection", "", "")
 	registerNode(t, orgID, "root.empty", "collection", "", "")
 	registerNode(t, otherOrg, "private", "collection", "", "")
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
 		for _, permission := range []string{"documents", "knowledge"} {
 			excludedRole := business.NewIDString()
 			require.NoError(t, testStore.CreateRole(ctx, &gen.Role{Id: excludedRole, OrgId: orgID, Name: "Example " + excludedRole, Permissions: []*gen.Permission{{Resource: permission, Action: "read"}}}))
-			grant := &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root.wiki", RoleId: excludedRole, GrantedBy: actorID}
+			grant := &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root.example", RoleId: excludedRole, GrantedBy: actorID}
 			if permission == "documents" {
 				grant.ExpiresAt = timestamppb.New(time.Now().Add(-time.Hour))
 			}
@@ -424,7 +424,7 @@ func TestListCollectionAccess_ReadGrantsAndTenantIsolation(t *testing.T) {
 		next, err := testStore.ListCollectionAccess(ctx, orgID, rows[0].Node.ScopePath, 100)
 		require.NoError(t, err)
 		require.Len(t, next, 1)
-		require.Equal(t, "root.wiki", next[0].Node.ScopePath)
+		require.Equal(t, "root.example", next[0].Node.ScopePath)
 		foreign, err := testStore.ListCollectionAccess(ctx, otherOrg, "", 100)
 		require.NoError(t, err)
 		require.Empty(t, foreign)
