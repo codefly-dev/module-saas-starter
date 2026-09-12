@@ -10,6 +10,23 @@ Installed products add tables through additive migration sources and must opt
 each relation into a role explicitly. They do not widen the Starter's default
 privileges or reuse a worker role for unrelated work.
 
+## Managed PostgreSQL profile
+
+The opt-in [managed baseline v1](services/store/baselines/managed-v1/CONTRACT.md)
+installs the canonical schema through 135 followed by migration 136 using a
+PostgreSQL 16+ CREATEROLE migration principal without SUPERUSER or BYPASSRLS.
+All five runtime roles are NOBYPASSRLS. Explicit exact-role policies provide the
+four background roles' existing row visibility; tenant policies, FORCE RLS and
+relation/column ACLs remain intact. Three guarded function owners change, and
+subscription sync retains its schema owner with one SELECT-only endpoint policy.
+Missing/empty enqueue request scope now fails closed. Runtime ledger privileges
+are revoked. Read the linked contract before selecting a fresh or upgrade plan.
+
+The table below describes legacy installations. The normal source remains the
+upgrade path: migration 136 does not claim to revoke existing BYPASSRLS role
+attributes. Fresh and upgrade packages use the same normal migration ledger;
+profile selection is explicit and bound to the reviewed source hashes.
+
 ## Roles
 
 | Role | Login | RLS bypass | Intended authority |
@@ -115,7 +132,7 @@ executable inventory and this table in the same change.
 | Scope | Relations | Required database boundary |
 |---|---|---|
 | `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `solution_registrations` | No RLS; exact grants |
-| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `execution_custody`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
+| `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `execution_custody`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
 | `user` | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
@@ -316,6 +333,46 @@ historical data stays repairable. Getting the read wrong would therefore
 silently disable the rule instead of tightening it. Control-plane transactions
 set no tenant organization and hold `BYPASSRLS`, so they evaluate the same
 predicate directly.
+
+## Identity deactivation and administered organizations
+
+Migration `137_identity_administered_organizations` adds
+`identity_administered_organizations(user_id)`, the read behind the
+deactivation half of the same invariant. Deactivating an identity — a soft
+delete or a suspension — writes no `organization_members` row but withdraws
+eligibility from every administrative membership the identity holds at once, so
+the decision needs the organizations it administers and, for each, how many
+eligible administrators that organization has and whether anybody else is still
+in it. That last count separates an organization left unadministrable from one
+left empty: `RegisterUser` gives every identity a personal organization it
+solely owns, so a rule counting only administrators would refuse every deletion
+on this platform.
+
+A deactivating transaction is scoped to an identity and to no organization,
+which is the one scope that can read neither input: `organization_members` is
+scoped to `app.current_org_id` (migrations `29`/`68`) and `users` to the
+caller's own row (migration `69`). Both return zero rows rather than an error,
+and zero administered organizations reads as "this identity administers
+nothing" — the answer that admits the deactivation. Same shape as the two
+sections above: a `SECURITY DEFINER` function owned by the NOLOGIN
+`app_control_plane` role, public execution revoked, `EXECUTE` granted only to
+`app_tenant`, and the body scoped to `app.current_user_id` so it answers only
+for the caller's own identity. It returns organization ids that caller is
+already a member of, plus a count over them, and no `users` column.
+
+The administrator count repeats migration `133`'s eligibility predicate rather than
+calling `organization_eligible_administrators`, which scopes itself to
+`app.current_org_id` — a value a deactivation has no single one of.
+`PostgresStore.ListAdministeredOrganizations` branches on the transaction's
+scope: the caller's own identity goes through the function, a transaction that
+has assumed `app_control_plane` evaluates the predicate directly, and one that is
+neither is refused rather than answered empty. It decides that on the assumed
+role, not on `rolbypassrls` — the managed profile makes every runtime role
+`NOBYPASSRLS` and grants the control plane its reach through explicit exact-role
+policies, so an attribute test would refuse every platform-administered
+deactivation there while passing everywhere else. Same predicate as migration
+`136`'s guard on `record_membership_integrity_findings()`. Executable tests pin the function's owner,
+security mode, and ACL, the eligibility filter, and that refusal.
 
 ## Session authorization invalidation
 

@@ -47,6 +47,18 @@ func orgMembershipStatusError(err error) error {
 	return quotaStatusError(err)
 }
 
+// userStatusError maps a refused deactivation to a precondition failure. The
+// caller asked for a state the platform may not be left in, and the error names
+// the organizations that have to be handed over first — so this one surfaces the
+// typed error's own message rather than the bare sentinel's.
+func userStatusError(err error) error {
+	var continuity *business.IdentityAdminContinuityError
+	if errors.As(err, &continuity) {
+		return status.Error(codes.FailedPrecondition, continuity.Error())
+	}
+	return err
+}
+
 func invitationStatusError(err error) error {
 	switch {
 	case err == nil:
@@ -243,7 +255,7 @@ func (s *UserServer) DeleteUser(ctx context.Context, req *gen.GetUserRequest) (*
 	if err := service.DeleteUser(ctx, actorID, access, &gen.GetUserRequest{
 		Identifier: &gen.GetUserRequest_Uuid{Uuid: targetID},
 	}); err != nil {
-		return nil, err
+		return nil, userStatusError(err)
 	}
 	return &emptypb.Empty{}, nil
 }

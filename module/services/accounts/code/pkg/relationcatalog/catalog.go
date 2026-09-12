@@ -176,8 +176,12 @@ var authorities = map[string]Authority{
 		Scope: ScopeTenant, PolicyShape: ShapePolymorphic, ScopeColumn: "org_id",
 		Notes: "Built-in roles (org_id IS NULL) globally readable; tenant rows scoped.",
 	},
-	"scope_grants":  {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
-	"scope_nodes":   {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"scope_grants": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"scope_nodes":  {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
+	"source_read_revisions": {
+		Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id",
+		Notes: "Read-only tenant cursor revision; source and grant mutation triggers advance it under the control-plane role.",
+	},
 	"subscriptions": {Scope: ScopeTenant, PolicyShape: ShapeDirect, ScopeColumn: "org_id"},
 	"team_members": {
 		Scope: ScopeTenant, PolicyShape: ShapeJoin, ScopeColumn: "team_id",

@@ -40,6 +40,8 @@ jobs:
         run: node --test module/tools/base-integrity.test.mjs
       - name: Test the RLS migration gate
         run: node --test module/tools/rls-migration-gate.test.mjs
+      - name: Verify managed baseline provenance and explicit source selection
+        run: python3 -m unittest discover -s qualification/managed-database -p 'test_*.py'
       - name: Test the migration pairing gate
         run: node --test module/tools/migration-pairing-gate.test.mjs
       - name: Test the generated-pins gate
@@ -67,7 +69,7 @@ jobs:
   authz-coverage:
     name: Authorization coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,6 +109,10 @@ jobs:
       - name: Enforce the declared-policy -> handler-enforcement lockstep
         working-directory: module/services/accounts/code
         run: go test -run 'Lockstep|RequiredCapabilities|ScanHandlers|EnforcementAllowlist' ./pkg/adapters/
+      - name: Qualify managed database install, upgrade and role boundaries
+        run: |
+          docker pull postgres@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54
+          python3 qualification/managed-database/ci.py /tmp/managed-database-qualification.json
 
   release-contract:
     name: Release gate contract

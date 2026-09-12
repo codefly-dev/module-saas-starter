@@ -3,6 +3,7 @@ package business
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -76,6 +77,15 @@ func (s *Service) SearchUsers(ctx context.Context, actorID string, req *gen.Sear
 }
 
 // SuspendUser suspends a user account (super_admin only).
+//
+// A suspension deactivates the identity exactly as a deletion does, and it
+// carries the same administrative-continuity consequence — but unlike a
+// deletion it is not refused for it. Suspension is how a compromised account is
+// contained, and an invariant about who can administer an organization must not
+// be the reason a credential in somebody else's hands stays live. The
+// organizations left without an administrator are recorded on the audit event
+// and reported to the operator instead, because the cost of containing the
+// account is theirs to repair and they have the authority to.
 func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.SuspendUserRequest) error {
 	w := wool.Get(ctx).In("SuspendUser")
 
@@ -83,16 +93,34 @@ func (s *Service) SuspendUser(ctx context.Context, actorID string, req *gen.Susp
 		return w.Wrapf(err, "permission denied")
 	}
 
+	var stranded []string
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		var err error
+		// Taken even though nothing here is refused: holding each organization's
+		// administration lock across the status write is what keeps a concurrent
+		// removal from counting this identity as an administrator it no longer
+		// is, and what makes the recorded list the one that actually committed.
+		stranded, err = s.organizationsStrandedByDeactivation(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
 		if err := s.store.UpdateUserStatus(ctx, req.UserId, "suspended"); err != nil {
 			return err
 		}
-		return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
+		if len(stranded) == 0 {
+			return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "")
+		}
+		return s.emitTx(ctx, actorID, "user", EventUserSuspended, "user", req.UserId, "",
+			map[string]any{"organizations_without_administrator": stranded})
 	}); err != nil {
 		return w.Wrapf(err, "cannot suspend user")
 	}
 
-	s.notifySlack(ctx, fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason))
+	message := fmt.Sprintf("Security: user %s suspended by %s (reason: %s)", req.UserId, actorID, req.Reason)
+	if len(stranded) > 0 {
+		message += fmt.Sprintf(" — organizations left without an administrator: %s", strings.Join(stranded, ", "))
+	}
+	s.notifySlack(ctx, message)
 	return nil
 }
 

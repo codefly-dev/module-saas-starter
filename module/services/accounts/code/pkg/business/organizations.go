@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -56,6 +58,141 @@ func OrgAdminContinuity(current int, projected int) error {
 		return nil
 	}
 	return ErrOrgAdminContinuity
+}
+
+// OrgAdministration is one organization an identity administers: how many
+// eligible administrators it has in total — the identity itself included, since
+// it is one of them — and how many members other than the identity are still
+// able to authenticate.
+type OrgAdministration struct {
+	OrgID                  string
+	EligibleAdministrators int
+	OtherActiveMembers     int
+}
+
+// StrandedByDeactivating reports whether deactivating the identity would leave
+// this organization unadministrable *to somebody*. Two conditions, and the
+// second is not a softening of the rule but the whole point of it: an
+// organization nobody else is in has nobody to strand.
+//
+// RegisterUser gives every identity a personal organization it solely owns, so
+// an organization count alone would refuse every deletion on this platform —
+// including the ordinary member's, who administers nothing anyone shares.
+// What the invariant protects is the members who would be left in an
+// organization no one can administer, so it asks whether there are any.
+func (a OrgAdministration) StrandedByDeactivating() bool {
+	if a.OtherActiveMembers == 0 {
+		return false
+	}
+	// The identity is one of the counted administrators, so deactivating it
+	// removes exactly one.
+	return OrgAdminContinuity(a.EligibleAdministrators, a.EligibleAdministrators-1) != nil
+}
+
+// ErrIdentityAdminContinuity reports a deactivation refused because the identity
+// is the only eligible administrator of at least one organization. It is the
+// same invariant ErrOrgAdminContinuity guards, reached from the identity's side
+// rather than one organization's, and it is a distinct sentinel because the
+// remedy is too: administration of those organizations has to be handed over
+// first, and the error names them.
+var ErrIdentityAdminContinuity = errors.New("identity is the only administrator of an organization")
+
+// IdentityAdminContinuityError carries the organizations a refused deactivation
+// would strand, so the caller is told which handovers it is waiting on instead
+// of only that something is.
+type IdentityAdminContinuityError struct {
+	Organizations []string
+}
+
+func (e *IdentityAdminContinuityError) Error() string {
+	return fmt.Sprintf("%s: %s", ErrIdentityAdminContinuity, strings.Join(e.Organizations, ", "))
+}
+
+func (e *IdentityAdminContinuityError) Unwrap() error { return ErrIdentityAdminContinuity }
+
+// maxDeactivationLockPasses bounds the enumerate-and-lock loop below. Each pass
+// past the second means the identity gained an administrative membership while
+// the loop was running; more than a handful of those in one transaction is not
+// contention, it is something pathological, and failing loudly beats looping.
+const maxDeactivationLockPasses = 8
+
+// organizationsStrandedByDeactivation locks the administrative standing of
+// every organization the identity administers and returns those its
+// deactivation would strand — see OrgAdministration.StrandedByDeactivating for
+// what that means.
+//
+// A deactivation is not a membership change and cannot be expressed as one: it
+// leaves every organization_members row standing and removes the identity from
+// all of them at once, so the invariant has to be evaluated per organization
+// and all of those organizations have to be pinned at the same time. Callers
+// hold the locks for the rest of the transaction that writes the status, which
+// is what serializes a deactivation against a concurrent removal or demotion in
+// any of the same organizations.
+//
+// The loop is the load-bearing part, and one pass is not enough. A promotion
+// can only raise an administrator count, so AddOrgMember settles it from its
+// argument and takes no administration lock — which means the identity can be
+// made an administrator of an organization this loop has already read past.
+// Deciding on an organization whose lock is not held admits exactly the
+// interleaving the lock exists to stop: the promotion lands, a demotion in that
+// same organization counts this identity (still active, because this
+// transaction has not committed) and commits, and then the deactivation commits
+// on top and leaves the organization with nobody. So the loop re-reads until
+// the roster comes back unchanged with every organization in it already locked,
+// and only then decides.
+//
+// Organizations are locked in ascending id, and the order is established here
+// rather than trusted from the query, because it is this loop that depends on
+// it: it is what keeps two concurrent deactivations over shared organizations
+// queueing instead of waiting on each other. A pass that discovers a new
+// organization sorting below one already held does acquire out of that order —
+// unavoidable, since a transaction-scoped advisory lock cannot be released to
+// retake it — so two deactivations that discover each other's organizations
+// mid-loop can deadlock. PostgreSQL detects that and aborts one with a loud
+// serialization error; it is a far better failure than the silent stranding it
+// replaces, and it needs a promotion to land inside both loops to happen at all.
+func (s *Service) organizationsStrandedByDeactivation(ctx context.Context, userID string) ([]string, error) {
+	w := wool.Get(ctx).In("organizationsStrandedByDeactivation")
+
+	held := map[string]bool{}
+	var previous []string
+	for range maxDeactivationLockPasses {
+		administered, err := s.store.ListAdministeredOrganizations(ctx, userID)
+		if err != nil {
+			return nil, w.Wrapf(err, "cannot list administered organizations")
+		}
+		orgs := make([]string, 0, len(administered))
+		for _, administration := range administered {
+			orgs = append(orgs, administration.OrgID)
+		}
+		slices.Sort(orgs)
+
+		// previous is nil only on the first pass, which has taken no locks yet,
+		// so an identity that administers nothing still gets a second read
+		// rather than a verdict from an unlocked one.
+		if previous != nil && slices.Equal(orgs, previous) {
+			var stranded []string
+			for _, administration := range administered {
+				if administration.StrandedByDeactivating() {
+					stranded = append(stranded, administration.OrgID)
+				}
+			}
+			return stranded, nil
+		}
+
+		for _, orgID := range orgs {
+			if held[orgID] {
+				continue
+			}
+			if err := s.store.LockOrgAdministration(ctx, orgID); err != nil {
+				return nil, w.Wrapf(err, "cannot lock organization administration")
+			}
+			held[orgID] = true
+		}
+		previous = orgs
+	}
+	return nil, w.NewError(
+		"the organizations this identity administers kept changing under their administration locks")
 }
 
 // requireOrgAdminContinuity takes the organization's administration lock and

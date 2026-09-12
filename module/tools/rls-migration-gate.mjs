@@ -362,6 +362,7 @@ export function analyzeSql(sql) {
       const list = policies.get(table) ?? [];
       list.push({
         policy: stripName(m[1]),
+        roles: /\bTO\s+([\s\S]*?)(?=\bUSING\b|\bWITH\s+CHECK\b|$)/i.exec(rest)?.[1].trim().split(/\s*,\s*/).map(stripName) ?? ["public"],
         verb: verb ? verb[1].toUpperCase() : "ALL",
         // PERMISSIVE (the default) policies OR-combine and grant access; RESTRICTIVE
         // policies only AND-tighten. Only permissive policies admit rows to a verb or
@@ -377,6 +378,8 @@ export function analyzeSql(sql) {
       if (target) {
         const using = clauseExpr(m[3], /^USING\s*\(/i);
         const check = clauseExpr(m[3], /^WITH\s+CHECK\s*\(/i);
+        const roles = /\bTO\s+([\s\S]*?)(?=\bUSING\b|\bWITH\s+CHECK\b|$)/i.exec(m[3]);
+        if (roles) target.roles = roles[1].trim().split(/\s*,\s*/).map(stripName);
         if (using !== null) target.using = using;
         if (check !== null) target.check = check;
       }
@@ -437,7 +440,11 @@ export function analyzeSql(sql) {
     for (const p of list) {
       if (!p.permissive) continue;
       for (const [clause, expr] of [["USING", p.using], ["WITH CHECK", p.check]]) {
-        if (expr !== null && expr.trim().toLowerCase() !== "false" && !SCOPING_SETTING.test(expr)) {
+        if (expr !== null && expr.trim().toLowerCase() !== "false" && !SCOPING_SETTING.test(expr) && !(
+          p.roles?.length === 1 &&
+          ["app_control_plane", "app_billing_worker", "app_webhook_worker", "app_job_worker"].includes(p.roles[0]) &&
+          expr.trim() === `current_user = '${p.roles[0]}'`
+        )) {
           errors.push(
             `${name}: policy ${p.policy} has a ${clause} predicate that never references app.current_org_id/app.current_user_id — it may be accidentally unconditional`,
           );

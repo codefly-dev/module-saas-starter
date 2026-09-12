@@ -6,20 +6,22 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"google.golang.org/grpc"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"google.golang.org/grpc"
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"sort"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"connectrpc.com/connect"
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"

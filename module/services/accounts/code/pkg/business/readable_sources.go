@@ -9,6 +9,7 @@ import (
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

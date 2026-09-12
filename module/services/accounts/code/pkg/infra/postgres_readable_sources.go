@@ -8,6 +8,7 @@ import (
 
 	"accounts/pkg/auth"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

@@ -10,8 +10,9 @@ import (
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	"accounts/pkg/infra"
-	"connectrpc.com/connect"
 	"time"
+
+	"connectrpc.com/connect"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
