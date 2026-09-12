@@ -12,6 +12,7 @@ import (
 	"accounts/pkg/events"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/jobs"
+
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
