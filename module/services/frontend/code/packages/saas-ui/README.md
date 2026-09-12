@@ -83,7 +83,7 @@ no consuming collection or chat screen; its wrapper tests exercise state disposa
 while end-to-end ingestion and those screens require verification in a consuming
 solution.
 
-The `dev-admin` fixture provisions a `Wiki` collection and a `Collection reader`
+The `dev-admin` fixture provisions an `Example Collection` and a `Collection reader`
 role via Accounts' registration/grant service paths. Only `admin@acme.com` and
 `bob@acme.com` receive that grant. Select this existing collection when connecting
 a demo source; other fixture viewers remain ungranted. Reseeding reconverges the

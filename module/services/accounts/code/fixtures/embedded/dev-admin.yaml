@@ -82,7 +82,7 @@ roles:
 
 collections:
   - org: Acme Corp
-    label: Wiki
+    label: Example Collection
     role: Collection reader
     readers:
       - admin@acme.com
