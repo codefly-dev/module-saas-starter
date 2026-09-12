@@ -69,11 +69,16 @@ func TestRLS_PolicyInstalled(t *testing.T) {
 		require.True(t, forced, "RLS not FORCED on webhook_subscriptions — table owner bypasses without FORCE")
 
 		var policyCount int
+		// Background-role and migration-owner policies have separate authority.
+		// Keep the exact count for policies directly applicable to requests;
+		// an extra PUBLIC policy must still fail this guard.
 		err = testStore.Pool().QueryRow(ctx, `
 			SELECT COUNT(*) FROM pg_policy
-			WHERE polrelid = 'webhook_subscriptions'::regclass`).Scan(&policyCount)
+			WHERE polrelid = 'webhook_subscriptions'::regclass
+			AND (0 = ANY(polroles) OR
+			    (SELECT oid FROM pg_roles WHERE rolname = 'app_tenant') = ANY(polroles))`).Scan(&policyCount)
 		require.NoError(t, err)
-		require.Equal(t, 1, policyCount, "expected exactly 1 policy on webhook_subscriptions")
+		require.Equal(t, 1, policyCount, "expected exactly 1 request-applicable policy on webhook_subscriptions")
 		return nil
 	}))
 }

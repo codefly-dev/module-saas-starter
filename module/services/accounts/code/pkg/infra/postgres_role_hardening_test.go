@@ -649,6 +649,24 @@ func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 			require.NotEmpty(t, authority.PolicyShape, relation)
 
 			policies := livePolicies(ctx, t, tx, relation)
+			// Explicit background policies replace BYPASSRLS only for the exact
+			// active SQL role. Keep checking every request-visible predicate.
+			requestPolicies := policies[:0]
+			for _, policy := range policies {
+				if policy.migrationOwner != "" {
+					require.Equal(t, "webhook_subscriptions", relation)
+					require.Equal(t, "r", policy.command, relation)
+					require.Equal(t, []string{"(CURRENT_USER = '" + policy.migrationOwner + "'::name)"}, policy.expressions, relation)
+					continue
+				}
+				if policy.backgroundRole != "" {
+					require.Equal(t, "*", policy.command, relation)
+					require.Equal(t, []string{"(CURRENT_USER = '" + policy.backgroundRole + "'::name)", "(CURRENT_USER = '" + policy.backgroundRole + "'::name)"}, policy.expressions, relation)
+					continue
+				}
+				requestPolicies = append(requestPolicies, policy)
+			}
+			policies = requestPolicies
 			require.NotEmpty(t, policies, relation)
 
 			switch authority.PolicyShape {
@@ -700,8 +718,10 @@ func TestPublishedRLSPolicyDetailMatchesLivePolicies(t *testing.T) {
 }
 
 type livePolicy struct {
-	command     string
-	expressions []string
+	backgroundRole string
+	migrationOwner string
+	command        string
+	expressions    []string
 }
 
 func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string) []livePolicy {
@@ -709,17 +729,26 @@ func livePolicies(ctx context.Context, t *testing.T, tx pgx.Tx, relation string)
 	rows, err := tx.Query(ctx, `
 		SELECT policy.polcmd::text,
 		       COALESCE(pg_get_expr(policy.polqual, policy.polrelid), ''),
-		       COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), '')
+		       COALESCE(pg_get_expr(policy.polwithcheck, policy.polrelid), ''),
+ CASE WHEN cardinality(policy.polroles)=1 AND policy.polname=role.rolname || '_explicit_rows'
+ AND role.rolname IN ('app_control_plane','app_billing_worker','app_webhook_worker','app_job_worker')
+ THEN role.rolname ELSE '' END,
+ CASE WHEN cardinality(policy.polroles)=1
+ AND policy.polname='webhook_subscriptions_migration_owner_read'
+ AND relation.relname='webhook_subscriptions' AND role.oid=relation.relowner
+ THEN role.rolname ELSE '' END
 		FROM pg_policy policy
+ JOIN pg_class relation ON relation.oid=policy.polrelid
+ LEFT JOIN pg_roles role ON role.oid=policy.polroles[1]
 		WHERE policy.polrelid = $1::regclass`, relation)
 	require.NoError(t, err, relation)
 	defer rows.Close()
 
 	var policies []livePolicy
 	for rows.Next() {
-		var command, using, check string
-		require.NoError(t, rows.Scan(&command, &using, &check), relation)
-		policy := livePolicy{command: command}
+		var command, using, check, backgroundRole, migrationOwner string
+		require.NoError(t, rows.Scan(&command, &using, &check, &backgroundRole, &migrationOwner), relation)
+		policy := livePolicy{command: command, backgroundRole: backgroundRole, migrationOwner: migrationOwner}
 		for _, expression := range []string{using, check} {
 			if expression != "" {
 				policy.expressions = append(policy.expressions, expression)

@@ -22,6 +22,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--allow-dirty',action='store_true')
     parser.add_argument('--tenant-mount',action='store_true',help='focused normal-host tenant TLS proof with real Redis; skips broker suite')
+    parser.add_argument('--managed-baseline',action='store_true',help='qualify the opt-in baseline with all runtime roles NOBYPASSRLS')
     options=parser.parse_args()
     source=cmd('git','rev-parse','HEAD',cwd=ROOT)
     dirty=bool(cmd('git','status','--porcelain',cwd=ROOT))
@@ -45,8 +46,8 @@ def main():
             vport=cmd('docker','port',names[1],'8200').rsplit(':',1)[1]
             dsn=f'postgresql://postgres@127.0.0.1:{pgport}/postgres?sslmode=disable'
             vurl='http://127.0.0.1:'+vport
-            def sql(text):
-                p=subprocess.run(['psql',dsn,'-v','ON_ERROR_STOP=1','-q'],input=text,text=True,capture_output=True)
+            def sql(text,connection=None):
+                p=subprocess.run(['psql',connection or dsn,'-v','ON_ERROR_STOP=1','-q','--single-transaction'],input=text,text=True,capture_output=True)
                 if p.returncode:raise RuntimeError(p.stderr[-2000:])
             ready(lambda:sql('SELECT 1'))
             initialized=ready(lambda:vault(vurl,'sys/init',{'secret_shares':1,'secret_threshold':1},method='PUT'))
@@ -66,8 +67,13 @@ def main():
             decrypted=vault(vurl,'transit/decrypt/api-keys',{'ciphertext':encrypted},credential)['data']['plaintext']
             assert base64.b64decode(decrypted)==probe, 'transit restart changed original ciphertext'
             migrations=sorted((ROOT/'module/services/store/migrations').glob('*.up.sql'),key=lambda p:int(p.name.split('_')[0]))
+            migration_dsn=dsn
+            if options.managed_baseline:
+                sql('CREATE ROLE example_migrator LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS CREATEROLE; ALTER DATABASE postgres OWNER TO example_migrator;')
+                migration_dsn=dsn.replace('postgres@','example_migrator@')
+                migrations=[ROOT/'module/services/store/baselines/managed-v1/135_managed_baseline.up.sql']+[p for p in migrations if int(p.name.split('_')[0])>135]
             for migration in migrations:
-                try:sql(migration.read_text())
+                try:sql(migration.read_text(),migration_dsn)
                 except Exception as e:raise RuntimeError(migration.name+': '+str(e)) from e
             sql('''CREATE ROLE custody_reader LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS;
 CREATE ROLE custody_writer LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS;
@@ -94,9 +100,10 @@ GRANT app_tenant,app_control_plane TO custody_writer;
                 subprocess.run([str(binary),'-test.run=^TestExecutionTenantReal$','-test.v','-test.timeout=2m'],cwd=ROOT/'module/services/accounts/code',env=env,check=True)
             else:
                 subprocess.run(['go','test','-race','-count=1','./pkg/adapters','-run','TestExecutionCustodyReal','-v'],cwd=ROOT/'module/services/accounts/code',env=env,check=True)
-            sql((ROOT/'module/services/store/migrations/131_execution_custody.down.sql').read_text())
-            sql((ROOT/'module/services/store/migrations/131_execution_custody.up.sql').read_text())
-            print(json.dumps({'source':source,'dirty':dirty,'migration_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in migrations},'local_only':True,'binary_kind':'normal-host-test' if options.tenant_mount else 'local-custody-process','qualification':'normal-tenant-mount' if options.tenant_mount else 'custody-broker','redis_image':REDIS if options.tenant_mount else None,'subprocess_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.exists() else None,'postgres_image':cmd('docker','image','inspect',PG,'--format','{{.Id}}'),'vault_image':VAULT,'vault_restart':True,'migrations':len(migrations),'source_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [ROOT/'module/services/accounts/code/execution_custody.go',ROOT/'module/services/accounts/code/execution_jwks.go',ROOT/'module/services/accounts/code/pkg/adapters/jwks_http.go',ROOT/'module/services/accounts/code/pkg/auth/ed25519/minter.go',ROOT/'module/services/accounts/code/execution_tenant_test.go',ROOT/'module/services/accounts/code/pkg/adapters/execution_custody_grpc.go',ROOT/'module/deployment/topology.bindings.codefly.yaml',ROOT/'qualification/execution-custody/run.py'] if p.exists()},'paid_calls':0}))
+            if not options.managed_baseline:
+                sql((ROOT/'module/services/store/migrations/131_execution_custody.down.sql').read_text())
+                sql((ROOT/'module/services/store/migrations/131_execution_custody.up.sql').read_text())
+            print(json.dumps({'source':source,'dirty':dirty,'migration_sha256':{p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in migrations},'local_only':True,'schema_profile':'managed-baseline-v1' if options.managed_baseline else 'canonical','binary_kind':'normal-host-test' if options.tenant_mount else 'local-custody-process','qualification':'normal-tenant-mount' if options.tenant_mount else 'custody-broker','redis_image':REDIS if options.tenant_mount else None,'subprocess_binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest() if binary.exists() else None,'postgres_image':cmd('docker','image','inspect',PG,'--format','{{.Id}}'),'vault_image':VAULT,'vault_restart':True,'migrations':len(migrations),'source_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [ROOT/'module/services/accounts/code/execution_custody.go',ROOT/'module/services/accounts/code/execution_jwks.go',ROOT/'module/services/accounts/code/pkg/adapters/jwks_http.go',ROOT/'module/services/accounts/code/pkg/auth/ed25519/minter.go',ROOT/'module/services/accounts/code/execution_tenant_test.go',ROOT/'module/services/accounts/code/pkg/adapters/execution_custody_grpc.go',ROOT/'module/deployment/topology.bindings.codefly.yaml',ROOT/'qualification/execution-custody/run.py'] if p.exists()},'paid_calls':0}))
         finally:
             for name in reversed(names):subprocess.run(['docker','rm','-f',name],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
 if __name__=='__main__':main()
