@@ -1169,3 +1169,16 @@ test("the prose counts of repository-specific gates match the enforced set", () 
     );
   }
 });
+
+test("authorization gate always runs isolated audit SQL regressions", () => {
+  const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  const job = ci.jobs["authz-coverage"];
+  assert.ok(Object.hasOwn(ci.on, "pull_request"));
+  assert.ok(Object.hasOwn(ci.on, "merge_group"));
+  assert.ok(job.services["audit-postgres"]);
+  const step = job.steps.find((step) => step.run?.includes("./internal/auditmetricstest"));
+  assert.ok(step, "database regression step must exist");
+  assert.equal(step.if, undefined, "database regression step must not be conditional");
+  assert.equal(step.env.AUDIT_METRICS_REQUIRE_DB, "1");
+  assert.match(step.env.AUDIT_METRICS_TEST_DSN, /job\.services\.audit-postgres\.ports/);
+});

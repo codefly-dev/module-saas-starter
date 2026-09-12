@@ -1,3 +1,5 @@
+import { create } from "@bufbuild/protobuf";
+import { AggregateAuditLogResponseSchema } from "../generated/typescript/src/gen/saas/accounts/v1/audit_pb.js";
 import { describe, expect, it } from "vitest";
 import { runDataGraph, runMetric } from "../src/datagraph/run.js";
 import type {
@@ -540,4 +542,133 @@ it("never turns missing or zero-denominator ratios into successful zero results"
 	expect(result.rate.points).toEqual([{ key: "real", value: 0 }]);
 	expect(result.rate.total).toBeNull();
 	expect(result.rate.coverage).toBe("partial");
+});
+
+describe("scoped server contract", () => {
+	for (const filter of [
+		{ event: "read", resource: "datasource", resourceId: "source-a" },
+		{ event: "read", collectionId: "collection-a" },
+		{ event: "read", payloadContains: { outcome: "returned" } },
+	]) {
+		for (const aggregation of ["count", "avg"] as const) {
+			for (const empty of [false, true]) {
+				it(`rejects unacknowledged ${aggregation} response, empty=${empty}, ${JSON.stringify(filter)}`, async () => {
+					const client = {
+						aggregateAuditLog: async () =>
+							create(AggregateAuditLogResponseSchema, {
+								buckets: empty
+									? []
+									: [
+											{
+												key: "all",
+												count: BigInt(900),
+												metrics: { value: 900 },
+											},
+										],
+							}),
+					};
+					await expect(
+						runMetric(
+							client,
+							{
+								id: "scoped",
+								kind: "source",
+								filter,
+								groupBy: "event_type",
+								aggregation,
+								field: "payload:duration_ms",
+							},
+							() => "saas.document.read",
+							context,
+						),
+					).rejects.toThrow("scope contract");
+				});
+			}
+		}
+	}
+	it("accepts acknowledged empty scoped responses", async () => {
+		const { client } = fakeAuditClient(() => []);
+		expect(
+			(
+				await runMetric(
+					client,
+					{
+						id: "scoped",
+						kind: "source",
+						filter: { event: "read", collectionId: "collection-a" },
+						groupBy: "event_type",
+						aggregation: "count",
+					},
+					() => "saas.document.read",
+					context,
+				)
+			).coverage,
+		).toBe("empty");
+	});
+});
+
+describe("derived additive totals", () => {
+	for (const aggregation of [
+		"count",
+		"sum",
+		"avg",
+		"percentile",
+		"count_distinct",
+	] as const) {
+		it(`preserves ${aggregation} semantics through nested arithmetic`, async () => {
+			const { client } = fakeAuditClient(() => [
+				{ key: "a", count: 2, metrics: { value: 2 } },
+				{ key: "b", count: 3, metrics: { value: 3 } },
+			]);
+			const graph: DataGraph = {
+				dashboards: [],
+				events: [{ name: "read", type: "saas.document.read" }],
+				metrics: [
+					...["a", "b"].map(
+						(id): SourceMetric => ({
+							id,
+							kind: "source",
+							filter: { event: "read" },
+							groupBy: "actor",
+							aggregation,
+							field: "payload:value",
+							percentile: 0.95,
+						}),
+					),
+					{
+						id: "added",
+						kind: "derived",
+						operation: "sum",
+						inputs: ["a", "b"],
+					},
+					{
+						id: "nested",
+						kind: "derived",
+						operation: "difference",
+						inputs: ["added", "a"],
+					},
+				],
+			};
+			const result = await runDataGraph(client, graph, context);
+			const additive = aggregation === "count" || aggregation === "sum";
+			expect(result.added.total).toBe(additive ? 10 : null);
+			expect(result.nested.total).toBe(additive ? 5 : null);
+			if (aggregation === "sum") {
+				const partial = await runDataGraph(
+					fakeAuditClient(() => [
+						{
+							key: "a",
+							count: 2,
+							metrics: { value: 2 },
+							samples: { value: BigInt(1) },
+						},
+					]).client,
+					graph,
+					context,
+				);
+				expect(partial.nested.coverage).toBe("partial");
+				expect(partial.nested.total).toBeNull();
+			}
+		});
+	}
 });

@@ -29,7 +29,8 @@ Both time endpoints are inclusive; reversed windows fail. A source metric can us
 Declare `sync_done` as `saas.datasource.sync.completed`. `resourceId` is the
 connected source ID, not a collection node ID. Accounts loads that source under
 its organization, resolves its **current** `BoundaryNodeID`, and checks the
-viewer's existing `documents:read` scope listing in the same transaction. Existing
+viewer's current `documents:read` grant through an exact node lookup in the
+same transaction. The lookup shares its predicates with scope listing. Existing
 and newly connected sources use identical logic. Missing sources/bindings, a
 changed binding the viewer cannot read, and revoked grants deny the read. There
 is no registration migration or copied permission engine.
@@ -72,7 +73,8 @@ not completed ingestion. `processed` and `new_versions` do not establish index
 readiness. Summing per-attempt counts is not a deduplicated document total.
 
 `saas.document.read` and `saas.document.search` are observational version-1
-contracts. In addition to existing document provenance fields they accept:
+contracts. `boundary`, `correlation_id`, and `outcome` are required nonempty
+strings; measurements remain optional. In addition to document provenance they accept:
 
 | Field | Meaning |
 | --- | --- |
@@ -95,6 +97,20 @@ and committed-document counts still require confirmed producer events. Do not
 substitute these read events or source dispatch for them. A complete aggregation
 cannot prove that an emitter has reported every operation.
 
+## Version acknowledgement
+
+Successful aggregate responses include `scope_contract_version: 1` (Connect JSON:
+`scopeContractVersion`), including empty results. SDK graphs, host dashboard hooks
+and imperative previews require this acknowledgement whenever `resourceId`,
+`collectionId`, or nonempty `payloadContains` is used. Missing or unsupported
+versions fail with a contract error: an older server may ignore unknown request
+fields and return organization-wide counts, so even an empty response cannot be
+accepted without acknowledgement. Upgrade the server before scoped clients.
+
+SDK facade metadata and bindings are generated from the same exported contract
+snapshot under `contracts/api/accounts/connect`; unpublished accounts protos are
+never the SDK binding input. Regenerate the export before generating the SDK.
+
 ## Unknown and partial results
 
 Empty queries have no points and render **No data yet**. Numeric sums with no
@@ -109,6 +125,8 @@ Missing derived operands and zero denominators stay unknown. Partial series keep
 observed chart points with a visible label and withhold the total. Distinct
 counts, averages, percentiles and ratios have no scalar total across multiple
 groups; summing or averaging those summaries would misrepresent the result.
+Sums and differences of complete additive inputs retain additive totals through
+nested derived metrics.
 The host DSL also withholds totals after top-N truncation. Authorization/RPC
 errors remain errors, never empty successful results. Existing consumers of the
 SDK must handle `total: null` when adopting this contract.
@@ -118,6 +136,8 @@ SDK must handle `total: null` when adopting this contract.
 Run `go test -race ./internal/auditmetricstest` from accounts/code for pure
 resource authorization tests. Set `AUDIT_METRICS_TEST_DSN` to an **independent,
 disposable PostgreSQL database** to execute the real SQL filtering, retry dedupe,
-samples, empty/zero and ratio tests. The test uses a rolled-back temporary table;
-it never starts or manages an application stack. Frontend package tests cover
+samples, empty/zero and ratio tests. The tests use rolled-back fixtures and a non-owner role with the shipped audit
+RLS policy; they never start or manage an application stack. The authorization CI
+gate provisions its own PostgreSQL service and requires these tests (a missing
+DSN with AUDIT_METRICS_REQUIRE_DB=1 in that gate is an error). Frontend package tests cover
 exact catalog names, compilation, unknown outcomes and partial rendering.

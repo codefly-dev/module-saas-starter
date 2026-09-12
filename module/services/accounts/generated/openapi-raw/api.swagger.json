@@ -5832,6 +5832,11 @@
             "type": "object",
             "$ref": "#/definitions/v1AuditAggregateBucket"
           }
+        },
+        "scopeContractVersion": {
+          "type": "integer",
+          "format": "int64",
+          "description": "Version 1 acknowledges resource, collection and payload filters, even with no buckets."
         }
       }
     },

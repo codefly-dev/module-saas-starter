@@ -28,7 +28,7 @@
 	"scripts": {
 		"build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
 		"generate": "node scripts/generate.mjs",
-		"generate:bindings": "cd ../../../../accounts && codefly generate proto --proto ./proto --output . --local --template buf.gen.sdk.yaml",
+		"generate:bindings": "cd ../../../../accounts && codefly generate proto --proto ../../contracts/api/accounts/connect/proto --output . --local --template buf.gen.sdk.yaml",
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"dependencies": {

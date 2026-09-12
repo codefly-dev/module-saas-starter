@@ -9,6 +9,7 @@ import {
 import {
 	auditEventTypesQuery,
 	useAuditLog,
+	useAuditAggregate,
 	usePrincipalDirectory,
 } from "./queries";
 
@@ -212,4 +213,34 @@ describe("usePrincipalDirectory", () => {
 
 		expect(listPrincipals).not.toHaveBeenCalled();
 	});
+});
+
+describe("scoped aggregate acknowledgement", () => {
+	for (const scopeContractVersion of [0, 1, 2]) {
+		it(`requires supported acknowledgement even for empty responses: ${scopeContractVersion}`, async () => {
+			const aggregateAuditLog = vi.fn(async () => ({
+				buckets: [],
+				scopeContractVersion,
+			}));
+			vi.mocked(useAuditService).mockReturnValue({
+				aggregateAuditLog,
+			} as unknown as ReturnType<typeof useAuditService>);
+			const { result } = renderHook(
+				() =>
+					useAuditAggregate({
+						orgId: "org-a",
+						collectionId: "collection-a",
+						eventType: "saas.document.read",
+						groupBy: "event_type",
+					}),
+				{ wrapper: wrapper() },
+			);
+			await waitFor(() => expect(result.current.isFetching).toBe(false));
+			if (scopeContractVersion === 1) expect(result.current.data).toEqual([]);
+			else {
+				expect(result.current.error?.message).toContain("scope contract");
+				expect(result.current.data).toBeUndefined();
+			}
+		});
+	}
 });

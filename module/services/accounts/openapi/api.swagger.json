@@ -413,6 +413,11 @@
             "type": "object"
           },
           "type": "array"
+        },
+        "scopeContractVersion": {
+          "description": "Version 1 acknowledges resource, collection and payload filters, even with no buckets.",
+          "format": "int64",
+          "type": "integer"
         }
       },
       "type": "object"

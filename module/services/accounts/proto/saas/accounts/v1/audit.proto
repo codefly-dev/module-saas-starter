@@ -159,6 +159,8 @@ message AuditAggregateBucket {
 
 message AggregateAuditLogResponse {
   repeated AuditAggregateBucket buckets = 1;
+  // Version 1 acknowledges resource, collection and payload filters, even with no buckets.
+  uint32 scope_contract_version = 2;
 }
 
 message ListAuditEventTypesRequest {}
