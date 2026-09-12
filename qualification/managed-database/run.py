@@ -353,9 +353,14 @@ WHERE member.rolname IN ('example_reader','example_writer','example_ro','example
             if args.fresh_package:
                 run(['docker','cp',str(staged),fresh+':/tmp/stage'])
                 run(['docker','cp',str(args.migrate),fresh+':/tmp/migrate'])
+            # Later migrations may legitimately add and remove their own policies.
+            # Snapshot the policy inventory at 136, immediately before the guarded
+            # downgrade, so its refusal still proves that it removed no policy.
+            if head>136:
+                run(migration_command(fresh,'example_migrator','down',str(head-136)))
+            assert sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='136:false'
             policy_before=sql(fresh,'SELECT count(*) FROM pg_policy').stdout
-            # Again down to 135, so the step that has to refuse is 136's own.
-            r=run(migration_command(fresh,'example_migrator','down',str(head-135)),check=False)
+            r=run(migration_command(fresh,'example_migrator','down','1'),check=False)
             assert r.returncode and 'background policy rollback requires' in r.stderr,r.stderr
             assert sql(fresh,'SELECT count(*) FROM pg_policy').stdout==policy_before
             assert sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='135:true'

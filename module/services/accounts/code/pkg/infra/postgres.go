@@ -417,11 +417,14 @@ type ReadQueryExecutor interface {
 }
 
 func (s *PostgresStore) readAs(ctx context.Context, tenantID, userID string, fn func(context.Context, ReadQueryExecutor) error) error {
-	if s.database == nil {
-		return errors.New("authenticated Postgres boundary is unavailable")
-	}
 	if err := auth.RequireVerifiedDatabaseScope(ctx, tenantID, userID); err != nil {
 		return err
+	}
+	if tx, ok := ctx.Value(sourceReadSnapshotKey{}).(pgx.Tx); ok {
+		return fn(ctx, tx)
+	}
+	if s.database == nil {
+		return errors.New("authenticated Postgres boundary is unavailable")
 	}
 	verifiedTenantID, verifiedUserID, ok := auth.VerifiedDatabaseIdentity(ctx)
 	if !ok {

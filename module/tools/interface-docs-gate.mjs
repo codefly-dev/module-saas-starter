@@ -95,6 +95,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/FetchDatasourceBlob": "datasource",
   "ModuleCapabilitiesService/GetApproval": "approvals",
   "ModuleCapabilitiesService/HeartbeatJob": "jobs",
+  "ModuleCapabilitiesService/ListReadableSourceCollections": "authorization",
   "ModuleCapabilitiesService/ListSubscriptions": "events",
   "ModuleCapabilitiesService/MintModuleRegistration": "authorization",
   "ModuleCapabilitiesService/MintModuleWorkContext": "authorization",

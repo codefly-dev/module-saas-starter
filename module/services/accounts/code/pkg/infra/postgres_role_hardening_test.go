@@ -74,6 +74,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"org_settings":                         {selectRows: true, insertRows: true, updateRows: true},
 	"organization_activations":             {selectRows: true, insertRows: true, updateRows: true},
 	"organization_authorization_revisions": {selectRows: true},
+	"source_read_revisions":                {selectRows: true},
 	"organization_members":                 {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"organizations":                        {selectRows: true, insertRows: true, updateRows: true},
 	"principal_authorization_revisions":    {selectRows: true},
@@ -300,10 +301,10 @@ func TestControlPlaneRelationGrantsAreExact(t *testing.T) {
 			if relation == "actor_chain_journal" || relation == "actor_chain_revocations" {
 				want = relationPrivileges{selectRows: true, insertRows: true}
 			}
-			// approval_requests is the mutable head: the control plane reads,
-			// inserts, and transitions it, but never deletes — org deletion cascades
-			// via the org_id FK, so no row-DELETE grant is needed.
-			if relation == "approval_requests" {
+			// approval_requests is the mutable head; source_read_revisions is
+			// a monotonic cursor revision. The control plane reads, inserts,
+			// and updates both; organization deletion uses the FK cascade.
+			if relation == "approval_requests" || relation == "source_read_revisions" {
 				want = relationPrivileges{selectRows: true, insertRows: true, updateRows: true}
 			}
 			// approval_decisions is append-only like actor_chain_journal: read and

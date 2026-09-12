@@ -1,0 +1,20 @@
+kind: library
+name: source-read-sdk
+version: 0.1.0
+languages:
+    - name: go
+      path: go/
+      exports:
+        - github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go
+sources:
+    - package: codefly/saas-starter
+      version: 0.1.0
+      service: accounts
+      endpoint: connect
+      contract-digest: sha256:234edd52c4ad23d9dba0a89b1a83e09ed8b231bec0d41bbda14061cc5d8d8f61
+      services:
+        - ModuleCapabilitiesService
+generated-by:
+    codefly: development
+    companion: ghcr.io/codefly-dev/proto:0.0.14
+    facade: true

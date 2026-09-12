@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"accounts/pkg/auth"
 	"context"
 	"runtime"
 	"sync"
@@ -162,6 +163,15 @@ func (s *PostgresStore) WithOrgTx(ctx context.Context, orgID string, fn func(ctx
 		// — if RLS is enabled, the empty setting would silently
 		// reject reads. Surface it loudly.
 		return errEmptyOrgID
+	}
+	// Read-only source projection callbacks must not open a second snapshot
+	// when existing authority helpers enter their tenant transaction.
+	if tx, ok := ctx.Value(sourceReadSnapshotKey{}).(pgx.Tx); ok {
+		_, owner, _ := auth.VerifiedDatabaseIdentity(ctx)
+		if err := auth.RequireVerifiedDatabaseScope(ctx, orgID, owner); err != nil {
+			return err
+		}
+		return fn(context.WithValue(ctx, "tx", tx)) //nolint:staticcheck // existing store transaction key
 	}
 	atomic.AddInt64(&orgTxCount, 1)
 	tx, err := s.pool.Begin(ctx)

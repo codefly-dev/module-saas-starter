@@ -99,6 +99,9 @@ type Store interface {
 	//     Call it at the top level only — nesting it inside an existing
 	//     WithOrgTx/WithControlPlane violates the no-nesting rule.
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
+	WithSourceReadSnapshot(context.Context, string, func(context.Context) error) error
+	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
+	ListReadableSourcesPage(context.Context, string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
 	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	DeleteDatasourceSource(ctx context.Context, orgID, id string) error
