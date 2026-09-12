@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, realpathSync, mkdirSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { parseWorkflowYaml } from './workflow-yaml.mjs';
@@ -11,48 +11,51 @@ const bindingsPath = 'module/deployment/topology.bindings.codefly.yaml';
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' });
 const normalize = ref => ref.replace(/^docker\.io\/library\//, '').replace(/^docker\.io\//, '');
 
-export function externalImages(recipe) {
-  const stages = new Set(['scratch']);
-  const images = new Set();
-  for (const line of recipe.split('\n')) {
-    const match = line.match(/^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?\s*$/i);
-    if (!match) {
-      if (/^FROM\s/i.test(line)) throw new Error(`Unsupported image declaration: ${line}`);
-      continue;
+export function materialImages(materials) {
+  if (!Array.isArray(materials) || !materials.length) throw new Error('Missing BuildKit materials');
+  return [...new Set(materials.flatMap(material => {
+    if (!material.URI.startsWith('pkg:docker/')) return [];
+    const uri = new URL(material.URI);
+    const image = decodeURIComponent(uri.pathname.slice('docker/'.length));
+    const separator = image.lastIndexOf('@');
+    if (separator < 1 || !material.Digests?.length || material.Digests.some(digest => !/^sha256:[a-f0-9]{64}$/.test(digest))) {
+      throw new Error(`Invalid Docker material: ${material.URI}`);
     }
-    const [, ref, stage] = match;
-    if (/[${}]/.test(ref)) throw new Error(`Unresolved image declaration: ${ref}`);
-    if (!stages.has(ref.toLowerCase())) images.add(normalize(ref));
-    if (stage) stages.add(stage.toLowerCase());
-  }
-  if (!images.size) throw new Error('No external build images found');
-  return [...images].sort();
+    const ref = normalize(`${image.slice(0, separator)}:${image.slice(separator + 1)}`);
+    return material.Digests.map(digest => `${ref}@${digest}`);
+  }))].sort();
 }
 
-export function resolvedImages(log) {
-  return [...new Set([...log.matchAll(/\bFROM\s+(\S+@sha256:[a-f0-9]{64})\b/g)]
-    .map(match => normalize(match[1])))].sort();
-}
-
-export function verifyImages(expected, actual, resolved) {
-  const errors = [];
-  if (JSON.stringify([...expected].sort()) !== JSON.stringify([...actual].sort())) {
-    errors.push(`Expected ${expected.join(', ')}; agent generated ${actual.join(', ')}`);
-  }
-  for (const ref of actual) {
-    if (!resolved.some(value => ref.includes('@') ? value === ref : value.startsWith(`${ref}@sha256:`))) {
-      errors.push(`No BuildKit FROM digest evidence for ${ref}`);
-    }
-  }
+export function verifyImages(expected, resolved) {
+  const matches = (ref, value) => ref.includes('@') ? ref === value : value.startsWith(`${ref}@sha256:`);
+  const errors = expected.filter(ref => !resolved.some(value => matches(ref, value)))
+    .map(ref => `Missing expected build material: ${ref}`);
+  errors.push(...resolved.filter(value => !expected.some(ref => matches(ref, value)))
+    .map(value => `Unexpected build material: ${value}`));
   return errors;
 }
 
+const docker = (...args) => execFileSync('docker', ['buildx', ...args], { encoding: 'utf8' });
+const history = () => docker('history', 'ls', '--format', '{{json .}}').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+
+export function selectBuild(builds, context, dockerfile) {
+  const matches = builds.filter(build => build.Context === context && build.Dockerfile === dockerfile);
+  if (matches.length !== 1 || matches[0].Status !== 'completed') {
+    throw new Error(`Expected one completed build for ${context}/${dockerfile}; found ${matches.length}`);
+  }
+  return matches[0];
+}
+
 export function coverageErrors(inventory, services, recipes) {
-  return recipes.filter(path => {
-    const name = path.split('/')[2];
-    const service = services.find(service => service.name === name);
-    return !service || !inventory[service.agent.name]?.images?.length;
-  }).map(path => `No effective image coverage for ${path}`);
+  const errors = services.filter(service => {
+    const config = inventory[service.agent.name];
+    return !config?.images?.length && config?.coverage !== 'codefly-vendor-audit';
+  }).map(service => `No effective image coverage for ${service.name} (${service.agent.name})`);
+  for (const path of recipes) {
+    const service = services.find(service => service.name === path.split('/')[2]);
+    if (!service || !inventory[service.agent.name]?.images?.length) errors.push(`No effective image coverage for ${path}`);
+  }
+  return errors;
 }
 
 function check(inventory, services) {
@@ -60,17 +63,9 @@ function check(inventory, services) {
     discoverManifests(root).filter(isGeneratedRecipe).map(manifest => manifest.path));
   if (process.env.CODEFLY_BASE) {
     const changed = git('diff', '--name-only', process.env.CODEFLY_BASE, 'HEAD').trim().split('\n');
-    for (const path of changed.filter(path => isGeneratedRecipe({ ecosystem: 'docker', path }))) {
-      if (!changed.includes(bindingsPath)) {
-        errors.push(`${path}: generated recipe changes require adoption through topology bindings; edits alone cannot change the build`);
-      }
-      const name = path.split('/')[2];
-      const service = services.find(service => service.name === name);
-      const expected = inventory[service?.agent.name]?.images ?? [];
-      const proposed = externalImages(read(path));
-      if (JSON.stringify(proposed) !== JSON.stringify([...expected].sort())) {
-        errors.push(`${path}: proposed images differ from the effective image contract; update the owning agent and topology bindings`);
-      }
+    const proposals = git('diff', '--name-only', '--diff-filter=ACMRT', process.env.CODEFLY_BASE, 'HEAD').trim().split('\n');
+    for (const path of proposals.filter(path => isGeneratedRecipe({ ecosystem: 'docker', path }))) {
+      errors.push(`${path}: generated recipes are not upgrade inputs; adopt an agent through topology bindings and update the image contract`);
     }
     if (changed.includes(inventoryPath) && !changed.includes(bindingsPath) &&
         git('ls-tree', '--name-only', process.env.CODEFLY_BASE, inventoryPath).trim()) {
@@ -87,16 +82,24 @@ function check(inventory, services) {
 }
 
 function evidence(inventory, services) {
-  const log = read('.codefly/ci/build.log');
-  const resolved = resolvedImages(log);
+  const before = new Set(JSON.parse(read('.codefly/ci/build-history-before.json')));
+  const builds = history().filter(record => !before.has(record.ref)).map(record => {
+    const build = JSON.parse(docker('history', 'inspect', record.ref.split('/').at(-1), '--format', 'json'));
+    if (existsSync(build.Context)) build.Context = realpathSync(build.Context);
+    return build;
+  });
   const selected = process.env.SELECTION_ALL === 'true'
     ? services : services.filter(service => (process.env.AFFECTED_SERVICES ?? '').split(/\s+/).includes(service.name));
   if (!selected.length) throw new Error('No services selected for build image evidence');
   const records = [];
-  const errors = [];
+  const errors = coverageErrors(inventory, services,
+    discoverManifests(root).filter(isGeneratedRecipe).map(manifest => manifest.path));
   for (const service of selected) {
     const config = inventory[service.agent.name];
-    if (!config) continue;
+    if (!config?.images?.length) {
+      records.push({ service: service.name, agent: service.agent, coverage: config?.coverage, errors: config ? [] : ['Missing coverage classification'] });
+      continue;
+    }
     const directory = `module/services/${service.name}/build-recipes/${service.agent.version}`;
     try {
       const manifest = JSON.parse(read(`${directory}/recipe.codefly.json`));
@@ -104,17 +107,22 @@ function evidence(inventory, services) {
         throw new Error('Build recipe metadata does not match the pinned agent');
       }
       const recipes = manifest.recipes.map(recipe => ({ ...recipe, content: read(`${directory}/${recipe.dockerfile}`) }));
-      const actual = [...new Set(recipes.flatMap(recipe => externalImages(recipe.content)))].sort();
-      const failures = verifyImages(config.images, actual, resolved);
+      const evidence = recipes.map(recipe => {
+        const context = realpathSync(resolve(root, `module/services/${service.name}`, recipe.context ?? '.'));
+        const build = selectBuild(builds, context, `builder/${recipe.dockerfile}`);
+        const { Ref, Context, Dockerfile, Status, Platform, StartedAt, CompletedAt, Materials } = build;
+        return { Ref, Context, Dockerfile, Status, Platform, StartedAt, CompletedAt, Materials };
+      });
+      const resolved = [...new Set(evidence.flatMap(build => materialImages(build.Materials)))].sort();
+      const failures = verifyImages(config.images, resolved);
       errors.push(...failures.map(error => `${service.name}: ${error}`));
-      records.push({ service: service.name, agent: service.agent, source: config.source, recipes,
-        images: actual, resolved: resolved.filter(value => actual.some(ref => value === ref || value.startsWith(`${ref}@`))), errors: failures });
+      records.push({ service: service.name, agent: service.agent, source: config.source, recipes, builds: evidence, resolved, errors: failures });
     } catch (error) {
       errors.push(`${service.name}: ${error.message}`);
       records.push({ service: service.name, agent: service.agent, errors: [error.message] });
     }
   }
-  writeFileSync(resolve(root, '.codefly/ci/build-images.json'), `${JSON.stringify({ schemaVersion: 1, records }, null, 2)}\n`);
+  writeFileSync(resolve(root, '.codefly/ci/build-images.json'), `${JSON.stringify({ schemaVersion: 2, records }, null, 2)}\n`);
   console.log(JSON.stringify(records, null, 2));
   return errors;
 }
@@ -129,6 +137,7 @@ export function monitor(inventory, digest = registryDigest) {
   const errors = [];
   const lines = ['# Effective build image updates', '', 'Update the owning agent source, publish a qualified release, then adopt it through topology bindings.', ''];
   for (const [agent, config] of Object.entries(inventory)) {
+    if (config.coverage === 'codefly-vendor-audit') continue;
     lines.push(`## ${agent}`, '', config.source, '');
     for (const ref of config.images) {
       const [tag, pinned] = ref.split('@');
@@ -155,10 +164,14 @@ if (resolve(process.argv[1] ?? '') === resolve(import.meta.filename)) {
     const inventory = JSON.parse(read(inventoryPath));
     const services = parseWorkflowYaml(read(bindingsPath)).services;
     const command = process.argv[2];
-    const errors = command === 'check' ? check(inventory, services)
+    if (command === 'snapshot') {
+      mkdirSync(resolve(root, '.codefly/ci'), { recursive: true });
+      writeFileSync(resolve(root, '.codefly/ci/build-history-before.json'), JSON.stringify(history().map(record => record.ref)));
+    }
+    const errors = command === 'snapshot' ? [] : command === 'check' ? check(inventory, services)
       : command === 'evidence' ? evidence(inventory, services)
       : command === 'monitor' ? monitor(inventory)
-      : ['usage: build-images.mjs check|evidence|monitor'];
+      : ['usage: build-images.mjs check|snapshot|evidence|monitor'];
     if (errors.length) throw new Error(errors.join('\n'));
   } catch (error) {
     console.error(error.message);

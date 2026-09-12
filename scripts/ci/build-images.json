@@ -31,5 +31,11 @@
       "alpine:3.21",
       "alpine:latest"
     ]
+  },
+  "redis": {
+    "coverage": "codefly-vendor-audit"
+  },
+  "vault": {
+    "coverage": "codefly-vendor-audit"
   }
 }

@@ -211,17 +211,27 @@ To upgrade an image:
    establish runtime compatibility. Do not bump Node or Go majors by editing a
    generated recipe.
 
-CI rejects generated-only recipe edits and proposed images that disagree with
-that contract before planning service CI. Changes to the image contract force the full service graph
-through CI. After the canonical build, `build-images.mjs evidence` compares the
-versioned `build-recipes/<agent-version>/recipe.codefly.json` inputs with the contract and requires BuildKit `FROM` records with
-matching digests. A successful build of an overwritten proposal therefore fails
-the image check. The `effective-build-images` artifact retains the build log,
-Codefly report, regenerated recipe text, agent pins, tags and resolved digests,
-including evidence from failed builds. Floating tags (currently the migration
-builder's Alpine 3.21) record the digest from the build log, never a later registry
-lookup. Missing digest evidence fails closed; changes to BuildKit's log format
-may require updating the evidence reader.
+CI rejects edits to generated recipes; deleting obsolete generated copies is
+allowed. Image proposals belong in the image contract alongside topology adoption.
+Every topology service must declare image coverage, even if its recipe is absent
+from the checkout. Redis and Vault explicitly use the existing Codefly vendor
+image audit; an unknown agent is an error.
+
+Changes to the image contract force the full service graph through CI. Before
+each canonical build attempt, CI snapshots Buildx history. After the build,
+`build-images.mjs evidence` reads the executor's structured materials from new
+build records, matched to each service context and recipe. BuildKit owns Dockerfile
+syntax and stage reachability: unused stages are not required, and whitespace,
+build arguments and stage aliases cannot hide effective dependencies. Both missing
+and unexpected materials fail verification. Command output is never evidence.
+Missing, failed or ambiguous build records fail closed, and previous attempts or
+other workspaces cannot supply a service's materials.
+
+The `effective-build-images` artifact retains Codefly reports, build logs, recipe
+text, agent pins and per-build material digests. Floating tags (currently the
+migration builder's Alpine 3.21) retain the digest BuildKit actually used, never a
+later registry lookup. CI pins Buildx v0.33.0 with the Docker driver to obtain this
+executor evidence without changing Codefly's build path.
 
 The same check fails if `authz-coverage` — or any other gate in `REQUIRED_GATES`
 — is dropped from the aggregate's `needs` or removed from the workflow, if the

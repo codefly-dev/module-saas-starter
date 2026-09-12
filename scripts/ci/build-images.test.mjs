@@ -4,88 +4,62 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { externalImages, resolvedImages, verifyImages, coverageErrors, monitor } from './build-images.mjs';
+import { materialImages, verifyImages, coverageErrors, monitor, selectBuild } from './build-images.mjs';
 import { parseWorkflowYaml } from './workflow-yaml.mjs';
 
 const digest = `sha256:${'a'.repeat(64)}`;
 const image = `node:24-alpine@${digest}`;
+const material = (name, version, hash = digest) => ({ URI: `pkg:docker/${name}@${version}?platform=linux%2Famd64`, Digests: [hash] });
 const workflow = parseWorkflowYaml(readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8'));
 
-test('external images exclude stage aliases and scratch, preserving tags and digests', () => {
-  assert.deepEqual(externalImages(`FROM --platform=linux/amd64 ${image} AS base\nFROM base AS build\nFROM scratch\nFROM BASE AS runner`), [image]);
-  assert.deepEqual(externalImages('FROM alpine:3.21'), ['alpine:3.21']);
+test('executor materials preserve all effective dependencies and platform digests', () => {
+  assert.deepEqual(materialImages([material('node', '24-alpine')]), [image]);
+  assert.deepEqual(materialImages([material('docker.io/library/alpine', '3.21')]), [`alpine:3.21@${digest}`]);
+  assert.match(verifyImages([image], materialImages([material('node', '24-alpine'), material('alpine', '3.21')])).join('\n'), /Unexpected build material/);
 });
 
-test('unresolved and missing image declarations fail closed', () => {
-  for (const recipe of ['FROM ${BASE}', 'FROM alpine AS build extra', 'COPY . .']) {
-    assert.throws(() => externalImages(recipe));
+test('missing, malformed and overwritten material evidence fails closed', () => {
+  for (const materials of [undefined, [], [{ URI: 'pkg:docker/node@24', Digests: [] }]]) assert.throws(() => materialImages(materials));
+  assert.match(verifyImages([image], []).join('\n'), /Missing expected/);
+  assert.match(verifyImages([image], materialImages([material('node', '26-alpine')])).join('\n'), /Unexpected/);
+  assert.deepEqual(verifyImages(['alpine:3.21'], materialImages([material('alpine', '3.21')])), []);
+});
+
+test('build identity cannot borrow another service or recipe, or accept ambiguous or failed attempts', () => {
+  const build = { Context: '/example/frontend', Dockerfile: 'builder/Dockerfile', Status: 'completed' };
+  assert.equal(selectBuild([build], build.Context, build.Dockerfile), build);
+  for (const builds of [[], [build, build], [{ ...build, Status: 'error' }], [{ ...build, Context: '/example/marketing' }], [{ ...build, Dockerfile: 'other' }]]) {
+    assert.throws(() => selectBuild(builds, build.Context, build.Dockerfile));
   }
 });
 
-test('only actual BuildKit FROM records establish resolved digest evidence', () => {
-  assert.deepEqual(resolvedImages(`#2 load metadata for docker.io/library/${image}\n#3 resolve docker.io/library/${image}`), []);
-  assert.deepEqual(resolvedImages(`#4 [base 1/1] FROM docker.io/library/${image}\n#4 [base 1/1] FROM docker.io/library/${image}`), [image]);
-});
-
-test('an upgrade overwritten by the agent fails even when the old image built successfully', () => {
-  const proposed = `node:26-alpine@sha256:${'b'.repeat(64)}`;
-  assert.match(verifyImages([proposed], [image], [image]).join('\n'), /agent generated node:24/);
-  assert.deepEqual(verifyImages([proposed], [proposed], [proposed]), []);
-});
-
-test('a pinned recipe requires the exact build digest, including on cached builds', () => {
-  assert.deepEqual(verifyImages([image], [image], [image]), []);
-  assert.match(verifyImages([image], [image], []).join('\n'), /No BuildKit/);
-  assert.match(verifyImages([image], [image], [`node:24-alpine@sha256:${'b'.repeat(64)}`]).join('\n'), /No BuildKit/);
-});
-
-test('a floating recipe records the digest resolved by the build, not a later registry lookup', () => {
-  const ref = 'alpine:3.21';
-  assert.deepEqual(verifyImages([ref], [ref], [`${ref}@${digest}`]), []);
-  assert.match(verifyImages([ref], [ref], [`alpine:3.23@${digest}`]).join('\n'), /No BuildKit/);
-});
-
-test('new generated recipes cannot silently lose image dependency coverage', () => {
-  const recipes = ['module/services/example/builder/Dockerfile'];
+test('every topology agent needs coverage even before it emits a Dockerfile', () => {
   const services = [{ name: 'example', agent: { name: 'example' } }];
-  assert.equal(coverageErrors({}, services, recipes).length, 1);
-  assert.deepEqual(coverageErrors({ example: { images: [image] } }, services, recipes), []);
+  assert.equal(coverageErrors({}, services, []).length, 1);
+  assert.deepEqual(coverageErrors({ example: { images: [image] } }, services, []), []);
+  const inventory = { example: { coverage: 'codefly-vendor-audit' } };
+  assert.deepEqual(coverageErrors(inventory, services, []), []);
+  assert.equal(coverageErrors(inventory, services, ['module/services/example/builder/Dockerfile']).length, 1);
 });
 
-test('CI verifies regenerated recipes after the canonical build and retains evidence on failure', () => {
+test('CI snapshots each attempt before the canonical build and retains evidence on failure', () => {
   const steps = workflow.jobs['codefly-build'].steps;
-  const build = steps.findIndex(step => step.name === 'Build affected service images');
-  const verify = steps.findIndex(step => step.run === 'node scripts/ci/build-images.mjs evidence');
-  assert.ok(verify > build);
-  assert.match(steps[build].run, /codefly ci run/);
-  assert.match(steps[build].run, /build_log=".codefly\/ci\/build.log"/);
-  assert.equal(steps[build].env.BUILDKIT_PROGRESS, 'plain');
-  assert.match(steps[verify].if, /!cancelled/);
-  const upload = steps.find(step => step.uses?.startsWith('actions/upload-artifact@'));
-  assert.match(upload.if, /!cancelled/);
-  assert.equal(upload.with['include-hidden-files'], 'true');
+  const script = steps.find(step => step.name === 'Build affected service images').run;
+  assert.match(script, /for attempt.*\n\s+node scripts\/ci\/build-images.mjs snapshot\n\s+if codefly ci run/);
+  const buildx = steps.find(step => step.uses?.startsWith('docker/setup-buildx-action@'));
+  assert.equal(buildx.with.version, 'v0.33.0');
+  assert.equal(buildx.with.driver, 'docker');
+  assert.match(steps.find(step => step.run === 'node scripts/ci/build-images.mjs evidence').if, /!cancelled/);
+  assert.equal(steps.find(step => step.uses?.startsWith('actions/upload-artifact@')).with['include-hidden-files'], 'true');
 });
 
-test('ineffective proposals stop the plan before expensive service CI and contract changes qualify all services', () => {
-  const steps = workflow.jobs['codefly-plan'].steps;
-  assert.ok(steps.findIndex(step => step.run === 'node scripts/ci/build-images.mjs check') <
-    steps.findIndex(step => step.name === 'Install Codefly'));
-  const plan = steps.find(step => step.name === 'Resolve affected services').run;
-  assert.match(plan, /git diff --name-only.*scripts\/ci\/build-images.json/);
-  assert.match(plan, /all=true\n\s+selection_args\+=\(--all\)/);
-});
-
-
-test('the registry monitor reports digest changes and release-line upgrades at the owning source', () => {
-  const config = { example: { source: 'https://example.com/agent', images: [image], watch: ['node:alpine'] } };
+test('the registry monitor reports changed digests and skips only classified vendor agents', () => {
+  const config = { example: { source: 'https://example.com/agent', images: [image], watch: ['node:alpine'] }, vendor: { coverage: 'codefly-vendor-audit' } };
   assert.deepEqual(monitor(config, () => digest), []);
-  const errors = monitor(config, () => `sha256:${'b'.repeat(64)}`);
-  assert.match(errors.join('\n'), /digest changed/);
-  assert.match(errors.join('\n'), /review node:alpine in https:\/\/example.com\/agent/);
-  assert.throws(() => monitor(config, () => { throw new Error('registry unavailable'); }), /registry unavailable/);
+  assert.match(monitor(config, () => `sha256:${'b'.repeat(64)}`).join('\n'), /digest changed/);
 });
 
-test('proposal checks use the PR base and require image changes to travel with topology adoption', () => {
+test('Git proposal checks allow deleting obsolete recipes and removing services but reject generated edits', () => {
   const dir = mkdtempSync(join(tmpdir(), 'build-image-proposal-'));
   const put = (path, content) => {
     mkdirSync(join(dir, path, '..'), { recursive: true });
@@ -93,54 +67,71 @@ test('proposal checks use the PR base and require image changes to travel with t
   };
   const git = (...args) => execFileSync('git', ['-c', 'user.name=Acme', '-c', 'user.email=user@example.com', ...args], { cwd: dir, encoding: 'utf8' });
   const commit = () => { git('add', '.'); git('commit', '-qm', 'test: image proposal'); };
-  const check = base => spawnSync(process.execPath, ['scripts/ci/build-images.mjs', 'check'], {
-    cwd: dir, encoding: 'utf8', env: { ...process.env, CODEFLY_BASE: base },
-  });
+  const check = base => spawnSync(process.execPath, ['scripts/ci/build-images.mjs', 'check'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CODEFLY_BASE: base } });
   try {
-    for (const file of ['build-images.mjs', 'dependabot-coverage.mjs', 'workflow-yaml.mjs']) {
-      put(`scripts/ci/${file}`, readFileSync(new URL(file, import.meta.url), 'utf8'));
-    }
+    for (const file of ['build-images.mjs', 'dependabot-coverage.mjs', 'workflow-yaml.mjs']) put(`scripts/ci/${file}`, readFileSync(new URL(file, import.meta.url), 'utf8'));
     const bindings = 'module/deployment/topology.bindings.codefly.yaml';
     put(bindings, 'services:\n  - name: example\n    agent:\n      name: example\n      version: 1.0.0\n');
     const recipe = 'module/services/example/builder/Dockerfile';
     put(recipe, `FROM ${image}\n`);
-    git('init', '-q');
-    commit();
-    const initial = git('rev-parse', 'HEAD').trim();
-    const inventory = 'scripts/ci/build-images.json';
-    put(inventory, JSON.stringify({ example: { images: [image] } }));
-    commit();
-    assert.equal(check(initial).status, 0);
+    put('scripts/ci/build-images.json', JSON.stringify({ example: { images: [image] } }));
+    git('init', '-q'); commit();
     const base = git('rev-parse', 'HEAD').trim();
-    put(recipe, `# refreshed\nFROM ${image}\n`);
-    commit();
-    assert.match(check(base).stderr, /edits alone cannot change the build/);
-    const upgraded = `node:26-alpine@${digest}`;
-    put(recipe, `FROM ${upgraded}\n`);
-    commit();
-    assert.match(check(base).stderr, /proposed images differ/);
-    put(inventory, JSON.stringify({ example: { images: [upgraded] } }));
-    commit();
-    assert.match(check(base).stderr, /require an agent release adopted through topology bindings/);
-    put(bindings, readFileSync(join(dir, bindings), 'utf8').replace('1.0.0', '2.0.0'));
-    commit();
+    put(recipe, ` FROM ${image}\n`); commit();
+    assert.match(check(base).stderr, /generated recipes are not upgrade inputs/);
+    rmSync(join(dir, recipe)); commit();
     assert.equal(check(base).status, 0, check(base).stderr);
-    const recipeDir = 'module/services/example/build-recipes/2.0.0';
-    put(`${recipeDir}/recipe.codefly.json`, JSON.stringify({ schema: 'codefly.dev/build-recipe/v2', name: 'example', version: '2.0.0', recipes: [{ dockerfile: 'builder/Dockerfile' }] }));
-    put(`${recipeDir}/builder/Dockerfile`, `FROM ${upgraded}\n`);
-    put('.codefly/ci/build.log', `#3 [build 1/1] FROM docker.io/library/${upgraded}\n`);
-    const evidence = () => spawnSync(process.execPath, ['scripts/ci/build-images.mjs', 'evidence'], {
-      cwd: dir, encoding: 'utf8', env: { ...process.env, SELECTION_ALL: 'true' },
-    });
-    assert.equal(evidence().status, 0, evidence().stderr);
-    const report = () => JSON.parse(readFileSync(join(dir, '.codefly/ci/build-images.json'), 'utf8'));
-    assert.deepEqual(report().records[0].resolved, [upgraded]);
-    put(`${recipeDir}/builder/Dockerfile`, `FROM ${image}\n`);
-    put('.codefly/ci/build.log', `#3 [build 1/1] FROM docker.io/library/${image}\n`);
-    assert.notEqual(evidence().status, 0);
-    assert.match(report().records[0].errors.join('\n'), /agent generated/);
+    put(bindings, 'services: []\n'); commit();
+    assert.equal(check(base).status, 0, check(base).stderr);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
 
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+test('evidence refuses missing coverage and excludes records from before this build attempt', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'build-image-evidence-'));
+  const put = (path, content) => {
+    mkdirSync(join(dir, path, '..'), { recursive: true });
+    writeFileSync(join(dir, path), content);
+  };
+  try {
+    for (const file of ['build-images.mjs', 'dependabot-coverage.mjs', 'workflow-yaml.mjs']) put(`scripts/ci/${file}`, readFileSync(new URL(file, import.meta.url), 'utf8'));
+    put('module/deployment/topology.bindings.codefly.yaml', 'services:\n  - name: example\n    agent:\n      name: example\n      version: 1.0.0\n');
+    put('scripts/ci/build-images.json', '{}');
+    put('.codefly/ci/build-history-before.json', '["builder/node/old"]');
+    put('module/services/example/build-recipes/1.0.0/recipe.codefly.json', JSON.stringify({ schema: 'codefly.dev/build-recipe/v2', name: 'example', version: '1.0.0', recipes: [{ dockerfile: 'Dockerfile', context: '.' }] }));
+    put('module/services/example/build-recipes/1.0.0/Dockerfile', `FROM ${image}\n`);
+    put('docker', `#!/usr/bin/env node
+if (process.argv[4] === 'ls') console.log(JSON.stringify({ref:'builder/node/old'}));
+else throw new Error('A stale record must never be inspected');
+`);
+    execFileSync('chmod', ['+x', join(dir, 'docker')]);
+    const evidence = () => spawnSync(process.execPath, ['scripts/ci/build-images.mjs', 'evidence'], {
+      cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, SELECTION_ALL: 'true' },
+    });
+    assert.match(evidence().stderr, /No effective image coverage/);
+    put('scripts/ci/build-images.json', JSON.stringify({ example: { coverage: 'codefly-vendor-audit' } }));
+    assert.match(evidence().stderr, /No effective image coverage/);
+    put('scripts/ci/build-images.json', JSON.stringify({ example: { images: [image] } }));
+    assert.match(evidence().stderr, /Expected one completed build/);
+    const report = JSON.parse(readFileSync(join(dir, '.codefly/ci/build-images.json'), 'utf8'));
+    assert.equal(report.records.length, 1);
+    assert.match(report.records[0].errors[0], /found 0/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('real BuildKit materials handle whitespace, skip unreachable stages and ignore printed FROM lines', { skip: process.env.BUILD_IMAGES_DOCKER_TEST !== 'true' }, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'build-image-materials-'));
+  const docker = (...args) => execFileSync('docker', ['buildx', ...args], { encoding: 'utf8' });
+  const build = recipe => {
+    writeFileSync(join(dir, 'Dockerfile'), recipe);
+    const metadata = join(dir, 'metadata.json');
+    execFileSync('docker', ['buildx', 'build', '--metadata-file', metadata, dir], { env: { ...process.env, BUILDX_METADATA_PROVENANCE: 'max' }, stdio: 'pipe' });
+    const ref = JSON.parse(readFileSync(metadata))['buildx.build.ref'];
+    return JSON.parse(docker('history', 'inspect', ref.split('/').at(-1), '--format', 'json'));
+  };
+  try {
+    const hidden = build('FROM alpine:3.23.5 AS base\n FROM alpine:3.21 AS runner\nCOPY --from=base /etc/alpine-release /build-release\n');
+    assert.match(verifyImages(['alpine:3.23.5'], materialImages(hidden.Materials)).join('\n'), /Unexpected build material: alpine:3.21/);
+    const unused = build('FROM alpine:3.21 AS discarded\nFROM alpine:3.23.5\nRUN echo "FROM alpine:3.21@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"\n');
+    assert.deepEqual(verifyImages(['alpine:3.23.5'], materialImages(unused.Materials)), []);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
