@@ -70,6 +70,7 @@ must not be inferred from a row here. See
 | The complete audit runs `--fail-on-vuln=false`; a separate step enforces first-party findings fail-closed | RELEASE_GATES.md § Vulnerability policy | `.github/workflows/ci.yml` `codefly-supply-chain` | configured | Codefly + this repo |
 | No artifact-writing job runs unless every mandatory gate actually succeeded | RELEASE_GATES.md § Publication gating | `scripts/ci/release-gates.mjs check` + `decide`, `release-gates.test.mjs` | implemented (#535) | this repo |
 | Root `go test ./...` does not cover nested service modules | RELEASE_GATES.md, AGENTS.md | six independent `go.mod` files; there is no `go.work` | implemented (documented) | #541 |
+| `main` here is the only default branch in the organization merging through a queue, and `secure-saas-platform` the only other requiring any check | RELEASE_GATES.md § The fleet beyond this repository | `scripts/ci/release-gates.mjs fleet` — operator-run: reading branch configuration needs `Administration: read`, which no workflow token can hold, so no gate can carry this | reviewed narrative | #617 |
 
 ## Public registry contract
 

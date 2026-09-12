@@ -293,9 +293,25 @@ Every non-archived repository gets one line — `gated`, `advisory`,
 `unavailable`, or `unknown` — and every gated one lists the contexts it requires,
 whether it has a queue rule, and whether it still requires branches to be up to
 date. `unavailable` is a private repository on an account whose plan offers
-neither mechanism, which can require nothing until that changes; `unknown` is a
-read that failed for any other reason, and it exits non-zero, because a sweep
-that quietly skipped a repository reads exactly like one that cleared it.
+neither mechanism, recognised by the upgrade notice GitHub answers with, which
+can require nothing until that changes. `unknown` is every other read that did
+not answer, and it exits non-zero listing what each one said, because a sweep
+that quietly skipped a repository reads exactly like one that cleared it — and
+because the cause matters: a missing permission, an exhausted rate limit and an
+outage all land there and want different responses.
+
+**Run it with admin on the repositories you are sweeping, or read `unknown` as
+the answer it is.** Classic branch protection is readable only by a repository
+admin, and GitHub masks that permission error as `404 Not Found` — the same
+answer it gives for a branch that genuinely has no protection. `cli/cli`'s
+`trunk` reports `protected: true` on the branch object while
+`branches/trunk/protection` 404s for anyone who does not administer it. So a
+protection 404 counts as "unprotected" only when the credential holds admin
+(`permissions.admin`, which rides along on the listing at no extra request);
+otherwise the repository is `unknown` rather than quietly `advisory`. The
+ruleset half needs no such care — GitHub returns every active rule that applies
+regardless of where it is configured, omitting only `evaluate` and `disabled`
+rulesets, which gate nothing anyway.
 
 The audit that #617 records was a hand-written list of 17 repository names, and
 it reported that no repository but this one required a check. It was wrong:

@@ -691,19 +691,34 @@ export function unreportedContextErrors(repositoryRoot = REPOSITORY_ROOT) {
 // a 404 from the branch-protection endpoint means the branch is unprotected,
 // while a 403 means the answer was withheld, and reading the second as the
 // first reports a repository as ungated when checks do gate it.
+// The HTTP answer inside a failed `gh api` call's stdout, or null when there is
+// none (no `gh`, no network, a non-JSON body) and the child-process error is
+// the only truth available.
+//
+// `--paginate --slurp` wraps every page in an outer array, and it wraps an
+// error body the same way, so on a paginated read the status sits one level
+// down. Missing that left the one read that pages — the organization listing,
+// also the one most likely to be rate-limited — unclassifiable, throwing the
+// raw child-process error instead of reporting what GitHub said.
+export function ghFailure(stdout) {
+  let body;
+  try {
+    body = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const failure = Array.isArray(body) ? body.find((page) => page?.status) : body;
+  return failure?.status ? { status: Number(failure.status), body: failure } : null;
+}
+
 export function ghJson(endpoint, extraArgs = []) {
   const options = { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 };
   try {
     return { status: 200, body: JSON.parse(execFileSync("gh", ["api", ...extraArgs, endpoint], options)) };
   } catch (error) {
-    let body;
-    try {
-      body = JSON.parse(error.stdout);
-    } catch {
-      throw error;
-    }
-    if (!body?.status) throw error;
-    return { status: Number(body.status), body };
+    const failure = ghFailure(error.stdout ?? "");
+    if (!failure) throw error;
+    return failure;
   }
 }
 
@@ -720,7 +735,21 @@ const BRANCH_UNPROTECTED = 404;
 // a branch whose configuration could not be read is neither gated nor
 // advisory, and recording it as advisory is the same mistake in the direction
 // that hides work.
-export function branchGating(repository, branch, gh = ghJson) {
+//
+// Which is why `admin` is a parameter. A 404 from the classic-protection
+// endpoint does **not** establish that a branch is unprotected: reading it
+// requires admin on the repository, and GitHub masks that permission error as
+// 404 rather than 403. `cli/cli`'s `trunk` reports `protected: true` on the
+// branch object while `branches/trunk/protection` 404s for anyone who does not
+// administer it. Trusting that 404 reports a gated repository as advisory —
+// the same silent under-report this command replaces — so it counts as an
+// answer only when the credential could have seen protection at all.
+//
+// The ruleset half needs no such care: GitHub documents `rules/branches` as
+// returning every active rule that applies regardless of where it is
+// configured, and as omitting only rulesets in `evaluate` or `disabled`
+// enforcement — which are exactly the ones that gate nothing.
+export function branchGating({ repository, branch, admin }, gh = ghJson) {
   const contexts = new Set();
   const mechanisms = new Set();
   const unreadable = [];
@@ -748,32 +777,59 @@ export function branchGating(repository, branch, gh = ghJson) {
       strict ||= required.strict === true;
       for (const check of required.checks) contexts.add(check.context);
     }
-  } else if (protection.status !== BRANCH_UNPROTECTED) {
+  } else if (protection.status !== BRANCH_UNPROTECTED || !admin) {
     unreadable.push({
       endpoint: `branches/${branch}/protection`,
       status: protection.status,
-      message: protection.body.message,
+      message: admin
+        ? protection.body.message
+        : `${protection.body.message} — classic protection is readable only by an admin, and GitHub ` +
+          "masks that as 404, so this cannot be told apart from an unprotected branch",
     });
   }
 
   return { contexts: [...contexts].sort(), strict, queue, mechanisms: [...mechanisms], unreadable };
 }
 
-// Neither branch protection nor rulesets exist for a private repository on a
-// free account: both endpoints answer 403. That is an answer — nothing can
-// require a check there until the repository is public or the account is
-// upgraded — and it is not the same as a read this credential merely was not
-// allowed to make, which leaves the sweep incomplete and must say so.
+// What GitHub answers, on both endpoints, when neither mechanism exists for a
+// private repository on a free account. The verdict below keys on this message
+// rather than on the bare 403 because a 403 arrives for reasons that are not an
+// answer at all — an exhausted rate limit, SAML enforcement, a token without
+// access to that repository — and every one of those on a private repository
+// would otherwise be reported as "nothing can require a check here", which is
+// a claim, not a gap. Keying on the text degrades in the safe direction: if
+// GitHub rewords it, the read becomes `unknown` and the sweep fails loudly
+// instead of asserting something false.
+const PLAN_OFFERS_NEITHER_MECHANISM = /^upgrade to github/i;
+
+// Nothing can require a check on a private repository whose account plan offers
+// neither mechanism, and that is an answer: the sweep is complete without it.
+// Any other failed read leaves the sweep incomplete and must say so.
 export function gatingVerdict({ private: isPrivate, contexts, unreadable }) {
   if (unreadable.length) {
-    return isPrivate && unreadable.every(({ status }) => status === 403) ? "unavailable" : "unknown";
+    const planLimited = unreadable.every(
+      ({ status, message }) => status === 403 && PLAN_OFFERS_NEITHER_MECHANISM.test(message ?? ""),
+    );
+    return isPrivate && planLimited ? "unavailable" : "unknown";
   }
   return contexts.length ? "gated" : "advisory";
 }
 
-function repositoryFacts(repository, gh = ghJson) {
-  const { body } = gh(`repos/${repository}`);
-  return { branch: body.default_branch, private: body.private };
+// Throws rather than returning a half-read fact: an unchecked read turns a
+// mistyped repository into a request for the branch literally named
+// `undefined`, and GitHub answers a rules query for a branch that does not
+// exist, so the mistake surfaces as plausible-looking gating data.
+export function repositoryFacts(repository, gh = ghJson) {
+  const { status, body } = gh(`repos/${repository}`);
+  if (status !== 200) {
+    throw new Error(`cannot read ${repository}: ${status} ${body.message ?? ""}`.trimEnd());
+  }
+  return {
+    repository,
+    branch: body.default_branch,
+    private: body.private,
+    admin: body.permissions?.admin === true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -794,8 +850,14 @@ export function contextDrift(declared, required) {
 }
 
 function contexts(repository) {
-  const facts = repositoryFacts(repository);
-  const gating = branchGating(repository, facts.branch);
+  let facts;
+  try {
+    facts = repositoryFacts(repository);
+  } catch (error) {
+    console.error(`contexts: ${error.message}`);
+    process.exit(2);
+  }
+  const gating = branchGating(facts);
   const verdict = gatingVerdict({ ...facts, ...gating });
   if (verdict === "unknown") {
     console.error(`contexts: ${repository}'s configuration on ${facts.branch} could not be read:`);
@@ -855,13 +917,20 @@ function contexts(repository) {
 // checks.
 export function activeRepositories(owner, gh = ghJson) {
   const pages = gh(`orgs/${owner}/repos?per_page=100`, ["--paginate", "--slurp"]);
+  if (pages.status !== 200) {
+    throw new Error(`cannot list ${owner}'s repositories: ${pages.status} ${pages.body.message ?? ""}`.trimEnd());
+  }
+  // `permissions.admin` rides along on this listing, so knowing whether a
+  // protection 404 is trustworthy costs no extra request. Absent, it reads as
+  // false, which makes every such 404 a failed read rather than an answer.
   return pages.body
     .flat()
     .filter((repository) => !repository.archived)
-    .map(({ full_name, default_branch, private: isPrivate }) => ({
+    .map(({ full_name, default_branch, private: isPrivate, permissions }) => ({
       repository: full_name,
       branch: default_branch,
       private: isPrivate,
+      admin: permissions?.admin === true,
     }))
     .sort((left, right) => left.repository.localeCompare(right.repository));
 }
@@ -876,10 +945,17 @@ export function fleetLines(rows) {
   for (const row of rows) {
     const verdict = gatingVerdict(row);
     if (verdict === "unknown") {
-      const reads = row.unreadable.map(
+      // The two mechanisms need different permissions, so a partial read is the
+      // ordinary case rather than a curiosity: dropping what was read would
+      // throw away a positive finding already in hand.
+      const detail = row.unreadable.map(
         ({ endpoint, status, message }) => `${endpoint}: ${status} ${message ?? ""}`.trimEnd(),
       );
-      lines.push(`unknown      ${name(row)}  ${reads.join("; ")}`);
+      if (row.contexts.length) {
+        detail.unshift(`${row.contexts.length} required via ${row.mechanisms.join(" + ")}, and`);
+      }
+      lines.push(`unknown      ${name(row)}  ${detail.join("; ")}`);
+      row.contexts.forEach((context) => lines.push(`                 "${context}"`));
       continue;
     }
     if (verdict === "unavailable") {
@@ -900,10 +976,14 @@ export function fleetLines(rows) {
 }
 
 function fleet(owner) {
-  const rows = activeRepositories(owner).map((facts) => ({
-    ...facts,
-    ...branchGating(facts.repository, facts.branch),
-  }));
+  let repositories;
+  try {
+    repositories = activeRepositories(owner);
+  } catch (error) {
+    console.error(`fleet: ${error.message}`);
+    process.exit(2);
+  }
+  const rows = repositories.map((facts) => ({ ...facts, ...branchGating(facts) }));
   fleetLines(rows).forEach((line) => console.log(line));
   const count = (verdict) => rows.filter((row) => gatingVerdict(row) === verdict).length;
   const queued = rows.filter((row) => gatingVerdict(row) === "gated" && row.queue).length;
@@ -913,10 +993,22 @@ function fleet(owner) {
       `require one on this plan, ${count("unknown")} could not be read.`,
   );
   if (count("unknown")) {
+    // Print what the failed reads said rather than naming a cause. A missing
+    // permission, an exhausted rate limit and an outage all land here, and
+    // "re-run with credentials that can read them" is wrong advice for two of
+    // the three.
+    const reasons = [
+      ...new Set(
+        rows
+          .filter((row) => gatingVerdict(row) === "unknown")
+          .flatMap((row) => row.unreadable.map(({ message }) => message ?? "no message")),
+      ),
+    ];
     console.error(
-      `\nFAIL: ${count("unknown")} of them withheld their branch configuration, so this sweep is not the ` +
-        "complete audit it would otherwise read as. Re-run with credentials that can read them.",
+      `\nFAIL: ${count("unknown")} of them did not answer, so this sweep is not the complete audit it ` +
+        "would otherwise read as. What they said:",
     );
+    reasons.forEach((reason) => console.error(`    ${reason}`));
     process.exit(1);
   }
 }

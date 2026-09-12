@@ -14,6 +14,8 @@ import {
   branchGating,
   fleetLines,
   gatingVerdict,
+  ghFailure,
+  repositoryFacts,
   exemptedGates,
   REQUIRED_GATES,
   isReleaseTag,
@@ -758,13 +760,16 @@ const protectionRequiring = (contexts, { strict = false } = {}) => ({
 const NOT_PROTECTED = { status: 404, body: { message: "Branch not protected", status: "404" } };
 const NO_RULES = { status: 200, body: [] };
 const PLAN_FORBIDS = { status: 403, body: { message: "Upgrade to GitHub Pro", status: "403" } };
+const RATE_LIMITED = { status: 403, body: { message: "API rate limit exceeded for user ID 1.", status: "403" } };
+
+/** An admin's view of one branch: a protection 404 is then a real answer. */
+const asAdmin = (repository, branch = "main") => ({ repository, branch, admin: true });
 
 test("a branch gated only by classic protection is not reported as ungated", () => {
   // The endpoint the handbook reaches for answers `[]` here; reading it alone
   // called `secure-saas-platform` advisory while three checks gated its merges.
   const gating = branchGating(
-    "owner/classic",
-    "main",
+    asAdmin("owner/classic"),
     fakeGh({ "rules/branches": NO_RULES, protection: protectionRequiring(["Qualification"], { strict: true }) }),
   );
   assert.deepEqual(gating.contexts, ["Qualification"]);
@@ -776,8 +781,7 @@ test("a branch gated only by classic protection is not reported as ungated", () 
 
 test("a branch gated by a ruleset reports its queue rule and does not need protection", () => {
   const gating = branchGating(
-    "owner/ruleset",
-    "main",
+    asAdmin("owner/ruleset"),
     fakeGh({ "rules/branches": rulesetRequiring(["Codefly quality"], { queue: true }), protection: NOT_PROTECTED }),
   );
   assert.deepEqual(gating.contexts, ["Codefly quality"]);
@@ -788,8 +792,7 @@ test("a branch gated by a ruleset reports its queue rule and does not need prote
 
 test("both mechanisms at once merge into one context set", () => {
   const gating = branchGating(
-    "owner/both",
-    "main",
+    asAdmin("owner/both"),
     fakeGh({ "rules/branches": rulesetRequiring(["Shared", "From ruleset"]), protection: protectionRequiring(["Shared", "From protection"]) }),
   );
   assert.deepEqual(gating.contexts, ["From protection", "From ruleset", "Shared"]);
@@ -797,45 +800,135 @@ test("both mechanisms at once merge into one context set", () => {
 });
 
 test("an unprotected branch is advisory, and that is a read answer rather than a failed one", () => {
-  const gating = branchGating("owner/open", "main", fakeGh({ "rules/branches": NO_RULES, protection: NOT_PROTECTED }));
+  const gating = branchGating(asAdmin("owner/open"), fakeGh({ "rules/branches": NO_RULES, protection: NOT_PROTECTED }));
   assert.deepEqual(gating.contexts, []);
   assert.deepEqual(gating.unreadable, []);
   assert.equal(gatingVerdict({ private: false, ...gating }), "advisory");
 });
 
 test("a withheld read is not advisory — it is the sweep admitting it is incomplete", () => {
-  const gating = branchGating("owner/opaque", "main", fakeGh({ "rules/branches": PLAN_FORBIDS, protection: NOT_PROTECTED }));
+  const gating = branchGating(asAdmin("owner/opaque"), fakeGh({ "rules/branches": PLAN_FORBIDS, protection: NOT_PROTECTED }));
   assert.equal(gating.unreadable.length, 1);
   assert.equal(gating.unreadable[0].status, 403);
   assert.equal(gatingVerdict({ private: false, ...gating }), "unknown");
 });
 
 test("a private repository whose plan offers neither mechanism cannot require a check at all", () => {
-  const gating = branchGating("owner/private", "main", fakeGh({ "rules/branches": PLAN_FORBIDS, protection: PLAN_FORBIDS }));
+  const gating = branchGating(asAdmin("owner/private"), fakeGh({ "rules/branches": PLAN_FORBIDS, protection: PLAN_FORBIDS }));
   assert.equal(gatingVerdict({ private: true, ...gating }), "unavailable");
   assert.equal(gatingVerdict({ private: false, ...gating }), "unknown");
 });
 
 test("the fleet sweep enumerates the organization and drops only archived repositories", () => {
   const pages = [
-    [{ full_name: "owner/b", default_branch: "main", private: false, archived: false }],
+    [{ full_name: "owner/b", default_branch: "main", private: false, archived: false, permissions: { admin: true } }],
     [
-      { full_name: "owner/a", default_branch: "develop", private: false, archived: false },
-      { full_name: "owner/gone", default_branch: "main", private: false, archived: true },
+      { full_name: "owner/a", default_branch: "develop", private: false, archived: false, permissions: { admin: false } },
+      { full_name: "owner/gone", default_branch: "main", private: false, archived: true, permissions: { admin: true } },
     ],
   ];
   assert.deepEqual(activeRepositories("owner", () => ({ status: 200, body: pages })), [
-    { repository: "owner/a", branch: "develop", private: false },
-    { repository: "owner/b", branch: "main", private: false },
+    { repository: "owner/a", branch: "develop", private: false, admin: false },
+    { repository: "owner/b", branch: "main", private: false, admin: true },
   ]);
+});
+
+test("a protection 404 without admin is a withheld read, not an unprotected branch", () => {
+  // GitHub masks the permission error as 404: `cli/cli`'s trunk reports
+  // `protected: true` on the branch object while `/protection` 404s for a
+  // non-admin. Trusting it reported every repository the caller does not
+  // administer as advisory — the silent under-report this command replaces.
+  const gh = fakeGh({ "rules/branches": NO_RULES, protection: NOT_PROTECTED });
+  const asMember = branchGating({ repository: "owner/elsewhere", branch: "main", admin: false }, gh);
+  assert.equal(asMember.unreadable.length, 1);
+  assert.match(asMember.unreadable[0].message, /readable only by an admin/);
+  assert.equal(gatingVerdict({ private: false, ...asMember }), "unknown");
+
+  const asOwner = branchGating(asAdmin("owner/elsewhere"), gh);
+  assert.deepEqual(asOwner.unreadable, []);
+  assert.equal(gatingVerdict({ private: false, ...asOwner }), "advisory");
+});
+
+test("an absent permissions block reads as no admin rather than as admin", () => {
+  const [row] = activeRepositories("owner", () => ({
+    status: 200,
+    body: [[{ full_name: "owner/x", default_branch: "main", private: false, archived: false }]],
+  }));
+  assert.equal(row.admin, false);
+});
+
+test("a 403 that is not the plan limitation never reads as unavailable", () => {
+  // A rate limit, SAML enforcement or a token without access all answer 403.
+  // Reporting those as "nothing can require a check here" states a false fact
+  // about another repository and exits zero.
+  const limited = branchGating(asAdmin("owner/private"), fakeGh({ "rules/branches": RATE_LIMITED, protection: RATE_LIMITED }));
+  assert.equal(gatingVerdict({ private: true, ...limited }), "unknown");
+
+  const planned = branchGating(asAdmin("owner/private"), fakeGh({ "rules/branches": PLAN_FORBIDS, protection: PLAN_FORBIDS }));
+  assert.equal(gatingVerdict({ private: true, ...planned }), "unavailable");
+});
+
+test("a slurped error body is classified rather than thrown as a child-process failure", () => {
+  // Verbatim stdout from `gh api --paginate --slurp orgs/<typo>/repos`: the
+  // error body is wrapped in the page array, so the status sits one level down.
+  // Missing it made every organization-listing failure an unhandled throw of
+  // the raw child-process error.
+  assert.deepEqual(
+    ghFailure('[{"message":"Not Found","documentation_url":"https://docs.github.com/rest","status":"404"}]'),
+    { status: 404, body: { message: "Not Found", documentation_url: "https://docs.github.com/rest", status: "404" } },
+  );
+  assert.equal(ghFailure('{"message":"Branch not protected","status":"404"}').status, 404);
+  assert.equal(ghFailure("gh: could not connect"), null, "a non-JSON body has no HTTP answer to report");
+  assert.equal(ghFailure("[]"), null, "an empty slurp carries no status");
+  assert.throws(
+    () =>
+      activeRepositories("nope", () => ({
+        status: 404,
+        body: { message: "Not Found", status: "404" },
+      })),
+    /cannot list nope's repositories: 404 Not Found/,
+  );
+});
+
+test("a repository that cannot be read never becomes a branch named undefined", () => {
+  assert.throws(
+    () => repositoryFacts("owner/typo", () => ({ status: 404, body: { message: "Not Found" } })),
+    /cannot read owner\/typo: 404 Not Found/,
+  );
+  assert.deepEqual(
+    repositoryFacts("owner/real", () => ({
+      status: 200,
+      body: { default_branch: "trunk", private: false, permissions: { admin: true } },
+    })),
+    { repository: "owner/real", branch: "trunk", private: false, admin: true },
+  );
+});
+
+test("an unknown row keeps the gating it did manage to read", () => {
+  // The mechanisms need different permissions, so half-answers are ordinary.
+  const [line, context] = fleetLines([
+    {
+      repository: "owner/half",
+      branch: "main",
+      private: false,
+      admin: false,
+      contexts: ["Qualification"],
+      mechanisms: ["branch protection"],
+      strict: false,
+      queue: false,
+      unreadable: [{ endpoint: "rules/branches/main", status: 403, message: "Resource protected by SAML" }],
+    },
+  ]);
+  assert.match(line, /^unknown .*1 required via branch protection, and; rules\/branches\/main: 403 Resource protected by SAML/);
+  assert.equal(context, '                 "Qualification"');
 });
 
 test("every fleet row carries a verdict, and a gated one lists the contexts a rollout must cover", () => {
   const lines = fleetLines([
-    { repository: "owner/gated", branch: "main", private: false, contexts: ["One", "Two"], mechanisms: ["ruleset"], strict: true, queue: false, unreadable: [] },
-    { repository: "owner/advisory", branch: "main", private: false, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [] },
-    { repository: "owner/private", branch: "main", private: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 403, message: "Upgrade to GitHub Pro" }] },
-    { repository: "owner/opaque", branch: "main", private: false, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 500, message: "Server Error" }] },
+    { repository: "owner/gated", branch: "main", private: false, admin: true, contexts: ["One", "Two"], mechanisms: ["ruleset"], strict: true, queue: false, unreadable: [] },
+    { repository: "owner/advisory", branch: "main", private: false, admin: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [] },
+    { repository: "owner/private", branch: "main", private: true, admin: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 403, message: "Upgrade to GitHub Pro" }] },
+    { repository: "owner/opaque", branch: "main", private: false, admin: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 500, message: "Server Error" }] },
   ]);
   assert.match(lines[0], /^gated {8}owner\/gated .*2 required via ruleset, no merge queue, strict up-to-date/);
   assert.deepEqual(lines.slice(1, 3), ['                 "One"', '                 "Two"']);
