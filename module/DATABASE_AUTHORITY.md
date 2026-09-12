@@ -10,6 +10,23 @@ Installed products add tables through additive migration sources and must opt
 each relation into a role explicitly. They do not widen the Starter's default
 privileges or reuse a worker role for unrelated work.
 
+## Managed PostgreSQL profile
+
+The opt-in [managed baseline v1](services/store/baselines/managed-v1/CONTRACT.md)
+installs the canonical schema through 135 followed by migration 136 using a
+PostgreSQL 16+ CREATEROLE migration principal without SUPERUSER or BYPASSRLS.
+All five runtime roles are NOBYPASSRLS. Explicit exact-role policies provide the
+four background roles' existing row visibility; tenant policies, FORCE RLS and
+relation/column ACLs remain intact. Three guarded function owners change, and
+subscription sync retains its schema owner with one SELECT-only endpoint policy.
+Missing/empty enqueue request scope now fails closed. Runtime ledger privileges
+are revoked. Read the linked contract before selecting a fresh or upgrade plan.
+
+The table below describes legacy installations. The normal source remains the
+upgrade path: migration 136 does not claim to revoke existing BYPASSRLS role
+attributes. Fresh and upgrade packages use the same normal migration ledger;
+profile selection is explicit and bound to the reviewed source hashes.
+
 ## Roles
 
 | Role | Login | RLS bypass | Intended authority |

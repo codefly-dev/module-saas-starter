@@ -353,3 +353,24 @@ test("a false literal inside an unconditional expression is not deny-all", () =>
   const errors = analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false OR true) WITH CHECK (true);`);
   assert.equal(errors.length, 2);
 });
+
+
+test("exact named background role policies are scoped by current SQL identity", () => {
+  for (const role of ["app_control_plane", "app_billing_worker", "app_webhook_worker", "app_job_worker"]) {
+    assert.deepEqual(analyzeSql(tenantSetup + `CREATE POLICY p ON t FOR ALL TO ${role} USING (current_user = '${role}') WITH CHECK (current_user = '${role}');`), []);
+  }
+});
+
+test("background policy exception refuses public, mismatched roles, flags and extra clauses", () => {
+  for (const [role, expression] of [
+    ["public", "current_user = 'app_control_plane'"],
+    ["app_tenant", "current_user = 'app_tenant'"],
+    ["app_job_worker", "current_user = 'app_control_plane'"],
+    ["app_control_plane, app_tenant", "current_user = 'app_control_plane'"],
+    ["app_control_plane", "current_user = 'app_control_plane' OR true"],
+    ["app_control_plane", "current_setting('app.role') = 'app_control_plane'"],
+  ]) {
+    assert.ok(analyzeSql(tenantSetup + `CREATE POLICY p ON t TO ${role} USING (${expression});`).length > 0);
+  }
+  assert.ok(analyzeSql(tenantSetup + `CREATE POLICY p ON t TO app_control_plane USING (current_user = 'app_control_plane'); ALTER POLICY p ON t TO public;`).length > 0);
+});
