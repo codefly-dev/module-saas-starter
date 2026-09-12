@@ -135,6 +135,66 @@ func (s *PostgresStore) CheckAccess(ctx context.Context, subjectID string, subje
 	return true, "granted via " + via, nil
 }
 
+func accessibleScopesQuery(subjectKind gen.SubjectKind, nodePredicate string) (string, error) {
+	scopePred, err := layeredSubjectPredicate(subjectKind, "g")
+	if err != nil {
+		return "", err
+	}
+	sharePred, err := layeredSubjectPredicate(subjectKind, "sh")
+	if err != nil {
+		return "", err
+	}
+
+	// $1 subject, $2 resource_type, $3 action, $4 org; the caller binds
+	// $5 to a node or cursor and, for listing, $6 to the limit. scope_path is UNIQUE per org, so it is a total keyset cursor.
+	// UNION dedupes a node reachable through both a grant and a share. The share
+	// branch's ancestor join is on the placed-record identity, so only nodes of the
+	// queried resource_type appear there — structural nodes (NULL resource columns)
+	// never match. The explicit org_id predicate is a second gate on top of the RLS
+	// floor, not RLS alone: it pins the RETURNED node (n.org_id) as well as the
+	// authorizing grant/share (g.org_id / sh.org_id), so an ltree ancestor match or
+	// a colliding (resource_type, resource_id) across tenants can never surface
+	// another org's node even if the RLS floor is ever bypassed.
+	return `
+		SELECT node_id, scope_path, kind, label FROM (
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.scope_path AS path
+			FROM scope_nodes n
+			JOIN scope_grants g ON g.scope_path @> n.scope_path
+			JOIN role_permissions rp ON rp.role_id = g.role_id
+			WHERE ` + scopePred + `
+			  AND n.org_id = $4
+			  AND g.org_id = $4
+			  AND (g.expires_at IS NULL OR g.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $3)
+			  AND ` + nodePredicate + `
+			UNION
+			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.scope_path AS path
+			FROM scope_nodes n
+			JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
+			JOIN role_permissions rp ON rp.role_id = sh.role_id
+			WHERE ` + sharePred + `
+			  AND n.org_id = $4
+			  AND sh.org_id = $4
+			  AND sh.resource_type = $2
+			  AND (sh.expires_at IS NULL OR sh.expires_at > now())
+			  AND (rp.resource = '*' OR rp.resource = $2)
+			  AND (rp.action   = '*' OR rp.action   = $3)
+			  AND ` + nodePredicate + `
+		) accessible`, nil
+}
+
+// CanReadScopeNode tests exact membership using the same grants and shares as scope listing.
+func (s *PostgresStore) CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error) {
+	query, err := accessibleScopesQuery(subjectKind, "n.id = $5")
+	if err != nil {
+		return false, err
+	}
+	var allowed bool
+	err = s.getQueryExecutor(ctx).QueryRow(ctx, "SELECT EXISTS ("+query+")", subjectID, resourceType, action, orgID, nodeID).Scan(&allowed)
+	return allowed, err
+}
+
 // ListAccessibleScopes enumerates the scope nodes subject may act on with
 // (resourceType, action) — the list-objects companion to CheckAccess. A node is
 // returned when EITHER a scope grant at an ancestor-or-equal path carries a role
@@ -151,60 +211,17 @@ func (s *PostgresStore) ListAccessibleScopes(ctx context.Context, orgID, subject
 	w := wool.Get(ctx).In("ListAccessibleScopes")
 	executor := s.getQueryExecutor(ctx)
 
-	scopePred, err := layeredSubjectPredicate(subjectKind, "g")
+	query, err := accessibleScopesQuery(subjectKind, "($5::ltree IS NULL OR n.scope_path > $5::ltree)")
 	if err != nil {
 		return nil, err
 	}
-	sharePred, err := layeredSubjectPredicate(subjectKind, "sh")
-	if err != nil {
-		return nil, err
-	}
-
-	// $1 subject, $2 resource_type, $3 action, $4 cursor (NULL=first page), $5
-	// limit, $6 org. scope_path is UNIQUE per org, so it is a total keyset cursor.
-	// UNION dedupes a node reachable through both a grant and a share. The share
-	// branch's ancestor join is on the placed-record identity, so only nodes of the
-	// queried resource_type appear there — structural nodes (NULL resource columns)
-	// never match. The explicit org_id predicate is a second gate on top of the RLS
-	// floor, not RLS alone: it pins the RETURNED node (n.org_id) as well as the
-	// authorizing grant/share (g.org_id / sh.org_id), so an ltree ancestor match or
-	// a colliding (resource_type, resource_id) across tenants can never surface
-	// another org's node even if the RLS floor is ever bypassed.
-	query := `
-		SELECT node_id, scope_path, kind, label FROM (
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.scope_path AS path
-			FROM scope_nodes n
-			JOIN scope_grants g ON g.scope_path @> n.scope_path
-			JOIN role_permissions rp ON rp.role_id = g.role_id
-			WHERE ` + scopePred + `
-			  AND n.org_id = $6
-			  AND g.org_id = $6
-			  AND (g.expires_at IS NULL OR g.expires_at > now())
-			  AND (rp.resource = '*' OR rp.resource = $2)
-			  AND (rp.action   = '*' OR rp.action   = $3)
-			  AND ($4::ltree IS NULL OR n.scope_path > $4::ltree)
-			UNION
-			SELECT n.id::text AS node_id, n.scope_path::text AS scope_path, n.kind AS kind, n.label AS label, n.scope_path AS path
-			FROM scope_nodes n
-			JOIN record_shares sh ON sh.resource_type = n.resource_type AND sh.resource_id = n.resource_id
-			JOIN role_permissions rp ON rp.role_id = sh.role_id
-			WHERE ` + sharePred + `
-			  AND n.org_id = $6
-			  AND sh.org_id = $6
-			  AND sh.resource_type = $2
-			  AND (sh.expires_at IS NULL OR sh.expires_at > now())
-			  AND (rp.resource = '*' OR rp.resource = $2)
-			  AND (rp.action   = '*' OR rp.action   = $3)
-			  AND ($4::ltree IS NULL OR n.scope_path > $4::ltree)
-		) accessible
-		ORDER BY path
-		LIMIT $5`
+	query += " ORDER BY path LIMIT $6"
 
 	var cursor any
 	if afterPath != "" {
 		cursor = afterPath
 	}
-	rows, err := executor.Query(ctx, query, subjectID, resourceType, action, cursor, limit, orgID)
+	rows, err := executor.Query(ctx, query, subjectID, resourceType, action, orgID, cursor, limit)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list accessible scopes")
 	}

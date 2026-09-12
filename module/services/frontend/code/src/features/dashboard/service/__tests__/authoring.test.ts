@@ -333,3 +333,16 @@ describe("dashboard authoring API", () => {
 		expect(commits).toEqual([]);
 	});
 });
+
+it("imperative previews reject unacknowledged collection filters", async () => {
+	const { api } = authoring();
+	await expect(
+		api.previewMetric({
+			title: "Scoped count",
+			event: { type: "saas.auth.login" },
+			collectionId: "collection-a",
+			groupBy: "event_type",
+			chart: "bar",
+		}),
+	).rejects.toThrow("scope contract");
+});

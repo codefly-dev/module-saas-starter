@@ -14,6 +14,7 @@ export interface FakeBucket {
 
 function response(buckets: FakeBucket[]) {
 	return create(AggregateAuditLogResponseSchema, {
+		scopeContractVersion: 1,
 		buckets: buckets.map((bucket) => ({
 			key: bucket.key,
 			count: BigInt(bucket.count),

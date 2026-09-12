@@ -1,3 +1,4 @@
+import { assertAuditScopeContract } from "@codefly-dev/saas-sdk";
 import type { MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import type { Client } from "@connectrpc/connect";
@@ -236,7 +237,9 @@ export function toAggregateRequest(
 // double metric values become numbers. Shared with the hook's `select`.
 export function toAggregateBuckets(
 	response: AggregateAuditLogResponse,
+	params: AuditAggregateParams,
 ): AuditAggregateBucket[] {
+	assertAuditScopeContract(params, response);
 	return response.buckets.map((b) => ({
 		key: b.key,
 		count: Number(b.count),
@@ -259,6 +262,6 @@ export function useAuditAggregate(
 		queryKey: ["audit-aggregate", params],
 		queryFn: () => svc.aggregateAuditLog(toAggregateRequest(params)),
 		enabled: options.enabled,
-		select: toAggregateBuckets,
+		select: (response) => toAggregateBuckets(response, params),
 	});
 }

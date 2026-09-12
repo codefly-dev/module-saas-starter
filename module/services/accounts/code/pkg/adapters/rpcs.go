@@ -1286,7 +1286,7 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 			Samples: b.Samples,
 		})
 	}
-	return &gen.AggregateAuditLogResponse{Buckets: out}, nil
+	return &gen.AggregateAuditLogResponse{Buckets: out, ScopeContractVersion: 1}, nil
 }
 
 func (s *AuditServer) ListAuditEventTypes(ctx context.Context, req *gen.ListAuditEventTypesRequest) (*gen.ListAuditEventTypesResponse, error) {

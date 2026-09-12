@@ -37,13 +37,14 @@ run(
 	sdk,
 );
 // Explicit rather than a postgenerate lifecycle hook: npm ignore-scripts must
-// not leave a facade whose imported descriptors were never generated.
+// not leave a facade whose imported descriptors were never generated. Both steps
+// read the exported snapshot, never the mutable service proto source.
 run(
 	[
 		"generate",
 		"proto",
 		"--proto",
-		"./proto",
+		"../../contracts/api/accounts/connect/proto",
 		"--output",
 		".",
 		"--local",

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // The typed audit-event registry. This Go catalog is the single source of
@@ -514,10 +515,18 @@ var documentFields = []PayloadField{
 }
 
 // Observed read telemetry never carries query text, excerpts or credentials.
-var documentReadFields = append(append([]PayloadField(nil), documentFields...),
-	str("correlation_id"), enum("outcome", "returned", "empty", "denied", "failed"),
-	PayloadField{Name: "result_count", Kind: FieldInt}, PayloadField{Name: "duration_ms", Kind: FieldInt},
-)
+var documentReadFields = func() []PayloadField {
+	fields := append([]PayloadField(nil), documentFields...)
+	for i := range fields {
+		if fields[i].Name == "boundary" {
+			fields[i].Required = true
+		}
+	}
+	return append(fields,
+		PayloadField{Name: "correlation_id", Kind: FieldString, Required: true},
+		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{"returned", "empty", "denied", "failed"}},
+		PayloadField{Name: "result_count", Kind: FieldInt}, PayloadField{Name: "duration_ms", Kind: FieldInt})
+}()
 
 // auditEventIndex resolves an event type to its definition. Built once.
 var auditEventIndex = func() map[EventType]AuditEventDefinition {
@@ -595,6 +604,11 @@ func ValidatePayload(t EventType, payload map[string]any) error {
 }
 
 func validateField(t EventType, f PayloadField, v any) error {
+	if (t == EventDocumentRead || t == EventDocumentSearch) && f.Required {
+		if value, ok := v.(string); !ok || strings.TrimSpace(value) == "" {
+			return fmt.Errorf("audit: event %q field %q requires a nonempty string", t, f.Name)
+		}
+	}
 	switch f.Kind {
 	case FieldString, FieldUUID:
 		if _, ok := v.(string); !ok {

@@ -7,7 +7,11 @@ export {
 	type ResolvedWidget,
 	runDashboard,
 } from "./datagraph/dashboard.js";
-export { runDataGraph, runMetric } from "./datagraph/run.js";
+export {
+	assertAuditScopeContract,
+	runDataGraph,
+	runMetric,
+} from "./datagraph/run.js";
 export type {
 	AuditAggregateClient,
 	AuditAggregateQuery,

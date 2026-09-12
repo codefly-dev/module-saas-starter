@@ -413,6 +413,9 @@ type AuditAggregateBucket struct {
 // already enforced this in adapters/rpcs.go AuditServer.QueryAuditLog)
 // and we use WithControlPlane to span tenants.
 func (s *Service) QueryAuditLog(ctx context.Context, q AuditQuery) ([]AuditEntry, string, int32, error) {
+	if q.CollectionID != "" {
+		return nil, "", 0, status.Error(codes.InvalidArgument, "collection analytics requires reader authorization")
+	}
 	var entries []AuditEntry
 	var nextToken string
 	var total int32
@@ -483,15 +486,17 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 		if !allowed {
 			return status.Error(codes.PermissionDenied, "resource read access required")
 		}
-		out, err = s.store.AggregateAuditLog(ctx, q, spec)
+		compiled := q
+		compiled.CollectionID = "" // Authorized and compiled into the boundary predicate above.
+		out, err = s.store.AggregateAuditLog(ctx, compiled, spec)
 		return err
 	})
 	return out, err
 }
 
 // Datasources are connected to structural collection nodes, not placed records.
-// Resolve the stored boundary and reuse the same documents/read scope listing
-// that governs collection retrieval; no request-supplied boundary is trusted.
+// Resolve the stored boundary and reuse the documents/read scope predicates
+// that govern collection retrieval; no request-supplied boundary is trusted.
 func (s *Service) canReadAuditResource(ctx context.Context, reader string, q AuditQuery) (bool, error) {
 	if q.Resource != "datasource" {
 		allowed, _, err := s.store.CheckAccess(ctx, reader, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, q.Resource, q.ResourceID, "read")
@@ -508,26 +513,7 @@ func (s *Service) canReadAuditResource(ctx context.Context, reader string, q Aud
 }
 
 func (s *Service) canReadAuditCollection(ctx context.Context, reader, orgID, boundaryID string) (bool, error) {
-	cursor := ""
-	for {
-		nodes, err := s.store.ListAccessibleScopes(ctx, orgID, reader, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", cursor, 500)
-		if err != nil {
-			return false, err
-		}
-		for _, node := range nodes {
-			if node.NodeId == boundaryID {
-				return true, nil
-			}
-		}
-		if len(nodes) < 500 {
-			return false, nil
-		}
-		next := nodes[len(nodes)-1].ScopePath
-		if next <= cursor {
-			return false, fmt.Errorf("non-advancing accessible scope cursor")
-		}
-		cursor = next
-	}
+	return s.store.CanReadScopeNode(ctx, orgID, reader, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", boundaryID)
 }
 
 // AggregateAuditLog computes grouped metrics over audit events for analytics.
@@ -536,6 +522,9 @@ func (s *Service) canReadAuditCollection(ctx context.Context, reader, orgID, bou
 // avg, min, max, percentile over payload fields), and any derived ratios,
 // filtered by the same predicates as QueryAuditLog.
 func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, spec AuditAggregationSpec) ([]AuditAggregateBucket, error) {
+	if q.CollectionID != "" {
+		return nil, status.Error(codes.InvalidArgument, "collection analytics requires reader authorization")
+	}
 	var out []AuditAggregateBucket
 	wrap := func(ctx context.Context) error {
 		var err error

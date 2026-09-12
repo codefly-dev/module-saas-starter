@@ -937,10 +937,12 @@ func (x *AuditAggregateBucket) GetSamples() map[string]int64 {
 }
 
 type AggregateAuditLogResponse struct {
-	state         protoimpl.MessageState  `protogen:"open.v1"`
-	Buckets       []*AuditAggregateBucket `protobuf:"bytes,1,rep,name=buckets,proto3" json:"buckets,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state   protoimpl.MessageState  `protogen:"open.v1"`
+	Buckets []*AuditAggregateBucket `protobuf:"bytes,1,rep,name=buckets,proto3" json:"buckets,omitempty"`
+	// Version 1 acknowledges resource, collection and payload filters, even with no buckets.
+	ScopeContractVersion uint32 `protobuf:"varint,2,opt,name=scope_contract_version,json=scopeContractVersion,proto3" json:"scope_contract_version,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *AggregateAuditLogResponse) Reset() {
@@ -978,6 +980,13 @@ func (x *AggregateAuditLogResponse) GetBuckets() []*AuditAggregateBucket {
 		return x.Buckets
 	}
 	return nil
+}
+
+func (x *AggregateAuditLogResponse) GetScopeContractVersion() uint32 {
+	if x != nil {
+		return x.ScopeContractVersion
+	}
+	return 0
 }
 
 type ListAuditEventTypesRequest struct {
@@ -1266,9 +1275,10 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01\x1a:\n" +
 	"\fSamplesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"]\n" +
+	"\x05value\x18\x02 \x01(\x03R\x05value:\x028\x01\"\x93\x01\n" +
 	"\x19AggregateAuditLogResponse\x12@\n" +
-	"\abuckets\x18\x01 \x03(\v2&.saas.accounts.v1.AuditAggregateBucketR\abuckets\"\x1c\n" +
+	"\abuckets\x18\x01 \x03(\v2&.saas.accounts.v1.AuditAggregateBucketR\abuckets\x124\n" +
+	"\x16scope_contract_version\x18\x02 \x01(\rR\x14scopeContractVersion\"\x1c\n" +
 	"\x1aListAuditEventTypesRequest\"\xd0\x01\n" +
 	"\x0eAuditEventType\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +

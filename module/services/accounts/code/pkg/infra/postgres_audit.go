@@ -156,6 +156,9 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 }
 
 func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery) ([]business.AuditEntry, string, int32, error) {
+	if q.CollectionID != "" {
+		return nil, "", 0, fmt.Errorf("uncompiled collection filter: reader authorization required")
+	}
 	exec := s.getQueryExecutor(ctx)
 
 	where, args := auditWhere(q, 1)
@@ -254,6 +257,9 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 // (Service) has already validated the spec; the builder still guards its own
 // switches so an unhandled shape fails loud rather than emitting wrong SQL.
 func (s *PostgresStore) AggregateAuditLog(ctx context.Context, q business.AuditQuery, spec business.AuditAggregationSpec) ([]business.AuditAggregateBucket, error) {
+	if q.CollectionID != "" {
+		return nil, fmt.Errorf("uncompiled collection filter: reader authorization required")
+	}
 	exec := s.getQueryExecutor(ctx)
 
 	aq, err := buildAggregateQuery(q, spec)

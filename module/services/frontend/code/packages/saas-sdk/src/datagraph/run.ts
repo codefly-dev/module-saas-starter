@@ -18,6 +18,28 @@ import type {
 	MetricSeries,
 } from "./types.js";
 
+/** Refuse scoped results from servers that silently ignore new request fields. */
+export function assertAuditScopeContract(
+	request: {
+		resourceId?: string;
+		collectionId?: string;
+		payloadContains?: unknown;
+	},
+	response: { scopeContractVersion?: number },
+): void {
+	if (
+		(request.resourceId ||
+			request.collectionId ||
+			(request.payloadContains &&
+				Object.keys(request.payloadContains).length > 0)) &&
+		response.scopeContractVersion !== 1
+	) {
+		throw new Error(
+			"Audit server does not acknowledge scope contract version 1",
+		);
+	}
+}
+
 function toSeries(
 	metricId: string,
 	points: MetricPoint[],
@@ -50,9 +72,9 @@ export async function runMetric(
 	resolveEventType: EventTypeResolver,
 	context: MetricContext,
 ): Promise<MetricSeries> {
-	const response = await client.aggregateAuditLog(
-		compileMetric(metric, resolveEventType, context),
-	);
+	const request = compileMetric(metric, resolveEventType, context);
+	const response = await client.aggregateAuditLog(request);
+	assertAuditScopeContract(request, response);
 	// A plain count reads the bucket's own COUNT(*); every other op is computed
 	// under METRIC_VALUE_ALIAS in the bucket's metrics map. The RPC omits that
 	// alias for a group whose aggregate is undefined (min/avg/max/percentile over
@@ -97,6 +119,7 @@ export async function runMetric(
 function combineDerived(
 	metric: DerivedMetric,
 	inputs: MetricSeries[],
+	additive: boolean,
 ): MetricSeries {
 	if (metric.operation === "sum") {
 		if (inputs.length < 2) {
@@ -175,7 +198,7 @@ function combineDerived(
 		points,
 		dimension.groupBy,
 		dimension.bucket,
-		false,
+		additive,
 		partial,
 	);
 }
@@ -252,6 +275,19 @@ export async function resolveMetrics(
 	// independent source metrics fetch in parallel. `reachableMetrics` proved the
 	// graph acyclic, so a metric's promise is cached before its inputs are
 	// awaited and no promise can ever await itself.
+	const additive = new Map<string, boolean>();
+	const isAdditive = (id: string): boolean => {
+		const cached = additive.get(id);
+		if (cached !== undefined) return cached;
+		const metric = byId.get(id);
+		const result =
+			metric !== undefined &&
+			(metric.kind === "source"
+				? metric.aggregation === "count" || metric.aggregation === "sum"
+				: metric.operation !== "ratio" && metric.inputs.every(isAdditive));
+		additive.set(id, result);
+		return result;
+	};
 	const pending = new Map<string, Promise<MetricSeries>>();
 	const resolve = (id: string): Promise<MetricSeries> => {
 		const cached = pending.get(id);
@@ -264,7 +300,7 @@ export async function resolveMetrics(
 			metric.kind === "source"
 				? runMetric(client, metric, resolveEventType, context)
 				: Promise.all(metric.inputs.map(resolve)).then((inputs) =>
-						combineDerived(metric, inputs),
+						combineDerived(metric, inputs, isAdditive(metric.id)),
 					);
 		pending.set(id, series);
 		return series;

@@ -2,6 +2,7 @@ package auditmetricstest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -75,15 +76,18 @@ func TestResourceReadRechecked(t *testing.T) {
 func TestPostgresIsolationDedupeAndUnknownTelemetry(t *testing.T) {
 	dsn := os.Getenv("AUDIT_METRICS_TEST_DSN")
 	if dsn == "" {
+		if os.Getenv("AUDIT_METRICS_REQUIRE_DB") == "1" {
+			t.Fatal("database gate requires AUDIT_METRICS_TEST_DSN")
+		}
 		t.Skip("set AUDIT_METRICS_TEST_DSN to a disposable PostgreSQL database")
 	}
 	ctx := context.Background()
 	conn, err := pgx.Connect(ctx, dsn)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
 	tx, err := conn.Begin(ctx)
 	require.NoError(t, err)
-	defer tx.Rollback(ctx)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
 	_, err = tx.Exec(ctx, `CREATE TEMP TABLE audit_events (org_id text, resource text, resource_id text, event_type text, actor_id text, created_at timestamptz, payload jsonb);
  INSERT INTO audit_events VALUES
  ('org-a','collection','source-a','saas.document.ingested','reader','2026-01-02','{"run_id":"run-a","logical_job_id":"job-a","documents":2}'),
@@ -136,12 +140,10 @@ func (s *datasourceStore) GetDatasourceSource(_ context.Context, org, id string)
 	}
 	return &business.DatasourceSource{ID: id, OrgID: org, BoundaryNodeID: "boundary-a"}, nil
 }
-func (s *datasourceStore) ListAccessibleScopes(_ context.Context, org, reader string, kind gen.SubjectKind, resource, action, cursor string, limit int) ([]*gen.AccessibleScope, error) {
-	if reader != "reader" || resource != "documents" || action != "read" || org != "org-a" {
-		return nil, nil
-	}
-	return []*gen.AccessibleScope{{NodeId: s.boundary}}, nil
+func (s *datasourceStore) CanReadScopeNode(_ context.Context, org, reader string, kind gen.SubjectKind, resource, action, nodeID string) (bool, error) {
+	return reader == "reader" && resource == "documents" && action == "read" && org == "org-a" && kind == gen.SubjectKind_SUBJECT_KIND_PRINCIPAL && nodeID == s.boundary, nil
 }
+
 func TestConnectedSourceUsesCurrentCollectionGrant(t *testing.T) {
 	store := &datasourceStore{boundary: "boundary-a"}
 	svc, err := business.NewService(store)
@@ -168,6 +170,7 @@ func TestDocumentCollectionFilterAndRevocation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, map[string]any{"version": "v1", "boundary": "boundary-a"}, store.query.PayloadContains)
 	require.NotContains(t, q.PayloadContains, "boundary")
+	require.Empty(t, store.query.CollectionID)
 	store.boundary = "boundary-b"
 	store.called = false
 	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", q, business.AuditAggregationSpec{})
@@ -199,15 +202,18 @@ func (s *transactionStore) WithOrgTx(ctx context.Context, org string, fn func(co
 func TestPostgresExistingAndNewSourceBindingRevocation(t *testing.T) {
 	dsn := os.Getenv("AUDIT_METRICS_TEST_DSN")
 	if dsn == "" {
+		if os.Getenv("AUDIT_METRICS_REQUIRE_DB") == "1" {
+			t.Fatal("database gate requires AUDIT_METRICS_TEST_DSN")
+		}
 		t.Skip("set AUDIT_METRICS_TEST_DSN to a disposable PostgreSQL database")
 	}
 	ctx := context.Background()
 	conn, err := pgx.Connect(ctx, dsn)
 	require.NoError(t, err)
-	defer conn.Close(ctx)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
 	tx, err := conn.Begin(ctx)
 	require.NoError(t, err)
-	defer tx.Rollback(ctx)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
 	_, err = tx.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS ltree;
  CREATE TEMP TABLE scope_nodes(id text,org_id text,scope_path ltree,kind text,label text,resource_type text,resource_id text);
  CREATE TEMP TABLE scope_grants(org_id text,subject_kind text,subject_id text,role_id text,scope_path ltree,expires_at timestamptz);
@@ -224,6 +230,48 @@ func TestPostgresExistingAndNewSourceBindingRevocation(t *testing.T) {
 	require.NoError(t, err)
 	svc, err := business.NewService(&transactionStore{PostgresStore: &infra.PostgresStore{}, tx: tx})
 	require.NoError(t, err)
+
+	// Exact membership and scope listing must agree for every authorization path.
+	queryCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key
+	raw := &infra.PostgresStore{}
+	parity := func(expected []string) {
+		t.Helper()
+		nodes, err := raw.ListAccessibleScopes(queryCtx, "org-a", "reader", gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", "", 1000)
+		require.NoError(t, err)
+		ids := []string{}
+		for _, node := range nodes {
+			ids = append(ids, node.NodeId)
+		}
+		require.ElementsMatch(t, expected, ids)
+		for _, id := range []string{"boundary-a", "boundary-b", "boundary-other-org", "placed", "missing"} {
+			allowed, err := raw.CanReadScopeNode(queryCtx, "org-a", "reader", gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", id)
+			require.NoError(t, err)
+			want := false
+			for _, match := range expected {
+				want = want || match == id
+			}
+			require.Equal(t, want, allowed, id)
+		}
+	}
+	parity([]string{"boundary-a"})
+	_, err = tx.Exec(ctx, `UPDATE scope_grants SET expires_at=now()-interval '1 second'`)
+	require.NoError(t, err)
+	parity(nil)
+	_, err = tx.Exec(ctx, `UPDATE scope_grants SET expires_at=NULL, subject_kind='team', subject_id='team-a'; INSERT INTO team_members VALUES ('team-a','reader')`)
+	require.NoError(t, err)
+	parity([]string{"boundary-a"})
+	_, err = tx.Exec(ctx, `DELETE FROM team_members; INSERT INTO scope_nodes VALUES ('placed','org-a','c','record','Example document','documents','record-a'); INSERT INTO record_shares VALUES ('org-a','principal','reader','reader-role','documents','record-a',NULL)`)
+	require.NoError(t, err)
+	parity([]string{"placed"})
+	_, err = tx.Exec(ctx, `UPDATE record_shares SET expires_at=now()-interval '1 second'`)
+	require.NoError(t, err)
+	parity(nil)
+	_, err = tx.Exec(ctx, `UPDATE record_shares SET expires_at=NULL, org_id='org-b'`)
+	require.NoError(t, err)
+	parity(nil)
+	_, err = tx.Exec(ctx, `DELETE FROM record_shares; UPDATE scope_grants SET subject_kind='principal',subject_id='reader'; UPDATE role_permissions SET resource='*',action='*'`)
+	require.NoError(t, err)
+	parity([]string{"boundary-a"})
 	q := business.AuditQuery{OrgID: "org-a", Resource: "datasource", ResourceID: "existing", EventType: "saas.datasource.sync.completed"}
 	check := func(want codes.Code) {
 		t.Helper()
@@ -258,5 +306,88 @@ func TestReadEventPayloadContract(t *testing.T) {
 		delete(payload, "query")
 		payload["outcome"] = "answered"
 		require.Error(t, business.ValidatePayload(event, payload))
+	}
+}
+
+func TestUncompiledCollectionFilterRejected(t *testing.T) {
+	ctx := context.Background()
+	q := business.AuditQuery{CollectionID: "boundary-a"}
+	store := &readerStore{}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+	_, err = svc.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{})
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.False(t, store.called)
+	_, _, _, err = svc.QueryAuditLog(ctx, q)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	raw := &infra.PostgresStore{}
+	_, err = raw.AggregateAuditLog(ctx, q, business.AuditAggregationSpec{})
+	require.ErrorContains(t, err, "uncompiled collection")
+	_, _, _, err = raw.QueryAuditLog(ctx, q)
+	require.ErrorContains(t, err, "uncompiled collection")
+}
+
+func TestReadEventRequiresCountableIdentity(t *testing.T) {
+	for _, event := range []business.EventType{business.EventDocumentRead, business.EventDocumentSearch} {
+		for _, field := range []string{"boundary", "correlation_id", "outcome"} {
+			for _, value := range []any{nil, "", "  ", 12} {
+				payload := map[string]any{"boundary": "boundary-a", "correlation_id": "request-a", "outcome": "empty"}
+				require.NoError(t, business.ValidatePayload(event, payload)) // Measurements may be absent.
+				if value == nil {
+					delete(payload, field)
+				} else {
+					payload[field] = value
+				}
+				require.Error(t, business.ValidatePayload(event, payload), "%s %s=%v", event, field, value)
+			}
+		}
+	}
+}
+
+// Read the shipped policies verbatim; a non-owner role must enforce them even
+// when the application query omits its explicit organization predicate.
+func TestPostgresAuditPolicyAsNonOwner(t *testing.T) {
+	dsn := os.Getenv("AUDIT_METRICS_TEST_DSN")
+	if dsn == "" {
+		if os.Getenv("AUDIT_METRICS_REQUIRE_DB") == "1" {
+			t.Fatal("database gate requires AUDIT_METRICS_TEST_DSN")
+		}
+		t.Skip("set AUDIT_METRICS_TEST_DSN to a disposable PostgreSQL database")
+	}
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, dsn)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
+	tx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
+	name := fmt.Sprintf("audit_test_%d", time.Now().UnixNano())
+	ident := pgx.Identifier{name}.Sanitize()
+	_, err = tx.Exec(ctx, "CREATE ROLE "+ident+" NOLOGIN NOSUPERUSER NOBYPASSRLS; CREATE SCHEMA "+ident+"; SET LOCAL search_path TO "+ident+"; CREATE TABLE audit_events(org_id text, actor_id text, event_type text, payload jsonb); INSERT INTO audit_events VALUES ('org-a','reader','saas.document.read','{}'),('org-b','reader','saas.document.read','{}'),(NULL,'reader','saas.document.read','{}')")
+	require.NoError(t, err)
+	for _, migration := range []string{"31_rls_audit_events.up.sql", "122_audit_events_user_scoped_insert.up.sql"} {
+		sql, err := os.ReadFile("../../../../store/migrations/" + migration)
+		require.NoError(t, err)
+		_, err = tx.Exec(ctx, string(sql))
+		require.NoError(t, err)
+	}
+	_, err = tx.Exec(ctx, "GRANT USAGE ON SCHEMA "+ident+" TO "+ident+"; GRANT SELECT ON audit_events TO "+ident+"; SET LOCAL ROLE "+ident)
+	require.NoError(t, err)
+	ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key
+	store := &infra.PostgresStore{}
+	for _, org := range []string{"org-a", "org-b", ""} {
+		_, err = tx.Exec(ctx, "SELECT set_config('app.current_org_id', $1, true)", org)
+		require.NoError(t, err)
+		rows, err := store.AggregateAuditLog(ctx, business.AuditQuery{}, business.AuditAggregationSpec{})
+		require.NoError(t, err)
+		if org == "" {
+			require.Empty(t, rows)
+		} else {
+			require.Len(t, rows, 1)
+			require.EqualValues(t, 1, rows[0].Count)
+		}
+		rows, err = store.AggregateAuditLog(ctx, business.AuditQuery{OrgID: "org-other"}, business.AuditAggregationSpec{})
+		require.NoError(t, err)
+		require.Empty(t, rows)
 	}
 }
