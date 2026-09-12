@@ -3,7 +3,7 @@
 import argparse,hashlib,json,os,re,shutil,subprocess,tempfile,time,uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
-IMAGE='sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54'
+IMAGE='postgres@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54'
 ROLES=['app_tenant','app_control_plane','app_billing_worker','app_webhook_worker','app_job_worker']
 
 def run(args,check=True,**kw):

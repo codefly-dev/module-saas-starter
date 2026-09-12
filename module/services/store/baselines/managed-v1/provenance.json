@@ -134,7 +134,7 @@
     "module/services/store/migrations/134_webhooks_as_event_subscriptions.up.sql": "a0b48621101aaa1d172e3603f481272736a4b234946e1e92f3ca75663ade6557",
     "module/services/store/migrations/135_organization_administrator_diagnostic.up.sql": "866131d33f9681f516c40175aa10356a5751bbf828cebe83ee683e0c3e546b2f"
   },
-  "postgres_image": "sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54",
+  "postgres_image": "postgres@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54",
   "postgres_version": "16.14 (Debian 16.14-1.pgdg13+1)",
   "baseline_sha256": "18646ff5417672f4f17c34503800daf9fb8299515b6ac4128468a97889275c3b",
   "explicit_policy_inventory": [
