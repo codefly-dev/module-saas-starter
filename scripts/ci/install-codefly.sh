@@ -13,7 +13,7 @@ archive="codefly_${version}_linux_amd64.tar.gz"
 scratch="$(mktemp -d)"
 trap 'rm -rf "${scratch}"' EXIT
 
-curl --fail --silent --show-error --location --retry 3 \
+curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
   "https://github.com/codefly-dev/cli/releases/download/v${version}/${archive}" \
   --output "${scratch}/${archive}"
 printf '%s  %s\n' "${checksum}" "${scratch}/${archive}" | sha256sum -c -
