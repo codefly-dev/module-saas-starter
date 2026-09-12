@@ -9,7 +9,6 @@ module/services/accounts/code/pkg/business/rls_datasource_sources_test.go
 module/services/accounts/code/pkg/githubconnector/connector_test.go
 module/services/auth-gateway/code/gateway_solutions_test.go
 module/services/auth-gateway/code/gateway_solutions.go
-module/services/frontend/code/packages/codefly-ui/CATALOG.md
 module/services/frontend/code/packages/saas-ui/src/datasources/__tests__/gateway.test.tsx
 module/services/frontend/code/src/lib/__tests__/proxy-solution-csp.test.ts
 module/services/frontend/code/src/lib/auth-provider.test.ts

@@ -182,7 +182,9 @@ describe("Dashboard", () => {
 		// primary token: assert a primary-keyed chart element renders inside the
 		// accented subtree, so hardcoding a color in a chart would fail here.
 		await screen.findByText("Auth Login");
-		expect(root.querySelector(".bg-primary\\/70")).toBeTruthy();
+		expect(
+			root.querySelector('[style*="background-color: var(--primary)"]'),
+		).toBeTruthy();
 	});
 
 	it("plots a percentile metric's value from the bucket metrics map", async () => {

@@ -9,7 +9,7 @@ import {
 	resolveSeries,
 	unionLabels,
 	valuesExtent,
-} from "./geometry";
+} from "../metric-geometry.js";
 
 describe("unionLabels", () => {
 	it("returns a single series' labels in order", () => {

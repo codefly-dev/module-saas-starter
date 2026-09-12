@@ -1,6 +1,6 @@
 {
 	"name": "@codefly-dev/ui",
-	"version": "0.2.3",
+	"version": "0.3.0",
 	"description": "The shared, versioned Codefly SaaS frontend kit: the plugin host and the tokens-as-data skin mechanism, standalone so the host and Module-Federation remotes import and dedupe one copy.",
 	"repository": {
 		"type": "git",
@@ -56,6 +56,11 @@
 			"types": "./dist/layout/index.d.ts",
 			"import": "./dist/layout/index.js",
 			"default": "./dist/layout/index.js"
+		},
+		"./table": {
+			"types": "./dist/table/index.d.ts",
+			"import": "./dist/table/index.js",
+			"default": "./dist/table/index.js"
 		}
 	},
 	"scripts": {
@@ -67,7 +72,10 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"lucide-react": "^1.8.0",
-		"tailwind-merge": "^3.5.0"
+		"tailwind-merge": "^3.5.0",
+		"cmdk": "^1.1.1",
+		"sonner": "^2.0.7",
+		"@tanstack/react-table": "^8.21.3"
 	},
 	"peerDependencies": {
 		"@codefly/saas-plugin-contract": "2.1.0",

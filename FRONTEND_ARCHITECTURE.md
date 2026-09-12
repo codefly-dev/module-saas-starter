@@ -218,3 +218,12 @@ Repeat Phase B for: orgs, teams, invitations, audit, entitlements. One commit pe
 - Feature-local reasoning: a new developer reads one `features/users/` folder and understands users. No jumping around category folders.
 - Agent-native: `core/` functions are pure TS and can be exposed as MCP tools. Any "business rule" an agent asks about is testable AND callable.
 - Incremental migration: existing features stay in place, new ones land in the new structure, old ones migrate one at a time.
+
+## Shared UI ownership and catalog evidence
+
+The current migration map and API decisions live in
+[module/services/frontend/code/UI_MIGRATION.md](module/services/frontend/code/UI_MIGRATION.md).
+Its inventory distinguishes actual shared implementations, compatibility import
+paths, host adapters, feature orchestration and missing owner stories. Story counts
+do not establish complete component coverage. The host shares each public UI
+subpath as a federation singleton and compiles CSS from both UI owner packages.

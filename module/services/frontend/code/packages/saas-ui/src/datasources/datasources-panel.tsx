@@ -1,5 +1,17 @@
 "use client";
 
+import {
+	Button,
+	Input,
+	Label,
+	Table,
+	TableHeader,
+	TableBody,
+	TableHead,
+	TableRow,
+	TableCell,
+} from "@codefly-dev/ui/layout";
+
 import { ConnectError } from "@connectrpc/connect";
 
 import {
@@ -86,12 +98,6 @@ function GatewayBoundPanel({
 interface DatasourcesPanelViewProps extends DatasourcesPanelBaseProps {
 	client: DatasourceClient;
 }
-
-const buttonClass =
-	"inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50";
-
-const rowActionClass =
-	"inline-flex h-8 items-center rounded-md border px-3 text-sm font-medium shadow-sm hover:bg-accent disabled:opacity-50";
 
 function DatasourcesPanelView({
 	client,
@@ -188,13 +194,9 @@ function DatasourcesPanelView({
 	return (
 		<div className={cn("space-y-4", className)}>
 			<div className="flex items-center justify-end">
-				<button
-					type="button"
-					className={buttonClass}
-					onClick={() => setShowConnect(true)}
-				>
+				<Button type="button" onClick={() => setShowConnect(true)}>
 					Connect GitHub
-				</button>
+				</Button>
 			</div>
 
 			{activitySource && (
@@ -217,13 +219,13 @@ function DatasourcesPanelView({
 					className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
 				>
 					<span>{actionError}</span>
-					<button
+					<Button
 						type="button"
 						className="text-xs underline"
 						onClick={() => setActionError(null)}
 					>
 						Dismiss
-					</button>
+					</Button>
 				</div>
 			)}
 
@@ -242,7 +244,10 @@ function DatasourcesPanelView({
 			) : (
 				<SourcesTable
 					onActivity={client.listActivity ? setActivitySource : undefined}
-					onReconnect={(source) => { setReconnectError(undefined); setReconnecting(source); }}
+					onReconnect={(source) => {
+						setReconnectError(undefined);
+						setReconnecting(source);
+					}}
 					sources={sources}
 					boundaries={boundaries}
 					syncingIds={syncingIds}
@@ -253,17 +258,35 @@ function DatasourcesPanelView({
 			)}
 
 			{reconnecting && (
-				<ReconnectSource source={reconnecting} pending={reconnectPending} error={reconnectError}
-				 onCancel={() => { if (!reconnectPending) setReconnecting(null); }}
-				 onSubmit={async (token) => {
-				  setReconnectPending(true); setReconnectError(undefined);
-				  try {
-				   const jobId = await client.syncSource(orgId, reconnecting.id, token);
-				   setSyncNotice(`Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`);
-				   setReconnecting(null); onSyncEnqueued?.(jobId); await list.refetch();
-				  } catch (error) { setReconnectError(messageOf(error)); }
-				  finally { setReconnectPending(false); }
-				 }} />
+				<ReconnectSource
+					source={reconnecting}
+					pending={reconnectPending}
+					error={reconnectError}
+					onCancel={() => {
+						if (!reconnectPending) setReconnecting(null);
+					}}
+					onSubmit={async (token) => {
+						setReconnectPending(true);
+						setReconnectError(undefined);
+						try {
+							const jobId = await client.syncSource(
+								orgId,
+								reconnecting.id,
+								token,
+							);
+							setSyncNotice(
+								`Credential replaced. Sync queued for ${reconnecting.repo}. Open History for ingestion results.`,
+							);
+							setReconnecting(null);
+							onSyncEnqueued?.(jobId);
+							await list.refetch();
+						} catch (error) {
+							setReconnectError(messageOf(error));
+						} finally {
+							setReconnectPending(false);
+						}
+					}}
+				/>
 			)}
 			{showConnect && (
 				<ConnectGitHubForm
@@ -358,75 +381,96 @@ function SourcesTable({
 }) {
 	return (
 		<div className="overflow-x-auto rounded-lg border">
-			<table className="w-full text-sm">
-				<thead className="border-b bg-muted/40">
-					<tr>
-						<th className={headerClass}>Repository</th>
-						<th className={headerClass}>Paths</th>
-						<th className={headerClass}>Branch</th>
-						<th className={headerClass}>Boundary</th>
-						<th className={headerClass}>Webhook</th>
-						<th className={headerClass}>Last sync dispatch</th>
-						<th className={cn(headerClass, "text-right")}>Actions</th>
-					</tr>
-				</thead>
-				<tbody>
+			<Table className="w-full text-sm">
+				<TableHeader className="border-b bg-muted/40">
+					<TableRow>
+						<TableHead className={headerClass}>Repository</TableHead>
+						<TableHead className={headerClass}>Paths</TableHead>
+						<TableHead className={headerClass}>Branch</TableHead>
+						<TableHead className={headerClass}>Boundary</TableHead>
+						<TableHead className={headerClass}>Webhook</TableHead>
+						<TableHead className={headerClass}>Last sync dispatch</TableHead>
+						<TableHead className={cn(headerClass, "text-right")}>
+							Actions
+						</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
 					{sources.map((source) => (
-						<tr key={source.id} className="border-b last:border-0">
-							<td className={cn(cellClass, "font-mono")}>{source.repo}</td>
-							<td className={cellClass}>
+						<TableRow key={source.id} className="border-b last:border-0">
+							<TableCell className={cn(cellClass, "font-mono")}>
+								{source.repo}
+							</TableCell>
+							<TableCell className={cellClass}>
 								{source.paths.length === 0 ? (
 									<span className="text-muted-foreground">All</span>
 								) : (
 									source.paths.join(", ")
 								)}
-							</td>
-							<td className={cellClass}>{source.branch || "default"}</td>
-							<td className={cellClass}>
+							</TableCell>
+							<TableCell className={cellClass}>
+								{source.branch || "default"}
+							</TableCell>
+							<TableCell className={cellClass}>
 								<BoundaryCell
 									nodeId={source.boundaryNodeId}
 									scope={boundaries.get(source.boundaryNodeId)}
 								/>
-							</td>
-							<td className={cellClass}>
-								{source.webhookConfigured ? "Signing secret configured" : "Not configured"}
-							</td>
-							<td className={cn(cellClass, "text-muted-foreground")}>
+							</TableCell>
+							<TableCell className={cellClass}>
+								{source.webhookConfigured
+									? "Signing secret configured"
+									: "Not configured"}
+							</TableCell>
+							<TableCell className={cn(cellClass, "text-muted-foreground")}>
 								<LastSyncCell source={source} />
-							</td>
-							<td className={cn(cellClass, "text-right")}>
+							</TableCell>
+							<TableCell className={cn(cellClass, "text-right")}>
 								<div className="inline-flex gap-2">
-									{source.provider === "github" && <button type="button" className={rowActionClass} onClick={() => onReconnect(source)}>Reconnect</button>}
+									{source.provider === "github" && (
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											onClick={() => onReconnect(source)}
+										>
+											Reconnect
+										</Button>
+									)}
 									{onActivity && (
-										<button
-											className={rowActionClass}
+										<Button
+											variant="outline"
+											size="sm"
 											onClick={() => onActivity(source)}
 										>
 											History
-										</button>
+										</Button>
 									)}
-									<button
+									<Button
 										type="button"
-										className={rowActionClass}
+										variant="outline"
+										size="sm"
 										disabled={syncingIds.has(source.id)}
 										onClick={() => onSync(source)}
 									>
 										{syncingIds.has(source.id) ? "Syncing…" : "Sync"}
-									</button>
-									<button
+									</Button>
+									<Button
 										type="button"
-										className={cn(rowActionClass, "text-destructive")}
+										variant="outline"
+										size="sm"
+										className="text-destructive"
 										disabled={deletingIds.has(source.id)}
 										onClick={() => onDelete(source)}
 									>
 										{deletingIds.has(source.id) ? "Deleting…" : "Delete"}
-									</button>
+									</Button>
 								</div>
-							</td>
-						</tr>
+							</TableCell>
+						</TableRow>
 					))}
-				</tbody>
-			</table>
+				</TableBody>
+			</Table>
 		</div>
 	);
 }
@@ -494,9 +538,9 @@ function SourceHistory({
 		>
 			<div className="flex items-center justify-between">
 				<h3 className="font-medium">Sync history · {source.repo}</h3>
-				<button className={rowActionClass} onClick={onClose}>
+				<Button variant="outline" size="sm" onClick={onClose}>
 					Close history
-				</button>
+				</Button>
 			</div>
 			<p className="text-xs text-muted-foreground">
 				Sync requests, dispatched files, and ingestion results. History
@@ -518,7 +562,9 @@ function SourceHistory({
 									{e.at ? new Date(e.at).toLocaleString() : "Unknown time"}
 								</time>
 							</div>
-							<p className="text-xs text-muted-foreground">Actor: {e.actor === source.id ? "Source sync worker" : e.actor}</p>
+							<p className="text-xs text-muted-foreground">
+								Actor: {e.actor === source.id ? "Source sync worker" : e.actor}
+							</p>
 							<dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
 								{Object.entries(e.fields)
 									.filter(([k]) => k !== "solution")
@@ -539,17 +585,65 @@ function SourceHistory({
 	);
 }
 
-function ReconnectSource({source, pending, error, onSubmit, onCancel}: {
- source: DatasourceView; pending: boolean; error?: string;
- onSubmit: (token: string) => Promise<void>; onCancel: () => void;
+function ReconnectSource({
+	source,
+	pending,
+	error,
+	onSubmit,
+	onCancel,
+}: {
+	source: DatasourceView;
+	pending: boolean;
+	error?: string;
+	onSubmit: (token: string) => Promise<void>;
+	onCancel: () => void;
 }) {
- const [token, setToken] = useState("");
- return <form aria-label="Reconnect GitHub source" className="space-y-3 rounded-lg border p-4"
- onSubmit={(event) => { event.preventDefault(); if (!pending && token.trim()) { const replacement = token.trim(); setToken(""); void onSubmit(replacement); } }}>
- <h3 className="font-medium">Reconnect {source.repo}</h3>
- <p className="text-sm text-muted-foreground">Replace the saved PAT and start a sync. Your source, collection, documents, and history are preserved.</p>
- <label className="block text-sm">New GitHub PAT<input type="password" autoComplete="new-password" required maxLength={4096} value={token} disabled={pending} onChange={(event) => setToken(event.target.value)} className="block w-full rounded-md border bg-background p-2" /></label>
- {error && <p role="alert">{error}</p>}
- <div className="flex gap-2"><button type="submit" className={buttonClass} disabled={pending || !token.trim()}>{pending ? "Validating and reconnecting…" : "Reconnect and sync"}</button><button type="button" className={rowActionClass} disabled={pending} onClick={onCancel}>Cancel</button></div>
- </form>;
+	const [token, setToken] = useState("");
+	return (
+		<form
+			aria-label="Reconnect GitHub source"
+			className="space-y-3 rounded-lg border p-4"
+			onSubmit={(event) => {
+				event.preventDefault();
+				if (!pending && token.trim()) {
+					const replacement = token.trim();
+					setToken("");
+					void onSubmit(replacement);
+				}
+			}}
+		>
+			<h3 className="font-medium">Reconnect {source.repo}</h3>
+			<p className="text-sm text-muted-foreground">
+				Replace the saved PAT and start a sync. Your source, collection,
+				documents, and history are preserved.
+			</p>
+			<Label className="block text-sm">
+				New GitHub PAT
+				<Input
+					type="password"
+					autoComplete="new-password"
+					required
+					maxLength={4096}
+					value={token}
+					disabled={pending}
+					onChange={(event) => setToken(event.target.value)}
+				/>
+			</Label>
+			{error && <p role="alert">{error}</p>}
+			<div className="flex gap-2">
+				<Button type="submit" disabled={pending || !token.trim()}>
+					{pending ? "Validating and reconnecting…" : "Reconnect and sync"}
+				</Button>
+				<Button
+					type="button"
+					variant="outline"
+					size="sm"
+					disabled={pending}
+					onClick={onCancel}
+				>
+					Cancel
+				</Button>
+			</div>
+		</form>
+	);
 }

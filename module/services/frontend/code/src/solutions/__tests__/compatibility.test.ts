@@ -6,7 +6,10 @@ import {
 	checkRuntimeCompatibility,
 	satisfiesRange,
 } from "@/solutions/compatibility";
-import { HOST_REACT_VERSION } from "@/solutions/host-runtime";
+import {
+	CODEFLY_KIT_VERSION,
+	HOST_REACT_VERSION,
+} from "@/solutions/host-runtime";
 import { parseManifest, type SolutionManifest } from "@/solutions/registry";
 
 function manifest(overrides: Record<string, unknown> = {}): SolutionManifest {
@@ -89,7 +92,9 @@ describe("checkRuntimeCompatibility", () => {
 					hostContract: 1,
 					reactRange: `^${HOST_REACT_VERSION.split(".")[0]}.0.0`,
 					shared: {
-						"@codefly-dev/ui": "^0.2.0",
+						"@codefly-dev/ui": `^${CODEFLY_KIT_VERSION}`,
+						"@codefly-dev/ui/layout": `^${CODEFLY_KIT_VERSION}`,
+						"@codefly-dev/ui/table": `^${CODEFLY_KIT_VERSION}`,
 						"@codefly-dev/saas-sdk": "^0.2.0",
 					},
 				},

@@ -150,16 +150,7 @@ export function niceTicks(min: number, max: number, count = 5): number[] {
 }
 
 /** Linear map from a value domain onto a pixel range. */
-export function linearScale(
-	domainMin: number,
-	domainMax: number,
-	rangeMin: number,
-	rangeMax: number,
-): (value: number) => number {
-	const domainSpan = domainMax - domainMin || 1;
-	const rangeSpan = rangeMax - rangeMin;
-	return (value) => rangeMin + ((value - domainMin) / domainSpan) * rangeSpan;
-}
+export { linearScale } from "./geometry.js";
 
 /**
  * X pixel centers for `count` points spread across [left, right]. Used as a

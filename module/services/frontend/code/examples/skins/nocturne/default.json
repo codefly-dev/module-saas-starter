@@ -18,7 +18,7 @@
       "popover": "oklch(0.21 0.035 280)",
       "popoverForeground": "oklch(0.95 0.01 280)",
       "primary": "oklch(0.62 0.22 285)",
-      "primaryForeground": "oklch(0.98 0.01 285)",
+      "primaryForeground": "oklch(0.15 0.02 280)",
       "secondary": "oklch(0.27 0.04 285)",
       "secondaryForeground": "oklch(0.95 0.01 280)",
       "accent": "oklch(0.72 0.14 210)",
@@ -45,7 +45,8 @@
       "accentForeground": "oklch(0.99 0.01 210)",
       "ring": "oklch(0.52 0.22 285)",
       "sidebar": "oklch(0.96 0.01 285)",
-      "sidebarPrimary": "oklch(0.52 0.22 285)"
+      "sidebarPrimary": "oklch(0.52 0.22 285)",
+      "mutedForeground": "oklch(0.52 0.01 280)"
     }
   },
   "branding": {

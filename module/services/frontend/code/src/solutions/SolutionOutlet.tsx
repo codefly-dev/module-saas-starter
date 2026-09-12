@@ -2,6 +2,14 @@
 
 import * as SaasSdk from "@codefly-dev/saas-sdk";
 import * as SaasUi from "@codefly-dev/saas-ui";
+import * as CodeflyLayout from "@codefly-dev/ui/layout";
+import * as CodeflyDashboard from "@codefly-dev/ui/dashboard";
+import * as CodeflyChat from "@codefly-dev/ui/chat";
+import * as CodeflySkin from "@codefly-dev/ui/skin";
+import * as CodeflyTable from "@codefly-dev/ui/table";
+import * as CodeflyPluginHost from "@codefly-dev/ui/plugin-host";
+import * as CodeflyPluginRuntime from "@codefly-dev/ui/plugin-host/runtime";
+import * as CodeflyPluginUi from "@codefly-dev/ui/plugin-host/ui";
 import * as CodeflyUi from "@codefly-dev/ui";
 import {
 	createInstance,
@@ -20,10 +28,7 @@ import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
-import {
-	CODEFLY_KIT_VERSION,
-	CODEFLY_SAAS_SDK_VERSION,
-} from "./host-runtime";
+import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
 // shadow or replace it: a solution remote renders against the one true instance
@@ -57,6 +62,46 @@ export { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION };
 // scope. This is the single source of truth the `kit-shared-version` test
 // asserts against directly, so a dropped `singleton` flag fails CI.
 export const CODEFLY_KIT_SHARED = {
+	"@codefly-dev/ui/layout": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyLayout,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/dashboard": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyDashboard,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/chat": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyChat,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/skin": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflySkin,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/table": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyTable,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/plugin-host": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyPluginHost,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/plugin-host/runtime": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyPluginRuntime,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
+	"@codefly-dev/ui/plugin-host/ui": {
+		version: CODEFLY_KIT_VERSION,
+		lib: () => CodeflyPluginUi,
+		shareConfig: SEALED_SHARE_CONFIG,
+	},
 	"@codefly-dev/ui": {
 		version: CODEFLY_KIT_VERSION,
 		lib: () => CodeflyUi,

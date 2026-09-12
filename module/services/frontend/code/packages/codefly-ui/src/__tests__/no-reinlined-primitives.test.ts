@@ -14,13 +14,19 @@ import { describe, expect, it } from "vitest";
 // Class strings that belong to exactly one layout primitive. Each is distinctive
 // enough that its presence outside `layout/` is a re-inline, not a coincidental
 // overlap of common utilities.
-const GUARDED_PRIMITIVES: Array<{ owner: string; class: string }> = [
+const GUARDED_PRIMITIVES: Array<{
+	owner: string;
+	class: string;
+	file: string;
+}> = [
 	{
 		owner: "Card (layout/card.tsx)",
-		class: "rounded-lg border bg-card p-4 text-card-foreground shadow-sm",
+		file: "card.tsx",
+		class: "gap-0 rounded-lg border p-4 shadow-sm ring-0",
 	},
 	{
-		owner: "Section (layout/card.tsx)",
+		owner: "Section (layout/page.tsx)",
+		file: "page.tsx",
 		class: "text-lg font-semibold tracking-tight",
 	},
 ];
@@ -55,7 +61,7 @@ function nonLayoutSourceFiles(dir: string): string[] {
 // `<Card>`/`<Section>` are the way to avoid writing the string at all.
 function reInlinedPrimitive(
 	source: string,
-): { owner: string; class: string } | undefined {
+): { owner: string; class: string; file: string } | undefined {
 	return GUARDED_PRIMITIVES.find((primitive) =>
 		source.includes(primitive.class),
 	);
@@ -93,7 +99,7 @@ describe("no re-inlined layout primitives outside the layout tier", () => {
 	// the card surface string and prove it reports a hit, so a green run means
 	// "no re-inline found", never "the detector was silently disarmed".
 	it("detects a re-inlined card surface string (self-test)", () => {
-		const violating = `<div className="rounded-lg border bg-card p-4 text-card-foreground shadow-sm" />`;
+		const violating = `<div className="gap-0 rounded-lg border p-4 shadow-sm ring-0" />`;
 		expect(reInlinedPrimitive(violating)?.owner).toBe("Card (layout/card.tsx)");
 	});
 
@@ -108,11 +114,12 @@ describe("no re-inlined layout primitives outside the layout tier", () => {
 // string that no longer exists and miss re-inlines of the new one. Tie the two
 // together so any edit to the primitive trips this test.
 describe("guarded strings stay in lockstep with the primitive that owns them", () => {
-	const cardSource = readFileSync(join(srcDir, "layout", "card.tsx"), "utf8");
 	for (const primitive of GUARDED_PRIMITIVES) {
 		it(`${primitive.owner} still defines its guarded class string`, () => {
 			expect(
-				cardSource.includes(primitive.class),
+				readFileSync(join(srcDir, "layout", primitive.file), "utf8").includes(
+					primitive.class,
+				),
 				`${primitive.owner} no longer contains "${primitive.class}" — the primitive changed but GUARDED_PRIMITIVES did not; update the registry to match`,
 			).toBe(true);
 		});

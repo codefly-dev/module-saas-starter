@@ -1,0 +1,3860 @@
+{
+  "baseline": "3795f5a24fb2063fdcf729586724fdd78d68fe99",
+  "baselineStories": 0,
+  "status": "Implementation in progress; story coverage and closure evidence incomplete",
+  "families": [
+    {
+      "source": "src/components/activity-feed.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "@/components/ui/card",
+        "@/components/ui/skeleton",
+        "@/features/audit/model/transforms",
+        "@/features/audit/model/types",
+        "@/features/audit/service/queries",
+        "@/lib/auth"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Resolves active organization, authenticated viewer and audit principal directory; an extracted data-in activity view is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/admin-layout.tsx",
+      "imports": [
+        "@codefly/saas-plugin-contract",
+        "lucide-react",
+        "next/link",
+        "next/navigation",
+        "react",
+        "@/components/brand-mark",
+        "@/components/rate-limit-banner",
+        "@/components/theme-toggle",
+        "@/components/ui/avatar",
+        "@/components/ui/dropdown-menu",
+        "@/components/ui/separator",
+        "@/components/ui/sidebar",
+        "@/components/ui/sonner",
+        "@/features/notifications/ui/notification-bell",
+        "@/lib/appearance-provider",
+        "@/lib/auth",
+        "@/lib/auth-session",
+        "@/lib/navigation-icons",
+        "@/lib/plugins/presentation",
+        "@/solutions/SolutionsMenu",
+        "@/lib/providers",
+        "@/lib/utils"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/admin-route-shell.tsx",
+      "imports": [
+        "next/navigation",
+        "react",
+        "@/components/admin-layout",
+        "@/components/impersonation-banner",
+        "@/components/ui/skeleton",
+        "@/lib/auth",
+        "@/lib/permissions"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/auth/role-gate.tsx",
+      "imports": [
+        "react",
+        "@/gen/saas/accounts/v1/frontend_catalog",
+        "@/lib/auth",
+        "@/lib/plugins/presentation"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/brand-mark.tsx",
+      "imports": [
+        "next/image",
+        "@/lib/appearance-provider",
+        "@/lib/utils"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/charts/chart.tsx",
+      "imports": [
+        "@codefly-dev/ui/dashboard"
+      ],
+      "owner": "@codefly-dev/ui/dashboard",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Lines"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Areas"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Bars"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "EmptyChart"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/command-palette.tsx",
+      "imports": [
+        "lucide-react",
+        "next/navigation",
+        "react",
+        "@/components/ui/command",
+        "@/components/ui/dialog",
+        "@/lib/auth",
+        "@/lib/hooks/use-users-search",
+        "@/lib/navigation-icons",
+        "@/lib/permissions",
+        "@/lib/plugins/presentation",
+        "@/lib/providers"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/consent-banner.tsx",
+      "imports": [
+        "@connectrpc/connect",
+        "lucide-react",
+        "next/link",
+        "react",
+        "@/gen/saas/accounts/v1/consent_pb",
+        "@/gen/saas/accounts/v1/waitlist_pb",
+        "@/lib/auth",
+        "@/lib/connect/transport",
+        "@/lib/legal-config",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/dashboard-route-shell.tsx",
+      "imports": [
+        "next/navigation",
+        "react",
+        "@/components/admin-layout",
+        "@/components/command-palette",
+        "@/components/impersonation-banner",
+        "@/components/ui/skeleton",
+        "@/features/onboarding/ui/onboarding-gate",
+        "@/lib/auth"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/dashboard.tsx",
+      "imports": [
+        "react",
+        "@/components/sparkline",
+        "@/components/ui/card",
+        "@/components/ui/skeleton"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/empty-state.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "react"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Host adapter injects persistence, theme or the legacy prop names into kit presentation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Empty"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/impersonation-banner.tsx",
+      "imports": [
+        "react",
+        "sonner",
+        "@/lib/auth"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/legal-document.tsx",
+      "imports": [
+        "next/link",
+        "@/lib/legal-config"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/metric-state.tsx",
+      "imports": [
+        "@codefly-dev/ui/dashboard"
+      ],
+      "owner": "@codefly-dev/ui/dashboard",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Availability"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Populated"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/org-selector.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/ui/select",
+        "@/lib/auth",
+        "@/lib/hooks"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/plugin-contribution-boundary.tsx",
+      "imports": [
+        "@codefly-dev/ui/plugin-host/runtime",
+        "@codefly-dev/ui/plugin-host/ui",
+        "lucide-react",
+        "react",
+        "@/components/ui/button",
+        "@/components/ui/skeleton",
+        "@/lib/utils"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/rate-limit-banner.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/lib/connect/rate-limit-tracker"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/slot.tsx",
+      "imports": [
+        "@/components/plugin-contribution-boundary",
+        "@/lib/auth",
+        "@/lib/plugins/presentation",
+        "@/lib/providers"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/sparkline.tsx",
+      "imports": [
+        "@codefly-dev/ui/dashboard"
+      ],
+      "owner": "@codefly-dev/ui/dashboard",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Populated"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/theme-toggle.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/ui/dropdown-menu",
+        "@/features/user-settings/ui/theme-preference-provider",
+        "@/lib/theme-provider",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/turnstile-widget.tsx",
+      "imports": [
+        "react",
+        "@/lib/abuse-protection"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/components/ui/alert-dialog.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Confirmation"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/avatar.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "BadgesAndAvatars"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/badge.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "BadgesAndAvatars"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/button.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Buttons"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/card.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "CompoundCard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "CompactCard"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/checkbox.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "CheckboxesAndSwitches"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/command.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "SearchCommands"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/dialog.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Modal"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/dropdown-menu.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Menu"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/input-group.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "InputWithAction"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "InvalidInput"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "DisabledInput"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/input.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Fields"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/label.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Fields"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/select.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Selection"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/separator.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Loading"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/sheet.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "SheetDialog"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/sidebar.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "react",
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Host adapter injects persistence, theme or the legacy prop names into kit presentation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "ResponsiveSidebar"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/skeleton.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Loading"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/sonner.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "react",
+        "@/lib/theme-provider"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Host adapter injects persistence, theme or the legacy prop names into kit presentation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "ToastStates"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/switch.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "CheckboxesAndSwitches"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/table.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "SelectableSummary"
+        },
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "EmptySummary"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Caption, header, body, footer, row, head and cell compose the parent stories; selection and empty states covered. Verify external explorer, skins and reviewed visual baselines."
+    },
+    {
+      "source": "src/components/ui/tabs.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "ControlledTabs"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/textarea.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Fields"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/components/ui/tooltip.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "TooltipPreview"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/shared/ui/data-table.tsx",
+      "imports": [
+        "@codefly-dev/ui/table"
+      ],
+      "owner": "@codefly-dev/ui/table",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/table.stories.tsx",
+          "export": "Paginated"
+        },
+        {
+          "file": "packages/codefly-ui/stories/table.stories.tsx",
+          "export": "Empty"
+        },
+        {
+          "file": "packages/codefly-ui/stories/table.stories.tsx",
+          "export": "Loading"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/shared/ui/layout.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/ui/layout",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "PageComposition"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/shared/ui/metric-tiles.tsx",
+      "imports": [
+        "@codefly-dev/ui/dashboard"
+      ],
+      "owner": "@codefly-dev/ui/dashboard",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Populated"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Availability"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Comparison"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "src/features/api-keys/ui/api-key-form.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines api-keys validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/api-keys/ui/api-keys-page.tsx",
+      "imports": [
+        "lucide-react",
+        "@/components/empty-state",
+        "@/components/org-selector",
+        "@/lib/auth",
+        "../model/types",
+        "../service/queries",
+        "./api-key-form",
+        "./api-keys-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the api-keys workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/api-keys/ui/api-keys-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines api-keys columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/audit/ui/audit-page.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/components/dashboard",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/transforms",
+        "../service/mutations",
+        "../service/queries",
+        "./audit-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the audit workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/audit/ui/audit-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "react",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines audit columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/auth/ui/callback-page.tsx",
+      "imports": [
+        "lucide-react",
+        "next/navigation",
+        "react",
+        "@/lib/auth",
+        "@/lib/auth-errors",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the auth workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/auth/ui/login-page.tsx",
+      "imports": [
+        "lucide-react",
+        "next/navigation",
+        "react",
+        "@/components/brand-mark",
+        "@/lib/appearance-provider",
+        "@/lib/auth",
+        "@/lib/fixtures/types",
+        "@/lib/public-handoff"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the auth workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/billing/ui/billing-admin-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "lucide-react",
+        "next/link",
+        "sonner",
+        "@/components/empty-state",
+        "@/components/metric-state",
+        "@/components/org-selector",
+        "@/components/sparkline",
+        "@/features/billing/model/usage-display",
+        "@/features/billing/service/usage-queries",
+        "@/features/platform/service/queries",
+        "@/gen/saas/accounts/v1/billing_pb",
+        "@/gen/saas/accounts/v1/usage_pb",
+        "@/lib/auth",
+        "@/lib/connect/transport",
+        "../service/mutations",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the billing workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/consent/ui/consent-settings-page.tsx",
+      "imports": [
+        "@connectrpc/connect",
+        "react",
+        "sonner",
+        "@/gen/saas/accounts/v1/consent_pb",
+        "@/lib/connect/transport",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the consent workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/dashboard/ui/charts/bar-list.tsx",
+      "imports": [
+        "@codefly-dev/ui/dashboard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/dashboard/ui/charts/line-chart.tsx",
+      "imports": [
+        "@codefly-dev/ui/dashboard"
+      ],
+      "owner": "@codefly-dev/ui/dashboard",
+      "disposition": "already canonical",
+      "reason": "Compatibility re-export; no host presentation implementation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/dashboard/ui/dashboard-editor.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/features/audit",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/identity",
+        "../model/schema",
+        "../model/validate",
+        "../service/draft-store",
+        "../service/use-dashboard-authoring",
+        "./dashboard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/dashboard/ui/dashboard.tsx",
+      "imports": [
+        "react",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/identity",
+        "../model/schema",
+        "./metric-card"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/dashboard/ui/layout.tsx",
+      "imports": [
+        "react"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/dashboard/ui/metric-card.tsx",
+      "imports": [
+        "lucide-react",
+        "@/components/sparkline",
+        "@/features/audit/model/transforms",
+        "@/shared/ui",
+        "../model/schema",
+        "../service/use-metric",
+        "./charts/bar-list",
+        "./charts/line-chart"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/dashboard/ui/my-dashboards.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/record",
+        "../service/dashboard-library",
+        "../service/use-dashboard-authoring",
+        "../service/use-dashboard-library",
+        "./dashboard-editor"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/datasources/datasources-admin.tsx",
+      "imports": [
+        "@codefly-dev/saas-ui",
+        "lucide-react",
+        "sonner",
+        "@/components/empty-state",
+        "@/components/org-selector",
+        "@/lib/auth",
+        "./datasource-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the datasources workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/event-operations/ui/event-operations-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "@/gen/saas/events/v1/operations_pb",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the event-operations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/gdpr/ui/data-privacy-page.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "sonner",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the gdpr workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/invitations/ui/invitation-acceptance.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "next/navigation",
+        "react",
+        "@/lib/auth",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the invitations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/invitations/ui/invitation-form.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/gen/saas/accounts/v1/invitations_pb",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines invitations validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/invitations/ui/invitations-page.tsx",
+      "imports": [
+        "@/components/org-selector",
+        "@/lib/auth",
+        "../service/queries",
+        "./invitation-form",
+        "./invitations-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the invitations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/invitations/ui/invitations-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines invitations columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/job-operations/ui/job-operations-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/gen/saas/jobs/v1/jobs_pb",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the job-operations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/mfa/ui/mfa-challenge.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "react-hook-form",
+        "sonner",
+        "@/shared/ui",
+        "../model/schemas",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the mfa workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/mfa/ui/mfa-devices.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the mfa workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/mfa/ui/mfa-settings-page.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/ui",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries",
+        "./mfa-devices",
+        "./mfa-setup",
+        "./passkey-setup"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the mfa workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/mfa/ui/mfa-setup.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "react-hook-form",
+        "sonner",
+        "@/shared/ui",
+        "../model/schemas",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the mfa workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/mfa/ui/passkey-setup.tsx",
+      "imports": [
+        "@simplewebauthn/browser",
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the mfa workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/notifications/ui/notification-bell.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../service/queries",
+        "./notification-panel"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the notifications workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/notifications/ui/notification-panel.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "next/link",
+        "next/navigation",
+        "sonner",
+        "@/shared/ui",
+        "../model/transforms",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the notifications workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/notifications/ui/notification-settings.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "react",
+        "sonner",
+        "@/features/user-settings/model/settings",
+        "@/features/user-settings/service/mutations",
+        "@/features/user-settings/service/queries",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the notifications workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/notifications/ui/notifications-page.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "next/navigation",
+        "sonner",
+        "@/shared/ui",
+        "../model/transforms",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the notifications workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/onboarding/ui/onboarding-gate.tsx",
+      "imports": [
+        "next/link",
+        "next/navigation",
+        "react",
+        "@/components/ui/button",
+        "@/lib/auth",
+        "../react/use-onboarding-controller",
+        "./onboarding-wizard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the onboarding workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/onboarding/ui/onboarding-wizard.tsx",
+      "imports": [
+        "lucide-react",
+        "@/shared/ui",
+        "../application/controller",
+        "../model/types",
+        "../react/use-onboarding-controller",
+        "@/lib/auth"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the onboarding workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/org-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react-hook-form",
+        "@/shared/ui",
+        "../model/schemas",
+        "../model/transforms"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines organizations validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/org-members-panel.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/auth/role-gate",
+        "@/features/roles/ui/manage-member-roles-dialog",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/org-settings-page.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "@tanstack/react-query",
+        "react",
+        "react-hook-form",
+        "sonner",
+        "@/shared/ui",
+        "../model/settings-schema",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/organizations-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/ui",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries",
+        "./org-form",
+        "./org-members-panel",
+        "./organizations-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the organizations workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/organizations/ui/organizations-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/types"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines organizations columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform/ui/admins-page.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/types",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform/ui/entitlements-page.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "react",
+        "sonner",
+        "@/components/org-selector",
+        "@/gen/saas/accounts/v1/frontend_catalog",
+        "@/lib/auth",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform/ui/flags-page.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "react",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/types",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/platform/ui/sessions-page.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the platform workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/roles/ui/manage-member-roles-dialog.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "react",
+        "sonner",
+        "@/shared/ui",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the roles workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/roles/ui/role-form.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/ui",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines roles validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/roles/ui/roles-page.tsx",
+      "imports": [
+        "../model/types",
+        "../service/queries",
+        "./role-form",
+        "./roles-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the roles workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/roles/ui/roles-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/types",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines roles columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/sso-admin/ui/sso-admin-page.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/empty-state",
+        "@/components/org-selector",
+        "@/lib/auth",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the sso-admin workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/teams/ui/team-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react-hook-form",
+        "@/shared/ui",
+        "../model/schemas"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines teams validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/teams/ui/team-members-panel.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/features/organizations/service/queries",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the teams workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/teams/ui/teams-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/org-selector",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries",
+        "./team-form",
+        "./team-members-panel",
+        "./teams-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the teams workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/teams/ui/teams-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/types"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines teams columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/user-settings/ui/general-settings-page.tsx",
+      "imports": [
+        "@codefly/saas-plugin-contract",
+        "@tanstack/react-query",
+        "react",
+        "sonner",
+        "@/features/user-profile/model/profile",
+        "@/features/user-profile/service/client",
+        "@/features/user-profile/service/mutations",
+        "@/features/user-profile/service/queries",
+        "@/gen/saas/accounts/v1/identity_pb",
+        "@/gen/saas/accounts/v1/user_settings_pb",
+        "@/shared/ui",
+        "../model/settings",
+        "../model/theme-preference",
+        "../service/mutations",
+        "../service/queries",
+        "./theme-preference-provider"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the user-settings workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/user-settings/ui/theme-preference-provider.tsx",
+      "imports": [
+        "@codefly/saas-plugin-contract",
+        "@tanstack/react-query",
+        "react",
+        "@/lib/auth",
+        "@/lib/theme-provider",
+        "../model/settings",
+        "../model/theme-preference",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the user-settings workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/users/ui/delete-user-dialog.tsx",
+      "imports": [
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the users workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/users/ui/edit-user-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react-hook-form",
+        "@/shared/ui",
+        "../model/schemas",
+        "../model/transforms",
+        "../model/types",
+        "../service/mutations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines users validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/users/ui/suspend-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react-hook-form",
+        "@/shared/ui",
+        "../model/schemas"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines users validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/users/ui/users-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries",
+        "./delete-user-dialog",
+        "./edit-user-form",
+        "./suspend-form",
+        "./users-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the users workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/users/ui/users-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines users columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/waitlist/ui/waitlist-admin-page.tsx",
+      "imports": [
+        "@bufbuild/protobuf/wkt",
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/gen/saas/accounts/v1/waitlist_pb",
+        "@/lib/connect/transport",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the waitlist workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/waitlist/ui/waitlist-page.tsx",
+      "imports": [
+        "@connectrpc/connect",
+        "lucide-react",
+        "next/link",
+        "next/navigation",
+        "react",
+        "@/components/turnstile-widget",
+        "@/gen/saas/accounts/v1/waitlist_pb",
+        "@/lib/connect/transport",
+        "@/lib/abuse-protection",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the waitlist workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/waitlist/ui/waitlist-verification.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "react",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the waitlist workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/webhooks/ui/webhook-deliveries-panel.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "../model/transforms",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the webhooks workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/webhooks/ui/webhook-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react-hook-form",
+        "@/shared/ui",
+        "../model/schemas",
+        "../model/transforms",
+        "../model/types"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines webhooks validation and submission for the owning workflow; shared controls own fields and dialogs.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/webhooks/ui/webhooks-page.tsx",
+      "imports": [
+        "@tanstack/react-query",
+        "lucide-react",
+        "react",
+        "sonner",
+        "@/components/empty-state",
+        "@/components/org-selector",
+        "@/components/ui/dialog",
+        "@/lib/auth",
+        "@/shared/ui",
+        "../model/transforms",
+        "../model/types",
+        "../service/mutations",
+        "../service/queries",
+        "./webhook-deliveries-panel",
+        "./webhook-form",
+        "./webhooks-table"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Owns the webhooks workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/features/webhooks/ui/webhooks-table.tsx",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "react",
+        "@/shared/lib/utils",
+        "@/shared/ui",
+        "@/shared/ui/data-table",
+        "../model/transforms",
+        "../model/types"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Defines webhooks columns and domain action menus; shared table controls own primitive presentation.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/auth/callback/page.tsx",
+      "imports": [
+        "@/features/auth/ui/callback-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/auth/login/page.tsx",
+      "imports": [
+        "react",
+        "@/features/auth/ui/login-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/auth/magic-link/magic-link-client.tsx",
+      "imports": [
+        "lucide-react",
+        "next/navigation",
+        "react",
+        "@/features/auth/service/mutations",
+        "@/lib/auth",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/auth/magic-link/page.tsx",
+      "imports": [
+        "./magic-link-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/auth/mfa/mfa-client.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/components/ui/button",
+        "@/components/ui/input",
+        "@/lib/auth"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/auth/mfa/page.tsx",
+      "imports": [
+        "./mfa-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/invitations/accept/page.tsx",
+      "imports": [
+        "next",
+        "react",
+        "@/features/invitations/ui/invitation-acceptance"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/layout.tsx",
+      "imports": [],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/legal/privacy/page.tsx",
+      "imports": [
+        "next",
+        "@/components/legal-document"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/legal/terms/page.tsx",
+      "imports": [
+        "next",
+        "@/components/legal-document"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/status/page.tsx",
+      "imports": [
+        "./status-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/status/status-client.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/components/brand-mark",
+        "@/lib/appearance-provider"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/waitlist/page.tsx",
+      "imports": [
+        "next",
+        "react",
+        "@/features/waitlist/ui/waitlist-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(auth)/waitlist/verify/page.tsx",
+      "imports": [
+        "next",
+        "@/features/waitlist/ui/waitlist-verification"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/dashboard-client.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "@/components/activity-feed",
+        "@/components/auth/role-gate",
+        "@/components/slot",
+        "@/components/ui/card",
+        "@/lib/auth"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/dashboards/page.tsx",
+      "imports": [
+        "@/features/dashboard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/docs/api-docs-frame.tsx",
+      "imports": [
+        "swagger-ui-react"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/docs/compliance/compliance-section.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/docs/compliance/page.tsx",
+      "imports": [
+        "@/features/trust/model/capabilities",
+        "@/features/trust/model/capabilities.server",
+        "./compliance-section"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/docs/page.tsx",
+      "imports": [
+        "./api-docs-frame"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/docs/sdks/page.tsx",
+      "imports": [
+        "@/shared/ui",
+        "@connectrpc/connect",
+        "@connectrpc/connect-web",
+        "./gen/saas/accounts/v1/authentication_pb",
+        "./gen/saas/accounts/v1/identity_pb",
+        "./gen/saas/accounts/v1/organizations_pb"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/insights/page.tsx",
+      "imports": [
+        "@/features/dashboard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/layout.tsx",
+      "imports": [
+        "@/components/dashboard-route-shell"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/notifications/page.tsx",
+      "imports": [
+        "@/features/notifications/ui/notifications-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/onboarding/page.tsx",
+      "imports": [
+        "@/features/onboarding/ui/onboarding-wizard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/page.tsx",
+      "imports": [
+        "@/solutions/SolutionsMenu",
+        "./dashboard-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/s/[solutionId]/page.tsx",
+      "imports": [
+        "next/navigation",
+        "@/solutions/SolutionDashboard",
+        "@/solutions/SolutionRuntime",
+        "@/solutions/registry"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/security/page.tsx",
+      "imports": [
+        "@/features/dashboard"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/settings/data/page.tsx",
+      "imports": [
+        "@/features/gdpr/ui/data-privacy-page",
+        "@/features/trust/model/capabilities",
+        "@/features/trust/model/capabilities.server"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/settings/mfa/page.tsx",
+      "imports": [
+        "@/features/mfa/ui/mfa-settings-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/settings/notifications/page.tsx",
+      "imports": [
+        "@/features/notifications/ui/notification-settings"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/settings/page.tsx",
+      "imports": [
+        "@/features/user-settings/ui/general-settings-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/(dashboard)/settings/privacy/page.tsx",
+      "imports": [
+        "@/features/consent/ui/consent-settings-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/[...slug]/page.tsx",
+      "imports": [
+        "./plugin-route-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/[...slug]/plugin-route-client.tsx",
+      "imports": [
+        "next/navigation",
+        "@/components/plugin-contribution-boundary",
+        "@/lib/auth",
+        "@/lib/plugins/presentation",
+        "@/lib/providers"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/admin-overview-client.tsx",
+      "imports": [
+        "next/link",
+        "@/components/ui/card",
+        "@/lib/auth",
+        "@/lib/navigation-icons",
+        "@/lib/plugins/presentation",
+        "@/lib/providers"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/api-keys/page.tsx",
+      "imports": [
+        "@/features/api-keys/ui/api-keys-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/audit-log/page.tsx",
+      "imports": [
+        "@/features/audit/ui/audit-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/billing/page.tsx",
+      "imports": [
+        "@/features/billing/ui/billing-admin-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/billing/success/billing-success-client.tsx",
+      "imports": [
+        "next/link",
+        "next/navigation",
+        "react"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/billing/success/page.tsx",
+      "imports": [
+        "./billing-success-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/datasources/page.tsx",
+      "imports": [
+        "@/features/datasources/datasources-admin"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/entitlements/page.tsx",
+      "imports": [
+        "@/features/platform/ui/entitlements-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/invitations/page.tsx",
+      "imports": [
+        "@/features/invitations/ui/invitations-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/layout.tsx",
+      "imports": [
+        "@/components/admin-route-shell"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/organizations/page.tsx",
+      "imports": [
+        "@/features/organizations/ui/organizations-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/organizations/settings/page.tsx",
+      "imports": [
+        "@/features/organizations/ui/org-settings-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/page.tsx",
+      "imports": [
+        "./admin-overview-client"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/admins/page.tsx",
+      "imports": [
+        "@/features/platform/ui/admins-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/events/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/event-operations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/feature-flags/page.tsx",
+      "imports": [
+        "@/features/platform/ui/flags-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/jobs/page.tsx",
+      "imports": [
+        "@/components/auth/role-gate",
+        "@/features/job-operations"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/page.tsx",
+      "imports": [
+        "lucide-react",
+        "next/link",
+        "@/shared/ui"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/platform/waitlist/page.tsx",
+      "imports": [
+        "@/features/waitlist/ui/waitlist-admin-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/roles/page.tsx",
+      "imports": [
+        "@/features/roles/ui/roles-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/sessions/page.tsx",
+      "imports": [
+        "@/features/platform/ui/sessions-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/sso/page.tsx",
+      "imports": [
+        "@/features/sso-admin/ui/sso-admin-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/teams/page.tsx",
+      "imports": [
+        "@/features/teams/ui/teams-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/users/page.tsx",
+      "imports": [
+        "@/features/users/ui/users-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/admin/webhooks/page.tsx",
+      "imports": [
+        "@/features/webhooks/ui/webhooks-page"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/global-error.tsx",
+      "imports": [
+        "@sentry/nextjs",
+        "next/error",
+        "react"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/icon.tsx",
+      "imports": [
+        "next/og",
+        "@/generated/public-site-config"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "src/app/layout.tsx",
+      "imports": [
+        "next",
+        "next/headers",
+        "@/components/consent-banner",
+        "@/lib/appearance",
+        "@/lib/providers",
+        "@/lib/skin",
+        "../../frontend.config"
+      ],
+      "owner": "SaaS application",
+      "disposition": "keep feature-local",
+      "reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+      "stories": [],
+      "coverage": "missing",
+      "remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+    },
+    {
+      "source": "packages/codefly-ui/src/chat/chat.tsx",
+      "imports": [
+        "react",
+        "../layout/avatar.js",
+        "../layout/button.js",
+        "../layout/textarea.js",
+        "../layout/page.js",
+        "./cn.js",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "Conversation"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "EmptyConversation"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "StreamingConversation"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/atoms.tsx",
+      "imports": [
+        "react",
+        "./cn.js",
+        "./format.js",
+        "./geometry.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "DashboardCharts"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/charts.tsx",
+      "imports": [
+        "react",
+        "./atoms.js",
+        "./cn.js",
+        "./geometry.js",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "DashboardCharts"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/dashboard.tsx",
+      "imports": [
+        "react",
+        "../layout/card.js",
+        "../layout/page.js",
+        "./charts.js",
+        "./cn.js",
+        "./types.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "DashboardCharts"
+        },
+        {
+          "file": "packages/codefly-ui/stories/composites.stories.tsx",
+          "export": "EmptyDashboard"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/metric-chart.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "react",
+        "../layout/cn.js",
+        "./metric-geometry.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Lines"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Areas"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Bars"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "EmptyChart"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/metric-state.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "../layout/badge.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Availability"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Populated"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/metric-tiles.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "lucide-react",
+        "react",
+        "./metric-state.js",
+        "./sparkline.js",
+        "../layout/card-root.js",
+        "../layout/skeleton.js",
+        "../layout/cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Populated"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Availability"
+        },
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Comparison"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/sparkline.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "react",
+        "./geometry.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "Populated"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/dashboard/trend-line-chart.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "react",
+        "./geometry.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/metrics.stories.tsx",
+          "export": "IndexedTrend"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/alert-dialog.tsx",
+      "imports": [
+        "@base-ui/react/alert-dialog",
+        "react",
+        "./button.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Confirmation"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/avatar.tsx",
+      "imports": [
+        "@base-ui/react/avatar",
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "BadgesAndAvatars"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/badge.tsx",
+      "imports": [
+        "@base-ui/react/merge-props",
+        "@base-ui/react/use-render",
+        "class-variance-authority",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "BadgesAndAvatars"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/button.tsx",
+      "imports": [
+        "@base-ui/react/button",
+        "class-variance-authority",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Buttons"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/card-root.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "CompoundCard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "CompactCard"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/card.tsx",
+      "imports": [
+        "react",
+        "./cn.js",
+        "./card-root.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "CompoundCard"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "CompactCard"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/checkbox.tsx",
+      "imports": [
+        "@base-ui/react/checkbox",
+        "lucide-react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "CheckboxesAndSwitches"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/command.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "cmdk",
+        "lucide-react",
+        "react",
+        "./dialog.js",
+        "./input-group.js",
+        "./cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "SearchCommands"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/dialog.tsx",
+      "imports": [
+        "@base-ui/react/dialog",
+        "lucide-react",
+        "react",
+        "./button.js",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Modal"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/dropdown-menu.tsx",
+      "imports": [
+        "@base-ui/react/menu",
+        "lucide-react",
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Menu"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/empty-state.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Empty"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/error-state.tsx",
+      "imports": [
+        "lucide-react",
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Error"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/input-group.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "class-variance-authority",
+        "react",
+        "./button.js",
+        "./input.js",
+        "./textarea.js",
+        "./cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "InputWithAction"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "InvalidInput"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "DisabledInput"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/input.tsx",
+      "imports": [
+        "@base-ui/react/input",
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Fields"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/label.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Fields"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/page.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "PageComposition"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/select.tsx",
+      "imports": [
+        "@base-ui/react/select",
+        "lucide-react",
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Selection"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/separator.tsx",
+      "imports": [
+        "@base-ui/react/separator",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Loading"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/sheet.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "@base-ui/react/dialog",
+        "lucide-react",
+        "react",
+        "./button.js",
+        "./cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "SheetDialog"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/sidebar.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "@base-ui/react/merge-props",
+        "@base-ui/react/use-render",
+        "class-variance-authority",
+        "lucide-react",
+        "react",
+        "./button.js",
+        "./input.js",
+        "./separator.js",
+        "./sheet.js",
+        "./skeleton.js",
+        "./tooltip.js",
+        "./use-mobile.js",
+        "./cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "ResponsiveSidebar"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/skeleton.tsx",
+      "imports": [
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Loading"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/sonner.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "lucide-react",
+        "sonner"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "ToastStates"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/switch.tsx",
+      "imports": [
+        "@base-ui/react/switch",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "CheckboxesAndSwitches"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/table.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "SelectableSummary"
+        },
+        {
+          "file": "packages/codefly-ui/stories/semantic-table.stories.tsx",
+          "export": "EmptySummary"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Caption, header, body, footer, row, head and cell compose the parent stories; selection and empty states covered. Verify external explorer, skins and reviewed visual baselines."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/tabs-root.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "@base-ui/react/tabs",
+        "class-variance-authority",
+        "./cn.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "HorizontalTabs"
+        },
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "VerticalTabs"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/tabs.tsx",
+      "imports": [
+        "react",
+        "./tabs-root.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/controls.stories.tsx",
+          "export": "ControlledTabs"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/textarea.tsx",
+      "imports": [
+        "react",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "Fields"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/layout/tooltip.tsx",
+      "imports": [
+        "@base-ui/react/tooltip",
+        "./cn.js"
+      ],
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/primitives.stories.tsx",
+          "export": "TooltipPreview"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/codefly-ui/src/table/data-table.tsx",
+      "owner": "@codefly-dev/ui",
+      "disposition": "already canonical",
+      "reason": "Shared owner implementation.",
+      "imports": [
+        "@tanstack/react-table",
+        "lucide-react",
+        "../layout/button.js",
+        "../layout/skeleton.js",
+        "../layout/table.js"
+      ],
+      "stories": [
+        {
+          "file": "packages/codefly-ui/stories/table.stories.tsx",
+          "export": "Paginated"
+        },
+        {
+          "file": "packages/codefly-ui/stories/table.stories.tsx",
+          "export": "Empty"
+        },
+        {
+          "file": "packages/codefly-ui/stories/table.stories.tsx",
+          "export": "Loading"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/connect-github-form.tsx",
+      "imports": [
+        "@hookform/resolvers/zod",
+        "react",
+        "react-hook-form",
+        "./schema.js",
+        "@codefly-dev/ui/layout"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ConnectionValidation"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ConnectionPending"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    },
+    {
+      "source": "packages/saas-ui/src/datasources/datasources-panel.tsx",
+      "imports": [
+        "@codefly-dev/ui/layout",
+        "@connectrpc/connect",
+        "@tanstack/react-query",
+        "react",
+        "./connect-github-form.js",
+        "./gateway.js",
+        "./queries.js",
+        "./schema.js",
+        "./types.js",
+        "./util.js"
+      ],
+      "owner": "@codefly-dev/saas-ui",
+      "disposition": "already canonical",
+      "reason": "Owner package implementation.",
+      "stories": [
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "Populated"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "Empty"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "Loading"
+        },
+        {
+          "file": "packages/saas-ui/stories/datasources.stories.tsx",
+          "export": "ProviderError"
+        }
+      ],
+      "coverage": "owner stories; browser/skin verification pending",
+      "remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+    }
+  ],
+  "publicEntrypoints": {
+    "@codefly-dev/ui": "packages/codefly-ui/src/index.ts",
+    "@codefly-dev/ui/plugin-host": "packages/codefly-ui/src/plugin-host/index.ts",
+    "@codefly-dev/ui/plugin-host/runtime": "packages/codefly-ui/src/plugin-host/runtime.ts",
+    "@codefly-dev/ui/plugin-host/ui": "packages/codefly-ui/src/plugin-host/ui.ts",
+    "@codefly-dev/ui/skin": "packages/codefly-ui/src/skin/index.ts",
+    "@codefly-dev/ui/dashboard": "packages/codefly-ui/src/dashboard/index.ts",
+    "@codefly-dev/ui/chat": "packages/codefly-ui/src/chat/index.ts",
+    "@codefly-dev/ui/layout": "packages/codefly-ui/src/layout/index.ts",
+    "@codefly-dev/ui/table": "packages/codefly-ui/src/table/index.ts",
+    "@codefly-dev/saas-ui": "packages/saas-ui/src/index.ts"
+  }
+}

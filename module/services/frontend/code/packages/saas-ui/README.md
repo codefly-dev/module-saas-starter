@@ -85,7 +85,7 @@ the split the sealing invariant exists to prevent). That means the consumer
 installs them:
 
 ```
-npm i @codefly-dev/saas-ui @codefly-dev/saas-sdk \
+npm i @codefly-dev/saas-ui @codefly-dev/saas-sdk @codefly-dev/ui \
       react react-hook-form @hookform/resolvers zod \
       @tanstack/react-query @connectrpc/connect @connectrpc/connect-web @bufbuild/protobuf
 ```

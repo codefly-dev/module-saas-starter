@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { HOST_SHARED_VERSIONS } from "../host-runtime";
 import { CODEFLY_KIT_SHARED } from "../SolutionOutlet";
 
 // The host shares @codefly-dev/ui, @codefly-dev/saas-ui, and @codefly-dev/saas-sdk
@@ -13,6 +14,14 @@ import { CODEFLY_KIT_SHARED } from "../SolutionOutlet";
 // than to one shared constant, and a bump to any of them can't drift silently.
 const SHARE_KEY_TO_DIR: Record<keyof typeof CODEFLY_KIT_SHARED, string> = {
 	"@codefly-dev/ui": "codefly-ui",
+	"@codefly-dev/ui/layout": "codefly-ui",
+	"@codefly-dev/ui/dashboard": "codefly-ui",
+	"@codefly-dev/ui/chat": "codefly-ui",
+	"@codefly-dev/ui/skin": "codefly-ui",
+	"@codefly-dev/ui/table": "codefly-ui",
+	"@codefly-dev/ui/plugin-host": "codefly-ui",
+	"@codefly-dev/ui/plugin-host/runtime": "codefly-ui",
+	"@codefly-dev/ui/plugin-host/ui": "codefly-ui",
 	"@codefly-dev/saas-ui": "saas-ui",
 	"@codefly-dev/saas-sdk": "saas-sdk",
 };
@@ -31,6 +40,7 @@ describe("shared kit versions match their published packages", () => {
 				CODEFLY_KIT_SHARED[shareKey as keyof typeof CODEFLY_KIT_SHARED];
 			expect(entry, `missing share entry for ${shareKey}`).toBeDefined();
 			expect(entry.version).toBe(packageVersion(dir));
+			expect(HOST_SHARED_VERSIONS[shareKey]).toBe(entry.version);
 		},
 	);
 });

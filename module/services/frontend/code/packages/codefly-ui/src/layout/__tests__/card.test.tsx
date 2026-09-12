@@ -2,7 +2,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import type { CSSProperties } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { Card, Section } from "../card.js";
+import { Card } from "../card.js";
+import { Section } from "../page.js";
 
 afterEach(cleanup);
 
