@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"accounts/pkg/business"
+	"accounts/pkg/infra"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
@@ -77,6 +78,36 @@ func TestAdministeredOrganizationsRefuseATransactionThatCanAnswerNeitherWay(t *t
 	require.NoError(t, testStore.As(business.Identity{UserID: outsider}).Within(testCtx, func(ctx context.Context) error {
 		_, err := testStore.ListAdministeredOrganizations(ctx, administrator)
 		require.Error(t, err, "an identity-scoped transaction must not answer for another identity")
+		return nil
+	}))
+}
+
+// Migration 136 makes every runtime role NOBYPASSRLS on the managed profile and
+// gives the background roles their cross-tenant visibility through explicit
+// exact-role policies instead. A scope probe that admitted the control plane on
+// its role *attribute* would refuse every platform-administered deactivation
+// there — and pass on any profile that still grants BYPASSRLS, which is every
+// local and default deployment. Assert it against the query the store runs, so
+// the distinction cannot be lost without this failing.
+func TestControlPlaneScopeSurvivesWithoutRLSBypass(t *testing.T) {
+	administrator := seedUser(t)
+	orgID := seedOrg(t, administrator)
+	seedOrgAdministrator(t, orgID, administrator)
+
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		var scopedUser string
+		var spansTenants bool
+		require.NoError(t, tx.QueryRow(ctx, infra.IdentityScopeProbe, infra.ControlPlaneDatabaseRole).
+			Scan(&scopedUser, &spansTenants))
+
+		require.True(t, spansTenants,
+			"the control plane must be recognised by the role it assumed, not by a role attribute the managed profile withholds")
+
+		// And the operation answers for another identity on that basis.
+		administered, err := testStore.ListAdministeredOrganizations(ctx, administrator)
+		require.NoError(t, err)
+		require.Len(t, administered, 1)
 		return nil
 	}))
 }

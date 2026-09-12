@@ -508,10 +508,14 @@ does not set, and `users` is readable only for the caller's own row. Both fail
 *silently* — zero rows, no error — and "administers nothing" is exactly the
 answer that lets the deactivation through. So request traffic resolves it through
 `identity_administered_organizations`, a `SECURITY DEFINER` function owned by
-`app_control_plane` and scoped to the caller's **own identity** (migration 136),
-and a transaction that spans tenants evaluates the same predicate directly.
-`ListAdministeredOrganizations` branches on which of the two it is in and
-refuses a transaction that is neither, rather than returning the empty answer.
+`app_control_plane` and scoped to the caller's **own identity** (migration 137),
+and a transaction that has assumed `app_control_plane` evaluates the same
+predicate directly. `ListAdministeredOrganizations` branches on which of the two
+it is in and refuses a transaction that is neither, rather than returning the
+empty answer. It decides that on the **assumed role**, not on `rolbypassrls`:
+the managed profile makes every runtime role `NOBYPASSRLS` (migration 136), so
+an attribute test would refuse every platform-administered deactivation there
+while passing on every profile that still grants it.
 
 **The two entry points differ in what they do with the result, deliberately:**
 

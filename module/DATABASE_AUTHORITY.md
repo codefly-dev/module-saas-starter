@@ -336,7 +336,7 @@ predicate directly.
 
 ## Identity deactivation and administered organizations
 
-Migration `136_identity_administered_organizations` adds
+Migration `137_identity_administered_organizations` adds
 `identity_administered_organizations(user_id)`, the read behind the
 deactivation half of the same invariant. Deactivating an identity — a soft
 delete or a suspension — writes no `organization_members` row but withdraws
@@ -364,9 +364,14 @@ The administrator count repeats migration `133`'s eligibility predicate rather t
 calling `organization_eligible_administrators`, which scopes itself to
 `app.current_org_id` — a value a deactivation has no single one of.
 `PostgresStore.ListAdministeredOrganizations` branches on the transaction's
-scope: the caller's own identity goes through the function, a transaction
-holding `BYPASSRLS` evaluates the predicate directly, and one that is neither is
-refused rather than answered empty. Executable tests pin the function's owner,
+scope: the caller's own identity goes through the function, a transaction that
+has assumed `app_control_plane` evaluates the predicate directly, and one that is
+neither is refused rather than answered empty. It decides that on the assumed
+role, not on `rolbypassrls` — the managed profile makes every runtime role
+`NOBYPASSRLS` and grants the control plane its reach through explicit exact-role
+policies, so an attribute test would refuse every platform-administered
+deactivation there while passing everywhere else. Same predicate as migration
+`136`'s guard on `record_membership_integrity_findings()`. Executable tests pin the function's owner,
 security mode, and ACL, the eligibility filter, and that refusal.
 
 ## Session authorization invalidation

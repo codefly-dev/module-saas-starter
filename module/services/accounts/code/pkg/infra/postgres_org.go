@@ -239,6 +239,26 @@ func (s *PostgresStore) CountOrgAdministrators(ctx context.Context, orgID string
 	return total, others, nil
 }
 
+// identityScopeProbe reports what a transaction may answer for: the identity its
+// RLS context is scoped to, and whether it is the control plane, which spans
+// every tenant.
+//
+// Spanning is decided on the role the transaction assumed, not on a role
+// attribute. withControlPlaneTx establishes it with SET LOCAL ROLE, and on the
+// managed profile that is the only signal there is: migration 136 makes every
+// runtime role NOBYPASSRLS and gives the background roles their cross-tenant
+// visibility through explicit `current_user = '<role>'` policies instead. Asking
+// after rolbypassrls would refuse every platform-administered deactivation on
+// exactly the deployment that migration exists to serve, while passing on any
+// profile that still grants the attribute. It is also wider than the authority
+// in question: on a legacy profile all four background roles carry BYPASSRLS,
+// and none of them has any business answering for an identity. Same predicate,
+// and same reasoning, as migration 136's guard on
+// record_membership_integrity_findings().
+const identityScopeProbe = `
+	SELECT coalesce(pg_catalog.current_setting('app.current_user_id', true), ''),
+	       current_user::text = $1`
+
 // ListAdministeredOrganizations returns every organization the identity is an
 // eligible administrator of, each with that organization's total count of
 // eligible administrators, ordered by organization id.
@@ -258,13 +278,8 @@ func (s *PostgresStore) ListAdministeredOrganizations(ctx context.Context, userI
 
 	var scopedUser string
 	var spansTenants bool
-	if err := executor.QueryRow(ctx, `
-		SELECT coalesce(pg_catalog.current_setting('app.current_user_id', true), ''),
-		       EXISTS (
-		           SELECT 1 FROM pg_catalog.pg_roles
-		           WHERE rolname = current_user AND (rolbypassrls OR rolsuper)
-		       )`,
-	).Scan(&scopedUser, &spansTenants); err != nil {
+	if err := executor.QueryRow(ctx, identityScopeProbe, controlPlaneDatabaseRole).
+		Scan(&scopedUser, &spansTenants); err != nil {
 		return nil, w.Wrapf(err, "failed to read the transaction's identity scope")
 	}
 
