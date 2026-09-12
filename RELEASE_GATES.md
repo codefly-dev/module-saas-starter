@@ -286,11 +286,11 @@ merge-queue base scoping sits three lines under the expression it describes, so 
 plain substring match would go vacuous the moment someone documented it by name.
 
 **The one thing `check` cannot verify is the list itself.** `REQUIRED_CONTEXTS`
-is this tree's copy of a set that really lives in the branch ruleset, and no
-token available to a workflow run can read that — listing rulesets needs
-`Administration: read`, which `GITHUB_TOKEN` cannot hold. A context added to the
-ruleset but not to this list is the dangerous direction: nothing holds it to
-running on `merge_group`, so the first queued pull request waits out
+is this tree's copy of a set that really lives in GitHub's branch configuration,
+and no token available to a workflow run can read that — it needs
+`Administration: read`, which `GITHUB_TOKEN` cannot hold. A context added there
+but not to this list is the dangerous direction: nothing holds it to running on
+`merge_group`, so the first queued pull request waits out
 `check_response_timeout_minutes` and is evicted, with `check` green throughout.
 Reconcile the two from your own credentials, and do it whenever either side
 moves:
@@ -300,9 +300,17 @@ node scripts/ci/release-gates.mjs contexts        # defaults to this repository
 node scripts/ci/release-gates.mjs contexts owner/repo
 ```
 
-It fails naming each context that only one side has, and also fails if the
-repository has no ruleset requiring any check at all — on an unprotected branch a
-merge queue gates nothing.
+It fails naming each context that only one side has, and also fails if nothing
+requires a check on the default branch at all — on an unprotected branch a merge
+queue gates nothing.
+
+A branch can be gated two ways, and **neither mechanism is visible to the
+other's endpoint**. A ruleset shows up in `rules/branches/<branch>`, which is
+what the queue rule lives in; classic branch protection shows up only in
+`branches/<branch>/protection`, and `rules/branches` answers `[]` for a branch
+it gates. So `contexts` reads both and unions them. Reading one alone is how the
+fleet audit below called a repository advisory while three checks gated its
+merges.
 
 Two limits are worth stating plainly. The contract **cannot protect its own job**:
 delete `release-contract` from the workflow and both the check and its tests stop
@@ -312,6 +320,68 @@ required-checks list alongside `release-gates`. And artifact-writing detection i
 a pattern list, not a proof: a publisher that writes by some means outside the
 signals above would not be classified. Extend `PUBLICATION_STEP_PATTERNS` and
 `PUBLICATION_PERMISSIONS` when a new publication mechanism arrives.
+
+### The fleet beyond this repository
+
+Everything above is about this repository, and that is a decision rather than an
+oversight. `main` here is the **only** default branch in the organization that
+merges through a queue, and the merge queue is only reachable through a ruleset's
+`merge_queue` rule, so there is no rollout to inherit it: on a branch that
+requires nothing, a queue gates nothing.
+
+Enumerate rather than believe a count, including this paragraph's:
+
+```bash
+node scripts/ci/release-gates.mjs fleet           # defaults to codefly-dev
+node scripts/ci/release-gates.mjs fleet owner
+```
+
+Every non-archived repository gets one line — `gated`, `advisory`,
+`unavailable`, or `unknown` — and every gated one lists the contexts it requires,
+whether it has a queue rule, and whether it still requires branches to be up to
+date. `unavailable` is a private repository on an account whose plan offers
+neither mechanism, recognised by the upgrade notice GitHub answers with, which
+can require nothing until that changes. `unknown` is every other read that did
+not answer, and it exits non-zero listing what each one said, because a sweep
+that quietly skipped a repository reads exactly like one that cleared it — and
+because the cause matters: a missing permission, an exhausted rate limit and an
+outage all land there and want different responses.
+
+**Run it with admin on the repositories you are sweeping, or read `unknown` as
+the answer it is.** Classic branch protection is readable only by a repository
+admin, and GitHub masks that permission error as `404 Not Found` — the same
+answer it gives for a branch that genuinely has no protection. `cli/cli`'s
+`trunk` reports `protected: true` on the branch object while
+`branches/trunk/protection` 404s for anyone who does not administer it. So a
+protection 404 counts as "unprotected" only when the credential holds admin
+(`permissions.admin`, which rides along on the listing at no extra request);
+otherwise the repository is `unknown` rather than quietly `advisory`. The
+ruleset half needs no such care — GitHub returns every active rule that applies
+regardless of where it is configured, omitting only `evaluate` and `disabled`
+rulesets, which gate nothing anyway.
+
+The audit that #617 records was a hand-written list of 17 repository names, and
+it reported that no repository but this one required a check. It was wrong:
+`secure-saas-platform` requires three, through classic protection, with
+`strict: true` and no queue — the same livelock configuration #611 was filed
+about. Two failure modes produced that, and the command exists because both are
+invisible from the inside: a list of names cannot report what it never looked at
+(the sweep that replaced it enumerated 60 active repositories), and the endpoint
+everyone reaches for cannot see classic protection.
+
+**Making a repository's CI blocking is its own decision, not a follow-through.**
+It takes effect the moment it lands: every required context must be a job name
+that actually reports on every pull request under its real, matrix-expanded
+name, or nothing in that repository can merge; and whatever is red or flaky there
+becomes a merge blocker on day one, having never had a reason to stay green.
+Nothing here schedules that. Per repository, if it is taken: confirm the default
+branch is green and its job names are stable, require those contexts
+**non-strict** (strict is what livelocked this repository — see #611), and only
+then, and only if merge volume warrants it, add the `merge_group` prerequisites
+to that repository's workflow before adding a `merge_queue` rule. This repository
+is the reference implementation for that last step, and the order is
+load-bearing: a queue enabled before its workflow reports on `merge_group`
+strands every entry behind checks that never arrive.
 
 ## What Codefly owns
 
