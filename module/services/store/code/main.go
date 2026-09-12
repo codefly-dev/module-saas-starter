@@ -32,10 +32,14 @@ func run() error {
 }
 
 func migrateStore(databaseURL string) error {
+	return migrateStoreFrom("file:///app/migrations", databaseURL)
+}
+
+func migrateStoreFrom(source, databaseURL string) error {
 	if databaseURL == "" {
 		return errors.New("store owner connection is empty")
 	}
-	runner, err := migrate.New("file:///app/migrations", databaseURL)
+	runner, err := migrate.New(source, databaseURL)
 	if err != nil {
 		return fmt.Errorf("initialize database migrations: %w", err)
 	}

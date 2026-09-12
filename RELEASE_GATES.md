@@ -422,7 +422,7 @@ reverse, fails the `release-contract` job.
 
 | Job | What it guards | What it runs |
 | --- | --- | --- |
-| `base-integrity` | the canonical base manifest that seeds every consumer sync, plus the RLS-migration, migration-pairing and generated-pin gates | `node --test` for each gate's own suite, then `node module/tools/<gate>.mjs check` |
+| `base-integrity` | the canonical base manifest that seeds every consumer sync, plus the RLS-migration, migration-pairing, reference-aware migration upgrade, and generated-pin gates | `node --test` for each gate's own suite, then `node module/tools/<gate>.mjs check`; migration reference validation runs on every candidate, with PostgreSQL upgrade and clean-install replay scoped to migration/runner inputs (see [migration policy](module/services/store/migrations/README.md)) |
 | `authz-coverage` | the generated authorization catalog: RBAC coverage, audit coverage, and permission no-broadening against `main` | `node module/tools/authz-coverage-gate.mjs`, plus `go test` for the gateway header-lockstep and adapter enforcement tests |
 | `release-contract` | this gating graph itself, and the Dependabot configuration that feeds it | `node --test scripts/ci/release-gates.test.mjs`, `node --test scripts/ci/dependabot-coverage.test.mjs`, `node scripts/ci/release-gates.mjs check`, `node scripts/ci/dependabot-coverage.mjs check` |
 | `docs-sync` | the generated interface docs and the story-trace tests (#516) | `node module/tools/interface-docs-gate.mjs check`, `node module/tools/story-trace-gate.mjs tests` |
