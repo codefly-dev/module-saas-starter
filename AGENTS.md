@@ -34,6 +34,48 @@ form (RBAC, delegation, Work Contexts, permission enforcement, audit) so every
 consumer reuses them; consumer-specific wiring stays in the consumer's own repo.
 The rule holds for public **and** private files alike.
 
+## Boundaries — non-negotiable
+
+This repo is a **module** — the **host**, the root every other module composes
+into. Its whole responsibility is one sentence: the first paragraph of its
+handbook page, `modules/saas-starter.md` in the handbook of the workspace that
+composes this host. Read that page before changing anything here. If the
+change would make that sentence need another clause, the change does not
+belong in this repo.
+
+- **Owns:** identity, tenancy, permissions, jobs, audit, approvals,
+  notifications, data sources, and the product surfaces.
+- **Never contains:** domain content of any kind — documents, rows, models,
+  agents and deals are the other modules'; a flag never grants an entitlement,
+  raises a quota, or replaces authorisation.
+- **Depends on:** nothing from other modules. It is the root of the
+  composition.
+
+The rules, governed by the handbook's `concepts/boundaries.md`:
+
+1. **Dependencies go one way**: solution → module → service, with the host
+   beneath every module. Never import, read the tables of, or hard-code the
+   internals of another module. Cross a module boundary only through the four
+   seam contracts (Ref, journal, host ports, provenance).
+2. **Nothing here names what sits above it.** A service never names a module,
+   a tenant or a permission. A module never names a solution, a customer or a
+   business line. If the task needs that word, stop: the thing belongs above,
+   through an extension point.
+3. **One consumer's need is not a feature of this repo.** Ship it in the
+   consumer through the extension point; if no extension point exists, open a
+   handbook track. Do not add a special case here, however small, however
+   temporary.
+4. **The boundary test in CI is part of the definition of done.** Never
+   weaken, skip, or allowlist past it to land a change.
+5. **If you cannot finish without breaking one of these, stop and say so.**
+   Half-done inside the boundary beats done across it.
+
+The test is `scripts/check-boundaries.sh` (denylist in
+`scripts/boundaries.denylist`, baseline in `scripts/boundaries.baseline`),
+run by `.github/workflows/boundaries.yml`. It is additive to the naming gate,
+the SDK-boundary job and the boundary tests this repo already runs. The
+baseline shrinks and never grows: clean a file, delete its line.
+
 ## Repository layout
 
 - `module/` — the canonical module source that ships to consumers. **This is

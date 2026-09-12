@@ -1,0 +1,16 @@
+module/docs/adr/0007-dashboard-storage-and-ownership.md
+module/services/accounts/code/pkg/adapters/rpcs.go
+module/services/accounts/code/pkg/business/connector_credentials_test.go
+module/services/accounts/code/pkg/business/datasource_deliveries_test.go
+module/services/accounts/code/pkg/business/datasource_deliveries.go
+module/services/accounts/code/pkg/business/datasources_test.go
+module/services/accounts/code/pkg/business/module_datasource_blob_test.go
+module/services/accounts/code/pkg/business/rls_datasource_sources_test.go
+module/services/accounts/code/pkg/githubconnector/connector_test.go
+module/services/auth-gateway/code/gateway_solutions_test.go
+module/services/auth-gateway/code/gateway_solutions.go
+module/services/frontend/code/packages/codefly-ui/CATALOG.md
+module/services/frontend/code/packages/saas-ui/src/datasources/__tests__/gateway.test.tsx
+module/services/frontend/code/src/lib/__tests__/proxy-solution-csp.test.ts
+module/services/frontend/code/src/lib/auth-provider.test.ts
+module/services/frontend/code/src/solutions/__tests__/SolutionDashboard.test.tsx
