@@ -19,9 +19,10 @@
 #    declared versions are owned by the canonical module, not by this
 #    repository's bots.
 #
-# 2. Every dependency manifest that is NOT base-tracked must be listed, so a gap
-#    is a gate failure rather than silence. The repository-root go.mod, the five
-#    builder Dockerfiles and the workflows are the whole of that set today.
+# 2. Every non-generated dependency manifest that is NOT base-tracked must be
+#    listed. Agent-generated builder Dockerfiles are not update inputs. Their
+#    effective images are checked by scripts/ci/build-images.mjs and monitored
+#    weekly by build-images.yml; upgrades belong in the owning service agent.
 #
 # Two groups per ecosystem, not one. A single catch-all that also swallowed
 # `major` meant one incompatible major bump made the entire grouped pull request
@@ -54,29 +55,6 @@ updates:
           - minor
           - patch
       gomod-major:
-        patterns:
-          - "*"
-        update-types:
-          - major
-
-  - package-ecosystem: docker
-    directories:
-      - /module/services/store/builder
-      - /module/services/accounts/builder
-      - /module/services/frontend/builder
-      - /module/services/marketing/builder
-      - /module/services/auth-gateway/builder
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 2
-    groups:
-      docker:
-        patterns:
-          - "*"
-        update-types:
-          - minor
-          - patch
-      docker-major:
         patterns:
           - "*"
         update-types:

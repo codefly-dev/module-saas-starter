@@ -128,7 +128,7 @@ jobs:
       - name: Test the release announcement
         run: node --test scripts/ci/announce-release.test.mjs
       - name: Test the dependabot coverage gate
-        run: node --test scripts/ci/dependabot-coverage.test.mjs
+        run: node --test scripts/ci/dependabot-coverage.test.mjs scripts/ci/build-images.test.mjs
       - name: Require every artifact-writing job to depend on the release gates
         run: node scripts/ci/release-gates.mjs check
       # A Dependabot entry over a base-tracked manifest opens a pull request that
@@ -136,7 +136,9 @@ jobs:
       # fails, and Dependabot cannot run `base-integrity.mjs gen` — which then
       # consumes the ecosystem's open-pull-requests-limit indefinitely.
       - name: Require dependabot to cover every updatable manifest and no base file
-        run: node scripts/ci/dependabot-coverage.mjs check
+        run: |
+          node scripts/ci/dependabot-coverage.mjs check
+          node scripts/ci/build-images.mjs check
 
   docs-sync:
     name: Interface docs and story tests
@@ -347,6 +349,10 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "1.27.0"
+      - name: Reject ineffective image proposals before service CI
+        env:
+          CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: node scripts/ci/build-images.mjs check
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       - name: Resolve affected services
@@ -382,7 +388,12 @@ jobs:
             && "${CODEFLY_BASE}" != "0000000000000000000000000000000000000000" ]]; then
             base="${CODEFLY_BASE}"
             all=false
-            selection_args+=(--base "${base}")
+            if git diff --name-only "${base}" "${GITHUB_SHA}" -- scripts/ci/build-images.json | grep -q .; then
+              all=true
+              selection_args+=(--all)
+            else
+              selection_args+=(--base "${base}")
+            fi
           else
             selection_args+=(--all)
           fi
@@ -598,14 +609,23 @@ jobs:
             go.sum
             module/tools/go.sum
             module/services/*/code/go.sum
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        with:
+          version: v0.33.0
+          driver: docker
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       - name: Ensure runner disk space
         run: bash scripts/ci/ensure-disk-space.sh
+      - name: Test executor image evidence against real Docker builds
+        env:
+          BUILD_IMAGES_DOCKER_TEST: 'true'
+        run: node --test scripts/ci/build-images.test.mjs
       - name: Build affected service images
         shell: bash
         env:
           SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
+          BUILDKIT_PROGRESS: plain
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
         run: |
           selection_args=(--head "${GITHUB_SHA}")
@@ -629,9 +649,10 @@ jobs:
           # even serially, and running builds in parallel makes the race more
           # likely, so allow a few retries. Retry only that exact daemon error;
           # genuine failures stop at once.
-          build_log="$(mktemp)"
-          trap 'rm -f "${build_log}"' EXIT
+          mkdir -p .codefly/ci
+          build_log=".codefly/ci/build.log"
           for attempt in 1 2 3 4 5; do
+            node scripts/ci/build-images.mjs snapshot
             if codefly ci run "${selection_args[@]}" \
               --phase build \
               --output ".codefly/ci/build-${attempt}" \
@@ -644,6 +665,21 @@ jobs:
             echo "::warning::Docker lost an image-export layer; syncing and retrying the build"
             sync
           done
+
+      - name: Verify effective build image evidence
+        if: ${{ !cancelled() }}
+        env:
+          SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
+          AFFECTED_SERVICES: ${{ needs.codefly-plan.outputs.services }}
+        run: node scripts/ci/build-images.mjs evidence
+      - name: Retain build image evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: effective-build-images
+          path: .codefly/ci/
+          include-hidden-files: true
+          if-no-files-found: error
 
   # The one aggregate every artifact-writing job below depends on. It runs past
   # a failed dependency so it can read its dependencies' own outcomes: a plain
