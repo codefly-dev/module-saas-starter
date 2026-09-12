@@ -24,12 +24,26 @@
 #    effective images are checked by scripts/ci/build-images.mjs and monitored
 #    weekly by build-images.yml; upgrades belong in the owning service agent.
 #
-# Two groups per ecosystem, not one. A single catch-all that also swallowed
-# `major` meant one incompatible major bump made the entire grouped pull request
-# unmergeable, and open-pull-requests-limit: 1 then stopped Dependabot opening
-# any replacement — starving the ecosystem of every patch queued behind it.
-# Majors travel in their own pull request, and the limit of 2 leaves room for
-# exactly that second request.
+# ONE catch-all group per ecosystem, at open-pull-requests-limit 1, so a week
+# yields at most one pull request per ecosystem instead of one per dependency.
+#
+# The groups deliberately carry NO `update-types:` filter. That filter only
+# recognises semver update types, so an update that is none of `major`/`minor`/
+# `patch` — a digest bump, which is what every github-actions pin here takes —
+# matches nothing in the list, falls OUT of the group, and opens an ungrouped
+# pull request of its own, one per directory. Omitting the filter makes
+# `patterns: "*"` mean what it says: everything, digests included. For the same
+# reason majors are not split into a second group — that is a guaranteed extra
+# pull request.
+#
+# Security updates keep their own group where one is defined: `applies-to`
+# separates them from version updates and they are not capped by
+# open-pull-requests-limit, because an urgent fix should not queue behind
+# routine work.
+#
+# Dependabot cannot group ACROSS ecosystems, so the entries below are the floor
+# on what Dependabot itself opens; .github/workflows/combine-deps.yml runs after
+# the weekly pass and folds whatever is open into a single pull request.
 #
 # Transitive security advisories are remediated by
 # .github/workflows/dep-audit.yml, which edits only lockfiles and regenerates the
@@ -38,27 +52,19 @@
 version: 2
 
 updates:
-  # The repository-root tooling module only. The five modules under module/ are
-  # base files; see rule 1.
+  # The repository-root tooling module and the published source-read SDK. The
+  # five modules under module/ are base files; see rule 1.
   - package-ecosystem: gomod
     directories:
       - /
       - /libraries/source-read-sdk/go
     schedule:
       interval: weekly
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
     groups:
       gomod:
         patterns:
           - "*"
-        update-types:
-          - minor
-          - patch
-      gomod-major:
-        patterns:
-          - "*"
-        update-types:
-          - major
 
   # Every action is already pinned to a commit digest, and
   # `release-gates.mjs check` fails the build on any mutable ref, so nothing but
@@ -67,16 +73,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 1
     groups:
       github-actions:
         patterns:
           - "*"
-        update-types:
-          - minor
-          - patch
-      github-actions-major:
-        patterns:
-          - "*"
-        update-types:
-          - major
