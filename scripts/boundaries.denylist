@@ -1,19 +1,27 @@
 # boundaries.denylist — what the host may not carry. Read by scripts/check-boundaries.sh:
-# one extended regex per line, joined with '|', matched case-sensitively over every
-# tracked text file. Governed by the handbook's concepts/boundaries.md (host row: "any
-# domain noun: document, row, model, agent, deal") and AGENTS.md §"Boundaries".
+# one extended regex per line, joined with '|', matched case-INsensitively over every
+# tracked text file ("Apollo" and "apollo" are the same leak). Governed by the
+# handbook's concepts/boundaries.md (host row: "any domain noun: document, row, model,
+# agent, deal") and AGENTS.md §"Boundaries".
 #
 # This gate is ADDITIVE to the gates the repo already runs. Customer, partner and
 # consumer names are enforced by module/tools/naming-gate.mjs, by digest, and this file
 # deliberately does not spell them (AGENTS.md §"Naming and confidentiality" binds this
 # file too). Generic technical nouns the host legitimately uses (document, row, model,
 # agent) are a review rule, not a grep rule.
+#
+# Because matching is case-insensitive, a pattern cannot tell a proper noun or a
+# camelCase identifier from the same letters in English prose. Where that distinction
+# matters (deal, lastlogin) the list matches the SHAPES the leak takes instead of the
+# bare word; the bare word in prose is then a review rule.
 
-# A product noun that belongs to a business line, never to the host: the type/proper-noun
-# form and the identifier forms. The lowercase English verb ("deal with", the MIT licence's
-# "deal in the Software") is not matched on purpose.
-\bDeals?\b
-\bdeals?[-_](id|type|intelligence|book|room|flow)s?\b
+# A product noun that belongs to a business line, never to the host. The English verb
+# and ordinary sales talk ("deal with", "same deal", "enterprise deals", the MIT
+# licence's "deal in the Software") are not matched on purpose, so only the
+# entity-shaped forms are: identifier and compound forms (deal_id, dealType, DealBook,
+# deal-room), the typed noun ("deal record", "deals table") and the product name.
+\bdeals?[-_]?(ids?|types?|intelligence|books?|rooms?|flows?|records?|entit(y|ies)|tables?|pages?|models?|stages?|status|owners?|teams?|pipelines?)\b
+\bdeals? (records?|entit(y|ies)|tables?|pages?|models?|stages?|status|owners?|teams?|objects?|schemas?|types?|lists?|pipelines?)\b
 \bdeal[-_ ]intelligence\b
 
 # Solution names contributed on top of the host: a solution is installed at runtime and
@@ -21,15 +29,25 @@
 # fixtures, not in a proxy path, not in a catalogue's "what the current solutions need".
 # A "/wiki/" path segment is excluded because it is how GitHub and other hosts address a
 # project wiki (github.com/<org>/<repo>/wiki/<page>), which is not a solution name; the
-# solution-shaped paths are then matched explicitly. The second solution's slug is matched
-# only in its all-lowercase form: `lastLogin`/`LastLogin` is the host's own identity
-# vocabulary (a user's last login timestamp), not the solution.
-(^|[^/])\b[Ww]iki\b
-\bsolutions/[Ww]iki\b
-/s/[Ww]iki\b
-\blastlogin\b
+# solution-shaped paths are then matched explicitly.
+(^|[^/])\bwiki\b
+\bsolutions/wiki\b
+/s/wiki\b
+# The second solution's slug is NOT matched as a bare word: case-insensitively it would
+# also match `lastLogin`/`LastLogin`, the host's own identity vocabulary (a user's last
+# login timestamp — a proto field, a JSON key, a column). It is matched in the shapes a
+# solution name takes and an identifier never does: a URL segment (/lastlogin,
+# /s/lastlogin, /solutions/lastlogin-go), a runtime or package suffix (lastlogin-go,
+# lastlogin-python, "lastlogin solution"), a quoted id that is not a JSON key
+# ("lastlogin" not followed by ':'), a possessive, and a prose mention ("e.g. lastlogin",
+# "(lastlogin, wiki)").
+/lastlogin\b
+\blastlogin[-_ ](go|python|solution)s?\b
+["'`]lastlogin["'`]([^:]|$)
+\blastlogin's\b
+(e\.g\.|i\.e\.|such as|like|\() ?lastlogin\b
 
 # Another module's name and internals: the host hands work to "the consuming module"
 # through its ports and never knows which one. (A line that says who consumes the host
 # is exempted by the script — the one place the handbook allows naming a consumer.)
-\b[Dd]ocument[-_ ][Ss]tores?\b
+\bdocument[-_ ]stores?\b

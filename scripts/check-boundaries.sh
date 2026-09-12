@@ -5,7 +5,7 @@
 #
 # It greps every tracked text file for the words and paths this layer may not
 # contain (scripts/boundaries.denylist: one extended regex per line, '#' comments)
-# and FAILS on any hit in a file not listed in scripts/boundaries.baseline — the
+# (case-insensitively: "Apollo" and "apollo" are the same leak) and FAILS on any hit in a file not listed in scripts/boundaries.baseline — the
 # files that already carried a hit the day the gate landed. The baseline shrinks and
 # never grows: clean a file, delete its line. A baselined file with no hits left is
 # reported so its line gets removed. Do not add to the baseline to land a change.
@@ -24,7 +24,7 @@ touch "$BASE"
 
 HITS="$(git ls-files -z \
   | grep -zvE '(^|/)(AGENTS|CLAUDE)\.md$|^scripts/(check-boundaries\.sh|boundaries\.(denylist|baseline))$' \
-  | xargs -0 grep -nEI "($PATTERN)" -- 2>/dev/null \
+  | xargs -0 grep -niEI "($PATTERN)" -- 2>/dev/null \
   | grep -viE 'consum(er|ers|ed|es|ing)\b' || true)"
 
 fail=0
@@ -33,7 +33,9 @@ for f in $FILES; do
   if ! grep -qxF "$f" "$BASE"; then
     fail=1
     echo "check-boundaries: $f names something outside this repo's boundary:" >&2
-    printf '%s\n' "$HITS" | grep -F "$f:" | head -5 | sed 's/^/    /' >&2
+    # awk, not grep|head: under pipefail, head closing early would SIGPIPE grep
+    # and abort the loop, truncating the report and any baseline built from it.
+    printf '%s\n' "$HITS" | awk -v p="$f:" 'index($0, p) == 1 && n < 5 { print "    " $0; n++ }' >&2
   fi
 done
 while read -r b; do
