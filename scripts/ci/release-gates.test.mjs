@@ -8,8 +8,12 @@ import test from "node:test";
 import {
   actionCommentErrors,
   actionPinErrors,
+  activeRepositories,
   AFFECTED_SCOPED_GATES,
   AGGREGATE_JOB,
+  branchGating,
+  fleetLines,
+  gatingVerdict,
   exemptedGates,
   REQUIRED_GATES,
   isReleaseTag,
@@ -717,6 +721,127 @@ test("a context the tree declares but the ruleset dropped is reported the other 
 
 test("agreement between the two sides is no drift in either direction", () => {
   assert.deepEqual(contextDrift(REQUIRED_CONTEXTS, [...REQUIRED_CONTEXTS].reverse()), [[], []]);
+});
+
+// --- reading what GitHub actually gates a merge on ---
+//
+// The two mechanisms are invisible to each other's endpoint, and the audit this
+// replaces read only one of them while also enumerating repositories by hand.
+// Both halves are fixtured here: a fake `gh` answering per endpoint.
+
+/** A `gh` stand-in: a map of endpoint substring -> { status, body }. */
+function fakeGh(answers) {
+  return (endpoint) => {
+    const match = Object.keys(answers).find((key) => endpoint.includes(key));
+    assert.ok(match, `no fixture for ${endpoint}`);
+    return answers[match];
+  };
+}
+
+const rulesetRequiring = (contexts, { strict = false, queue = false } = {}) => ({
+  status: 200,
+  body: [
+    ...(queue ? [{ type: "merge_queue", parameters: {} }] : []),
+    {
+      type: "required_status_checks",
+      parameters: {
+        strict_required_status_checks_policy: strict,
+        required_status_checks: contexts.map((context) => ({ context })),
+      },
+    },
+  ],
+});
+const protectionRequiring = (contexts, { strict = false } = {}) => ({
+  status: 200,
+  body: { required_status_checks: { strict, checks: contexts.map((context) => ({ context, app_id: null })) } },
+});
+const NOT_PROTECTED = { status: 404, body: { message: "Branch not protected", status: "404" } };
+const NO_RULES = { status: 200, body: [] };
+const PLAN_FORBIDS = { status: 403, body: { message: "Upgrade to GitHub Pro", status: "403" } };
+
+test("a branch gated only by classic protection is not reported as ungated", () => {
+  // The endpoint the handbook reaches for answers `[]` here; reading it alone
+  // called `secure-saas-platform` advisory while three checks gated its merges.
+  const gating = branchGating(
+    "owner/classic",
+    "main",
+    fakeGh({ "rules/branches": NO_RULES, protection: protectionRequiring(["Qualification"], { strict: true }) }),
+  );
+  assert.deepEqual(gating.contexts, ["Qualification"]);
+  assert.deepEqual(gating.mechanisms, ["branch protection"]);
+  assert.equal(gating.strict, true);
+  assert.equal(gating.queue, false);
+  assert.equal(gatingVerdict({ private: false, ...gating }), "gated");
+});
+
+test("a branch gated by a ruleset reports its queue rule and does not need protection", () => {
+  const gating = branchGating(
+    "owner/ruleset",
+    "main",
+    fakeGh({ "rules/branches": rulesetRequiring(["Codefly quality"], { queue: true }), protection: NOT_PROTECTED }),
+  );
+  assert.deepEqual(gating.contexts, ["Codefly quality"]);
+  assert.deepEqual(gating.mechanisms, ["ruleset"]);
+  assert.equal(gating.queue, true);
+  assert.deepEqual(gating.unreadable, []);
+});
+
+test("both mechanisms at once merge into one context set", () => {
+  const gating = branchGating(
+    "owner/both",
+    "main",
+    fakeGh({ "rules/branches": rulesetRequiring(["Shared", "From ruleset"]), protection: protectionRequiring(["Shared", "From protection"]) }),
+  );
+  assert.deepEqual(gating.contexts, ["From protection", "From ruleset", "Shared"]);
+  assert.deepEqual(gating.mechanisms, ["ruleset", "branch protection"]);
+});
+
+test("an unprotected branch is advisory, and that is a read answer rather than a failed one", () => {
+  const gating = branchGating("owner/open", "main", fakeGh({ "rules/branches": NO_RULES, protection: NOT_PROTECTED }));
+  assert.deepEqual(gating.contexts, []);
+  assert.deepEqual(gating.unreadable, []);
+  assert.equal(gatingVerdict({ private: false, ...gating }), "advisory");
+});
+
+test("a withheld read is not advisory — it is the sweep admitting it is incomplete", () => {
+  const gating = branchGating("owner/opaque", "main", fakeGh({ "rules/branches": PLAN_FORBIDS, protection: NOT_PROTECTED }));
+  assert.equal(gating.unreadable.length, 1);
+  assert.equal(gating.unreadable[0].status, 403);
+  assert.equal(gatingVerdict({ private: false, ...gating }), "unknown");
+});
+
+test("a private repository whose plan offers neither mechanism cannot require a check at all", () => {
+  const gating = branchGating("owner/private", "main", fakeGh({ "rules/branches": PLAN_FORBIDS, protection: PLAN_FORBIDS }));
+  assert.equal(gatingVerdict({ private: true, ...gating }), "unavailable");
+  assert.equal(gatingVerdict({ private: false, ...gating }), "unknown");
+});
+
+test("the fleet sweep enumerates the organization and drops only archived repositories", () => {
+  const pages = [
+    [{ full_name: "owner/b", default_branch: "main", private: false, archived: false }],
+    [
+      { full_name: "owner/a", default_branch: "develop", private: false, archived: false },
+      { full_name: "owner/gone", default_branch: "main", private: false, archived: true },
+    ],
+  ];
+  assert.deepEqual(activeRepositories("owner", () => ({ status: 200, body: pages })), [
+    { repository: "owner/a", branch: "develop", private: false },
+    { repository: "owner/b", branch: "main", private: false },
+  ]);
+});
+
+test("every fleet row carries a verdict, and a gated one lists the contexts a rollout must cover", () => {
+  const lines = fleetLines([
+    { repository: "owner/gated", branch: "main", private: false, contexts: ["One", "Two"], mechanisms: ["ruleset"], strict: true, queue: false, unreadable: [] },
+    { repository: "owner/advisory", branch: "main", private: false, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [] },
+    { repository: "owner/private", branch: "main", private: true, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 403, message: "Upgrade to GitHub Pro" }] },
+    { repository: "owner/opaque", branch: "main", private: false, contexts: [], mechanisms: [], strict: false, queue: false, unreadable: [{ endpoint: "rules/branches/main", status: 500, message: "Server Error" }] },
+  ]);
+  assert.match(lines[0], /^gated {8}owner\/gated .*2 required via ruleset, no merge queue, strict up-to-date/);
+  assert.deepEqual(lines.slice(1, 3), ['                 "One"', '                 "Two"']);
+  assert.match(lines[3], /^advisory .*nothing requires a status check/);
+  assert.match(lines[4], /^unavailable .*private on a plan with neither/);
+  assert.match(lines[5], /^unknown .*rules\/branches\/main: 500 Server Error/);
 });
 
 test("the graph walk reddens check when a gate workflow loses its merge_group trigger", () => {

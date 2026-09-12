@@ -15,6 +15,8 @@
 //
 //   node scripts/ci/release-gates.mjs decide   # the aggregate job's verdict
 //   node scripts/ci/release-gates.mjs check    # the static workflow contract
+//   node scripts/ci/release-gates.mjs contexts # what GitHub requires, reconciled
+//   node scripts/ci/release-gates.mjs fleet    # which repositories gate a merge
 //
 // `decide` is the runtime half: given `toJSON(needs)` it fails unless every
 // mandatory gate actually succeeded. `check` is the static half: it parses the
@@ -674,32 +676,114 @@ export function unreportedContextErrors(repositoryRoot = REPOSITORY_ROOT) {
 }
 
 // ---------------------------------------------------------------------------
-// contexts — reconcile REQUIRED_CONTEXTS with the live branch ruleset
+// the live half — what GitHub actually gates a merge on
 // ---------------------------------------------------------------------------
 
 // `check` can only hold the workflows to what this tree declares. The set that
-// actually gates a merge lives in the branch ruleset, which a workflow run
-// cannot read: reading rulesets needs Administration:read, and the token a job
-// gets tops out below that. So this half runs from a developer's or agent's
+// actually gates a merge lives in GitHub's own branch configuration, which a
+// workflow run cannot read: it needs `Administration: read`, and the token a
+// job gets tops out below that. So this half runs from a developer's or agent's
 // own credentials rather than in CI, and is the thing to run whenever either
 // side moves.
+
+// `gh api` exits nonzero on any HTTP error but still writes the response body,
+// which carries the status, to stdout. Keeping that status is the whole point:
+// a 404 from the branch-protection endpoint means the branch is unprotected,
+// while a 403 means the answer was withheld, and reading the second as the
+// first reports a repository as ungated when checks do gate it.
+export function ghJson(endpoint, extraArgs = []) {
+  const options = { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 };
+  try {
+    return { status: 200, body: JSON.parse(execFileSync("gh", ["api", ...extraArgs, endpoint], options)) };
+  } catch (error) {
+    let body;
+    try {
+      body = JSON.parse(error.stdout);
+    } catch {
+      throw error;
+    }
+    if (!body?.status) throw error;
+    return { status: Number(body.status), body };
+  }
+}
+
+const BRANCH_UNPROTECTED = 404;
+
+// Every way a status check can be required on one branch. The two mechanisms
+// have to be read separately because neither endpoint reports the other's
+// answer: `rules/branches` returns `[]` for a branch whose merges are gated by
+// classic protection, and `branches/*/protection` 404s "Branch not protected"
+// for a branch gated by a ruleset. Consulting one alone is how an audit calls a
+// gated repository advisory.
 //
-// A context required by the ruleset but absent here is the dangerous
-// direction: nothing makes it run on `merge_group`, so the first queued pull
-// request waits out the queue's check-response timeout and is evicted, and
-// every merge behind it stalls.
-export function rulesetContexts(repository) {
-  const gh = (endpoint) =>
-    JSON.parse(execFileSync("gh", ["api", endpoint], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+// A read that failed is the third answer, and it is kept rather than collapsed:
+// a branch whose configuration could not be read is neither gated nor
+// advisory, and recording it as advisory is the same mistake in the direction
+// that hides work.
+export function branchGating(repository, branch, gh = ghJson) {
   const contexts = new Set();
-  for (const { id } of gh(`repos/${repository}/rulesets`)) {
-    for (const rule of gh(`repos/${repository}/rulesets/${id}`).rules ?? []) {
+  const mechanisms = new Set();
+  const unreadable = [];
+  let strict = false;
+  let queue = false;
+
+  const rules = gh(`repos/${repository}/rules/branches/${branch}`);
+  if (rules.status === 200) {
+    for (const rule of rules.body) {
+      if (rule.type === "merge_queue") queue = true;
       if (rule.type !== "required_status_checks") continue;
+      mechanisms.add("ruleset");
+      strict ||= rule.parameters?.strict_required_status_checks_policy === true;
       for (const check of rule.parameters?.required_status_checks ?? []) contexts.add(check.context);
     }
+  } else {
+    unreadable.push({ endpoint: `rules/branches/${branch}`, status: rules.status, message: rules.body.message });
   }
-  return [...contexts].sort();
+
+  const protection = gh(`repos/${repository}/branches/${branch}/protection`);
+  if (protection.status === 200) {
+    const required = protection.body.required_status_checks;
+    if (required) {
+      mechanisms.add("branch protection");
+      strict ||= required.strict === true;
+      for (const check of required.checks) contexts.add(check.context);
+    }
+  } else if (protection.status !== BRANCH_UNPROTECTED) {
+    unreadable.push({
+      endpoint: `branches/${branch}/protection`,
+      status: protection.status,
+      message: protection.body.message,
+    });
+  }
+
+  return { contexts: [...contexts].sort(), strict, queue, mechanisms: [...mechanisms], unreadable };
 }
+
+// Neither branch protection nor rulesets exist for a private repository on a
+// free account: both endpoints answer 403. That is an answer — nothing can
+// require a check there until the repository is public or the account is
+// upgraded — and it is not the same as a read this credential merely was not
+// allowed to make, which leaves the sweep incomplete and must say so.
+export function gatingVerdict({ private: isPrivate, contexts, unreadable }) {
+  if (unreadable.length) {
+    return isPrivate && unreadable.every(({ status }) => status === 403) ? "unavailable" : "unknown";
+  }
+  return contexts.length ? "gated" : "advisory";
+}
+
+function repositoryFacts(repository, gh = ghJson) {
+  const { body } = gh(`repos/${repository}`);
+  return { branch: body.default_branch, private: body.private };
+}
+
+// ---------------------------------------------------------------------------
+// contexts — reconcile REQUIRED_CONTEXTS with what gates this repository
+// ---------------------------------------------------------------------------
+
+// A context required on the branch but absent from `REQUIRED_CONTEXTS` is the
+// dangerous direction: nothing makes it run on `merge_group`, so the first
+// queued pull request waits out the queue's check-response timeout and is
+// evicted, and every merge behind it stalls.
 
 // What the two sides disagree about, as [missingHere, missingThere].
 export function contextDrift(declared, required) {
@@ -710,24 +794,41 @@ export function contextDrift(declared, required) {
 }
 
 function contexts(repository) {
-  const required = rulesetContexts(repository);
-  if (required.length === 0) {
-    console.error(
-      `contexts: ${repository} has no ruleset requiring any status check, so nothing gates a ` +
-        "merge there and a merge queue would gate nothing.",
+  const facts = repositoryFacts(repository);
+  const gating = branchGating(repository, facts.branch);
+  const verdict = gatingVerdict({ ...facts, ...gating });
+  if (verdict === "unknown") {
+    console.error(`contexts: ${repository}'s configuration on ${facts.branch} could not be read:`);
+    gating.unreadable.forEach(({ endpoint, status, message }) =>
+      console.error(`    ${endpoint}: ${status} ${message ?? ""}`.trimEnd()),
     );
     process.exit(1);
   }
+  if (verdict === "unavailable") {
+    console.error(
+      `contexts: ${repository} is private on an account whose plan offers neither branch protection ` +
+        "nor rulesets, so no check can be required there and a merge queue would gate nothing.",
+    );
+    process.exit(1);
+  }
+  if (verdict === "advisory") {
+    console.error(
+      `contexts: nothing requires a status check on ${repository}'s ${facts.branch}, so a red run ` +
+        "blocks no merge there and a merge queue would gate nothing.",
+    );
+    process.exit(1);
+  }
+  const required = gating.contexts;
   const [unguarded, stale] = contextDrift(REQUIRED_CONTEXTS, required);
   for (const context of unguarded) {
     console.error(
-      `    the ruleset requires "${context}", which REQUIRED_CONTEXTS does not declare; nothing ` +
+      `    ${facts.branch} requires "${context}", which REQUIRED_CONTEXTS does not declare; nothing ` +
         "holds it to running on merge_group, so a queue entry can wait on it forever",
     );
   }
   for (const context of stale) {
     console.error(
-      `    REQUIRED_CONTEXTS declares "${context}", which the ruleset does not require; either ` +
+      `    REQUIRED_CONTEXTS declares "${context}", which ${facts.branch} does not require; either ` +
         "the ruleset lost it or this list is stale",
     );
   }
@@ -735,7 +836,89 @@ function contexts(repository) {
     console.error(`\nFAIL: ${unguarded.length + stale.length} context(s) differ between ${repository} and this tree.`);
     process.exit(1);
   }
-  console.log(`✓ ${repository}'s ruleset requires exactly the ${required.length} contexts REQUIRED_CONTEXTS declares.`);
+  console.log(
+    `✓ ${repository}'s ${facts.branch} requires exactly the ${required.length} contexts ` +
+      `REQUIRED_CONTEXTS declares, via ${gating.mechanisms.join(" + ")}.`,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// fleet — which repositories in the organization block a merge at all
+// ---------------------------------------------------------------------------
+
+// #611 asked to roll this repository's merge queue out to "every active repo in
+// the org that has required status checks on its default branch". Answering
+// that means enumerating the organization rather than sweeping a hand-written
+// list of repository names: the list that answered it in #616 held 17 of them,
+// and a list of names cannot report what it never looked at — it read as a
+// complete audit while missing the one other repository that does require
+// checks.
+export function activeRepositories(owner, gh = ghJson) {
+  const pages = gh(`orgs/${owner}/repos?per_page=100`, ["--paginate", "--slurp"]);
+  return pages.body
+    .flat()
+    .filter((repository) => !repository.archived)
+    .map(({ full_name, default_branch, private: isPrivate }) => ({
+      repository: full_name,
+      branch: default_branch,
+      private: isPrivate,
+    }))
+    .sort((left, right) => left.repository.localeCompare(right.repository));
+}
+
+// One verdict line per repository, greppable, and the context names under each
+// repository that gates something — those are the audit, and the set a rollout
+// would have to hold to `merge_group`.
+export function fleetLines(rows) {
+  const width = Math.max(...rows.map((row) => row.repository.length));
+  const name = (row) => `${row.repository.padEnd(width)}  ${row.branch}`;
+  const lines = [];
+  for (const row of rows) {
+    const verdict = gatingVerdict(row);
+    if (verdict === "unknown") {
+      const reads = row.unreadable.map(
+        ({ endpoint, status, message }) => `${endpoint}: ${status} ${message ?? ""}`.trimEnd(),
+      );
+      lines.push(`unknown      ${name(row)}  ${reads.join("; ")}`);
+      continue;
+    }
+    if (verdict === "unavailable") {
+      lines.push(`unavailable  ${name(row)}  private on a plan with neither branch protection nor rulesets`);
+      continue;
+    }
+    if (verdict === "advisory") {
+      lines.push(`advisory     ${name(row)}  nothing requires a status check`);
+      continue;
+    }
+    const detail = [`${row.contexts.length} required via ${row.mechanisms.join(" + ")}`];
+    detail.push(row.queue ? "merge queue" : "no merge queue");
+    if (row.strict) detail.push("strict up-to-date");
+    lines.push(`gated        ${name(row)}  ${detail.join(", ")}`);
+    row.contexts.forEach((context) => lines.push(`                 "${context}"`));
+  }
+  return lines;
+}
+
+function fleet(owner) {
+  const rows = activeRepositories(owner).map((facts) => ({
+    ...facts,
+    ...branchGating(facts.repository, facts.branch),
+  }));
+  fleetLines(rows).forEach((line) => console.log(line));
+  const count = (verdict) => rows.filter((row) => gatingVerdict(row) === verdict).length;
+  const queued = rows.filter((row) => gatingVerdict(row) === "gated" && row.queue).length;
+  console.log(
+    `\n${rows.length} active repositories in ${owner}: ${count("gated")} gate a merge on a status check ` +
+      `(${queued} through a merge queue), ${count("advisory")} are advisory, ${count("unavailable")} cannot ` +
+      `require one on this plan, ${count("unknown")} could not be read.`,
+  );
+  if (count("unknown")) {
+    console.error(
+      `\nFAIL: ${count("unknown")} of them withheld their branch configuration, so this sweep is not the ` +
+        "complete audit it would otherwise read as. Re-run with credentials that can read them.",
+    );
+    process.exit(1);
+  }
 }
 
 function check() {
@@ -768,8 +951,9 @@ if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
   if (command === "check") check();
   else if (command === "decide") decide();
   else if (command === "contexts") contexts(process.argv[3] ?? "codefly-dev/module-saas-starter");
+  else if (command === "fleet") fleet(process.argv[3] ?? "codefly-dev");
   else {
-    console.error("usage: release-gates.mjs check | decide | contexts [owner/repo]");
+    console.error("usage: release-gates.mjs check | decide | contexts [owner/repo] | fleet [owner]");
     process.exit(2);
   }
 }
