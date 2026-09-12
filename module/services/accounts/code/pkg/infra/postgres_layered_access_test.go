@@ -390,3 +390,52 @@ func TestCheckAccess_GlobalRoleGrant(t *testing.T) {
 	require.True(t, checkAccess(t, orgID, principalID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "doc", "global-doc", "read"),
 		"a grant via a global/built-in role must authorize")
 }
+
+func TestListCollectionAccess_ReadGrantsAndTenantIsolation(t *testing.T) {
+	orgID, actorID, roleID := layeredFixture(t, "documents", "read")
+	otherOrg, _, _ := layeredFixture(t, "documents", "read")
+	registerNode(t, orgID, "root", "solution", "", "")
+	registerNode(t, orgID, "root.example", "collection", "", "")
+	registerNode(t, orgID, "root.empty", "collection", "", "")
+	registerNode(t, otherOrg, "private", "collection", "", "")
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		for _, permission := range []string{"documents", "knowledge"} {
+			excludedRole := business.NewIDString()
+			require.NoError(t, testStore.CreateRole(ctx, &gen.Role{Id: excludedRole, OrgId: orgID, Name: "Example " + excludedRole, Permissions: []*gen.Permission{{Resource: permission, Action: "read"}}}))
+			grant := &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root.example", RoleId: excludedRole, GrantedBy: actorID}
+			if permission == "documents" {
+				grant.ExpiresAt = timestamppb.New(time.Now().Add(-time.Hour))
+			}
+			require.NoError(t, testStore.GrantScope(ctx, grant))
+		}
+		return nil
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root", RoleId: roleID, GrantedBy: actorID})
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 1)
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+		require.Equal(t, "root.empty", rows[0].Node.ScopePath)
+		require.Len(t, rows[0].ReadGrants, 1)
+		require.Equal(t, "root", rows[0].ReadGrants[0].Grant.ScopePath)
+		require.NotEmpty(t, rows[0].ReadGrants[0].ActorLabel)
+		next, err := testStore.ListCollectionAccess(ctx, orgID, rows[0].Node.ScopePath, 100)
+		require.NoError(t, err)
+		require.Len(t, next, 1)
+		require.Equal(t, "root.example", next[0].Node.ScopePath)
+		foreign, err := testStore.ListCollectionAccess(ctx, otherOrg, "", 100)
+		require.NoError(t, err)
+		require.Empty(t, foreign)
+		return testStore.RevokeScope(ctx, orgID, actorID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "root", roleID)
+	}))
+	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 100)
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+		require.Empty(t, rows[0].ReadGrants)
+		require.Empty(t, rows[1].ReadGrants)
+		return nil
+	}))
+}

@@ -58,6 +58,7 @@ export interface ConnectGitHubInput {
 	paths: string[];
 	branch: string;
 	targetCollection: string;
+	boundaryNodeId?: string;
 	accessToken: string;
 	webhookSecret: string;
 }
@@ -69,19 +70,46 @@ export interface SourceActivity {
 	at?: string;
 	fields: Record<string, unknown>;
 }
+export interface CollectionGrantView {
+	id: string;
+	subjectId: string;
+	subjectKind: "principal" | "team";
+	scopePath: string;
+	roleId: string;
+	subjectLabel: string;
+	roleName: string;
+	actorLabel: string;
+}
+export interface CollectionAccessView {
+	nodeId: string;
+	label: string;
+	scopePath: string;
+	grants: CollectionGrantView[];
+}
+export interface CollectionGrantSubject {
+	id: string;
+	kind: "principal" | "team";
+	label: string;
+}
 export interface DatasourceClient {
+	listCollections?(orgId: string): Promise<CollectionAccessView[]>;
+	listGrantSubjects?(orgId: string): Promise<CollectionGrantSubject[]>;
+	grantCollectionRead?(
+		orgId: string,
+		scopePath: string,
+		subject: CollectionGrantSubject,
+	): Promise<void>;
+	revokeCollectionRead?(
+		orgId: string,
+		grant: CollectionGrantView,
+	): Promise<void>;
+
 	listActivity?(orgId: string, sourceId: string): Promise<SourceActivity[]>;
 	listSources(orgId: string): Promise<DatasourceView[]>;
 	addGitHubSource(input: ConnectGitHubInput): Promise<void>;
 	/** Enqueues an async pull; resolves to the durable job id. */
 	syncSource(orgId: string, id: string, accessToken?: string): Promise<string>;
 	deleteSource(orgId: string, id: string): Promise<void>;
-	/**
-	 * Enumerates the org's data boundaries the caller may act on, so a source's
-	 * boundary renders as a name plus the caller's grants on it rather than a raw
-	 * node id. Optional: the accessible-scopes RPC is not part of the published
-	 * SDK surface, so a client that cannot reach it omits this and the panel
-	 * falls back to the boundary id.
-	 */
+	/** Enumerates the caller’s documents/read boundaries; failure must reject. */
 	listAccessibleScopes?(orgId: string): Promise<AccessibleScopeView[]>;
 }

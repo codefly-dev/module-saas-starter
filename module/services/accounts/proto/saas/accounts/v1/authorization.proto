@@ -195,6 +195,30 @@ message ScopeGrant {
   google.protobuf.Timestamp created_at = 9;
 }
 
+message CollectionReadGrant {
+  ScopeGrant grant = 1;
+  string subject_label = 2;
+  string role_name = 3;
+  string actor_label = 4;
+}
+
+message CollectionAccess {
+  ScopeNode node = 1;
+  // Active documents/read grants at this node or an ancestor.
+  repeated CollectionReadGrant read_grants = 2;
+}
+
+message ListCollectionAccessRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  int32 page_size = 2 [(buf.validate.field).int32 = {gte: 0 lte: 100}];
+  string page_token = 3;
+}
+
+message ListCollectionAccessResponse {
+  repeated CollectionAccess collections = 1;
+  string next_page_token = 2;
+}
+
 message GrantScopeRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string subject_id = 2 [(buf.validate.field).string.uuid = true];
@@ -581,6 +605,26 @@ service PermissionService {
       post: "/v1/scope-nodes"
       body: "*"
     };
+  }
+
+  rpc ListCollectionAccess(ListCollectionAccessRequest) returns (ListCollectionAccessResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {get: "/v1/collection-access"};
   }
 
   // GrantScope grants a role to a principal/team at a registered scope node;

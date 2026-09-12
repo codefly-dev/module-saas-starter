@@ -3,21 +3,8 @@ import type { ConnectGitHubInput, DatasourceClient } from "./types.js";
 
 const sourcesKey = (orgId: string) => ["datasources", orgId] as const;
 
-const scopesKey = (orgId: string) =>
-	["datasource-boundaries", orgId] as const;
+const scopesKey = (orgId: string) => ["datasource-boundaries", orgId] as const;
 
-/**
- * The org's data boundaries the caller may act on. Stays disabled when the
- * client cannot reach the accessible-scopes RPC, and never retries: an
- * unresolved boundary degrades to its id, so a failed lookup must not turn into
- * a failed panel.
- *
- * Resolving one boundary costs a walk of every scope node the caller can reach
- * in the org — a grant at the org root covers the whole subtree, placed records
- * included — so this is far too expensive to repeat on every mount and window
- * focus. Grants change rarely and an added source invalidates the key
- * explicitly, so the answer is held rather than refetched on sight.
- */
 export function useAccessibleScopes(client: DatasourceClient, orgId: string) {
 	const listAccessibleScopes = client.listAccessibleScopes?.bind(client);
 	return useQuery({
@@ -25,7 +12,9 @@ export function useAccessibleScopes(client: DatasourceClient, orgId: string) {
 		queryFn: () => listAccessibleScopes?.(orgId) ?? [],
 		enabled: !!orgId && !!listAccessibleScopes,
 		retry: false,
-		staleTime: 5 * 60 * 1000,
+		staleTime: 0,
+		refetchInterval: 5000,
+		refetchIntervalInBackground: true,
 	});
 }
 
@@ -34,7 +23,7 @@ export function useListSources(client: DatasourceClient, orgId: string) {
 		queryKey: sourcesKey(orgId),
 		queryFn: () => client.listSources(orgId),
 		enabled: !!orgId,
-        refetchInterval: 5000,
+		refetchInterval: 5000,
 	});
 }
 
@@ -48,6 +37,9 @@ export function useAddGitHubSource(client: DatasourceClient) {
 		// new row renders an opaque id for a boundary the caller may well hold.
 		onSuccess: (_result, input) => {
 			queryClient.invalidateQueries({ queryKey: sourcesKey(input.orgId) });
+			queryClient.invalidateQueries({
+				queryKey: ["collection-access", input.orgId],
+			});
 			queryClient.invalidateQueries({ queryKey: scopesKey(input.orgId) });
 		},
 	});

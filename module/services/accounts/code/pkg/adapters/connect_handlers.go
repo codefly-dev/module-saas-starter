@@ -1416,3 +1416,7 @@ func mfaDeviceTypeToProto(s string) gen.MFADeviceType {
 	}
 	return gen.MFADeviceType_MFA_DEVICE_TYPE_UNSPECIFIED
 }
+
+func (h *permConnectHandler) ListCollectionAccess(ctx context.Context, req *connect.Request[gen.ListCollectionAccessRequest]) (*connect.Response[gen.ListCollectionAccessResponse], error) {
+	return unary(ctx, req, h.inner.ListCollectionAccess)
+}

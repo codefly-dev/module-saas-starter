@@ -71,3 +71,19 @@ teams:
     org: Acme Corp
     members:
       - carol@acme.com
+
+roles:
+  - org: Acme Corp
+    name: Collection reader
+    description: Read documents in explicitly granted collections
+    permissions:
+      - resource: documents
+        action: read
+
+collections:
+  - org: Acme Corp
+    label: Example Collection
+    role: Collection reader
+    readers:
+      - admin@acme.com
+      - bob@acme.com

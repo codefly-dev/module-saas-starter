@@ -2,11 +2,15 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useId } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { type ConnectGitHubValues, connectGitHubSchema } from "./schema.js";
+import type { CollectionAccessView } from "./types.js";
 import { cn } from "./util.js";
 
 interface ConnectGitHubFormProps {
+	collections?: CollectionAccessView[];
+	readableNodeIds?: string[];
+	collectionError?: boolean;
 	onSubmit: (values: ConnectGitHubValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
@@ -22,6 +26,9 @@ const errorClass = "text-sm text-destructive";
 
 export function ConnectGitHubForm({
 	onSubmit,
+	collections,
+	readableNodeIds,
+	collectionError,
 	onCancel,
 	isPending,
 	errorMessage,
@@ -35,6 +42,7 @@ export function ConnectGitHubForm({
 		resolver: zodResolver(connectGitHubSchema),
 		defaultValues: {
 			repo: "",
+			boundaryNodeId: "",
 			paths: "",
 			branch: "",
 			targetCollection: "",
@@ -43,6 +51,16 @@ export function ConnectGitHubForm({
 		},
 	});
 	const { errors } = form.formState;
+    const boundaryNodeId = useWatch({control: form.control, name: "boundaryNodeId"});
+    const targetCollection = useWatch({control: form.control, name: "targetCollection"});
+	const selected = collections?.find(
+		(collection) => collection.nodeId === boundaryNodeId,
+	);
+	const named =
+		selected ??
+		collections?.find(
+			(collection) => collection.label === targetCollection,
+		);
 
 	return (
 		<div
@@ -112,15 +130,68 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
+						{collections && (
+							<label>
+								Existing collection
+								<select
+									aria-label="Existing collection"
+									value={boundaryNodeId ?? ""}
+									onChange={(event) => {
+										form.setValue("boundaryNodeId", event.target.value);
+										form.setValue(
+											"targetCollection",
+											collections.find(
+												(collection) =>
+													collection.nodeId === event.target.value,
+											)?.label ?? "",
+										);
+									}}
+								>
+									<option value="">Create a collection</option>
+									{collections.map((collection) => (
+										<option key={collection.nodeId} value={collection.nodeId}>
+											{collection.label}
+										</option>
+									))}
+								</select>
+							</label>
+						)}
 						<label className={labelClass} htmlFor={idFor("collection")}>
 							Target collection
 						</label>
 						<input
 							id={idFor("collection")}
+							readOnly={!!selected}
 							className={fieldClass}
 							placeholder="Documents-store collection to land entries in"
 							{...form.register("targetCollection")}
 						/>
+						<p className="text-sm">
+							Connecting grants no read access to the creator or a default team.
+							Organization administrators explicitly grant members or teams
+							documents/read.
+						</p>
+						{collectionError ? (
+							<p role="alert">Couldn’t inspect collection grants.</p>
+						) : named ? (
+							<p>
+								Readers:{" "}
+								{named.grants.map((grant) => grant.subjectLabel).join(", ") ||
+									"No collection read grants"}
+								.{" "}
+								{readableNodeIds === undefined
+									? "Your read permission is unresolved."
+									: readableNodeIds.includes(named.nodeId)
+										? "You can read documents."
+										: "You do not have documents/read. Ask an administrator for access."}
+							</p>
+						) : (
+							<p>
+								{collections
+									? "New collections have no read grants. Your read permission must be checked after creation."
+									: "Collection grants are unresolved. Inspect them in the host after connecting."}
+							</p>
+						)}
 						{errors.targetCollection && (
 							<p className={errorClass}>{errors.targetCollection.message}</p>
 						)}
@@ -138,10 +209,11 @@ export function ConnectGitHubForm({
 							{...form.register("accessToken")}
 						/>
 						<p className="text-xs text-muted-foreground">
-                            Use a fine-grained PAT restricted to this repository with Contents: Read-only.
-                            Your organization may require approval or SSO authorization.
-                            Repository and branch access are verified before saving.
-                        </p>
+							Use a fine-grained PAT restricted to this repository with
+							Contents: Read-only. Your organization may require approval or SSO
+							authorization. Repository and branch access are verified before
+							saving.
+						</p>
 						{errors.accessToken && (
 							<p className={errorClass}>{errors.accessToken.message}</p>
 						)}

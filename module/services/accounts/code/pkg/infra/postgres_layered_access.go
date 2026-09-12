@@ -555,3 +555,72 @@ func (s *PostgresStore) ListShares(ctx context.Context, orgID, resourceType, res
 	}
 	return out, nil
 }
+
+func (s *PostgresStore) ListCollectionAccess(ctx context.Context, orgID, afterPath string, limit int) ([]*gen.CollectionAccess, error) {
+	executor := s.getQueryExecutor(ctx)
+	rows, err := executor.Query(ctx, `SELECT id, scope_path::text, label FROM scope_nodes
+ WHERE org_id = $1 AND kind = 'collection' AND scope_path::text > $2
+ ORDER BY scope_path::text LIMIT $3`, orgID, afterPath, limit)
+	if err != nil {
+		return nil, err
+	}
+	var collections []*gen.CollectionAccess
+	for rows.Next() {
+		node := &gen.ScopeNode{OrgId: orgID, Kind: "collection"}
+		if err := rows.Scan(&node.Id, &node.ScopePath, &node.Label); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		collections = append(collections, &gen.CollectionAccess{Node: node})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for _, collection := range collections {
+		grants, err := executor.Query(ctx, `SELECT g.id, g.subject_id, g.subject_kind, g.scope_path::text, g.role_id,
+   COALESCE(g.granted_by::text, ''), g.expires_at, g.created_at,
+   COALESCE(t.name, p.display_name, g.subject_id::text), r.name,
+   COALESCE(a.display_name, g.granted_by::text, 'Unknown actor')
+   FROM scope_grants g JOIN roles r ON r.id = g.role_id
+   LEFT JOIN principals p ON g.subject_kind = 'principal' AND p.id = g.subject_id
+   LEFT JOIN teams t ON g.subject_kind = 'team' AND t.id = g.subject_id
+   LEFT JOIN principals a ON a.id = g.granted_by
+   WHERE g.org_id = $1 AND g.scope_path @> $2::ltree
+   AND (g.expires_at IS NULL OR g.expires_at > NOW())
+   AND EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = g.role_id
+    AND rp.resource IN ('documents', '*') AND rp.action IN ('read', '*'))
+   ORDER BY g.created_at, g.id`, orgID, collection.Node.ScopePath)
+		if err != nil {
+			return nil, err
+		}
+		for grants.Next() {
+			view := &gen.CollectionReadGrant{Grant: &gen.ScopeGrant{OrgId: orgID}}
+			g := view.Grant
+			var kind string
+			var expires *time.Time
+			var created time.Time
+			if err := grants.Scan(&g.Id, &g.SubjectId, &kind, &g.ScopePath, &g.RoleId, &g.GrantedBy,
+				&expires, &created, &view.SubjectLabel, &view.RoleName, &view.ActorLabel); err != nil {
+				grants.Close()
+				return nil, err
+			}
+			g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_PRINCIPAL
+			if kind == "team" {
+				g.SubjectKind = gen.SubjectKind_SUBJECT_KIND_TEAM
+			}
+			g.CreatedAt = timestamppb.New(created)
+			if expires != nil {
+				g.ExpiresAt = timestamppb.New(*expires)
+			}
+			collection.ReadGrants = append(collection.ReadGrants, view)
+		}
+		err = grants.Err()
+		grants.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return collections, nil
+}

@@ -236,6 +236,7 @@
         "/saas.accounts.v1.PermissionService/DeleteRole",
         "/saas.accounts.v1.PermissionService/GrantScope",
         "/saas.accounts.v1.PermissionService/ListAccessibleScopes",
+        "/saas.accounts.v1.PermissionService/ListCollectionAccess",
         "/saas.accounts.v1.PermissionService/ListRoleAssignments",
         "/saas.accounts.v1.PermissionService/ListRoles",
         "/saas.accounts.v1.PermissionService/ListShares",
@@ -6062,6 +6063,62 @@
       },
       "policy_tier": "internal",
       "description": "Internal list of scope nodes a subject may act on (list-objects companion to CheckAccess).",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/ListCollectionAccess",
+      "service": "PermissionService",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "ListCollectionAccess",
+      "input_type": "saas.accounts.v1.ListCollectionAccessRequest",
+      "output_type": "saas.accounts.v1.ListCollectionAccessResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "GET",
+          "path": "/v1/collection-access",
+          "body": "",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Inspect collection boundaries and active inherited documents/read grants.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
