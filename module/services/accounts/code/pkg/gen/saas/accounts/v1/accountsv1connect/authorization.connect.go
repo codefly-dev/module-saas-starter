@@ -70,6 +70,9 @@ const (
 	// PermissionServiceRegisterScopeNodeProcedure is the fully-qualified name of the
 	// PermissionService's RegisterScopeNode RPC.
 	PermissionServiceRegisterScopeNodeProcedure = "/saas.accounts.v1.PermissionService/RegisterScopeNode"
+	// PermissionServiceListCollectionAccessProcedure is the fully-qualified name of the
+	// PermissionService's ListCollectionAccess RPC.
+	PermissionServiceListCollectionAccessProcedure = "/saas.accounts.v1.PermissionService/ListCollectionAccess"
 	// PermissionServiceGrantScopeProcedure is the fully-qualified name of the PermissionService's
 	// GrantScope RPC.
 	PermissionServiceGrantScopeProcedure = "/saas.accounts.v1.PermissionService/GrantScope"
@@ -135,6 +138,7 @@ type PermissionServiceClient interface {
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error)
+	ListCollectionAccess(context.Context, *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error)
@@ -229,6 +233,12 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(permissionServiceMethods.ByName("RegisterScopeNode")),
 			connect.WithClientOptions(opts...),
 		),
+		listCollectionAccess: connect.NewClient[v1.ListCollectionAccessRequest, v1.ListCollectionAccessResponse](
+			httpClient,
+			baseURL+PermissionServiceListCollectionAccessProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("ListCollectionAccess")),
+			connect.WithClientOptions(opts...),
+		),
 		grantScope: connect.NewClient[v1.GrantScopeRequest, v1.GrantScopeResponse](
 			httpClient,
 			baseURL+PermissionServiceGrantScopeProcedure,
@@ -275,6 +285,7 @@ type permissionServiceClient struct {
 	checkAccess          *connect.Client[v1.CheckAccessRequest, v1.CheckAccessResponse]
 	listAccessibleScopes *connect.Client[v1.ListAccessibleScopesRequest, v1.ListAccessibleScopesResponse]
 	registerScopeNode    *connect.Client[v1.RegisterScopeNodeRequest, v1.RegisterScopeNodeResponse]
+	listCollectionAccess *connect.Client[v1.ListCollectionAccessRequest, v1.ListCollectionAccessResponse]
 	grantScope           *connect.Client[v1.GrantScopeRequest, v1.GrantScopeResponse]
 	revokeScope          *connect.Client[v1.RevokeScopeRequest, emptypb.Empty]
 	shareRecord          *connect.Client[v1.ShareRecordRequest, v1.ShareRecordResponse]
@@ -337,6 +348,11 @@ func (c *permissionServiceClient) RegisterScopeNode(ctx context.Context, req *co
 	return c.registerScopeNode.CallUnary(ctx, req)
 }
 
+// ListCollectionAccess calls saas.accounts.v1.PermissionService.ListCollectionAccess.
+func (c *permissionServiceClient) ListCollectionAccess(ctx context.Context, req *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error) {
+	return c.listCollectionAccess.CallUnary(ctx, req)
+}
+
 // GrantScope calls saas.accounts.v1.PermissionService.GrantScope.
 func (c *permissionServiceClient) GrantScope(ctx context.Context, req *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error) {
 	return c.grantScope.CallUnary(ctx, req)
@@ -389,6 +405,7 @@ type PermissionServiceHandler interface {
 	// RegisterScopeNode adds a node to the org's scope tree, or places a product
 	// record at a node when resource_type/resource_id are set.
 	RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error)
+	ListCollectionAccess(context.Context, *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error)
 	// GrantScope grants a role to a principal/team at a registered scope node;
 	// the grant inherits to the node's whole subtree.
 	GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error)
@@ -479,6 +496,12 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 		connect.WithSchema(permissionServiceMethods.ByName("RegisterScopeNode")),
 		connect.WithHandlerOptions(opts...),
 	)
+	permissionServiceListCollectionAccessHandler := connect.NewUnaryHandler(
+		PermissionServiceListCollectionAccessProcedure,
+		svc.ListCollectionAccess,
+		connect.WithSchema(permissionServiceMethods.ByName("ListCollectionAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
 	permissionServiceGrantScopeHandler := connect.NewUnaryHandler(
 		PermissionServiceGrantScopeProcedure,
 		svc.GrantScope,
@@ -533,6 +556,8 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 			permissionServiceListAccessibleScopesHandler.ServeHTTP(w, r)
 		case PermissionServiceRegisterScopeNodeProcedure:
 			permissionServiceRegisterScopeNodeHandler.ServeHTTP(w, r)
+		case PermissionServiceListCollectionAccessProcedure:
+			permissionServiceListCollectionAccessHandler.ServeHTTP(w, r)
 		case PermissionServiceGrantScopeProcedure:
 			permissionServiceGrantScopeHandler.ServeHTTP(w, r)
 		case PermissionServiceRevokeScopeProcedure:
@@ -594,6 +619,10 @@ func (UnimplementedPermissionServiceHandler) ListAccessibleScopes(context.Contex
 
 func (UnimplementedPermissionServiceHandler) RegisterScopeNode(context.Context, *connect.Request[v1.RegisterScopeNodeRequest]) (*connect.Response[v1.RegisterScopeNodeResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.RegisterScopeNode is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) ListCollectionAccess(context.Context, *connect.Request[v1.ListCollectionAccessRequest]) (*connect.Response[v1.ListCollectionAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ListCollectionAccess is not implemented"))
 }
 
 func (UnimplementedPermissionServiceHandler) GrantScope(context.Context, *connect.Request[v1.GrantScopeRequest]) (*connect.Response[v1.GrantScopeResponse], error) {

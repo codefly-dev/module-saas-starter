@@ -20,6 +20,7 @@ export const connectGitHubSchema = z.object({
 			"A path prefix is too long (max 512 characters)",
 		),
 	branch: z.string().max(255, "Branch name too long").optional(),
+	boundaryNodeId: z.string().optional(),
 	targetCollection: z
 		.string()
 		.min(1, "Target collection is required")

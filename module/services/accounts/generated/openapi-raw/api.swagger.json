@@ -937,6 +937,49 @@
         ]
       }
     },
+    "/v1/collection-access": {
+      "get": {
+        "operationId": "PermissionService_ListCollectionAccess",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListCollectionAccessResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orgId",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "pageToken",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
+      }
+    },
     "/v1/consent/preferences": {
       "put": {
         "operationId": "ConsentService_UpdatePreferences",
@@ -6112,6 +6155,39 @@
         }
       }
     },
+    "v1CollectionAccess": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "$ref": "#/definitions/v1ScopeNode"
+        },
+        "readGrants": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionReadGrant"
+          },
+          "description": "Active documents/read grants at this node or an ancestor."
+        }
+      }
+    },
+    "v1CollectionReadGrant": {
+      "type": "object",
+      "properties": {
+        "grant": {
+          "$ref": "#/definitions/v1ScopeGrant"
+        },
+        "subjectLabel": {
+          "type": "string"
+        },
+        "roleName": {
+          "type": "string"
+        },
+        "actorLabel": {
+          "type": "string"
+        }
+      }
+    },
     "v1CompleteMFAChallengeRequest": {
       "type": "object",
       "properties": {
@@ -7775,6 +7851,21 @@
             "type": "object",
             "$ref": "#/definitions/v1AuditEventType"
           }
+        }
+      }
+    },
+    "v1ListCollectionAccessResponse": {
+      "type": "object",
+      "properties": {
+        "collections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CollectionAccess"
+          }
+        },
+        "nextPageToken": {
+          "type": "string"
         }
       }
     },

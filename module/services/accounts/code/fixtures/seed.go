@@ -38,7 +38,15 @@ type fixtureFile struct {
 	Teams         []fixtureTeam           `yaml:"teams"`
 	Agents        []fixtureAgent          `yaml:"agents"`
 	Roles         []fixtureRole           `yaml:"roles"`
+	Collections   []fixtureCollection     `yaml:"collections"`
 	Assignments   []fixtureRoleAssignment `yaml:"assignments"`
+}
+
+type fixtureCollection struct {
+	Org     string   `yaml:"org"`
+	Label   string   `yaml:"label"`
+	Role    string   `yaml:"role"`
+	Readers []string `yaml:"readers"`
 }
 
 type fixtureUser struct {
@@ -272,6 +280,10 @@ func Seed(ctx context.Context, service *business.Service, name string) error {
 		return err
 	}
 	if err := seedRoleAssignments(ctx, w, service, f.Assignments, orgIDs, agentIDs, roleIDs); err != nil {
+		return err
+	}
+
+	if err := seedCollections(ctx, service, f.Collections, orgIDs, orgOwnerIDs, userIDs, roleIDs); err != nil {
 		return err
 	}
 
@@ -1002,6 +1014,49 @@ func seedRoleAssignments(
 			wool.Field("org", assignment.Org),
 			wool.Field("agent_identifier", assignment.AgentIdentifier),
 			wool.Field("role", assignment.Role))
+	}
+	return nil
+}
+
+func seedCollections(ctx context.Context, service *business.Service, collections []fixtureCollection, orgIDs, owners, users, roles map[string]string) error {
+	for _, collection := range collections {
+		orgID, actorID, roleID := orgIDs[collection.Org], owners[collection.Org], roles[fixtureScopedKey(collection.Org, collection.Role)]
+		if orgID == "" || actorID == "" || roleID == "" || strings.TrimSpace(collection.Label) == "" {
+			return fmt.Errorf("collection %q requires a known organization, owner, role, and label", collection.Label)
+		}
+		for _, reader := range collection.Readers {
+			if users[reader] == "" {
+				return fmt.Errorf("collection %q references unknown reader %q", collection.Label, reader)
+			}
+		}
+		var scopePath, pageToken string
+		for {
+			page, err := service.ListCollectionAccess(ctx, &gen.ListCollectionAccessRequest{OrgId: orgID, PageToken: pageToken})
+			if err != nil {
+				return err
+			}
+			for _, existing := range page.Collections {
+				if existing.Node.Label == collection.Label {
+					scopePath = existing.Node.ScopePath
+					break
+				}
+			}
+			if scopePath != "" || page.NextPageToken == "" {
+				break
+			}
+			pageToken = page.NextPageToken
+		}
+		if scopePath == "" {
+			scopePath = strings.ReplaceAll(business.NewIDString(), "-", "_")
+			if _, err := service.RegisterScopeNode(ctx, actorID, &gen.RegisterScopeNodeRequest{OrgId: orgID, ScopePath: scopePath, Kind: business.ScopeNodeKindCollection, Label: collection.Label}); err != nil {
+				return err
+			}
+		}
+		for _, reader := range collection.Readers {
+			if _, err := service.GrantScope(ctx, actorID, &gen.GrantScopeRequest{OrgId: orgID, ScopePath: scopePath, RoleId: roleID, SubjectId: users[reader], SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL}); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

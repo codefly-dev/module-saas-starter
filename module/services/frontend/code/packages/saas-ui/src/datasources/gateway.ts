@@ -23,6 +23,14 @@ import type { DatasourceClient, DatasourceView } from "./types.js";
 export interface GatewayBinding {
 	/** Same-origin base the gateway proxies to the backend, e.g. `/api/solutions/{id}/proxy`. */
 	apiBase: string;
+	/**
+	 * Permission resource type the collection's content is governed by, as the
+	 * composition declares it. This kit ships with the host and holds no domain
+	 * content, so it cannot know whether a collection holds documents, rows or
+	 * models — the consumer mounting it says. Omitted means undeclared, which
+	 * reads as no access rather than as access to something (fail-closed).
+	 */
+	contentResource?: string;
 	/** Reads the current access token (may be null before the first exchange). */
 	getAccessToken: () => string | null;
 	/**
@@ -44,9 +52,42 @@ export interface GatewayBinding {
  */
 export function datasourceClientOverTransport(
 	transport: Transport,
+	contentResource?: string,
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
+		async listAccessibleScopes(orgId) {
+			// Nothing declared the content's resource type, so there is no question to
+			// ask the permission service — and answering "readable" would be inventing
+			// authority the composition never granted.
+			if (!contentResource) {
+				return [];
+			}
+			const scopes = [];
+			let pageToken = "";
+			do {
+				const page = await accounts
+					.New(transport)
+					.accessibleScope()
+					.listMyAccessibleScopes({
+						orgId,
+						resourceType: contentResource,
+						action: "read",
+						pageSize: 1000,
+						pageToken,
+					});
+				scopes.push(
+					...page.scopes.map((scope) => ({
+						nodeId: scope.nodeId,
+						label: scope.label,
+						kind: scope.kind,
+						actions: ["read"],
+					})),
+				);
+				pageToken = page.nextPageToken;
+			} while (pageToken);
+			return scopes;
+		},
 		async listActivity(orgId, sourceId) {
 			const audit = accounts.New(transport).audit();
 			const types = [
@@ -94,9 +135,6 @@ export function datasourceClientOverTransport(
 			return response.datasources.map(toDatasourceView);
 		},
 		async addGitHubSource(input) {
-			// The form's collection name mints a `collection` boundary node
-			// server-side; reuse of an existing boundary is the boundaryNodeId path,
-			// which this connect form does not expose.
 			await client.addGitHubSource({
 				orgId: input.orgId,
 				repo: input.repo,
@@ -104,11 +142,17 @@ export function datasourceClientOverTransport(
 				branch: input.branch,
 				accessToken: input.accessToken,
 				webhookSecret: input.webhookSecret,
-				boundary: { case: "collectionLabel", value: input.targetCollection },
+				boundary: input.boundaryNodeId
+					? { case: "boundaryNodeId", value: input.boundaryNodeId }
+					: { case: "collectionLabel", value: input.targetCollection },
 			});
 		},
 		async syncSource(orgId, id, accessToken) {
-			const response = await client.syncSource({ orgId, id, ...(accessToken ? { accessToken } : {}) });
+			const response = await client.syncSource({
+				orgId,
+				id,
+				...(accessToken ? { accessToken } : {}),
+			});
 			return response.jobId;
 		},
 		async deleteSource(orgId, id) {
@@ -151,6 +195,7 @@ export function createDatasourceClient(
 	};
 	return datasourceClientOverTransport(
 		createConnectTransport({ baseUrl: binding.apiBase, interceptors: [auth] }),
+		binding.contentResource,
 	);
 }
 

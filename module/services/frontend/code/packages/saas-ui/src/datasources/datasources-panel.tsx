@@ -20,6 +20,7 @@ import {
 	useQuery,
 } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
+import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
 import {
@@ -79,11 +80,17 @@ function GatewayBoundPanel({
 }: DatasourcesPanelBaseProps & { gateway: GatewayBinding }) {
 	// The interceptor reads the token at request time, so the client only needs
 	// rebuilding when the binding itself changes — not on every render.
-	const { apiBase, getAccessToken, refreshAccessToken } = gateway;
+	const { apiBase, getAccessToken, refreshAccessToken, contentResource } =
+		gateway;
 	const client = useMemo(
 		() =>
-			createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken }),
-		[apiBase, getAccessToken, refreshAccessToken],
+			createDatasourceClient({
+				apiBase,
+				getAccessToken,
+				refreshAccessToken,
+				contentResource,
+			}),
+		[apiBase, getAccessToken, refreshAccessToken, contentResource],
 	);
 	const [queryClient] = useState(
 		() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }),
@@ -128,6 +135,19 @@ function DatasourcesPanelView({
 
 	const list = useListSources(client, orgId);
 	const scopes = useAccessibleScopes(client, orgId);
+	const collections = useQuery({
+		queryKey: ["collection-access", orgId],
+		queryFn: () => client.listCollections!(orgId),
+		enabled: !!client.listCollections,
+		retry: false,
+		refetchInterval: 5000,
+	});
+	const [editingCollection, setEditingCollection] = useState<string>();
+	const selectedCollection = collections.isError
+		? undefined
+		: collections.data?.find(
+				(collection) => collection.nodeId === editingCollection,
+			);
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -140,6 +160,7 @@ function DatasourcesPanelView({
 				paths: parsePaths(values.paths),
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
+				boundaryNodeId: values.boundaryNodeId || undefined,
 				accessToken: values.accessToken,
 				webhookSecret: values.webhookSecret ?? "",
 			},
@@ -156,7 +177,7 @@ function DatasourcesPanelView({
 		try {
 			const jobId = await syncMutation.mutateAsync({ orgId, id: source.id });
 			setSyncNotice(
-				`Sync queued for ${source.repo}. Ingestion runs in the background; documents will appear in Collection when ready.`,
+				`Sync queued for ${source.repo}. Ingestion runs in the background; content will appear in the collection when ready.`,
 			);
 			onSyncEnqueued?.(jobId);
 		} catch (error) {
@@ -187,9 +208,10 @@ function DatasourcesPanelView({
 	const sources = list.data ?? [];
 	const boundaries = useMemo(() => {
 		const byNode = new Map<string, AccessibleScopeView>();
-		for (const scope of scopes.data ?? []) byNode.set(scope.nodeId, scope);
+		for (const scope of (scopes.isError ? [] : scopes.data) ?? [])
+			byNode.set(scope.nodeId, scope);
 		return byNode;
-	}, [scopes.data]);
+	}, [scopes.data, scopes.isError]);
 
 	return (
 		<div className={cn("space-y-4", className)}>
@@ -199,6 +221,74 @@ function DatasourcesPanelView({
 				</Button>
 			</div>
 
+			{scopes.isError ? (
+				<p role="alert">
+					Couldn’t verify collection permissions. This does not mean there is no
+					indexed content.
+				</p>
+			) : scopes.isSuccess && boundaries.size === 0 ? (
+				<p role="status">
+					No readable collection. Ask an organization administrator for
+					read access. Connecting or syncing a source does not grant
+					access.
+				</p>
+			) : null}
+			{client.listCollections ? (
+				<section aria-label="Collection access" className="space-y-2">
+					{collections.isError ? (
+						<p role="alert">
+							Couldn’t inspect collection grants. Organization administrator
+							access is required.
+						</p>
+					) : (
+						collections.data?.map((collection) => (
+							<div key={collection.nodeId}>
+								<span>
+									{collection.label} ·{" "}
+									{scopes.isError || !scopes.isSuccess
+										? "Read permission unresolved"
+										: boundaries.has(collection.nodeId)
+											? "You can read this collection"
+											: "You do not have read access"}{" "}
+									· Readers:{" "}
+									{collection.grants
+										.map((grant) => grant.subjectLabel)
+										.join(", ") || "No collection read grants"}
+								</span>
+								{client.grantCollectionRead &&
+									client.revokeCollectionRead &&
+									client.listGrantSubjects && (
+										<Button
+											type="button"
+											variant="link"
+											size="sm"
+											onClick={() => setEditingCollection(collection.nodeId)}
+										>
+											Manage read grants for {collection.label}
+										</Button>
+									)}
+							</div>
+						))
+					)}
+				</section>
+			) : (
+				<Button
+					type="button"
+					variant="link"
+					size="sm"
+					onClick={() => window.location.assign("/admin/datasources")}
+				>
+					Manage collection read grants in the host (organization
+					administrators)
+				</Button>
+			)}
+			{selectedCollection && (
+				<CollectionGrants
+					client={client}
+					orgId={orgId}
+					collection={selectedCollection}
+				/>
+			)}
 			{activitySource && (
 				<SourceHistory
 					client={client}
@@ -250,6 +340,7 @@ function DatasourcesPanelView({
 					}}
 					sources={sources}
 					boundaries={boundaries}
+                    permissionsResolved={scopes.isSuccess && !scopes.isError}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
 					onSync={handleSync}
@@ -290,6 +381,13 @@ function DatasourcesPanelView({
 			)}
 			{showConnect && (
 				<ConnectGitHubForm
+					collections={collections.isError ? [] : collections.data}
+					readableNodeIds={
+						scopes.isSuccess && !scopes.isError
+							? [...boundaries.keys()]
+							: undefined
+					}
+					collectionError={collections.isError}
 					onSubmit={handleConnect}
 					onCancel={() => setShowConnect(false)}
 					isPending={addMutation.isPending}
@@ -363,6 +461,7 @@ const cellClass = "px-3 py-2 align-middle";
 function SourcesTable({
 	sources,
 	boundaries,
+    permissionsResolved,
 	syncingIds,
 	deletingIds,
 	onSync,
@@ -372,6 +471,7 @@ function SourcesTable({
 }: {
 	sources: DatasourceView[];
 	boundaries: ReadonlyMap<string, AccessibleScopeView>;
+    permissionsResolved: boolean;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
@@ -414,6 +514,7 @@ function SourcesTable({
 							<TableCell className={cellClass}>
 								<BoundaryCell
 									nodeId={source.boundaryNodeId}
+                                    permissionsResolved={permissionsResolved}
 									scope={boundaries.get(source.boundaryNodeId)}
 								/>
 							</TableCell>
@@ -475,24 +576,14 @@ function SourcesTable({
 	);
 }
 
-/**
- * A source's data boundary: the collection its Entries land in, named where the
- * caller could resolve it, plus the grants it holds there. Falls back to the node
- * id so the boundary is always identifiable.
- *
- * Absence is deliberately never rendered as denial. The lookup reports scope
- * grants only, and a scope grant is one of several paths to authority — flat
- * RBAC (an org admin's `*:*`) authorizes the datasource RPCs without ever
- * creating a scope-grant row, so an empty result is the normal state for a
- * tenant that grants no boundaries. "No access" here would therefore be false
- * for the very admin who connected the source.
- */
 function BoundaryCell({
+    permissionsResolved,
 	nodeId,
 	scope,
 }: {
 	nodeId: string;
 	scope: AccessibleScopeView | undefined;
+    permissionsResolved: boolean;
 }) {
 	if (scope) {
 		return (
@@ -504,7 +595,7 @@ function BoundaryCell({
 			</div>
 		);
 	}
-	return <div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>;
+	return <div><div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div><p className="text-xs">{permissionsResolved ? "No read access" : "Read permission unresolved"}</p></div>;
 }
 
 function SourceHistory({
@@ -615,7 +706,7 @@ function ReconnectSource({
 			<h3 className="font-medium">Reconnect {source.repo}</h3>
 			<p className="text-sm text-muted-foreground">
 				Replace the saved PAT and start a sync. Your source, collection,
-				documents, and history are preserved.
+				content, and history are preserved.
 			</p>
 			<Label className="block text-sm">
 				New GitHub PAT

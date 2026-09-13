@@ -28,6 +28,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/audit-log:aggregate", Procedure: "/saas.accounts.v1.AuditService/AggregateAuditLog"},
 		{Service: "accounts", Method: "GET", Path: "/v1/auth/.well-known/jwks.json", Procedure: "/saas.accounts.v1.AuthService/GetJWKS"},
 		{Service: "accounts", Method: "GET", Path: "/v1/billing/invoices/{org_id}", Procedure: "/saas.accounts.v1.BillingService/ListInvoices"},
+		{Service: "accounts", Method: "GET", Path: "/v1/collection-access", Procedure: "/saas.accounts.v1.PermissionService/ListCollectionAccess"},
 		{Service: "accounts", Method: "GET", Path: "/v1/consent/status", Procedure: "/saas.accounts.v1.ConsentService/GetStatus"},
 		{Service: "accounts", Method: "GET", Path: "/v1/delegations/{id}:wait", Procedure: "/saas.accounts.v1.DelegationService/WaitForDelegation"},
 		{Service: "accounts", Method: "GET", Path: "/v1/delegations:pending", Procedure: "/saas.accounts.v1.DelegationService/ListPendingDelegations"},

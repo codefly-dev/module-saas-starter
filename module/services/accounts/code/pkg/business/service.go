@@ -87,6 +87,19 @@ func (s *Service) SetModuleCapabilities(producer jobs.Producer, store jobs.Store
 	s.modulePrincipals = registry
 }
 
+// ModulePrincipals returns the declared registry, and SetModulePrincipals
+// replaces it without disturbing the job wiring SetModuleCapabilities also owns.
+// The composition declares a module's vocabulary — including the permission
+// resources its content is governed by — so a caller that needs to read or
+// stand in for that declaration goes through here rather than re-deriving it.
+func (s *Service) ModulePrincipals() ModulePrincipalRegistry {
+	return s.modulePrincipals
+}
+
+func (s *Service) SetModulePrincipals(registry ModulePrincipalRegistry) {
+	s.modulePrincipals = registry
+}
+
 // SetModuleEventTransport wires the domain-event pub/sub transport backing
 // ModuleCapabilitiesService.PublishEvent / ReplayEvents (issue #493). Publish
 // writes the event-of-record into the caller's transaction (transactional
