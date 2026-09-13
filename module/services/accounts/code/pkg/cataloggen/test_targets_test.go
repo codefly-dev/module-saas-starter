@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	agentv0 "github.com/codefly-dev/core/generated/go/codefly/services/agent/v0"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -146,4 +147,14 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 			require.ElementsMatch(t, target.RuntimeServices, runtimeServices, target.Suite)
 		}
 	}
+}
+
+// Nothing reads this catalog because the pinned runtime has no wire for it: an
+// agent offers effective-inputs discovery through its advertisement, and that
+// field postdates this pin. Failing here means the transport arrived, so the
+// catalog may be revisited once a released agent also advertises discovery.
+func TestPinnedRuntimeCannotTransportEffectiveInputs(t *testing.T) {
+	fields := (&agentv0.AgentInformation{}).ProtoReflect().Descriptor().Fields()
+	require.Nil(t, fields.ByName("effective_inputs_versions"),
+		"advertisement gained effective-inputs support: revisit planner consumption")
 }
