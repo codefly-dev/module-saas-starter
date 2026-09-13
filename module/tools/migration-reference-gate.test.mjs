@@ -42,3 +42,47 @@ test('required CI context validates the event base and only scopes database repl
   assert.equal(replay.env.MIGRATION_BASE, check.env.MIGRATION_BASE);
   assert.equal(job.steps.find(step => step.uses?.startsWith('actions/checkout@')).with['fetch-depth'], '0');
 });
+
+test('the store target catalog declares exactly the replay scope the gate enforces', async () => {
+  const { readFileSync, readdirSync } = await import('node:fs');
+  const catalog = JSON.parse(readFileSync(new URL('../services/store/test-targets.json', import.meta.url), 'utf8'));
+  assert.equal(catalog.schema_version, 1);
+  assert.equal(catalog.fallback, 'whole-service-and-dependency-closure');
+  const target = suite => catalog.targets.find(entry => entry.suite === suite);
+  const reference = target('migration-reference');
+  const qualification = target('migration-qualification');
+  assert.equal(catalog.targets.length, 2);
+  for (const entry of catalog.targets) {
+    assert.equal(entry.complete, false, entry.suite);
+    assert.deepEqual(entry.runtime_services, [], entry.suite);
+  }
+  // Reference validation reads committed trees; only qualification starts a database.
+  assert.deepEqual(reference.ephemeral_images, []);
+  assert.equal(reference.setup_budget_seconds, 0);
+  assert.deepEqual(qualification.ephemeral_images, ['postgres:16']);
+  assert.ok(qualification.setup_budget_seconds > 0);
+  const sample = root => root.endsWith('/') ? `${root}probe` : root;
+  const covered = path => qualification.input_roots.some(root => root.endsWith('/') ? path.startsWith(root) : root === path);
+  // Neither direction may drift: every declared root must trigger replay, and
+  // every path the gate replays on must be declared.
+  for (const root of qualification.input_roots) assert.equal(needsReplay([sample(root)]), true, root);
+  for (const root of reference.input_roots) assert.ok(covered(root), root);
+  const services = new URL('../services/', import.meta.url);
+  for (const service of readdirSync(services, { withFileTypes: true }).filter(entry => entry.isDirectory())) {
+    if (readdirSync(new URL(`${service.name}/`, services)).includes('migrations')) {
+      assert.ok(covered(`module/services/${service.name}/migrations/probe`), service.name);
+    }
+  }
+  for (const tool of readdirSync(new URL('./', import.meta.url)).filter(name => name.startsWith('migration-'))) {
+    assert.ok(covered(`module/tools/${tool}`), tool);
+  }
+  const store = new URL('../services/store/', import.meta.url);
+  for (const entry of readdirSync(store, { recursive: true, withFileTypes: true })) {
+    if (!entry.name.endsWith('codefly.yaml')) continue;
+    const within = entry.parentPath.slice(entry.parentPath.indexOf('module/services/store'));
+    assert.ok(covered(`${within}/${entry.name}`.replaceAll('//', '/')), entry.name);
+  }
+  assert.ok(covered('module/services/store/code/main.go'));
+  assert.ok(covered('module/deployment/topology.bindings.codefly.yaml'));
+  assert.ok(covered('.github/workflows/ci.yml'));
+});

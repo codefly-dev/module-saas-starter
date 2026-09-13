@@ -33,6 +33,12 @@ node module/tools/migration-reference-gate.mjs origin/main
 node module/tools/migration-reference-gate.mjs origin/main --replay
 ```
 
+[`../test-targets.json`](../test-targets.json) declares these as two planner
+targets: reference validation, which starts no container, and the upgrade and
+clean-install qualification, which starts throwaway PostgreSQL clusters. Its
+declared inputs are gated against this gate's own replay scope, so the two cannot
+drift apart.
+
 Reference validation compares committed trees. CI uses full Git history and
 passes `pull_request.base.sha` or `merge_group.base_sha` directly, rather than
 the feature branch's old merge base. Pushes use the previous commit; new tags

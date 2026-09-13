@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "path_base": "repository",
+  "working_directory": ".",
+  "fallback": "whole-service-and-dependency-closure",
+  "targets": [
+    {
+      "suite": "migration-reference",
+      "phase": "test",
+      "command": [
+        "node",
+        "module/tools/migration-reference-gate.mjs",
+        "<reference>"
+      ],
+      "runtime_services": [],
+      "ephemeral_images": [],
+      "setup_budget_seconds": 0,
+      "input_roots": [
+        "module/services/store/migrations/",
+        "module/tools/migration-pairing-gate.mjs",
+        "module/tools/migration-reference-gate.mjs"
+      ],
+      "complete": false
+    },
+    {
+      "suite": "migration-qualification",
+      "phase": "test",
+      "command": [
+        "node",
+        "module/tools/migration-reference-gate.mjs",
+        "<reference>",
+        "--replay"
+      ],
+      "runtime_services": [],
+      "ephemeral_images": [
+        "postgres:16"
+      ],
+      "setup_budget_seconds": 30,
+      "input_roots": [
+        ".github/workflows/ci.yml",
+        "module/deployment/topology.bindings.codefly.yaml",
+        "module/services/store/code/",
+        "module/services/store/dns/localkube/dns.codefly.yaml",
+        "module/services/store/migrations/",
+        "module/services/store/service.codefly.yaml",
+        "module/tools/migration-pairing-gate.mjs",
+        "module/tools/migration-pairing-gate.test.mjs",
+        "module/tools/migration-reference-gate.mjs",
+        "module/tools/migration-reference-gate.test.mjs"
+      ],
+      "complete": false
+    }
+  ]
+}
