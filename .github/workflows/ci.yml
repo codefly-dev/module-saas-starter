@@ -48,6 +48,8 @@ jobs:
         run: node --test module/tools/migration-pairing-gate.test.mjs
       - name: Test the migration reference gate
         run: node --test module/tools/migration-reference-gate.test.mjs
+      - name: Test the test-target catalog gate
+        run: node --test module/tools/test-targets-gate.test.mjs
       - name: Validate migration history against the merge reference
         id: migration-reference
         env:
@@ -73,6 +75,8 @@ jobs:
         run: node module/tools/rls-migration-gate.mjs check
       - name: Enforce up+down pairing across all migrations
         run: node module/tools/migration-pairing-gate.mjs check
+      - name: Validate every service test-target catalog
+        run: node module/tools/test-targets-gate.mjs check
       # Fails fast and by name on generated Go that no pinned run reproduces,
       # instead of letting Codefly's sync-drift phase report it late as an
       # opaque byte diff that blocks the gate on every open PR.

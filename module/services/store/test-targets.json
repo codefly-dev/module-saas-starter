@@ -10,10 +10,13 @@
       "command": [
         "node",
         "module/tools/migration-reference-gate.mjs",
-        "<reference>"
+        "${reference}"
       ],
+      "arguments": {
+        "reference": "event base commit: pull_request.base.sha or merge_group.base_sha"
+      },
       "runtime_services": [],
-      "ephemeral_images": [],
+      "external_inputs": [],
       "setup_budget_seconds": 0,
       "input_roots": [
         "module/services/store/migrations/",
@@ -28,17 +31,26 @@
       "command": [
         "node",
         "module/tools/migration-reference-gate.mjs",
-        "<reference>",
+        "${reference}",
         "--replay"
       ],
+      "arguments": {
+        "reference": "event base commit: pull_request.base.sha or merge_group.base_sha"
+      },
       "runtime_services": [],
-      "ephemeral_images": [
-        "postgres:16"
+      "external_inputs": [
+        {
+          "kind": "EXTERNAL",
+          "name": "postgres:16",
+          "identity": "unresolved"
+        }
       ],
       "setup_budget_seconds": 30,
       "input_roots": [
         ".github/workflows/ci.yml",
         "module/deployment/topology.bindings.codefly.yaml",
+        "module/services/store/baselines/",
+        "module/services/store/builder/",
         "module/services/store/code/",
         "module/services/store/dns/localkube/dns.codefly.yaml",
         "module/services/store/migrations/",

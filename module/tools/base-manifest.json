@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2459,
+  "fileCount": 2461,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
@@ -177,7 +177,7 @@
     "services/accounts/EXECUTION_CUSTODY.md": "d076c28837287db5ed6d3a670689834d5c017f0b7621414d589e63cf75fca4f8",
     "services/accounts/GETTING_STARTED.md": "643bde7b68eb6bbe72988fde4c25a17512601f720f234043a51a7a521b5949c9",
     "services/accounts/README.md": "e9677ce854f88f0b8ca6652737ad18b7a10e6348ee9e53cdd5317d230c0af209",
-    "services/accounts/TESTING.md": "0df573ee72ed20014ac836a5150f7ee463f84790ca86c5654552fe8bfadd577c",
+    "services/accounts/TESTING.md": "53883bc61efbbaf329c5de458fb957048c53511c50d0325b8e98cfa729f29c32",
     "services/accounts/TRUST_BOUNDARY.md": "b0c5e84bd1a51c3b9da41e941148ae27453ad388233ef7819f94872950980283",
     "services/accounts/buf.gen.composition.python.yaml": "7ee6479f05544408e60b1f7e10e3298c74671954fba9de0db3485fe2483dd571",
     "services/accounts/buf.gen.composition.yaml": "2931d7cef475270d4fa1b846cf5c66ca81b6f729fba48b4c241140c405250a83",
@@ -2395,12 +2395,12 @@
     "services/store/migrations/99_actor_chain_journal.up.sql": "be4a45da405d2370e7d532e5e8cd913a9af6f54409d4a0bff3e53eb6ac611f21",
     "services/store/migrations/9_create_entitlements.down.sql": "1912ec46c4a21f11ab1b2ca833a5b2a6cc219777f5b241b96d82124f17b20ad2",
     "services/store/migrations/9_create_entitlements.up.sql": "049642b6f6d53c971777178b2804081f3716996e596eecb5e0e1088a3cb09326",
-    "services/store/migrations/README.md": "b9eca11bbf06445683c94e2cc98afa2d83441413e7ed7161f1d733251ce83258",
+    "services/store/migrations/README.md": "58ed22fd883467049676298b096421949bdd809e7481b58cd89001678bfeec5a",
     "services/store/old_migration/2_create_organizations_table.down.sql": "3b8eae3e331150d18cd3ec56ae0247fd222fbb634b7d962951d09b5320729553",
     "services/store/old_migration/2_create_organizations_table.up.sql": "8a0967db380bfeb7efe8c237b66cb88cb4eebbc171d73d302b40d07911a0f6b3",
     "services/store/old_migration/3_create_teams_table.down.sql": "96b049baec3557a064554373a176bcc4a74e04af66a7d23dd84e43e7c926e151",
     "services/store/old_migration/3_create_teams_table.up.sql": "8dfa5332db49a1385ad73150c6952f9d4aec728f289317946ac4da3970065a48",
-    "services/store/test-targets.json": "8bc61d8365e9110cbc8a878a7258cd20d7c2a3a4d2f2d5e5ab67ea3384fcf1b7",
+    "services/store/test-targets.json": "d5ebb3669db64d4c5c27e9f3f4dee555b58c5e9c5bbe552bf4cbe4453439991f",
     "services/telemetry/code/collector/collector.go": "fb59cc78e81467b67e31116c4a038316668ab21fa967a3b299bf911aca12235e",
     "services/telemetry/code/collector/collector_test.go": "f1d25458b52f5d13a45494351dfb9a9757b114801efeb152f4694301cfaaa242",
     "services/telemetry/code/go.mod": "78c59995ec32fd455f328871341510f13721e488887145b297ab9c53ebc3395b",
@@ -2444,8 +2444,8 @@
     "tools/marketing-extraction.mjs": "20a7e8abd1fd04cc84aaed7333405c0813149220dd8122a70771c4917c4e0e93",
     "tools/migration-pairing-gate.mjs": "c6216c7882e38d194cc008e11418651181c85eccaf7a133a28a01588b18dd64a",
     "tools/migration-pairing-gate.test.mjs": "c675ccfc6e5b39edd56d3a498754f18b81fb566054e15efbb02c3e24b58b95eb",
-    "tools/migration-reference-gate.mjs": "167030fca95a88c6b9273dec6e49b1a63641f3f425cc23171caff020ac5058ff",
-    "tools/migration-reference-gate.test.mjs": "b6e0a1ac5d593114c3045cdba01d5fab5731c9df2161ed108fcb3c6b74192156",
+    "tools/migration-reference-gate.mjs": "983efd9fc404c74d71ef9ceb50cda02b154982bfd8c236680f380345fa5e5157",
+    "tools/migration-reference-gate.test.mjs": "5d3db636dc3069d7afba3c6223a35a74ea1eaeac0fd621cac74d8a9ae7278d4a",
     "tools/modulepackage/archive.go": "3455c1ccb7c59b6856c69c839e0e936163b98bc19e2f506ca96faa41a2efae0f",
     "tools/modulepackage/commands.go": "4d1789a70fa78aed3b5e91a8a66c2011248917c7db587f116c228bd35077fd31",
     "tools/modulepackage/manifest.go": "10b8d38170bb17218d8aaaae2be802356e7c17f99aff4721ebd05a42d74dd525",
@@ -2460,6 +2460,8 @@
     "tools/shared_proto_copies_test.go": "1d92644586d9931dc468e1ac69fd4f87f7b8895277616e7f669ba0d466bf4e72",
     "tools/solution_registration_boundary_test.go": "14063df1dc8f1b69c1acae1329c89b36b98aff6d4536622f80969b69685d98b1",
     "tools/story-trace-gate.mjs": "48fdeb8d7618aca4629185066c665915662aa221f8abb7310673e4ba2b59d565",
-    "tools/story-trace-gate.test.mjs": "533fe446ad510aecd2ac8c0b6aab6ec0c8740752155512bd18e45bad387d9f66"
+    "tools/story-trace-gate.test.mjs": "533fe446ad510aecd2ac8c0b6aab6ec0c8740752155512bd18e45bad387d9f66",
+    "tools/test-targets-gate.mjs": "99a2e0cb49291081fceff1e5c549a03dad1c56024e76c0cb69a08f147da34245",
+    "tools/test-targets-gate.test.mjs": "34234682752317d296f2282c1f616b1ffa7381aa9615e6082af13f1bf51815ca"
   }
 }

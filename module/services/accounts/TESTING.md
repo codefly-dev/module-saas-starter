@@ -81,7 +81,7 @@ These package tests exercise the candidate schema. They do not establish full
 reference-to-candidate upgrade qualification. That qualification shipped with
 [#644](https://github.com/codefly-dev/module-saas-starter/issues/644) as
 independent required results in the **Base manifest integrity** context, scoped to
-migrations, migration runners, store configuration and the migration gates
-themselves. [`../store/test-targets.json`](../store/test-targets.json) declares
+migrations, migration runners, store configuration, the managed install baseline,
+the store image recipe and the migration gates themselves. [`../store/test-targets.json`](../store/test-targets.json) declares
 those two checks as separate planner targets carrying that input scope. A fast
 pure result cannot satisfy either result, and no accounts target claims it.
