@@ -101,8 +101,9 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
-	// This read verifies the forwarded viewer Work Context (documents audience,
-	// documents/read attenuation) and current owner/actor and collection grants.
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
 	// The internal listener remains mandatory; callers cannot supply identities.
 	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
@@ -420,8 +421,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
-	// This read verifies the forwarded viewer Work Context (documents audience,
-	// documents/read attenuation) and current owner/actor and collection grants.
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
 	// The internal listener remains mandatory; callers cannot supply identities.
 	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.

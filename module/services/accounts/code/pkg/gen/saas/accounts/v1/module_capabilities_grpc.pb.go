@@ -47,8 +47,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ModuleCapabilitiesServiceClient interface {
-	// This read verifies the forwarded viewer Work Context (documents audience,
-	// documents/read attenuation) and current owner/actor and collection grants.
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
 	// The internal listener remains mandatory; callers cannot supply identities.
 	ListReadableSourceCollections(ctx context.Context, in *ListReadableSourceCollectionsRequest, opts ...grpc.CallOption) (*ListReadableSourceCollectionsResponse, error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
@@ -324,8 +325,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
 type ModuleCapabilitiesServiceServer interface {
-	// This read verifies the forwarded viewer Work Context (documents audience,
-	// documents/read attenuation) and current owner/actor and collection grants.
+	// The forwarded viewer Work Context names the calling module in its audience;
+	// this read verifies it carries kind-wide read on a content resource type that
+	// module declares, and current owner/actor and collection grants.
 	// The internal listener remains mandatory; callers cannot supply identities.
 	ListReadableSourceCollections(context.Context, *ListReadableSourceCollectionsRequest) (*ListReadableSourceCollectionsResponse, error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.

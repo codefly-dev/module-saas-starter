@@ -425,8 +425,9 @@ message ListReadableSourceCollectionsResponse {
 }
 
 service ModuleCapabilitiesService {
-  // This read verifies the forwarded viewer Work Context (documents audience,
-  // documents/read attenuation) and current owner/actor and collection grants.
+  // The forwarded viewer Work Context names the calling module in its audience;
+  // this read verifies it carries kind-wide read on a content resource type that
+  // module declares, and current owner/actor and collection grants.
   // The internal listener remains mandatory; callers cannot supply identities.
   rpc ListReadableSourceCollections(ListReadableSourceCollectionsRequest) returns (ListReadableSourceCollectionsResponse) {
     option (saas.policy.v1.method_policy) = {
