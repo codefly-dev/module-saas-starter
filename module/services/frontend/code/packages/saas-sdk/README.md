@@ -156,12 +156,17 @@ exported into the module package (`module/contracts/api`):
 npm run generate
 ```
 
-This runs `codefly generate client --from contracts:… --endpoint accounts/connect
+This runs `scripts/generate.mjs`, which performs **both** generation steps. The
+first, `codefly generate client --from contracts:… --endpoint accounts/connect
 --services AccessibleScopeService,AuditService,DatasourceService,WebhookService`,
-writing the bindings
+writes the bindings
 (`generated/typescript/src/gen`), the `accounts` facade
 (`generated/typescript/src/accounts_facade.ts`), and the resolved
-`library.codefly.yaml` recording the contract digest.
+`library.codefly.yaml` recording the contract digest. The second is the buf step
+described below. Run the script — or the npm scripts that wrap it — rather than
+the bare `codefly generate client` command: on its own that step emits whichever
+foreign descriptors the CLI's core decides to, which is the omission the second
+step exists to repair.
 
 The `--services` flag scopes only the generated **facade** to the public
 services. The accounts/connect contract is the full `saas.accounts.v1` package
