@@ -187,6 +187,14 @@ closure, including buf/validate and google/api. It avoids CLI-dependent foreign
 import omissions and never repairs generated files by hand. The public package
 still compiles only the closure reachable from its public SDK sources.
 
+**Install the frontend workspace before regenerating.** That template reaches the
+pinned plugin through `npx --no-install`, so
+`npm ci --prefix module/services/frontend/code` has to have run first. Without it
+the buf step exits non-zero *after* the client step has already rewritten the
+vendored contract, the facade and `library.codefly.yaml`, leaving a
+half-regenerated tree. Install the workspace and re-run, or `git checkout` the
+`generated` directory to get back to a known state.
+
 **Regenerate with the codefly version CI pins, and check the result.** The
 buf step above is a backstop, not a substitute for the pin: the generation
 recipe is `//go:embed`-ed into the CLI through the core it vendors, so which

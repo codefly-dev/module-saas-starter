@@ -28,7 +28,10 @@ interface GenerationCall {
 // the script only generates what an entry point actually invokes, so a manifest
 // that never reaches it leaves the second step — the one that re-emits foreign
 // descriptors the client step may omit — unreachable from any documented command.
-function runPackageScript(script: string): GenerationCall[] {
+function runPackageScript(
+	script: string,
+	args: string[] = [],
+): GenerationCall[] {
 	const temp = mkdtempSync(join(tmpdir(), "audit-sdk-generation-"));
 	try {
 		const fixtureSdk = join(
@@ -54,7 +57,10 @@ function runPackageScript(script: string): GenerationCall[] {
 			`#!${process.execPath}\nrequire("node:fs").appendFileSync(process.env.GENERATION_CALLS, JSON.stringify({cwd:process.cwd(),args:process.argv.slice(2)})+"\\n");\n`,
 			{ mode: 0o755 },
 		);
-		const result = spawnSync("npm", ["run", "--silent", script], {
+		const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+		const argv = ["run", "--silent", script];
+		if (args.length > 0) argv.push("--", ...args);
+		const result = spawnSync(npm, argv, {
 			cwd: fixtureSdk,
 			env: {
 				...process.env,
@@ -76,11 +82,17 @@ function runPackageScript(script: string): GenerationCall[] {
 const flag = (call: GenerationCall, name: string) =>
 	call.args[call.args.indexOf(name) + 1];
 
+// The client step decides which foreign descriptors land on disk and has been
+// seen omitting them; the sdk template regenerates the whole import closure, so
+// it is what keeps `buf/validate` and `google/api` present. A `generate` that
+// runs only the client step reintroduces the dangling-import tree by construction.
 it("binds both generation steps to the exported contract, ignoring mutable service protos", () => {
-	const calls = runPackageScript("generate");
+	const calls = runPackageScript("generate", ["--force"]);
 	expect(calls).toHaveLength(2);
 	expect(calls[0].args.slice(0, 2)).toEqual(["generate", "client"]);
 	expect(calls[1].args.slice(0, 2)).toEqual(["generate", "proto"]);
+	expect(flag(calls[1], "--template")).toBe("buf.gen.sdk.yaml");
+	expect(calls[0].args).toContain("--force");
 	const exported = resolve(
 		calls[0].cwd,
 		flag(calls[0], "--from").replace("contracts:", ""),
@@ -90,20 +102,20 @@ it("binds both generation steps to the exported contract, ignoring mutable servi
 	);
 });
 
-// The client step decides which foreign descriptors land on disk and has been
-// seen omitting them; this template regenerates the whole import closure, so it
-// is what keeps `buf/validate` and `google/api` present. A `generate` that runs
-// only the client step reintroduces the dangling-import tree by construction.
-it("regenerates the complete import closure through the sdk buf template", () => {
-	const calls = runPackageScript("generate");
-	expect(flag(calls[1], "--template")).toBe("buf.gen.sdk.yaml");
-});
-
 it("refreshes bindings alone without rewriting the vendored contract or facade", () => {
 	const calls = runPackageScript("generate:bindings");
 	expect(calls).toHaveLength(1);
 	expect(calls[0].args.slice(0, 2)).toEqual(["generate", "proto"]);
-	expect(calls[0].args).not.toContain("--bindings-only");
+});
+
+// The selector is this script's own and the CLI has no such option, so a spelling
+// it does not recognize must still not reach the step that forwards arguments.
+it("keeps the step selector out of the forwarded client arguments", () => {
+	const calls = runPackageScript("generate", ["--bindings-only=false"]);
+	expect(calls).toHaveLength(2);
+	expect(calls[0].args.some((arg) => arg.startsWith("--bindings-only"))).toBe(
+		false,
+	);
 });
 
 function messageContract(message: DescriptorProto): unknown {

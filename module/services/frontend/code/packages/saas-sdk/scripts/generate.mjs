@@ -16,6 +16,9 @@ const args = process.argv.slice(2);
 // Refreshing the bindings alone leaves the vendored contract and facade — and
 // the digest they record — exactly as they are.
 const bindingsOnly = args.includes("--bindings-only");
+// The selector is this script's own; the CLI has no such option, so no spelling
+// of it may reach the step that forwards its arguments.
+const forwarded = args.filter((arg) => !arg.startsWith("--bindings-only"));
 if (!bindingsOnly) {
 	run(
 		[
@@ -37,7 +40,7 @@ if (!bindingsOnly) {
 			"accounts",
 			"--output",
 			"./generated",
-			...args,
+			...forwarded,
 		],
 		sdk,
 	);
