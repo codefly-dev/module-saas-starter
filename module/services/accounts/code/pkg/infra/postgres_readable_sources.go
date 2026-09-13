@@ -71,10 +71,26 @@ func (s *PostgresStore) SourceReadRevision(ctx context.Context, org string, subj
 
 // ListReadableSourcesPage intersects all principals in SQL before applying the
 // keyset limit. No unrelated source or credential payload is materialized.
-func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string, subjects []string, after string, limit int) ([]*gen.ReadableSourceCollection, error) {
+//
+// resources names the permission resource types the calling module's content is
+// governed by; it comes from that module's declared grant, because the host
+// holds no domain content and so cannot name the resource itself.
+//
+// An empty set authorizes nothing. That needs saying in the query rather than
+// left to the resource comparison: a wildcard ('*') role permission matches
+// every resource type on its own, so without the cardinality guard a module
+// that declared no content would still read every collection a wildcard role
+// covers. The guard is what makes "declared none reads nothing" true.
+func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string, subjects []string, resources []string, after string, limit int) ([]*gen.ReadableSourceCollection, error) {
 	tx, err := sourceReadExecutor(ctx)
 	if err != nil {
 		return nil, err
+	}
+	// A nil slice would bind as NULL, and both `= ANY(NULL)` and cardinality(NULL)
+	// are NULL rather than false. Both refuse, but only an empty array says so in
+	// the plan.
+	if resources == nil {
+		resources = []string{}
 	}
 	rows, err := tx.Query(ctx, `SELECT s.id::text, s.boundary_node_id::text, s.provider,
  COALESCE(s.repo,''), COALESCE(s.branch,''), s.paths
@@ -85,16 +101,16 @@ func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string,
  EXISTS (SELECT 1 FROM scope_grants g JOIN role_permissions rp ON rp.role_id=g.role_id
  WHERE g.org_id=$1 AND g.scope_path @> n.scope_path
  AND (g.expires_at IS NULL OR g.expires_at > now())
- AND (rp.resource='*' OR rp.resource='documents') AND (rp.action='*' OR rp.action='read')
+ AND cardinality($5::text[])>0 AND (rp.resource='*' OR rp.resource=ANY($5::text[])) AND (rp.action='*' OR rp.action='read')
  AND ((g.subject_kind='principal' AND g.subject_id=subject.id) OR
  (g.subject_kind='team' AND g.subject_id IN (SELECT team_id FROM team_members WHERE user_id=subject.id))))
  OR EXISTS (SELECT 1 FROM record_shares sh JOIN role_permissions rp ON rp.role_id=sh.role_id
- WHERE sh.org_id=$1 AND sh.resource_type=n.resource_type AND sh.resource_id=n.resource_id AND sh.resource_type='documents'
+ WHERE sh.org_id=$1 AND sh.resource_type=n.resource_type AND sh.resource_id=n.resource_id AND sh.resource_type=ANY($5::text[])
  AND (sh.expires_at IS NULL OR sh.expires_at > now())
- AND (rp.resource='*' OR rp.resource='documents') AND (rp.action='*' OR rp.action='read')
+ AND (rp.resource='*' OR rp.resource=ANY($5::text[])) AND (rp.action='*' OR rp.action='read')
  AND ((sh.subject_kind='principal' AND sh.subject_id=subject.id) OR
  (sh.subject_kind='team' AND sh.subject_id IN (SELECT team_id FROM team_members WHERE user_id=subject.id))))
- )) ORDER BY s.id LIMIT $4`, org, subjects, nullableSourceCursor(after), limit)
+ )) ORDER BY s.id LIMIT $4`, org, subjects, nullableSourceCursor(after), limit, resources)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -23,8 +24,10 @@ type sourceReadCursor struct {
 
 // ReadableSourceCollections checks authority and reads one joined page in a
 // single repeatable-read snapshot. Cursors bind identity and durable revisions;
-// expiration of a standing grant also forces enumeration to restart.
-func (s *Service) ReadableSourceCollections(ctx context.Context, org string, subjects []string, req *gen.ListReadableSourceCollectionsRequest, authorize func(context.Context) error) (*gen.ListReadableSourceCollectionsResponse, error) {
+// expiration of a standing grant also forces enumeration to restart. resources
+// names the permission resource types the calling module's content is governed
+// by, which is what read grants are intersected against.
+func (s *Service) ReadableSourceCollections(ctx context.Context, org string, subjects []string, resources []string, req *gen.ListReadableSourceCollectionsRequest, authorize func(context.Context) error) (*gen.ListReadableSourceCollectionsResponse, error) {
 	if org == "" || len(subjects) == 0 || authorize == nil {
 		return nil, status.Error(codes.PermissionDenied, "viewer identity required")
 	}
@@ -33,6 +36,15 @@ func (s *Service) ReadableSourceCollections(ctx context.Context, org string, sub
 			return nil, status.Error(codes.PermissionDenied, "viewer identity required")
 		}
 	}
+	// A module that declared no content has no basis to ask. The store refuses an
+	// empty set too, but the guarantee belongs here rather than resting on the one
+	// caller that happens to check first.
+	if len(resources) == 0 {
+		return nil, status.Error(codes.PermissionDenied, "module content resources required")
+	}
+	// The digest below binds the resource set into the cursor, so reordering a
+	// declaration — which changes no authority — must not invalidate a live page.
+	resources = slices.Sorted(slices.Values(resources))
 	var cur sourceReadCursor
 	if req.GetPageToken() != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(req.GetPageToken())
@@ -58,10 +70,11 @@ func (s *Service) ReadableSourceCollections(ctx context.Context, org string, sub
 			return err
 		}
 		raw, err := json.Marshal(struct {
-			Org      string
-			Subjects []string
-			Revision string
-		}{org, subjects, revision})
+			Org       string
+			Subjects  []string
+			Resources []string
+			Revision  string
+		}{org, subjects, resources, revision})
 		if err != nil {
 			return err
 		}
@@ -72,7 +85,7 @@ func (s *Service) ReadableSourceCollections(ctx context.Context, org string, sub
 		if req.GetPageToken() != "" && (cur.Scope != scope || !cur.ExpiresAt.Equal(expires)) {
 			return status.Error(codes.InvalidArgument, "source scope changed; restart pagination")
 		}
-		collections, err := s.store.ListReadableSourcesPage(ctx, org, subjects, cur.After, size+1)
+		collections, err := s.store.ListReadableSourcesPage(ctx, org, subjects, resources, cur.After, size+1)
 		if err != nil {
 			return err
 		}

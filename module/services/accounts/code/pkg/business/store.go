@@ -101,7 +101,7 @@ type Store interface {
 	InsertDatasourceSource(ctx context.Context, source *DatasourceSource) error
 	WithSourceReadSnapshot(context.Context, string, func(context.Context) error) error
 	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
-	ListReadableSourcesPage(context.Context, string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
+	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
 	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	DeleteDatasourceSource(ctx context.Context, orgID, id string) error
