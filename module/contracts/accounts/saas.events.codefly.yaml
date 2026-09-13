@@ -195,7 +195,15 @@ publishes:
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d
+  - type: saas.document.read
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
   - type: saas.document.renamed
+    schema: saas/events/v1/events.proto#EventEnvelope
+    visibility: external
+    retention: 30d
+  - type: saas.document.search
     schema: saas/events/v1/events.proto#EventEnvelope
     visibility: external
     retention: 30d

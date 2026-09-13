@@ -18,7 +18,8 @@ export type MetricStatus = "loading" | "error" | "ready";
 
 export interface MetricSeries {
 	points: MetricPoint[];
-	total: number;
+	total: number | null;
+	partial?: boolean;
 	status: MetricStatus;
 }
 
@@ -53,6 +54,10 @@ export function compileMetricQuery(
 		orgId,
 		eventType: metric.event?.type,
 		category: metric.category,
+		resource: metric.resource,
+		resourceId: metric.resourceId,
+		collectionId: metric.collectionId,
+		payloadContains: metric.payloadContains,
 		groupBy,
 		groupBys,
 		bucket: metric.bucket,
@@ -103,8 +108,8 @@ function pointValue(
 
 // count and sum accumulate across groups, so a stat over them is their sum.
 // count_distinct, avg, min, max, percentile, and ratios do not — summing
-// per-group percentiles or ratios is meaningless — so a stat reports their
-// mean, which collapses to the single value for a one-group metric.
+// per-group percentiles or ratios is meaningless — a stat is unavailable
+// across multiple groups.
 function isAdditive(metric: MetricDef): boolean {
 	if (metric.ratio) return false;
 	const op = metric.value?.op ?? "count";
@@ -122,11 +127,28 @@ export function shapeMetricSeries(
 	buckets: readonly AuditAggregateBucket[],
 	metric: MetricDef,
 	valueAlias: string | null,
-): { points: MetricPoint[]; total: number } {
+): { points: MetricPoint[]; total: number | null; partial: boolean } {
 	const shaped: MetricPoint[] = [];
+	let partial = false;
 	for (const bucket of buckets) {
 		const value = pointValue(bucket, valueAlias);
-		if (value === undefined) continue;
+		if (value === undefined || !Number.isFinite(value)) {
+			partial = true;
+			continue;
+		}
+		const aliases = metric.ratio
+			? ["numerator", "denominator"]
+			: valueAlias === null
+				? []
+				: [valueAlias];
+		if (
+			aliases.some(
+				(alias) =>
+					bucket.samples?.[alias] === undefined ||
+					bucket.samples[alias] < bucket.count,
+			)
+		)
+			partial = true;
 		shaped.push({ key: pointKey(bucket), value });
 	}
 
@@ -138,9 +160,26 @@ export function shapeMetricSeries(
 		points = metric.limit ? ranked.slice(0, metric.limit) : ranked;
 	}
 
-	if (points.length === 0) return { points, total: 0 };
+	if (points.length === 0) return { points, total: null, partial };
 	const sum = points.reduce((acc, p) => acc + p.value, 0);
-	return { points, total: isAdditive(metric) ? sum : sum / points.length };
+	// Mirrors the SDK's toSeries. An additive total is the sum of what was
+	// observed, so partiality annotates it (the card shows "Partial telemetry")
+	// instead of withholding it — optional payload fields are absent by design.
+	// A non-additive scalar needs a single complete group. Truncation by `limit`
+	// suppresses either: a top-N slice is not the series total, so reporting the
+	// slice's sum as "the total" would be wrong rather than merely incomplete.
+	return {
+		points,
+		partial,
+		total:
+			points.length !== shaped.length
+				? null
+				: isAdditive(metric)
+					? sum
+					: partial || points.length !== 1
+						? null
+						: sum,
+	};
 }
 
 // useMetric resolves a MetricDef against the audit AggregateAuditLog RPC and
@@ -155,7 +194,7 @@ export function useMetric(metric: MetricDef, orgId: string): MetricSeries {
 		enabled: orgId !== "",
 	});
 
-	const { points, total } = useMemo(
+	const { points, total, partial } = useMemo(
 		() => shapeMetricSeries(data ?? [], metric, valueAlias),
 		[data, metric, valueAlias],
 	);
@@ -168,5 +207,5 @@ export function useMetric(metric: MetricDef, orgId: string): MetricSeries {
 			? "loading"
 			: "ready";
 
-	return { points, total, status };
+	return { points, total, partial, status };
 }

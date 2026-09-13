@@ -9,6 +9,7 @@ import {
 import {
 	auditEventTypesQuery,
 	useAuditLog,
+	useAuditAggregate,
 	usePrincipalDirectory,
 } from "./queries";
 
@@ -212,4 +213,39 @@ describe("usePrincipalDirectory", () => {
 
 		expect(listPrincipals).not.toHaveBeenCalled();
 	});
+});
+
+describe("scoped aggregate acknowledgement", () => {
+	for (const scopeContractVersion of [0, 1, 2]) {
+		it(`requires supported acknowledgement even for empty responses: ${scopeContractVersion}`, async () => {
+			const aggregateAuditLog = vi.fn(async () => ({
+				buckets: [],
+				scopeContractVersion,
+			}));
+			vi.mocked(useAuditService).mockReturnValue({
+				aggregateAuditLog,
+			} as unknown as ReturnType<typeof useAuditService>);
+			const { result } = renderHook(
+				() =>
+					useAuditAggregate({
+						orgId: "org-a",
+						collectionId: "collection-a",
+						eventType: "saas.document.read",
+						groupBy: "event_type",
+					}),
+				{ wrapper: wrapper() },
+			);
+			await waitFor(() => expect(result.current.isFetching).toBe(false));
+			// The contract version only grows and a later one is a superset of 1,
+			// so anything >= 1 is an acknowledgement. Only 0 — an older server that
+			// dropped the scope fields and answered organization-wide — is refused.
+			// Demanding exact equality would have thrown on every scoped metric of
+			// every deployed client the first time the server bumped to 2.
+			if (scopeContractVersion >= 1) expect(result.current.data).toEqual([]);
+			else {
+				expect(result.current.error?.message).toContain("scope contract");
+				expect(result.current.data).toBeUndefined();
+			}
+		});
+	}
 });

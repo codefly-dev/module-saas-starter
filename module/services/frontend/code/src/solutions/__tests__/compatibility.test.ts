@@ -8,6 +8,7 @@ import {
 } from "@/solutions/compatibility";
 import {
 	CODEFLY_KIT_VERSION,
+	CODEFLY_SAAS_SDK_VERSION,
 	HOST_REACT_VERSION,
 } from "@/solutions/host-runtime";
 import { parseManifest, type SolutionManifest } from "@/solutions/registry";
@@ -95,7 +96,7 @@ describe("checkRuntimeCompatibility", () => {
 						"@codefly-dev/ui": `^${CODEFLY_KIT_VERSION}`,
 						"@codefly-dev/ui/layout": `^${CODEFLY_KIT_VERSION}`,
 						"@codefly-dev/ui/table": `^${CODEFLY_KIT_VERSION}`,
-						"@codefly-dev/saas-sdk": "^0.2.0",
+						"@codefly-dev/saas-sdk": `^${CODEFLY_SAAS_SDK_VERSION}`,
 					},
 				},
 			}),

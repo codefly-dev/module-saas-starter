@@ -298,6 +298,7 @@ type Store interface {
 	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
 	// Confined to orgID with an explicit predicate on top of the RLS tenant floor.
 	ListAccessibleScopes(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
+	CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
 	// GetOrCreateCollectionNode reuses an existing collection node with node.Label
 	// in the tenant, or registers node and returns its id — one boundary per

@@ -156,6 +156,10 @@ function assertMetric(
 			"description",
 			"event",
 			"category",
+			"resource",
+			"resourceId",
+			"collectionId",
+			"payloadContains",
 			"groupBy",
 			"bucket",
 			"chart",
@@ -169,6 +173,36 @@ function assertMetric(
 		context,
 	);
 	assertNonEmptyString(value.title, `${context} title`);
+	if (value.collectionId !== undefined) {
+		assertNonEmptyString(value.collectionId, `${context} collectionId`);
+		// Accounts requires an event type for every scoped read, collection reads
+		// included — it resolves the registered boundary field from it. Rejecting
+		// here keeps the authoring surface from saving a metric that can only fail
+		// at query time.
+		assertSpec(
+			value.event !== undefined,
+			`${context} collectionId requires event`,
+		);
+	}
+	if (value.resource !== undefined)
+		assertNonEmptyString(value.resource, `${context} resource`);
+	if (value.resourceId !== undefined) {
+		assertNonEmptyString(value.resourceId, `${context} resourceId`);
+		assertNonEmptyString(value.resource, `${context} resource`);
+		assertSpec(
+			value.event !== undefined,
+			`${context} resourceId requires event`,
+		);
+	}
+	assertSpec(
+		value.payloadContains === undefined ||
+			(isObject(value.payloadContains) &&
+				Object.entries(value.payloadContains).every(
+					([key, val]) => key.trim().length > 0 && typeof val === "string",
+				)),
+		`${context} payloadContains must contain string values`,
+	);
+
 	assertOptionalText(value.description, `${context} description`);
 
 	// groupBy is one dimension or, for multi-dimensional grouping, a non-empty

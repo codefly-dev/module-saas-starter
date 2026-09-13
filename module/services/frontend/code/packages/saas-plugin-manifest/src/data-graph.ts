@@ -78,6 +78,11 @@ export interface MetricFilter {
 	event: string;
 	actor?: string;
 	resource?: string;
+	/** Exact resource boundary; requires resource and current read access. */
+	resourceId?: string;
+	collectionId?: string;
+	/** Exact string payload predicates, e.g. run_id or outcome. */
+	payloadContains?: Record<string, string>;
 }
 
 /** A metric computed directly from audit events — one `AggregateAuditLog` query. */
@@ -148,7 +153,7 @@ export interface DataGraph {
 }
 
 const LOGICAL_ID = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
-const EVENT_TYPE = /^[a-z][a-z0-9]*(?:\.[a-z0-9]+)*\.v[1-9][0-9]*$/;
+const EVENT_TYPE = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/;
 // A group dimension is one of the fixed audit columns or a payload field
 // addressed as `payload:<key>` with a non-empty key.
 const FIXED_GROUP_BY = ["event_type", "category", "actor", "time"] as const;
@@ -245,7 +250,7 @@ function validateEvent(value: unknown): asserts value is EventDeclaration {
 	assertLogicalId(value.name, "event name");
 	assertGraph(
 		typeof value.type === "string" && EVENT_TYPE.test(value.type),
-		`event '${String(value.name)}' type '${String(value.type)}' must be namespaced and versioned`,
+		`event '${String(value.name)}' type '${String(value.type)}' must be namespaced`,
 	);
 	assertOptionalText(
 		value.description,
@@ -273,8 +278,42 @@ function validateSourceMetric(value: Record<string, unknown>): void {
 	const context = `metric '${String(value.id)}'`;
 	const filter = value.filter;
 	assertGraph(isObject(filter), `${context} filter must be an object`);
-	assertExactKeys(filter, ["event", "actor", "resource"], `${context} filter`);
+	assertExactKeys(
+		filter,
+		[
+			"event",
+			"actor",
+			"resource",
+			"resourceId",
+			"collectionId",
+			"payloadContains",
+		],
+		`${context} filter`,
+	);
 	assertLogicalId(filter.event, `${context} filter event`);
+	assertGraph(
+		filter.collectionId === undefined ||
+			(typeof filter.collectionId === "string" &&
+				filter.collectionId.trim().length > 0),
+		`${context} collectionId must be a non-empty string`,
+	);
+	assertGraph(
+		filter.resourceId === undefined ||
+			(typeof filter.resourceId === "string" &&
+				filter.resourceId.trim().length > 0 &&
+				typeof filter.resource === "string" &&
+				filter.resource.trim().length > 0),
+		`${context} filter resourceId requires resource`,
+	);
+	assertGraph(
+		filter.payloadContains === undefined ||
+			(isObject(filter.payloadContains) &&
+				Object.entries(filter.payloadContains).every(
+					([key, val]) => key.trim().length > 0 && typeof val === "string",
+				)),
+		`${context} filter payloadContains must contain string values`,
+	);
+
 	assertGraph(
 		filter.actor === undefined ||
 			(typeof filter.actor === "string" && filter.actor.trim().length > 0),
