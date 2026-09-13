@@ -30,9 +30,10 @@ With `go test -v`, database harnesses emit JSON timing records to stderr for
 elapsed milliseconds, readiness budget and failure status. A failed dependency
 setup emits no execution record. Go compilation precedes these records and
 fixture initialization sits between setup and execution. These records do not
-claim to measure either. The pinned Core SDK reports only flow-wide readiness:
-per-service build/setup durations and the exact service that exceeded its budget
-still require SDK/CLI lifecycle evidence. Keep the Codefly debug log with failures.
+claim to measure either. Codefly's flow status carries a single readiness flag in
+both the pinned Core release and the latest one, so naming the service that
+exceeded its budget needs new SDK/CLI lifecycle evidence, not a dependency bump.
+Keep the Codefly debug log with failures.
 
 ## Planner handoff
 
@@ -57,21 +58,30 @@ Unknown/legacy discovery retains Core's whole-service fallback.
 Coordination contracts:
 
 - [Core #445](https://github.com/codefly-dev/core/issues/445), implemented in
-  [Core #455](https://github.com/codefly-dev/core/pull/455), still tracks released
-  agent discovery adoption.
-- [CLI #611](https://github.com/codefly-dev/cli/issues/611) shipped prerequisite
-  scheduling safety. [CLI #626](https://github.com/codefly-dev/cli/issues/626)
-  owns the remaining typed suite selection and validated plan execution.
+  [Core #455](https://github.com/codefly-dev/core/pull/455), released schema v1 of
+  `Agent.GetEffectiveInputs`: a task key is a phase plus a test suite,
+  `complete: false` forces conservative selection and bars result reuse, and
+  `runtime_services` states only what must be running, never what content a task
+  consumes.
+- [CLI #611](https://github.com/codefly-dev/cli/issues/611) and
+  [CLI #626](https://github.com/codefly-dev/cli/issues/626) are both closed:
+  prerequisite scheduling, phase graphs and validated plan execution shipped.
+- Released-agent adoption is the remaining blocker. Core's effective-input
+  documentation assigns it to `codefly-dev/service-go` and
+  `codefly-dev/service-nextjs`, which must implement discovery and
+  framework-specific conformance before advertising v1. Until one does, Core
+  keeps conservative whole-service behavior.
 
-No provider workflow maintains a second test matrix. Planner consumption of this
-catalog remains pending those agent/CLI integrations.
+No provider workflow maintains a second test matrix. Nothing consumes this
+catalog yet.
 
 ## Database qualification
 
 These package tests exercise the candidate schema. They do not establish full
-reference-to-candidate upgrade qualification. Keep clean installation and upgrade
-as independent required results in the migration gate owned by
-[#644](https://github.com/codefly-dev/module-saas-starter/issues/644), scoped to
-migrations, migration runners, store images and their configuration/toolchains.
-A fast pure result cannot satisfy either result. Until reference-aware qualification
-ships, neither this catalog nor these test runs claim that coverage.
+reference-to-candidate upgrade qualification. That qualification shipped with
+[#644](https://github.com/codefly-dev/module-saas-starter/issues/644) as
+independent required results in the **Base manifest integrity** context, scoped to
+migrations, migration runners, store configuration, the managed install baseline,
+the store image recipe and the migration gates themselves. [`../store/test-targets.json`](../store/test-targets.json) declares
+those two checks as separate planner targets carrying that input scope. A fast
+pure result cannot satisfy either result, and no accounts target claims it.

@@ -37,6 +37,10 @@ function tree(ref) {
 export function needsReplay(paths) {
   return paths.some(path => /^module\/services\/[^/]+\/migrations\//.test(path) ||
     /^module\/services\/store\/(code\/|.*codefly\.yaml$)/.test(path) ||
+    // baselines/ is the managed fresh-install source and builder/ carries the image
+    // recipe plus its runtime-access SQL. Both change the schema a clean install
+    // produces, so both must replay; provenance hashing alone never applies them.
+    /^module\/services\/store\/(baselines|builder)\//.test(path) ||
     /^module\/tools\/migration-/.test(path) ||
     path === 'module/deployment/topology.bindings.codefly.yaml' || path === '.github/workflows/ci.yml');
 }

@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "path_base": "repository",
+  "working_directory": ".",
+  "fallback": "whole-service-and-dependency-closure",
+  "targets": [
+    {
+      "suite": "migration-reference",
+      "phase": "test",
+      "command": [
+        "node",
+        "module/tools/migration-reference-gate.mjs",
+        "${reference}"
+      ],
+      "arguments": {
+        "reference": "event base commit: pull_request.base.sha or merge_group.base_sha"
+      },
+      "runtime_services": [],
+      "external_inputs": [],
+      "setup_budget_seconds": 0,
+      "input_roots": [
+        "module/services/store/migrations/",
+        "module/tools/migration-pairing-gate.mjs",
+        "module/tools/migration-reference-gate.mjs"
+      ],
+      "complete": false
+    },
+    {
+      "suite": "migration-qualification",
+      "phase": "test",
+      "command": [
+        "node",
+        "module/tools/migration-reference-gate.mjs",
+        "${reference}",
+        "--replay"
+      ],
+      "arguments": {
+        "reference": "event base commit: pull_request.base.sha or merge_group.base_sha"
+      },
+      "runtime_services": [],
+      "external_inputs": [
+        {
+          "kind": "EXTERNAL",
+          "name": "postgres:16",
+          "identity": "unresolved"
+        }
+      ],
+      "setup_budget_seconds": 30,
+      "input_roots": [
+        ".github/workflows/ci.yml",
+        "module/deployment/topology.bindings.codefly.yaml",
+        "module/services/store/baselines/",
+        "module/services/store/builder/",
+        "module/services/store/code/",
+        "module/services/store/dns/localkube/dns.codefly.yaml",
+        "module/services/store/migrations/",
+        "module/services/store/service.codefly.yaml",
+        "module/tools/migration-pairing-gate.mjs",
+        "module/tools/migration-pairing-gate.test.mjs",
+        "module/tools/migration-reference-gate.mjs",
+        "module/tools/migration-reference-gate.test.mjs"
+      ],
+      "complete": false
+    }
+  ]
+}
