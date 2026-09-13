@@ -52,6 +52,18 @@ collections:
       - reader@example.com
 `), 0600))
 	const orgID = "00000000-0000-7000-8000-00000000c645"
+	// The composition declares which permission resource its content is governed
+	// by; the host names none of its own, so without this the fixture's grants
+	// confer nothing and the read set is empty by design.
+	previous := testService.ModulePrincipals()
+	testService.SetModulePrincipals(business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("example"): {
+			Prefix:    "example",
+			Resources: []string{"example-records"},
+			Tenant:    orgID,
+		},
+	})
+	t.Cleanup(func() { testService.SetModulePrincipals(previous) })
 	for range 2 {
 		require.NoError(t, fixtures.Seed(testCtx, testService, "collection-demo"))
 	}
