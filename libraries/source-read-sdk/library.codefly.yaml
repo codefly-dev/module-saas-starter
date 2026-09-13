@@ -11,7 +11,7 @@ sources:
       version: 0.1.0
       service: accounts
       endpoint: connect
-      contract-digest: sha256:234edd52c4ad23d9dba0a89b1a83e09ed8b231bec0d41bbda14061cc5d8d8f61
+      contract-digest: sha256:e9b4298fb9154003ce81605efcaf24803d99acc3b43d4a5524c92f73bb1aa057
       services:
         - ModuleCapabilitiesService
 generated-by:
