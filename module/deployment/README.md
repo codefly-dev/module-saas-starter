@@ -161,14 +161,15 @@ an empty ingress list.
 
 ## Managed-service handoffs
 
-Managed-capable environments — `eks` on AWS and `aks` on Azure — declare each
-module-owned managed service under `managed-services`. The module generates an
-`ExternalName` Service and topology-derived egress policy. Optional
+Managed-capable environments — `eks` on AWS, `aks` on Azure, and `gke` on GCP —
+declare each module-owned managed service under `managed-services`. The module
+generates an `ExternalName` Service and topology-derived egress policy. Optional
 `secret-references` generate ExternalSecret objects containing only provider
 keys and SecretStore references. Supported `kind` values are `elasticache`,
-`rds-postgresql`, `s3`, `secrets-manager`, and `azure-postgres-flexible`. The
-Azure `ExternalSecret` handoff shape is still in flux under infra's passwordless
-direction, so the worked example below stays on the stable AWS shape:
+`rds-postgresql`, `s3`, `secrets-manager`, `azure-postgres-flexible`, and
+`cloud-sql-postgres`. The Azure `ExternalSecret` handoff shape is still in flux
+under infra's passwordless direction, so the worked example below stays on the
+stable AWS shape:
 
 ```yaml
 managed-services:
@@ -183,6 +184,49 @@ managed-services:
         secret-store:
           name: aws-secrets-manager
           kind: ClusterSecretStore
+```
+
+### Authentication mode
+
+`auth-mode` states how callers authenticate to a managed service. It defaults to
+`password`: the connection secret reaches the workload through
+`secret-references`, which is the shape every AWS and Azure kind above uses. A
+handoff in the default mode records no `authMode` key, so a bundle for an
+existing environment is unchanged. `external-identity` is the passwordless shape
+— the pod authenticates as its own workload identity, so the instance issues no
+connection secret, the bundle handoff records the mode for the promotion driver,
+and the overlay renders no ExternalSecret. Declaring `secret-references`
+alongside it is rejected.
+
+Under `external-identity` the module also renders an egress NetworkPolicy from
+each caller to the node-local instance metadata endpoint
+(`169.254.169.254/32`, TCP 80), which is where every major cloud serves
+workload-identity tokens. The baseline denies all egress and the public-egress
+policy excepts link-local, so without that rule the mode would have no path to
+the credential it is defined by and the failure would land at connection time
+rather than at generation.
+
+The rendered shape is a **direct** authenticated connection to the instance's
+DNS name — an `ExternalName` Service plus the declared egress CIDRs on the
+declared ports. The module does not render a Cloud SQL connector/Auth Proxy
+sidecar, and a deployment that adds one needs egress this module does not
+generate. `instance-connection-name` is carried in the bundle for the promotion
+driver, which owns anything outside the cluster; it is the
+`project:region:instance` coordinate (the legacy domain-scoped
+`domain:project:region:instance` form is also accepted) and is not derivable
+from a DNS name. Because a silent password default would have the driver project
+a secret an IAM-only instance never issued, the kind requires `auth-mode` to be
+stated rather than inherited:
+
+```yaml
+managed-services:
+  store:
+    kind: cloud-sql-postgres
+    external-name: store.identity.internal.example.com
+    auth-mode: external-identity
+    instance-connection-name: identity-prod:us-central1:store
+    egress-cidrs:
+      - 10.42.0.0/24
 ```
 
 No cloud-provider behavior is added to the generic Postgres, Redis, S3, or
