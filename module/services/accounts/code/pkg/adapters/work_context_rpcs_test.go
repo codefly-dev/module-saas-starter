@@ -729,6 +729,68 @@ func TestVerifyActorParentRejectsOwnerOnlyContext(t *testing.T) {
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
+func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
+	const foreignSession = "019f6bf7-2222-7222-8222-222222222272"
+
+	previous := service
+	svc, err := business.NewService(renewMembershipStore{})
+	require.NoError(t, err)
+	service = svc
+	t.Cleanup(func() { service = previous })
+
+	request := func(sessionID string) *gen.StartTaskWorkContextRequest {
+		return &gen.StartTaskWorkContextRequest{
+			OrgId:            renewOrgID,
+			TaskId:           renewTaskID,
+			SessionId:        sessionID,
+			ActorPrincipalId: renewActorID,
+			Audience:         "tool.test",
+			TtlSeconds:       900,
+			AuthorityScopes: []*gen.WorkContextScope{{
+				ResourceKind: "evidence",
+				Actions:      []string{"read"},
+			}},
+		}
+	}
+	caller := func() context.Context {
+		return stampVerifiedIdentity(
+			context.Background(), renewActorID, renewOrgID, accountsauth.Assurance{},
+		)
+	}
+
+	t.Run("session_backed_caller", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		ctx := accountsauth.WithVerifiedSessionIDString(caller(), renewSession)
+
+		issued, err := server.StartTask(ctx, request(renewSession))
+		require.NoError(t, err)
+		require.Equal(t, renewSession, issued.GetSessionId())
+	})
+
+	// A caller that roots its own Task and Session ids while presenting a real
+	// session must keep minting, and must still get a capability bound to the
+	// session it actually holds rather than the one it named. Refusing here
+	// instead would have bound nothing extra and broken that caller outright.
+	t.Run("session_the_caller_does_not_hold_is_ignored_not_refused", func(t *testing.T) {
+		server := newRenewTestServer(t)
+		ctx := accountsauth.WithVerifiedSessionIDString(caller(), renewSession)
+
+		issued, err := server.StartTask(ctx, request(foreignSession))
+		require.NoError(t, err)
+		require.Equal(t, renewSession, issued.GetSessionId())
+	})
+
+	// A service credential or an API key carries no session to derive, so the
+	// headless shape is preserved rather than failing closed on its absence.
+	t.Run("caller_without_a_session_keeps_the_requested_id", func(t *testing.T) {
+		server := newRenewTestServer(t)
+
+		issued, err := server.StartTask(caller(), request(foreignSession))
+		require.NoError(t, err)
+		require.Equal(t, foreignSession, issued.GetSessionId())
+	})
+}
+
 func TestVerifyActorParentRejectsStaleRevision(t *testing.T) {
 	server := newRenewTestServer(t)
 	server.authority = &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{

@@ -57,7 +57,7 @@ func TestExecutionTenantReal(t *testing.T) {
 	defer admin.Close()
 	sql := func(q string, args ...any) { t.Helper(); _, e := admin.Exec(ctx, q, args...); require.NoError(t, e) }
 	owner, org, actor, role := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
-	task, session := uuid.NewString(), uuid.NewString()
+	task := uuid.NewString()
 	sql(`INSERT INTO users(uuid,primary_email,status) VALUES($1,'user@example.com','active')`, owner)
 	sql(`INSERT INTO organizations(id,name,slug,owner_id) VALUES($1,'Example','example',$2)`, org, owner)
 	sql(`INSERT INTO organization_members(org_id,user_id,role) VALUES($1,$2,'owner')`, org, owner)
@@ -129,7 +129,7 @@ func TestExecutionTenantReal(t *testing.T) {
 		require.NoError(t, e)
 		return h
 	}
-	start := &gen.StartTaskWorkContextRequest{OrgId: org, TaskId: task, SessionId: session, Audience: "example.facade", ActorPrincipalId: actor, TtlSeconds: 120, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example.tasks", ResourceIds: []string{task}, Actions: []string{"execute", "read", "start"}}}}
+	start := &gen.StartTaskWorkContextRequest{OrgId: org, TaskId: task, SessionId: identity.SessionID.String(), Audience: "example.facade", ActorPrincipalId: actor, TtlSeconds: 120, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example.tasks", ResourceIds: []string{task}, Actions: []string{"execute", "read", "start"}}}}
 	ownerContext := func() context.Context {
 		return metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+pair.AccessToken))
 	}
