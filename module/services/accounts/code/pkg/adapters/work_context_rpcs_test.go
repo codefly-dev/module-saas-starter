@@ -767,12 +767,17 @@ func TestStartTaskRootsTaskInCallerVerifiedSession(t *testing.T) {
 		require.Equal(t, renewSession, issued.GetSessionId())
 	})
 
-	t.Run("session_the_caller_does_not_hold_is_refused", func(t *testing.T) {
+	// A caller that roots its own Task and Session ids while presenting a real
+	// session must keep minting, and must still get a capability bound to the
+	// session it actually holds rather than the one it named. Refusing here
+	// instead would have bound nothing extra and broken that caller outright.
+	t.Run("session_the_caller_does_not_hold_is_ignored_not_refused", func(t *testing.T) {
 		server := newRenewTestServer(t)
 		ctx := accountsauth.WithVerifiedSessionIDString(caller(), renewSession)
 
-		_, err := server.StartTask(ctx, request(foreignSession))
-		require.Equal(t, codes.PermissionDenied, status.Code(err))
+		issued, err := server.StartTask(ctx, request(foreignSession))
+		require.NoError(t, err)
+		require.Equal(t, renewSession, issued.GetSessionId())
 	})
 
 	// A service credential or an API key carries no session to derive, so the

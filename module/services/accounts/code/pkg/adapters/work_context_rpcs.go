@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
+	"github.com/codefly-dev/core/wool"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 
@@ -262,10 +263,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
-	sessionID, err := callerSessionID(ctx, req.GetSessionId())
-	if err != nil {
-		return nil, err
-	}
+	sessionID := callerSessionID(ctx, req.GetSessionId())
 	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -802,28 +800,39 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 	return ownerID, nil
 }
 
-// callerSessionID roots a Task in the session the caller actually holds. A
-// capability signed and journaled under a session the caller merely named is
-// tied to nothing it can lose: a revocation, an expiry, an ended impersonation
-// or an organization switch all end a session without ever reaching a context
-// rooted in some other one. So a session-backed caller gets its own verified
-// session and a request naming any other is refused rather than honored.
+// callerSessionID roots a Task in the session the caller actually holds, so a
+// capability is never signed and journaled under a session that only ever
+// existed in the request that named it.
+//
+// A divergent id is ignored rather than refused. Refusing reads as the safer
+// choice, but the requested id is not authority — it is a correlation field the
+// derived value replaces — so refusing buys no binding that ignoring does not,
+// and it breaks every caller that roots its own Task and Session ids while
+// presenting a real session.
+//
+// This binds attribution, not enforcement: nothing re-checks a minted capability
+// against session liveness today, so a revocation does not reach an outstanding
+// context before its TTL runs out. Deriving the id here is what makes the
+// journal name a session that can be revoked at all, and what that enforcement
+// would later hang from.
 //
 // A caller authenticated by a service credential or an API key has no session to
 // derive and keeps the requested id, as the headless installation mint does.
-func callerSessionID(ctx context.Context, requested string) (string, error) {
+func callerSessionID(ctx context.Context, requested string) string {
 	verified, ok := accountsauth.VerifiedSessionID(ctx)
 	if !ok {
-		return requested, nil
+		return requested
 	}
 	// Compare parsed ids: uuid.Parse accepts spellings the canonical form does
-	// not, so the caller's own session written another way must not read as a
-	// foreign one. The canonical spelling is what gets signed.
-	parsed, _ := uuid.Parse(requested)
-	if parsed != verified {
-		return "", status.Error(codes.PermissionDenied, "session_id must name the caller's verified session")
+	// not, so the caller's own session written another way is not a divergence.
+	// Neither id is logged — a session id identifies a live session, and wool
+	// masks keys rather than values.
+	if parsed, _ := uuid.Parse(requested); parsed != verified {
+		wool.Get(ctx).In("StartTask").Warn(
+			"requested session_id is not the caller's verified session; binding to the verified session",
+		)
 	}
-	return verified.String(), nil
+	return verified.String()
 }
 
 func (s *WorkContextAuthorityServer) verifyParent(
