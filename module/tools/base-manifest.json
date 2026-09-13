@@ -1321,7 +1321,7 @@
     "services/frontend/code/packages/saas-plugin-react/test/ui.test.tsx": "e2eeb7ebe7f77b843c2a93d6c6cac56b59a306ba8ddcd4b0bcf40bc0c2d30c3a",
     "services/frontend/code/packages/saas-plugin-react/tsconfig.json": "70424332460f50070ccc0abea555f3784b7f085fa7c14c83d5274c604e5368b3",
     "services/frontend/code/packages/saas-plugin-react/vitest.config.ts": "d7e617597af80e8e7f8c986c4cf229842d5dd88b1f65d7af052f9330e4232b89",
-    "services/frontend/code/packages/saas-sdk/README.md": "05e2d3e8fb3a20f83078a7b62ea8757043fd24d4b28f8e8a22b9e636010f2c83",
+    "services/frontend/code/packages/saas-sdk/README.md": "b46f508e0c9c23ecc3f76e79374b0666f650b1d0f7e30992313dd5f3b4c245c3",
     "services/frontend/code/packages/saas-sdk/generated/contract/catalog.codefly.json": "0bbbc3a5b621b2ad4accbd2b3c817e9d1985a7a667905a080a630d88e295eeaa",
     "services/frontend/code/packages/saas-sdk/generated/contract/contract.binpb": "95020353296c24f7ac6b1a8654dfe33e8338e0b9cf173f5914c3f3fd821ef52e",
     "services/frontend/code/packages/saas-sdk/generated/library.codefly.yaml": "764e0eef5100e27b504c671a773689478bc6f977c448722a3ef03524442a0f03",

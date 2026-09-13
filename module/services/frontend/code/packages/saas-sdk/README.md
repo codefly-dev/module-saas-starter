@@ -182,6 +182,25 @@ closure, including buf/validate and google/api. It avoids CLI-dependent foreign
 import omissions and never repairs generated files by hand. The public package
 still compiles only the closure reachable from its public SDK sources.
 
+**Regenerate with the codefly version CI pins, and check the result.** The
+buf step above is a backstop, not a substitute for the pin: the generation
+recipe is `//go:embed`-ed into the CLI through the core it vendors, so which
+`codefly` you run still decides the emitted shape. `codefly@v0.1.145` vendors
+`core v0.3.20` and emits all nine third-party descriptors; a `development`
+build vendoring `core v0.3.25` calls `MarkForeignImports`, which suppresses
+foreign-namespace files and silently *deletes* the six `google/protobuf`
+well-known types from the generated tree. That is not hypothetical — it was
+committed here once and nothing local caught it, because `tsc` compiles from
+`src` only.
+
+`scripts/ci/install-codefly.sh` is the authority for the pinned version.
+Check what you are about to run, and what you got:
+
+```bash
+go version -m "$(which codefly)" | grep core   # want v0.3.20
+git ls-files -- '*/generated/typescript/src/gen/*' | grep -cE '/(google|buf)/'  # want 9
+```
+
 Run `npm run generate:bindings` alone after changing the source proto locally.
 The generated tree integrity and module composition contract-digest tests gate
 both dependency closure and vendored provenance.
