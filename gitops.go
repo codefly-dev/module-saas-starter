@@ -25,6 +25,9 @@ const moduleBundleSchema = "codefly.dev/module-bundle/v1"
 var (
 	dnsLabelPattern   = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$`)
 	unresolvedPattern = regexp.MustCompile(`(?i)REPLACE_ME|saas-starter|\$\{[^}]+\}|<[^>]*replace[^>]*>`)
+	// A Cloud SQL instance is addressed by project:region:instance, which is not
+	// a DNS name, so it travels beside the ExternalName rather than inside it.
+	instanceConnectionPattern = regexp.MustCompile(`^[a-z][-a-z0-9]{4,28}[a-z0-9]:[a-z0-9]+(?:-[a-z0-9]+)*:[a-z](?:[-a-z0-9]{0,96}[a-z0-9])?$`)
 )
 
 type moduleManifest struct {
@@ -125,10 +128,12 @@ type bundleIngressRoute struct {
 }
 
 type managedServiceHandoff struct {
-	Service          string   `json:"service"`
-	Kind             string   `json:"kind"`
-	ExternalName     string   `json:"externalName"`
-	SecretReferences []string `json:"secretReferences,omitempty"`
+	Service                string   `json:"service"`
+	Kind                   string   `json:"kind"`
+	ExternalName           string   `json:"externalName"`
+	AuthMode               string   `json:"authMode"`
+	InstanceConnectionName string   `json:"instanceConnectionName,omitempty"`
+	SecretReferences       []string `json:"secretReferences,omitempty"`
 }
 
 // UnmarshalJSON reads the handoff kind from "kind", falling back to the legacy
@@ -150,10 +155,12 @@ func (h *managedServiceHandoff) UnmarshalJSON(data []byte) error {
 }
 
 type managedServiceConfig struct {
-	Kind             string                   `yaml:"kind"`
-	ExternalName     string                   `yaml:"external-name"`
-	EgressCIDRs      []string                 `yaml:"egress-cidrs,omitempty"`
-	SecretReferences []managedSecretReference `yaml:"secret-references,omitempty"`
+	Kind                   string                   `yaml:"kind"`
+	ExternalName           string                   `yaml:"external-name"`
+	AuthMode               string                   `yaml:"auth-mode,omitempty"`
+	InstanceConnectionName string                   `yaml:"instance-connection-name,omitempty"`
+	EgressCIDRs            []string                 `yaml:"egress-cidrs,omitempty"`
+	SecretReferences       []managedSecretReference `yaml:"secret-references,omitempty"`
 }
 
 type managedSecretReference struct {
@@ -781,9 +788,13 @@ func validateManagedServices(
 			return fmt.Errorf("environment %q declares unexpected managed service %q", environment.Name, service)
 		}
 		switch config.Kind {
-		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible":
+		case "elasticache", "rds-postgresql", "s3", "secrets-manager", "azure-postgres-flexible", "cloud-sql-postgres":
 		default:
 			return fmt.Errorf("environment %q managed service %q kind %q is not supported", environment.Name, service, config.Kind)
+		}
+		authMode, err := validateManagedAuth(environment.Name, service, config)
+		if err != nil {
+			return err
 		}
 		if !validExternalName(config.ExternalName) {
 			return fmt.Errorf("environment %q managed service %q external-name %q is not an exact DNS name", environment.Name, service, config.ExternalName)
@@ -795,9 +806,11 @@ func validateManagedServices(
 		}
 		referenceNames := make(map[string]struct{}, len(config.SecretReferences))
 		handoff := managedServiceHandoff{
-			Service:      service,
-			Kind:         config.Kind,
-			ExternalName: config.ExternalName,
+			Service:                service,
+			Kind:                   config.Kind,
+			ExternalName:           config.ExternalName,
+			AuthMode:               authMode,
+			InstanceConnectionName: config.InstanceConnectionName,
 		}
 		for _, reference := range config.SecretReferences {
 			if err := validateDNSLabel("managed secret reference name", reference.Name); err != nil {
@@ -822,6 +835,38 @@ func validateManagedServices(
 		return strings.Compare(left.Service, right.Service)
 	})
 	return validateManagedDependencyCIDRs(environment.Name, topology, plan.managed)
+}
+
+// validateManagedAuth resolves how callers authenticate to a managed service.
+// An unset auth-mode keeps the password-backed shape the password-bearing kinds
+// have always had; external-identity means the workload authenticates as itself,
+// so there is no connection secret to project and none may be declared.
+func validateManagedAuth(environment, service string, config managedServiceConfig) (string, error) {
+	instance := strings.TrimSpace(config.InstanceConnectionName)
+	mode := strings.TrimSpace(config.AuthMode)
+	if config.Kind == "cloud-sql-postgres" {
+		// A silent password default here would have the driver project a
+		// connection secret an IAM-only instance never issued, so the choice is
+		// stated rather than inherited.
+		if mode == "" {
+			return "", fmt.Errorf("environment %q managed service %q kind %q requires an explicit auth-mode", environment, service, config.Kind)
+		}
+		if !instanceConnectionPattern.MatchString(instance) {
+			return "", fmt.Errorf("environment %q managed service %q instance-connection-name %q is not a project:region:instance name", environment, service, config.InstanceConnectionName)
+		}
+	} else if instance != "" {
+		return "", fmt.Errorf("environment %q managed service %q kind %q does not take an instance-connection-name", environment, service, config.Kind)
+	}
+	switch mode {
+	case "", "password":
+		return "password", nil
+	case "external-identity":
+		if len(config.SecretReferences) > 0 {
+			return "", fmt.Errorf("environment %q managed service %q authenticates as an external identity and declares secret references", environment, service)
+		}
+		return "external-identity", nil
+	}
+	return "", fmt.Errorf("environment %q managed service %q auth-mode %q is not supported", environment, service, config.AuthMode)
 }
 
 func validateManagedDependencyCIDRs(environment string, topology deploymentTopology, managed map[string]managedServiceConfig) error {
@@ -859,7 +904,7 @@ func classifyEnvironment(environment *environmentConfig) (local bool, managedCap
 	switch kind {
 	case "k3d":
 		return true, false, kind, nil
-	case "eks", "aks":
+	case "eks", "aks", "gke":
 		return false, true, kind, nil
 	case "":
 		if strings.HasPrefix(environment.Name, "local") {

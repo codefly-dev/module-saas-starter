@@ -55,22 +55,26 @@
         {
           "service": "cache",
           "kind": "elasticache",
-          "externalName": "cache.internal.example.com"
+          "externalName": "cache.internal.example.com",
+          "authMode": "password"
         },
         {
           "service": "object-storage",
           "kind": "s3",
-          "externalName": "object-storage.internal.example.com"
+          "externalName": "object-storage.internal.example.com",
+          "authMode": "password"
         },
         {
           "service": "store",
           "kind": "rds-postgresql",
-          "externalName": "store.internal.example.com"
+          "externalName": "store.internal.example.com",
+          "authMode": "password"
         },
         {
           "service": "vault",
           "kind": "secrets-manager",
-          "externalName": "vault.internal.example.com"
+          "externalName": "vault.internal.example.com",
+          "authMode": "password"
         }
       ]
     }

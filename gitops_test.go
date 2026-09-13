@@ -411,7 +411,7 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 		{
 			name: "unsupported cluster kind",
 			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
-				workspace.Environments[0].Cluster.Kind = "gke"
+				workspace.Environments[0].Cluster.Kind = "openshift"
 			},
 			want: "is not supported",
 		},
@@ -465,6 +465,69 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 				workspace.Environments[1].ManagedServices["store"] = config
 			},
 			want: "secret reference",
+		},
+		{
+			name: "cloud sql without an explicit auth mode",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.Kind = "cloud-sql-postgres"
+				config.InstanceConnectionName = "identity-prod:us-central1:store"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "requires an explicit auth-mode",
+		},
+		{
+			name: "cloud sql without an instance connection name",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.Kind = "cloud-sql-postgres"
+				config.AuthMode = "external-identity"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "is not a project:region:instance name",
+		},
+		{
+			name: "malformed instance connection name",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.Kind = "cloud-sql-postgres"
+				config.AuthMode = "external-identity"
+				config.InstanceConnectionName = "identity-prod:us-central1"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "is not a project:region:instance name",
+		},
+		{
+			name: "instance connection name on a non cloud sql kind",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.InstanceConnectionName = "identity-prod:us-central1:store"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "does not take an instance-connection-name",
+		},
+		{
+			name: "unsupported managed auth mode",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.AuthMode = "kerberos"
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "auth-mode",
+		},
+		{
+			name: "external identity with a connection secret",
+			mutate: func(_ *testing.T, _ string, workspace *workspaceManifest) {
+				config := workspace.Environments[1].ManagedServices["store"]
+				config.AuthMode = "external-identity"
+				config.SecretReferences = []managedSecretReference{{
+					Name:        "store-runtime",
+					RemoteKey:   "products/identity/store",
+					SecretStore: secretStoreRef{Name: "gcp", Kind: "ClusterSecretStore"},
+				}}
+				workspace.Environments[1].ManagedServices["store"] = config
+			},
+			want: "declares secret references",
 		},
 		{
 			name: "missing service path",
@@ -1522,6 +1585,74 @@ func TestAKSEnvironmentRendersAzureManagedHandoff(t *testing.T) {
 	}
 	if !strings.Contains(string(handoff), "externalName: store.postgres.database.azure.com") {
 		t.Fatalf("azure handoff is missing its ExternalName Service:\n%s", handoff)
+	}
+}
+
+func TestGKEEnvironmentRendersPasswordlessCloudSQLHandoff(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "handoff-control", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].Name = "gke"
+	workspace.Environments[1].Cluster.Kind = "gke"
+	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
+		Kind:                   "cloud-sql-postgres",
+		ExternalName:           "store.identity.internal.example.com",
+		AuthMode:               "external-identity",
+		InstanceConnectionName: "identity-prod:us-central1:store",
+		EgressCIDRs:            []string{"10.42.0.0/24"},
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+
+	var bundle moduleBundle
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	gke := bundle.Environments[1]
+	if gke.Name != "gke" || gke.Cluster != "gke" {
+		t.Fatalf("gke bundle environment = %q/%q, want gke/gke", gke.Name, gke.Cluster)
+	}
+	if len(gke.ManagedServiceHandoffs) != 1 {
+		t.Fatalf("gke managed handoffs = %#v", gke.ManagedServiceHandoffs)
+	}
+	handoff := gke.ManagedServiceHandoffs[0]
+	if handoff.Kind != "cloud-sql-postgres" ||
+		handoff.AuthMode != "external-identity" ||
+		handoff.InstanceConnectionName != "identity-prod:us-central1:store" {
+		t.Fatalf("gke managed handoff = %#v", handoff)
+	}
+	if len(handoff.SecretReferences) != 0 {
+		t.Fatalf("passwordless handoff carries secret references: %#v", handoff.SecretReferences)
+	}
+	if slices.Contains(gke.Services, "store") {
+		t.Fatalf("managed store must not appear as an in-cluster workload: %v", gke.Services)
+	}
+
+	rendered, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/gke/base/handoffs/store.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rendered), "externalName: store.identity.internal.example.com") {
+		t.Fatalf("cloud sql handoff is missing its ExternalName Service:\n%s", rendered)
+	}
+	// The instance authenticates the pod as its own workload identity, so the
+	// overlay must project no connection secret of any shape.
+	for _, forbidden := range []string{"ExternalSecret", "secretKeyRef", "stringData:"} {
+		if strings.Contains(string(rendered), forbidden) {
+			t.Errorf("passwordless cloud sql handoff rendered %q:\n%s", forbidden, rendered)
+		}
 	}
 }
 

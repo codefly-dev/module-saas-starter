@@ -161,14 +161,15 @@ an empty ingress list.
 
 ## Managed-service handoffs
 
-Managed-capable environments — `eks` on AWS and `aks` on Azure — declare each
-module-owned managed service under `managed-services`. The module generates an
-`ExternalName` Service and topology-derived egress policy. Optional
+Managed-capable environments — `eks` on AWS, `aks` on Azure, and `gke` on GCP —
+declare each module-owned managed service under `managed-services`. The module
+generates an `ExternalName` Service and topology-derived egress policy. Optional
 `secret-references` generate ExternalSecret objects containing only provider
 keys and SecretStore references. Supported `kind` values are `elasticache`,
-`rds-postgresql`, `s3`, `secrets-manager`, and `azure-postgres-flexible`. The
-Azure `ExternalSecret` handoff shape is still in flux under infra's passwordless
-direction, so the worked example below stays on the stable AWS shape:
+`rds-postgresql`, `s3`, `secrets-manager`, `azure-postgres-flexible`, and
+`cloud-sql-postgres`. The Azure `ExternalSecret` handoff shape is still in flux
+under infra's passwordless direction, so the worked example below stays on the
+stable AWS shape:
 
 ```yaml
 managed-services:
@@ -183,6 +184,33 @@ managed-services:
         secret-store:
           name: aws-secrets-manager
           kind: ClusterSecretStore
+```
+
+### Authentication mode
+
+`auth-mode` states how callers authenticate to a managed service. It defaults to
+`password`: the connection secret reaches the workload through
+`secret-references`, which is the shape every AWS and Azure kind above uses.
+`external-identity` is the passwordless shape — the pod authenticates as its own
+workload identity, so the instance issues no connection secret, the bundle
+handoff records the mode for the promotion driver, and the overlay renders no
+ExternalSecret. Declaring `secret-references` alongside it is rejected.
+
+`cloud-sql-postgres` additionally carries `instance-connection-name`, the
+`project:region:instance` coordinate the Cloud SQL connector needs and which is
+not derivable from a DNS name. Because a silent password default would have the
+driver project a secret an IAM-only instance never issued, the kind requires
+`auth-mode` to be stated rather than inherited:
+
+```yaml
+managed-services:
+  store:
+    kind: cloud-sql-postgres
+    external-name: store.identity.internal.example.com
+    auth-mode: external-identity
+    instance-connection-name: identity-prod:us-central1:store
+    egress-cidrs:
+      - 10.42.0.0/24
 ```
 
 No cloud-provider behavior is added to the generic Postgres, Redis, S3, or
