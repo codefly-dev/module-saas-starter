@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"accounts/pkg/datasource/github"
@@ -40,8 +41,10 @@ import (
 // ModulePrincipalGrant declares what a module service principal may do on the
 // capability surface. Queues bounds the queues it may enqueue to and claim from;
 // Namespaces bounds the event namespaces it may publish into (the leading dotted
-// segment of an event type); CrossTenant lets it act on tenants other than its
-// bound org and enqueue global (inbox-worker) jobs — the authority an inbox
+// segment of an event type); Resources names the permission resource types the
+// module's own content is governed by, which is how the host authorizes reads of
+// content it does not itself hold; CrossTenant lets it act on tenants other than
+// its bound org and enqueue global (inbox-worker) jobs — the authority an inbox
 // worker needs to service every tenant's deliveries on its queue. Tenant is the
 // org a single-tenant module is bound to, which its minted Work Context carries;
 // a cross-tenant module names the tenant per mint instead.
@@ -49,6 +52,7 @@ type ModulePrincipalGrant struct {
 	Prefix      string
 	Queues      []string
 	Namespaces  []string
+	Resources   []string
 	CrossTenant bool
 	Tenant      string
 }
@@ -77,6 +81,32 @@ func (g ModulePrincipalGrant) allowsNamespace(namespace string) bool {
 // ModulePrincipalRegistry maps a module service principal id to its grant.
 type ModulePrincipalRegistry map[string]ModulePrincipalGrant
 
+// ContentResources is the union of the permission resource types every composed
+// module declares its content under, sorted and deduplicated.
+//
+// The host owns permissions but holds no domain content, so it cannot name the
+// resource a collection's documents, rows or models are governed by — only the
+// composition knows which modules it composed. Reading the union from the
+// declared registry is what keeps that knowledge out of this module: nothing
+// here spells a consumer's noun, and a composition that declares none gets an
+// empty set, which authorizes nothing (fail-closed).
+func (r ModulePrincipalRegistry) ContentResources() []string {
+	seen := make(map[string]struct{})
+	for _, grant := range r {
+		for _, resource := range grant.Resources {
+			if resource != "" {
+				seen[resource] = struct{}{}
+			}
+		}
+	}
+	resources := make([]string, 0, len(seen))
+	for resource := range seen {
+		resources = append(resources, resource)
+	}
+	slices.Sort(resources)
+	return resources
+}
+
 // ModulePrincipalID is the service principal a composed module acts as. It is
 // derived from the module's registration prefix — the same identity the
 // registration broker binds as the credential's `sub` — so a composition
@@ -101,6 +131,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 	var wire map[string]struct {
 		Queues      []string `json:"queues"`
 		Namespaces  []string `json:"namespaces"`
+		Resources   []string `json:"resources"`
 		CrossTenant bool     `json:"cross_tenant"`
 		Tenant      string   `json:"tenant"`
 	}
@@ -131,6 +162,7 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 			Prefix:      prefix,
 			Queues:      grant.Queues,
 			Namespaces:  grant.Namespaces,
+			Resources:   grant.Resources,
 			CrossTenant: grant.CrossTenant,
 			Tenant:      grant.Tenant,
 		}

@@ -186,8 +186,8 @@ export function ConnectGitHubForm({
 								{readableNodeIds === undefined
 									? "Your read permission is unresolved."
 									: readableNodeIds.includes(named.nodeId)
-										? "You can read documents."
-										: "You do not have documents/read. Ask an administrator for access."}
+										? "You can read this collection."
+										: "You do not have read access. Ask an administrator for access."}
 							</p>
 						) : (
 							<p>

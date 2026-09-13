@@ -127,6 +127,7 @@ describe("createDatasourceClient", () => {
 		const client = createDatasourceClient({
 			apiBase: "/api/solutions/example/proxy",
 			getAccessToken: () => "test-token",
+			contentResource: "example-records",
 		});
 		const operations = {
 			listSources: () => client.listSources("org-1"),
@@ -365,4 +366,18 @@ it("connects to the selected node without deriving authority from its label", as
  await client.addGitHubSource({orgId: "org-1", repo: "acme/example", paths: [], branch: "main", targetCollection: "Example Collection", boundaryNodeId: "11111111-1111-1111-1111-111111111111", accessToken: "test-pat", webhookSecret: ""});
  expect(calls[0].body).toMatchObject({boundaryNodeId: "11111111-1111-1111-1111-111111111111"});
  expect(calls[0].body).not.toHaveProperty("collectionLabel");
+});
+
+it("reports no readable scope when the composition declares no content resource", async () => {
+ const {calls} = stubFetch({});
+ const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token"});
+ expect(await client.listAccessibleScopes!("org-1")).toEqual([]);
+ expect(calls).toHaveLength(0);
+});
+
+it("asks the permission service for the resource the composition declared", async () => {
+ const {calls} = stubFetch({});
+ const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token", contentResource: "example-records"});
+ await client.listAccessibleScopes!("org-1");
+ expect(calls[0].body).toMatchObject({resourceType: "example-records", action: "read"});
 });

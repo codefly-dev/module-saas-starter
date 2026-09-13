@@ -80,11 +80,17 @@ function GatewayBoundPanel({
 }: DatasourcesPanelBaseProps & { gateway: GatewayBinding }) {
 	// The interceptor reads the token at request time, so the client only needs
 	// rebuilding when the binding itself changes — not on every render.
-	const { apiBase, getAccessToken, refreshAccessToken } = gateway;
+	const { apiBase, getAccessToken, refreshAccessToken, contentResource } =
+		gateway;
 	const client = useMemo(
 		() =>
-			createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken }),
-		[apiBase, getAccessToken, refreshAccessToken],
+			createDatasourceClient({
+				apiBase,
+				getAccessToken,
+				refreshAccessToken,
+				contentResource,
+			}),
+		[apiBase, getAccessToken, refreshAccessToken, contentResource],
 	);
 	const [queryClient] = useState(
 		() => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }),
@@ -171,7 +177,7 @@ function DatasourcesPanelView({
 		try {
 			const jobId = await syncMutation.mutateAsync({ orgId, id: source.id });
 			setSyncNotice(
-				`Sync queued for ${source.repo}. Ingestion runs in the background; documents will appear in Collection when ready.`,
+				`Sync queued for ${source.repo}. Ingestion runs in the background; content will appear in the collection when ready.`,
 			);
 			onSyncEnqueued?.(jobId);
 		} catch (error) {
@@ -223,7 +229,7 @@ function DatasourcesPanelView({
 			) : scopes.isSuccess && boundaries.size === 0 ? (
 				<p role="status">
 					No readable collection. Ask an organization administrator for
-					documents/read access. Connecting or syncing a source does not grant
+					read access. Connecting or syncing a source does not grant
 					access.
 				</p>
 			) : null}
@@ -242,8 +248,8 @@ function DatasourcesPanelView({
 									{scopes.isError || !scopes.isSuccess
 										? "Read permission unresolved"
 										: boundaries.has(collection.nodeId)
-											? "You can read documents"
-											: "You do not have documents/read"}{" "}
+											? "You can read this collection"
+											: "You do not have read access"}{" "}
 									· Readers:{" "}
 									{collection.grants
 										.map((grant) => grant.subjectLabel)
@@ -589,7 +595,7 @@ function BoundaryCell({
 			</div>
 		);
 	}
-	return <div><div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div><p className="text-xs">{permissionsResolved ? "No documents/read access" : "Read permission unresolved"}</p></div>;
+	return <div><div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div><p className="text-xs">{permissionsResolved ? "No read access" : "Read permission unresolved"}</p></div>;
 }
 
 function SourceHistory({
@@ -700,7 +706,7 @@ function ReconnectSource({
 			<h3 className="font-medium">Reconnect {source.repo}</h3>
 			<p className="text-sm text-muted-foreground">
 				Replace the saved PAT and start a sync. Your source, collection,
-				documents, and history are preserved.
+				content, and history are preserved.
 			</p>
 			<Label className="block text-sm">
 				New GitHub PAT

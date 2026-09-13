@@ -86,12 +86,12 @@ export function CollectionGrants({
 			<h3 className="font-medium">Who can read {collection.label}</h3>
 			<p className="text-sm">
 				Connecting a source grants no access to its creator or a default team.
-				An administrator explicitly grants documents/read to a member or team.
+				An administrator explicitly grants read access to a member or team.
 			</p>
 			{collection.grants.length === 0 ? (
 				<p>
 					No collection read grants. Ingestion can proceed, but viewers need a
-					grant to read documents.
+					grant to read this collection.
 				</p>
 			) : (
 				<ul>

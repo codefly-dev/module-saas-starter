@@ -132,7 +132,7 @@ describe("collection read access", () => {
 			target: { value: "collection-id" },
 		});
 		expect(screen.getByText(/Readers: No collection read grants/)).toBeTruthy();
-		expect(screen.getByText(/You do not have documents\/read/)).toBeTruthy();
+		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
 		expect(
 			(screen.getByLabelText("Target collection") as HTMLInputElement).readOnly,
 		).toBe(true);

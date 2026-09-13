@@ -556,7 +556,18 @@ func (s *PostgresStore) ListShares(ctx context.Context, orgID, resourceType, res
 	return out, nil
 }
 
-func (s *PostgresStore) ListCollectionAccess(ctx context.Context, orgID, afterPath string, limit int) ([]*gen.CollectionAccess, error) {
+// ListCollectionAccess lists collection boundaries with the grants that confer
+// read on their content. readResources names the permission resource types that
+// content is governed by; it comes from the composition's declared module
+// registry, because the host holds no domain content and so cannot name the
+// resource itself. An empty set matches nothing, so an undeclared composition
+// reports no read grants rather than inventing authority (fail-closed).
+func (s *PostgresStore) ListCollectionAccess(ctx context.Context, orgID, afterPath string, limit int, readResources []string) ([]*gen.CollectionAccess, error) {
+	// A nil slice would bind as NULL, and `= ANY(NULL)` is NULL rather than false.
+	// Both refuse the grant, but only an empty array says so in the plan.
+	if readResources == nil {
+		readResources = []string{}
+	}
 	executor := s.getQueryExecutor(ctx)
 	rows, err := executor.Query(ctx, `SELECT id, scope_path::text, label FROM scope_nodes
  WHERE org_id = $1 AND kind = 'collection' AND scope_path::text > $2
@@ -590,8 +601,8 @@ func (s *PostgresStore) ListCollectionAccess(ctx context.Context, orgID, afterPa
    WHERE g.org_id = $1 AND g.scope_path @> $2::ltree
    AND (g.expires_at IS NULL OR g.expires_at > NOW())
    AND EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = g.role_id
-    AND rp.resource IN ('documents', '*') AND rp.action IN ('read', '*'))
-   ORDER BY g.created_at, g.id`, orgID, collection.Node.ScopePath)
+    AND (rp.resource = ANY($3::text[]) OR rp.resource = '*') AND rp.action IN ('read', '*'))
+   ORDER BY g.created_at, g.id`, orgID, collection.Node.ScopePath, readResources)
 		if err != nil {
 			return nil, err
 		}

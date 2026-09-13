@@ -45,13 +45,13 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 Each source binds to a collection scope node. Connecting or creating a collection
 creates **no creator, default-team, or organization-wide read grant**. Accounts
-is the authority for `documents/read`; source labels and flat administrative
+is the authority for read on the declared content resource; source labels and flat administrative
 roles never substitute for a collection grant.
 
 The host's `/admin/datasources` picker lists existing collections, their active
 read grants (including inherited grants), and the creator's current read access.
 Administrators can choose a member or team and grant a role containing only
-`documents/read`, or revoke a displayed grant. Revoking an inherited grant removes
+that resource, or revoke a displayed grant. Revoking an inherited grant removes
 that role at its ancestor and all descendants; the confirmation names this impact.
 Accounts checks admin authority and emits its transactional grant/revoke audit and
 lifecycle events. The host audit page resolves actor names, and grant rows display
@@ -61,7 +61,7 @@ transport-free `CollectionGrants` component. Gateway-bound source panels link to
 that host action; admin permission APIs are not added to the public SDK.
 
 `createDatasourceClient` queries the SDK's caller-scoped `ListMyAccessibleScopes`
-with `documents/read`, follows every page, and propagates failures. No readable
+with read on that resource, follows every page, and propagates failures. No readable
 collection and permission-service failure have separate states; neither is an
 empty search result or proof of an indexing failure.
 
@@ -82,6 +82,12 @@ allowed boundary after a successful empty content response. This repository has
 no consuming collection or chat screen; its wrapper tests exercise state disposal,
 while end-to-end ingestion and those screens require verification in a consuming
 solution.
+
+The collection panel reads its content resource from the `contentResource` on the
+gateway binding, and the server matches grants against the `resources` each composed
+module declares in `MODULE_PRINCIPALS`. Neither names a resource itself: this kit
+ships with the host, which holds no domain content. A deployment that declares none
+therefore reports no read grants — that is the fail-closed answer, not a bug.
 
 The `dev-admin` fixture provisions an `Example Collection` and a `Collection reader`
 role via Accounts' registration/grant service paths. Only `admin@acme.com` and

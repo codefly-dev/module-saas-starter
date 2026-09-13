@@ -13,13 +13,24 @@ import { OrganizationService } from "@/gen/saas/accounts/v1/organizations_pb";
 import { TeamService } from "@/gen/saas/accounts/v1/teams_pb";
 import { apiTransport } from "@/lib/connect/transport";
 
+// The permission resource this deployment's collection content is governed by,
+// declared by the composition. The host holds no domain content, so it has no
+// noun of its own to fall back on: unset means undeclared, and every read and
+// grant below refuses rather than guessing. It mirrors the `resources` a module
+// declares in MODULE_PRINCIPALS, which is what the server matches grants against.
+// Read per call rather than at module load: `NEXT_PUBLIC_*` is inlined at build
+// time either way, and a deployment that changes it should not need this module
+// re-imported to take effect.
+const contentResource = () =>
+	process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
+
 const permissions = createClient(PermissionService, apiTransport);
 const organizations = createClient(OrganizationService, apiTransport);
 const principals = createClient(PrincipalService, apiTransport);
 const teams = createClient(TeamService, apiTransport);
 
 export const datasourceClient: DatasourceClient = {
-	...datasourceClientOverTransport(apiTransport),
+	...datasourceClientOverTransport(apiTransport, contentResource()),
 	async listCollections(orgId) {
 		const collections: CollectionAccessView[] = [];
 		let pageToken = "";
@@ -86,20 +97,26 @@ export const datasourceClient: DatasourceClient = {
 		];
 	},
 	async grantCollectionRead(orgId, scopePath, subject) {
+		const resource = contentResource();
+		if (!resource) {
+			throw new Error(
+				"no collection content resource is declared for this deployment, so there is no read permission to grant",
+			);
+		}
 		const { roles } = await permissions.listRoles({ orgId });
 		let role = roles.find(
 			(role) =>
 				role.orgId === orgId &&
 				role.permissions.length === 1 &&
-				role.permissions[0].resource === "documents" &&
+				role.permissions[0].resource === resource &&
 				role.permissions[0].action === "read",
 		);
 		if (!role) {
 			({ role } = await permissions.createRole({
 				orgId,
 				name: "Collection reader",
-				description: "Read documents in explicitly granted collections",
-				permissions: [{ resource: "documents", action: "read" }],
+				description: `Read ${resource} in explicitly granted collections`,
+				permissions: [{ resource, action: "read" }],
 			}));
 		}
 		await permissions.grantScope({

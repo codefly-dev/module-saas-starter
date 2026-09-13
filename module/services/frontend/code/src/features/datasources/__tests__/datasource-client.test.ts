@@ -1,5 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { datasourceClient } from "../datasource-client";
+
+// The composition declares which permission resource its collection content is
+// governed by; the host has no noun of its own to fall back on. A generic stand-in
+// is enough here — these tests assert the value is threaded, not what it is.
+const CONTENT_RESOURCE = "example-records";
+
+beforeAll(() => {
+	process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE = CONTENT_RESOURCE;
+});
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -62,7 +71,7 @@ function gatedFetch() {
 }
 
 describe("datasourceClient.listAccessibleScopes", () => {
-	it("queries documents/read and follows every page", async () => {
+	it("queries the declared content resource and follows every page", async () => {
 		const { requests, release } = gatedFetch();
 
 		const pending = datasourceClient.listAccessibleScopes?.("org-1");
@@ -80,7 +89,7 @@ describe("datasourceClient.listAccessibleScopes", () => {
 		// anything at all; a silent change to either empties every boundary.
 		for (const request of requests) {
 			expect(request.orgId).toBe("org-1");
-			expect(request.resourceType).toBe("documents");
+			expect(request.resourceType).toBe(CONTENT_RESOURCE);
 			expect(request.pageSize).toBe(1000);
 		}
 
@@ -111,7 +120,7 @@ it("uses Accounts to create an exact read role and grant the selected team", asy
  }));
  await datasourceClient.grantCollectionRead!("org-1", "root.example", {id: "team-id", kind: "team", label: "Example Team"});
  expect(calls.map(call => call.url.split("/").at(-1))).toEqual(["ListRoles", "CreateRole", "GrantScope"]);
- expect(calls[1].body.permissions).toEqual([{resource: "documents", action: "read"}]);
+ expect(calls[1].body.permissions).toEqual([{resource: CONTENT_RESOURCE, action: "read"}]);
  expect(calls[2].body).toMatchObject({orgId: "org-1", scopePath: "root.example", subjectId: "team-id", subjectKind: "SUBJECT_KIND_TEAM", roleId: "role-id"});
 });
 
@@ -119,4 +128,16 @@ it("propagates permission-service failure rather than reporting no grants", asyn
  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({code: "unavailable", message: "permission service unavailable"}), {status: 503, headers: {"content-type": "application/json"}})));
  await expect(datasourceClient.listAccessibleScopes!("org-1")).rejects.toThrow("permission service unavailable");
  await expect(datasourceClient.listCollections!("org-1")).rejects.toThrow("permission service unavailable");
+});
+
+it("refuses to grant when the composition declares no content resource", async () => {
+ const previous = process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
+ delete process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
+ try {
+  await expect(
+   datasourceClient.grantCollectionRead!("org-1", "root.example", {id: "team-id", kind: "team", label: "Example Team"}),
+  ).rejects.toThrow(/no collection content resource is declared/);
+ } finally {
+  process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE = previous;
+ }
 });

@@ -394,6 +394,9 @@ func TestCheckAccess_GlobalRoleGrant(t *testing.T) {
 }
 
 func TestListCollectionAccess_ReadGrantsAndTenantIsolation(t *testing.T) {
+	// The resource the composition declares its content under. The host never
+	// names it; this stands in for the declared module registry.
+	declared := []string{"documents"}
 	orgID, actorID, roleID := layeredFixture(t, "documents", "read")
 	otherOrg, _, _ := layeredFixture(t, "documents", "read")
 	registerNode(t, orgID, "root", "solution", "", "")
@@ -416,24 +419,32 @@ func TestListCollectionAccess_ReadGrantsAndTenantIsolation(t *testing.T) {
 		return testStore.GrantScope(ctx, &gen.ScopeGrant{Id: business.NewIDString(), OrgId: orgID, SubjectId: actorID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: "root", RoleId: roleID, GrantedBy: actorID})
 	}))
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 1)
+		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 1, declared)
 		require.NoError(t, err)
 		require.Len(t, rows, 1)
 		require.Equal(t, "root.empty", rows[0].Node.ScopePath)
 		require.Len(t, rows[0].ReadGrants, 1)
 		require.Equal(t, "root", rows[0].ReadGrants[0].Grant.ScopePath)
 		require.NotEmpty(t, rows[0].ReadGrants[0].ActorLabel)
-		next, err := testStore.ListCollectionAccess(ctx, orgID, rows[0].Node.ScopePath, 100)
+		next, err := testStore.ListCollectionAccess(ctx, orgID, rows[0].Node.ScopePath, 100, declared)
 		require.NoError(t, err)
 		require.Len(t, next, 1)
 		require.Equal(t, "root.example", next[0].Node.ScopePath)
-		foreign, err := testStore.ListCollectionAccess(ctx, otherOrg, "", 100)
+		foreign, err := testStore.ListCollectionAccess(ctx, otherOrg, "", 100, declared)
 		require.NoError(t, err)
 		require.Empty(t, foreign)
+		// A composition that declares no content resource authorizes nothing: the
+		// boundaries still list, but no grant is reported as conferring read.
+		undeclared, err := testStore.ListCollectionAccess(ctx, orgID, "", 100, nil)
+		require.NoError(t, err)
+		require.Len(t, undeclared, 2)
+		for _, row := range undeclared {
+			require.Empty(t, row.ReadGrants, "an undeclared resource must confer no read")
+		}
 		return testStore.RevokeScope(ctx, orgID, actorID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "root", roleID)
 	}))
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
-		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 100)
+		rows, err := testStore.ListCollectionAccess(ctx, orgID, "", 100, declared)
 		require.NoError(t, err)
 		require.Len(t, rows, 2)
 		require.Empty(t, rows[0].ReadGrants)

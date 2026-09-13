@@ -23,6 +23,14 @@ import type { DatasourceClient, DatasourceView } from "./types.js";
 export interface GatewayBinding {
 	/** Same-origin base the gateway proxies to the backend, e.g. `/api/solutions/{id}/proxy`. */
 	apiBase: string;
+	/**
+	 * Permission resource type the collection's content is governed by, as the
+	 * composition declares it. This kit ships with the host and holds no domain
+	 * content, so it cannot know whether a collection holds documents, rows or
+	 * models — the consumer mounting it says. Omitted means undeclared, which
+	 * reads as no access rather than as access to something (fail-closed).
+	 */
+	contentResource?: string;
 	/** Reads the current access token (may be null before the first exchange). */
 	getAccessToken: () => string | null;
 	/**
@@ -44,10 +52,17 @@ export interface GatewayBinding {
  */
 export function datasourceClientOverTransport(
 	transport: Transport,
+	contentResource?: string,
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
 	return {
 		async listAccessibleScopes(orgId) {
+			// Nothing declared the content's resource type, so there is no question to
+			// ask the permission service — and answering "readable" would be inventing
+			// authority the composition never granted.
+			if (!contentResource) {
+				return [];
+			}
 			const scopes = [];
 			let pageToken = "";
 			do {
@@ -56,7 +71,7 @@ export function datasourceClientOverTransport(
 					.accessibleScope()
 					.listMyAccessibleScopes({
 						orgId,
-						resourceType: "documents",
+						resourceType: contentResource,
 						action: "read",
 						pageSize: 1000,
 						pageToken,
@@ -180,6 +195,7 @@ export function createDatasourceClient(
 	};
 	return datasourceClientOverTransport(
 		createConnectTransport({ baseUrl: binding.apiBase, interceptors: [auth] }),
+		binding.contentResource,
 	);
 }
 

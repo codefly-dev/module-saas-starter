@@ -75,9 +75,9 @@ teams:
 roles:
   - org: Acme Corp
     name: Collection reader
-    description: Read documents in explicitly granted collections
+    description: Read collection content in explicitly granted collections
     permissions:
-      - resource: documents
+      - resource: example-records
         action: read
 
 collections:

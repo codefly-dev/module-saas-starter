@@ -42,7 +42,7 @@ roles:
   - org: ExampleCorp
     name: Collection reader
     permissions:
-      - resource: documents
+      - resource: example-records
         action: read
 collections:
   - org: ExampleCorp
@@ -65,7 +65,7 @@ collections:
 	readerID := seededUUIDFor(t, testCtx, "collection-reader")
 	ownerID := seededUUIDFor(t, testCtx, "collection-owner")
 	for _, identity := range []string{"collection-owner", "collection-member", "collection-reader"} {
-		scopes, err := testService.ListAccessibleScopes(testCtx, &gen.ListAccessibleScopesRequest{OrgId: orgID, SubjectId: seededUUIDFor(t, testCtx, identity), SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ResourceType: "documents", Action: "read"})
+		scopes, err := testService.ListAccessibleScopes(testCtx, &gen.ListAccessibleScopesRequest{OrgId: orgID, SubjectId: seededUUIDFor(t, testCtx, identity), SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ResourceType: "example-records", Action: "read"})
 		require.NoError(t, err)
 		if identity == "collection-reader" {
 			require.Len(t, scopes.Scopes, 1)
@@ -75,7 +75,7 @@ collections:
 	}
 	grant := collection.ReadGrants[0].Grant
 	require.NoError(t, testService.RevokeScope(testCtx, ownerID, &gen.RevokeScopeRequest{OrgId: orgID, SubjectId: readerID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ScopePath: grant.ScopePath, RoleId: grant.RoleId}))
-	scopes, err := testService.ListAccessibleScopes(testCtx, &gen.ListAccessibleScopesRequest{OrgId: orgID, SubjectId: readerID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ResourceType: "documents", Action: "read"})
+	scopes, err := testService.ListAccessibleScopes(testCtx, &gen.ListAccessibleScopesRequest{OrgId: orgID, SubjectId: readerID, SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, ResourceType: "example-records", Action: "read"})
 	require.NoError(t, err)
 	require.Empty(t, scopes.Scopes)
 	require.NoError(t, testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
