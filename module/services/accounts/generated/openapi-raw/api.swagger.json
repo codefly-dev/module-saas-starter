@@ -552,7 +552,7 @@
           },
           {
             "name": "payloadContains",
-            "description": "String-valued JSONB containment, ANDed with every other filter.",
+            "description": "String-valued JSONB containment, ANDed with every other filter. A\n`boundary` key on a registered saas.document.* event names a collection, so\nit carries the same current-read requirement as collection_id below rather\nthan being a way to spell that filter without the check.",
             "in": "query",
             "required": false,
             "type": "string"

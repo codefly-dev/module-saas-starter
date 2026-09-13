@@ -233,22 +233,6 @@ func TestPayloadBoundarySpellingTakesTheCollectionGrant(t *testing.T) {
 	require.True(t, store.called)
 }
 
-// scope_nodes.id is UUID, so binding a caller-supplied non-UUID collection id
-// would abort the transaction with "invalid input syntax for type uuid" — an
-// opaque internal error where the honest answer is a denial. The guard runs
-// before any executor is touched, so this holds without a database.
-func TestNonUUIDCollectionDeniesRatherThanErroring(t *testing.T) {
-	store := &infra.PostgresStore{}
-
-	for _, nodeID := range []string{"collection-node-id", "", "not a uuid"} {
-		allowed, err := store.CanReadScopeNode(context.Background(), "org-a", "reader",
-			gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", nodeID)
-
-		require.NoErrorf(t, err, "node %q should deny, not error", nodeID)
-		require.Falsef(t, allowed, "node %q must not be readable", nodeID)
-	}
-}
-
 // Bind production store methods to the independently owned fixture transaction.
 type transactionStore struct {
 	*infra.PostgresStore
@@ -409,6 +393,77 @@ func TestReadEventRequiresCountableIdentity(t *testing.T) {
 
 // Read the shipped policies verbatim; a non-owner role must enforce them even
 // when the application query omits its explicit organization predicate.
+// scope_nodes.id is UUID. The point check compares against n.id::text — the
+// same projection ListAccessibleScopes returns as node_id — so an id that is not
+// a UUID matches nothing instead of aborting the transaction with "invalid input
+// syntax for type uuid", and the two paths cannot disagree about a node.
+//
+// A UUID has several accepted spellings but only one text form, so the id is
+// canonicalized first: a caller naming a node it may read is not denied over
+// punctuation or case.
+func TestCanReadScopeNodeMatchesIDSpellingsAndRefusesGarbage(t *testing.T) {
+	dsn := os.Getenv("AUDIT_METRICS_TEST_DSN")
+	if dsn == "" {
+		if os.Getenv("AUDIT_METRICS_REQUIRE_DB") == "1" {
+			t.Fatal("database gate requires AUDIT_METRICS_TEST_DSN")
+		}
+		t.Skip("set AUDIT_METRICS_TEST_DSN to a disposable PostgreSQL database")
+	}
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, dsn)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, conn.Close(ctx)) }()
+	tx, err := conn.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, tx.Rollback(ctx)) }()
+
+	// id is UUID here, as it is in production (migration 98), so the cast this
+	// query avoids is the one that would actually fail.
+	_, err = tx.Exec(ctx, `CREATE EXTENSION IF NOT EXISTS ltree;
+ CREATE TEMP TABLE scope_nodes(id uuid,org_id text,scope_path ltree,kind text,label text,resource_type text,resource_id text);
+ CREATE TEMP TABLE scope_grants(org_id text,subject_kind text,subject_id text,role_id text,scope_path ltree,expires_at timestamptz);
+ CREATE TEMP TABLE role_permissions(role_id text,resource text,action text);
+ CREATE TEMP TABLE record_shares(org_id text,subject_kind text,subject_id text,role_id text,resource_type text,resource_id text,expires_at timestamptz);
+ CREATE TEMP TABLE team_members(team_id text,user_id text);
+ INSERT INTO scope_nodes VALUES ('a1b2c3d4-1111-4111-8111-abcdefabcdef','org-a','a','collection','Example collection',NULL,NULL);
+ INSERT INTO role_permissions VALUES ('reader-role','documents','read');
+ INSERT INTO scope_grants VALUES ('org-a','principal','reader','reader-role','a',NULL);`)
+	require.NoError(t, err)
+
+	raw := &infra.PostgresStore{}
+	queryCtx := context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key
+	check := func(nodeID string) (bool, error) {
+		return raw.CanReadScopeNode(queryCtx, "org-a", "reader",
+			gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", nodeID)
+	}
+
+	// Every accepted spelling of the same UUID denotes the same node. The id
+	// carries hex letters so the uppercase case is a real one.
+	for _, spelling := range []string{
+		"a1b2c3d4-1111-4111-8111-abcdefabcdef",
+		"A1B2C3D4-1111-4111-8111-ABCDEFABCDEF",
+		"{a1b2c3d4-1111-4111-8111-abcdefabcdef}",
+		"urn:uuid:a1b2c3d4-1111-4111-8111-abcdefabcdef",
+		"a1b2c3d4111141118111abcdefabcdef",
+	} {
+		allowed, err := check(spelling)
+		require.NoErrorf(t, err, "spelling %q", spelling)
+		require.Truef(t, allowed, "spelling %q names a readable node", spelling)
+	}
+
+	// Not a UUID at all: a denial, never an error, and never a transaction abort.
+	for _, garbage := range []string{"collection-node-id", "", "not a uuid", "'; DROP TABLE scope_nodes--"} {
+		allowed, err := check(garbage)
+		require.NoErrorf(t, err, "garbage %q must deny, not error", garbage)
+		require.Falsef(t, allowed, "garbage %q must not be readable", garbage)
+	}
+
+	// A real UUID that names no node stays a denial.
+	allowed, err := check("22222222-2222-4222-8222-222222222222")
+	require.NoError(t, err)
+	require.False(t, allowed)
+}
+
 func TestPostgresAuditPolicyAsNonOwner(t *testing.T) {
 	dsn := os.Getenv("AUDIT_METRICS_TEST_DSN")
 	if dsn == "" {

@@ -466,7 +466,10 @@ export type AggregateAuditLogRequest = Message<"saas.accounts.v1.AggregateAuditL
   resourceId: string;
 
   /**
-   * String-valued JSONB containment, ANDed with every other filter.
+   * String-valued JSONB containment, ANDed with every other filter. A
+   * `boundary` key on a registered saas.document.* event names a collection, so
+   * it carries the same current-read requirement as collection_id below rather
+   * than being a way to spell that filter without the check.
    *
    * @generated from field: map<string, string> payload_contains = 15;
    */

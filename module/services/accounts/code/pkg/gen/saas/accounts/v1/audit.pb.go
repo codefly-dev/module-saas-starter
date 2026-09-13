@@ -698,7 +698,10 @@ type AggregateAuditLogRequest struct {
 	// Exact registered resource boundary. Requires org_id, resource, event_type
 	// and current read access to this resource in addition to audit:read.
 	ResourceId string `protobuf:"bytes,14,opt,name=resource_id,json=resourceId,proto3" json:"resource_id,omitempty"`
-	// String-valued JSONB containment, ANDed with every other filter.
+	// String-valued JSONB containment, ANDed with every other filter. A
+	// `boundary` key on a registered saas.document.* event names a collection, so
+	// it carries the same current-read requirement as collection_id below rather
+	// than being a way to spell that filter without the check.
 	PayloadContains map[string]string `protobuf:"bytes,15,rep,name=payload_contains,json=payloadContains,proto3" json:"payload_contains,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// Document event collection: current documents/read authorization plus an
 	// exact payload.boundary predicate. Requires a registered saas.document.*

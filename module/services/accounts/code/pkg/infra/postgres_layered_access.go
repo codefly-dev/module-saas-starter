@@ -187,20 +187,30 @@ func accessibleScopesQuery(subjectKind gen.SubjectKind, nodePredicate string) (s
 
 // CanReadScopeNode tests exact membership using the same grants and shares as scope listing.
 func (s *PostgresStore) CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error) {
-	// scope_nodes.id is UUID, so binding a caller-supplied string that is not one
-	// would abort the transaction with "invalid input syntax for type uuid"
-	// instead of answering the question. No node can carry a non-UUID id, so the
-	// honest answer is "not a node you may read" — and denying rather than
-	// erroring keeps a malformed id indistinguishable from an unauthorized one.
-	if _, err := uuid.Parse(nodeID); err != nil {
-		return false, nil
+	// Compare against `n.id::text`, the exact projection ListAccessibleScopes
+	// returns as node_id, so exact membership is tested against the same set the
+	// listing enumerates and the two can never disagree on a node.
+	//
+	// It also settles the id's type: scope_nodes.id is UUID, and binding a
+	// caller-supplied string straight to it aborts the transaction with "invalid
+	// input syntax for type uuid" instead of answering. Comparing as text makes
+	// an unparseable id simply match nothing — a denial, which is the honest
+	// answer and keeps a malformed id indistinguishable from an unauthorized one.
+	//
+	// A UUID has several accepted spellings (uppercase, braced, urn, unhyphenated)
+	// that all denote the same node, but only one text form. Canonicalize so a
+	// caller naming a node it may read is not denied over punctuation; anything
+	// that is not a UUID is passed through, which matches nothing on a UUID column.
+	node := nodeID
+	if parsed, err := uuid.Parse(nodeID); err == nil {
+		node = parsed.String()
 	}
-	query, err := accessibleScopesQuery(subjectKind, "n.id = $5")
+	query, err := accessibleScopesQuery(subjectKind, "n.id::text = $5")
 	if err != nil {
 		return false, err
 	}
 	var allowed bool
-	err = s.getQueryExecutor(ctx).QueryRow(ctx, "SELECT EXISTS ("+query+")", subjectID, resourceType, action, orgID, nodeID).Scan(&allowed)
+	err = s.getQueryExecutor(ctx).QueryRow(ctx, "SELECT EXISTS ("+query+")", subjectID, resourceType, action, orgID, node).Scan(&allowed)
 	return allowed, err
 }
 
