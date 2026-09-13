@@ -16,6 +16,7 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/gen/saas/accounts/v1/accountsv1connect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ import (
 
 const sourceA = "019f6bf7-0000-7000-8000-000000000001"
 const sourceB = "019f6bf7-0000-7000-8000-000000000002"
+const sourceR = "019f6bf7-0000-7000-8000-000000000003"
 
 const readOrg = "019f6bf7-5b4b-74e5-8c17-092259bb1661"
 const readOwner = "019f6bf7-5b1c-730d-9687-fe6d4aff31ed"
@@ -41,6 +43,8 @@ type readProjectionStore struct {
 	sources                 []*business.DatasourceSource
 	err                     error
 	resources               []string
+	nodeResource            map[string]string
+	wildcard                bool
 	scopeCalls, sourceCalls int
 	revision                int
 	expires                 time.Time
@@ -64,7 +68,8 @@ func (f *readProjectionStore) ListReadableSourcesPage(_ context.Context, org str
 		if source.OrgID != org {
 			return nil, errors.New("unexpected tenant")
 		}
-		allowed := len(resources) > 0
+		allowed := len(resources) > 0 &&
+			(f.wildcard || slices.Contains(resources, f.nodeResourceType(source.BoundaryNodeID)))
 		for _, subject := range subjects {
 			found := false
 			for _, scope := range f.grants[subject] {
@@ -90,6 +95,15 @@ func (f *readProjectionStore) ListReadableSourcesPage(_ context.Context, org str
 	return out[:min(limit, len(out))], f.err
 }
 
+// nodeResourceType mirrors scope_nodes.resource_type: the type a collection's
+// records are governed by, which the declared set is matched against.
+func (f *readProjectionStore) nodeResourceType(node string) string {
+	if kind, ok := f.nodeResource[node]; ok {
+		return kind
+	}
+	return "documents"
+}
+
 type sourceReadIdentityAuthority struct{ *workContextAuthorityFake }
 
 func (a sourceReadIdentityAuthority) ResolveWorkContextAuthority(ctx context.Context, org, owner, actor string, permissions []business.WorkContextPermission) (*business.WorkContextAuthorityFacts, error) {
@@ -103,10 +117,11 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	t.Helper()
 	previousService, previousAuthority := service, workContextSingleton
 	t.Cleanup(func() { service, workContextSingleton = previousService, previousAuthority; SetInternalToken("") })
-	store := &readProjectionStore{grants: map[string][]*gen.AccessibleScope{readOwner: {{NodeId: "boundary-a", ScopePath: "a"}, {NodeId: "boundary-b", ScopePath: "b"}}}, sources: []*business.DatasourceSource{
+	store := &readProjectionStore{grants: map[string][]*gen.AccessibleScope{readOwner: {{NodeId: "boundary-a", ScopePath: "a"}, {NodeId: "boundary-b", ScopePath: "b"}, {NodeId: "boundary-r", ScopePath: "r"}}}, nodeResource: map[string]string{"boundary-r": "rows"}, sources: []*business.DatasourceSource{
 		{ID: sourceA, OrgID: readOrg, Provider: "github", Repo: "acme/handbook", BoundaryNodeID: "boundary-a", Branch: "main", Paths: []string{"docs/"}},
 		{ID: sourceB, OrgID: readOrg, Provider: "github", Repo: "acme/policies", BoundaryNodeID: "boundary-b", Branch: "release"},
 		{ID: "source-denied", OrgID: readOrg, Provider: "github", Repo: "acme/private", BoundaryNodeID: "boundary-denied"},
+		{ID: sourceR, OrgID: readOrg, Provider: "github", Repo: "acme/ledger", BoundaryNodeID: "boundary-r", Branch: "main"},
 	}}
 	var err error
 	service, err = business.NewService(store)
@@ -242,12 +257,22 @@ func TestSourceReadIntersectsDelegatedSubjectsAndRejectsUnsupportedSources(t *te
 func TestSourceReadAuthorizesEachModuleUnderItsOwnDeclaredResources(t *testing.T) {
 	store, _, client, mint := sourceReadFixture(t)
 	ctx := context.Background()
-	for _, module := range []string{"documents", "rows"} {
-		result, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(mint(module, module, "read")))
+	page := func(module string) []string {
+		r := sourceReadRequest(mint(module, module, "read"))
+		r.Msg.PageSize = 10
+		result, err := client.ListReadableSourceCollections(ctx, r)
 		require.NoError(t, err)
-		require.Len(t, result.Msg.Collections, 1)
-		require.Equal(t, []string{module}, store.resources)
+		var ids []string
+		for _, collection := range result.Msg.Collections {
+			ids = append(ids, collection.SourceId)
+		}
+		return ids
 	}
+	// Each module reads what its own content type governs, and nothing else — the
+	// rows module must not be handed a documents-governed collection.
+	require.Equal(t, []string{sourceA, sourceB}, page("documents"))
+	require.Equal(t, []string{sourceR}, page("rows"))
+	require.Equal(t, []string{"rows"}, store.resources)
 	// A cursor is bound to the resource types it enumerated under, so another
 	// module cannot resume a page this one opened.
 	first, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(mint("documents", "documents", "read")))
@@ -257,6 +282,34 @@ func TestSourceReadAuthorizesEachModuleUnderItsOwnDeclaredResources(t *testing.T
 	next.Msg.PageToken = first.Msg.NextPageToken
 	_, err = client.ListReadableSourceCollections(ctx, next)
 	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
+// A wildcard role permission grants read on every resource type, so it covers
+// whatever the caller declared. The declaration is then the only thing bounding
+// it, which is why an empty one has to be refused rather than trusted to match
+// nothing: '*' matches on its own.
+func TestSourceReadWildcardRoleStaysBoundedByTheDeclaration(t *testing.T) {
+	store, _, client, mint := sourceReadFixture(t)
+	store.wildcard = true
+	r := sourceReadRequest(mint("rows", "rows", "read"))
+	r.Msg.PageSize = 10
+	result, err := client.ListReadableSourceCollections(context.Background(), r)
+	require.NoError(t, err)
+	require.Len(t, result.Msg.Collections, 3)
+	require.Equal(t, []string{"rows"}, store.resources)
+}
+
+// The store's fail-closed guarantee must not rest on the one caller that happens
+// to check first, so the business layer refuses an empty declaration itself.
+func TestSourceReadRefusesAnEmptyDeclarationBeforeStorage(t *testing.T) {
+	store, _, _, _ := sourceReadFixture(t)
+	ctx := auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg)
+	for _, declared := range [][]string{nil, {}} {
+		_, err := service.ReadableSourceCollections(ctx, readOrg, []string{readOwner}, declared,
+			&gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	}
+	require.Zero(t, store.sourceCalls)
 }
 
 // A composition that declares no content for a module authorizes nothing for it,

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"slices"
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -35,6 +36,15 @@ func (s *Service) ReadableSourceCollections(ctx context.Context, org string, sub
 			return nil, status.Error(codes.PermissionDenied, "viewer identity required")
 		}
 	}
+	// A module that declared no content has no basis to ask. The store refuses an
+	// empty set too, but the guarantee belongs here rather than resting on the one
+	// caller that happens to check first.
+	if len(resources) == 0 {
+		return nil, status.Error(codes.PermissionDenied, "module content resources required")
+	}
+	// The digest below binds the resource set into the cursor, so reordering a
+	// declaration — which changes no authority — must not invalidate a live page.
+	resources = slices.Sorted(slices.Values(resources))
 	var cur sourceReadCursor
 	if req.GetPageToken() != "" {
 		raw, err := base64.RawURLEncoding.DecodeString(req.GetPageToken())

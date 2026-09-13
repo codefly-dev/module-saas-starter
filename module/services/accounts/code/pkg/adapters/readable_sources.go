@@ -14,6 +14,10 @@ import (
 
 // ListReadableSourceCollections verifies the exact forwarded viewer capability;
 // this operation does not use the installation's module capability identity.
+// The audience no longer separates those two — a module prefix and the
+// module-capability audience are both legal audience strings — so what excludes a
+// module's own identity token is the scope requirement below: that mint seals no
+// authority scopes, and an empty scope set grants nothing.
 func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Context, req *gen.ListReadableSourceCollectionsRequest) (*gen.ListReadableSourceCollectionsResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err
@@ -42,9 +46,13 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
+	// Both refusals answer identically. Telling "that audience declares no content"
+	// apart from "your capability does not grant read on it" would report which
+	// modules a composition declared, which the registration surface takes
+	// constant-time care never to reveal.
 	declared, err := service.ModuleContentResources(claims.GetAudience())
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.PermissionDenied, "module content read scope required")
 	}
 	var resources []string
 	for _, resource := range declared {

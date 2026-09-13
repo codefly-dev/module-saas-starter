@@ -169,4 +169,15 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	exec(`INSERT INTO scope_grants(org_id,subject_id,subject_kind,scope_path,role_id) VALUES($1,$2,'principal','root.collection',$3)`, readOrg, readOwner, role)
 	checkSourcesUnder([]string{"rows"}, 2)
 	checkSourcesUnder([]string{"documents"}, 0)
+
+	// A wildcard permission — what migration 4 seeds the built-in admin role with —
+	// matches every resource type on its own, so it satisfies whichever type the
+	// caller declared. The declaration is then the only bound left, and an empty
+	// one has to be refused explicitly: without that, a module that declared no
+	// content would read every collection a wildcard role covers.
+	exec(`UPDATE role_permissions SET resource='*',action='*' WHERE role_id=$1`, role)
+	checkSourcesUnder([]string{"rows"}, 2)
+	checkSourcesUnder([]string{"documents"}, 2)
+	checkSourcesUnder([]string{}, 0)
+	checkSourcesUnder(nil, 0)
 }
