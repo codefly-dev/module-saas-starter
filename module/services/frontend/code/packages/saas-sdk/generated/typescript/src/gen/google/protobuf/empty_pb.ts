@@ -63,3 +63,4 @@ export type Empty = Message<"google.protobuf.Empty"> & {
  */
 export const EmptySchema: GenMessage<Empty> = /*@__PURE__*/
   messageDesc(file_google_protobuf_empty, 0);
+

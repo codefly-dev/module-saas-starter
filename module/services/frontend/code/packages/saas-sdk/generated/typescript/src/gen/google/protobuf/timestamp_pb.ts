@@ -164,3 +164,4 @@ export type Timestamp = Message<"google.protobuf.Timestamp"> & {
  */
 export const TimestampSchema: GenMessage<Timestamp> = /*@__PURE__*/
   messageDesc(file_google_protobuf_timestamp, 0);
+
