@@ -186,6 +186,69 @@ func TestDocumentCollectionFilterAndRevocation(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
+// A collection named through payload_contains is the same read as one named
+// through collection_id — accounts compiles the first into the second — so it
+// must take the same grant check. Before this was promoted, a reader denied on
+// collection_id got identical rows by moving the filter into payload_contains,
+// which made the check on the adjacent field worth nothing.
+func TestPayloadBoundarySpellingTakesTheCollectionGrant(t *testing.T) {
+	store := &datasourceStore{boundary: "boundary-a"}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+
+	// Reader holds no grant on boundary-b, and names it only in the payload.
+	denied := business.AuditQuery{
+		OrgID:           "org-a",
+		EventType:       "saas.document.ingested",
+		PayloadContains: map[string]any{"boundary": "boundary-b"},
+	}
+	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", denied, business.AuditAggregationSpec{})
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.False(t, store.called, "a denied collection read must not reach the store")
+
+	// The same spelling still works where the grant does hold.
+	store.called = false
+	allowed := business.AuditQuery{
+		OrgID:           "org-a",
+		EventType:       "saas.document.ingested",
+		PayloadContains: map[string]any{"boundary": "boundary-a"},
+	}
+	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", allowed, business.AuditAggregationSpec{})
+	require.NoError(t, err)
+	require.True(t, store.called)
+	require.Equal(t, map[string]any{"boundary": "boundary-a"}, store.query.PayloadContains)
+	require.Empty(t, store.query.CollectionID, "the filter is compiled, never handed to the store uncompiled")
+
+	// A boundary key on an event that carries no registered boundary field is
+	// not a collection reference, so the organization-wide contract is unchanged
+	// and no collection check is imposed on it.
+	store.called = false
+	unrelated := business.AuditQuery{
+		OrgID:           "org-a",
+		EventType:       "saas.datasource.sync.completed",
+		PayloadContains: map[string]any{"boundary": "boundary-b"},
+	}
+	_, err = svc.AggregateAuditLogForReader(context.Background(), "reader", unrelated, business.AuditAggregationSpec{})
+	require.NoError(t, err)
+	require.True(t, store.called)
+}
+
+// scope_nodes.id is UUID, so binding a caller-supplied non-UUID collection id
+// would abort the transaction with "invalid input syntax for type uuid" — an
+// opaque internal error where the honest answer is a denial. The guard runs
+// before any executor is touched, so this holds without a database.
+func TestNonUUIDCollectionDeniesRatherThanErroring(t *testing.T) {
+	store := &infra.PostgresStore{}
+
+	for _, nodeID := range []string{"collection-node-id", "", "not a uuid"} {
+		allowed, err := store.CanReadScopeNode(context.Background(), "org-a", "reader",
+			gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, "documents", "read", nodeID)
+
+		require.NoErrorf(t, err, "node %q should deny, not error", nodeID)
+		require.Falsef(t, allowed, "node %q must not be readable", nodeID)
+	}
+}
+
 // Bind production store methods to the independently owned fixture transaction.
 type transactionStore struct {
 	*infra.PostgresStore

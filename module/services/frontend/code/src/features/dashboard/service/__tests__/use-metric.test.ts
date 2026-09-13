@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { metric } from "../../model/schema";
-import { compileMetricQuery } from "../use-metric";
+import { compileMetricQuery, shapeMetricSeries } from "../use-metric";
 
 describe("compileMetricQuery", () => {
 	it("keeps the simple count form a metrics-free query read off the bucket", () => {
@@ -115,5 +115,51 @@ describe("compileMetricQuery", () => {
 
 		expect(params.from).toEqual(new Date(from));
 		expect(params.to).toEqual(new Date(to));
+	});
+});
+
+describe("shapeMetricSeries coverage", () => {
+	const bucket = (key: string, count: number, value: number, samples: number) => ({
+		key,
+		count,
+		keys: [key],
+		metrics: { value },
+		samples: { value: samples },
+	});
+
+	it("keeps an additive total when some events omit an optional field", () => {
+		// `result_count` and `duration_ms` are registered as optional, so a group
+		// where only some events carried the field is normal operation, not a
+		// broken feed. Suppressing the total here rendered "Total unavailable" on
+		// the documented example dashboard's stat tile.
+		const sum = metric({
+			title: "Results returned",
+			event: { type: "saas.document.search" },
+			groupBy: "event_type",
+			chart: "stat",
+			value: { op: "sum", field: "payload:result_count" },
+		});
+
+		const series = shapeMetricSeries([bucket("a", 4, 9, 2)], sum, "value");
+
+		expect(series.partial).toBe(true);
+		expect(series.total).toBe(9);
+	});
+
+	it("suppresses a non-additive total when a group was dropped", () => {
+		// An average is only a series-level scalar for one complete group; if a
+		// group went missing the survivor is not the series' value.
+		const avg = metric({
+			title: "Average duration",
+			event: { type: "saas.document.read" },
+			groupBy: "event_type",
+			chart: "stat",
+			value: { op: "avg", field: "payload:duration_ms" },
+		});
+
+		const series = shapeMetricSeries([bucket("a", 4, 9, 2)], avg, "value");
+
+		expect(series.partial).toBe(true);
+		expect(series.total).toBeNull();
 	});
 });

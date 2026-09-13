@@ -105,7 +105,7 @@ func decodeAuditCursor(token string) (time.Time, string, error) {
 
 // auditWhere builds the shared WHERE clause for the search and aggregate paths
 // from an AuditQuery, returning the SQL fragment and its ordered args.
-func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
+func auditWhere(q business.AuditQuery, startArg int) (string, []any, error) {
 	var conditions []string
 	var args []any
 	argN := startArg
@@ -137,9 +137,15 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 		add("resource_id = $%d", q.ResourceID)
 	}
 	if len(q.PayloadContains) > 0 {
-		if raw, err := json.Marshal(q.PayloadContains); err == nil {
-			add("payload @> $%d::jsonb", string(raw))
+		raw, err := json.Marshal(q.PayloadContains)
+		if err != nil {
+			// Dropping the predicate would WIDEN the result set, and this is the
+			// predicate an authorized collection read was narrowed to — a silent
+			// drop hands org-wide rows to a caller cleared for one collection.
+			// Refuse the query; a filter that cannot be bound is never "no filter".
+			return "", nil, fmt.Errorf("audit: cannot bind payload filter: %w", err)
 		}
+		add("payload @> $%d::jsonb", string(raw))
 	}
 	if q.From != nil {
 		add("created_at >= $%d", *q.From)
@@ -152,7 +158,7 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any) {
 	if len(conditions) > 0 {
 		where = "WHERE " + strings.Join(conditions, " AND ")
 	}
-	return where, args
+	return where, args, nil
 }
 
 func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery) ([]business.AuditEntry, string, int32, error) {
@@ -161,7 +167,10 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 	}
 	exec := s.getQueryExecutor(ctx)
 
-	where, args := auditWhere(q, 1)
+	where, args, err := auditWhere(q, 1)
+	if err != nil {
+		return nil, "", 0, err
+	}
 	argN := len(args) + 1
 
 	pageSize := q.PageSize
@@ -330,7 +339,10 @@ type aggregateQuery struct {
 // (payload keys, percentiles) is bound as a parameter, never interpolated, so
 // the query is injection-safe.
 func buildAggregateQuery(q business.AuditQuery, spec business.AuditAggregationSpec) (aggregateQuery, error) {
-	where, args := auditWhere(q, 1)
+	where, args, err := auditWhere(q, 1)
+	if err != nil {
+		return aggregateQuery{}, err
+	}
 	argN := len(args) + 1
 	addArg := func(v any) int {
 		args = append(args, v)

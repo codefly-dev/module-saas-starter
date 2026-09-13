@@ -42,8 +42,16 @@ Conflicting boundary predicates fail. Only registered `saas.document.*` events
 with a boundary field support this filter. Optional `payloadContains` string
 predicates (such as `version` or `correlation_id`) are ANDed with it. An additional
 `resourceId` requires its own registered-record read permission as well.
-Unscoped legacy organization audit queries remain organization audit queries;
-a payload predicate alone is not collection authorization.
+Naming a collection through `payloadContains.boundary` on one of those events is
+the same read as `collectionId` and takes the same grant check: accounts
+promotes the predicate into the scoped path, so the two spellings of one filter
+cannot authorize differently.
+
+This check scopes a filter; it does not make collection activity confidential
+from the organization. Organization-wide aggregation remains an organization
+audit read, so a member with organization audit authority can still group by
+`payload:boundary` and see per-collection counts without holding any collection
+grant. Do not build an access-control boundary on `collectionId` alone.
 
 See [the configuration-only graph](./examples/scoped-audit-dashboard.json).
 Replace the two placeholder IDs with the selected source and collection IDs.

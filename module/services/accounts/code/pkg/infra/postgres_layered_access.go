@@ -11,6 +11,7 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/codefly-dev/core/wool"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -186,6 +187,14 @@ func accessibleScopesQuery(subjectKind gen.SubjectKind, nodePredicate string) (s
 
 // CanReadScopeNode tests exact membership using the same grants and shares as scope listing.
 func (s *PostgresStore) CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error) {
+	// scope_nodes.id is UUID, so binding a caller-supplied string that is not one
+	// would abort the transaction with "invalid input syntax for type uuid"
+	// instead of answering the question. No node can carry a non-UUID id, so the
+	// honest answer is "not a node you may read" — and denying rather than
+	// erroring keeps a malformed id indistinguishable from an unauthorized one.
+	if _, err := uuid.Parse(nodeID); err != nil {
+		return false, nil
+	}
 	query, err := accessibleScopesQuery(subjectKind, "n.id = $5")
 	if err != nil {
 		return false, err

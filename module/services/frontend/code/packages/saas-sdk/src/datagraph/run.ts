@@ -32,7 +32,7 @@ export function assertAuditScopeContract(
 			request.collectionId ||
 			(request.payloadContains &&
 				Object.keys(request.payloadContains).length > 0)) &&
-		response.scopeContractVersion !== 1
+		(response.scopeContractVersion ?? 0) < 1
 	) {
 		throw new Error(
 			"Audit server does not acknowledge scope contract version 1",
@@ -51,14 +51,21 @@ function toSeries(
 	return {
 		metricId,
 		points,
+		// An additive total (count, sum) is the sum of what was actually observed,
+		// so partiality annotates it via `coverage` rather than withholding it:
+		// optional payload fields such as `result_count` are absent by design, and
+		// suppressing on partial blanked the stat tile of every metric over one.
+		// A non-additive scalar (avg, min, max, percentile, ratio) is only defined
+		// for a single complete group — if any group was dropped, the surviving
+		// one is not the series' value, so it stays null.
 		total:
-			partial || points.length === 0
+			points.length === 0
 				? null
 				: additive
 					? points.reduce((sum, point) => sum + point.value, 0)
-					: points.length === 1
-						? points[0].value
-						: null,
+					: partial || points.length !== 1
+						? null
+						: points[0].value,
 		coverage: partial ? "partial" : points.length === 0 ? "empty" : "complete",
 		groupBy,
 		bucket,

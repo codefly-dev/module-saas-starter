@@ -220,6 +220,25 @@ describe("assertDashboardSpec", () => {
 		).toThrow(/event type must be a non-empty string/);
 	});
 
+	it("rejects a collectionId metric that declares no event", () => {
+		// Accounts requires an event type for every scoped read so it can resolve
+		// the registered boundary field. Without this the authoring surface saved
+		// the metric happily and it failed only at query time, as InvalidArgument.
+		expect(() =>
+			assertDashboardSpec({
+				version: DASHBOARD_SPEC_VERSION,
+				metrics: [
+					{
+						title: "x",
+						collectionId: "collection-a",
+						groupBy: "event_type",
+						chart: "bar",
+					},
+				],
+			}),
+		).toThrow(/collectionId requires event/);
+	});
+
 	it("rejects a metric that sets both event and category", () => {
 		expect(() =>
 			assertDashboardSpec({

@@ -162,17 +162,23 @@ export function shapeMetricSeries(
 
 	if (points.length === 0) return { points, total: null, partial };
 	const sum = points.reduce((acc, p) => acc + p.value, 0);
+	// Mirrors the SDK's toSeries. An additive total is the sum of what was
+	// observed, so partiality annotates it (the card shows "Partial telemetry")
+	// instead of withholding it — optional payload fields are absent by design.
+	// A non-additive scalar needs a single complete group. Truncation by `limit`
+	// suppresses either: a top-N slice is not the series total, so reporting the
+	// slice's sum as "the total" would be wrong rather than merely incomplete.
 	return {
 		points,
 		partial,
 		total:
-			partial || points.length !== shaped.length
+			points.length !== shaped.length
 				? null
 				: isAdditive(metric)
 					? sum
-					: points.length === 1
-						? sum
-						: null,
+					: partial || points.length !== 1
+						? null
+						: sum,
 	};
 }
 

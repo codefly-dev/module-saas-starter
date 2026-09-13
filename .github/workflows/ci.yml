@@ -88,7 +88,11 @@ jobs:
   authz-coverage:
     name: Authorization coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Kept at 15: this job now also boots a PostgreSQL service and runs the
+    # scoped-audit suite under -race, so it does strictly more work than when
+    # 15 was set. Lowering it to 10 alongside that addition was a timeout flake
+    # waiting to happen.
+    timeout-minutes: 15
     services:
       audit-postgres:
         image: postgres:17-alpine

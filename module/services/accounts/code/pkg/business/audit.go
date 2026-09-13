@@ -443,6 +443,15 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 	if err := spec.Validate(); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	// collection_id compiles to exactly a payload `boundary` predicate below, so
+	// naming that predicate directly is the same collection read by another
+	// spelling. Promote it into the gated path: otherwise the grant check below
+	// is defeated by moving the filter from collection_id into payload_contains.
+	if q.CollectionID == "" && isDocumentBoundaryEvent(q.EventType) {
+		if boundary, ok := q.PayloadContains["boundary"].(string); ok && boundary != "" {
+			q.CollectionID = boundary
+		}
+	}
 	if q.ResourceID == "" && q.CollectionID == "" {
 		return s.AggregateAuditLog(ctx, q, spec)
 	}
@@ -450,14 +459,7 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 		return nil, status.Error(codes.InvalidArgument, "resource analytics requires reader, organization, resource and event type")
 	}
 	if q.CollectionID != "" {
-		definition, registered := LookupAuditEvent(EventType(q.EventType))
-		hasBoundary := false
-		for _, field := range definition.Fields {
-			if field.Name == "boundary" {
-				hasBoundary = true
-			}
-		}
-		if !registered || !strings.HasPrefix(q.EventType, "saas.document.") || !hasBoundary {
+		if !isDocumentBoundaryEvent(q.EventType) {
 			return nil, status.Error(codes.InvalidArgument, "collection analytics requires a registered document boundary event")
 		}
 		if boundary, exists := q.PayloadContains["boundary"]; exists && boundary != q.CollectionID {
@@ -472,26 +474,63 @@ func (s *Service) AggregateAuditLogForReader(ctx context.Context, reader string,
 	}
 	var out []AuditAggregateBucket
 	err := s.store.WithOrgTx(ctx, q.OrgID, func(ctx context.Context) error {
-		allowed := true
-		var err error
+		// Each scope proves itself; there is no permissive default to fall
+		// through to. `proven` records that at least one check actually ran, so
+		// a future caller reaching here with neither scope set is denied rather
+		// than served on the strength of an untested assumption.
+		denied := status.Error(codes.PermissionDenied, "resource read access required")
+		proven := false
 		if q.CollectionID != "" {
-			allowed, err = s.canReadAuditCollection(ctx, reader, q.OrgID, q.CollectionID)
+			allowed, err := s.canReadAuditCollection(ctx, reader, q.OrgID, q.CollectionID)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				return denied
+			}
+			proven = true
 		}
-		if err == nil && allowed && q.ResourceID != "" {
-			allowed, err = s.canReadAuditResource(ctx, reader, q)
+		if q.ResourceID != "" {
+			allowed, err := s.canReadAuditResource(ctx, reader, q)
+			if err != nil {
+				return err
+			}
+			if !allowed {
+				return denied
+			}
+			proven = true
 		}
-		if err != nil {
-			return err
+		if !proven {
+			return denied
 		}
-		if !allowed {
-			return status.Error(codes.PermissionDenied, "resource read access required")
-		}
+		var err error
 		compiled := q
 		compiled.CollectionID = "" // Authorized and compiled into the boundary predicate above.
 		out, err = s.store.AggregateAuditLog(ctx, compiled, spec)
 		return err
 	})
 	return out, err
+}
+
+// isDocumentBoundaryEvent reports whether eventType is a registered
+// saas.document.* event carrying a boundary field — the only shape for which a
+// payload `boundary` value names a collection node. Both the collection filter
+// and the payload-spelling promotion above test the same predicate, so the two
+// spellings of one filter can never diverge on which events they authorize.
+func isDocumentBoundaryEvent(eventType string) bool {
+	if !strings.HasPrefix(eventType, "saas.document.") {
+		return false
+	}
+	definition, registered := LookupAuditEvent(EventType(eventType))
+	if !registered {
+		return false
+	}
+	for _, field := range definition.Fields {
+		if field.Name == "boundary" {
+			return true
+		}
+	}
+	return false
 }
 
 // Datasources are connected to structural collection nodes, not placed records.

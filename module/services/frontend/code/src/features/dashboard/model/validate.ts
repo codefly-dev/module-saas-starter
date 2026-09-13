@@ -173,8 +173,17 @@ function assertMetric(
 		context,
 	);
 	assertNonEmptyString(value.title, `${context} title`);
-	if (value.collectionId !== undefined)
+	if (value.collectionId !== undefined) {
 		assertNonEmptyString(value.collectionId, `${context} collectionId`);
+		// Accounts requires an event type for every scoped read, collection reads
+		// included — it resolves the registered boundary field from it. Rejecting
+		// here keeps the authoring surface from saving a metric that can only fail
+		// at query time.
+		assertSpec(
+			value.event !== undefined,
+			`${context} collectionId requires event`,
+		);
+	}
 	if (value.resource !== undefined)
 		assertNonEmptyString(value.resource, `${context} resource`);
 	if (value.resourceId !== undefined) {

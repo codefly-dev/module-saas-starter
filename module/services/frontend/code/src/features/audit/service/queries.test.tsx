@@ -236,7 +236,12 @@ describe("scoped aggregate acknowledgement", () => {
 				{ wrapper: wrapper() },
 			);
 			await waitFor(() => expect(result.current.isFetching).toBe(false));
-			if (scopeContractVersion === 1) expect(result.current.data).toEqual([]);
+			// The contract version only grows and a later one is a superset of 1,
+			// so anything >= 1 is an acknowledgement. Only 0 — an older server that
+			// dropped the scope fields and answered organization-wide — is refused.
+			// Demanding exact equality would have thrown on every scoped metric of
+			// every deployed client the first time the server bumped to 2.
+			if (scopeContractVersion >= 1) expect(result.current.data).toEqual([]);
 			else {
 				expect(result.current.error?.message).toContain("scope contract");
 				expect(result.current.data).toBeUndefined();

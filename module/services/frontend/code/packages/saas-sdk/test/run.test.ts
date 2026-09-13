@@ -488,7 +488,11 @@ it("distinguishes empty, observed zero, partial samples and non-additive totals"
 		context,
 	);
 	expect(partial.points).toEqual([{ key: "a", value: 9 }]);
-	expect(partial.total).toBeNull();
+	// An additive total reports what WAS observed and flags the gap through
+	// coverage. Nulling it here blanked the stat tile of every metric over an
+	// optional payload field (result_count, duration_ms), which is the shape the
+	// documented example dashboard uses.
+	expect(partial.total).toBe(9);
 	expect(partial.coverage).toBe("partial");
 	const grouped = await runMetric(
 		fakeAuditClient(() => [
@@ -586,6 +590,32 @@ describe("scoped server contract", () => {
 			}
 		}
 	}
+	it("accepts a newer scope contract version than it was built against", async () => {
+		// The version only ever grows, and a later version is a superset of 1's
+		// guarantees. Demanding exact equality meant the first server bump to 2
+		// would throw on every scoped metric of every already-deployed client.
+		const client = {
+			aggregateAuditLog: async () =>
+				create(AggregateAuditLogResponseSchema, {
+					scopeContractVersion: 2,
+					buckets: [{ key: "all", count: BigInt(3) }],
+				}),
+		};
+		const series = await runMetric(
+			client,
+			{
+				id: "scoped",
+				kind: "source",
+				filter: { event: "read", collectionId: "collection-a" },
+				groupBy: "event_type",
+				aggregation: "count",
+			},
+			() => "saas.document.read",
+			context,
+		);
+		expect(series.total).toBe(3);
+	});
+
 	it("accepts acknowledged empty scoped responses", async () => {
 		const { client } = fakeAuditClient(() => []);
 		expect(
@@ -667,7 +697,9 @@ describe("derived additive totals", () => {
 					context,
 				);
 				expect(partial.nested.coverage).toBe("partial");
-				expect(partial.nested.total).toBeNull();
+				// Same rule one level up: a derived ADDITIVE total stays a number
+				// and carries the partial coverage rather than vanishing.
+				expect(partial.nested.total).toBe(2);
 			}
 		});
 	}
