@@ -24,13 +24,32 @@ import { apiTransport } from "@/lib/connect/transport";
 const contentResource = () =>
 	process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
 
+// One client per declared resource: the value is stable in a running deployment,
+// so this rebuilds only if it actually changes.
+let scoped: { resource?: string; client: DatasourceClient } | null = null;
+const scopedClient = (): DatasourceClient => {
+	const resource = contentResource();
+	if (!scoped || scoped.resource !== resource) {
+		scoped = {
+			resource,
+			client: datasourceClientOverTransport(apiTransport, resource),
+		};
+	}
+	return scoped.client;
+};
+
 const permissions = createClient(PermissionService, apiTransport);
 const organizations = createClient(OrganizationService, apiTransport);
 const principals = createClient(PrincipalService, apiTransport);
 const teams = createClient(TeamService, apiTransport);
 
 export const datasourceClient: DatasourceClient = {
-	...datasourceClientOverTransport(apiTransport, contentResource()),
+	...datasourceClientOverTransport(apiTransport),
+	// Resolve the declared resource per call, not at module load, so a scope query
+	// reflects the deployment's configuration rather than import order.
+	listAccessibleScopes(orgId) {
+		return scopedClient().listAccessibleScopes!(orgId);
+	},
 	async listCollections(orgId) {
 		const collections: CollectionAccessView[] = [];
 		let pageToken = "";
