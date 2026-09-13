@@ -123,7 +123,7 @@
     "contracts/reference/topology.codefly.yaml": "ee4c69fafc4efa416490010e4755531563a8bec577cd493a8970cd73bb45dd39",
     "contracts/settings/v1/settings-contribution.schema.json": "6785b8d5dbd763c5df9e195f1a0a0ade3f48a48e130a29acf67c0674b019ff57",
     "contracts/topology/v1/topology-contribution.schema.json": "bfb0dc480f46e3292ad20dd39ad9184367a792a4fb39c5446053d9356525c93f",
-    "deployment/README.md": "014f6c04a166fdb6f7105ab863c2a7237bcfc417d63960437627d9ea781a645a",
+    "deployment/README.md": "6526fd0dffead7adf6072cb0cfe2840dfa0fc651f470eb1b7252b346f60156f5",
     "deployment/generated/asyncapi.json": "19d0285245b7796cf018113db80e19e1d76116fd1a81cc2a0910bca60cda6111",
     "deployment/generated/communication.md": "cf732b384f6b20e9783dfb5606726270b675b226c41bd5a0abe7701c009450e2",
     "deployment/generated/contributed-fixtures.json": "05b16f72ee62f04b58f8728831a6c4245cc8141a0f0d72498a08acfb317307a7",
