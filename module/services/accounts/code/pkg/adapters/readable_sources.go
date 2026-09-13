@@ -34,12 +34,26 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
-	claims, err := authority.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: authority.issuer, Audience: "documents"})
+	// The audience is not compared against a literal: it names the composed
+	// module the capability was minted for, and that module's own declaration
+	// says which permission resource types its content is governed by. A host
+	// that spelled one here would answer "no access" for every other consumer.
+	claims, err := authority.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: authority.issuer})
 	if err != nil {
 		return nil, status.Error(codes.Unauthenticated, "invalid viewer Work Context")
 	}
-	if err = codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: "documents", Action: "read"}); err != nil {
-		return nil, status.Error(codes.PermissionDenied, "documents read scope required")
+	declared, err := service.ModuleContentResources(claims.GetAudience())
+	if err != nil {
+		return nil, err
+	}
+	var resources []string
+	for _, resource := range declared {
+		if codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: resource, Action: "read"}) == nil {
+			resources = append(resources, resource)
+		}
+	}
+	if len(resources) == 0 {
+		return nil, status.Error(codes.PermissionDenied, "module content read scope required")
 	}
 	if claims.GetTenantId() == "" {
 		return &gen.ListReadableSourceCollectionsResponse{}, nil
@@ -49,7 +63,7 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	for _, actor := range claims.GetActorChain() {
 		subjects = append(subjects, actor.GetPrincipalId())
 	}
-	return service.ReadableSourceCollections(ctx, claims.GetTenantId(), subjects, req, func(ctx context.Context) error {
+	return service.ReadableSourceCollections(ctx, claims.GetTenantId(), subjects, resources, req, func(ctx context.Context) error {
 		_, err := authority.requireCurrentAuthority(ctx, claims.GetTenantId(), claims)
 		return err
 	})

@@ -120,10 +120,10 @@ func ModulePrincipalID(prefix string) string {
 
 // ParseModulePrincipalRegistry decodes the deployment-provided registry of
 // module service principals. The document its JSON describes is a map of module
-// prefix to {"queues": [...], "namespaces": [...], "cross_tenant": bool,
-// "tenant": "<org uuid>"}, indexed here by the principal id derived from that
-// prefix. An empty string yields an empty registry, which denies every caller
-// (fail-closed).
+// prefix to {"queues": [...], "namespaces": [...], "resources": [...],
+// "cross_tenant": bool, "tenant": "<org uuid>"}, indexed here by the principal id
+// derived from that prefix. An empty string yields an empty registry, which
+// denies every caller (fail-closed).
 func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 	if raw == "" {
 		return ModulePrincipalRegistry{}, nil
@@ -188,6 +188,28 @@ func (s *Service) moduleGrant(caller ModuleCaller) (ModulePrincipalGrant, error)
 		return ModulePrincipalGrant{}, status.Errorf(codes.PermissionDenied, "principal %s is not a registered module principal", caller.PrincipalID)
 	}
 	return grant, nil
+}
+
+// ModuleContentResources reports the permission resource types the content of
+// one composed module is governed by. prefix is the module's registration
+// prefix — the name a composition declares its principal under, and the audience
+// a capability minted for that module carries.
+//
+// The host owns permissions but holds no domain content, so it cannot name the
+// resource a collection's records are governed by; only the composition knows
+// which modules it composed. Reading the answer from the declared registry is
+// what keeps that knowledge out of this module, and an audience that names no
+// registered module — or one that declares no content — resolves to nothing
+// rather than to an invented authority (fail-closed).
+//
+// This is the per-caller counterpart of ContentResources, which takes the union
+// because its caller is an org administrator rather than one module.
+func (s *Service) ModuleContentResources(prefix string) ([]string, error) {
+	grant, registered := s.modulePrincipals[ModulePrincipalID(prefix)]
+	if !registered || len(grant.Resources) == 0 {
+		return nil, status.Error(codes.PermissionDenied, "capability audience declares no module content")
+	}
+	return grant.Resources, nil
 }
 
 // authorizeTenant resolves the tenant a call targets. A call may only name its

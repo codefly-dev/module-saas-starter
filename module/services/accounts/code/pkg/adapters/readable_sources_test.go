@@ -40,6 +40,7 @@ type readProjectionStore struct {
 	grants                  map[string][]*gen.AccessibleScope
 	sources                 []*business.DatasourceSource
 	err                     error
+	resources               []string
 	scopeCalls, sourceCalls int
 	revision                int
 	expires                 time.Time
@@ -54,15 +55,16 @@ func (f *readProjectionStore) WithSourceReadSnapshot(ctx context.Context, org st
 func (f *readProjectionStore) SourceReadRevision(context.Context, string, []string) (string, time.Time, error) {
 	return fmt.Sprint(f.revision), f.expires, f.err
 }
-func (f *readProjectionStore) ListReadableSourcesPage(_ context.Context, org string, subjects []string, after string, limit int) ([]*gen.ReadableSourceCollection, error) {
+func (f *readProjectionStore) ListReadableSourcesPage(_ context.Context, org string, subjects, resources []string, after string, limit int) ([]*gen.ReadableSourceCollection, error) {
 	f.scopeCalls++
 	f.sourceCalls++
+	f.resources = resources
 	var out []*gen.ReadableSourceCollection
 	for _, source := range f.sources {
 		if source.OrgID != org {
 			return nil, errors.New("unexpected tenant")
 		}
-		allowed := true
+		allowed := len(resources) > 0
 		for _, subject := range subjects {
 			found := false
 			for _, scope := range f.grants[subject] {
@@ -97,7 +99,7 @@ func (a sourceReadIdentityAuthority) ResolveWorkContextAuthority(ctx context.Con
 	return a.workContextAuthorityFake.ResolveWorkContextAuthority(ctx, org, owner, actor, permissions)
 }
 
-func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorityFake, accountsv1connect.ModuleCapabilitiesServiceClient, func(string, string) string) {
+func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorityFake, accountsv1connect.ModuleCapabilitiesServiceClient, func(string, string, string) string) {
 	t.Helper()
 	previousService, previousAuthority := service, workContextSingleton
 	t.Cleanup(func() { service, workContextSingleton = previousService, previousAuthority; SetInternalToken("") })
@@ -109,6 +111,12 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	var err error
 	service, err = business.NewService(store)
 	require.NoError(t, err)
+	// Two composed modules whose content is governed by unrelated resource types:
+	// nothing this host authorizes may depend on which of them is calling.
+	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"documents"}},
+		business.ModulePrincipalID("rows"):      {Prefix: "rows", Resources: []string{"rows"}},
+	})
 	facts := &workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 7, PrincipalRevision: 3}}
 	_, key, err := ed25519.GenerateKey(rand.Reader)
 	require.NoError(t, err)
@@ -123,10 +131,10 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	client := accountsv1connect.NewModuleCapabilitiesServiceClient(server.Client(), server.URL, connect.WithGRPC())
-	mint := func(audience, action string) string {
+	mint := func(audience, kind, action string) string {
 		token, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: audience, TenantID: readOrg, OwnerPrincipalID: readOwner,
 			TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222", AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: codefly.WorkContextReplayIdempotent,
-			AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "documents", Actions: []string{action}}}})
+			AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{action}}}})
 		require.NoError(t, err)
 		return token.Encoded()
 	}
@@ -141,7 +149,7 @@ func sourceReadRequest(token string) *connect.Request[gen.ListReadableSourceColl
 func TestSourceReadSignedConnectProjectionAndRevocation(t *testing.T) {
 	store, facts, client, mint := sourceReadFixture(t)
 	ctx := context.Background()
-	token := mint("documents", "read")
+	token := mint("documents", "documents", "read")
 	first, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
 	require.NoError(t, err)
 	require.Len(t, first.Msg.Collections, 1)
@@ -174,9 +182,10 @@ func TestSourceReadRejectsUntrustedAuthorityBeforeStorage(t *testing.T) {
 		perimeter   bool
 		duplicate   bool
 	}{
-		{name: "forged", token: "not-signed", perimeter: true}, {name: "wrong audience", token: mint("other", "read"), perimeter: true},
-		{name: "scope attenuation", token: mint("documents", "write"), perimeter: true}, {name: "missing perimeter", token: mint("documents", "read")},
-		{name: "ambiguous carrier", token: mint("documents", "read"), perimeter: true, duplicate: true},
+		{name: "forged", token: "not-signed", perimeter: true}, {name: "unregistered audience", token: mint("other", "other", "read"), perimeter: true},
+		{name: "undeclared resource kind", token: mint("documents", "rows", "read"), perimeter: true},
+		{name: "scope attenuation", token: mint("documents", "documents", "write"), perimeter: true}, {name: "missing perimeter", token: mint("documents", "documents", "read")},
+		{name: "ambiguous carrier", token: mint("documents", "documents", "read"), perimeter: true, duplicate: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			r := sourceReadRequest(test.token)
@@ -202,28 +211,62 @@ func TestSourceReadCompleteScopePaginationAndPartialFailure(t *testing.T) {
 		store.grants[readOwner] = append(store.grants[readOwner], &gen.AccessibleScope{NodeId: fmt.Sprintf("boundary-%04d", i), ScopePath: fmt.Sprintf("scope%04d", i)})
 	}
 	store.sources[0].BoundaryNodeID = "boundary-1000"
-	result, err := client.ListReadableSourceCollections(context.Background(), sourceReadRequest(mint("documents", "read")))
+	result, err := client.ListReadableSourceCollections(context.Background(), sourceReadRequest(mint("documents", "documents", "read")))
 	require.NoError(t, err)
 	require.Len(t, result.Msg.Collections, 1)
 	require.Equal(t, 1, store.scopeCalls)
 	store.err = errors.New("source backend unavailable")
-	result, err = client.ListReadableSourceCollections(context.Background(), sourceReadRequest(mint("documents", "read")))
+	result, err = client.ListReadableSourceCollections(context.Background(), sourceReadRequest(mint("documents", "documents", "read")))
 	require.Error(t, err)
 	require.Nil(t, result)
 }
 func TestSourceReadIntersectsDelegatedSubjectsAndRejectsUnsupportedSources(t *testing.T) {
 	store, _, _, _ := sourceReadFixture(t)
 	store.grants["actor"] = []*gen.AccessibleScope{{NodeId: "boundary-b", ScopePath: "b"}}
-	r, err := service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
+	r, err := service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, []string{"documents"}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.NoError(t, err)
 	require.Len(t, r.Collections, 1)
 	require.Equal(t, sourceB, r.Collections[0].SourceId)
 	store.sources[1].Provider = "unsupported"
-	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
+	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner, "actor"}, []string{"documents"}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.Error(t, err)
 	require.Nil(t, r)
 	store.sources[1].OrgID = "another-tenant"
-	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
+	r, err = service.ReadableSourceCollections(auth.WithVerifiedDatabaseIdentity(context.Background(), readOwner, readOrg), readOrg, []string{readOwner}, []string{"documents"}, &gen.ListReadableSourceCollectionsRequest{}, func(context.Context) error { return nil })
 	require.Error(t, err)
 	require.Nil(t, r)
+}
+
+// The host holds no domain content, so which resource type governs a collection
+// is the calling module's declaration to make — not a literal in this repository.
+func TestSourceReadAuthorizesEachModuleUnderItsOwnDeclaredResources(t *testing.T) {
+	store, _, client, mint := sourceReadFixture(t)
+	ctx := context.Background()
+	for _, module := range []string{"documents", "rows"} {
+		result, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(mint(module, module, "read")))
+		require.NoError(t, err)
+		require.Len(t, result.Msg.Collections, 1)
+		require.Equal(t, []string{module}, store.resources)
+	}
+	// A cursor is bound to the resource types it enumerated under, so another
+	// module cannot resume a page this one opened.
+	first, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(mint("documents", "documents", "read")))
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Msg.NextPageToken)
+	next := sourceReadRequest(mint("rows", "rows", "read"))
+	next.Msg.PageToken = first.Msg.NextPageToken
+	_, err = client.ListReadableSourceCollections(ctx, next)
+	require.Equal(t, connect.CodeInvalidArgument, connect.CodeOf(err))
+}
+
+// A composition that declares no content for a module authorizes nothing for it,
+// rather than falling back to a resource type this host invented.
+func TestSourceReadDeniesModulesWithNoDeclaredResources(t *testing.T) {
+	store, _, client, mint := sourceReadFixture(t)
+	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("documents"): {Prefix: "documents"},
+	})
+	_, err := client.ListReadableSourceCollections(context.Background(), sourceReadRequest(mint("documents", "documents", "read")))
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	require.Zero(t, store.sourceCalls)
 }

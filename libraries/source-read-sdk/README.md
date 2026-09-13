@@ -18,8 +18,10 @@ result, err := client.ModuleCapabilities().
 through Connect interceptors. `New(gateway, options...)` also enforces gRPC;
 a custom gateway must provide an HTTP/2-capable client.
 Every call must carry one original signed viewer Work Context in
-`x-codefly-work-context`, audience `documents`, kind-wide `documents/read`,
-plus the cluster-internal perimeter credential. Installation/module credentials
+`x-codefly-work-context`, audience the calling module's registration prefix and
+kind-wide `read` on a resource type that module declares its content under, plus
+the cluster-internal perimeter credential. Only the declared types are honoured;
+a module that declares none reads nothing. Installation/module credentials
 are not a viewer. Never put either credential or a minting secret in a browser.
 The empty request contains no tenant, subject, scopes, or boundary authority.
 

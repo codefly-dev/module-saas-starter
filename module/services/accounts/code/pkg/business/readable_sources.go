@@ -23,8 +23,10 @@ type sourceReadCursor struct {
 
 // ReadableSourceCollections checks authority and reads one joined page in a
 // single repeatable-read snapshot. Cursors bind identity and durable revisions;
-// expiration of a standing grant also forces enumeration to restart.
-func (s *Service) ReadableSourceCollections(ctx context.Context, org string, subjects []string, req *gen.ListReadableSourceCollectionsRequest, authorize func(context.Context) error) (*gen.ListReadableSourceCollectionsResponse, error) {
+// expiration of a standing grant also forces enumeration to restart. resources
+// names the permission resource types the calling module's content is governed
+// by, which is what read grants are intersected against.
+func (s *Service) ReadableSourceCollections(ctx context.Context, org string, subjects []string, resources []string, req *gen.ListReadableSourceCollectionsRequest, authorize func(context.Context) error) (*gen.ListReadableSourceCollectionsResponse, error) {
 	if org == "" || len(subjects) == 0 || authorize == nil {
 		return nil, status.Error(codes.PermissionDenied, "viewer identity required")
 	}
@@ -58,10 +60,11 @@ func (s *Service) ReadableSourceCollections(ctx context.Context, org string, sub
 			return err
 		}
 		raw, err := json.Marshal(struct {
-			Org      string
-			Subjects []string
-			Revision string
-		}{org, subjects, revision})
+			Org       string
+			Subjects  []string
+			Resources []string
+			Revision  string
+		}{org, subjects, resources, revision})
 		if err != nil {
 			return err
 		}
@@ -72,7 +75,7 @@ func (s *Service) ReadableSourceCollections(ctx context.Context, org string, sub
 		if req.GetPageToken() != "" && (cur.Scope != scope || !cur.ExpiresAt.Equal(expires)) {
 			return status.Error(codes.InvalidArgument, "source scope changed; restart pagination")
 		}
-		collections, err := s.store.ListReadableSourcesPage(ctx, org, subjects, cur.After, size+1)
+		collections, err := s.store.ListReadableSourcesPage(ctx, org, subjects, resources, cur.After, size+1)
 		if err != nil {
 			return err
 		}

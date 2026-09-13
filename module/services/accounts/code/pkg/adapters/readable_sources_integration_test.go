@@ -52,6 +52,10 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	defer store.Close()
 	service, err = business.NewService(store)
 	require.NoError(t, err)
+	service.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("documents"): {Prefix: "documents", Resources: []string{"documents"}},
+		business.ModulePrincipalID("rows"):      {Prefix: "rows", Resources: []string{"rows"}},
+	})
 	workContextSingleton.authority = store
 	workContextSingleton.journal = store
 	verified := auth.WithVerifiedDatabaseIdentity(ctx, readOwner, readOrg)
@@ -62,7 +66,7 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 		return err
 	}))
 	facts.facts = current
-	token := mint("documents", "read")
+	token := mint("documents", "documents", "read")
 	result, err := client.ListReadableSourceCollections(ctx, sourceReadRequest(token))
 	require.NoError(t, err)
 	require.Len(t, result.Msg.Collections, 1)
@@ -85,10 +89,10 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 		_, _, err := store.SourceReadRevision(snapshot, readOrg, []string{readOwner, actor})
 		require.NoError(t, err) // establish the snapshot before the concurrent commit
 		exec(`BEGIN; DELETE FROM scope_grants WHERE org_id='` + readOrg + `'; INSERT INTO scope_grants(org_id,subject_id,subject_kind,scope_path,role_id) VALUES('` + readOrg + `','` + actor + `','principal','root.collection','` + role + `'); COMMIT;`)
-		rows, err := store.ListReadableSourcesPage(snapshot, readOrg, []string{readOwner, actor}, "", 2)
+		rows, err := store.ListReadableSourcesPage(snapshot, readOrg, []string{readOwner, actor}, []string{"documents"}, "", 2)
 		require.NoError(t, err)
 		require.Empty(t, rows)
-		ownerRows, err := store.ListReadableSourcesPage(snapshot, readOrg, []string{readOwner}, "", 2)
+		ownerRows, err := store.ListReadableSourcesPage(snapshot, readOrg, []string{readOwner}, []string{"documents"}, "", 2)
 		require.NoError(t, err)
 		require.Len(t, ownerRows, 1) // the original snapshot, despite the committed revocation
 		return nil
@@ -127,15 +131,16 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	team := uuid.NewString()
 	exec(`INSERT INTO teams(id,org_id,name,slug,path) VALUES($1,$2,'Example Team','example-team','example-team')`, team, readOrg)
 	exec(`INSERT INTO team_members(team_id,user_id,org_id) VALUES($1,$2,$3)`, team, readOwner, readOrg)
-	checkSources := func(want int) {
+	checkSourcesUnder := func(resources []string, want int) {
 		t.Helper()
 		require.NoError(t, store.WithSourceReadSnapshot(verified, readOrg, func(snapshot context.Context) error {
-			rows, err := store.ListReadableSourcesPage(snapshot, readOrg, []string{readOwner}, "", 10)
+			rows, err := store.ListReadableSourcesPage(snapshot, readOrg, []string{readOwner}, resources, "", 10)
 			require.NoError(t, err)
 			require.Len(t, rows, want)
 			return nil
 		}))
 	}
+	checkSources := func(want int) { t.Helper(); checkSourcesUnder([]string{"documents"}, want) }
 	exec(`INSERT INTO scope_grants(org_id,subject_id,subject_kind,scope_path,role_id) VALUES($1,$2,'team','root.collection',$3)`, readOrg, team, role)
 	checkSources(2)
 	exec(`DELETE FROM scope_grants WHERE org_id=$1`, readOrg)
@@ -150,4 +155,18 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	exec(`UPDATE role_permissions SET action='write' WHERE role_id=$1`, role)
 	checkSources(0)
 
+	// A collection whose content another module governs is read by that module
+	// and by no other: the resource type is the caller's declaration, and an
+	// undeclared composition reads nothing at all.
+	exec(`UPDATE role_permissions SET resource='rows',action='read' WHERE role_id=$1`, role)
+	exec(`UPDATE scope_nodes SET resource_type='rows' WHERE id=$1`, boundary)
+	exec(`UPDATE record_shares SET resource_type='rows' WHERE org_id=$1`, readOrg)
+	checkSourcesUnder([]string{"rows"}, 2)
+	checkSourcesUnder([]string{"documents"}, 0)
+	checkSourcesUnder(nil, 0)
+	// The standing-grant branch answers the same way, independently of shares.
+	exec(`DELETE FROM record_shares WHERE org_id=$1`, readOrg)
+	exec(`INSERT INTO scope_grants(org_id,subject_id,subject_kind,scope_path,role_id) VALUES($1,$2,'principal','root.collection',$3)`, readOrg, readOwner, role)
+	checkSourcesUnder([]string{"rows"}, 2)
+	checkSourcesUnder([]string{"documents"}, 0)
 }
