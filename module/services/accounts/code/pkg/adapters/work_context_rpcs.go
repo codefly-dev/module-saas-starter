@@ -262,6 +262,10 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
+	sessionID, err := callerSessionID(ctx, req.GetSessionId())
+	if err != nil {
+		return nil, err
+	}
 	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -292,7 +296,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 		TenantID:              req.GetOrgId(),
 		OwnerPrincipalID:      ownerID,
 		TaskID:                req.GetTaskId(),
-		SessionID:             req.GetSessionId(),
+		SessionID:             sessionID,
 		AuthorizationRevision: facts.EffectiveRevision(),
 		ReplayPolicy:          workContextReplayPolicy(req.GetReplayPolicy()),
 		AuthorityScopes:       scopes,
@@ -796,6 +800,30 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 		return "", err
 	}
 	return ownerID, nil
+}
+
+// callerSessionID roots a Task in the session the caller actually holds. A
+// capability signed and journaled under a session the caller merely named is
+// tied to nothing it can lose: a revocation, an expiry, an ended impersonation
+// or an organization switch all end a session without ever reaching a context
+// rooted in some other one. So a session-backed caller gets its own verified
+// session and a request naming any other is refused rather than honored.
+//
+// A caller authenticated by a service credential or an API key has no session to
+// derive and keeps the requested id, as the headless installation mint does.
+func callerSessionID(ctx context.Context, requested string) (string, error) {
+	verified, ok := accountsauth.VerifiedSessionID(ctx)
+	if !ok {
+		return requested, nil
+	}
+	// Compare parsed ids: uuid.Parse accepts spellings the canonical form does
+	// not, so the caller's own session written another way must not read as a
+	// foreign one. The canonical spelling is what gets signed.
+	parsed, _ := uuid.Parse(requested)
+	if parsed != verified {
+		return "", status.Error(codes.PermissionDenied, "session_id must name the caller's verified session")
+	}
+	return verified.String(), nil
 }
 
 func (s *WorkContextAuthorityServer) verifyParent(
