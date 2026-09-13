@@ -27,7 +27,9 @@ var (
 	unresolvedPattern = regexp.MustCompile(`(?i)REPLACE_ME|saas-starter|\$\{[^}]+\}|<[^>]*replace[^>]*>`)
 	// A Cloud SQL instance is addressed by project:region:instance, which is not
 	// a DNS name, so it travels beside the ExternalName rather than inside it.
-	instanceConnectionPattern = regexp.MustCompile(`^[a-z][-a-z0-9]{4,28}[a-z0-9]:[a-z0-9]+(?:-[a-z0-9]+)*:[a-z](?:[-a-z0-9]{0,96}[a-z0-9])?$`)
+	// The optional leading segment is the legacy domain-scoped project form
+	// (example.com:project:region:instance) that older organizations still carry.
+	instanceConnectionPattern = regexp.MustCompile(`^(?:[a-z0-9](?:[-a-z0-9]*[a-z0-9])?(?:\.[a-z0-9](?:[-a-z0-9]*[a-z0-9])?)+:)?[a-z][-a-z0-9]{4,28}[a-z0-9]:[a-z0-9]+(?:-[a-z0-9]+)*:[a-z](?:[-a-z0-9]{0,96}[a-z0-9])?$`)
 )
 
 type moduleManifest struct {
@@ -131,7 +133,7 @@ type managedServiceHandoff struct {
 	Service                string   `json:"service"`
 	Kind                   string   `json:"kind"`
 	ExternalName           string   `json:"externalName"`
-	AuthMode               string   `json:"authMode"`
+	AuthMode               string   `json:"authMode,omitempty"`
 	InstanceConnectionName string   `json:"instanceConnectionName,omitempty"`
 	SecretReferences       []string `json:"secretReferences,omitempty"`
 }
@@ -792,13 +794,18 @@ func validateManagedServices(
 		default:
 			return fmt.Errorf("environment %q managed service %q kind %q is not supported", environment.Name, service, config.Kind)
 		}
-		authMode, err := validateManagedAuth(environment.Name, service, config)
-		if err != nil {
-			return err
-		}
 		if !validExternalName(config.ExternalName) {
 			return fmt.Errorf("environment %q managed service %q external-name %q is not an exact DNS name", environment.Name, service, config.ExternalName)
 		}
+		authMode, instanceConnection, err := validateManagedAuth(environment.Name, service, config)
+		if err != nil {
+			return err
+		}
+		// Store what was validated rather than what was written: the renderer and
+		// the bundle both read these back, so a padded or defaulted spelling must
+		// not survive past the one place that checked it.
+		config.AuthMode = authMode
+		config.InstanceConnectionName = instanceConnection
 		for _, cidr := range config.EgressCIDRs {
 			if _, _, err := net.ParseCIDR(cidr); err != nil {
 				return fmt.Errorf("environment %q managed service %q egress CIDR %q is invalid", environment.Name, service, cidr)
@@ -809,8 +816,13 @@ func validateManagedServices(
 			Service:                service,
 			Kind:                   config.Kind,
 			ExternalName:           config.ExternalName,
-			AuthMode:               authMode,
-			InstanceConnectionName: config.InstanceConnectionName,
+			InstanceConnectionName: instanceConnection,
+		}
+		// Only a non-default mode earns a key: every consumer already reads an
+		// absent authMode as the password-backed shape, so emitting it for the
+		// default would rewrite every existing handoff to say what it already said.
+		if authMode != "password" {
+			handoff.AuthMode = authMode
 		}
 		for _, reference := range config.SecretReferences {
 			if err := validateDNSLabel("managed secret reference name", reference.Name); err != nil {
@@ -841,32 +853,32 @@ func validateManagedServices(
 // An unset auth-mode keeps the password-backed shape the password-bearing kinds
 // have always had; external-identity means the workload authenticates as itself,
 // so there is no connection secret to project and none may be declared.
-func validateManagedAuth(environment, service string, config managedServiceConfig) (string, error) {
-	instance := strings.TrimSpace(config.InstanceConnectionName)
-	mode := strings.TrimSpace(config.AuthMode)
+func validateManagedAuth(environment, service string, config managedServiceConfig) (mode, instance string, err error) {
+	instance = strings.TrimSpace(config.InstanceConnectionName)
+	mode = strings.TrimSpace(config.AuthMode)
 	if config.Kind == "cloud-sql-postgres" {
 		// A silent password default here would have the driver project a
 		// connection secret an IAM-only instance never issued, so the choice is
 		// stated rather than inherited.
 		if mode == "" {
-			return "", fmt.Errorf("environment %q managed service %q kind %q requires an explicit auth-mode", environment, service, config.Kind)
+			return "", "", fmt.Errorf("environment %q managed service %q kind %q requires an explicit auth-mode", environment, service, config.Kind)
 		}
 		if !instanceConnectionPattern.MatchString(instance) {
-			return "", fmt.Errorf("environment %q managed service %q instance-connection-name %q is not a project:region:instance name", environment, service, config.InstanceConnectionName)
+			return "", "", fmt.Errorf("environment %q managed service %q instance-connection-name %q is not a project:region:instance name", environment, service, config.InstanceConnectionName)
 		}
 	} else if instance != "" {
-		return "", fmt.Errorf("environment %q managed service %q kind %q does not take an instance-connection-name", environment, service, config.Kind)
+		return "", "", fmt.Errorf("environment %q managed service %q kind %q does not take an instance-connection-name", environment, service, config.Kind)
 	}
 	switch mode {
 	case "", "password":
-		return "password", nil
+		return "password", instance, nil
 	case "external-identity":
 		if len(config.SecretReferences) > 0 {
-			return "", fmt.Errorf("environment %q managed service %q authenticates as an external identity and declares secret references", environment, service)
+			return "", "", fmt.Errorf("environment %q managed service %q authenticates as an external identity and declares secret references", environment, service)
 		}
-		return "external-identity", nil
+		return "external-identity", instance, nil
 	}
-	return "", fmt.Errorf("environment %q managed service %q auth-mode %q is not supported", environment, service, config.AuthMode)
+	return "", "", fmt.Errorf("environment %q managed service %q auth-mode %q is not supported", environment, service, config.AuthMode)
 }
 
 func validateManagedDependencyCIDRs(environment string, topology deploymentTopology, managed map[string]managedServiceConfig) error {
@@ -2022,6 +2034,7 @@ func topologyNetworkPolicies(
 			})
 		}
 	}
+	tokenEgress := make(map[string]struct{})
 	for _, current := range edges {
 		if _, exists := inCluster[current.target]; exists {
 			policies = append(policies,
@@ -2035,6 +2048,12 @@ func topologyNetworkPolicies(
 			return nil, fmt.Errorf("dependency %s -> %s has no in-cluster service or managed handoff", current.caller, current.target)
 		}
 		policies = append(policies, managedEgressPolicy(namespace, labels, current.caller, current.callerApp, current.target, current.ports, config.EgressCIDRs))
+		if config.AuthMode == "external-identity" {
+			if _, rendered := tokenEgress[current.caller]; !rendered {
+				tokenEgress[current.caller] = struct{}{}
+				policies = append(policies, workloadIdentityTokenEgressPolicy(namespace, labels, current.caller, current.callerApp))
+			}
+		}
 	}
 	for _, service := range topology.Services {
 		if len(service.BootstrapJobEndpoints) == 0 {
@@ -2276,6 +2295,32 @@ var publicIPv6Exceptions = []string{
 	"2002::/16", "fc00::/7", "fe80::/10", "ff00::/8",
 }
 
+// instanceMetadataCIDR is the node-local instance metadata endpoint every major
+// cloud serves workload-identity tokens from (GCP, Azure IMDS and AWS IMDS all
+// answer on this address).
+const instanceMetadataCIDR = "169.254.169.254/32"
+
+// workloadIdentityTokenEgressPolicy lets a caller mint the token that IS its
+// credential under external-identity. The default-deny baseline denies all
+// egress and publicEgressPolicy excepts link-local, so without this the
+// passwordless mode has no path to the credential it is defined by — and the
+// failure would land at connection time, long after generation reported success.
+func workloadIdentityTokenEgressPolicy(namespace string, labels map[string]string, caller, callerApp string) kubeObject {
+	return kubeObject{
+		APIVersion: "networking.k8s.io/v1",
+		Kind:       "NetworkPolicy",
+		Metadata:   objectMeta{Name: kubernetesName("allow", caller, "workload-identity-token"), Namespace: namespace, Labels: labels},
+		Spec: map[string]any{
+			"podSelector": map[string]any{"matchLabels": map[string]string{"app": callerApp}},
+			"policyTypes": []string{"Egress"},
+			"egress": []any{map[string]any{
+				"to":    []any{map[string]any{"ipBlock": map[string]string{"cidr": instanceMetadataCIDR}}},
+				"ports": []any{map[string]any{"protocol": "TCP", "port": 80}},
+			}},
+		},
+	}
+}
+
 func publicEgressPolicy(namespace string, labels map[string]string, service, serviceApp string, ports []uint32) kubeObject {
 	return kubeObject{
 		APIVersion: "networking.k8s.io/v1",
@@ -2370,8 +2415,8 @@ func validateGeneratedBundle(root string, bundle moduleBundle) error {
 		if err != nil {
 			return err
 		}
-		if unresolvedPattern.Match(data) {
-			return fmt.Errorf("%s contains an unresolved placeholder or starter identity", file)
+		if match := unresolvedPattern.Find(data); match != nil {
+			return fmt.Errorf("%s contains an unresolved placeholder or starter identity %q", file, match)
 		}
 		return nil
 	})

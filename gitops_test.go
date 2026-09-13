@@ -1656,6 +1656,142 @@ func TestGKEEnvironmentRendersPasswordlessCloudSQLHandoff(t *testing.T) {
 	}
 }
 
+func passwordlessGKEFixture(t *testing.T, name, instanceConnection string) (string, *workspaceManifest) {
+	t.Helper()
+	root, moduleDir := writeModuleFixture(t, name, "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace.Environments[1].Name = "gke"
+	workspace.Environments[1].Cluster.Kind = "gke"
+	workspace.Environments[1].ManagedServices["store"] = managedServiceConfig{
+		Kind:                   "cloud-sql-postgres",
+		ExternalName:           "store.identity.internal.example.com",
+		AuthMode:               "external-identity",
+		InstanceConnectionName: instanceConnection,
+		EgressCIDRs:            []string{"10.42.0.0/24"},
+	}
+	return moduleDir, workspace
+}
+
+// External identity means the token IS the credential, so a caller that cannot
+// reach the metadata endpoint cannot authenticate at all — and the baseline
+// denies egress while the public-egress policy excepts link-local.
+func TestPasswordlessManagedServiceRendersWorkloadIdentityTokenEgress(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "token-egress", "identity-prod:us-central1:store")
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/gke/base/network-policy.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := string(data)
+	for _, expected := range []string{
+		"name: allow-accounts-workload-identity-token",
+		"cidr: 169.254.169.254/32",
+	} {
+		if !strings.Contains(rendered, expected) {
+			t.Errorf("passwordless caller has no token egress %q:\n%s", expected, rendered)
+		}
+	}
+}
+
+// The password-backed shape mints nothing, so it must not be granted reach to
+// the metadata endpoint it has no use for.
+func TestPasswordManagedServiceRendersNoWorkloadIdentityTokenEgress(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "no-token-egress", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(
+		moduleDir,
+		filepath.FromSlash(bundleRelativeDir),
+		"overlays/aws/base/network-policy.yaml",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "workload-identity-token") || strings.Contains(string(data), "169.254.169.254") {
+		t.Errorf("password-backed caller was granted metadata endpoint reach:\n%s", data)
+	}
+}
+
+// The value that was validated is the value that must travel: validating a
+// trimmed spelling while storing the raw one ships a coordinate no driver can
+// resolve.
+func TestPasswordlessHandoffCanonicalizesInstanceConnectionName(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "token-trim", "  identity-prod:us-central1:store  ")
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bundle moduleBundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	handoff := bundle.Environments[1].ManagedServiceHandoffs[0]
+	if handoff.InstanceConnectionName != "identity-prod:us-central1:store" {
+		t.Errorf("instance connection name = %q, want the canonical spelling", handoff.InstanceConnectionName)
+	}
+}
+
+// An absent authMode already means password to every existing consumer, so the
+// default must not rewrite handoffs on clouds this feature never touched.
+func TestPasswordDefaultOmitsAuthModeFromBundle(t *testing.T) {
+	t.Parallel()
+	root, moduleDir := writeModuleFixture(t, "authmode-default", "identity", []string{"accounts", "store"})
+	workspace, err := loadWorkspaceManifest(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(moduleDir, filepath.FromSlash(bundleRelativeDir), "bundle.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "authMode") {
+		t.Errorf("password-backed handoff emitted an authMode key:\n%s", data)
+	}
+}
+
+func TestInstanceConnectionNameAcceptsDomainScopedProject(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "domain-scoped", "example.com:identity-prod:us-central1:store")
+	if err := generateDeploymentBundle(moduleDir, workspace); err != nil {
+		t.Fatalf("legacy domain-scoped project was refused: %v", err)
+	}
+}
+
+func TestUnresolvedPlaceholderErrorNamesTheToken(t *testing.T) {
+	t.Parallel()
+	moduleDir, workspace := passwordlessGKEFixture(t, "unresolved-token", "saas-starter:us-central1:store")
+	err := generateDeploymentBundle(moduleDir, workspace)
+	if err == nil {
+		t.Fatal("a starter identity in the bundle was accepted")
+	}
+	if !strings.Contains(err.Error(), "saas-starter") {
+		t.Errorf("error does not name the offending token: %v", err)
+	}
+}
+
 func TestReplaceGeneratedTreeRestoresPreviousTreeOnInstallFailure(t *testing.T) {
 	t.Parallel()
 	parent := t.TempDir()
