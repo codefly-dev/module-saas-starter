@@ -12,30 +12,39 @@ function run(args, cwd) {
 	if (result.error) throw result.error;
 	if (result.status !== 0) process.exit(result.status ?? 1);
 }
-run(
-	[
-		"generate",
-		"client",
-		"--from",
-		"contracts:../../../../../contracts/api",
-		"--endpoint",
-		"accounts/connect",
-		"--language",
-		"typescript",
-		"--services",
-		"AccessibleScopeService,AuditService,DatasourceService,WebhookService",
-		"--name",
-		"saas-sdk",
-		"--npm-scope",
-		"@codefly-dev/saas-sdk",
-		"--module-name",
-		"accounts",
-		"--output",
-		"./generated",
-		...process.argv.slice(2),
-	],
-	sdk,
-);
+const args = process.argv.slice(2);
+// Refreshing the bindings alone leaves the vendored contract and facade — and
+// the digest they record — exactly as they are.
+const bindingsOnly = args.includes("--bindings-only");
+// The selector is this script's own; the CLI has no such option, so no spelling
+// of it may reach the step that forwards its arguments.
+const forwarded = args.filter((arg) => !arg.startsWith("--bindings-only"));
+if (!bindingsOnly) {
+	run(
+		[
+			"generate",
+			"client",
+			"--from",
+			"contracts:../../../../../contracts/api",
+			"--endpoint",
+			"accounts/connect",
+			"--language",
+			"typescript",
+			"--services",
+			"AccessibleScopeService,AuditService,DatasourceService,WebhookService",
+			"--name",
+			"saas-sdk",
+			"--npm-scope",
+			"@codefly-dev/saas-sdk",
+			"--module-name",
+			"accounts",
+			"--output",
+			"./generated",
+			...forwarded,
+		],
+		sdk,
+	);
+}
 // Explicit rather than a postgenerate lifecycle hook: npm ignore-scripts must
 // not leave a facade whose imported descriptors were never generated. Both steps
 // read the exported snapshot, never the mutable service proto source.

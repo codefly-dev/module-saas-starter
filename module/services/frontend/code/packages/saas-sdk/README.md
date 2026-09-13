@@ -156,12 +156,17 @@ exported into the module package (`module/contracts/api`):
 npm run generate
 ```
 
-This runs `codefly generate client --from contracts:… --endpoint accounts/connect
+This runs `scripts/generate.mjs`, which performs **both** generation steps. The
+first, `codefly generate client --from contracts:… --endpoint accounts/connect
 --services AccessibleScopeService,AuditService,DatasourceService,WebhookService`,
-writing the bindings
+writes the bindings
 (`generated/typescript/src/gen`), the `accounts` facade
 (`generated/typescript/src/accounts_facade.ts`), and the resolved
-`library.codefly.yaml` recording the contract digest.
+`library.codefly.yaml` recording the contract digest. The second is the buf step
+described below. Run the script — or the npm scripts that wrap it — rather than
+the bare `codefly generate client` command: on its own that step emits whichever
+foreign descriptors the CLI's core decides to, which is the omission the second
+step exists to repair.
 
 The `--services` flag scopes only the generated **facade** to the public
 services. The accounts/connect contract is the full `saas.accounts.v1` package
@@ -181,6 +186,14 @@ TypeScript plugin and `include_imports: true` to generate the complete import
 closure, including buf/validate and google/api. It avoids CLI-dependent foreign
 import omissions and never repairs generated files by hand. The public package
 still compiles only the closure reachable from its public SDK sources.
+
+**Install the frontend workspace before regenerating.** That template reaches the
+pinned plugin through `npx --no-install`, so
+`npm ci --prefix module/services/frontend/code` has to have run first. Without it
+the buf step exits non-zero *after* the client step has already rewritten the
+vendored contract, the facade and `library.codefly.yaml`, leaving a
+half-regenerated tree. Install the workspace and re-run, or `git checkout` the
+`generated` directory to get back to a known state.
 
 **Regenerate with the codefly version CI pins, and check the result.** The
 buf step above is a backstop, not a substitute for the pin: the generation
