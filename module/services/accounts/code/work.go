@@ -280,6 +280,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetGitHubAppRegistration(
 		workspaceEnv("github-app", "GITHUB_APP_ID"),
 		workspaceEnv("github-app", "GITHUB_APP_PRIVATE_KEY"),
+		workspaceEnv("github-app", "GITHUB_APP_WEBHOOK_SECRET"),
 	)
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
@@ -803,6 +804,19 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, err
 	}
 
+	// The GitHub App installation reconciler (issue #691): it leases each
+	// verified App-level delivery and re-derives the affected sources' access
+	// from GitHub, rather than acting on what the delivery claimed.
+	datasourceInstallationWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.DatasourceInstallationQueue,
+		Handler:    service.NewDatasourceInstallationJobHandler(),
+		RetryDelay: business.DatasourceSyncRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	// The inbound GitHub push webhook is an unauthenticated, un-rate-limited edge
 	// that resolves a per-source signing secret from the credential store (a
 	// control-plane DB read) on every request. It is opt-in per deployment so a
@@ -817,6 +831,19 @@ func doWork(ctx context.Context) (Clean, error) {
 			datasource.HandlerDeps{Producer: jobStore, Sources: datasourceSourceResolver{svc: service}},
 		))
 		w.Info("GitHub datasource webhook enabled")
+	}
+
+	// The App's own lifecycle deliveries arrive at a second, App-wide endpoint.
+	// `installation` and `installation_repositories` are delivered only to the
+	// App registration's webhook URL and signed with the registration's own
+	// secret, so neither the per-source path nor a per-source secret can receive
+	// them. Mounting is gated on an actual registration, so a deployment that
+	// registered no App exposes no such surface.
+	if service.GitHubAppWebhookConfigured() {
+		adapters.RegisterHTTPRoute(datasource.GitHubAppWebhookPath, datasource.NewAppHandler(
+			datasource.AppHandlerDeps{Producer: jobStore, Registration: service},
+		))
+		w.Info("GitHub App lifecycle webhook enabled")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and
@@ -935,6 +962,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	datasourceSyncWorker.Start(ctx)
 	privacyWorker.Start(ctx)
 	datasourceDeliveryWorker.Start(ctx)
+	datasourceInstallationWorker.Start(ctx)
 	eventRelayWorker.Start(ctx)
 
 	return func() {
@@ -1000,6 +1028,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := datasourceDeliveryWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("datasource delivery worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping datasource installation worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := datasourceInstallationWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("datasource installation worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("stopping domain-event relay worker")
