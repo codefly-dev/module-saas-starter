@@ -263,7 +263,7 @@ func (s *WorkContextAuthorityServer) StartTask(
 	if err != nil {
 		return nil, err
 	}
-	sessionID := callerSessionID(ctx, "StartTask", req.GetSessionId())
+	sessionID := callerSessionID(ctx, req.GetSessionId())
 	permissions, scopes, err := workContextScopes(req.GetAuthorityScopes())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -480,16 +480,19 @@ func (s *WorkContextAuthorityServer) resolveInstallationAuthority(
 	return nil, status.Error(codes.Internal, "cannot resolve installation authority")
 }
 
-// StartRootSession re-roots a capability in another root Session under the same
-// Task. A root Session deliberately keeps no lineage — the signer clears
-// parent_session_id — so the Session this names is the only anchor the actor
-// chain journal and every downstream evidence read have, and a Session the
-// request invented leaves both naming one that never existed. Bind the caller's
-// verified session, as StartTask does.
+// StartRootSession issues another root Session under the same Task. The Session
+// id is generated here rather than taken from the request: a root Session keeps
+// no lineage — the signer clears parent_session_id — so a caller-chosen id is
+// free to name anything at all, including a Session that never existed or one
+// belonging to unrelated work. Generating it is what makes the new root Session
+// verifiably fresh. The issued response carries the id, which is what a caller
+// correlates on and what the product records its own Session row under.
 //
-// A caller still holding the Session the parent is rooted in has no other root
-// Session to move to, so the request is refused rather than minting a second
-// capability for the Session the parent already names.
+// The Session is an execution scope, not the caller's authenticated session.
+// This issuer never owns consumer Task/Session rows, so deriving the caller's
+// auth session here would put an identifier the product has no row for into a
+// field the product owns, and would refuse every caller whose parent Task was
+// rooted in the same auth session.
 func (s *WorkContextAuthorityServer) StartRootSession(
 	ctx context.Context,
 	req *gen.StartRootSessionWorkContextRequest,
@@ -501,21 +504,17 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, actor, err := s.verifyParent(
+	parentToken, _, actor, err := s.verifyParent(
 		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
 	)
 	if err != nil {
 		return nil, err
 	}
-	sessionID := callerSessionID(ctx, "StartRootSession", req.GetSessionId())
-	if sessionID == parent.GetSessionId() {
-		return nil, status.Error(codes.InvalidArgument, "new session must differ from parent session")
-	}
 	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	token, signed, err := s.signer.StartSession(parentToken, codefly.StartRootSessionInput{
-		SessionID:    sessionID,
+		SessionID:    uuid.NewString(),
 		Audience:     req.GetAudience(),
 		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
 		TTL:          workContextTTL(req.GetTtlSeconds()),
@@ -811,9 +810,9 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 	return ownerID, nil
 }
 
-// callerSessionID roots a capability in the session the caller actually holds,
-// so one is never signed and journaled under a session that only ever existed in
-// the request that named it.
+// callerSessionID roots a Task in the session the caller actually holds, so a
+// capability is never signed and journaled under a session that only ever
+// existed in the request that named it.
 //
 // A divergent id is ignored rather than refused. Refusing reads as the safer
 // choice, but the requested id is not authority — it is a correlation field the
@@ -829,7 +828,7 @@ func (s *WorkContextAuthorityServer) authorizeOwner(ctx context.Context, orgID s
 //
 // A caller authenticated by a service credential or an API key has no session to
 // derive and keeps the requested id, as the headless installation mint does.
-func callerSessionID(ctx context.Context, rpc string, requested string) string {
+func callerSessionID(ctx context.Context, requested string) string {
 	verified, ok := accountsauth.VerifiedSessionID(ctx)
 	if !ok {
 		return requested
@@ -839,7 +838,7 @@ func callerSessionID(ctx context.Context, rpc string, requested string) string {
 	// Neither id is logged — a session id identifies a live session, and wool
 	// masks keys rather than values.
 	if parsed, _ := uuid.Parse(requested); parsed != verified {
-		wool.Get(ctx).In(rpc).Warn(
+		wool.Get(ctx).In("StartTask").Warn(
 			"requested session_id is not the caller's verified session; binding to the verified session",
 		)
 	}
