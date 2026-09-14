@@ -301,6 +301,11 @@ type Store interface {
 	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
 	// Confined to orgID with an explicit predicate on top of the RLS tenant floor.
 	ListAccessibleScopes(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
+	// ListAccessibleResourceIDs narrows candidates to the placed records the
+	// subject may currently act on, through the same grant + share union as
+	// ListAccessibleScopes — one call for a set of ids a reader already holds,
+	// rather than a point check each. Run under WithOrgTx.
+	ListAccessibleResourceIDs(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action string, candidates []string) ([]string, error)
 	CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
 	// GetOrCreateCollectionNode reuses an existing collection node with node.Label
