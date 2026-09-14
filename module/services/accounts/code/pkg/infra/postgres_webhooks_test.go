@@ -10,7 +10,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +75,26 @@ func TestMain(m *testing.M) {
 }
 
 func runPostgresInfraTests(m *testing.M) int {
+	if raw := os.Getenv("ACCOUNTS_INSTALLER_TEST_DATABASE_URL"); raw != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil || (parsed.Hostname() != "127.0.0.1" && parsed.Hostname() != "localhost") || !strings.HasPrefix(parsed.Path, "/installer_test_") {
+			fmt.Fprintln(os.Stderr, "installer tests require a disposable loopback installer_test_ database")
+			return 1
+		}
+		store, err := infra.NewPostgresStoreFromURL(context.Background(), raw)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		defer store.Close()
+		testStore, testPool, testCtx = store, store.Pool(), context.Background()
+		if err := store.WithControlPlane(testCtx, func(ctx context.Context) error { return store.SyncAuditEventTypes(ctx, business.AuditEventCatalog()) }); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return m.Run()
+	}
+
 	ctx := context.Background()
 	wool.SetGlobalLogLevel(wool.DEBUG)
 

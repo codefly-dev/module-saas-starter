@@ -183,6 +183,15 @@ func doWork(ctx context.Context) (Clean, error) {
 		return nil, fmt.Errorf("parse module principal registry: %w", err)
 	}
 	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
+	// Explicit organization delegation is separate from module identity. A
+	// projected policy is refreshed by the delivery system and read per call.
+	if policyPath := os.Getenv("MODULE_INSTALLER_POLICY_FILE"); policyPath != "" {
+		handler, err := adapters.NewModuleInstallationHTTPHandler(service, policyPath)
+		if err != nil {
+			return nil, fmt.Errorf("configure module installer policy: %w", err)
+		}
+		adapters.RegisterHTTPRoute("/v1/module-installations/", handler)
+	}
 
 	// Domain-event pub/sub (issue #493): the reference events.Transport over the
 	// durable jobs platform. A module publish joins its WithOrgTx transaction so
