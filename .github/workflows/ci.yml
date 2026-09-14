@@ -501,10 +501,14 @@ jobs:
           restore-keys: |
             npm-quality-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
+        if: matrix.phase != 'test'
         run: bash scripts/ci/install-codefly.sh
       - name: Ensure runner disk space
         if: matrix.phase == 'test'
         run: bash scripts/ci/ensure-disk-space.sh
+      - name: Install isolated-session Codefly test tool
+        if: matrix.phase == 'test'
+        run: bash scripts/ci/install-codefly-test.sh
       - name: Make host.docker.internal resolvable on the Linux runner
         shell: bash
         run: |

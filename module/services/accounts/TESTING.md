@@ -69,14 +69,23 @@ CI installer selects Core 0.3.20 and does not provide that handshake. It is not 
 compatible standalone graph owner for this SDK. Do not opt out of isolation to
 hide that mismatch.
 
-A managed Codefly parent with the typed dependency environment can supply its
-already-running graph; that path does not create a standalone control session.
-The official managed-CI pin remains unchanged. A standalone graph-owning run
-requires a compatible CLI release or an explicitly recorded source build such as
-canonical CLI commit `7a3a895a1ea308ea838e9e165221fc875d2563bb` (Core 0.3.29),
-plus the normal container/agent prerequisites. That source commit is not a newer
-published CLI release. Pure tests, standalone compilation and native database
-qualifications do not claim that the full dependency graph booted.
+The actual Codefly quality(test) run on 2026-09-14 confirmed that these database
+packages create nested graph-owning sessions even under CI. They did not reuse a
+managed parent: CLI 0.1.145 failed to bind the requested isolated socket for all
+four database packages. The module's unchanged 90s/120s/300s setup budgets exposed
+the incompatibility before database test execution.
+
+Only the quality(test) matrix job now builds canonical CLI commit
+`7a3a895a1ea308ea838e9e165221fc875d2563bb` (Core 0.3.29), using the pinned Go 1.27.0
+toolchain. `scripts/ci/install-codefly-test.sh` verifies the exact commit and tree,
+uses read-only module resolution and VCS build metadata, and records the binary
+hash and build information. The source tool is installed after runner disk
+preparation. The other jobs retain the official CLI 0.1.145 installer; deployment
+CLI pins are unaffected. The full test selection, gates, isolation and timeouts
+remain unchanged. This source build is not a newer official CLI release.
+Standalone graph-owning tests need this compatible tool plus their normal
+container/agent prerequisites. Pure tests, compilation and native database
+qualifications alone do not establish that the complete dependency graph boots.
 
 On 2026-09-14, that exact CLI source was built locally with Go 1.27.0 on
 darwin/arm64 using `go build -mod=readonly -ldflags='-s -w' ./cmd/codefly`.
