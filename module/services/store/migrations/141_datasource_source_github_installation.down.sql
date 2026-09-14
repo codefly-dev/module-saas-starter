@@ -4,5 +4,5 @@
 
 DROP INDEX IF EXISTS public.datasource_sources_github_installation;
 
-ALTER TABLE datasource_sources
+ALTER TABLE public.datasource_sources
     DROP COLUMN github_installation_id;
