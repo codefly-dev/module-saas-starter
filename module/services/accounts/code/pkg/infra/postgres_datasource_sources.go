@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -185,43 +186,71 @@ func (s *PostgresStore) ClearDatasourceSourceDegraded(ctx context.Context, sourc
 	return err
 }
 
-// ClearDatasourceSourceInstallationDegraded is ClearDatasourceSourceDegraded
-// narrowed to the reasons the App-level reconciler writes, so restored App
-// access revives only a source that path parked — a source the compiler
-// degraded for a structural fault of its own keeps both its status and its
-// reason. Matching the reason inside the UPDATE rather than against an earlier
-// read keeps that decision atomic against a concurrent degrade. Runs under the
-// caller's WithControlPlane.
-func (s *PostgresStore) ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) error {
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
-		UPDATE datasource_sources
-		   SET status            = 'active',
-		       status_reason     = '',
-		       next_reconcile_at = CASE WHEN reconcile_interval > INTERVAL '0'
-		                                THEN NOW() + reconcile_interval END,
-		       updated_at        = NOW()
-		 WHERE id = $1 AND status = 'degraded' AND status_reason = ANY($2)`, sourceID, reasons)
-	return err
-}
-
-// MarkDatasourceSourceInstallationDegraded parks a source whose GitHub App
-// access was withdrawn. It is MarkDatasourceSourceDegraded with an active-only
-// predicate: the reconciler decides what to park from a list read taken before
-// it made any GitHub call, so by the time it writes, an operator may have
-// paused the source or the compiler may have degraded it for a fault of its
-// own. Re-testing the status inside the UPDATE is what keeps a webhook from
-// overwriting either. The unguarded method stays as it is — the change-set
-// compiler is the only in-flight writer for its source and relies on that.
+// MarkDatasourceSourceInstallationDegraded parks a source the GitHub App no
+// longer grants access to, and re-labels one this path already parked when the
+// cause changes. It is MarkDatasourceSourceDegraded narrowed on both sides: the
+// row must be 'active' or already carry one of reasons, and its reason must
+// actually differ.
+//
+// Every one of those is a predicate rather than a caller-side check because the
+// App-level reconciler decides from a listing taken one or two GitHub round-trips
+// earlier, while the change-set compiler degrades sources under a different job
+// ordering namespace. A Go-side status check would let a stale 'active' overwrite
+// that compiler degrade — discarding its reason and leaving the row carrying one
+// of ours, which this path would then happily revive with the fault still
+// standing. Requiring a real change also makes a redelivery write no row, so the
+// caller's audit record follows a transition rather than an attempt.
+//
 // Runs under the caller's WithControlPlane.
-func (s *PostgresStore) MarkDatasourceSourceInstallationDegraded(ctx context.Context, sourceID, reason string) error {
-	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+func (s *PostgresStore) MarkDatasourceSourceInstallationDegraded(ctx context.Context, sourceID, reason string, reasons []string) (bool, error) {
+	tag, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		UPDATE datasource_sources
 		   SET status            = 'degraded',
 		       status_reason     = $2,
 		       next_reconcile_at = NULL,
 		       updated_at        = NOW()
-		 WHERE id = $1 AND status = 'active'`, sourceID, reason)
-	return err
+		 WHERE id = $1
+		   AND status_reason IS DISTINCT FROM $2
+		   AND (status = 'active' OR (status = 'degraded' AND status_reason = ANY($3)))`,
+		sourceID, reason, reasons)
+	return tag.RowsAffected() > 0, err
+}
+
+// ClearDatasourceSourceInstallationDegraded is ClearDatasourceSourceDegraded
+// narrowed to the reasons the App-level reconciler writes, so restored App
+// access revives only a source that path parked — a source the compiler
+// degraded for a structural fault of its own keeps both its status and its
+// reason. Matching the reason inside the UPDATE rather than against an earlier
+// read keeps that decision atomic against a concurrent degrade, and returning
+// the reason it replaced is what lets the caller name the cause the source
+// recovered from: the row read before the UPDATE may not be the row it matched.
+// Empty when no row matched. Runs under the caller's WithControlPlane.
+func (s *PostgresStore) ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) (string, error) {
+	var cleared string
+	// RETURNING yields the post-UPDATE row, where status_reason is already '',
+	// so the reason being replaced is read in a locking CTE that runs against
+	// the pre-UPDATE snapshot. FOR UPDATE makes the match and the write one
+	// atomic step rather than a read this statement could race.
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		WITH parked AS (
+			SELECT id, status_reason
+			  FROM datasource_sources
+			 WHERE id = $1 AND status = 'degraded' AND status_reason = ANY($2)
+			   FOR UPDATE
+		)
+		UPDATE datasource_sources d
+		   SET status            = 'active',
+		       status_reason     = '',
+		       next_reconcile_at = CASE WHEN d.reconcile_interval > INTERVAL '0'
+		                                THEN NOW() + d.reconcile_interval END,
+		       updated_at        = NOW()
+		  FROM parked p
+		 WHERE d.id = p.id
+		 RETURNING p.status_reason`, sourceID, reasons).Scan(&cleared)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return cleared, err
 }
 
 // ListGitHubInstallationsPendingRecheck returns the distinct installations that

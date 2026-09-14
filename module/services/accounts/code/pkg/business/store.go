@@ -153,17 +153,23 @@ type Store interface {
 	// resurrect a source an operator has since paused. Control-plane.
 	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error
 	// MarkDatasourceSourceInstallationDegraded parks a source whose GitHub App
-	// access was withdrawn, only while it is still active. The reconciler decides
-	// what to park from a read taken before any GitHub call, so the status is
-	// re-tested inside the UPDATE: without that, a webhook can overwrite an
-	// operator's pause, or a degrade the compiler recorded for its own fault.
-	// Control-plane.
-	MarkDatasourceSourceInstallationDegraded(ctx context.Context, sourceID, reason string) error
+	// access was withdrawn, and re-labels one this path already parked when the
+	// cause changes. The reconciler decides what to park from a read taken before
+	// any GitHub call, so the predicate lives in the UPDATE: it writes only over
+	// 'active' or over one of reasons, and only when the reason actually differs.
+	// Without that, a webhook can overwrite an operator's pause or a degrade the
+	// compiler recorded for its own fault; with an active-only predicate it would
+	// instead no-op silently on a changed cause. Reports whether a row changed,
+	// which is the transition the audit trail records. Control-plane.
+	MarkDatasourceSourceInstallationDegraded(ctx context.Context, sourceID, reason string, reasons []string) (bool, error)
 	// ClearDatasourceSourceInstallationDegraded is ClearDatasourceSourceDegraded
 	// narrowed to sources parked for one of reasons. Matching the recorded reason
 	// as well as the status is what keeps restored GitHub App access from
-	// reviving a source degraded for an unrelated structural fault. Control-plane.
-	ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) error
+	// reviving a source degraded for an unrelated structural fault. Returns the
+	// reason it cleared, or "" when no row matched: the audit record names the
+	// cause the source recovered from, and reading it back from the UPDATE is the
+	// only way to name the one that was actually there. Control-plane.
+	ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) (string, error)
 	// ListDatasourceSourcesByGitHubInstallation returns one page of the GitHub
 	// sources bound to an App installation, ordered by id and starting after
 	// afterID. The read spans tenants — an App-level delivery names an

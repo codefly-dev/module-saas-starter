@@ -94,6 +94,7 @@ type installationHarness struct {
 	store    *datasourceFakeStore
 	api      *fakeInstallationAPI
 	producer *recordingProducer
+	audit    *recordingAudit
 }
 
 func newInstallationHarness(t *testing.T, api *fakeInstallationAPI) *installationHarness {
@@ -109,10 +110,10 @@ func newInstallationHarness(t *testing.T, api *fakeInstallationAPI) *installatio
 
 	store := newDatasourceFakeStore()
 	producer := &recordingProducer{}
-	svc, _ := newDatasourceService(store, producer, nil)
+	svc, audit := newDatasourceService(store, producer, nil)
 	svc.SetGitHubConnector(githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL)))
 	svc.SetGitHubAppRegistration("123456", testAppKeyPEM(t), "whsec_app")
-	return &installationHarness{svc: svc, store: store, api: api, producer: producer}
+	return &installationHarness{svc: svc, store: store, api: api, producer: producer, audit: audit}
 }
 
 // enqueuedRecheckKeys returns the idempotency key of every re-check job the
@@ -502,4 +503,206 @@ func TestInstallationJobHandlerRejectsMisroutedWork(t *testing.T) {
 			require.Contains(t, fmt.Sprint(err), "datasource.invalid_job")
 		})
 	}
+}
+
+// onlyAuditEntry asserts exactly one record of a type was written and returns
+// it, so a test reads the payload rather than only the fact of an emission.
+func onlyAuditEntry(t *testing.T, h *installationHarness, event business.EventType) business.AuditEntry {
+	t.Helper()
+	entries := h.audit.entriesOf(event)
+	require.Len(t, entries, 1, "expected exactly one %s record", event)
+	return entries[0]
+}
+
+// A third party revoking access is the one datasource state change that had no
+// entry on the tenant's audit spine: the row said a source was degraded, never
+// when it became degraded. The record carries the installation and the cause,
+// and no credential material.
+func TestReconcileInstallationAuditsLostAccess(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	entry := onlyAuditEntry(t, h, business.EventDatasourceSourceAccessLost)
+	require.Equal(t, "system", entry.ActorType, "the change originates in a third party's account, not a tenant request")
+	require.Equal(t, testOrg, entry.OrgID, "the record belongs on the tenant's spine")
+	require.Equal(t, "datasource", entry.Resource)
+	require.Equal(t, source.ID, entry.ResourceID)
+	require.Equal(t, map[string]any{
+		"repo":            "acme/docs",
+		"installation_id": testAppInstallation,
+		"reason":          business.DatasourceAccessLostRepositoryUnavailable,
+	}, entry.Payload)
+	require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload))
+}
+
+func TestReconcileInstallationAuditsSuspensionAsItsOwnCause(t *testing.T) {
+	suspended := time.Now().UTC()
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		coverage:      map[string]string{"acme/docs": testAppInstallation},
+		installations: map[string]*time.Time{testAppInstallation: &suspended},
+	})
+	h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	entry := onlyAuditEntry(t, h, business.EventDatasourceSourceAccessLost)
+	require.Equal(t, business.DatasourceAccessLostSuspended, entry.Payload["reason"])
+	require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload))
+}
+
+func TestReconcileInstallationAuditsRestoredAccess(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		coverage:      map[string]string{"acme/docs": testAppInstallation},
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.degrade(t, source.ID, business.DatasourceReasonInstallationSuspended)
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	entry := onlyAuditEntry(t, h, business.EventDatasourceSourceAccessRestored)
+	require.Equal(t, "system", entry.ActorType)
+	require.Equal(t, testOrg, entry.OrgID)
+	require.Equal(t, "datasource", entry.Resource)
+	require.Equal(t, source.ID, entry.ResourceID)
+	require.Equal(t, map[string]any{
+		"repo":            "acme/docs",
+		"installation_id": testAppInstallation,
+		"restored_from":   business.DatasourceAccessLostSuspended,
+	}, entry.Payload)
+	require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload))
+}
+
+// An App-level delivery is redelivered freely, and GitHub answers the same way
+// each time. Only the transition is an event, so a second pass over a source
+// already in its target state adds nothing to the tenant's log.
+func TestReconcileInstallationAuditsTheTransitionNotTheDelivery(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	require.Equal(t, 1, auditCount(h.audit, business.EventDatasourceSourceAccessLost))
+
+	h.api.coverage = map[string]string{"acme/docs": testAppInstallation}
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	require.Equal(t, 1, auditCount(h.audit, business.EventDatasourceSourceAccessRestored))
+}
+
+// The restore record follows what the write actually matched, not the status
+// read before it: a source the change-set compiler parked keeps its degrade, so
+// restored App access must not claim on the audit trail that it came back.
+func TestReconcileInstallationDoesNotAuditARestoreItDidNotMake(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		coverage:      map[string]string{"acme/docs": testAppInstallation},
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.degrade(t, source.ID, "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit")
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	require.Empty(t, h.audit.entriesOf(business.EventDatasourceSourceAccessRestored))
+}
+
+// An operator pause is left alone, so there is no transition to record either.
+func TestReconcileInstallationDoesNotAuditAnOperatorPause(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	source.Status = business.DatasourceStatusPaused
+	require.NoError(t, h.store.InsertDatasourceSource(context.Background(), source))
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	require.Empty(t, h.audit.entriesOf(business.EventDatasourceSourceAccessLost))
+}
+
+// The reconciler lists every source, then spends one or two GitHub round-trips
+// per source before writing it, and the change-set compiler parks sources under
+// a different job ordering namespace — so nothing stops a compiler degrade from
+// landing inside that window. Deciding from the listed status would overwrite it:
+// the compiler's reason is discarded, and the row is left carrying one of this
+// path's, which this path would then revive with the oversized-snapshot fault
+// still standing. The write must refuse it, and audit nothing.
+func TestReconcileInstallationDoesNotOverwriteADegradeThatLandedMidReconcile(t *testing.T) {
+	const compilerReason = "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit"
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	var once sync.Once
+	h.store.beforeInstallationMark = func(string) {
+		once.Do(func() { h.degrade(t, source.ID, compilerReason) })
+	}
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	untouched := h.reload(t, source.ID)
+	require.Equal(t, business.DatasourceStatusDegraded, untouched.Status)
+	require.Equal(t, compilerReason, untouched.StatusReason,
+		"a stale listing must not let this path take ownership of another path's degrade")
+	require.Empty(t, h.audit.entriesOf(business.EventDatasourceSourceAccessLost))
+}
+
+// The same window, with an operator pausing the source inside it. A pause
+// outranks a webhook however stale the listing is.
+func TestReconcileInstallationDoesNotOverwriteAPauseThatLandedMidReconcile(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	var once sync.Once
+	h.store.beforeInstallationMark = func(string) {
+		once.Do(func() {
+			paused := *source
+			paused.Status = business.DatasourceStatusPaused
+			require.NoError(t, h.store.InsertDatasourceSource(context.Background(), &paused))
+		})
+	}
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	require.Equal(t, business.DatasourceStatusPaused, h.reload(t, source.ID).Status)
+	require.Empty(t, h.audit.entriesOf(business.EventDatasourceSourceAccessLost))
+}
+
+// A source parked for a deselected repository whose installation is later
+// suspended is still degraded, so nothing about its status changes — but the
+// recorded cause is now wrong, and an audit trail that never corrects it leaves
+// the tenant reading the wrong reason forever.
+func TestReconcileInstallationRecordsAChangedCause(t *testing.T) {
+	suspended := time.Now().UTC()
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		coverage:      map[string]string{"acme/docs": testAppInstallation},
+		installations: map[string]*time.Time{testAppInstallation: &suspended},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.degrade(t, source.ID, business.DatasourceReasonInstallationRepositoryUnavailable)
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	relabelled := h.reload(t, source.ID)
+	require.Equal(t, business.DatasourceStatusDegraded, relabelled.Status)
+	require.Equal(t, business.DatasourceReasonInstallationSuspended, relabelled.StatusReason)
+
+	entry := onlyAuditEntry(t, h, business.EventDatasourceSourceAccessLost)
+	require.Equal(t, business.DatasourceAccessLostSuspended, entry.Payload["reason"])
+	require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload))
+
+	// The corrected cause is itself a transition, so reconciling again adds nothing.
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+	require.Equal(t, 1, auditCount(h.audit, business.EventDatasourceSourceAccessLost))
 }

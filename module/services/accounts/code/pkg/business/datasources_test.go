@@ -262,31 +262,6 @@ func (f *datasourceFakeStore) ListGitHubInstallationsPendingRecheck(_ context.Co
 	return out, nil
 }
 
-// beforeInstallationMark runs immediately before a park is applied, holding no
-// lock, so a test can stand in for the operator pause or compiler degrade that
-// can land between the reconciler's page read and its write.
-func (f *datasourceFakeStore) MarkDatasourceSourceInstallationDegraded(_ context.Context, sourceID, reason string) error {
-	if f.beforeInstallationMark != nil {
-		f.beforeInstallationMark(sourceID)
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	s, ok := f.sources[sourceID]
-	if !ok {
-		return errors.New("not found")
-	}
-	// Mirror the store's active-only predicate: the status is re-tested here,
-	// not at the caller, so a source paused or degraded since the caller read it
-	// is left exactly as it is.
-	if s.Status != business.DatasourceStatusActive {
-		return nil
-	}
-	s.Status = business.DatasourceStatusDegraded
-	s.StatusReason = reason
-	s.NextReconcileAt = nil
-	return nil
-}
-
 func (f *datasourceFakeStore) SetDatasourceSourceGitHubInstallation(_ context.Context, orgID, id, installationID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -296,18 +271,49 @@ func (f *datasourceFakeStore) SetDatasourceSourceGitHubInstallation(_ context.Co
 	return nil
 }
 
-func (f *datasourceFakeStore) ClearDatasourceSourceInstallationDegraded(_ context.Context, sourceID string, reasons []string) error {
+// Mirrors the store's predicate: writes over 'active' or over one of the App
+// path's own reasons, never over an operator pause or another path's degrade,
+// and only when the reason actually changes.
+//
+// beforeInstallationMark runs immediately before the write, holding no lock, so
+// a test can stand in for the operator pause or compiler degrade that can land
+// between the reconciler's page read and its write.
+func (f *datasourceFakeStore) MarkDatasourceSourceInstallationDegraded(_ context.Context, sourceID, reason string, reasons []string) (bool, error) {
+	if f.beforeInstallationMark != nil {
+		f.beforeInstallationMark(sourceID)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.sources[sourceID]
 	if !ok {
-		return errors.New("not found")
+		return false, errors.New("not found")
+	}
+	if s.StatusReason == reason {
+		return false, nil
+	}
+	owned := s.Status == business.DatasourceStatusDegraded && slices.Contains(reasons, s.StatusReason)
+	if s.Status != business.DatasourceStatusActive && !owned {
+		return false, nil
+	}
+	s.Status = business.DatasourceStatusDegraded
+	s.StatusReason = reason
+	s.NextReconcileAt = nil
+	return true, nil
+}
+
+func (f *datasourceFakeStore) ClearDatasourceSourceInstallationDegraded(_ context.Context, sourceID string, reasons []string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return "", errors.New("not found")
 	}
 	// Mirror the store's status+reason guard: a source degraded for a reason
 	// this path did not write keeps both its status and its reason.
 	if s.Status != business.DatasourceStatusDegraded || !slices.Contains(reasons, s.StatusReason) {
-		return nil
+		return "", nil
 	}
+	cleared := s.StatusReason
 	s.Status = business.DatasourceStatusActive
 	s.StatusReason = ""
 	if s.ReconcileInterval > 0 {
@@ -316,7 +322,7 @@ func (f *datasourceFakeStore) ClearDatasourceSourceInstallationDegraded(_ contex
 	} else {
 		s.NextReconcileAt = nil
 	}
-	return nil
+	return cleared, nil
 }
 
 func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, sourceID string) error {
@@ -471,6 +477,20 @@ func (a *recordingAudit) Emit(_ context.Context, entry business.AuditEntry) {
 func (a *recordingAudit) EmitTx(ctx context.Context, entry business.AuditEntry) error {
 	a.Emit(ctx, entry)
 	return nil
+}
+
+// entriesOf returns every recorded entry of one type, so a test can assert the
+// payload a producer wrote and not merely that it emitted something.
+func (a *recordingAudit) entriesOf(event business.EventType) []business.AuditEntry {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var out []business.AuditEntry
+	for _, e := range a.entries {
+		if e.EventType == event {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 func (a *recordingAudit) types() []business.EventType {

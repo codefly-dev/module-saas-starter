@@ -55,9 +55,33 @@ const (
 	DatasourceReasonInstallationSuspended             = "The GitHub App installation for this source is suspended. Unsuspend it in GitHub to resume syncing."
 )
 
-// datasourceInstallationReasons bounds what this path may revive: a source the
-// change-set compiler parked for a structural fault of its own must stay parked
-// when App access returns. It is also what the recheck sweep selects on.
+// The same causes as audit codes. The operator-facing sentence above is matched
+// against stored rows, so it cannot double as the analytics discriminator:
+// rewording it for operators would silently re-type historical audit records.
+// The codes are load-bearing in the other direction — they are the values
+// consumers filter and aggregate on — so neither string may be edited once
+// published; a changed cause is a new pair.
+const (
+	DatasourceAccessLostRepositoryUnavailable = "repository_unavailable"
+	DatasourceAccessLostSuspended             = "suspended"
+)
+
+// datasourceInstallationReasonCodes pairs every cause this path may write with
+// the code that names it on the audit trail. It is the one place the two
+// vocabularies meet, so a cause cannot exist with a sentence and no code.
+//
+// Every lookup through it is total by construction: a park's sentence comes from
+// githubInstallationAccess, which returns only these keys, and a revive's comes
+// back from an UPDATE that matched status_reason against the same set.
+var datasourceInstallationReasonCodes = map[string]string{
+	DatasourceReasonInstallationRepositoryUnavailable: DatasourceAccessLostRepositoryUnavailable,
+	DatasourceReasonInstallationSuspended:             DatasourceAccessLostSuspended,
+}
+
+// datasourceInstallationReasons bounds what this path may park over, revive and
+// re-label: a source the change-set compiler parked for a structural fault of
+// its own must stay parked when App access returns. It is also what the recheck
+// sweep selects on.
 var datasourceInstallationReasons = []string{
 	DatasourceReasonInstallationRepositoryUnavailable,
 	DatasourceReasonInstallationSuspended,
@@ -226,7 +250,9 @@ func (s *Service) RunGitHubInstallationRecheck(ctx context.Context) (int, error)
 }
 
 // githubInstallationAccess reports why a source can no longer read its
-// repository, or "" when access is intact.
+// repository, or "" when access is intact. The sentence it returns is always a
+// key of datasourceInstallationReasons, which is what makes the audit code
+// lookup at the write site total.
 //
 // The question is put to GitHub per source and by repository — never by the
 // installation id the delivery carried. A source rebound to a different
@@ -308,26 +334,65 @@ func keepRetryable(existing, next error) error {
 // or a compiler degrade landing in between. The status checks below are only a
 // fast path that saves a statement per unchanged source; the predicates in the
 // UPDATEs are what actually decide.
+//
+// The park predicate is deliberately not active-only. A source parked for a
+// deselected repository whose installation is later suspended is still degraded,
+// so an active-only write would match no row and leave the recorded cause wrong
+// for good; it therefore also writes over this path's own reasons, and only when
+// the reason actually changes.
+//
+// Each transition is recorded on the tenant's audit spine, and only a real
+// transition is: both emits are gated on the row the write actually matched, so
+// a stale read can neither invent a record nor mislabel one. The actor is the
+// system — this runs from a verified App-level delivery, not from anything a
+// tenant asked for, and the change itself happened in a third party's account.
 func (s *Service) applyGitHubInstallationAccess(ctx context.Context, source *DatasourceSource, reason string) error {
 	w := wool.Get(ctx).In("applyGitHubInstallationAccess")
 	if reason == "" {
+		// The only cheap pre-check that is safe: the clear matches
+		// status='degraded', and nothing outside this path — which is FIFO per
+		// installation — can move a source INTO one of our reasons, so a stale
+		// 'active' can only skip a clear that would have matched no row anyway.
+		// It keeps the common healthy source from costing a write.
 		if source.Status != DatasourceStatusDegraded {
 			return nil
 		}
+		var restoredFrom string
 		if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			return s.store.ClearDatasourceSourceInstallationDegraded(ctx, source.ID, datasourceInstallationReasons)
+			var err error
+			restoredFrom, err = s.store.ClearDatasourceSourceInstallationDegraded(ctx, source.ID, datasourceInstallationReasons)
+			return err
 		}); err != nil {
 			return w.Wrapf(err, "restore source")
+		}
+		if restoredFrom != "" {
+			s.emit(ctx, source.ID, "system", EventDatasourceSourceAccessRestored, "datasource", source.ID, source.OrgID,
+				map[string]any{
+					"repo":            source.Repo,
+					"installation_id": source.GitHubInstallationID,
+					"restored_from":   datasourceInstallationReasonCodes[restoredFrom],
+				})
 		}
 		return nil
 	}
 	if source.Status == DatasourceStatusDegraded && source.StatusReason == reason {
 		return nil
 	}
+	var parked bool
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.store.MarkDatasourceSourceInstallationDegraded(ctx, source.ID, reason)
+		var err error
+		parked, err = s.store.MarkDatasourceSourceInstallationDegraded(ctx, source.ID, reason, datasourceInstallationReasons)
+		return err
 	}); err != nil {
 		return w.Wrapf(err, "park source")
+	}
+	if parked {
+		s.emit(ctx, source.ID, "system", EventDatasourceSourceAccessLost, "datasource", source.ID, source.OrgID,
+			map[string]any{
+				"repo":            source.Repo,
+				"installation_id": source.GitHubInstallationID,
+				"reason":          datasourceInstallationReasonCodes[reason],
+			})
 	}
 	return nil
 }
