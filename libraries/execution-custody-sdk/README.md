@@ -8,14 +8,15 @@ issuer, storage, or policy packages. It has no browser entry point.
 
 `NewClient(origin, transport)` requires a bare HTTPS origin and a transport with
 TLS 1.3 or newer, normal certificate verification, no proxy and no custom peer
-verification callbacks. The client clones the transport, never follows redirects,
+verification, TLS dialing or alternate protocol callbacks. The client clones the transport, never follows redirects,
 and sends one POST per call without retry headers or retry logic. Every request
 and complete response is bounded by five seconds or the caller's earlier deadline.
 Call `Close` when retiring a client to close its idle connections.
 
 This intentionally retains the stricter consumer transport and JSON rules: older
 callers of the service-local client must set `TLSClientConfig.MinVersion` to
-`tls.VersionTLS13`, remove proxy/custom verification callbacks, and accept only
+`tls.VersionTLS13`, remove proxy/custom verification, TLS dialing or alternate
+protocol callbacks, and accept only
 known v1 response fields. The broker already requires TLS 1.3. There is no HTTP,
 skip-verification, proxy, redirect, or retry compatibility mode.
 

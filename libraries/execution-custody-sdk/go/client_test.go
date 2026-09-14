@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,6 +47,23 @@ func TestClientRejectsUnsafeTransport(t *testing.T) {
 	for _, transport := range []*http.Transport{nil, {}, {TLSClientConfig: &tls.Config{}}, {TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, InsecureSkipVerify: true}}, {TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, VerifyConnection: func(tls.ConnectionState) error { return nil }}}, {TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13}, Proxy: func(*http.Request) (*url.URL, error) { return nil, nil }}} {
 		if _, err := NewClient("https://example.test", transport); err == nil {
 			t.Fatal("unsafe transport accepted")
+		}
+	}
+	for _, configure := range []func(*http.Transport){
+		func(tr *http.Transport) {
+			tr.DialTLS = func(string, string) (net.Conn, error) { return nil, errors.New("unused") }
+		},
+		func(tr *http.Transport) {
+			tr.DialTLSContext = func(context.Context, string, string) (net.Conn, error) { return nil, errors.New("unused") }
+		},
+		func(tr *http.Transport) {
+			tr.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{"custom": func(string, *tls.Conn) http.RoundTripper { return nil }}
+		},
+	} {
+		tr := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13}}
+		configure(tr)
+		if _, err := NewClient("https://example.test", tr); err == nil {
+			t.Fatal("custom TLS path can bypass verified transport")
 		}
 	}
 }

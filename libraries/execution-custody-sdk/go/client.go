@@ -103,7 +103,7 @@ type Client struct {
 
 func NewClient(endpoint string, transport *http.Transport) (*Client, error) {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || transport == nil || transport.Proxy != nil || transport.TLSClientConfig == nil {
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || transport == nil || transport.Proxy != nil || transport.TLSClientConfig == nil || transport.DialTLS != nil || transport.DialTLSContext != nil || len(transport.TLSNextProto) != 0 {
 		return nil, errors.New("verified HTTPS broker transport required")
 	}
 	t := transport.TLSClientConfig
