@@ -2033,11 +2033,20 @@ type CompleteGitHubAppSetupRequest struct {
 	// redirect.
 	State string `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
 	// The installation the redirect claims was installed. A claim, never
-	// authority: the host verifies it against GitHub as the App, and refuses one
-	// already bound to a different organization.
+	// authority: it is a small integer supplied by a browser, so the host both
+	// verifies it against GitHub as the App and requires `code` below to
+	// attribute it to the caller, and refuses one already bound to a different
+	// organization.
 	InstallationId string `protobuf:"bytes,3,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The authorization code GitHub appends to the setup redirect when the App
+	// requests user authorization during installation. The host trades it for a
+	// user-to-server token and requires that user to reach the installation,
+	// which is what stops one organization claiming another's installation by
+	// naming its id. Required: without it an installation is attributable to
+	// nobody.
+	Code          string `protobuf:"bytes,4,opt,name=code,proto3" json:"code,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CompleteGitHubAppSetupRequest) Reset() {
@@ -2087,6 +2096,13 @@ func (x *CompleteGitHubAppSetupRequest) GetState() string {
 func (x *CompleteGitHubAppSetupRequest) GetInstallationId() string {
 	if x != nil {
 		return x.InstallationId
+	}
+	return ""
+}
+
+func (x *CompleteGitHubAppSetupRequest) GetCode() string {
+	if x != nil {
+		return x.Code
 	}
 	return ""
 }
@@ -2378,12 +2394,14 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"installUrl\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xa0\x01\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\xc0\x01\n" +
 	"\x1dCompleteGitHubAppSetupRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12 \n" +
 	"\x05state\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x05state\x12<\n" +
-	"\x0finstallation_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x10\x01\x18 2\b^[0-9]+$R\x0einstallationId\"\x94\x01\n" +
+	"\x0finstallation_id\x18\x03 \x01(\tB\x13\xbaH\x10r\x0e\x10\x01\x18 2\b^[0-9]+$R\x0einstallationId\x12\x1e\n" +
+	"\x04code\x18\x04 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x04code\"\x94\x01\n" +
 	"\x1eCompleteGitHubAppSetupResponse\x12'\n" +
 	"\x0finstallation_id\x18\x01 \x01(\tR\x0einstallationId\x12I\n" +
 	"\frepositories\x18\x02 \x03(\v2%.saas.accounts.v1.GitHubAppRepositoryR\frepositories\"\\\n" +
