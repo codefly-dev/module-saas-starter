@@ -74,3 +74,19 @@ func TestInstallerPolicyRejectsUnknownAndUnboundedDeclarations(t *testing.T) {
 		require.Error(t, err)
 	}
 }
+
+func TestInstallerPolicyRejectsOversizedProjection(t *testing.T) {
+	p, _, _ := installerPolicyFixture()
+	raw, err := json.Marshal(p)
+	require.NoError(t, err)
+	const maxPolicyBytes = 1 << 20
+	boundary := string(raw) + strings.Repeat(" ", maxPolicyBytes-len(raw))
+	_, err = business.ParseInstallerPolicy(strings.NewReader(boundary))
+	require.NoError(t, err)
+	for _, suffix := range []string{" ", "{}", "invalid"} {
+		t.Run(suffix, func(t *testing.T) {
+			_, err := business.ParseInstallerPolicy(strings.NewReader(boundary + suffix))
+			require.Error(t, err)
+		})
+	}
+}

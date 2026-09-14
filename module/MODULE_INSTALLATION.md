@@ -30,7 +30,8 @@ or human API key to bootstrap itself.
 
 `MODULE_INSTALLER_POLICY_FILE` is the absolute path to the policy projection.
 Unset disables the HTTP surface. Invalid policy fails startup; subsequent
-missing or malformed projections fail each request closed. All replicas must
+missing, malformed or oversized projections fail each request closed. The policy
+file is limited to 1 MiB, including whitespace. All replicas must
 receive the approved projection. Mount the containing directory, so atomic
 projection replacement is visible; a pinned subPath mount will not refresh.
 

@@ -1,6 +1,7 @@
 package business
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -85,7 +86,15 @@ func boundedSet(values []string) bool {
 }
 
 func ParseInstallerPolicy(reader io.Reader) (*InstallerPolicy, error) {
-	decoder := json.NewDecoder(io.LimitReader(reader, 1<<20))
+	const maxPolicyBytes = 1 << 20
+	raw, err := io.ReadAll(io.LimitReader(reader, maxPolicyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read installer policy: %w", err)
+	}
+	if len(raw) > maxPolicyBytes {
+		return nil, errors.New("installer policy exceeds maximum size")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	var policy InstallerPolicy
 	if err := decoder.Decode(&policy); err != nil {
