@@ -74,19 +74,19 @@ func NewConnector(opts ...Option) *Connector {
 // comfortably valid. This is the entry point SyncSource and webhook re-fetch
 // call.
 func (c *Connector) FetchRepoContents(ctx context.Context, cred AppCredential, owner, repo, path, ref string) (*RepoContent, error) {
-	token, err := c.installationToken(ctx, cred)
+	token, err := c.InstallationToken(ctx, cred)
 	if err != nil {
 		return nil, err
 	}
 	return c.GetRepoContents(ctx, token, owner, repo, path, ref)
 }
 
-// installationToken returns a cached token for the credential's installation,
+// InstallationToken returns a cached token for the credential's installation,
 // minting and caching a fresh one when none is cached or the cached one is
 // within the refresh window of expiry. Minting is de-duplicated per
 // installation: concurrent callers that all miss the cache share a single mint
 // rather than each creating a token (GitHub rate-limits token creation).
-func (c *Connector) installationToken(ctx context.Context, cred AppCredential) (string, error) {
+func (c *Connector) InstallationToken(ctx context.Context, cred AppCredential) (string, error) {
 	key := cred.cacheKey()
 
 	if token, ok := c.cachedToken(key); ok {
@@ -104,6 +104,7 @@ func (c *Connector) installationToken(ctx context.Context, cred AppCredential) (
 			return "", err
 		}
 		c.mu.Lock()
+		c.sweepExpiredLocked()
 		c.tokens[key] = token
 		c.mu.Unlock()
 		return token.Token, nil
@@ -114,13 +115,33 @@ func (c *Connector) installationToken(ctx context.Context, cred AppCredential) (
 	return minted.(string), nil
 }
 
-// cachedToken returns a still-valid cached token for key, if any.
+// cachedToken returns a still-valid cached token for key, if any, dropping the
+// entry when it has aged out.
 func (c *Connector) cachedToken(key string) (string, bool) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	cached, ok := c.tokens[key]
-	c.mu.Unlock()
-	if ok && c.now().Before(cached.ExpiresAt.Add(-tokenRefreshWindow)) {
+	if !ok {
+		return "", false
+	}
+	if c.now().Before(cached.ExpiresAt.Add(-tokenRefreshWindow)) {
 		return cached.Token, true
 	}
+	delete(c.tokens, key)
 	return "", false
+}
+
+// sweepExpiredLocked drops every entry past its expiry. The cache is keyed by
+// the exact authority a token carries — app, installation, repository scope and
+// binding — so a source that is re-bound, or a repository that stops being
+// read, leaves an entry nothing ever looks up again. Without this the map grows
+// for the life of the process; sweeping on mint bounds it to the authorities
+// actually in use, and a mint is rare (at most one per authority per hour).
+func (c *Connector) sweepExpiredLocked() {
+	now := c.now()
+	for key, token := range c.tokens {
+		if !now.Before(token.ExpiresAt) {
+			delete(c.tokens, key)
+		}
+	}
 }

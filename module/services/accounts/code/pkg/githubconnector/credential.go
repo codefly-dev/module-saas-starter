@@ -9,21 +9,41 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// AppCredential is the per-source GitHub App credential from which an
-// installation access token is minted. AppID and InstallationID identify the
-// app and its installation on the source's org/repos; PrivateKeyPEM is the
-// app's RSA signing key (the sensitive part, PKCS#1 or PKCS#8 PEM). This is the
-// plaintext shape that the business layer encrypts through SecretCipher and
-// stores as a single envelope.
+// InstallationScope narrows a minted installation token below the authority the
+// installation itself holds: to named repositories ("name", not "owner/name")
+// and to an explicit permission set. GitHub refuses a permission the
+// installation was not granted, so a caller requests only what it reads.
+type InstallationScope struct {
+	Repositories []string          `json:"repositories,omitempty"`
+	Permissions  map[string]string `json:"permissions,omitempty"`
+}
+
+// AppCredential is the GitHub App credential from which an installation access
+// token is minted. AppID and InstallationID identify the app and its
+// installation on the source's org/repos; PrivateKeyPEM is the app's RSA
+// signing key (the sensitive part, PKCS#1 or PKCS#8 PEM).
 type AppCredential struct {
 	AppID          string `json:"app_id"`
 	InstallationID string `json:"installation_id"`
 	PrivateKeyPEM  string `json:"private_key_pem"`
+	// Scope narrows the minted token to what the caller actually reads; nil
+	// mints a token carrying the installation's full authority.
+	Scope *InstallationScope `json:"scope,omitempty"`
+	// Binding identifies the stored credential this token is minted for. It must
+	// be distinct for every binding ever created, because it is what keeps a
+	// cached token from outliving the binding it was minted under: GitHub
+	// documents no mid-life invalidation when an installation's repository
+	// selection or permissions are narrowed, so a token issued under the old
+	// binding keeps working until it expires. A counter is the wrong shape here
+	// — anything that can return to a previous value re-collides with a live
+	// cache entry — so callers pass a value that only moves forward.
+	Binding string `json:"binding,omitempty"`
 }
 
 // Marshal renders the credential as the JSON secret persisted by the store.
@@ -76,8 +96,34 @@ func (c AppCredential) signingKey() (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
-// cacheKey identifies the installation a minted token belongs to, so a cached
-// token is never handed to a different app or installation.
+// cacheKey identifies the exact authority a minted token carries, so a cached
+// token is never handed to a different app, installation, repository or
+// permission set, nor survives the credential revision it was minted under.
+// Scope components are sorted, so two equivalent scopes share one cache entry.
 func (c AppCredential) cacheKey() string {
-	return c.AppID + "/" + c.InstallationID
+	var key strings.Builder
+	key.WriteString(c.AppID)
+	key.WriteString("/")
+	key.WriteString(c.InstallationID)
+	key.WriteString("#")
+	key.WriteString(c.Binding)
+	if c.Scope == nil {
+		return key.String()
+	}
+	repos := slices.Clone(c.Scope.Repositories)
+	slices.Sort(repos)
+	for _, repo := range repos {
+		key.WriteString("|r:")
+		key.WriteString(repo)
+	}
+	permissions := make([]string, 0, len(c.Scope.Permissions))
+	for name, level := range c.Scope.Permissions {
+		permissions = append(permissions, name+"="+level)
+	}
+	slices.Sort(permissions)
+	for _, permission := range permissions {
+		key.WriteString("|p:")
+		key.WriteString(permission)
+	}
+	return key.String()
 }

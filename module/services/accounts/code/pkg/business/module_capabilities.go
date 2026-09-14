@@ -734,9 +734,19 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	if err := authorizeTenant(caller, grant, source.OrgID); err != nil {
 		return nil, "", err
 	}
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "decrypt access token").Error())
+		// A revoked installation or an unreadable credential is a precondition the
+		// tenant must repair, not an internal fault; reporting it as Internal tells
+		// a module caller to retry something that can never succeed.
+		var failure *jobs.ProcessingError
+		if errors.As(err, &failure) {
+			if failure.Retryable {
+				return nil, "", status.Error(codes.Unavailable, failure.Failure.Message)
+			}
+			return nil, "", status.Error(codes.FailedPrecondition, failure.Failure.Message)
+		}
+		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "authenticate to github").Error())
 	}
 	// Trust boundary: blobSHA is caller-supplied and NOT re-validated against the
 	// change set that referenced it. Authorization is enforced at the repository
@@ -751,7 +761,7 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	// per-fetch ticket this RPC exists to remove and break the intended lag between
 	// a module's cursor and the repo head, so the repo-grained check is the
 	// boundary by design.
-	content, err := s.newGitHubClient(token).GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
+	content, err := client.GetBlob(ctx, source.Repo, blobSHA, maxContentTicketBytes)
 	if err != nil {
 		if errors.Is(err, github.ErrFileTooLarge) {
 			return nil, "", status.Errorf(codes.FailedPrecondition, "blob exceeds the %d-byte fetch limit", maxContentTicketBytes)

@@ -121,11 +121,14 @@ func (s *Service) ResolveContentTicket(ctx context.Context, ticket string) ([]by
 	if source == nil || source.Provider != DatasourceProviderGitHub {
 		return nil, ErrContentTicketInvalid
 	}
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return nil, w.Wrapf(err, "decrypt access token")
+		// Returned unwrapped: the resolver already classified this as terminal or
+		// retryable, and wrapping hides that from the caller deciding whether to
+		// retry the redemption.
+		return nil, err
 	}
-	content, err := s.newGitHubClient(token).GetBlob(ctx, source.Repo, claims.BlobSHA, maxContentTicketBytes)
+	content, err := client.GetBlob(ctx, source.Repo, claims.BlobSHA, maxContentTicketBytes)
 	if err != nil {
 		if errors.Is(err, github.ErrFileTooLarge) {
 			return nil, w.NewError("blob exceeds the content ticket size limit")

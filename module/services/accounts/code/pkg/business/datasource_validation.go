@@ -22,7 +22,12 @@ func (s *Service) validateGitHubSource(ctx context.Context, repo, branch, token 
 	}
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	client := s.newGitHubClient(strings.TrimSpace(token))
+	return validateGitHubAccess(ctx, s.newGitHubClient(strings.TrimSpace(token)), repo, branch)
+}
+
+// validateGitHubAccess proves an already-authenticated client can read the
+// source's branch, whichever credential kind produced it.
+func validateGitHubAccess(ctx context.Context, client GitHubContentClient, repo, branch string) error {
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
 		var err error
@@ -31,8 +36,7 @@ func (s *Service) validateGitHubSource(ctx context.Context, repo, branch, token 
 			return githubValidationError(err)
 		}
 	}
-	_, err := client.ResolveCommit(ctx, repo, branch)
-	if err != nil {
+	if _, err := client.ResolveCommit(ctx, repo, branch); err != nil {
 		return githubValidationError(err)
 	}
 	return nil
@@ -61,11 +65,11 @@ func (s *Service) checkGitHubSyncPreflight(ctx context.Context, source *Datasour
 	}
 	preflightCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	token, err := s.datasourceCipher.DecryptSecret(preflightCtx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(preflightCtx, source)
 	if err != nil {
 		var failure *jobs.ProcessingError
-		if errors.As(datasourceCredentialError(err), &failure) && !failure.Retryable {
-			return status.Error(codes.FailedPrecondition, "Stored GitHub credential is invalid. Reconnect the source.")
+		if errors.As(err, &failure) && !failure.Retryable {
+			return status.Error(codes.FailedPrecondition, failure.Failure.Message)
 		}
 		if ctx.Err() != nil {
 			return status.FromContextError(ctx.Err()).Err()
@@ -74,7 +78,7 @@ func (s *Service) checkGitHubSyncPreflight(ctx context.Context, source *Datasour
 		wool.Get(ctx).Warn("GitHub credential preflight unavailable; deferring to durable sync", wool.Field("source", source.ID))
 		return nil
 	}
-	err = s.validateGitHubSource(preflightCtx, source.Repo, source.Branch, token)
+	err = validateGitHubAccess(preflightCtx, client, source.Repo, source.Branch)
 	if ctx.Err() != nil {
 		return status.FromContextError(ctx.Err()).Err()
 	}
