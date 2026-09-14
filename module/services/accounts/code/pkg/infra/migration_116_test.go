@@ -22,7 +22,10 @@ import (
 
 // A store instance applying migrations holds the runner's lock for its whole
 // run, which on a cold database is the entire chain.
-const migrationLockWait = 2 * time.Minute
+const (
+	migrationLockWait           = 2 * time.Minute
+	migrationLockDeadlineMargin = 10 * time.Second
+)
 
 // Migration 116 is the audit-event namespace cutover. It rewrites stored values
 // (audit_event_types, audit_events, webhook_subscriptions) and only then
@@ -58,8 +61,16 @@ func migrationSQL(t *testing.T, name string) string {
 // a service that is still migrating. The runner takes one advisory lock for the
 // length of its run, so fn holds that same lock: the two are then exclusive
 // however the phase happens to be scheduled.
+//
+// fn must not call asMigrationOwner again: a nested call opens a second session
+// and waits on the lock this one already holds, so the slot below refuses it
+// outright rather than letting it block out the whole wait budget and then
+// report a timeout that accuses the store.
 func asMigrationOwner(t *testing.T, fn func(ctx context.Context, conn *pgxpool.Conn)) {
 	t.Helper()
+	require.NoError(t, testdb.EnterMigrationLock())
+	defer testdb.ExitMigrationLock()
+
 	ctx := testCtx
 	connString, err := codefly.For(ctx).Service("store").Secret("postgres", "owner-connection")
 	require.NoError(t, err)
@@ -71,26 +82,49 @@ func asMigrationOwner(t *testing.T, fn func(ctx context.Context, conn *pgxpool.C
 	defer conn.Release()
 
 	lockID := migrationRunnerLockID(t, ctx, conn, connString)
-	lockCtx, cancel := context.WithTimeout(ctx, migrationLockWait)
+	lockCtx, cancel := migrationLockContext(t, ctx)
 	defer cancel()
 	_, err = conn.Exec(lockCtx, `SELECT pg_advisory_lock($1)`, lockID)
 	require.NoError(t, err, "acquire the store migration lock")
 	defer func() {
-		_, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, lockID)
-		require.NoError(t, err)
+		var released bool
+		if err := conn.QueryRow(ctx, `SELECT pg_advisory_unlock($1)`, lockID).Scan(&released); err != nil {
+			// A failed callback can leave the session unusable, and closing the
+			// pool ends the session, which releases the lock anyway. Failing here
+			// would bury the failure that caused it.
+			t.Logf("release the store migration lock: %v", err)
+			return
+		}
+		require.True(t, released,
+			"released a lock this session never held: the derived id is not the one the runner takes")
 	}()
 
 	fn(ctx, conn)
 }
 
+// migrationLockContext bounds the wait for the runner's lock without outliving
+// the test binary's own deadline. A wait that outlives it is killed as a panic
+// dump naming no cause, which is what bounding the wait exists to prevent.
+func migrationLockContext(t *testing.T, ctx context.Context) (context.Context, context.CancelFunc) {
+	t.Helper()
+	wait := migrationLockWait
+	if deadline, ok := t.Deadline(); ok {
+		if budget := time.Until(deadline) - migrationLockDeadlineMargin; budget < wait {
+			wait = budget
+		}
+	}
+	return context.WithTimeout(ctx, wait)
+}
+
 // migrationRunnerLockID resolves the lock on conn's own session, so the schema
-// hashed into it is the one this connection resolves — the same way the runner
-// reads it for itself.
+// and database hashed into it are the ones this connection resolves — the same
+// way the runner reads them for itself.
 func migrationRunnerLockID(t *testing.T, ctx context.Context, conn *pgxpool.Conn, connString string) int64 {
 	t.Helper()
-	var schema string
-	require.NoError(t, conn.QueryRow(ctx, `SELECT CURRENT_SCHEMA()`).Scan(&schema))
-	lockID, err := testdb.MigrationRunnerLockID(connString, schema)
+	var schema, database string
+	require.NoError(t, conn.QueryRow(ctx,
+		`SELECT CURRENT_SCHEMA(), CURRENT_DATABASE()`).Scan(&schema, &database))
+	lockID, err := testdb.MigrationRunnerLockID(connString, schema, database)
 	require.NoError(t, err)
 	return lockID
 }
@@ -122,28 +156,38 @@ func mustExec(t *testing.T, ctx context.Context, conn *pgxpool.Conn, sql string,
 }
 
 // replayMigration116 runs down, lets seed write the legacy-shaped rows the
-// pre-116 schema still accepts, then runs up.
+// pre-116 schema still accepts, then runs up — all in one transaction. Between
+// down and up, audit_event_types carries no namespace column, and a service
+// reconciling the audit registry at startup fails against that schema; inside a
+// transaction no other session ever observes it. It also means a failure
+// anywhere in the replay rolls the whole replay back, leaving the shared schema
+// as it was found instead of half-restored — which is why no repair runs here:
+// re-applying up over a schema that still has 116 is itself an error.
 func replayMigration116(t *testing.T, seed func(ctx context.Context, conn *pgxpool.Conn)) {
 	t.Helper()
 	down := migrationSQL(t, "116_namespace_audit_events.down.sql")
 	up := migrationSQL(t, "116_namespace_audit_events.up.sql")
-	restored := false
-	t.Cleanup(func() {
-		if restored {
-			return
-		}
-		// A failure between down and up would leave the shared schema without the
-		// namespace constraints for every later test in the package.
-		asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
-			mustExec(t, ctx, conn, up)
-		})
-	})
 	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		mustExec(t, ctx, conn, `BEGIN`)
 		mustExec(t, ctx, conn, down)
 		seed(ctx, conn)
 		mustExec(t, ctx, conn, up)
+		mustExec(t, ctx, conn, `COMMIT`)
 	})
-	restored = true
+}
+
+// The replay's intermediate schema must never be visible to another session,
+// and a replay that fails partway must leave nothing behind. Both follow from it
+// being one transaction, and nothing in the replay's own result would reveal
+// that it had come apart into several.
+func TestMigrationReplayRunsInOneTransaction(t *testing.T) {
+	replayMigration116(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		var transaction *string
+		require.NoError(t, conn.QueryRow(ctx,
+			`SELECT pg_current_xact_id_if_assigned()::text`).Scan(&transaction))
+		require.NotNil(t, transaction,
+			"the down migration's writes must belong to a transaction the up migration shares")
+	})
 }
 
 // controlPlaneTx hands the caller the transaction WithControlPlane put on ctx,
