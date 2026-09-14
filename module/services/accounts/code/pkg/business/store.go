@@ -152,6 +152,33 @@ type Store interface {
 	// sweep resumes selecting it. Scoped to status='degraded' so it cannot
 	// resurrect a source an operator has since paused. Control-plane.
 	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error
+	// MarkDatasourceSourceInstallationDegraded parks a source whose GitHub App
+	// access was withdrawn, only while it is still active. The reconciler decides
+	// what to park from a read taken before any GitHub call, so the status is
+	// re-tested inside the UPDATE: without that, a webhook can overwrite an
+	// operator's pause, or a degrade the compiler recorded for its own fault.
+	// Control-plane.
+	MarkDatasourceSourceInstallationDegraded(ctx context.Context, sourceID, reason string) error
+	// ClearDatasourceSourceInstallationDegraded is ClearDatasourceSourceDegraded
+	// narrowed to sources parked for one of reasons. Matching the recorded reason
+	// as well as the status is what keeps restored GitHub App access from
+	// reviving a source degraded for an unrelated structural fault. Control-plane.
+	ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) error
+	// ListDatasourceSourcesByGitHubInstallation returns one page of the GitHub
+	// sources bound to an App installation, ordered by id and starting after
+	// afterID. The read spans tenants — an App-level delivery names an
+	// installation and nothing else, and its receiver is unauthenticated, so
+	// there is no tenant to scope the lookup to. Control-plane.
+	ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID, afterID string, limit int) ([]*DatasourceSource, error)
+	// ListGitHubInstallationsPendingRecheck returns the distinct installations
+	// still holding a source parked for one of reasons, so restoration does not
+	// depend on a single webhook delivery arriving. Control-plane.
+	ListGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string, limit int) ([]string, error)
+	// SetDatasourceSourceGitHubInstallation stamps the routing index an App-level
+	// delivery resolves sources through, recording which installation the
+	// source's credential envelope binds it to. The envelope stays the only thing
+	// a token is minted from. Runs under the caller's WithOrgTx.
+	SetDatasourceSourceGitHubInstallation(ctx context.Context, orgID, id, installationID string) error
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
