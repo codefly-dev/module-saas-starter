@@ -174,7 +174,17 @@ func (s *PostgresStore) MarkDatasourceSourceDegraded(ctx context.Context, source
 // The status='degraded' guard makes it a no-op on a source an operator has since
 // paused, so recovery cannot silently override an operator pause. Runs under the
 // caller's WithControlPlane (the leased compiler has no tenant context).
-func (s *PostgresStore) ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error {
+//
+// excludeReasons names the degrades this path does not own, which it must not
+// lift. Recovery here proves one thing — a snapshot fit within the ingest cap —
+// and that says nothing about whether a GitHub App installation has started
+// granting access again. Without the exclusion a successful snapshot would
+// revive a source parked for withdrawn App access and record it as an ingest
+// recovery, leaving that path's access_lost with no matching access_restored.
+// status_reason is nullable, so it is coalesced: a legacy degraded row with no
+// reason recorded stays clearable, where `NULL <> ALL(...)` would silently
+// match nothing and strand it degraded for good.
+func (s *PostgresStore) ClearDatasourceSourceDegraded(ctx context.Context, sourceID string, excludeReasons []string) error {
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		UPDATE datasource_sources
 		   SET status            = 'active',
@@ -182,7 +192,8 @@ func (s *PostgresStore) ClearDatasourceSourceDegraded(ctx context.Context, sourc
 		       next_reconcile_at = CASE WHEN reconcile_interval > INTERVAL '0'
 		                                THEN NOW() + reconcile_interval END,
 		       updated_at        = NOW()
-		 WHERE id = $1 AND status = 'degraded'`, sourceID)
+		 WHERE id = $1 AND status = 'degraded'
+		   AND COALESCE(status_reason, '') <> ALL($2)`, sourceID, excludeReasons)
 	return err
 }
 
@@ -253,13 +264,37 @@ func (s *PostgresStore) ClearDatasourceSourceInstallationDegraded(ctx context.Co
 	return cleared, err
 }
 
-// ListGitHubInstallationsPendingRecheck returns the distinct installations that
-// still have a source parked for one of reasons. A parked source leaves the
-// reconcile sweep (that sweep selects status='active'), so without this the
-// only way back to active is another App-level delivery — and a delivery GitHub
-// fails to hand over is not retried forever. This is the pull-side safety net
-// that makes restoration independent of one webhook arriving. Control-plane.
-func (s *PostgresStore) ListGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string, limit int) ([]string, error) {
+// CountGitHubInstallationsPendingRecheck reports how many distinct installations
+// still hold a parked source. The sweep needs the size of the set, not just a
+// page of it, to rotate across the whole of it — see the offset argument below.
+// Control-plane.
+func (s *PostgresStore) CountGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string) (int, error) {
+	var total int
+	err := s.getQueryExecutor(ctx).QueryRow(ctx, `
+		SELECT COUNT(DISTINCT github_installation_id)
+		  FROM datasource_sources
+		 WHERE status = 'degraded'
+		   AND provider = 'github'
+		   AND status_reason = ANY($1)
+		   AND github_installation_id IS NOT NULL`, reasons).Scan(&total)
+	return total, err
+}
+
+// ListGitHubInstallationsPendingRecheck returns one page of the distinct
+// installations that still have a source parked for one of reasons. A parked
+// source leaves the reconcile sweep (that sweep selects status='active'), so
+// without this the only way back to active is another App-level delivery — and
+// a delivery GitHub fails to hand over is not retried forever. This is the
+// pull-side safety net that makes restoration independent of one webhook
+// arriving. Control-plane.
+//
+// offset is what keeps that safety net from covering only its own first page.
+// An installation that was deleted parks its sources permanently — access can
+// never return — so those rows stay in this set for good. Reading a fixed first
+// page every window therefore starves every installation sorting behind them
+// once the permanently-parked fill one batch, and the caller rotates offset so
+// each page is reached in turn.
+func (s *PostgresStore) ListGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string, offset, limit int) ([]string, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
 		SELECT DISTINCT github_installation_id
 		  FROM datasource_sources
@@ -268,7 +303,7 @@ func (s *PostgresStore) ListGitHubInstallationsPendingRecheck(ctx context.Contex
 		   AND status_reason = ANY($1)
 		   AND github_installation_id IS NOT NULL
 		 ORDER BY github_installation_id
-		 LIMIT $2`, reasons, limit)
+		 LIMIT $2 OFFSET $3`, reasons, limit, offset)
 	if err != nil {
 		return nil, err
 	}

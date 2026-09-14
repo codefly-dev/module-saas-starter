@@ -153,8 +153,11 @@ type Store interface {
 	// snapshot has succeeded again: it clears status_reason and restores
 	// next_reconcile_at from the source's reconcile interval so the reconcile
 	// sweep resumes selecting it. Scoped to status='degraded' so it cannot
-	// resurrect a source an operator has since paused. Control-plane.
-	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error
+	// resurrect a source an operator has since paused, and to reasons outside
+	// excludeReasons so it cannot lift a degrade another path owns — a snapshot
+	// fitting the ingest cap is no evidence that withdrawn GitHub App access has
+	// returned. Control-plane.
+	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string, excludeReasons []string) error
 	// MarkDatasourceSourceInstallationDegraded parks a source whose GitHub App
 	// access was withdrawn, and re-labels one this path already parked when the
 	// cause changes. The reconciler decides what to park from a read taken before
@@ -179,10 +182,17 @@ type Store interface {
 	// installation and nothing else, and its receiver is unauthenticated, so
 	// there is no tenant to scope the lookup to. Control-plane.
 	ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID, afterID string, limit int) ([]*DatasourceSource, error)
-	// ListGitHubInstallationsPendingRecheck returns the distinct installations
-	// still holding a source parked for one of reasons, so restoration does not
-	// depend on a single webhook delivery arriving. Control-plane.
-	ListGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string, limit int) ([]string, error)
+	// ListGitHubInstallationsPendingRecheck returns one page of the distinct
+	// installations still holding a source parked for one of reasons, so
+	// restoration does not depend on a single webhook delivery arriving. offset
+	// rotates that page: a deleted installation parks its sources permanently, so
+	// a fixed first page would eventually be filled by installations that can
+	// never recover and would starve every live one behind them. Control-plane.
+	ListGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string, offset, limit int) ([]string, error)
+	// CountGitHubInstallationsPendingRecheck sizes that set, which is what lets
+	// the sweep rotate across all of it rather than re-reading one page.
+	// Control-plane.
+	CountGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string) (int, error)
 	// SetDatasourceSourceGitHubInstallation stamps the routing index an App-level
 	// delivery resolves sources through, recording which installation the
 	// source's credential envelope binds it to. The envelope stays the only thing

@@ -394,11 +394,13 @@ func TestReconcileInstallationRateLimitedLookupStaysRetryable(t *testing.T) {
 }
 
 // One installation spans tenants, so a single unreachable repository must not
-// strand every source behind it — including another organization's.
+// strand every source behind it — including another organization's. The refusal
+// has to be one that concerns only this repository: a 403 is GitHub throttling
+// the caller, which the walk stops on instead (see the test below).
 func TestReconcileInstallationStepsOverAnUnreachableSource(t *testing.T) {
 	h := newInstallationHarness(t, &fakeInstallationAPI{
 		installations: map[string]*time.Time{testAppInstallation: nil},
-		failRepo:      map[string]int{"acme/docs": http.StatusForbidden},
+		failRepo:      map[string]int{"acme/docs": http.StatusUnprocessableEntity},
 	})
 	blocked := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
 	deselected := h.seedAppSource(t, "source-b", "acme/widgets", testAppInstallation)
@@ -500,6 +502,109 @@ func TestInstallationRecheckSweepUsesOneKeyPerWindow(t *testing.T) {
 	require.Equal(t, keys[1], keys[2])
 }
 
+// The sweep takes one page per window, not the whole parked set, and the page it
+// takes is contiguous rather than a mixture.
+//
+// The parked set is deliberately a whole number of pages. Which page a window
+// takes is derived from the clock, so a set that divides unevenly would return a
+// short final page in half the windows and make this assertion depend on the
+// half-hour it ran in. Rotation itself is covered exhaustively and without a
+// clock in TestRecheckPageOffsetReachesEveryPage.
+func TestInstallationRecheckSweepTakesOnePageOfALargerParkedSet(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{})
+	const pageSize = 100
+	const parked = 2 * pageSize
+	for i := range parked {
+		source := h.seedAppSource(t, fmt.Sprintf("source-%03d", i), fmt.Sprintf("acme/repo-%03d", i), fmt.Sprintf("inst-%03d", i))
+		h.degrade(t, source.ID, business.DatasourceReasonInstallationSuspended)
+	}
+
+	enqueued, err := h.svc.RunGitHubInstallationRecheck(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, pageSize, enqueued, "one window re-checks one page of the parked set")
+
+	keys := h.enqueuedRecheckKeys()
+	require.Len(t, keys, pageSize)
+	onFirstPage := 0
+	for _, key := range keys {
+		for i := range pageSize {
+			if strings.Contains(key, fmt.Sprintf(":inst-%03d:", i)) {
+				onFirstPage++
+				break
+			}
+		}
+	}
+	require.True(t, onFirstPage == 0 || onFirstPage == pageSize,
+		"a window takes one contiguous page, not a mixture of pages (got %d of %d from the first page)", onFirstPage, pageSize)
+}
+
+// Both producers of the installation queue stamp the same schema version on it,
+// so a consumer reading the payload rather than the attributes must not find a
+// different envelope depending on which produced it.
+func TestInstallationRecheckJobCarriesTheSamePayloadAsADelivery(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.degrade(t, source.ID, business.DatasourceReasonInstallationSuspended)
+
+	_, err := h.svc.RunGitHubInstallationRecheck(context.Background())
+	require.NoError(t, err)
+
+	h.producer.mu.Lock()
+	defer h.producer.mu.Unlock()
+	require.Len(t, h.producer.jobs, 1)
+	require.JSONEq(t, fmt.Sprintf(`{"installation_id":%q}`, testAppInstallation), string(h.producer.jobs[0].GetPayload()),
+		"the sweep and the receiver must describe one envelope")
+}
+
+// GitHub throttling is not a fact about one repository: it answers the same way
+// for every source left in the walk, and the job restarts that walk from its
+// first page. Continuing therefore spends a doomed request per remaining source
+// and then repeats every request that already succeeded — load applied to the
+// very limit that produced the failure.
+func TestReconcileInstallationStopsOnAThrottledLookup(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		coverage:      map[string]string{"acme/docs": testAppInstallation, "acme/widgets": testAppInstallation},
+		installations: map[string]*time.Time{testAppInstallation: nil},
+		failRepo:      map[string]int{"acme/docs": http.StatusTooManyRequests},
+	})
+	throttled := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	behind := h.seedAppSource(t, "source-b", "acme/widgets", testAppInstallation)
+
+	err := h.reconcile(t, testAppInstallation)
+	require.Error(t, err)
+	var processing *jobs.ProcessingError
+	require.ErrorAs(t, err, &processing)
+	require.True(t, processing.Retryable, "the retry is what covers the sources the walk stopped short of")
+
+	coverageReads, _ := h.api.reads()
+	require.Equal(t, 1, coverageReads,
+		"the walk must stop at the throttle, not ask once per remaining source")
+	require.Equal(t, business.DatasourceStatusActive, h.reload(t, throttled.ID).Status)
+	require.Equal(t, business.DatasourceStatusActive, h.reload(t, behind.ID).Status)
+}
+
+// The routing column is stamped once, when a source is bound to the App. An
+// uninstall-and-reinstall issues a NEW installation id, so the column then names
+// one that no longer exists — and since the reconciler lists BY that column, no
+// later delivery for the real installation would ever reach this source again.
+// Nothing else revisits it: the re-check sweep selects only degraded rows, and a
+// syncing source is not degraded. Correcting it from what GitHub just answered
+// is what keeps the staleness from being permanent.
+func TestReconcileInstallationCorrectsAStaleRoutingColumn(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		coverage:      map[string]string{"acme/docs": testOtherAppInstallation},
+		installations: map[string]*time.Time{testOtherAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	reloaded := h.reload(t, source.ID)
+	require.Equal(t, business.DatasourceStatusActive, reloaded.Status)
+	require.Equal(t, testOtherAppInstallation, reloaded.GitHubInstallationID,
+		"a delivery for the installation that actually covers this repository must be able to find it")
+}
+
 func TestInstallationJobHandlerRejectsMisroutedWork(t *testing.T) {
 	h := newInstallationHarness(t, &fakeInstallationAPI{})
 	handler := h.svc.NewDatasourceInstallationJobHandler()
@@ -565,6 +670,27 @@ func TestReconcileInstallationAuditsSuspensionAsItsOwnCause(t *testing.T) {
 	require.NoError(t, h.reconcile(t, testAppInstallation))
 
 	entry := onlyAuditEntry(t, h, business.EventDatasourceSourceAccessLost)
+	require.Equal(t, business.DatasourceAccessLostSuspended, entry.Payload["reason"])
+	require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload))
+}
+
+// The record must name the installation the decision was actually made against.
+// Access is resolved per source BY REPOSITORY, so when a repository has moved to
+// a different installation the routing column is not what answered — auditing it
+// would attribute a revocation to an installation that had nothing to do with it.
+func TestReconcileInstallationAuditsTheInstallationThatAnswered(t *testing.T) {
+	suspended := time.Now().UTC()
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		coverage:      map[string]string{"acme/docs": testOtherAppInstallation},
+		installations: map[string]*time.Time{testOtherAppInstallation: &suspended},
+	})
+	h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	entry := onlyAuditEntry(t, h, business.EventDatasourceSourceAccessLost)
+	require.Equal(t, testOtherAppInstallation, entry.Payload["installation_id"],
+		"the audit names the installation that was asked, not the stale column")
 	require.Equal(t, business.DatasourceAccessLostSuspended, entry.Payload["reason"])
 	require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload))
 }

@@ -844,6 +844,12 @@ func doWork(ctx context.Context) (Clean, error) {
 			datasource.AppHandlerDeps{Producer: jobStore, Registration: service},
 		))
 		w.Info("GitHub App lifecycle webhook enabled")
+	} else if service.GitHubAppConfigured() {
+		// Half a registration is the dangerous shape: sources mint App tokens and
+		// look healthy, while GitHub's lifecycle deliveries land on a route that
+		// does not exist. Revocation then stays invisible for the life of a
+		// cached token with nothing anywhere to say why.
+		w.Warn("GitHub App registered without a webhook secret; installation lifecycle events cannot be verified and will not be received")
 	}
 
 	// Start background data retention goroutine. Runs once on startup and

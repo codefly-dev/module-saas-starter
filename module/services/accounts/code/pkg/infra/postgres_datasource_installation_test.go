@@ -246,13 +246,55 @@ func TestPostgresListGitHubInstallationsPendingRecheck(t *testing.T) {
 		pending, err = testStore.ListGitHubInstallationsPendingRecheck(ctx, []string{
 			business.DatasourceReasonInstallationSuspended,
 			business.DatasourceReasonInstallationRepositoryUnavailable,
-		}, 100)
+		}, 0, 100)
 		return err
 	}))
 
 	require.Contains(t, pending, parkedInstallation)
 	require.NotContains(t, pending, healthyInstallation, "an active source needs no re-check")
 	require.NotContains(t, pending, compilerInstallation, "another path's degrade is not this sweep's to lift")
+}
+
+// The ingest-recovery path owns one degrade reason and must not lift another's.
+// A snapshot fitting the ingest cap proves nothing about whether a GitHub App
+// installation has started granting access again, so clearing an App park here
+// would return a source to active with its access still revoked — and record it
+// on the audit trail as an ingest recovery, leaving that path's access_lost with
+// no matching access_restored.
+func TestPostgresClearDatasourceSourceDegradedLeavesAnInstallationParkAlone(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	sourceID := seedDatasourceSource(t, org)
+	bindInstallation(t, org, sourceID, uniqueInstallationID())
+	parkForInstallation(t, sourceID, business.DatasourceReasonInstallationSuspended)
+
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.ClearDatasourceSourceDegraded(ctx, sourceID, installationReasons)
+	}))
+
+	still, err := testStore.GetDatasourceSourceByID(testCtx, sourceID)
+	require.NoError(t, err)
+	require.Equal(t, business.DatasourceStatusDegraded, still.Status,
+		"an App park is not the ingest path's to lift")
+	require.Equal(t, business.DatasourceReasonInstallationSuspended, still.StatusReason)
+}
+
+// status_reason is nullable, and `NULL <> ALL(...)` is NULL rather than true —
+// so a degraded row that recorded no reason must still be clearable, or the
+// exclusion would strand it degraded permanently.
+func TestPostgresClearDatasourceSourceDegradedStillClearsAReasonlessRow(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+	sourceID := seedDatasourceSource(t, org)
+	setSourceState(t, sourceID, business.DatasourceStatusDegraded, "")
+
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.ClearDatasourceSourceDegraded(ctx, sourceID, installationReasons)
+	}))
+
+	revived, err := testStore.GetDatasourceSourceByID(testCtx, sourceID)
+	require.NoError(t, err)
+	require.Equal(t, business.DatasourceStatusActive, revived.Status)
 }
 
 // Restoring App access revives only what the App-level reconciler parked. A

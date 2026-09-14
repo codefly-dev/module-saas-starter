@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -164,11 +165,35 @@ func (s *Service) ReconcileGitHubInstallation(ctx context.Context, installationI
 		}
 		for _, source := range page {
 			after = source.ID
-			reason, err := s.githubInstallationAccess(ctx, registration, source, suspended)
+			reason, covering, err := s.githubInstallationAccess(ctx, registration, source, suspended)
 			if err != nil {
 				w.Warn("installation access check failed", wool.Field("source", source.ID), wool.ErrField(err))
 				failure = keepRetryable(failure, err)
+				if !isPerSourceFault(err) {
+					// Throttled, or GitHub is not answering: stop rather than ask
+					// the same question for every source left. Nothing is stranded
+					// by stopping — the failure is retryable and the retry walks
+					// the installation again from the start.
+					return failure
+				}
 				continue
+			}
+			// Correct the routing index from what GitHub just answered. The
+			// column is stamped once, when a source is bound to the App, so an
+			// uninstall-and-reinstall leaves it naming an installation that no
+			// longer exists — and since this listing is BY that column, no later
+			// delivery for the real installation would ever reach this source
+			// again. Nothing else revisits it either: the recheck sweep selects
+			// only degraded rows, and an actively syncing source is never
+			// degraded. Left unwritten, the staleness is permanent.
+			if covering != "" && covering != source.GitHubInstallationID {
+				if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+					return s.store.SetDatasourceSourceGitHubInstallation(ctx, source.OrgID, source.ID, covering)
+				}); err != nil {
+					failure = keepRetryable(failure, err)
+				} else {
+					source.GitHubInstallationID = covering
+				}
 			}
 			if err := s.applyGitHubInstallationAccess(ctx, source, reason); err != nil {
 				failure = keepRetryable(failure, err)
@@ -199,20 +224,40 @@ func (s *Service) RunGitHubInstallationRecheck(ctx context.Context) (int, error)
 		return 0, nil
 	}
 
-	var installations []string
-	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		found, err := s.store.ListGitHubInstallationsPendingRecheck(ctx, datasourceInstallationReasons, datasourceInstallationRecheckBatch)
-		installations = found
-		return err
-	}); err != nil {
-		return 0, w.Wrapf(err, "list installations pending recheck")
-	}
-
 	// One job per installation per window. The sweep runs on the retention
 	// ticker, far more often than an installation's state changes, so the
 	// window — not the tick — sets the re-check rate: the jobs platform resolves
 	// a repeated idempotency key to the job already queued.
 	window := time.Now().UTC().Truncate(datasourceInstallationRecheckInterval).Unix()
+	// The same window, counted rather than stamped, also chooses which page of
+	// the parked set this sweep takes. A raw unix timestamp is unusable as a
+	// rotation index: it advances by the window length, so modulo a page count
+	// sharing a factor with it, some pages would never come up at all.
+	counter := window / int64(datasourceInstallationRecheckInterval/time.Second)
+
+	var installations []string
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		total, err := s.store.CountGitHubInstallationsPendingRecheck(ctx, datasourceInstallationReasons)
+		if err != nil {
+			return err
+		}
+		if total == 0 {
+			return nil
+		}
+		// Rotate, because a source parked for a DELETED installation never comes
+		// back: its id stays in this set permanently. A fixed first page would
+		// fill with those and silently stop re-checking everything behind them —
+		// including the live installation whose `unsuspend` delivery was lost,
+		// which is the one case this sweep exists to catch. Deriving the page
+		// from the window counter rather than from a cursor held in memory keeps
+		// the rotation going across restarts, which a process-local cursor would
+		// reset to the same first page on every deploy.
+		offset := recheckPageOffset(counter, total, datasourceInstallationRecheckBatch)
+		installations, err = s.store.ListGitHubInstallationsPendingRecheck(ctx, datasourceInstallationReasons, offset, datasourceInstallationRecheckBatch)
+		return err
+	}); err != nil {
+		return 0, w.Wrapf(err, "list installations pending recheck")
+	}
 	enqueued := 0
 	for _, installation := range installations {
 		response, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
@@ -228,10 +273,14 @@ func (s *Service) RunGitHubInstallationRecheck(ctx context.Context) (int, error)
 				},
 				IdempotencyKey: fmt.Sprintf("%s:%s:%d", datasourceInstallationRecheckSource, installation, window),
 				SchemaVersion:  datasourceInstallationSchemaVersion,
-				Payload:        datasourceRequestBody(),
-				ContentType:    datasourceRequestContentType,
-				MaxAttempts:    datasourceDeliveryMaxAttempts,
-				Attributes:     map[string]string{attrInstallationID: installation},
+				// The same body the receiver records, because both producers
+				// stamp the same schema version on this one queue: a consumer
+				// that reads the payload rather than the attributes must not
+				// find a different envelope depending on which produced it.
+				Payload:     installationJobPayload(installation),
+				ContentType: datasourceRequestContentType,
+				MaxAttempts: datasourceDeliveryMaxAttempts,
+				Attributes:  map[string]string{attrInstallationID: installation},
 			},
 		})
 		if err != nil {
@@ -249,24 +298,50 @@ func (s *Service) RunGitHubInstallationRecheck(ctx context.Context) (int, error)
 	return enqueued, nil
 }
 
+// installationJobPayload is the body both producers of the installation queue
+// write. The reconciler routes on the job's attributes, but the receiver and
+// this sweep stamp one schema version on one queue, so their envelopes must not
+// differ by producer. Marshalling a one-entry map of strings has no failure
+// mode, which is why the error is not plumbed.
+func installationJobPayload(installationID string) []byte {
+	encoded, _ := json.Marshal(map[string]string{"installation_id": installationID})
+	return encoded
+}
+
+// recheckPageOffset picks which page of the parked set one sweep takes. counter
+// advances by exactly one per re-check window, so consecutive sweeps take
+// consecutive pages and every parked installation is reached within one full
+// rotation. Without that rotation the sweep re-reads its first page forever, and
+// since a deleted installation can never regain access its sources stay parked
+// permanently — so the dead accumulate at a fixed position and starve every live
+// installation behind them.
+func recheckPageOffset(counter int64, total, batch int) int {
+	pages := int64((total + batch - 1) / batch)
+	if pages <= 1 {
+		return 0
+	}
+	return int(counter%pages) * batch
+}
+
 // githubInstallationAccess reports why a source can no longer read its
-// repository, or "" when access is intact. The sentence it returns is always a
-// key of datasourceInstallationReasons, which is what makes the audit code
-// lookup at the write site total.
+// repository, or "" when access is intact, together with the installation that
+// actually covers the repository now. The sentence it returns is always a key of
+// datasourceInstallationReasons, which is what makes the audit code lookup at
+// the write site total.
 //
 // The question is put to GitHub per source and by repository — never by the
 // installation id the delivery carried. A source rebound to a different
 // installation since its routing column was stamped is then answered for the
 // installation that actually covers it, so a stale column costs a redundant
 // check rather than a wrong revocation.
-func (s *Service) githubInstallationAccess(ctx context.Context, registration githubconnector.AppCredential, source *DatasourceSource, suspended map[string]bool) (string, error) {
+func (s *Service) githubInstallationAccess(ctx context.Context, registration githubconnector.AppCredential, source *DatasourceSource, suspended map[string]bool) (string, string, error) {
 	owner, repo, _ := strings.Cut(source.Repo, "/")
 	covering, err := s.githubConnector.FindRepositoryInstallation(ctx, registration, owner, repo)
 	if err != nil {
 		if githubconnector.IsNotFound(err) {
-			return DatasourceReasonInstallationRepositoryUnavailable, nil
+			return DatasourceReasonInstallationRepositoryUnavailable, "", nil
 		}
-		return "", githubInstallationStateError(err)
+		return "", "", githubInstallationStateError(err)
 	}
 
 	isSuspended, known := suspended[covering]
@@ -274,17 +349,17 @@ func (s *Service) githubInstallationAccess(ctx context.Context, registration git
 		installation, err := s.githubConnector.GetInstallation(ctx, registration, covering)
 		if err != nil {
 			if githubconnector.IsNotFound(err) {
-				return DatasourceReasonInstallationRepositoryUnavailable, nil
+				return DatasourceReasonInstallationRepositoryUnavailable, covering, nil
 			}
-			return "", githubInstallationStateError(err)
+			return "", covering, githubInstallationStateError(err)
 		}
 		isSuspended = installation.SuspendedAt != nil
 		suspended[covering] = isSuspended
 	}
 	if isSuspended {
-		return DatasourceReasonInstallationSuspended, nil
+		return DatasourceReasonInstallationSuspended, covering, nil
 	}
-	return "", nil
+	return "", covering, nil
 }
 
 // githubInstallationStateError classifies a failure to READ installation state,
@@ -301,12 +376,47 @@ func (s *Service) githubInstallationAccess(ctx context.Context, registration git
 // deliver promptly, so everything except a rejected credential stays retryable.
 func githubInstallationStateError(err error) error {
 	var apiErr *githubconnector.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
-		return jobs.NewProcessingError("datasource.github_app_credential_rejected",
-			"GitHub rejected this deployment's GitHub App credential. Check the registered App id and signing key. This job will not retry.", false)
+	if errors.As(err, &apiErr) {
+		switch {
+		case apiErr.StatusCode == http.StatusUnauthorized:
+			return jobs.NewProcessingError(githubAppCredentialRejectedCode,
+				"GitHub rejected this deployment's GitHub App credential. Check the registered App id and signing key. This job will not retry.", false)
+		case apiErr.StatusCode == http.StatusForbidden,
+			apiErr.StatusCode == http.StatusTooManyRequests,
+			apiErr.StatusCode >= http.StatusInternalServerError:
+			return jobs.NewProcessingError(githubAppStateUnavailableCode,
+				"Could not read the GitHub App installation's current state. GitHub may be unavailable or rate limiting; this job may retry.", true)
+		}
+		// Any other refusal is about this one repository — a malformed name, say
+		// — and says nothing about the App or about GitHub's willingness to
+		// answer for the next source.
+		return jobs.NewProcessingError(githubRepositoryUnreadableCode,
+			"Could not read this repository's GitHub App installation. This source was skipped; the job may retry.", true)
 	}
-	return jobs.NewProcessingError("datasource.github_app_state_unavailable",
+	// A transport failure is not specific to one repository either.
+	return jobs.NewProcessingError(githubAppStateUnavailableCode,
 		"Could not read the GitHub App installation's current state. GitHub may be unavailable or rate limiting; this job may retry.", true)
+}
+
+// The failure codes this path records. They are load-bearing beyond reporting:
+// the reconcile loop decides from them whether a failure concerns one source or
+// every remaining one.
+const (
+	githubAppCredentialRejectedCode = "datasource.github_app_credential_rejected"
+	githubAppStateUnavailableCode   = "datasource.github_app_state_unavailable"
+	githubRepositoryUnreadableCode  = "datasource.github_repository_unreadable"
+)
+
+// isPerSourceFault reports whether a failed access check concerns only the
+// source it happened on. Everything else — a rejected credential, throttling,
+// GitHub being unavailable — will answer the same way for every source left in
+// the walk, and the job restarts that walk from its first page, so continuing
+// past one spends a doomed request per remaining source and then repeats every
+// request that already succeeded. That is load, applied to the exact limit that
+// produced the failure.
+func isPerSourceFault(err error) bool {
+	var processing *jobs.ProcessingError
+	return errors.As(err, &processing) && processing.Failure.GetCode() == githubRepositoryUnreadableCode
 }
 
 // keepRetryable prefers a retryable failure over a terminal one, so a job that

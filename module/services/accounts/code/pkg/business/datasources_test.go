@@ -242,9 +242,7 @@ func (f *datasourceFakeStore) ListDatasourceSourcesByGitHubInstallation(_ contex
 	return out, nil
 }
 
-func (f *datasourceFakeStore) ListGitHubInstallationsPendingRecheck(_ context.Context, reasons []string, limit int) ([]string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
+func (f *datasourceFakeStore) pendingRecheck(reasons []string) []string {
 	var out []string
 	for _, s := range f.sources {
 		if s.Status != business.DatasourceStatusDegraded || s.GitHubInstallationID == "" {
@@ -256,6 +254,23 @@ func (f *datasourceFakeStore) ListGitHubInstallationsPendingRecheck(_ context.Co
 		out = append(out, s.GitHubInstallationID)
 	}
 	slices.Sort(out)
+	return out
+}
+
+func (f *datasourceFakeStore) CountGitHubInstallationsPendingRecheck(_ context.Context, reasons []string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.pendingRecheck(reasons)), nil
+}
+
+func (f *datasourceFakeStore) ListGitHubInstallationsPendingRecheck(_ context.Context, reasons []string, offset, limit int) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.pendingRecheck(reasons)
+	if offset >= len(out) {
+		return nil, nil
+	}
+	out = out[offset:]
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
@@ -325,7 +340,7 @@ func (f *datasourceFakeStore) ClearDatasourceSourceInstallationDegraded(_ contex
 	return cleared, nil
 }
 
-func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, sourceID string) error {
+func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, sourceID string, excludeReasons []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.sources[sourceID]
@@ -335,6 +350,11 @@ func (f *datasourceFakeStore) ClearDatasourceSourceDegraded(_ context.Context, s
 	// Mirror the store's status='degraded' guard: only a degraded row is revived,
 	// so a paused source is left untouched.
 	if s.Status != business.DatasourceStatusDegraded {
+		return nil
+	}
+	// Mirror the store's exclusion: a degrade another path owns is not this
+	// path's to lift.
+	if slices.Contains(excludeReasons, s.StatusReason) {
 		return nil
 	}
 	s.Status = business.DatasourceStatusActive
