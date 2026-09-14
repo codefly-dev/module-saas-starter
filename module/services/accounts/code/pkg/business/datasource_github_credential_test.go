@@ -293,8 +293,78 @@ func TestGitHubSource_AppBackedSourceNeverFallsBackToAPAT(t *testing.T) {
 	require.Len(t, h.producer.jobs, enqueued, "a denied source must not enqueue a sync that would read nothing")
 }
 
+// A stored credential naming a kind this deployment does not implement must
+// fail closed. Falling through to the PAT branch would hand the client an empty
+// token, and an empty token is not "no credential" — it is an anonymous client,
+// which reads a public repository successfully and reports a sync that proved
+// no authorization at all.
+func TestGitHubSource_UnrecognizedCredentialKindFailsClosed(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{})
+	source := h.addPATSource(t, "acme/docs", "pat-old")
+	authenticated := len(h.tokens.all())
+
+	h.store.mu.Lock()
+	h.store.sources[source.ID].CredentialSecretRef =
+		"enc:github-connector:" + source.ID + `:{"kind":"app_v2","installation_id":"4242"}`
+	h.store.mu.Unlock()
+
+	_, err := h.svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID)
+	require.Error(t, err)
+	require.Len(t, h.tokens.all(), authenticated, "an unreadable credential must build no client")
+}
+
+func TestGitHubSource_EmptyStoredPATFailsClosed(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{})
+	source := h.addPATSource(t, "acme/docs", "pat-old")
+	authenticated := len(h.tokens.all())
+
+	h.store.mu.Lock()
+	h.store.sources[source.ID].CredentialSecretRef = "enc:github-connector:" + source.ID + ":"
+	h.store.mu.Unlock()
+
+	_, err := h.svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID)
+	require.Error(t, err)
+	require.Len(t, h.tokens.all(), authenticated, "an empty credential must never become an anonymous client")
+}
+
+// Re-binding a source to the App after an intervening PAT reconnect must mint
+// under a fresh identity. GitHub documents no mid-life invalidation when an
+// installation is narrowed, so serving the token minted for the binding that
+// was replaced would carry authority the operator may have revoked in between.
+func TestGitHubSource_PATReconnectDoesNotResurrectASupersededToken(t *testing.T) {
+	app := &fakeGitHubApp{}
+	h := newAppHarness(t, app)
+	source := h.addPATSource(t, "acme/docs", "pat-old")
+	ctx := context.Background()
+
+	_, err := h.svc.MigrateGitHubSourceToApp(ctx, "actor-1", testOrg, source.ID)
+	require.NoError(t, err)
+	firstToken := h.tokens.last()
+	mintsAfterFirst := app.mintCount()
+
+	_, err = h.svc.SyncDatasourceSource(ctx, "actor-1", testOrg, source.ID, "pat-new")
+	require.NoError(t, err)
+
+	_, err = h.svc.MigrateGitHubSourceToApp(ctx, "actor-1", testOrg, source.ID)
+	require.NoError(t, err)
+	_, err = h.svc.SyncDatasourceSource(ctx, "actor-1", testOrg, source.ID)
+	require.NoError(t, err)
+
+	require.Greater(t, app.mintCount(), mintsAfterFirst, "a re-binding must mint its own token")
+	require.NotEqual(t, firstToken, h.tokens.last(), "the superseded binding's token must not be served again")
+
+	// Every write of this source's credential is attributable to a kind, so an
+	// App binding replaced by a PAT is visible in the audit trail rather than
+	// looking like a record written before the field existed.
+	var kinds []any
+	for _, payload := range h.credentialAudits() {
+		kinds = append(kinds, payload["credential_kind"])
+	}
+	require.Equal(t, []any{"app", "pat", "app"}, kinds)
+}
+
 // A minted token is reused until it is superseded: a rotation re-binds the
-// installation at a new revision, and the old token is never served for it.
+// installation at a new binding, and the old token is never served for it.
 func TestGitHubSource_TokenIsCachedAndReMintedOnRotation(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
 	source := h.addPATSource(t, "acme/docs", "pat-old")

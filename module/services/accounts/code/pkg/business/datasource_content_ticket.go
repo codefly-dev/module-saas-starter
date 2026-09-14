@@ -123,7 +123,10 @@ func (s *Service) ResolveContentTicket(ctx context.Context, ticket string) ([]by
 	}
 	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return nil, w.Wrapf(err, "authenticate to github")
+		// Returned unwrapped: the resolver already classified this as terminal or
+		// retryable, and wrapping hides that from the caller deciding whether to
+		// retry the redemption.
+		return nil, err
 	}
 	content, err := client.GetBlob(ctx, source.Repo, claims.BlobSHA, maxContentTicketBytes)
 	if err != nil {

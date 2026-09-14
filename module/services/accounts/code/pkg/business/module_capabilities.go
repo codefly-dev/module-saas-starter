@@ -736,6 +736,16 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	}
 	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
+		// A revoked installation or an unreadable credential is a precondition the
+		// tenant must repair, not an internal fault; reporting it as Internal tells
+		// a module caller to retry something that can never succeed.
+		var failure *jobs.ProcessingError
+		if errors.As(err, &failure) {
+			if failure.Retryable {
+				return nil, "", status.Error(codes.Unavailable, failure.Failure.Message)
+			}
+			return nil, "", status.Error(codes.FailedPrecondition, failure.Failure.Message)
+		}
 		return nil, "", status.Error(codes.Internal, w.Wrapf(err, "authenticate to github").Error())
 	}
 	// Trust boundary: blobSHA is caller-supplied and NOT re-validated against the

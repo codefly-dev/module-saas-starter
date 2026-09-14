@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/codefly-dev/core/wool"
 
@@ -15,11 +17,16 @@ import (
 
 // How a GitHub source authenticates. A `pat` source presents a stored
 // fine-grained token; an `app` source presents an installation token the host
-// mints for each fetch and never stores.
+// mints for each fetch and never stores. These are the only kinds a stored
+// credential may name — anything else is refused rather than interpreted.
 const (
 	githubCredentialKindPAT = "pat"
 	githubCredentialKindApp = "app"
 )
+
+// githubMigrationProbeTimeout bounds the GitHub round trips a migration makes,
+// matching the budget connect-time validation already uses.
+const githubMigrationProbeTimeout = 10 * time.Second
 
 // githubInstallationReadPermissions is the whole authority a source needs to
 // read a repository: file contents, plus the metadata every request resolves
@@ -29,14 +36,21 @@ const (
 var githubInstallationReadPermissions = map[string]string{"contents": "read", "metadata": "read"}
 
 // githubStoredCredential is the plaintext behind a GitHub source's credential
-// envelope. An app source stores only the installation it was bound to and the
-// revision of that binding — never a token (they last an hour) and never the
-// App's signing key, which is deployment custody.
+// envelope. An app source stores only the installation it was bound to and when
+// that binding was made — never a token (they last an hour) and never the App's
+// signing key, which is deployment custody.
 type githubStoredCredential struct {
 	Kind           string `json:"kind"`
 	AccessToken    string `json:"access_token,omitempty"`
 	InstallationID string `json:"installation_id,omitempty"`
-	Revision       int    `json:"revision,omitempty"`
+	// BoundAt is when this binding was created, in Unix nanoseconds, and becomes
+	// the connector's cache identity for it. It must never return to a value an
+	// earlier binding used: GitHub documents no mid-life invalidation when an
+	// installation's repository selection or permissions are narrowed, so a
+	// token minted under a superseded binding keeps working until it expires. A
+	// counter cannot carry this — an intervening PAT reconnect replaces the whole
+	// envelope, so the count restarts and re-collides with that live token.
+	BoundAt int64 `json:"bound_at,omitempty"`
 }
 
 func (c githubStoredCredential) marshal() (string, error) {
@@ -88,7 +102,7 @@ func (s *Service) appCredentialFor(cred githubStoredCredential, repo string) git
 			Repositories: []string{name},
 			Permissions:  githubInstallationReadPermissions,
 		},
-		Revision: cred.Revision,
+		Binding: strconv.FormatInt(cred.BoundAt, 10),
 	}
 }
 
@@ -98,8 +112,9 @@ func (s *Service) appCredentialFor(cred githubStoredCredential, repo string) git
 // fetch — goes through here, so token acquisition and refresh are one
 // behaviour rather than five.
 func (s *Service) githubClientForSource(ctx context.Context, source *DatasourceSource) (GitHubContentClient, error) {
+	w := wool.Get(ctx).In("githubClientForSource")
 	if s.datasourceCipher == nil || s.newGitHubClient == nil {
-		return nil, errors.New("datasource connector is not configured")
+		return nil, w.NewError("datasource connector is not configured")
 	}
 	plaintext, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
 	if err != nil {
@@ -117,22 +132,35 @@ func (s *Service) githubClientForSource(ctx context.Context, source *DatasourceS
 // repository-scoped installation token, which the connector caches per
 // authority and re-mints before it lapses.
 //
-// An App-backed source never silently falls back to a PAT: once access is
-// denied, revoked or suspended, the source fails with an actionable error
-// until an operator repairs the installation.
+// The kinds are an allow-list. Falling through to "treat it as a PAT" would
+// hand the caller whatever the access token field happened to hold, and an
+// empty one is not "no credential" — the GitHub client omits the Authorization
+// header entirely, so a public repository would sync as though it had been
+// authorized. An App-backed source likewise never falls back to a PAT: once
+// access is denied, revoked or suspended, the source fails with an actionable
+// error until an operator repairs the installation.
 func (s *Service) githubToken(ctx context.Context, cred githubStoredCredential, repo string) (string, error) {
-	if cred.Kind != githubCredentialKindApp {
+	switch cred.Kind {
+	case githubCredentialKindPAT:
+		if strings.TrimSpace(cred.AccessToken) == "" {
+			return "", jobs.NewProcessingError("datasource.credential_unreadable",
+				"The stored GitHub credential for this source is empty. Reconnect the source with a valid token. This sync job will not retry.", false)
+		}
 		return cred.AccessToken, nil
+	case githubCredentialKindApp:
+		if s.githubConnector == nil || !s.GitHubAppConfigured() {
+			return "", jobs.NewProcessingError("datasource.github_app_unconfigured",
+				"This source authenticates through a GitHub App that this deployment has no registration for. Restore the App registration, or reconnect the source. This sync job will not retry.", false)
+		}
+		token, err := s.githubConnector.InstallationToken(ctx, s.appCredentialFor(cred, repo))
+		if err != nil {
+			return "", githubInstallationTokenError(err)
+		}
+		return token, nil
+	default:
+		return "", jobs.NewProcessingError("datasource.credential_unreadable",
+			"The stored GitHub credential for this source is not in a form this deployment understands. Reconnect the source. This sync job will not retry.", false)
 	}
-	if s.githubConnector == nil || !s.GitHubAppConfigured() {
-		return "", jobs.NewProcessingError("datasource.github_app_unconfigured",
-			"This source authenticates through a GitHub App that this deployment has no registration for. Restore the App registration, or reconnect the source. This sync job will not retry.", false)
-	}
-	token, err := s.githubConnector.InstallationToken(ctx, s.appCredentialFor(cred, repo))
-	if err != nil {
-		return "", githubInstallationTokenError(err)
-	}
-	return token, nil
 }
 
 // githubInstallationTokenError classifies a failed mint. A revoked, suspended
@@ -184,48 +212,49 @@ func (s *Service) MigrateGitHubSourceToApp(ctx context.Context, actorID, orgID, 
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
 
-	owner, _, _ := strings.Cut(source.Repo, "/")
+	// Every GitHub and Vault round trip happens before the transaction opens, and
+	// under its own deadline. The credential row is locked with SELECT … FOR
+	// UPDATE and the GitHub client allows 30s per request, so resolving, minting
+	// and validating inside the transaction would pin that lock and a pooled
+	// database connection for minutes whenever GitHub is slow or rate-limiting.
+	probeCtx, cancel := context.WithTimeout(ctx, githubMigrationProbeTimeout)
+	defer cancel()
+
+	owner, repoName, _ := strings.Cut(source.Repo, "/")
 	registration := githubconnector.AppCredential{AppID: s.githubAppID, PrivateKeyPEM: s.githubAppKeyPEM}
-	_, repoName, _ := strings.Cut(source.Repo, "/")
-	installationID, err := s.githubConnector.FindRepositoryInstallation(ctx, registration, owner, repoName)
+	installationID, err := s.githubConnector.FindRepositoryInstallation(probeCtx, registration, owner, repoName)
 	if err != nil {
 		return nil, githubInstallationTokenError(err)
 	}
 
+	// The binding is stamped from the clock rather than counted up from whatever
+	// is stored, so it cannot repeat a previous binding's value and be served
+	// that binding's still-cached token.
+	replacement := githubStoredCredential{
+		Kind:           githubCredentialKindApp,
+		InstallationID: installationID,
+		BoundAt:        time.Now().UTC().UnixNano(),
+	}
+	token, err := s.githubToken(probeCtx, replacement, source.Repo)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateGitHubAccess(probeCtx, s.newGitHubClient(token), source.Repo, source.Branch); err != nil {
+		return nil, err
+	}
+
+	blob, err := replacement.marshal()
+	if err != nil {
+		return nil, w.Wrapf(err, "encode app credential")
+	}
+	encrypted, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(id), blob)
+	if err != nil {
+		return nil, w.Wrapf(err, "encrypt app credential")
+	}
+
 	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		ref, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id)
-		if err != nil {
+		if _, err := s.store.LockDatasourceSourceCredentialRef(ctx, orgID, id); err != nil {
 			return w.Wrapf(err, "lock credential")
-		}
-		plaintext, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(id), ref)
-		if err != nil {
-			return datasourceCredentialError(err)
-		}
-		// The revision advances from whatever is stored now, read under the lock,
-		// so a concurrent reconnect cannot leave two bindings sharing a revision
-		// and therefore a cached token.
-		current := parseGitHubStoredCredential(plaintext)
-		replacement := githubStoredCredential{
-			Kind:           githubCredentialKindApp,
-			InstallationID: installationID,
-			Revision:       current.Revision + 1,
-		}
-
-		token, err := s.githubToken(ctx, replacement, source.Repo)
-		if err != nil {
-			return err
-		}
-		if err := validateGitHubAccess(ctx, s.newGitHubClient(token), source.Repo, source.Branch); err != nil {
-			return err
-		}
-
-		blob, err := replacement.marshal()
-		if err != nil {
-			return w.Wrapf(err, "encode app credential")
-		}
-		encrypted, err := s.datasourceCipher.EncryptSecret(ctx, DatasourceConnectorSecretPurpose(id), blob)
-		if err != nil {
-			return w.Wrapf(err, "encrypt app credential")
 		}
 		if err := s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted); err != nil {
 			return w.Wrapf(err, "persist app credential")

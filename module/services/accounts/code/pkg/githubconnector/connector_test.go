@@ -417,7 +417,7 @@ func TestInstallationTokenCacheIsKeyedByScopeAndRevision(t *testing.T) {
 	handbook := cred
 	handbook.Scope = &githubconnector.InstallationScope{Repositories: []string{"handbook"}}
 	rotated := wiki
-	rotated.Revision = 2
+	rotated.Binding = "2026-09-14T10:00:00Z"
 
 	fetch := func(c githubconnector.AppCredential) {
 		t.Helper()

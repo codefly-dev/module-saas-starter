@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -36,11 +35,15 @@ type AppCredential struct {
 	// Scope narrows the minted token to what the caller actually reads; nil
 	// mints a token carrying the installation's full authority.
 	Scope *InstallationScope `json:"scope,omitempty"`
-	// Revision advances whenever the credential behind this installation is
-	// replaced or the app's signing key is rotated. It is part of the token
-	// cache identity, so a rotation is never served a token minted under the
-	// superseded credential.
-	Revision int `json:"revision,omitempty"`
+	// Binding identifies the stored credential this token is minted for. It must
+	// be distinct for every binding ever created, because it is what keeps a
+	// cached token from outliving the binding it was minted under: GitHub
+	// documents no mid-life invalidation when an installation's repository
+	// selection or permissions are narrowed, so a token issued under the old
+	// binding keeps working until it expires. A counter is the wrong shape here
+	// — anything that can return to a previous value re-collides with a live
+	// cache entry — so callers pass a value that only moves forward.
+	Binding string `json:"binding,omitempty"`
 }
 
 // Marshal renders the credential as the JSON secret persisted by the store.
@@ -103,7 +106,7 @@ func (c AppCredential) cacheKey() string {
 	key.WriteString("/")
 	key.WriteString(c.InstallationID)
 	key.WriteString("#")
-	key.WriteString(strconv.Itoa(c.Revision))
+	key.WriteString(c.Binding)
 	if c.Scope == nil {
 		return key.String()
 	}
