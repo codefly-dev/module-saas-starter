@@ -33,6 +33,10 @@ fixture initialization sits between setup and execution. These records do not
 claim to measure either. Codefly's flow status carries a single readiness flag in
 both the pinned Core release and the latest one, so naming the service that
 exceeded its budget needs new SDK/CLI lifecycle evidence, not a dependency bump.
+That signal is requested in [Core #476](https://github.com/codefly-dev/core/issues/476).
+A test pins `FlowStatus` to its single field, so a signal carried there fails it;
+one delivered as a new message or streaming RPC would not. Re-read this section
+when #476 lands rather than trusting that test to notice.
 Keep the Codefly debug log with failures.
 
 ## Planner handoff
