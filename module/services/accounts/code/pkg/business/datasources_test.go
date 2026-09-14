@@ -199,7 +199,7 @@ func (f *datasourceFakeStore) BumpDatasourceReconcile(_ context.Context, sourceI
 	return nil
 }
 
-func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, sourceID, reason string) error {
+func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, sourceID string, reason business.DatasourceDegradeReason) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	s, ok := f.sources[sourceID]
@@ -207,7 +207,7 @@ func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, so
 		return errors.New("not found")
 	}
 	s.Status = business.DatasourceStatusDegraded
-	s.StatusReason = reason
+	s.StatusReason = reason.String()
 	s.NextReconcileAt = nil
 	return nil
 }

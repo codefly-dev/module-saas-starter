@@ -162,22 +162,24 @@ func TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason(t *testing.T) {
 	}
 }
 
-// TestDatasourceSourceToProto_ActiveSourceCarriesNoReason keeps status_reason a
-// signal rather than a field every client has to interpret: an active source
-// explains nothing, so a non-empty reason always means the source needs
-// attention.
-func TestDatasourceSourceToProto_ActiveSourceCarriesNoReason(t *testing.T) {
-	out := datasourceSourceToProto(&business.DatasourceSource{
-		ID:       "11111111-1111-1111-1111-111111111111",
-		OrgID:    "22222222-2222-2222-2222-222222222222",
-		Provider: business.DatasourceProviderGitHub,
-		Status:   business.DatasourceStatusActive,
-	})
-
-	if got := out.GetStatus(); got != gen.DatasourceStatus_DATASOURCE_STATUS_ACTIVE {
-		t.Errorf("status = %v, want DATASOURCE_STATUS_ACTIVE", got)
-	}
-	if got := out.GetStatusReason(); got != "" {
-		t.Errorf("status_reason = %q, want empty for an active source", got)
+// TestDatasourceStatusToProto_MapsEveryStoredStatus pins the whole switch rather
+// than the one arm this change added. A stored status that loses its case falls
+// through to UNSPECIFIED, which on the wire is indistinguishable from "unknown"
+// — exactly the defect that hid a degraded source. The unrecognised-value arm
+// pins that fallback as deliberate, so a status this projection has never heard
+// of stays UNSPECIFIED instead of being reported as a real one.
+func TestDatasourceStatusToProto_MapsEveryStoredStatus(t *testing.T) {
+	for _, testCase := range []struct {
+		stored string
+		want   gen.DatasourceStatus
+	}{
+		{business.DatasourceStatusActive, gen.DatasourceStatus_DATASOURCE_STATUS_ACTIVE},
+		{business.DatasourceStatusPaused, gen.DatasourceStatus_DATASOURCE_STATUS_PAUSED},
+		{business.DatasourceStatusDegraded, gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED},
+		{"a-status-this-binary-predates", gen.DatasourceStatus_DATASOURCE_STATUS_UNSPECIFIED},
+	} {
+		if got := datasourceStatusToProto(testCase.stored); got != testCase.want {
+			t.Errorf("datasourceStatusToProto(%q) = %v, want %v", testCase.stored, got, testCase.want)
+		}
 	}
 }

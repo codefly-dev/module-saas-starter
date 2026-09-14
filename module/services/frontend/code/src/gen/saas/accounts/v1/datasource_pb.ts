@@ -348,8 +348,9 @@ export type Datasource = Message<"saas.accounts.v1.Datasource"> & {
 
   /**
    * Why the source left DATASOURCE_STATUS_ACTIVE, in prose a tenant can act on;
-   * empty while it is active. Carries only the operator-facing reason — never
-   * credential material, a token, or a signing secret.
+   * empty while it is active. Every value is produced by one of a closed set of
+   * named constructors in the host, so it carries no credential material, token,
+   * or signing secret — raw provider error text can never reach this field.
    *
    * @generated from field: string status_reason = 17;
    */
@@ -922,10 +923,10 @@ export enum DatasourceStatus {
 
   /**
    * The source is parked because it cannot make progress for a structural
-   * reason somebody must resolve; status_reason says which. Unlike a pause this
-   * is not tenant-requested, so it is worth surfacing unprompted. Already-
-   * ingested content is retained and stays readable — degrading stops future
-   * pulls, it never withdraws history.
+   * reason somebody must resolve; status_reason says which. The host sets it,
+   * never the tenant, so it is worth surfacing unprompted. Already-ingested
+   * content is retained and stays readable — degrading stops future pulls, it
+   * never withdraws history.
    *
    * @generated from enum value: DATASOURCE_STATUS_DEGRADED = 3;
    */

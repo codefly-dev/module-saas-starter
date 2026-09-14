@@ -686,7 +686,7 @@ func TestReconcile_RecoversDegradedSourceWhenManifestFitsAgain(t *testing.T) {
 	// Park it degraded in both the in-memory source the handler carries and the
 	// stored copy the recovery write revives.
 	source.Status = business.DatasourceStatusDegraded
-	if err := store.MarkDatasourceSourceDegraded(context.Background(), source.ID, "manifest was over the ingest limit"); err != nil {
+	if err := store.MarkDatasourceSourceDegraded(context.Background(), source.ID, business.SnapshotTooLargeDegradeReason(1048576, 983040)); err != nil {
 		t.Fatal(err)
 	}
 

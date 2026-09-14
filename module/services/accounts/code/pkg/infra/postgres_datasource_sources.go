@@ -154,14 +154,14 @@ func (s *PostgresStore) BumpDatasourceReconcile(ctx context.Context, sourceID st
 // next_reconcile_at keeps the row out of the due set even after an operator
 // widens the interval. Runs under the caller's WithControlPlane (the leased
 // compiler has no tenant context).
-func (s *PostgresStore) MarkDatasourceSourceDegraded(ctx context.Context, sourceID, reason string) error {
+func (s *PostgresStore) MarkDatasourceSourceDegraded(ctx context.Context, sourceID string, reason business.DatasourceDegradeReason) error {
 	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
 		UPDATE datasource_sources
 		   SET status            = 'degraded',
 		       status_reason     = $2,
 		       next_reconcile_at = NULL,
 		       updated_at        = NOW()
-		 WHERE id = $1`, sourceID, reason)
+		 WHERE id = $1`, sourceID, reason.String())
 	return err
 }
 

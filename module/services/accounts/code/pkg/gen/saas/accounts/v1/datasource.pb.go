@@ -96,10 +96,10 @@ const (
 	DatasourceStatus_DATASOURCE_STATUS_ACTIVE      DatasourceStatus = 1
 	DatasourceStatus_DATASOURCE_STATUS_PAUSED      DatasourceStatus = 2
 	// The source is parked because it cannot make progress for a structural
-	// reason somebody must resolve; status_reason says which. Unlike a pause this
-	// is not tenant-requested, so it is worth surfacing unprompted. Already-
-	// ingested content is retained and stays readable — degrading stops future
-	// pulls, it never withdraws history.
+	// reason somebody must resolve; status_reason says which. The host sets it,
+	// never the tenant, so it is worth surfacing unprompted. Already-ingested
+	// content is retained and stays readable — degrading stops future pulls, it
+	// never withdraws history.
 	DatasourceStatus_DATASOURCE_STATUS_DEGRADED DatasourceStatus = 3
 )
 
@@ -640,8 +640,9 @@ type Datasource struct {
 	// like last_ingested_at set only for a github source.
 	LastIngestedCommit string `protobuf:"bytes,16,opt,name=last_ingested_commit,json=lastIngestedCommit,proto3" json:"last_ingested_commit,omitempty"`
 	// Why the source left DATASOURCE_STATUS_ACTIVE, in prose a tenant can act on;
-	// empty while it is active. Carries only the operator-facing reason — never
-	// credential material, a token, or a signing secret.
+	// empty while it is active. Every value is produced by one of a closed set of
+	// named constructors in the host, so it carries no credential material, token,
+	// or signing secret — raw provider error text can never reach this field.
 	StatusReason  string `protobuf:"bytes,17,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
