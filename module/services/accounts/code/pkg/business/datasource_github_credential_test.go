@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -378,16 +379,20 @@ func TestGitHubSource_TokenIsCachedAndReMintedOnRotation(t *testing.T) {
 	firstToken := h.tokens.last()
 	require.True(t, strings.HasPrefix(firstToken, "ghs_"))
 
+	// Failures are collected and asserted on the test goroutine: require's
+	// FailNow from a spawned goroutine does not stop the test and can report the
+	// failure against whatever is running when it lands.
 	var wg sync.WaitGroup
-	for range 20 {
+	concurrent := make([]error, 20)
+	for i := range concurrent {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := h.svc.SyncDatasourceSource(ctx, "actor-1", testOrg, source.ID)
-			require.NoError(t, err)
+			_, concurrent[i] = h.svc.SyncDatasourceSource(ctx, "actor-1", testOrg, source.ID)
 		}()
 	}
 	wg.Wait()
+	require.NoError(t, errors.Join(concurrent...))
 	require.Equal(t, minted, h.app.mintCount(), "concurrent fetches must reuse the cached installation token")
 
 	_, err = h.svc.MigrateGitHubSourceToApp(ctx, "actor-2", testOrg, source.ID)
