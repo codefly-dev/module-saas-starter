@@ -15,6 +15,7 @@ import (
 	"accounts/pkg/business"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/githubconnector"
+	"accounts/pkg/jobs"
 )
 
 const (
@@ -35,6 +36,9 @@ type fakeInstallationAPI struct {
 	installations map[string]*time.Time
 	// failStatus, when set, fails every request — GitHub being unavailable.
 	failStatus int
+	// failRepo fails only the named repositories' coverage lookup, so a test can
+	// strand one source and prove the rest are still reconciled.
+	failRepo map[string]int
 
 	coverageReads     int
 	installationReads int
@@ -51,6 +55,10 @@ func (f *fakeInstallationAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	case strings.HasPrefix(r.URL.Path, "/repos/") && strings.HasSuffix(r.URL.Path, "/installation"):
 		f.coverageReads++
 		repo := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/repos/"), "/installation")
+		if status, ok := f.failRepo[repo]; ok {
+			http.Error(w, `{"message":"You have exceeded a secondary rate limit"}`, status)
+			return
+		}
 		installation, ok := f.coverage[repo]
 		if !ok {
 			http.Error(w, `{"message":"Not Found"}`, http.StatusNotFound)
@@ -82,9 +90,10 @@ func (f *fakeInstallationAPI) reads() (coverage, installations int) {
 }
 
 type installationHarness struct {
-	svc   *business.Service
-	store *datasourceFakeStore
-	api   *fakeInstallationAPI
+	svc      *business.Service
+	store    *datasourceFakeStore
+	api      *fakeInstallationAPI
+	producer *recordingProducer
 }
 
 func newInstallationHarness(t *testing.T, api *fakeInstallationAPI) *installationHarness {
@@ -99,10 +108,26 @@ func newInstallationHarness(t *testing.T, api *fakeInstallationAPI) *installatio
 	t.Cleanup(server.Close)
 
 	store := newDatasourceFakeStore()
-	svc, _ := newDatasourceService(store, &recordingProducer{}, nil)
+	producer := &recordingProducer{}
+	svc, _ := newDatasourceService(store, producer, nil)
 	svc.SetGitHubConnector(githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL)))
 	svc.SetGitHubAppRegistration("123456", testAppKeyPEM(t), "whsec_app")
-	return &installationHarness{svc: svc, store: store, api: api}
+	return &installationHarness{svc: svc, store: store, api: api, producer: producer}
+}
+
+// enqueuedRecheckKeys returns the idempotency key of every re-check job the
+// sweep produced. The platform resolves a repeated key to the job already
+// queued, so the key is what actually throttles the sweep.
+func (h *installationHarness) enqueuedRecheckKeys() []string {
+	h.producer.mu.Lock()
+	defer h.producer.mu.Unlock()
+	var keys []string
+	for _, job := range h.producer.jobs {
+		if job.GetQueue() == business.DatasourceInstallationQueue {
+			keys = append(keys, job.GetIdempotencyKey())
+		}
+	}
+	return keys
 }
 
 // seedAppSource writes an App-backed source straight into the store, bound to
@@ -308,6 +333,155 @@ func TestReconcileInstallationTouchesOnlyItsOwnSources(t *testing.T) {
 
 	require.Equal(t, business.DatasourceStatusDegraded, h.reload(t, revoked.ID).Status)
 	require.Equal(t, business.DatasourceStatusActive, h.reload(t, other.ID).Status)
+}
+
+// The reconciler decides what to park from a page listed before it called
+// GitHub, and it is ordered per installation, not per source — so nothing stops
+// an operator pausing a source in between. The park must re-test the status
+// where it writes, or the pause is erased and the next re-check, finding access
+// intact, flips that source back to active against the operator's stop.
+func TestReconcileInstallationDoesNotOverwriteAConcurrentPause(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	h.store.beforeInstallationMark = func(id string) {
+		h.store.mu.Lock()
+		defer h.store.mu.Unlock()
+		h.store.sources[id].Status = business.DatasourceStatusPaused
+	}
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	paused := h.reload(t, source.ID)
+	require.Equal(t, business.DatasourceStatusPaused, paused.Status,
+		"a pause that lands mid-reconcile outranks the park")
+	require.Empty(t, paused.StatusReason)
+}
+
+// GitHub answers 403 when it declines to serve a request — overwhelmingly a
+// rate limit, which this path invites by issuing a request per source. Treating
+// that as terminal would dead-letter the job and silently drop the revocation
+// the endpoint exists to deliver.
+func TestReconcileInstallationRateLimitedLookupStaysRetryable(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{failStatus: http.StatusForbidden})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+
+	err := h.reconcile(t, testAppInstallation)
+	require.Error(t, err)
+	var processing *jobs.ProcessingError
+	require.ErrorAs(t, err, &processing)
+	require.True(t, processing.Retryable, "a 403 is GitHub declining to answer, not the tenant losing access")
+	require.Equal(t, business.DatasourceStatusActive, h.reload(t, source.ID).Status,
+		"a source is never parked on an answer GitHub did not give")
+}
+
+// One installation spans tenants, so a single unreachable repository must not
+// strand every source behind it — including another organization's.
+func TestReconcileInstallationStepsOverAnUnreachableSource(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+		failRepo:      map[string]int{"acme/docs": http.StatusForbidden},
+	})
+	blocked := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	deselected := h.seedAppSource(t, "source-b", "acme/widgets", testAppInstallation)
+
+	err := h.reconcile(t, testAppInstallation)
+	require.Error(t, err, "the job still reports the failure so it comes back")
+	var processing *jobs.ProcessingError
+	require.ErrorAs(t, err, &processing)
+	require.True(t, processing.Retryable)
+
+	require.Equal(t, business.DatasourceStatusActive, h.reload(t, blocked.ID).Status,
+		"the source GitHub would not answer for is left alone")
+	require.Equal(t, business.DatasourceStatusDegraded, h.reload(t, deselected.ID).Status,
+		"the source behind it is still reconciled")
+}
+
+// An installation can cover more sources than one read holds.
+func TestReconcileInstallationWalksEveryPage(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	const sources = 205
+	ids := make([]string, 0, sources)
+	for i := range sources {
+		ids = append(ids, h.seedAppSource(t, fmt.Sprintf("source-%03d", i), "acme/docs", testAppInstallation).ID)
+	}
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	for _, id := range ids {
+		require.Equal(t, business.DatasourceStatusDegraded, h.reload(t, id).Status,
+			"every page must be reconciled, not just the first")
+	}
+}
+
+// The routing column is only ever stamped by a GitHub path, and a source of
+// another provider must never be parked with a GitHub reason.
+func TestReconcileInstallationSkipsAnotherProvider(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{
+		installations: map[string]*time.Time{testAppInstallation: nil},
+	})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.store.mu.Lock()
+	h.store.sources[source.ID].Provider = business.DatasourceProviderAPI
+	h.store.mu.Unlock()
+
+	require.NoError(t, h.reconcile(t, testAppInstallation))
+
+	require.Equal(t, business.DatasourceStatusActive, h.reload(t, source.ID).Status)
+}
+
+// Parking takes a source out of the reconcile sweep, so if the `unsuspend`
+// delivery is never handed over the source stays parked for good. The re-check
+// sweep is the pull-side route back, and it must select exactly the
+// installations this path parked.
+func TestInstallationRecheckSweepEnqueuesParkedInstallationsOnly(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{})
+	parked := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.seedAppSource(t, "source-b", "acme/widgets", testOtherAppInstallation)
+	h.degrade(t, parked.ID, business.DatasourceReasonInstallationSuspended)
+
+	enqueued, err := h.svc.RunGitHubInstallationRecheck(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 1, enqueued)
+
+	keys := h.enqueuedRecheckKeys()
+	require.Len(t, keys, 1)
+	require.Contains(t, keys[0], testAppInstallation)
+	require.NotContains(t, keys[0], testOtherAppInstallation, "an installation with no parked source needs no re-check")
+}
+
+func TestInstallationRecheckSweepIgnoresAnotherPathsDegrade(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.degrade(t, source.ID, "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit")
+
+	enqueued, err := h.svc.RunGitHubInstallationRecheck(context.Background())
+	require.NoError(t, err)
+	require.Zero(t, enqueued, "the compiler's degrade is not this sweep's to lift")
+	require.Empty(t, h.enqueuedRecheckKeys())
+}
+
+// The sweep runs on a one-minute tick; the re-check window, not the tick, sets
+// how often an installation is re-verified. The platform resolves a repeated
+// idempotency key to the job already queued, so a stable key is the throttle.
+func TestInstallationRecheckSweepUsesOneKeyPerWindow(t *testing.T) {
+	h := newInstallationHarness(t, &fakeInstallationAPI{})
+	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
+	h.degrade(t, source.ID, business.DatasourceReasonInstallationSuspended)
+
+	for range 3 {
+		_, err := h.svc.RunGitHubInstallationRecheck(context.Background())
+		require.NoError(t, err)
+	}
+
+	keys := h.enqueuedRecheckKeys()
+	require.Len(t, keys, 3)
+	require.Equal(t, keys[0], keys[1], "repeated sweeps inside one window must reuse the key")
+	require.Equal(t, keys[1], keys[2])
 }
 
 func TestInstallationJobHandlerRejectsMisroutedWork(t *testing.T) {

@@ -204,16 +204,73 @@ func (s *PostgresStore) ClearDatasourceSourceInstallationDegraded(ctx context.Co
 	return err
 }
 
-// ListDatasourceSourcesByGitHubInstallation returns every source bound to one
-// GitHub App installation, oldest first. The read spans tenants because an
-// App-level delivery names an installation and no tenant, so it runs under the
-// caller's WithControlPlane.
-func (s *PostgresStore) ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID string) ([]*business.DatasourceSource, error) {
+// MarkDatasourceSourceInstallationDegraded parks a source whose GitHub App
+// access was withdrawn. It is MarkDatasourceSourceDegraded with an active-only
+// predicate: the reconciler decides what to park from a list read taken before
+// it made any GitHub call, so by the time it writes, an operator may have
+// paused the source or the compiler may have degraded it for a fault of its
+// own. Re-testing the status inside the UPDATE is what keeps a webhook from
+// overwriting either. The unguarded method stays as it is — the change-set
+// compiler is the only in-flight writer for its source and relies on that.
+// Runs under the caller's WithControlPlane.
+func (s *PostgresStore) MarkDatasourceSourceInstallationDegraded(ctx context.Context, sourceID, reason string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET status            = 'degraded',
+		       status_reason     = $2,
+		       next_reconcile_at = NULL,
+		       updated_at        = NOW()
+		 WHERE id = $1 AND status = 'active'`, sourceID, reason)
+	return err
+}
+
+// ListGitHubInstallationsPendingRecheck returns the distinct installations that
+// still have a source parked for one of reasons. A parked source leaves the
+// reconcile sweep (that sweep selects status='active'), so without this the
+// only way back to active is another App-level delivery — and a delivery GitHub
+// fails to hand over is not retried forever. This is the pull-side safety net
+// that makes restoration independent of one webhook arriving. Control-plane.
+func (s *PostgresStore) ListGitHubInstallationsPendingRecheck(ctx context.Context, reasons []string, limit int) ([]string, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, `
+		SELECT DISTINCT github_installation_id
+		  FROM datasource_sources
+		 WHERE status = 'degraded'
+		   AND provider = 'github'
+		   AND status_reason = ANY($1)
+		   AND github_installation_id IS NOT NULL
+		 ORDER BY github_installation_id
+		 LIMIT $2`, reasons, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var installations []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		installations = append(installations, id)
+	}
+	return installations, rows.Err()
+}
+
+// ListDatasourceSourcesByGitHubInstallation returns one page of the GitHub
+// sources bound to an App installation, ordered by id and starting after
+// afterID, so a reconcile walks an installation of any size in bounded memory.
+// The read spans tenants because an App-level delivery names an installation
+// and no tenant, so it runs under the caller's WithControlPlane. Non-GitHub
+// providers are excluded: the column is only ever stamped by a GitHub path, and
+// a source of another provider must never be parked with a GitHub reason.
+func (s *PostgresStore) ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID, afterID string, limit int) ([]*business.DatasourceSource, error) {
 	rows, err := s.getQueryExecutor(ctx).Query(ctx,
 		`SELECT `+datasourceSourceColumns+`
 		   FROM datasource_sources
 		  WHERE github_installation_id = $1
-		  ORDER BY created_at`, installationID)
+		    AND provider = 'github'
+		    AND ($2 = '' OR id::text > $2)
+		  ORDER BY id::text
+		  LIMIT $3`, installationID, afterID, limit)
 	if err != nil {
 		return nil, err
 	}

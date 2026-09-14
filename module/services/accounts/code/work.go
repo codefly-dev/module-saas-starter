@@ -898,6 +898,21 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
+		// GitHub App installation re-check (issue #691): the same safety net, for
+		// the half that webhooks alone cannot cover. Parking a source removes it
+		// from the reconcile sweep above, so a restored installation whose
+		// `unsuspend` delivery GitHub failed to hand over would leave that source
+		// parked for good. This re-verifies installations that still hold one.
+		// The sweep runs on the same tick, but each installation is only enqueued
+		// once per re-check window, so the tick does not set the rate.
+		sweepInstallationRecheck := func() {
+			if n, err := service.RunGitHubInstallationRecheck(retentionCtx); err != nil {
+				rw.Warn("github installation recheck sweep failed", wool.ErrField(err))
+			} else if n > 0 {
+				rw.Info("enqueued github installation rechecks", wool.Field("count", n))
+			}
+		}
+
 		sweepCustody := func() {
 			if err := store.PurgeExecutionCustody(retentionCtx, time.Now()); err != nil {
 				rw.Warn("execution custody expiry sweep failed")
@@ -910,6 +925,7 @@ func doWork(ctx context.Context) (Clean, error) {
 		sweepReplay()
 		sweepPrivacyArtifacts()
 		sweepReconcile()
+		sweepInstallationRecheck()
 
 		retentionTicker := time.NewTicker(24 * time.Hour)
 		replayTicker := time.NewTicker(time.Hour)
@@ -929,6 +945,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			case <-reconcileTicker.C:
 				sweepCustody()
 				sweepReconcile()
+				sweepInstallationRecheck()
 			}
 		}
 	}()

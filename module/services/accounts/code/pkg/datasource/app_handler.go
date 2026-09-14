@@ -12,8 +12,9 @@ package datasource
 // pasted in for its own repository.
 //
 // What arrives is a claim that something about an installation changed. The
-// receiver does not act on it: it verifies the signature, records the delivery
-// durably, and returns 2xx. The leased reconciler then re-derives each affected
+// receiver does not act on it: it verifies the signature, durably records which
+// installation to re-examine — that routing fact alone, never the delivery body
+// — and returns 2xx. The leased reconciler then re-derives each affected
 // source's access from GitHub, because a delivery can be replayed, delayed or
 // arrive out of order, and revoking a tenant's source on a stale claim is worse
 // than acting a beat later.
@@ -50,10 +51,12 @@ const (
 	GitHubAppWebhookSchemaVersion = 1
 	GitHubAppWebhookMaxAttempts   = 24
 
-	// installationOrderingNamespace serializes deliveries per installation, so a
+	// installationOrderingNamespace serializes work per installation, so a
 	// suspend and the unsuspend that follows it reconcile in the order GitHub
-	// sent them instead of racing. It must match
-	// business.datasourceInstallationOrderingNamespace.
+	// sent them instead of racing — and so the host's own re-check cannot run
+	// beside a delivery for the same installation. It must match
+	// business.datasourceInstallationOrderingNamespace, which the re-check sweep
+	// stamps on the jobs it enqueues.
 	installationOrderingNamespace = "datasource.installation"
 
 	attrInstallationID = "datasource.installation_id"
@@ -145,6 +148,18 @@ func (h *appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only the routing fact is retained, never the delivery body. The reconciler
+	// re-derives every source's access from GitHub and reads nothing out of the
+	// payload, so keeping the original would durably store a third party's
+	// repository list, account and sender for no consumer at all. A replay needs
+	// the installation id and nothing else.
+	retained, err := json.Marshal(map[string]string{"installation_id": installationID})
+	if err != nil {
+		log.Warn("encode installation reference failed", wool.ErrField(err))
+		writeError(w, http.StatusInternalServerError, "internal")
+		return
+	}
+
 	response, err := h.deps.Producer.EnqueueJob(r.Context(), &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction: jobsv1.JobDirection_JOB_DIRECTION_INBOX,
@@ -158,7 +173,7 @@ func (h *appHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			},
 			IdempotencyKey: deliveryID,
 			SchemaVersion:  GitHubAppWebhookSchemaVersion,
-			Payload:        body,
+			Payload:        retained,
 			ContentType:    gitHubWebhookContentType,
 			MaxAttempts:    GitHubAppWebhookMaxAttempts,
 			Attributes: map[string]string{
