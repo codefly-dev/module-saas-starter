@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,7 @@ type fakeGitHub struct {
 	mu              sync.Mutex
 	mintCount       int
 	lastContentPath string
+	lastMintBody    []byte
 }
 
 type githubFile struct {
@@ -73,8 +75,11 @@ func (f *fakeGitHub) handleMint(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(f.mintDelay)
 	}
 
+	body, _ := io.ReadAll(r.Body)
+
 	f.mu.Lock()
 	f.mintCount++
+	f.lastMintBody = body
 	f.mu.Unlock()
 
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -131,6 +136,12 @@ func (f *fakeGitHub) contentPath() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.lastContentPath
+}
+
+func (f *fakeGitHub) mintBody() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastMintBody
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -348,4 +359,84 @@ func TestFetchRepoContentsSingleFlightsTokenMint(t *testing.T) {
 	wg.Wait()
 
 	require.Equal(t, 1, fake.mints(), "concurrent first fetches must share a single installation-token mint")
+}
+
+func TestMintInstallationTokenNarrowsToRequestedScope(t *testing.T) {
+	cred, key := credentialWithKey(t)
+	cred.Scope = &githubconnector.InstallationScope{
+		Repositories: []string{"wiki"},
+		Permissions:  map[string]string{"contents": "read", "metadata": "read"},
+	}
+	fake := &fakeGitHub{appPublicKey: &key.PublicKey, appID: cred.AppID, tokenExpiry: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
+	_, err := conn.MintInstallationToken(context.Background(), cred)
+	require.NoError(t, err)
+
+	var requested struct {
+		Repositories []string          `json:"repositories"`
+		Permissions  map[string]string `json:"permissions"`
+	}
+	require.NoError(t, json.Unmarshal(fake.mintBody(), &requested))
+	require.Equal(t, []string{"wiki"}, requested.Repositories)
+	require.Equal(t, map[string]string{"contents": "read", "metadata": "read"}, requested.Permissions)
+}
+
+func TestMintInstallationTokenWithoutScopeSendsNoNarrowing(t *testing.T) {
+	cred, key := credentialWithKey(t)
+	fake := &fakeGitHub{appPublicKey: &key.PublicKey, appID: cred.AppID, tokenExpiry: time.Now().Add(time.Hour)}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+
+	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
+	_, err := conn.MintInstallationToken(context.Background(), cred)
+	require.NoError(t, err)
+	require.Empty(t, fake.mintBody(), "an unscoped mint must not narrow the installation's authority")
+}
+
+// A cached token carries a specific authority. Two sources sharing one
+// installation must not share a token minted for the other's repository, and a
+// rotated credential must never be served a token minted under the superseded
+// one.
+func TestInstallationTokenCacheIsKeyedByScopeAndRevision(t *testing.T) {
+	cred, key := credentialWithKey(t)
+	fake := &fakeGitHub{
+		appPublicKey: &key.PublicKey,
+		appID:        cred.AppID,
+		tokenExpiry:  time.Now().Add(time.Hour),
+		files:        map[string]githubFile{"a.md": {content: []byte("a")}},
+	}
+	server := httptest.NewServer(fake)
+	defer server.Close()
+	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
+
+	wiki := cred
+	wiki.Scope = &githubconnector.InstallationScope{Repositories: []string{"wiki"}}
+	handbook := cred
+	handbook.Scope = &githubconnector.InstallationScope{Repositories: []string{"handbook"}}
+	rotated := wiki
+	rotated.Binding = "2026-09-14T10:00:00Z"
+
+	fetch := func(c githubconnector.AppCredential) {
+		t.Helper()
+		_, err := conn.FetchRepoContents(context.Background(), c, "acme", "wiki", "a.md", "")
+		require.NoError(t, err)
+	}
+
+	fetch(wiki)
+	fetch(wiki)
+	require.Equal(t, 1, fake.mints(), "the same authority must reuse its cached token")
+
+	fetch(handbook)
+	require.Equal(t, 2, fake.mints(), "a different repository scope must mint its own token")
+
+	fetch(rotated)
+	require.Equal(t, 3, fake.mints(), "a rotated credential must not reuse the superseded token")
+
+	reordered := wiki
+	reordered.Scope = &githubconnector.InstallationScope{Repositories: []string{"wiki"}}
+	fetch(reordered)
+	require.Equal(t, 3, fake.mints(), "an equivalent scope must resolve to the same cache entry")
 }

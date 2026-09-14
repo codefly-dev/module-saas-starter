@@ -927,7 +927,8 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 				if err := s.store.UpdateDatasourceSourceCredential(ctx, orgID, id, encrypted); err != nil {
 					return err
 				}
-				return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID, map[string]any{"repo": source.Repo})
+				return s.emitTx(ctx, actorID, "user", EventDatasourceCredentialUpdated, "datasource", source.ID, orgID,
+					map[string]any{"repo": source.Repo, "credential_kind": githubCredentialKindPAT})
 			}); err != nil {
 				return "", err
 			}

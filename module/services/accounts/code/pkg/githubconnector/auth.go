@@ -1,9 +1,13 @@
 package githubconnector
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -33,12 +37,20 @@ func (c *Connector) MintInstallationToken(ctx context.Context, cred AppCredentia
 		return InstallationToken{}, err
 	}
 
+	body, err := scopedMintBody(cred.Scope)
+	if err != nil {
+		return InstallationToken{}, err
+	}
+
 	url := fmt.Sprintf("%s/app/installations/%s/access_tokens", c.baseURL, cred.InstallationID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return InstallationToken{}, err
 	}
 	req.Header.Set("Authorization", "Bearer "+appJWT)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	setGitHubHeaders(req)
 
 	var out struct {
@@ -52,6 +64,56 @@ func (c *Connector) MintInstallationToken(ctx context.Context, cred AppCredentia
 		return InstallationToken{}, fmt.Errorf("mint installation token: response missing token")
 	}
 	return InstallationToken{Token: out.Token, ExpiresAt: out.ExpiresAt}, nil
+}
+
+// FindRepositoryInstallation resolves which installation of the app covers
+// owner/repo, authenticating as the app itself. The host asks GitHub rather
+// than believing a caller: an installation id arriving from a browser redirect
+// or a webhook body is a claim, not authority to bind that installation to a
+// tenant. Only AppID and PrivateKeyPEM are read from cred; its InstallationID
+// is what this call exists to discover. A repository the app is not installed
+// on answers 404, which IsNotFound classifies.
+func (c *Connector) FindRepositoryInstallation(ctx context.Context, cred AppCredential, owner, repo string) (string, error) {
+	appJWT, err := c.appJWT(cred)
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := fmt.Sprintf("%s/repos/%s/%s/installation",
+		c.baseURL, url.PathEscape(owner), url.PathEscape(repo))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+appJWT)
+	setGitHubHeaders(req)
+
+	// GitHub reports the installation id as a JSON number; json.Number keeps it
+	// exact rather than routing a 64-bit id through float64.
+	var out struct {
+		ID json.Number `json:"id"`
+	}
+	if err := c.do(req, &out); err != nil {
+		return "", fmt.Errorf("find repository installation: %w", err)
+	}
+	if out.ID.String() == "" {
+		return "", fmt.Errorf("find repository installation: response missing installation id")
+	}
+	return out.ID.String(), nil
+}
+
+// scopedMintBody renders the narrowing request GitHub's create-installation-
+// access-token endpoint accepts. An unset scope sends no body at all, which
+// mints a token carrying everything the installation was granted.
+func scopedMintBody(scope *InstallationScope) (io.Reader, error) {
+	if scope == nil || (len(scope.Repositories) == 0 && len(scope.Permissions) == 0) {
+		return nil, nil
+	}
+	payload, err := json.Marshal(scope)
+	if err != nil {
+		return nil, fmt.Errorf("encode installation token scope: %w", err)
+	}
+	return bytes.NewReader(payload), nil
 }
 
 // appJWT builds the RS256-signed JWT that authenticates as the GitHub App
