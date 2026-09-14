@@ -852,4 +852,62 @@ describe("GitHub App onboarding", () => {
 		const status = await screen.findByText(/already connects every repository/i);
 		expect(status).toBeTruthy();
 	});
+
+	it("hides the App path when the client cannot complete the return leg", async () => {
+		// begin and complete are independently optional. Offering the install with
+		// no way to redeem what comes back strands the tenant on a completed
+		// GitHub install with nothing to show for it.
+		const client = fakeClient({
+			beginGitHubAppSetup: vi.fn(async () => ({
+				installUrl: "https://github.com/apps/codefly/installations/new?state=s1",
+				state: "s1",
+				expiresAt: undefined,
+			})),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+
+		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		expect(
+			screen.queryByRole("button", {
+				name: /install or select repositories/i,
+			}),
+		).toBeNull();
+		expect(screen.getByLabelText("Access token")).toBeTruthy();
+	});
+
+	it("does not connect a repository the App picker shows as unselected", async () => {
+		// Typing a repository on the PAT path and switching back leaves the picker
+		// blank — the installation does not grant it — so submitting must not send
+		// a repository the reader cannot see chosen.
+		landOn("?installation_id=42&state=s1");
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		await screen.findByLabelText("Repository");
+
+		fireEvent.change(screen.getByLabelText("Authentication"), {
+			target: { value: "pat" },
+		});
+		fireEvent.change(screen.getByLabelText("Repository"), {
+			target: { value: "acme/not-granted" },
+		});
+		fireEvent.change(screen.getByLabelText("Authentication"), {
+			target: { value: "app" },
+		});
+		fireEvent.change(screen.getByLabelText("Target collection"), {
+			target: { value: "docs" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "Connect through the GitHub App" }),
+		);
+
+		await waitFor(() =>
+			expect(
+				(screen.getByLabelText("Repository") as HTMLSelectElement).value,
+			).toBe(""),
+		);
+		expect(client.addGitHubSource).not.toHaveBeenCalled();
+	});
 });

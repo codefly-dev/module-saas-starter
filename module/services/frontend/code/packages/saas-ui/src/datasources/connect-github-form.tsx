@@ -107,12 +107,22 @@ export function ConnectGitHubForm({
 							<select
 								id={idFor("method")}
 								value={method}
-								onChange={(event) =>
-									form.setValue(
-										"method",
-										event.target.value === "pat" ? "pat" : "app",
-									)
-								}
+								onChange={(event) => {
+									const next = event.target.value === "pat" ? "pat" : "app";
+									form.setValue("method", next);
+									// The App path can only connect what the installation
+									// grants, and the picker renders blank for anything else —
+									// leaving a repository typed on the PAT path selected would
+									// submit a repository the reader cannot see chosen.
+									if (
+										next === "app" &&
+										!appRepositories?.some(
+											(candidate) => candidate.repo === form.getValues("repo"),
+										)
+									) {
+										form.setValue("repo", "");
+									}
+								}}
 							>
 								<option value="app">GitHub App (recommended)</option>
 								<option value="pat">Fine-grained personal access token</option>
