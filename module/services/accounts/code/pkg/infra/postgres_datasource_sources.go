@@ -19,7 +19,8 @@ const datasourceSourceColumns = `
 	boundary_node_id::text, credential_secret_ref, COALESCE(webhook_secret_ref, ''),
 	status, COALESCE(status_reason, ''), last_synced_at, created_at, updated_at, config,
 	COALESCE(last_ingested_commit, ''), last_ingested_at, COALESCE(last_delivery_id, ''),
-	(EXTRACT(EPOCH FROM reconcile_interval))::bigint, next_reconcile_at`
+	(EXTRACT(EPOCH FROM reconcile_interval))::bigint, next_reconcile_at,
+	COALESCE(github_installation_id, '')`
 
 func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	var d business.DatasourceSource
@@ -30,7 +31,7 @@ func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 		&d.BoundaryNodeID, &d.CredentialSecretRef, &d.WebhookSecretRef,
 		&d.Status, &d.StatusReason, &d.LastSyncedAt, &d.CreatedAt, &d.UpdatedAt, &config,
 		&d.LastIngestedCommit, &d.LastIngestedAt, &d.LastDeliveryID,
-		&reconcileIntervalSeconds, &d.NextReconcileAt,
+		&reconcileIntervalSeconds, &d.NextReconcileAt, &d.GitHubInstallationID,
 	); err != nil {
 		return nil, err
 	}
@@ -88,12 +89,12 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 		INSERT INTO datasource_sources (
 			id, org_id, provider, repo, paths, branch, boundary_node_id,
 			credential_secret_ref, webhook_secret_ref, status, config,
-			reconcile_interval, next_reconcile_at)
+			reconcile_interval, next_reconcile_at, github_installation_id)
 		VALUES ($1, $2, $3, NULLIF($4, ''), $5, NULLIF($6, ''), $7, $8, NULLIF($9, ''), $10, $11,
-			make_interval(secs => $12), $13)`,
+			make_interval(secs => $12), $13, NULLIF($14, ''))`,
 		source.ID, source.OrgID, source.Provider, source.Repo, paths, source.Branch,
 		source.BoundaryNodeID, source.CredentialSecretRef, source.WebhookSecretRef, source.Status, config,
-		source.ReconcileInterval.Seconds(), source.NextReconcileAt,
+		source.ReconcileInterval.Seconds(), source.NextReconcileAt, source.GitHubInstallationID,
 	)
 	return err
 }
@@ -181,6 +182,62 @@ func (s *PostgresStore) ClearDatasourceSourceDegraded(ctx context.Context, sourc
 		                                THEN NOW() + reconcile_interval END,
 		       updated_at        = NOW()
 		 WHERE id = $1 AND status = 'degraded'`, sourceID)
+	return err
+}
+
+// ClearDatasourceSourceInstallationDegraded is ClearDatasourceSourceDegraded
+// narrowed to the reasons the App-level reconciler writes, so restored App
+// access revives only a source that path parked — a source the compiler
+// degraded for a structural fault of its own keeps both its status and its
+// reason. Matching the reason inside the UPDATE rather than against an earlier
+// read keeps that decision atomic against a concurrent degrade. Runs under the
+// caller's WithControlPlane.
+func (s *PostgresStore) ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET status            = 'active',
+		       status_reason     = '',
+		       next_reconcile_at = CASE WHEN reconcile_interval > INTERVAL '0'
+		                                THEN NOW() + reconcile_interval END,
+		       updated_at        = NOW()
+		 WHERE id = $1 AND status = 'degraded' AND status_reason = ANY($2)`, sourceID, reasons)
+	return err
+}
+
+// ListDatasourceSourcesByGitHubInstallation returns every source bound to one
+// GitHub App installation, oldest first. The read spans tenants because an
+// App-level delivery names an installation and no tenant, so it runs under the
+// caller's WithControlPlane.
+func (s *PostgresStore) ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID string) ([]*business.DatasourceSource, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx,
+		`SELECT `+datasourceSourceColumns+`
+		   FROM datasource_sources
+		  WHERE github_installation_id = $1
+		  ORDER BY created_at`, installationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sources []*business.DatasourceSource
+	for rows.Next() {
+		source, err := scanDatasourceSource(rows)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
+}
+
+// SetDatasourceSourceGitHubInstallation stamps the routing index an App-level
+// delivery resolves sources through. Runs under the caller's WithOrgTx, beside
+// the credential envelope it indexes.
+func (s *PostgresStore) SetDatasourceSourceGitHubInstallation(ctx context.Context, orgID, id, installationID string) error {
+	_, err := s.getQueryExecutor(ctx).Exec(ctx, `
+		UPDATE datasource_sources
+		   SET github_installation_id = NULLIF($3, ''),
+		       updated_at             = NOW()
+		 WHERE id = $1 AND org_id = $2`, id, orgID, installationID)
 	return err
 }
 

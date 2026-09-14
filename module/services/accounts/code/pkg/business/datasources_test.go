@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -209,6 +210,54 @@ func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, so
 	s.Status = business.DatasourceStatusDegraded
 	s.StatusReason = reason.String()
 	s.NextReconcileAt = nil
+	return nil
+}
+
+func (f *datasourceFakeStore) ListDatasourceSourcesByGitHubInstallation(_ context.Context, installationID string) ([]*business.DatasourceSource, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*business.DatasourceSource
+	for _, s := range f.sources {
+		if s.GitHubInstallationID == installationID {
+			cp := *s
+			out = append(out, &cp)
+		}
+	}
+	// The real store orders the result; map iteration does not, and a caller
+	// that reconciles sources in a different order each run is untestable.
+	slices.SortFunc(out, func(a, b *business.DatasourceSource) int { return strings.Compare(a.ID, b.ID) })
+	return out, nil
+}
+
+func (f *datasourceFakeStore) SetDatasourceSourceGitHubInstallation(_ context.Context, orgID, id, installationID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.sources[id]; ok && s.OrgID == orgID {
+		s.GitHubInstallationID = installationID
+	}
+	return nil
+}
+
+func (f *datasourceFakeStore) ClearDatasourceSourceInstallationDegraded(_ context.Context, sourceID string, reasons []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return errors.New("not found")
+	}
+	// Mirror the store's status+reason guard: a source degraded for a reason
+	// this path did not write keeps both its status and its reason.
+	if s.Status != business.DatasourceStatusDegraded || !slices.Contains(reasons, s.StatusReason) {
+		return nil
+	}
+	s.Status = business.DatasourceStatusActive
+	s.StatusReason = ""
+	if s.ReconcileInterval > 0 {
+		next := time.Now().UTC().Add(s.ReconcileInterval)
+		s.NextReconcileAt = &next
+	} else {
+		s.NextReconcileAt = nil
+	}
 	return nil
 }
 

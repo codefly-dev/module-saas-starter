@@ -155,6 +155,21 @@ type Store interface {
 	// sweep resumes selecting it. Scoped to status='degraded' so it cannot
 	// resurrect a source an operator has since paused. Control-plane.
 	ClearDatasourceSourceDegraded(ctx context.Context, sourceID string) error
+	// ClearDatasourceSourceInstallationDegraded is ClearDatasourceSourceDegraded
+	// narrowed to sources parked for one of reasons. Matching the recorded reason
+	// as well as the status is what keeps restored GitHub App access from
+	// reviving a source degraded for an unrelated structural fault. Control-plane.
+	ClearDatasourceSourceInstallationDegraded(ctx context.Context, sourceID string, reasons []string) error
+	// ListDatasourceSourcesByGitHubInstallation returns every source bound to one
+	// GitHub App installation, across tenants — an App-level delivery names an
+	// installation and nothing else, and its receiver is unauthenticated, so
+	// there is no tenant to scope the lookup to. Control-plane.
+	ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID string) ([]*DatasourceSource, error)
+	// SetDatasourceSourceGitHubInstallation stamps the routing index an App-level
+	// delivery resolves sources through, recording which installation the
+	// source's credential envelope binds it to. The envelope stays the only thing
+	// a token is minted from. Runs under the caller's WithOrgTx.
+	SetDatasourceSourceGitHubInstallation(ctx context.Context, orgID, id, installationID string) error
 
 	// Organizations
 	CreateOrganization(ctx context.Context, org *gen.Organization) error
