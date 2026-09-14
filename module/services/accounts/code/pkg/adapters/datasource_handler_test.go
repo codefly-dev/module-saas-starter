@@ -137,3 +137,47 @@ func TestDatasourceSourceToProto_OmitsUnadvancedCursor(t *testing.T) {
 		t.Errorf("last_ingested_commit = %q, want empty", out.GetLastIngestedCommit())
 	}
 }
+
+// TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason covers the state a
+// tenant most needs to see and could not: the compiler parks a source it cannot
+// make progress on and records why, but the wire had no degraded value and no
+// reason field, so the projection fell through to UNSPECIFIED and dropped the
+// explanation. A source that had silently stopped ingesting was indistinguishable
+// from one whose status was simply unknown.
+func TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason(t *testing.T) {
+	const reason = "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit"
+	out := datasourceSourceToProto(&business.DatasourceSource{
+		ID:           "11111111-1111-1111-1111-111111111111",
+		OrgID:        "22222222-2222-2222-2222-222222222222",
+		Provider:     business.DatasourceProviderGitHub,
+		Status:       business.DatasourceStatusDegraded,
+		StatusReason: reason,
+	})
+
+	if got := out.GetStatus(); got != gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED {
+		t.Errorf("status = %v, want DATASOURCE_STATUS_DEGRADED", got)
+	}
+	if got := out.GetStatusReason(); got != reason {
+		t.Errorf("status_reason = %q, want %q", got, reason)
+	}
+}
+
+// TestDatasourceSourceToProto_ActiveSourceCarriesNoReason keeps status_reason a
+// signal rather than a field every client has to interpret: an active source
+// explains nothing, so a non-empty reason always means the source needs
+// attention.
+func TestDatasourceSourceToProto_ActiveSourceCarriesNoReason(t *testing.T) {
+	out := datasourceSourceToProto(&business.DatasourceSource{
+		ID:       "11111111-1111-1111-1111-111111111111",
+		OrgID:    "22222222-2222-2222-2222-222222222222",
+		Provider: business.DatasourceProviderGitHub,
+		Status:   business.DatasourceStatusActive,
+	})
+
+	if got := out.GetStatus(); got != gen.DatasourceStatus_DATASOURCE_STATUS_ACTIVE {
+		t.Errorf("status = %v, want DATASOURCE_STATUS_ACTIVE", got)
+	}
+	if got := out.GetStatusReason(); got != "" {
+		t.Errorf("status_reason = %q, want empty for an active source", got)
+	}
+}

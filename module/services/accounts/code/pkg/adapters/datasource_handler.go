@@ -225,6 +225,7 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 		Provider:           datasourceProviderToProto(source.Provider),
 		BoundaryNodeId:     source.BoundaryNodeID,
 		Status:             datasourceStatusToProto(source.Status),
+		StatusReason:       source.StatusReason,
 		WebhookConfigured:  source.WebhookConfigured(),
 		CreatedAt:          timestamppb.New(source.CreatedAt),
 		UpdatedAt:          timestamppb.New(source.UpdatedAt),
@@ -414,6 +415,8 @@ func datasourceStatusToProto(status string) gen.DatasourceStatus {
 		return gen.DatasourceStatus_DATASOURCE_STATUS_ACTIVE
 	case business.DatasourceStatusPaused:
 		return gen.DatasourceStatus_DATASOURCE_STATUS_PAUSED
+	case business.DatasourceStatusDegraded:
+		return gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED
 	default:
 		return gen.DatasourceStatus_DATASOURCE_STATUS_UNSPECIFIED
 	}
