@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { connectGitHubSchema } from "../schema.js";
 
 const valid = {
+	method: "pat" as const,
 	repo: "codefly-dev/module-saas-starter",
 	paths: "docs/\nsrc/",
 	branch: "main",
@@ -34,5 +35,21 @@ describe("connectGitHubSchema", () => {
 		expect(connectGitHubSchema.safeParse({ ...valid, paths }).success).toBe(
 			false,
 		);
+	});
+
+	it("accepts a payload written before the method discriminator existed", () => {
+		// connectGitHubSchema is exported, so a consumer's payload predating the
+		// App path must keep parsing — under the token rule it was written against.
+		const legacy: Record<string, unknown> = { ...valid };
+		delete legacy.method;
+
+		const parsed = connectGitHubSchema.safeParse(legacy);
+
+		expect(parsed.success).toBe(true);
+		expect(parsed.success && parsed.data.method).toBe("pat");
+		expect(
+			connectGitHubSchema.safeParse({ ...legacy, accessToken: undefined })
+				.success,
+		).toBe(false);
 	});
 });

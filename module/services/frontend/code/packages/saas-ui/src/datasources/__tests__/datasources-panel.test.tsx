@@ -8,7 +8,7 @@ import {
 	screen,
 	waitFor,
 } from "@testing-library/react";
-import type { ReactElement } from "react";
+import { StrictMode, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConnectGitHubForm } from "../connect-github-form.js";
 import { DatasourcesPanel } from "../datasources-panel.js";
@@ -507,3 +507,349 @@ it.each(["first", "second"])(
   expect(client.deleteSource).not.toHaveBeenCalled();
   expect((await screen.findByRole("status")).textContent).toContain("Credential replaced");
  });
+
+describe("GitHub App onboarding", () => {
+	const appRepositories = [
+		{
+			repo: "codefly-dev/module-saas-starter",
+			defaultBranch: "main",
+			alreadyConnected: false,
+		},
+		{
+			repo: "codefly-dev/already-there",
+			defaultBranch: "trunk",
+			alreadyConnected: true,
+		},
+	];
+
+	function appClient(overrides: Partial<DatasourceClient> = {}) {
+		return fakeClient({
+			beginGitHubAppSetup: vi.fn(async () => ({
+				installUrl: "https://github.com/apps/codefly/installations/new?state=s1",
+				state: "s1",
+				expiresAt: undefined,
+			})),
+			completeGitHubAppSetup: vi.fn(async () => ({
+				installationId: "42",
+				repositories: appRepositories,
+			})),
+			migrateGitHubSourceToApp: vi.fn(async () => {}),
+			...overrides,
+		});
+	}
+
+	function landOn(search: string) {
+		window.history.replaceState(null, "", `/admin/datasources${search}`);
+	}
+
+	afterEach(() => landOn(""));
+
+	it("offers the App as the default and keeps the PAT as a named alternative", async () => {
+		renderWithClient(<DatasourcesPanel client={appClient()} orgId="org-1" />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+
+		const method = screen.getByLabelText("Authentication") as HTMLSelectElement;
+		expect(method.value).toBe("app");
+		// The App path asks for no token at all — that is the whole point of it.
+		expect(screen.queryByLabelText("Access token")).toBeNull();
+		expect(
+			[...method.options].map((option) => option.textContent),
+		).toEqual([
+			"GitHub App (recommended)",
+			"Fine-grained personal access token",
+		]);
+	});
+
+	it("falls back to the PAT path when the client cannot drive App setup", async () => {
+		// A consumer adapting its own client need not implement the App RPCs; the
+		// surface must degrade to the token form rather than offer a dead button.
+		renderWithClient(<DatasourcesPanel client={fakeClient()} orgId="org-1" />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+
+		expect(screen.queryByLabelText("Authentication")).toBeNull();
+		expect(screen.getByLabelText("Access token")).toBeTruthy();
+	});
+
+	it("sends the browser to the install URL the host minted", async () => {
+		const assign = vi.fn();
+		vi.spyOn(window.location, "assign").mockImplementation(assign);
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: /install or select repositories/i }),
+		);
+
+		await waitFor(() =>
+			expect(client.beginGitHubAppSetup).toHaveBeenCalledWith("org-1"),
+		);
+		expect(assign).toHaveBeenCalledWith(
+			"https://github.com/apps/codefly/installations/new?state=s1",
+		);
+	});
+
+	it("redeems the state and installation the redirect echoed back", async () => {
+		landOn("?installation_id=42&setup_action=install&state=s1");
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalledWith(
+				"org-1",
+				"s1",
+				"42",
+			),
+		);
+	});
+
+	it("redeems a setup_action=update return too", async () => {
+		// An existing installation gaining repositories comes back as `update`, not
+		// `install`; treating only the latter as a return would strand that tenant.
+		landOn("?installation_id=42&setup_action=update&state=s1");
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await waitFor(() => expect(client.completeGitHubAppSetup).toHaveBeenCalled());
+	});
+
+	it("burns the state out of the URL so a reload cannot replay it", async () => {
+		landOn("?tab=sources&installation_id=42&setup_action=install&state=s1");
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await waitFor(() => expect(client.completeGitHubAppSetup).toHaveBeenCalled());
+		// The state is single-use, so leaving it in the URL would make a refresh
+		// report a rejection for a setup that in fact succeeded.
+		expect(window.location.search).toBe("?tab=sources");
+		expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1);
+	});
+
+	it("renders the returned repositories with their default branch", async () => {
+		landOn("?installation_id=42&state=s1");
+		renderWithClient(<DatasourcesPanel client={appClient()} orgId="org-1" />);
+
+		const picker = (await screen.findByLabelText(
+			"Repository",
+		)) as HTMLSelectElement;
+		const offered = [...picker.options].map((option) => option.textContent);
+		expect(offered).toContain("codefly-dev/module-saas-starter · main");
+	});
+
+	it("does not offer a repository this organization already connects", async () => {
+		landOn("?installation_id=42&state=s1");
+		renderWithClient(<DatasourcesPanel client={appClient()} orgId="org-1" />);
+
+		const picker = (await screen.findByLabelText(
+			"Repository",
+		)) as HTMLSelectElement;
+		const connected = [...picker.options].find((option) =>
+			option.value.includes("already-there"),
+		);
+		expect(connected?.disabled).toBe(true);
+		expect(connected?.textContent).toContain("already connected");
+	});
+
+	it("connects the selected repository with no access token", async () => {
+		landOn("?installation_id=42&state=s1");
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		fireEvent.change(await screen.findByLabelText("Repository"), {
+			target: { value: "codefly-dev/module-saas-starter" },
+		});
+		fireEvent.change(screen.getByLabelText("Target collection"), {
+			target: { value: "docs" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "Connect through the GitHub App" }),
+		);
+
+		await waitFor(() => expect(client.addGitHubSource).toHaveBeenCalled());
+		const input = vi.mocked(client.addGitHubSource).mock.calls[0][0];
+		expect(input.accessToken).toBeUndefined();
+		expect(input.repo).toBe("codefly-dev/module-saas-starter");
+		// Picking a repository adopts the branch GitHub reported for it.
+		expect(input.branch).toBe("main");
+	});
+
+	it("surfaces a rejected return without opening the repository picker", async () => {
+		landOn("?installation_id=42&state=stale");
+		const client = appClient({
+			completeGitHubAppSetup: vi.fn(async () => {
+				throw new ConnectError(
+					"The GitHub App setup link has already been used or has expired.",
+					Code.PermissionDenied,
+				);
+			}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toContain("already been used");
+		expect(screen.queryByRole("option", { name: /already-there/ })).toBeNull();
+	});
+
+	it("migrates an existing source onto the App in place", async () => {
+		const client = appClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		fireEvent.click(await screen.findByRole("button", { name: "Use GitHub App" }));
+
+		await waitFor(() =>
+			expect(client.migrateGitHubSourceToApp).toHaveBeenCalledWith(
+				"org-1",
+				"ds-1",
+			),
+		);
+		// In place: no source is created or removed to change how one authenticates.
+		expect(client.addGitHubSource).not.toHaveBeenCalled();
+		expect(client.deleteSource).not.toHaveBeenCalled();
+		expect((await screen.findByRole("status")).textContent).toContain(
+			"GitHub App",
+		);
+	});
+
+	it("hides the migration action when the client cannot perform it", async () => {
+		const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await screen.findByRole("button", { name: "Reconnect" });
+		expect(screen.queryByRole("button", { name: "Use GitHub App" })).toBeNull();
+	});
+
+	it("reports a failed migration against the source it names", async () => {
+		const client = appClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			migrateGitHubSourceToApp: vi.fn(async () => {
+				throw new ConnectError(
+					"The GitHub App installation covering that repository is not connected to this organization.",
+					Code.PermissionDenied,
+				);
+			}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		fireEvent.click(await screen.findByRole("button", { name: "Use GitHub App" }));
+
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toContain(sampleSource.repo);
+		expect(alert.textContent).toContain("not connected to this organization");
+	});
+
+	it("leaves the redirect alone when the client cannot redeem it", async () => {
+		// The App calls are optional on DatasourceClient, so a consumer may adapt
+		// its own client and handle the redirect itself. Consuming the parameters
+		// — or the address bar — on its behalf silently breaks that handler.
+		landOn("?installation_id=42&setup_action=install&state=s1");
+		renderWithClient(<DatasourcesPanel client={fakeClient()} orgId="org-1" />);
+
+		await screen.findByText(/No data sources connected/i);
+		expect(window.location.search).toBe(
+			"?installation_id=42&setup_action=install&state=s1",
+		);
+		expect(screen.queryByRole("dialog", { name: "Connect GitHub" })).toBeNull();
+	});
+
+	it("does not re-redeem a burned state against a different organization", async () => {
+		// The state is bound to the org that began it, so re-firing it after an org
+		// switch reports a rejection for a setup that in fact succeeded. The kit
+		// must hold this itself rather than rely on the host keying it by org.
+		landOn("?installation_id=42&state=s1");
+		const client = appClient();
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		const panel = (orgId: string) => (
+			<QueryClientProvider client={queryClient}>
+				<DatasourcesPanel client={client} orgId={orgId} />
+			</QueryClientProvider>
+		);
+		const { rerender } = render(panel("org-A"));
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalledWith(
+				"org-A",
+				"s1",
+				"42",
+			),
+		);
+
+		rerender(panel("org-B"));
+
+		await waitFor(() => expect(screen.queryByLabelText("Repository")).toBeNull());
+		expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1);
+	});
+
+	it("redeems the single-use state exactly once under StrictMode", async () => {
+		// A double-mount re-submitting a single-use credential is how the refresh
+		// self-reuse bug (#506) reached production.
+		landOn("?installation_id=42&state=s1");
+		const client = appClient();
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		});
+		render(
+			<StrictMode>
+				<QueryClientProvider client={queryClient}>
+					<DatasourcesPanel client={client} orgId="org-1" />
+				</QueryClientProvider>
+			</StrictMode>,
+		);
+
+		await waitFor(() => expect(client.completeGitHubAppSetup).toHaveBeenCalled());
+		await screen.findByLabelText("Repository");
+		expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1);
+	});
+
+	it("says it is completing setup, not opening GitHub, on the return leg", async () => {
+		landOn("?installation_id=42&state=s1");
+		let release: (value: {
+			installationId: string;
+			repositories: typeof appRepositories;
+		}) => void = () => {};
+		const client = appClient({
+			completeGitHubAppSetup: vi.fn(
+				() =>
+					new Promise<{
+						installationId: string;
+						repositories: typeof appRepositories;
+					}>((resolve) => {
+						release = resolve;
+					}),
+			),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			(await screen.findByRole("button", { name: /completing setup/i }))
+				.textContent,
+		).not.toMatch(/opening github/i);
+		await act(async () => {
+			release({ installationId: "42", repositories: appRepositories });
+		});
+	});
+
+	it("explains a picker with nothing left to connect", async () => {
+		landOn("?installation_id=42&state=s1");
+		const client = appClient({
+			completeGitHubAppSetup: vi.fn(async () => ({
+				installationId: "42",
+				repositories: appRepositories.map((repository) => ({
+					...repository,
+					alreadyConnected: true,
+				})),
+			})),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		// Every option disabled with no explanation is a dead end the reader
+		// cannot act on.
+		const status = await screen.findByText(/already connects every repository/i);
+		expect(status).toBeTruthy();
+	});
+});

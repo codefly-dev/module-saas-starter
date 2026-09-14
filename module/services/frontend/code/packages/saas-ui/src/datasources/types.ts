@@ -51,6 +51,33 @@ export interface AccessibleScopeView {
 	actions: string[];
 }
 
+/**
+ * One repository a verified App installation grants this host read access to.
+ *
+ * `alreadyConnected` is answered per organization — the calling org already has
+ * a GitHub source for this repo — not as a property of the installation, so two
+ * organizations sharing an installation see it differently.
+ */
+export interface GitHubAppRepositoryView {
+	repo: string;
+	/** Empty when GitHub reported no default branch, so it is a suggestion. */
+	defaultBranch: string;
+	alreadyConnected: boolean;
+}
+
+/** Where to send the browser to install the App, and the state binding the return. */
+export interface GitHubAppSetupHandle {
+	installUrl: string;
+	state: string;
+	expiresAt: string | undefined;
+}
+
+/** The installation the host verified and claimed, and what it grants. */
+export interface GitHubAppInstallationView {
+	installationId: string;
+	repositories: GitHubAppRepositoryView[];
+}
+
 /** The connect form's resolved output, ready for `addGitHubSource`. */
 export interface ConnectGitHubInput {
 	orgId: string;
@@ -59,7 +86,8 @@ export interface ConnectGitHubInput {
 	branch: string;
 	targetCollection: string;
 	boundaryNodeId?: string;
-	accessToken: string;
+	/** Omitted connects through the App: the host resolves the installation. */
+	accessToken?: string;
 	webhookSecret: string;
 }
 
@@ -112,4 +140,19 @@ export interface DatasourceClient {
 	deleteSource(orgId: string, id: string): Promise<void>;
 	/** Enumerates the caller’s readable collection boundaries; failure must reject. */
 	listAccessibleScopes?(orgId: string): Promise<AccessibleScopeView[]>;
+
+	/**
+	 * Mints the one-time setup state and the URL that installs the deployment's
+	 * App. Absent on a client that cannot drive App onboarding, which is what
+	 * drops the App path and leaves the PAT one.
+	 */
+	beginGitHubAppSetup?(orgId: string): Promise<GitHubAppSetupHandle>;
+	/** Redeems the state the redirect echoed back and claims the installation. */
+	completeGitHubAppSetup?(
+		orgId: string,
+		state: string,
+		installationId: string,
+	): Promise<GitHubAppInstallationView>;
+	/** Rebinds an existing source's credential onto the App, in place. */
+	migrateGitHubSourceToApp?(orgId: string, id: string): Promise<void>;
 }
