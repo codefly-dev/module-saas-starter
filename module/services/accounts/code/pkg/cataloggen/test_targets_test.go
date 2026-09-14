@@ -151,10 +151,11 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 
 // Nothing reads this catalog because the pinned runtime has no wire for it: an
 // agent offers effective-inputs discovery through its advertisement, and that
-// field postdates this pin. Failing here means the transport arrived, so the
-// catalog may be revisited once a released agent also advertises discovery.
+// field postdates this pin. Released runtimes already carry it, so a deliberate
+// bump trips this permanently — delete it then. Completeness stays barred above
+// either way, because no released agent advertises discovery.
 func TestPinnedRuntimeCannotTransportEffectiveInputs(t *testing.T) {
 	fields := (&agentv0.AgentInformation{}).ProtoReflect().Descriptor().Fields()
 	require.Nil(t, fields.ByName("effective_inputs_versions"),
-		"advertisement gained effective-inputs support: revisit planner consumption")
+		"transport exists at this pin: delete this assertion, released-agent discovery still bars consumption")
 }
