@@ -11,6 +11,7 @@ import (
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/google/uuid"
 )
 
