@@ -30,7 +30,7 @@ fi
 
 (
   cd "${scratch}/source"
-  go build -mod=readonly -buildvcs=true -trimpath -ldflags='-s -w' \
+  go build -mod=readonly -p=2 -buildvcs=true -trimpath -ldflags='-s -w' \
     -o "${scratch}/codefly" ./cmd/codefly
 )
 go version -m "${scratch}/codefly" > "${scratch}/build-info.txt"
