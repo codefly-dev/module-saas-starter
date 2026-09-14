@@ -891,7 +891,7 @@
     "services/accounts/code/pkg/infra/postgres_mfa_login.go": "30f84aeba5cf71e90efbc5e6341b00d03eb8a6365b9966e7b62848bdb35f528b",
     "services/accounts/code/pkg/infra/postgres_mfa_test.go": "f567626663664159e46f85c5f8cb4af13f59b64b66a7e2e808bb856e977b2d93",
     "services/accounts/code/pkg/infra/postgres_module_installations.go": "94643c40385b2e779a04a1b64131aea7d9448edcd43e430a539d51e3d51aec95",
-    "services/accounts/code/pkg/infra/postgres_module_installations_test.go": "bb03750169239ec34f52c3331bf9652ea7767aeffbb068ad24e074bb494ad916",
+    "services/accounts/code/pkg/infra/postgres_module_installations_test.go": "4d19dafe7ab4cee7e558101739e59edd528a1f875fdf0cd2f6e61c9ea02e8451",
     "services/accounts/code/pkg/infra/postgres_notifications.go": "c09dbbf231054b9517f2bc62d0ca59ddbe46ca57e43d120e8a133c0ab9e317ff",
     "services/accounts/code/pkg/infra/postgres_notifications_test.go": "eaca21f81b172b6f82b2224052e220ad3ac854a55e96bc657dce6b9249855571",
     "services/accounts/code/pkg/infra/postgres_onboarding.go": "95e6b494cefa8ee623681038467fc08d94929fd664e86bdb37a6c03318760ecf",
