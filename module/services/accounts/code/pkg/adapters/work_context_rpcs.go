@@ -480,6 +480,19 @@ func (s *WorkContextAuthorityServer) resolveInstallationAuthority(
 	return nil, status.Error(codes.Internal, "cannot resolve installation authority")
 }
 
+// StartRootSession issues another root Session under the same Task. The Session
+// id is generated here rather than taken from the request: a root Session keeps
+// no lineage — the signer clears parent_session_id — so a caller-chosen id is
+// free to name anything at all, including a Session that never existed or one
+// belonging to unrelated work. Generating it is what makes the new root Session
+// verifiably fresh. The issued response carries the id, which is what a caller
+// correlates on and what the product records its own Session row under.
+//
+// The Session is an execution scope, not the caller's authenticated session.
+// This issuer never owns consumer Task/Session rows, so deriving the caller's
+// auth session here would put an identifier the product has no row for into a
+// field the product owns, and would refuse every caller whose parent Task was
+// rooted in the same auth session.
 func (s *WorkContextAuthorityServer) StartRootSession(
 	ctx context.Context,
 	req *gen.StartRootSessionWorkContextRequest,
@@ -491,20 +504,17 @@ func (s *WorkContextAuthorityServer) StartRootSession(
 	if err != nil {
 		return nil, err
 	}
-	parentToken, parent, actor, err := s.verifyParent(
+	parentToken, _, actor, err := s.verifyParent(
 		ctx, req.GetOrgId(), ownerID, req.GetParentWorkContextToken(),
 	)
 	if err != nil {
 		return nil, err
 	}
-	if req.GetSessionId() == parent.GetSessionId() {
-		return nil, status.Error(codes.InvalidArgument, "new session_id must differ from parent session")
-	}
 	if err := enforceActorAudience(actor, req.GetAudience()); err != nil {
 		return nil, err
 	}
 	token, signed, err := s.signer.StartSession(parentToken, codefly.StartRootSessionInput{
-		SessionID:    req.GetSessionId(),
+		SessionID:    uuid.NewString(),
 		Audience:     req.GetAudience(),
 		ReplayPolicy: workContextReplayPolicy(req.GetReplayPolicy()),
 		TTL:          workContextTTL(req.GetTtlSeconds()),
