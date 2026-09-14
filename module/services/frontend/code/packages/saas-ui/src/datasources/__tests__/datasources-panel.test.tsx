@@ -595,7 +595,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("redeems the state and installation the redirect echoed back", async () => {
-		landOn("?installation_id=42&setup_action=install&state=s1");
+		landOn("?installation_id=42&setup_action=install&state=s1&code=oauth-1");
 		const client = appClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
@@ -604,6 +604,7 @@ describe("GitHub App onboarding", () => {
 				"org-1",
 				"s1",
 				"42",
+				"oauth-1",
 			),
 		);
 	});
@@ -611,7 +612,7 @@ describe("GitHub App onboarding", () => {
 	it("redeems a setup_action=update return too", async () => {
 		// An existing installation gaining repositories comes back as `update`, not
 		// `install`; treating only the latter as a return would strand that tenant.
-		landOn("?installation_id=42&setup_action=update&state=s1");
+		landOn("?installation_id=42&setup_action=update&state=s1&code=oauth-1");
 		const client = appClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
@@ -619,7 +620,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("burns the state out of the URL so a reload cannot replay it", async () => {
-		landOn("?tab=sources&installation_id=42&setup_action=install&state=s1");
+		landOn("?tab=sources&installation_id=42&setup_action=install&state=s1&code=oauth-1");
 		const client = appClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
@@ -631,7 +632,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("renders the returned repositories with their default branch", async () => {
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		renderWithClient(<DatasourcesPanel client={appClient()} orgId="org-1" />);
 
 		const picker = (await screen.findByLabelText(
@@ -642,7 +643,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("does not offer a repository this organization already connects", async () => {
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		renderWithClient(<DatasourcesPanel client={appClient()} orgId="org-1" />);
 
 		const picker = (await screen.findByLabelText(
@@ -656,7 +657,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("connects the selected repository with no access token", async () => {
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		const client = appClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
@@ -679,7 +680,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("surfaces a rejected return without opening the repository picker", async () => {
-		landOn("?installation_id=42&state=stale");
+		landOn("?installation_id=42&state=stale&code=oauth-1");
 		const client = appClient({
 			completeGitHubAppSetup: vi.fn(async () => {
 				throw new ConnectError(
@@ -746,12 +747,12 @@ describe("GitHub App onboarding", () => {
 		// The App calls are optional on DatasourceClient, so a consumer may adapt
 		// its own client and handle the redirect itself. Consuming the parameters
 		// — or the address bar — on its behalf silently breaks that handler.
-		landOn("?installation_id=42&setup_action=install&state=s1");
+		landOn("?installation_id=42&setup_action=install&state=s1&code=oauth-1");
 		renderWithClient(<DatasourcesPanel client={fakeClient()} orgId="org-1" />);
 
 		await screen.findByText(/No data sources connected/i);
 		expect(window.location.search).toBe(
-			"?installation_id=42&setup_action=install&state=s1",
+			"?installation_id=42&setup_action=install&state=s1&code=oauth-1",
 		);
 		expect(screen.queryByRole("dialog", { name: "Connect GitHub" })).toBeNull();
 	});
@@ -760,7 +761,7 @@ describe("GitHub App onboarding", () => {
 		// The state is bound to the org that began it, so re-firing it after an org
 		// switch reports a rejection for a setup that in fact succeeded. The kit
 		// must hold this itself rather than rely on the host keying it by org.
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		const client = appClient();
 		const queryClient = new QueryClient({
 			defaultOptions: { queries: { retry: false } },
@@ -776,6 +777,7 @@ describe("GitHub App onboarding", () => {
 				"org-A",
 				"s1",
 				"42",
+				"oauth-1",
 			),
 		);
 
@@ -788,7 +790,7 @@ describe("GitHub App onboarding", () => {
 	it("redeems the single-use state exactly once under StrictMode", async () => {
 		// A double-mount re-submitting a single-use credential is how the refresh
 		// self-reuse bug (#506) reached production.
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		const client = appClient();
 		const queryClient = new QueryClient({
 			defaultOptions: { queries: { retry: false } },
@@ -807,7 +809,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("says it is completing setup, not opening GitHub, on the return leg", async () => {
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		let release: (value: {
 			installationId: string;
 			repositories: typeof appRepositories;
@@ -835,7 +837,7 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("explains a picker with nothing left to connect", async () => {
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		const client = appClient({
 			completeGitHubAppSetup: vi.fn(async () => ({
 				installationId: "42",
@@ -882,7 +884,7 @@ describe("GitHub App onboarding", () => {
 		// Typing a repository on the PAT path and switching back leaves the picker
 		// blank — the installation does not grant it — so submitting must not send
 		// a repository the reader cannot see chosen.
-		landOn("?installation_id=42&state=s1");
+		landOn("?installation_id=42&state=s1&code=oauth-1");
 		const client = appClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 		await screen.findByLabelText("Repository");
@@ -909,5 +911,23 @@ describe("GitHub App onboarding", () => {
 			).toBe(""),
 		);
 		expect(client.addGitHubSource).not.toHaveBeenCalled();
+	});
+
+	it("still redeems a return that carried no authorization code", async () => {
+		// GitHub omits `code` when the App was registered without user
+		// authorization during installation. Treating that as "not a return" would
+		// strand the tenant in silence; the host's error names the setting.
+		landOn("?installation_id=42&setup_action=install&state=s1");
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalledWith(
+				"org-1",
+				"s1",
+				"42",
+				"",
+			),
+		);
 	});
 });

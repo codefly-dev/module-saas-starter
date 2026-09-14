@@ -47,7 +47,10 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 fine-grained PAT as a named alternative for existing connections and development.
 The panel drives `beginGitHubAppSetup`, sends the browser to the install URL the
 host mints, and on the way back redeems `completeGitHubAppSetup` with the echoed
-state and installation id — then lists the repositories that installation grants,
+state, the installation id, and the authorization code GitHub appends when the App
+requests user authorization during installation — the host trades that code to prove
+the caller can reach the installation they name, so the App must be registered with
+it enabled. It then lists the repositories that installation grants,
 skipping the ones this organization already connects and offering each repository's
 reported default branch. Connecting that way sends no access token at all. An
 existing source moves onto the App in place with `migrateGitHubSourceToApp`.
