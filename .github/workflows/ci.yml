@@ -269,6 +269,7 @@ jobs:
             go.sum
             module/tools/go.sum
             module/services/*/code/go.sum
+            libraries/execution-custody-sdk/go/go.sum
       - name: Validate module agent
         env:
           GOWORK: "off"
@@ -279,6 +280,14 @@ jobs:
         run: |
           (cd libraries/source-read-sdk/go && go test ./... && go vet ./...)
           bash scripts/ci/test-source-read.sh
+      - name: Test private custody SDK conformance
+        working-directory: libraries/execution-custody-sdk/go
+        env:
+          GOWORK: "off"
+        run: |
+          go mod verify
+          go test -race ./...
+          go vet ./...
       - name: Reject direct Codefly runtime-carrier access
         working-directory: module/tools
         env:
