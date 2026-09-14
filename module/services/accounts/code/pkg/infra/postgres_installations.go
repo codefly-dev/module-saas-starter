@@ -98,6 +98,9 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 		wool.Field("org_id", params.OrgID),
 		wool.Field("solution", params.SolutionIdentifier))
 	executor := s.getQueryExecutor(ctx)
+	if err := lockSolutionInstallation(ctx, executor, params.OrgID, params.SolutionIdentifier); err != nil {
+		return nil, err
+	}
 
 	// The owner of record must be a current org admin. The installing caller is
 	// already gated as an admin; an explicitly named owner is validated here.
@@ -164,11 +167,11 @@ func (s *PostgresStore) InstallSolution(ctx context.Context, params *business.In
 	installation, err := scanInstallation(executor.QueryRow(ctx, `
 		INSERT INTO installations
 			(id, org_id, agent_principal_id, solution_identifier, owner_principal_id,
-			 co_owner_principal_ids, root_scope_node_id, status)
-		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active')
+			 co_owner_principal_ids, root_scope_node_id, status, installer_principal_id)
+		VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active', NULLIF($7, '')::uuid)
 		RETURNING `+installationColumns,
 		params.OrgID, agentID, params.SolutionIdentifier, params.OwnerPrincipalID,
-		stringArray(params.CoOwnerPrincipalIDs), nodeID,
+		stringArray(params.CoOwnerPrincipalIDs), nodeID, params.InstallerPrincipalID,
 	))
 	if err != nil {
 		// A concurrent install of the same solution won the race between the
@@ -190,6 +193,9 @@ func (s *PostgresStore) getOrCreateAgentPrincipal(ctx context.Context, params *b
 	w := wool.Get(ctx).In("getOrCreateAgentPrincipal")
 	existing, err := s.GetAgentPrincipal(ctx, params.OrgID, params.AgentIdentifier)
 	if err == nil {
+		if existing.AgentIdentifier != params.AgentIdentifier || !sameStringSet(existing.AllowedAudiences, params.AllowedAudiences) || !sameStringSet(existing.AllowedScopes, params.AllowedScopes) || existing.RevokedAt != nil || existing.DisabledAt != nil {
+			return "", installerConflict("existing agent revision has incompatible attributes or lifecycle; explicit lifecycle action is required")
+		}
 		return existing.ID, nil
 	}
 	var se *business.StoreError
@@ -268,9 +274,11 @@ func (s *PostgresStore) getOrRegisterSolutionNode(ctx context.Context, params *b
 // reconcile to a no-op and the caller returns the existing row.
 func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, existing *gen.Installation, params *business.InstallSolutionParams) error {
 	var allowedAudiences, allowedScopes []string
+	var agentIdentifier, displayName string
+	var live bool
 	if err := executor.QueryRow(ctx,
-		`SELECT allowed_audiences, allowed_scopes FROM principals WHERE id = $1 AND org_id = $2`,
-		existing.AgentPrincipalId, existing.OrgId).Scan(&allowedAudiences, &allowedScopes); err != nil {
+		`SELECT allowed_audiences, allowed_scopes, agent_identifier, display_name, revoked_at IS NULL AND disabled_at IS NULL FROM principals WHERE id = $1 AND org_id = $2`,
+		existing.AgentPrincipalId, existing.OrgId).Scan(&allowedAudiences, &allowedScopes, &agentIdentifier, &displayName, &live); err != nil {
 		return fmt.Errorf("load existing agent ceiling: %w", err)
 	}
 	// A missing standing grant (an admin revoked it out from under an active
@@ -287,14 +295,16 @@ func reconcileExistingInstallation(ctx context.Context, executor QueryExecutor, 
 		existing.OrgId, existing.RootScopeNodeId, existing.AgentPrincipalId).Scan(&roleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("load existing standing grant role: %w", err)
 	}
-	if roleID == params.RoleID &&
+	if roleID == params.RoleID && live && agentIdentifier == params.AgentIdentifier &&
+		existing.OwnerPrincipalId == params.OwnerPrincipalID &&
+		(params.DisplayName == "" || params.DisplayName == displayName) &&
 		sameStringSet(allowedAudiences, params.AllowedAudiences) &&
 		sameStringSet(allowedScopes, params.AllowedScopes) &&
 		sameStringSet(existing.CoOwnerPrincipalIds, params.CoOwnerPrincipalIDs) {
 		return nil
 	}
 	return business.NewStoreError(
-		fmt.Errorf("solution %s is already installed with a different ceiling, role, or co-owner set; uninstall and reinstall to change it",
+		fmt.Errorf("solution %s is already installed with different immutable attributes, owner, ceiling, role, or lifecycle; explicit lifecycle action is required",
 			params.SolutionIdentifier),
 		business.ErrTypeConflict)
 }
