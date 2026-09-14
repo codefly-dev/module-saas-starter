@@ -13,10 +13,12 @@ import (
 // solution scope node, standing grant, and installation row are created together
 // in one transaction; see InstallationStore.InstallSolution.
 type InstallSolutionParams struct {
-	OrgID              string
-	AgentIdentifier    string // "publisher/name:version"
-	SolutionIdentifier string
-	DisplayName        string // empty defaults to AgentIdentifier
+	// InstallerPrincipalID records ownership for bounded nonhuman reconciliation.
+	InstallerPrincipalID string
+	OrgID                string
+	AgentIdentifier      string // "publisher/name:version"
+	SolutionIdentifier   string
+	DisplayName          string // empty defaults to AgentIdentifier
 	// RootScopeLabel is the display label of the kind='solution' node. The node's
 	// ltree path is derived server-side from its id (ADR-0002), never caller-chosen.
 	RootScopeLabel string
