@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -436,7 +435,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 		// park the source in the degraded state (which clears its schedule and drops
 		// it from the reconcile sweep) and record why, so an operator sees it and
 		// resets it once the manifest fits. Acknowledged, not retried.
-		reason := fmt.Sprintf("snapshot manifest is %d bytes, over the %d-byte ingest limit", len(payload), maxIngestPayload)
+		reason := SnapshotTooLargeDegradeReason(len(payload), maxIngestPayload)
 		// Degrading is a state transition, so only write and audit when the
 		// source is not already degraded. A source stuck oversized is retried by
 		// "Sync now" (SyncDatasourceSource ignores status), and each such attempt

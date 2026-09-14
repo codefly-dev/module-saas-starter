@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -37,6 +38,31 @@ const (
 	// until an operator resets it to active; StatusReason records why.
 	DatasourceStatusDegraded = "degraded"
 )
+
+// DatasourceDegradeReason is the closed set of explanations that may be stored
+// in a source's status_reason, which every organization member can read through
+// ListSources and GetSource. The wire contract promises that field carries no
+// credential material, and nothing about a plain string parameter would keep
+// that promise: the idiomatic way to explain a failed provider call is
+// fmt.Sprintf("%v", err), and a provider error wraps request URLs, response
+// bodies and installation identifiers verbatim. So the reason is a distinct type
+// whose body is unexported and which has no constructor from a string or an
+// error. Outside this package a caller cannot build one at all; inside it, the
+// named constructors below are the only way, which makes adding an unsafe reason
+// a visible edit here rather than an ordinary-looking call site elsewhere.
+type DatasourceDegradeReason struct{ text string }
+
+// String renders the reason for storage and for the wire projection.
+func (r DatasourceDegradeReason) String() string { return r.text }
+
+// SnapshotTooLargeDegradeReason explains a source parked because its full-tree
+// manifest overran the ingest payload cap. Both operands are sizes this process
+// measured, never provider-supplied text.
+func SnapshotTooLargeDegradeReason(size, limit int) DatasourceDegradeReason {
+	return DatasourceDegradeReason{
+		text: fmt.Sprintf("snapshot manifest is %d bytes, over the %d-byte ingest limit", size, limit),
+	}
+}
 
 // API credential kinds mirror saas.accounts.v1.ApiCredentialKind; they select
 // how the stored credential is presented on the generic connector's requests.

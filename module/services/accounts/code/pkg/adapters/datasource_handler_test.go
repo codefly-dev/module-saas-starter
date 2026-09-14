@@ -137,3 +137,49 @@ func TestDatasourceSourceToProto_OmitsUnadvancedCursor(t *testing.T) {
 		t.Errorf("last_ingested_commit = %q, want empty", out.GetLastIngestedCommit())
 	}
 }
+
+// TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason covers the state a
+// tenant most needs to see and could not: the compiler parks a source it cannot
+// make progress on and records why, but the wire had no degraded value and no
+// reason field, so the projection fell through to UNSPECIFIED and dropped the
+// explanation. A source that had silently stopped ingesting was indistinguishable
+// from one whose status was simply unknown.
+func TestDatasourceSourceToProto_ProjectsDegradedStatusAndReason(t *testing.T) {
+	const reason = "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit"
+	out := datasourceSourceToProto(&business.DatasourceSource{
+		ID:           "11111111-1111-1111-1111-111111111111",
+		OrgID:        "22222222-2222-2222-2222-222222222222",
+		Provider:     business.DatasourceProviderGitHub,
+		Status:       business.DatasourceStatusDegraded,
+		StatusReason: reason,
+	})
+
+	if got := out.GetStatus(); got != gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED {
+		t.Errorf("status = %v, want DATASOURCE_STATUS_DEGRADED", got)
+	}
+	if got := out.GetStatusReason(); got != reason {
+		t.Errorf("status_reason = %q, want %q", got, reason)
+	}
+}
+
+// TestDatasourceStatusToProto_MapsEveryStoredStatus pins the whole switch rather
+// than the one arm this change added. A stored status that loses its case falls
+// through to UNSPECIFIED, which on the wire is indistinguishable from "unknown"
+// — exactly the defect that hid a degraded source. The unrecognised-value arm
+// pins that fallback as deliberate, so a status this projection has never heard
+// of stays UNSPECIFIED instead of being reported as a real one.
+func TestDatasourceStatusToProto_MapsEveryStoredStatus(t *testing.T) {
+	for _, testCase := range []struct {
+		stored string
+		want   gen.DatasourceStatus
+	}{
+		{business.DatasourceStatusActive, gen.DatasourceStatus_DATASOURCE_STATUS_ACTIVE},
+		{business.DatasourceStatusPaused, gen.DatasourceStatus_DATASOURCE_STATUS_PAUSED},
+		{business.DatasourceStatusDegraded, gen.DatasourceStatus_DATASOURCE_STATUS_DEGRADED},
+		{"a-status-this-binary-predates", gen.DatasourceStatus_DATASOURCE_STATUS_UNSPECIFIED},
+	} {
+		if got := datasourceStatusToProto(testCase.stored); got != testCase.want {
+			t.Errorf("datasourceStatusToProto(%q) = %v, want %v", testCase.stored, got, testCase.want)
+		}
+	}
+}

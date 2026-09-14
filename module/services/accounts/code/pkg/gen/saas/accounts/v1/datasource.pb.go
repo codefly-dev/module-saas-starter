@@ -95,6 +95,12 @@ const (
 	DatasourceStatus_DATASOURCE_STATUS_UNSPECIFIED DatasourceStatus = 0
 	DatasourceStatus_DATASOURCE_STATUS_ACTIVE      DatasourceStatus = 1
 	DatasourceStatus_DATASOURCE_STATUS_PAUSED      DatasourceStatus = 2
+	// The source is parked because it cannot make progress for a structural
+	// reason somebody must resolve; status_reason says which. The host sets it,
+	// never the tenant, so it is worth surfacing unprompted. Already-ingested
+	// content is retained and stays readable — degrading stops future pulls, it
+	// never withdraws history.
+	DatasourceStatus_DATASOURCE_STATUS_DEGRADED DatasourceStatus = 3
 )
 
 // Enum value maps for DatasourceStatus.
@@ -103,11 +109,13 @@ var (
 		0: "DATASOURCE_STATUS_UNSPECIFIED",
 		1: "DATASOURCE_STATUS_ACTIVE",
 		2: "DATASOURCE_STATUS_PAUSED",
+		3: "DATASOURCE_STATUS_DEGRADED",
 	}
 	DatasourceStatus_value = map[string]int32{
 		"DATASOURCE_STATUS_UNSPECIFIED": 0,
 		"DATASOURCE_STATUS_ACTIVE":      1,
 		"DATASOURCE_STATUS_PAUSED":      2,
+		"DATASOURCE_STATUS_DEGRADED":    3,
 	}
 )
 
@@ -631,8 +639,13 @@ type Datasource struct {
 	// diffs the next delivery from it. Empty until the first delivery lands, and
 	// like last_ingested_at set only for a github source.
 	LastIngestedCommit string `protobuf:"bytes,16,opt,name=last_ingested_commit,json=lastIngestedCommit,proto3" json:"last_ingested_commit,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Why the source left DATASOURCE_STATUS_ACTIVE, in prose a tenant can act on;
+	// empty while it is active. Every value is produced by one of a closed set of
+	// named constructors in the host, so it carries no credential material, token,
+	// or signing secret — raw provider error text can never reach this field.
+	StatusReason  string `protobuf:"bytes,17,opt,name=status_reason,json=statusReason,proto3" json:"status_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Datasource) Reset() {
@@ -766,6 +779,13 @@ func (x *Datasource) GetLastIngestedAt() *timestamppb.Timestamp {
 func (x *Datasource) GetLastIngestedCommit() string {
 	if x != nil {
 		return x.LastIngestedCommit
+	}
+	return ""
+}
+
+func (x *Datasource) GetStatusReason() string {
+	if x != nil {
+		return x.StatusReason
 	}
 	return ""
 }
@@ -1872,7 +1892,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06prefix\x18\x04 \x01(\tR\x06prefix\x12\"\n" +
 	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12\x1f\n" +
 	"\vmax_objects\x18\x06 \x01(\rR\n" +
-	"maxObjects\"\xd5\x06\n" +
+	"maxObjects\"\xfa\x06\n" +
 	"\n" +
 	"Datasource\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -1892,7 +1912,8 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x06upload\x18\r \x01(\v2(.saas.accounts.v1.UploadDatasourceConfigR\x06upload\x12(\n" +
 	"\x10boundary_node_id\x18\x0e \x01(\tR\x0eboundaryNodeId\x12D\n" +
 	"\x10last_ingested_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0elastIngestedAt\x120\n" +
-	"\x14last_ingested_commit\x18\x10 \x01(\tR\x12lastIngestedCommitJ\x04\b\x04\x10\x05R\x11target_collection\"\xc2\x03\n" +
+	"\x14last_ingested_commit\x18\x10 \x01(\tR\x12lastIngestedCommit\x12#\n" +
+	"\rstatus_reason\x18\x11 \x01(\tR\fstatusReasonJ\x04\b\x04\x10\x05R\x11target_collection\"\xc2\x03\n" +
 	"\x16AddGitHubSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12A\n" +
 	"\x04repo\x18\x02 \x01(\tB-\xbaH*r(\x10\x03\x18\xff\x012!^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$R\x04repo\x12'\n" +
@@ -1973,11 +1994,12 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x1aDATASOURCE_PROVIDER_GITHUB\x10\x01\x12\x1b\n" +
 	"\x17DATASOURCE_PROVIDER_API\x10\x02\x12\x1f\n" +
 	"\x1bDATASOURCE_PROVIDER_CRAWLER\x10\x03\x12\x1e\n" +
-	"\x1aDATASOURCE_PROVIDER_UPLOAD\x10\x04*q\n" +
+	"\x1aDATASOURCE_PROVIDER_UPLOAD\x10\x04*\x91\x01\n" +
 	"\x10DatasourceStatus\x12!\n" +
 	"\x1dDATASOURCE_STATUS_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18DATASOURCE_STATUS_ACTIVE\x10\x01\x12\x1c\n" +
-	"\x18DATASOURCE_STATUS_PAUSED\x10\x02*\xd6\x01\n" +
+	"\x18DATASOURCE_STATUS_PAUSED\x10\x02\x12\x1e\n" +
+	"\x1aDATASOURCE_STATUS_DEGRADED\x10\x03*\xd6\x01\n" +
 	"\x11ApiCredentialKind\x12#\n" +
 	"\x1fAPI_CREDENTIAL_KIND_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aAPI_CREDENTIAL_KIND_BEARER\x10\x01\x12\x1d\n" +

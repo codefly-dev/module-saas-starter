@@ -145,7 +145,10 @@ type Store interface {
 	// progress on (an oversized snapshot manifest), recording the reason and
 	// clearing next_reconcile_at so the reconcile sweep stops re-selecting it
 	// until an operator resets it to active. Control-plane.
-	MarkDatasourceSourceDegraded(ctx context.Context, sourceID, reason string) error
+	// The reason is a closed-set DatasourceDegradeReason rather than a string:
+	// status_reason is tenant-readable, so raw provider error text must not be
+	// able to reach it.
+	MarkDatasourceSourceDegraded(ctx context.Context, sourceID string, reason DatasourceDegradeReason) error
 	// ClearDatasourceSourceDegraded returns a degraded source to active once a
 	// snapshot has succeeded again: it clears status_reason and restores
 	// next_reconcile_at from the source's reconcile interval so the reconcile
