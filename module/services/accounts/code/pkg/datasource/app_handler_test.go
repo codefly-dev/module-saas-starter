@@ -82,7 +82,9 @@ func postAppDelivery(t *testing.T, server *httptest.Server, d appDelivery) *http
 	return response
 }
 
-const suspendDelivery = `{"action":"suspend","installation":{"id":4242}}`
+// A real delivery carries the installation's account and the person who acted,
+// neither of which the reconciler reads.
+const suspendDelivery = `{"action":"suspend","installation":{"id":4242,"account":{"login":"acme-org"}},"sender":{"login":"example-operator"}}`
 
 // A verified lifecycle delivery is recorded durably and keyed so the reconciler
 // can find the installation it concerns — and nothing more: the receiver does
@@ -101,8 +103,14 @@ func TestAppWebhookQueuesInstallationDelivery(t *testing.T) {
 	job := request.GetJob()
 	require.Equal(t, datasource.GitHubAppWebhookQueue, job.GetQueue())
 	require.Equal(t, datasource.GitHubAppWebhookTopic, job.GetTopic())
-	require.Equal(t, []byte(suspendDelivery), job.GetPayload())
 	require.Equal(t, "installation", job.GetAttributes()["github.event"])
+
+	// Only the routing fact is retained. The reconciler re-derives everything
+	// from GitHub and reads nothing out of the payload, so keeping the delivery
+	// would durably store a third party's account and sender for no consumer.
+	require.JSONEq(t, `{"installation_id":"4242"}`, string(job.GetPayload()))
+	require.NotContains(t, string(job.GetPayload()), "example-operator")
+	require.NotContains(t, string(job.GetPayload()), "acme-org")
 	require.Equal(t, "4242", job.GetAttributes()["datasource.installation_id"])
 	require.Equal(t, "delivery-1", job.GetAttributes()["datasource.delivery_id"])
 

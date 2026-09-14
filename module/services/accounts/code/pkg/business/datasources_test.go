@@ -29,6 +29,9 @@ type datasourceFakeStore struct {
 	nodes       map[string]bool
 	collections map[string]string // label -> node id
 	ordinals    map[string]int64  // source id -> next ordinal to hand out
+
+	// beforeInstallationMark, when set, runs just before a park is applied.
+	beforeInstallationMark func(sourceID string)
 }
 
 func newDatasourceFakeStore() *datasourceFakeStore {
@@ -213,20 +216,75 @@ func (f *datasourceFakeStore) MarkDatasourceSourceDegraded(_ context.Context, so
 	return nil
 }
 
-func (f *datasourceFakeStore) ListDatasourceSourcesByGitHubInstallation(_ context.Context, installationID string) ([]*business.DatasourceSource, error) {
+func (f *datasourceFakeStore) ListDatasourceSourcesByGitHubInstallation(_ context.Context, installationID, afterID string, limit int) ([]*business.DatasourceSource, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var out []*business.DatasourceSource
 	for _, s := range f.sources {
-		if s.GitHubInstallationID == installationID {
-			cp := *s
-			out = append(out, &cp)
+		// Mirror the query's provider filter: the column is only ever stamped by
+		// a GitHub path, and another provider must never be parked for a GitHub
+		// reason.
+		if s.GitHubInstallationID != installationID || s.Provider != business.DatasourceProviderGitHub {
+			continue
 		}
+		if afterID != "" && s.ID <= afterID {
+			continue
+		}
+		cp := *s
+		out = append(out, &cp)
 	}
-	// The real store orders the result; map iteration does not, and a caller
+	// The real store orders and pages; map iteration does neither, and a caller
 	// that reconciles sources in a different order each run is untestable.
 	slices.SortFunc(out, func(a, b *business.DatasourceSource) int { return strings.Compare(a.ID, b.ID) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
 	return out, nil
+}
+
+func (f *datasourceFakeStore) ListGitHubInstallationsPendingRecheck(_ context.Context, reasons []string, limit int) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, s := range f.sources {
+		if s.Status != business.DatasourceStatusDegraded || s.GitHubInstallationID == "" {
+			continue
+		}
+		if !slices.Contains(reasons, s.StatusReason) || slices.Contains(out, s.GitHubInstallationID) {
+			continue
+		}
+		out = append(out, s.GitHubInstallationID)
+	}
+	slices.Sort(out)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// beforeInstallationMark runs immediately before a park is applied, holding no
+// lock, so a test can stand in for the operator pause or compiler degrade that
+// can land between the reconciler's page read and its write.
+func (f *datasourceFakeStore) MarkDatasourceSourceInstallationDegraded(_ context.Context, sourceID, reason string) error {
+	if f.beforeInstallationMark != nil {
+		f.beforeInstallationMark(sourceID)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	s, ok := f.sources[sourceID]
+	if !ok {
+		return errors.New("not found")
+	}
+	// Mirror the store's active-only predicate: the status is re-tested here,
+	// not at the caller, so a source paused or degraded since the caller read it
+	// is left exactly as it is.
+	if s.Status != business.DatasourceStatusActive {
+		return nil
+	}
+	s.Status = business.DatasourceStatusDegraded
+	s.StatusReason = reason
+	s.NextReconcileAt = nil
+	return nil
 }
 
 func (f *datasourceFakeStore) SetDatasourceSourceGitHubInstallation(_ context.Context, orgID, id, installationID string) error {
