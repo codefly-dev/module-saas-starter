@@ -6,11 +6,16 @@ cloud calls, provider dispatch or retained credentials. Optional
 MODULE_INSTALLER_CLIENT_SCRIPT runs a separately reviewed HTTP client against
 an ephemeral TLS server and the real database inside the Go integration test.
 """
+import argparse
 import os
 from pathlib import Path
 import subprocess
 import time
 import uuid
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--managed-baseline", action="store_true", help="qualify the fresh managed baseline and every following migration")
+args = parser.parse_args()
 
 service = Path(__file__).resolve().parents[1]
 migrations = service.parents[1] / "store" / "migrations"
@@ -31,6 +36,9 @@ try:
     else:
         raise RuntimeError("disposable PostgreSQL did not become ready")
     files = sorted(migrations.glob("*.up.sql"), key=lambda path: int(path.name.split("_")[0]))
+    if args.managed_baseline:
+        files = [migrations.parent / "baselines/managed-v1/135_managed_baseline.up.sql", *[
+            path for path in files if int(path.name.split("_")[0]) > 135]]
     sql = "BEGIN;\n" + "\n".join(path.read_text() for path in files) + "\nCOMMIT;\n"
     run("docker", "exec", "-i", name, "psql", "-h", "127.0.0.1", "-U", "postgres", "-d", "installer_test_repeatable",
         "-v", "ON_ERROR_STOP=1", "-q", input=sql, text=True, stdout=subprocess.DEVNULL)

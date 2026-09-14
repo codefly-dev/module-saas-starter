@@ -173,6 +173,7 @@ From `module/services/accounts/code`:
 ```sh
 go test -race -tags=pure ./pkg/adapters ./pkg/infra
 python3 tools/test_module_installer.py
+python3 tools/test_module_installer.py --managed-baseline
 ```
 
 The second command requires Docker, Go, and an already-present
@@ -180,6 +181,11 @@ The second command requires Docker, Go, and an already-present
 bound to loopback, applies this checkout's entire migration chain, runs the
 real PostgreSQL integration cases under the race detector, then removes only
 that container. It never selects Kubernetes or cloud credentials.
+
+The third command starts from the fresh managed baseline and applies every
+following migration, including its intentionally empty session search path.
+It runs the same persistent PostgreSQL/TLS installer proof against that schema.
+The optional separately reviewed client script also applies to this mode.
 
 Tests exercise real retained-key-format Work Context issuance/verification,
 wrong secret/issuer/audience/expiry, policy expiry/removal, organization/module/
