@@ -160,7 +160,22 @@ func (h *installationHarness) reload(t *testing.T, id string) *business.Datasour
 	return source
 }
 
+// installationReasons is what this path may park over and revive, mirroring the
+// unexported set the service passes to the store.
+var installationReasons = []string{
+	business.DatasourceReasonInstallationRepositoryUnavailable,
+	business.DatasourceReasonInstallationSuspended,
+}
+
 func (h *installationHarness) degrade(t *testing.T, id, reason string) {
+	t.Helper()
+	_, err := h.store.MarkDatasourceSourceInstallationDegraded(context.Background(), id, reason, installationReasons)
+	require.NoError(t, err)
+}
+
+// degradeCompiler parks a source the way the change-set compiler does, through
+// the other owner of status_reason and its closed reason type.
+func (h *installationHarness) degradeCompiler(t *testing.T, id string, reason business.DatasourceDegradeReason) {
 	t.Helper()
 	require.NoError(t, h.store.MarkDatasourceSourceDegraded(context.Background(), id, reason))
 }
@@ -241,19 +256,19 @@ func TestReconcileInstallationRestoresRepairedSource(t *testing.T) {
 // Two paths degrade a source. Restored App access must not clear a park the
 // change-set compiler applied for a structural fault of its own.
 func TestReconcileInstallationLeavesAnotherPathsDegradeAlone(t *testing.T) {
-	const compilerReason = "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit"
+	compilerReason := business.SnapshotTooLargeDegradeReason(1048576, 983040)
 	h := newInstallationHarness(t, &fakeInstallationAPI{
 		coverage:      map[string]string{"acme/docs": testAppInstallation},
 		installations: map[string]*time.Time{testAppInstallation: nil},
 	})
 	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
-	h.degrade(t, source.ID, compilerReason)
+	h.degradeCompiler(t, source.ID, compilerReason)
 
 	require.NoError(t, h.reconcile(t, testAppInstallation))
 
 	untouched := h.reload(t, source.ID)
 	require.Equal(t, business.DatasourceStatusDegraded, untouched.Status)
-	require.Equal(t, compilerReason, untouched.StatusReason)
+	require.Equal(t, compilerReason.String(), untouched.StatusReason)
 }
 
 // An operator pause outranks a webhook: losing access must not rewrite a source
@@ -458,7 +473,7 @@ func TestInstallationRecheckSweepEnqueuesParkedInstallationsOnly(t *testing.T) {
 func TestInstallationRecheckSweepIgnoresAnotherPathsDegrade(t *testing.T) {
 	h := newInstallationHarness(t, &fakeInstallationAPI{})
 	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
-	h.degrade(t, source.ID, "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit")
+	h.degradeCompiler(t, source.ID, business.SnapshotTooLargeDegradeReason(1048576, 983040))
 
 	enqueued, err := h.svc.RunGitHubInstallationRecheck(context.Background())
 	require.NoError(t, err)
@@ -607,7 +622,7 @@ func TestReconcileInstallationDoesNotAuditARestoreItDidNotMake(t *testing.T) {
 		installations: map[string]*time.Time{testAppInstallation: nil},
 	})
 	source := h.seedAppSource(t, "source-a", "acme/docs", testAppInstallation)
-	h.degrade(t, source.ID, "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit")
+	h.degradeCompiler(t, source.ID, business.SnapshotTooLargeDegradeReason(1048576, 983040))
 
 	require.NoError(t, h.reconcile(t, testAppInstallation))
 
@@ -636,7 +651,7 @@ func TestReconcileInstallationDoesNotAuditAnOperatorPause(t *testing.T) {
 // path's, which this path would then revive with the oversized-snapshot fault
 // still standing. The write must refuse it, and audit nothing.
 func TestReconcileInstallationDoesNotOverwriteADegradeThatLandedMidReconcile(t *testing.T) {
-	const compilerReason = "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit"
+	compilerReason := business.SnapshotTooLargeDegradeReason(1048576, 983040)
 	h := newInstallationHarness(t, &fakeInstallationAPI{
 		installations: map[string]*time.Time{testAppInstallation: nil},
 	})
@@ -644,14 +659,14 @@ func TestReconcileInstallationDoesNotOverwriteADegradeThatLandedMidReconcile(t *
 
 	var once sync.Once
 	h.store.beforeInstallationMark = func(string) {
-		once.Do(func() { h.degrade(t, source.ID, compilerReason) })
+		once.Do(func() { h.degradeCompiler(t, source.ID, compilerReason) })
 	}
 
 	require.NoError(t, h.reconcile(t, testAppInstallation))
 
 	untouched := h.reload(t, source.ID)
 	require.Equal(t, business.DatasourceStatusDegraded, untouched.Status)
-	require.Equal(t, compilerReason, untouched.StatusReason,
+	require.Equal(t, compilerReason.String(), untouched.StatusReason,
 		"a stale listing must not let this path take ownership of another path's degrade")
 	require.Empty(t, h.audit.entriesOf(business.EventDatasourceSourceAccessLost))
 }
