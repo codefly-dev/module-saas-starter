@@ -394,7 +394,7 @@ hosted custody/revision mount.** Existing local qualification uses its separatel
 bounded fixture bootstrap. Unknown profiles fail startup.
 
 `verified-tls` requires explicit PostgreSQL user, database and TCP hostname,
-`sslmode=verify-full`, actual driver certificate/hostname verification on every
+`sslmode=verify-full`, actual driver certificate/hostname verification with no
 fallback, and no ambiguous endpoint/user/database/role query override or ambient
 `PG*` setting. Only lowercase `sslmode`, `sslrootcert`, `sslcert`, `sslkey`,
 `connect_timeout`, the documented pgx pool size/lifetime/health settings and
@@ -420,7 +420,8 @@ private sockets and distinct non-owner principals. There is no application cloud
 SDK or token minting. The platform owns each proxy's fixed principal, verified
 remote TLS/IAM, private routes, mounted socket ownership and reconnect lifecycle.
 
-Every normal Accounts pool uses the selected parser: scoped reader/writer,
+Every normal Accounts pool uses the shared service-postgres parser and its actual
+validated configuration: scoped reader/writer,
 legacy request pool and billing/webhook/job worker pools. The existing factory
 and fixed `SET ROLE` boundaries still own authority; a connection URL cannot select
 a privileged role. Changing transport is an explicit deployment change, not a
@@ -434,8 +435,8 @@ go test -race pkg/infra/database_transport.go pkg/infra/database_transport_test.
 go test -race -tags=integration ./pkg/adapters -run TestAccountsLocalProxyStore -count=1 -v
 ```
 
-The second test creates a disposable Unix-only PostgreSQL server, applies all127
-unchanged migrations, opens Accounts' actual factory with two socket/principal
+The second test creates a disposable Unix-only PostgreSQL server, applies all 134
+unchanged canonical migration files, opens Accounts' actual factory with two socket/principal
 bindings, checks direct/tenant custody denial, recovers the original private
 record after store reconstruction, and opens all three fixed worker pools with
 custody denied. It is an Accounts local-socket/role proof, not a Cloud SQL IAM,

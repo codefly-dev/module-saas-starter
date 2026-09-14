@@ -64,7 +64,7 @@ func TestAccountsLocalProxyStore(t *testing.T) {
 		b, _ := strconv.Atoi(strings.Split(filepath.Base(migrations[j]), "_")[0])
 		return a < b
 	})
-	require.Len(t, migrations, 127)
+	require.Len(t, migrations, 134)
 	for _, path := range migrations {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)

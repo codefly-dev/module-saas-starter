@@ -43,11 +43,21 @@ hook and retains explicit `app_tenant` / `app_control_plane` role selection. An
 unset file preserves local URL credentials. Token projection and its atomic
 replacement remain deployment responsibilities.
 
-Accounts still validates its explicit verified-TLS/private-proxy transport policy
-before construction, including distinct reader/writer proxy sockets. Shared
-transport-policy parsing is a separate primitive extension; adopting the shared
-pool constructor does not change connection-policy acceptance or grant new
-control-plane authority.
+Accounts selects the shared `ConnectionProfile` policy. `Open` parses and validates
+both actual request configurations before creating either pool; the separate
+legacy/control-plane and worker pools use the shared `ParseConnection` result
+directly. This removes the second driver parse while retaining distinct proxy
+sockets and fixed module role hooks. Empty transport retains pgx legacy behavior;
+explicit profiles reject ambient `PG*` settings, implicit passfiles, driver
+fallbacks and URL role overrides. Errors from explicit profile validation are
+redacted. No grant, migration or control-plane authority changes.
+
+The runtime library pin is `github.com/codefly-dev/service-postgres`
+`v0.0.134-0.20260914194009-c96add860843`. Migration-engine selection remains
+independent. To qualify both the legacy and verified-TLS constructors on isolated
+native PostgreSQL, run `scripts/qualify-scoped-pools.py` with `--transport legacy`
+and `--transport verified-tls`; each checks identity scope, projected-token
+rotation after forced reconnect, control-plane behavior and repeated closure.
 
 ## Roles
 

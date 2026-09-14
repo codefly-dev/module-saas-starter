@@ -10,7 +10,8 @@ import (
 
 // Measure reports setup and execution separately even when setup fails before
 // testing.M can emit any test events. Dependency names describe the requested
-// graph; the SDK currently returns only a flow-wide readiness timeout.
+// graph passed to this wrapper. Core can now carry per-service readiness, but
+// this timing record receives no status snapshot and must not infer a culprit.
 func Measure(target, phase string, dependencies []string, budget time.Duration) func(bool) {
 	return measure(os.Stderr, target, phase, dependencies, budget)
 }

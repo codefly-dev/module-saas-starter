@@ -2,13 +2,10 @@ package infra
 
 import (
 	"errors"
-	"net/url"
 	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
 
 	codefly "github.com/codefly-dev/sdk-go"
+	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,94 +24,27 @@ func DatabaseTransportProfile() (string, error) {
 	return "", errors.New("unsupported Accounts database transport")
 }
 
-// parseDatabaseTransport opens no pool and changes no role. Fixed role selection
-// and verified physical identities remain owned by the existing store factory.
+// databaseConnectionProfile preserves this module's intentional legacy default
+// and its prohibition on URL role selection. Token-file projection is a local
+// composition policy; the primitive only sees the actual provider/hook.
+func databaseConnectionProfile(profile string) (scopedpostgres.ConnectionProfile, error) {
+	switch profile {
+	case "", "verified-tls", "local-identity-proxy":
+	default:
+		return scopedpostgres.ConnectionProfile{}, errors.New("unsupported Accounts database transport")
+	}
+	if profile == "local-identity-proxy" && os.Getenv(databaseTokenFileEnv) != "" {
+		return scopedpostgres.ConnectionProfile{}, errors.New("local database proxy cannot use a token file")
+	}
+	return scopedpostgres.ConnectionProfile{Transport: scopedpostgres.ConnectionTransport(profile)}, nil
+}
+
+// The intentional legacy/control-plane pool uses the returned driver config
+// directly. Request pools use the same policy inside service-postgres Open.
 func parseDatabaseTransport(connection, profile string, tokenHook bool) (*pgxpool.Config, error) {
-	invalid := errors.New("invalid Accounts database transport binding")
-	if profile == "" {
-		return pgxpool.ParseConfig(connection)
-	}
-	if profile != "verified-tls" && profile != "local-identity-proxy" {
-		return nil, invalid
-	}
-	for _, entry := range os.Environ() {
-		if strings.HasPrefix(entry, "PG") {
-			return nil, invalid
-		}
-	}
-	u, err := url.Parse(connection)
-	if err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Opaque != "" || u.Fragment != "" || u.User == nil || u.User.Username() == "" || !strings.HasPrefix(u.Path, "/") || u.Path == "/" || strings.ContainsAny(strings.TrimPrefix(u.Path, "/"), "/\x00") {
-		return nil, invalid
-	}
-	q, err := url.ParseQuery(u.RawQuery)
+	policy, err := databaseConnectionProfile(profile)
 	if err != nil {
-		return nil, invalid
+		return nil, err
 	}
-	for _, values := range q {
-		if len(values) != 1 {
-			return nil, invalid
-		}
-	}
-	if profile == "local-identity-proxy" {
-		if u.Host != "" || q.Get("sslmode") != "disable" || q.Get("passfile") != "/dev/null" || tokenHook || os.Getenv("POSTGRES_TOKEN_FILE") != "" {
-			return nil, invalid
-		}
-		if _, present := u.User.Password(); present {
-			return nil, invalid
-		}
-		for key := range q {
-			switch key {
-			case "host", "port", "sslmode", "passfile":
-			default:
-				return nil, invalid
-			}
-		}
-		socket := q.Get("host")
-		if !filepath.IsAbs(socket) || filepath.Clean(socket) != socket || socket == "/" || strings.ContainsAny(socket, ",\x00\r\n") || strings.Contains(socket, ".s.PGSQL.") {
-			return nil, invalid
-		}
-		port, err := strconv.ParseUint(q.Get("port"), 10, 16)
-		if err != nil || port == 0 || len(socket+"/.s.PGSQL."+q.Get("port")) > 103 {
-			return nil, invalid
-		}
-		cfg, err := pgxpool.ParseConfig(connection)
-		if err != nil || cfg.ConnConfig.Host != socket || cfg.ConnConfig.Port != uint16(port) || cfg.ConnConfig.Database != strings.TrimPrefix(u.Path, "/") || cfg.ConnConfig.User != u.User.Username() || cfg.ConnConfig.Password != "" || cfg.ConnConfig.TLSConfig != nil || len(cfg.ConnConfig.Fallbacks) != 0 || len(cfg.ConnConfig.RuntimeParams) != 0 {
-			return nil, invalid
-		}
-		return cfg, nil
-	}
-	if u.Hostname() == "" || strings.Contains(u.Hostname(), ",") || q.Get("sslmode") != "verify-full" {
-		return nil, invalid
-	}
-	// pgx treats unrecognized query keys as PostgreSQL startup parameters. A
-	// denylist misses case aliases such as ROLE and session_authorization.
-	// Only canonical driver settings and a non-authorizing label are supported.
-	for key, values := range q {
-		if strings.ContainsRune(values[0], '\x00') {
-			return nil, invalid
-		}
-		switch key {
-		case "sslmode", "sslrootcert", "sslcert", "sslkey", "connect_timeout",
-			"pool_max_conns", "pool_min_conns", "pool_min_idle_conns",
-			"pool_max_conn_lifetime", "pool_max_conn_idle_time",
-			"pool_health_check_period", "pool_max_conn_lifetime_jitter", "application_name":
-		default:
-			return nil, invalid
-		}
-	}
-	cfg, err := pgxpool.ParseConfig(connection)
-	if err != nil || cfg.ConnConfig.Host != u.Hostname() || cfg.ConnConfig.Database != strings.TrimPrefix(u.Path, "/") || cfg.ConnConfig.User != u.User.Username() || cfg.ConnConfig.TLSConfig == nil || cfg.ConnConfig.TLSConfig.InsecureSkipVerify || cfg.ConnConfig.TLSConfig.ServerName != u.Hostname() {
-		return nil, invalid
-	}
-	for key, value := range cfg.ConnConfig.RuntimeParams {
-		if key != "application_name" || value != q.Get("application_name") {
-			return nil, invalid
-		}
-	}
-	for _, fallback := range cfg.ConnConfig.Fallbacks {
-		if fallback.TLSConfig == nil || fallback.TLSConfig.InsecureSkipVerify || fallback.TLSConfig.ServerName != u.Hostname() {
-			return nil, invalid
-		}
-	}
-	return cfg, nil
+	return scopedpostgres.ParseConnection(connection, policy, tokenHook)
 }

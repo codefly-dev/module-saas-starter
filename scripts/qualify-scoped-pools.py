@@ -6,6 +6,7 @@ from pathlib import Path
 import socket
 import subprocess
 import tempfile
+from urllib.parse import urlencode
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,6 +15,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--postgres-bin", type=Path, required=True)
     parser.add_argument("--go", default="go")
+    parser.add_argument("--transport", choices=["legacy", "verified-tls"], default="legacy")
     args = parser.parse_args()
     postgres = args.postgres_bin.resolve()
     env = {k: v for k, v in os.environ.items()
@@ -36,12 +38,23 @@ def main():
         (data / "pg_hba.conf").write_text(
             "host all postgres 127.0.0.1/32 trust\n"
             "host all all 127.0.0.1/32 scram-sha-256\n")
+        tls_options = ""
+        tls_query = {"sslmode": "disable"}
+        if args.transport == "verified-tls":
+            run(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+                 "-subj", "/CN=Disposable Database Fixture", "-addext", "subjectAltName=IP:127.0.0.1",
+                 "-keyout", fixture / "server.key", "-out", fixture / "server.crt"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            (fixture / "server.key").chmod(0o600)
+            tls_options = f" -c ssl=on -c ssl_cert_file={fixture / 'server.crt'} -c ssl_key_file={fixture / 'server.key'}"
+            tls_query = {"sslmode": "verify-full", "sslrootcert": str(fixture / "server.crt")}
         run([postgres / "pg_ctl", "-D", data, "-l", fixture / "postgres.log",
-             "-o", f"-h 127.0.0.1 -p {port} -k '' -c password_encryption=scram-sha-256", "-w", "start"])
+             "-o", f"-h 127.0.0.1 -p {port} -k '' -c password_encryption=scram-sha-256{tls_options}", "-w", "start"])
         try:
             run([postgres / "createdb", "-h", "127.0.0.1", "-p", str(port), "-U", "postgres", "scoped_pools_fixture"])
             env["ACCOUNTS_SCOPED_POOL_TEST_DSN"] = (
-                f"postgres://postgres@127.0.0.1:{port}/scoped_pools_fixture?sslmode=disable")
+                f"postgres://postgres@127.0.0.1:{port}/scoped_pools_fixture?" + urlencode(tls_query))
+            env["ACCOUNTS_SCOPED_POOL_TEST_TRANSPORT"] = "" if args.transport == "legacy" else args.transport
             env.update({"GOWORK": "off", "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off"})
             run([args.go, "test", "-race", "-count=1", "-v", "./qualification/scopedpools"],
                 cwd=ROOT / "module/services/accounts/code")

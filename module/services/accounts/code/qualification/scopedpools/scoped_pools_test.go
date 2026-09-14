@@ -57,7 +57,9 @@ func TestScopedPoolsIdentityRotationAndClosure(t *testing.T) {
  ('10000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000002','owner');
  `)
 	require.NoError(t, err)
-	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "")
+	profile := os.Getenv("ACCOUNTS_SCOPED_POOL_TEST_TRANSPORT")
+	require.Contains(t, []string{"", "verified-tls"}, profile)
+	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", profile)
 	path := filepath.Join(t.TempDir(), "token")
 	rotate := func(token string) {
 		t.Helper()
@@ -79,6 +81,14 @@ func TestScopedPoolsIdentityRotationAndClosure(t *testing.T) {
 	store, err := infra.NewPostgresStoreWithCapabilities(ctx, readerDSN, writerDSN)
 	require.NoError(t, err)
 	t.Cleanup(store.Close)
+	if profile != "" {
+		_, err = infra.NewPostgresStoreWithCapabilities(ctx, readerDSN, writerDSN+"&role=app_control_plane")
+		require.Error(t, err, "application-role override must fail before opening a pool")
+		t.Setenv("PGHOST", "elsewhere")
+		_, err = infra.NewPostgresStoreWithCapabilities(ctx, readerDSN, writerDSN)
+		require.Error(t, err, "ambient endpoint must be rejected")
+		require.NoError(t, os.Unsetenv("PGHOST"))
+	}
 	const orgA = "10000000-0000-0000-0000-000000000001"
 	const orgB = "10000000-0000-0000-0000-000000000002"
 	const userA = "20000000-0000-0000-0000-000000000001"

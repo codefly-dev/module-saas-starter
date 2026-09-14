@@ -30,13 +30,11 @@ With `go test -v`, database harnesses emit JSON timing records to stderr for
 elapsed milliseconds, readiness budget and failure status. A failed dependency
 setup emits no execution record. Go compilation precedes these records and
 fixture initialization sits between setup and execution. These records do not
-claim to measure either. Codefly's flow status carries a single readiness flag in
-both the pinned Core release and the latest one, so naming the service that
-exceeded its budget needs new SDK/CLI lifecycle evidence, not a dependency bump.
-That signal is requested in [Core #476](https://github.com/codefly-dev/core/issues/476).
-A test pins `FlowStatus` to its single field, so a signal carried there fails it;
-one delivered as a new message or streaming RPC would not. Re-read this section
-when #476 lands rather than trusting that test to notice.
+claim to measure either. Core 0.3.29 now carries per-service readiness in
+`FlowStatus.services`. These timing wrappers receive only their requested graph,
+not a status snapshot, so they still must not infer which service overran. Keep
+per-service diagnostics from the CLI alongside the timing records; the obsolete
+single-field descriptor assertion has been removed.
 Keep the Codefly debug log with failures.
 
 ### Isolated request-pool qualification
@@ -46,11 +44,12 @@ and cached dependencies:
 
 ```sh
 python3 scripts/qualify-scoped-pools.py \
-  --postgres-bin /path/to/postgres/bin --go /path/to/go
+  --postgres-bin /path/to/postgres/bin --go /path/to/go --transport verified-tls
 ```
 
 This extra qualification invokes the public production constructor against a
-temporary loopback-only PostgreSQL cluster. It checks verified organization/user
+temporary loopback-only TLS PostgreSQL cluster. `--transport legacy` repeats the
+same proof with the unchanged empty-profile behavior. It checks verified organization/user
 scope and pooled reuse, explicit legacy/control-plane role behavior, rejection of
 an old credential by PostgreSQL, token rotation after backend termination, repeated
 close and cleanup after failed writer startup. The owner connection uses fixture
@@ -60,6 +59,24 @@ after the run. No cloud issuer, provider call or deployed transport is exercised
 The test lives in `qualification/scopedpools`, outside the shared integration
 package startup. It skips without the runner's explicit disposable-fixture DSN
 and is excluded from `pure`; it does not replace the canonical service gate.
+
+## Standalone dependency-harness prerequisite
+
+The PostgreSQL runtime dependency now selects Core 0.3.29. Its `WithDependencies`
+uses an isolated Unix control session and `SessionHandshake` when a standalone
+Go test owns the dependency graph. The official CLI 0.1.145 pinned by the managed
+CI installer selects Core 0.3.20 and does not provide that handshake. It is not a
+compatible standalone graph owner for this SDK. Do not opt out of isolation to
+hide that mismatch.
+
+A managed Codefly parent with the typed dependency environment can supply its
+already-running graph; that path does not create a standalone control session.
+The official managed-CI pin remains unchanged. A standalone graph-owning run
+requires a compatible CLI release or an explicitly recorded source build such as
+canonical CLI commit `7a3a895a1ea308ea838e9e165221fc875d2563bb` (Core 0.3.29),
+plus the normal container/agent prerequisites. That source commit is not a newer
+published CLI release. Pure tests, standalone compilation and native database
+qualifications do not claim that the full dependency graph booted.
 
 ## Planner handoff
 

@@ -4,8 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	scopedpostgres "github.com/codefly-dev/service-postgres/libs/go"
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 )
@@ -149,6 +151,6 @@ func TestTokenFileAccessTokenProviderRetainsOneProjectedCredential(t *testing.T)
 func TestOpenScopedBoundaryRetainsProxySeparation(t *testing.T) {
 	clearDatabaseEnvironment(t)
 	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "local-identity-proxy")
-	_, _, err := openScopedBoundary(context.Background(), proxyURL(), proxyURL(), nil)
-	require.ErrorContains(t, err, "distinct private identity sockets")
+	_, _, err := openScopedBoundary(context.Background(), proxyURL(), strings.Replace(proxyURL(), "fixture@", "writer@", 1), nil)
+	require.ErrorIs(t, err, scopedpostgres.ErrConnectionProfile)
 }
