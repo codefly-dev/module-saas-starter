@@ -9,13 +9,20 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+
+	"accounts/internal/testdb"
 )
+
+// A store instance applying migrations holds the runner's lock for its whole
+// run, which on a cold database is the entire chain.
+const migrationLockWait = 2 * time.Minute
 
 // Migration 116 is the audit-event namespace cutover. It rewrites stored values
 // (audit_event_types, audit_events, webhook_subscriptions) and only then
@@ -43,6 +50,14 @@ func migrationSQL(t *testing.T, name string) string {
 // capability — the authority a migration runs under, and the only one that may
 // ALTER the audit tables. The service's own pools deliberately hold no DDL
 // privilege, so they cannot replay a migration.
+//
+// The store database is shared, and a service start applies migrations over the
+// same catalog rows a replay rewrites — two sessions altering one table's
+// catalog entry is `tuple concurrently updated`, which aborts whichever loses.
+// The package lock serializes this package against the other suites, not against
+// a service that is still migrating. The runner takes one advisory lock for the
+// length of its run, so fn holds that same lock: the two are then exclusive
+// however the phase happens to be scheduled.
 func asMigrationOwner(t *testing.T, fn func(ctx context.Context, conn *pgxpool.Conn)) {
 	t.Helper()
 	ctx := testCtx
@@ -54,7 +69,50 @@ func asMigrationOwner(t *testing.T, fn func(ctx context.Context, conn *pgxpool.C
 	conn, err := pool.Acquire(ctx)
 	require.NoError(t, err)
 	defer conn.Release()
+
+	lockID := migrationRunnerLockID(t, ctx, conn, connString)
+	lockCtx, cancel := context.WithTimeout(ctx, migrationLockWait)
+	defer cancel()
+	_, err = conn.Exec(lockCtx, `SELECT pg_advisory_lock($1)`, lockID)
+	require.NoError(t, err, "acquire the store migration lock")
+	defer func() {
+		_, err := conn.Exec(ctx, `SELECT pg_advisory_unlock($1)`, lockID)
+		require.NoError(t, err)
+	}()
+
 	fn(ctx, conn)
+}
+
+// migrationRunnerLockID resolves the lock on conn's own session, so the schema
+// hashed into it is the one this connection resolves — the same way the runner
+// reads it for itself.
+func migrationRunnerLockID(t *testing.T, ctx context.Context, conn *pgxpool.Conn, connString string) int64 {
+	t.Helper()
+	var schema string
+	require.NoError(t, conn.QueryRow(ctx, `SELECT CURRENT_SCHEMA()`).Scan(&schema))
+	lockID, err := testdb.MigrationRunnerLockID(connString, schema)
+	require.NoError(t, err)
+	return lockID
+}
+
+// Holding the lock is what makes the replay exclusive with a migrating service,
+// so a second session must not be able to take it while the replay runs. Nothing
+// in the replay's own result would reveal a lock it failed to hold.
+func TestMigrationReplayExcludesTheMigrationRunner(t *testing.T) {
+	asMigrationOwner(t, func(ctx context.Context, conn *pgxpool.Conn) {
+		connString, err := codefly.For(ctx).Service("store").Secret("postgres", "owner-connection")
+		require.NoError(t, err)
+		contender, err := pgxpool.New(ctx, connString)
+		require.NoError(t, err)
+		defer contender.Close()
+
+		var acquired bool
+		require.NoError(t, contender.QueryRow(ctx,
+			`SELECT pg_try_advisory_lock($1)`,
+			migrationRunnerLockID(t, ctx, conn, connString)).Scan(&acquired))
+		require.False(t, acquired,
+			"a store instance applying migrations must wait for the replay to finish")
+	})
 }
 
 func mustExec(t *testing.T, ctx context.Context, conn *pgxpool.Conn, sql string, args ...any) {
