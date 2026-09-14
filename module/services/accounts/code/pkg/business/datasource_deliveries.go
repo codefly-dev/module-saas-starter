@@ -285,11 +285,10 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		return "", ErrMalformedDelivery
 	}
 
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return "", datasourceCredentialError(err)
+		return "", err
 	}
-	client := s.newGitHubClient(token)
 
 	branch := source.Branch
 	if branch == "" {
@@ -374,11 +373,10 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if s.datasourceCipher == nil || s.datasourceJobs == nil || s.newGitHubClient == nil {
 		return false, w.NewError("datasource connector is not configured")
 	}
-	token, err := s.datasourceCipher.DecryptSecret(ctx, DatasourceConnectorSecretPurpose(source.ID), source.CredentialSecretRef)
+	client, err := s.githubClientForSource(ctx, source)
 	if err != nil {
-		return false, datasourceCredentialError(err)
+		return false, err
 	}
-	client := s.newGitHubClient(token)
 
 	branch := source.Branch
 	if branch == "" {

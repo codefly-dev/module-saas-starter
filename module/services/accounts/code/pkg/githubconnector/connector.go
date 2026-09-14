@@ -74,19 +74,19 @@ func NewConnector(opts ...Option) *Connector {
 // comfortably valid. This is the entry point SyncSource and webhook re-fetch
 // call.
 func (c *Connector) FetchRepoContents(ctx context.Context, cred AppCredential, owner, repo, path, ref string) (*RepoContent, error) {
-	token, err := c.installationToken(ctx, cred)
+	token, err := c.InstallationToken(ctx, cred)
 	if err != nil {
 		return nil, err
 	}
 	return c.GetRepoContents(ctx, token, owner, repo, path, ref)
 }
 
-// installationToken returns a cached token for the credential's installation,
+// InstallationToken returns a cached token for the credential's installation,
 // minting and caching a fresh one when none is cached or the cached one is
 // within the refresh window of expiry. Minting is de-duplicated per
 // installation: concurrent callers that all miss the cache share a single mint
 // rather than each creating a token (GitHub rate-limits token creation).
-func (c *Connector) installationToken(ctx context.Context, cred AppCredential) (string, error) {
+func (c *Connector) InstallationToken(ctx context.Context, cred AppCredential) (string, error) {
 	key := cred.cacheKey()
 
 	if token, ok := c.cachedToken(key); ok {

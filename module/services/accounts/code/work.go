@@ -258,12 +258,20 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetMFASecretCipher(vaultClient)
 	service.SetOrgIdentityProviderCipher(vaultClient)
 	service.SetConnectorCipher(vaultClient)
-	service.SetGitHubConnector(githubconnector.NewConnector())
+	service.SetGitHubConnector(githubconnector.NewConnector(
+		githubconnector.WithBaseURL(os.Getenv("GITHUB_API_BASE_URL"))))
 	// Datasource connector (issue #274): per-source credentials are Vault-transit
 	// encrypted, and pulled files are enqueued onto the durable inbox seam the
 	// documents module consumes. GITHUB_API_BASE_URL overrides api.github.com for
 	// GitHub Enterprise or tests.
 	service.SetDatasourceConnector(vaultClient, jobStore, os.Getenv("GITHUB_API_BASE_URL"))
+	// The App registration is deployment custody: the signing key is read here
+	// and never copied onto a source record. Unset leaves sources on their own
+	// stored fine-grained PAT.
+	service.SetGitHubAppRegistration(
+		workspaceEnv("github-app", "GITHUB_APP_ID"),
+		workspaceEnv("github-app", "GITHUB_APP_PRIVATE_KEY"),
+	)
 	webhookPolicy := business.NewWebhookEndpointPolicy()
 	service.SetWebhookSecurity(vaultClient, webhookPolicy)
 	webAuthnRPID, webAuthnDisplayName, webAuthnOrigins, err := configuredWebAuthn()
