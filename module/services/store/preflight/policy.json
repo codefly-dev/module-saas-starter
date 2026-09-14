@@ -1,0 +1,94 @@
+{
+  "contract_version": "codefly.dev/postgres-empty-baseline-policy/v1",
+  "observation_contract": "codefly.dev/accounts-migration-observation/v1",
+  "database": "saas",
+  "schema": "public",
+  "runtime_identities": {
+    "reader": "accounts-reader",
+    "writer": "accounts-writer"
+  },
+  "application_roles": [
+    "app_tenant",
+    "app_control_plane",
+    "app_billing_worker",
+    "app_webhook_worker",
+    "app_job_worker"
+  ],
+  "collision_types": [
+    "platform_role",
+    "user_status"
+  ],
+  "extensions": [
+    "btree_gist",
+    "ltree",
+    "uuid-ossp"
+  ],
+  "ledger": {
+    "name": "schema_migrations",
+    "version_column": "version",
+    "version_type": "int8",
+    "dirty_column": "dirty",
+    "dirty_type": "bool"
+  },
+  "min_server_version": 160000,
+  "migrator": {
+    "required_true": [
+      "login",
+      "create_role",
+      "database_owner_usable",
+      "schema_owner_usable",
+      "schema_usage",
+      "schema_create",
+      "database_create"
+    ],
+    "forbidden_true": [
+      "superuser",
+      "bypass_rls",
+      "replication",
+      "elevated_membership"
+    ]
+  },
+  "external_login": {
+    "required_true": [
+      "login"
+    ],
+    "forbidden_true": [
+      "superuser",
+      "bypass_rls",
+      "create_role",
+      "create_db",
+      "replication",
+      "owner_membership",
+      "elevated_membership"
+    ]
+  },
+  "managed_group": {
+    "required_true": [
+      "can_admin"
+    ],
+    "forbidden_true": [
+      "superuser",
+      "bypass_rls",
+      "create_role",
+      "create_db",
+      "replication",
+      "owner_membership",
+      "elevated_membership",
+      "login",
+      "inherit"
+    ]
+  },
+  "membership": {
+    "runtime": {
+      "inherit": true,
+      "set": true,
+      "admin": false
+    },
+    "creator": {
+      "inherit": false,
+      "set": true,
+      "admin": true
+    },
+    "new_login_inherit": true
+  }
+}

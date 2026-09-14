@@ -1,0 +1,9 @@
+{
+  "contract_version": "codefly.dev/postgres-preflight-package/v1",
+  "name": "accounts-empty-baseline",
+  "version": "1.0.0",
+  "files": {
+    "policy.json": "7265d502fab534aa929dfe240f1133b0fc850c08f67597e3bfe7ca5fbec30c19",
+    "observe.sql": "b7f50a41f0782c34c1452b4e6b5e2df368224bcbbb10ada7588e4af4af02b737"
+  }
+}
