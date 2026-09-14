@@ -43,6 +43,7 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Access-token signing-key rotation runbook: `module/KEY_ROTATION.md`
 - Generated REST inventory: `module/services/accounts/generated/rest-surface.json`
 - REST/OpenAPI contract and extension boundary: `module/REST_SURFACE.md`
+- Resource follow subscriptions over events and notifications: `module/FOLLOWS.md`
 
 ## Architecture
 

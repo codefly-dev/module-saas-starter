@@ -375,6 +375,7 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Resend delivery events | ✅    | Exact-body Svix verification, stale/tamper rejection, durable `svix-id` dedup, PII-minimized history, monotonic invitation projection |
 | User notification prefs| 🟡    | Optional in-app and product/marketing/digest email policy is enforced; per-workflow overrides and unsubscribe are not yet available |
 | Outbound webhooks      | ✅    | Generated transactional outbox, Vault keys, SSRF-safe exact-body signing, generic fenced retries/dead letters, replay |
+| Resource follows       | ❌    | Contract defined in `module/FOLLOWS.md`; no follow relation, event→inbox bridge, or read-time visibility recheck is built |
 | Push notifications     | ❌    | No web/mobile push implementation or user-facing control            |
 | SMS notifications      | ❌    | No SMS provider                                                     |
 | Slack / Teams hooks    | 🟡    | Internal Slack notifier (errors/health); not customer-facing        |

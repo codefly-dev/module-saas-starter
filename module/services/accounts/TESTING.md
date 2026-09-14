@@ -78,6 +78,15 @@ plus the normal container/agent prerequisites. That source commit is not a newer
 published CLI release. Pure tests, standalone compilation and native database
 qualifications do not claim that the full dependency graph booted.
 
+On 2026-09-14, that exact CLI source was built locally with Go 1.27.0 on
+darwin/arm64 using `go build -mod=readonly -ldflags='-s -w' ./cmd/codefly`.
+Its embedded build information confirmed Core 0.3.29 and an unmodified source
+tree. The real-server tests `TestServerSupportsCoreIsolatedSession`,
+`TestSessionEnvironmentCannotFallBackToTCP` and
+`TestIsolatedSessionDoesNotUnlinkForeignSocket` all passed in `./pkg/web`.
+This verifies the local Unix-socket session prerequisite only: it is neither an
+official CLI release nor proof that the full Accounts dependency graph boots.
+
 ## Planner handoff
 
 [`test-targets.json`](./test-targets.json) is a versioned repository catalog of

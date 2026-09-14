@@ -58,6 +58,7 @@ above the [Transport port](#transport-port) changes.
 | **Command / job** | Work one specific consumer must perform (today's inbox/outbox). Not fanned out. Unchanged by this contract. |
 | **Audit record** | The compliance trail of an action ([the typed audit registry](./docs/adr/0003-typed-audit-event-registry.md)). An event *may* reference an audit id; the audit spine is never a delivery channel. |
 | **Subscription** | A durable declaration that consumer `C` receives events matching a topic pattern on queue `Q`. |
+| **Resource follow** | A *person's* durable intent to be notified about one resource instance ([FOLLOWS.md](./FOLLOWS.md)). Not a subscription: this row routes a service principal to a queue, and a person holds no queue grant. |
 | **Transport** | The mechanism that stores and delivers envelopes. The Postgres outbox today; a broker later, behind the same port. |
 | **Partition key** | The ordering domain of an event stream, e.g. `tenant/source`. FIFO is guaranteed only within one partition. |
 

@@ -1,14 +1,15 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2478,
+  "fileCount": 2479,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
     "CONTRACT_VERSIONING.md": "9663fcdd6753b5823959d3280e71a30dff1708e728c92f4a74e3d377fe7aa331",
     "DATABASE_AUTHORITY.md": "092bccc0a07564872e718e9704133b9c79252591a67bb5c3fea5535eaa282056",
     "DEPLOYMENT_TOPOLOGY.md": "84f6c6e24f25bb7e87b37212d29c955c78054c02734aef2f8d82f2a2a86a4a8a",
-    "EVENTS.md": "ff9f1fae0418beb3c42628c312bdac3b24b084a84a503b9f8eb8dbc4e2744412",
-    "FEATURES.md": "62c8dd3ddd5aa02d4673d273fc02ab54f42d1acf214caa57e6819f10d0d9f8c2",
+    "EVENTS.md": "d13d01de4408cd83849912ed69ef96258b798466d79c8e706cfd1aaffe9ce16e",
+    "FEATURES.md": "79f6ad1b13fcb0d1e8722fc7497fc1c2d302764c6d23fbbddf6f4f27afb4d395",
+    "FOLLOWS.md": "382269036a057445a255491669f6b776b4035738c1cde807425be4107768440f",
     "FRONTEND_CATALOG.md": "f744d2bd9ede3996b3da7ef5ae9ddb5cd5b0d3894475eb3c53bf89e1ad501768",
     "FRONTEND_PLUGINS.md": "3f3b9a764d2d076e6c3ee311fb82e0428cfedd62e58edc1eb6f81be9071e83d5",
     "GATEWAY_ROUTES.md": "8783146f60b53956ff8ec6ccbd496cf351aa9524abcb7fec6030f0cc95718ba8",
