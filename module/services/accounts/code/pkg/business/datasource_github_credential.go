@@ -74,14 +74,26 @@ func parseGitHubStoredCredential(plaintext string) githubStoredCredential {
 
 // SetGitHubAppRegistration wires the deployment's GitHub App: the id it is
 // registered under, the RSA private key its installation tokens are signed
-// with, and the secret GitHub signs the App's own lifecycle deliveries with.
-// All three are operator-managed deployment configuration, held once here
-// rather than copied onto each source, and never leave accounts. An empty
-// registration leaves every source on its own stored PAT.
-func (s *Service) SetGitHubAppRegistration(appID, privateKeyPEM, webhookSecret string) {
+// with, the URL slug its install link is built from, and the secret GitHub
+// signs the App's own lifecycle deliveries with. All four are operator-managed
+// deployment configuration, held once here rather than copied onto each source,
+// and never leave accounts. An empty registration leaves every source on its
+// own stored PAT.
+func (s *Service) SetGitHubAppRegistration(appID, privateKeyPEM, slug, webhookSecret string) {
 	s.githubAppID = strings.TrimSpace(appID)
 	s.githubAppKeyPEM = strings.TrimSpace(privateKeyPEM)
+	s.githubAppSlug = strings.TrimSpace(slug)
 	s.githubAppWebhookSecret = strings.TrimSpace(webhookSecret)
+}
+
+// SetGitHubAppOAuth wires the App's OAuth client, which tenant onboarding uses
+// to identify the person returning from an install. It is deliberately separate
+// from the signing registration above: that credential acts as the App, this one
+// acts as a user, and only the latter can attribute an installation to a caller.
+// An empty pair leaves App onboarding off.
+func (s *Service) SetGitHubAppOAuth(clientID, clientSecret string) {
+	s.githubAppClientID = strings.TrimSpace(clientID)
+	s.githubAppClientSecret = strings.TrimSpace(clientSecret)
 }
 
 // GitHubAppConfigured reports whether this deployment can mint installation

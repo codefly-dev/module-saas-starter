@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:cfbeae06d38b539bec69ba20bfb87731846773003bd3ac47bd9934b656a0134b",
+      "digest": "sha256:097deab484841beca450c0bda087468ff8a3e912c80759d76534d0361d7f05ab",
       "services": [
         {
           "name": "APIKeyService",
@@ -90,10 +90,13 @@
           "procedures": [
             "/saas.accounts.v1.DatasourceService/AddGitHubSource",
             "/saas.accounts.v1.DatasourceService/AddSource",
+            "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup",
+            "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
             "/saas.accounts.v1.DatasourceService/DeleteSource",
             "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog",
             "/saas.accounts.v1.DatasourceService/GetSource",
             "/saas.accounts.v1.DatasourceService/ListSources",
+            "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
             "/saas.accounts.v1.DatasourceService/SyncSource"
           ]
         },
