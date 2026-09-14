@@ -20,7 +20,7 @@
 -- source-read revision trigger's UPDATE OF list (migration 138): rebinding an
 -- installation changes no readable-source attribute a consumer's cursor tracks.
 
-ALTER TABLE datasource_sources
+ALTER TABLE public.datasource_sources
     ADD COLUMN github_installation_id TEXT;
 
 -- Partial: only App-backed sources carry a binding, and the lookup is always
