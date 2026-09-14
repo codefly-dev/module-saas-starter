@@ -116,6 +116,7 @@ means concretely:
 | --- | --- | --- | --- | --- |
 | No **text** file in the repository names a real customer, partner, employer, or downstream consumer | AGENTS.md § Naming and confidentiality | `node module/tools/naming-gate.mjs check` scans every file's contents *and* its path, holding its forbidden terms as digests rather than literals; `naming-gate.test.mjs` covers the matcher and asserts the shipped tree is clean. Both run in the `base-integrity` job | **implemented** | #569 |
 | One checked-in **binary** descriptor still carries such a name | `packages/saas-sdk/generated/contract/contract.binpb` | **none — outside the gate's reach.** A compiled descriptor embeds its protos' comments, and the gate skips binaries, so nothing detects this | known drift, filed | #585 |
+| No pull request **title**, **body**, or **commit message** merged after #707 names a real customer, partner, employer, or downstream consumer | AGENTS.md § Naming and confidentiality | `node module/tools/naming-gate.mjs records <base>` runs the same digests through the same matcher over all three and fails the pull request; `naming-gate.test.mjs` covers it, including that the report names the matching mode and never the term. Runs in the `base-integrity` job on `pull_request` and `merge_group` | **implemented** | #707 |
 | No commit **added by a pull request** publishes an author or committer email outside GitHub's no-reply domains | AGENTS.md § Naming and confidentiality | `node module/tools/commit-identity-gate.mjs check <base>` allowlists `<id>+<login>@users.noreply.github.com` and `noreply@github.com` over both fields of every commit in the range; `commit-identity-gate.test.mjs` covers the matcher and asserts the rejected address never reaches the report. Runs in the `base-integrity` job on `pull_request`, from the *current* base tip to the head sha — never from `base.sha`, which is fixed at the last push and would drag already-published commits into the range once the base moves | **implemented** | #708 |
 | As of 2026-09-14, 506 of the 865 commits already on `main` carried a consumer domain in their author or committer email — a measurement taken then, not a running total | this repository's git history (and `cli`, `core`, `solution-runtime-go` likewise) | **none, and none possible without a history rewrite.** Both fields are part of the commit object, so changing one rewrites every descendant hash — breaking every clone, fork and open pull request — and GitHub serves the original objects until a Support request collects them. Rewriting is a disclosure decision weighed against that blast radius, and is **deliberately not taken**; the row above stops the count growing | accepted exposure, filed | #708 |
 
@@ -125,7 +126,10 @@ means concretely:
 
   Three limits on what the first row establishes, none of them closed here.
   It scans the working tree, so it does not un-publish the names already in
-  this repository's git history or in its public issues. And it reads text: the
+  this repository's git history or in its public issues — #707 later added the
+  prevention half for new records (the third row below), but what is already
+  published stays published, which is why that row is scoped to records written
+  after it. And it reads text: the
   accounts descriptor was regenerated with this change so that it matches its
   scrubbed proto, but the saas-sdk copy cannot be — `codefly generate client`
   refuses without `--force`, which also bumps the SDK toolchain, so it is
