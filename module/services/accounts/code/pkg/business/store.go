@@ -497,6 +497,10 @@ type Store interface {
 	CreateNotification(ctx context.Context, n *Notification) error
 	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error)
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
+	// ListUnreadResourceReferences groups the user's unread follow items by the
+	// resource they refer to, so the caller can recheck visibility per resource
+	// and discount what is no longer readable. Run under WithUserTx.
+	ListUnreadResourceReferences(ctx context.Context, userID string) ([]UnreadResourceReference, error)
 	MarkNotificationRead(ctx context.Context, id string) error
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	DeleteNotification(ctx context.Context, id string) error
