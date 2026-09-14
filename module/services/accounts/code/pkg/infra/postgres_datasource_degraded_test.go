@@ -16,10 +16,11 @@ import (
 // degraded with a reason, and an active source carries none.
 //
 // The business-layer coverage of recovery runs against a fake store that
-// hand-mirrors this SQL, so it cannot see the SQL change. Drop `status_reason =
-// ''` from the real revive statement and that test stays green while every
-// recovered source keeps projecting its stale degrade reason — to every
-// organization member, since ListSources and GetSource are ORG_MEMBER reads.
+// hand-mirrors this SQL, so it cannot see the SQL change. Remove the
+// status_reason reset from the real revive statement and that test stays green
+// while every recovered source keeps projecting its stale degrade reason — to
+// every organization member, since ListSources and GetSource are ORG_MEMBER
+// reads.
 func TestPostgresDatasourceDegradeRoundTripClearsTheStoredReason(t *testing.T) {
 	owner := seedUser(t)
 	org := seedOrg(t, owner)
