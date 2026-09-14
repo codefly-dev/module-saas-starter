@@ -5,6 +5,7 @@ package executioncustody
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"io"
@@ -70,20 +71,50 @@ type Error struct {
 
 func (e *Error) Error() string { return "execution custody: " + e.Code }
 
+// HTTPStatus is the v1 broker status for this code, or zero for an unknown code.
+func (e *Error) HTTPStatus() int {
+	switch e.Code {
+	case "InvalidArgument":
+		return http.StatusBadRequest
+	case "Unauthenticated":
+		return http.StatusUnauthorized
+	case "PermissionDenied":
+		return http.StatusForbidden
+	case "NotFound":
+		return http.StatusNotFound
+	case "AlreadyExists":
+		return http.StatusConflict
+	case "FailedPrecondition":
+		return http.StatusPreconditionFailed
+	case "Unavailable":
+		return http.StatusServiceUnavailable
+	default:
+		return 0
+	}
+}
+
 // Client never retries a command or follows a redirect carrying credentials.
 // For worker exchange Transport must present the configured client certificate.
 type Client struct {
-	endpoint string
-	http     *http.Client
+	endpoint  string
+	http      *http.Client
+	transport *http.Transport
 }
 
 func NewClient(endpoint string, transport *http.Transport) (*Client, error) {
 	u, err := url.Parse(endpoint)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || transport == nil || transport.TLSClientConfig == nil || transport.TLSClientConfig.InsecureSkipVerify {
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Path != "" || transport == nil || transport.Proxy != nil || transport.TLSClientConfig == nil || transport.DialTLS != nil || transport.DialTLSContext != nil || len(transport.TLSNextProto) != 0 {
 		return nil, errors.New("verified HTTPS broker transport required")
 	}
-	return &Client{endpoint: endpoint, http: &http.Client{Transport: transport.Clone(), Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	t := transport.TLSClientConfig
+	if t.InsecureSkipVerify || t.MinVersion < tls.VersionTLS13 || t.VerifyConnection != nil || t.VerifyPeerCertificate != nil || (t.MaxVersion != 0 && t.MaxVersion < t.MinVersion) {
+		return nil, errors.New("verified TLS 1.3 broker transport required")
+	}
+	tr := transport.Clone()
+	return &Client{endpoint: endpoint, transport: tr, http: &http.Client{Transport: tr, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
+
+func (c *Client) Close() { c.transport.CloseIdleConnections() }
 func (c *Client) Register(ctx context.Context, accessToken string, in RegisterRequest) (Registration, error) {
 	var out Registration
 	err := c.call(ctx, RegisterPath, accessToken, in, &out)
@@ -120,18 +151,36 @@ func (c *Client) call(ctx context.Context, path, token string, in, out any) erro
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		var failure Error
-		if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&failure) != nil || failure.Code == "" {
+		if decode(resp.Body, 4096, &failure) != nil {
 			return &Error{Code: "Unavailable"}
 		}
-		switch failure.Code {
-		case "InvalidArgument", "Unauthenticated", "PermissionDenied", "NotFound", "AlreadyExists", "FailedPrecondition", "Unavailable":
-			return &failure
-		default:
+		if failure.HTTPStatus() != resp.StatusCode {
 			return &Error{Code: "Unavailable"}
 		}
+		return &failure
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 128<<10)).Decode(out) != nil {
+	if decode(resp.Body, 128<<10, out) != nil {
 		return &Error{Code: "Unavailable"}
+	}
+	return nil
+}
+
+func decode(body io.Reader, limit int64, out any) error {
+	raw, err := io.ReadAll(io.LimitReader(body, limit+1))
+	if err != nil || int64(len(raw)) > limit {
+		return errors.New("bounded v1 response required")
+	}
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '{' {
+		return errors.New("v1 response object required")
+	}
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if err := d.Decode(out); err != nil {
+		return err
+	}
+	var extra any
+	if d.Decode(&extra) != io.EOF {
+		return errors.New("complete v1 response required")
 	}
 	return nil
 }

@@ -12,7 +12,7 @@ import (
 
 func TestTokenFileBeforeConnectUnsetKeepsEmbeddedPassword(t *testing.T) {
 	t.Setenv(databaseTokenFileEnv, "")
-	require.Nil(t, tokenFileBeforeConnect(),
+	require.Nil(t, accessTokenBeforeConnect(tokenFileAccessTokenProvider()),
 		"no token file configured must leave the URL-embedded password in force")
 }
 
@@ -21,7 +21,7 @@ func TestTokenFileBeforeConnectRereadsTokenPerConnection(t *testing.T) {
 	require.NoError(t, os.WriteFile(tokenPath, []byte("  first-token\n"), 0o600))
 	t.Setenv(databaseTokenFileEnv, tokenPath)
 
-	hook := tokenFileBeforeConnect()
+	hook := accessTokenBeforeConnect(tokenFileAccessTokenProvider())
 	require.NotNil(t, hook)
 
 	connConfig, err := pgx.ParseConfig("postgresql://app:stale-embedded@localhost:5432/db?sslmode=disable")
@@ -46,7 +46,7 @@ func TestTokenFileBeforeConnectEmptyFileFailsLoud(t *testing.T) {
 	connConfig, err := pgx.ParseConfig("postgresql://app@localhost:5432/db?sslmode=disable")
 	require.NoError(t, err)
 
-	err = tokenFileBeforeConnect()(context.Background(), connConfig)
+	err = accessTokenBeforeConnect(tokenFileAccessTokenProvider())(context.Background(), connConfig)
 	require.ErrorContains(t, err, "empty")
 }
 
@@ -57,7 +57,7 @@ func TestTokenFileBeforeConnectMissingFileFailsLoud(t *testing.T) {
 	connConfig, err := pgx.ParseConfig("postgresql://app@localhost:5432/db?sslmode=disable")
 	require.NoError(t, err)
 
-	err = tokenFileBeforeConnect()(context.Background(), connConfig)
+	err = accessTokenBeforeConnect(tokenFileAccessTokenProvider())(context.Background(), connConfig)
 	require.Error(t, err)
 }
 
@@ -69,7 +69,7 @@ func TestTokenFileBeforeConnectRejectsOversizedFile(t *testing.T) {
 	connConfig, err := pgx.ParseConfig("postgresql://app@localhost:5432/db?sslmode=disable")
 	require.NoError(t, err)
 
-	err = tokenFileBeforeConnect()(context.Background(), connConfig)
+	err = accessTokenBeforeConnect(tokenFileAccessTokenProvider())(context.Background(), connConfig)
 	require.ErrorContains(t, err, "exceeds")
 }
 
@@ -84,20 +84,18 @@ func TestTokenFileBeforeConnectHonorsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err = tokenFileBeforeConnect()(ctx, connConfig)
+	err = accessTokenBeforeConnect(tokenFileAccessTokenProvider())(ctx, connConfig)
 	require.ErrorIs(t, err, context.Canceled,
 		"a cancelled connection attempt must not block on the token read")
 	require.Equal(t, "embedded", connConfig.Password,
 		"a cancelled read must not partially apply a password")
 }
 
-// configureConnection is the single seam that attaches the rotation hook to
-// every pool; assert the wiring itself, since the hook's own behavior is covered
-// above but a dropped assignment would silently disable rotation.
+// The legacy pool retains its pgx hook; request pools use the shared provider.
 func TestConfigureConnectionWiresHookWhenConfigured(t *testing.T) {
 	t.Setenv(databaseTokenFileEnv, filepath.Join(t.TempDir(), "token"))
 
-	config, err := configureConnection("postgresql://app:pw@localhost:5432/db?sslmode=disable", tokenFileBeforeConnect())
+	config, err := configureConnection("postgresql://app:pw@localhost:5432/db?sslmode=disable", accessTokenBeforeConnect(tokenFileAccessTokenProvider()))
 	require.NoError(t, err)
 	require.NotNil(t, config.BeforeConnect,
 		"a configured token file must reach the pool as a BeforeConnect hook")
@@ -106,7 +104,7 @@ func TestConfigureConnectionWiresHookWhenConfigured(t *testing.T) {
 func TestConfigureConnectionHasNoHookWhenUnset(t *testing.T) {
 	t.Setenv(databaseTokenFileEnv, "")
 
-	config, err := configureConnection("postgresql://app:pw@localhost:5432/db?sslmode=disable", tokenFileBeforeConnect())
+	config, err := configureConnection("postgresql://app:pw@localhost:5432/db?sslmode=disable", accessTokenBeforeConnect(tokenFileAccessTokenProvider()))
 	require.NoError(t, err)
 	require.Nil(t, config.BeforeConnect,
 		"local password mode must leave the pool without a connection hook")
@@ -121,4 +119,36 @@ func TestOpenScopedBoundaryRejectsNilContext(t *testing.T) {
 	var nilCtx context.Context
 	_, _, err := openScopedBoundary(nilCtx, "read-only", "read-write", nil)
 	require.ErrorContains(t, err, "context is required")
+}
+
+func TestOpenScopedBoundaryRejectsMissingAndSharedCapabilities(t *testing.T) {
+	clearDatabaseEnvironment(t)
+	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "")
+	_, _, err := openScopedBoundary(context.Background(), "", "", nil)
+	require.ErrorContains(t, err, "connections are required")
+	connection := "postgresql://same@localhost/database?sslmode=disable"
+	_, _, err = openScopedBoundary(context.Background(), connection, connection, nil)
+	require.ErrorContains(t, err, "distinct database roles")
+}
+
+func TestTokenFileAccessTokenProviderRetainsOneProjectedCredential(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "token")
+	t.Setenv(databaseTokenFileEnv, path)
+	provider := tokenFileAccessTokenProvider()
+	require.NotNil(t, provider)
+	require.NoError(t, os.WriteFile(path, []byte("first"), 0o600))
+	token, err := provider(context.Background(), "reader")
+	require.NoError(t, err)
+	require.Equal(t, "first", token)
+	require.NoError(t, os.WriteFile(path, []byte("second"), 0o600))
+	token, err = provider(context.Background(), "writer")
+	require.NoError(t, err)
+	require.Equal(t, "second", token)
+}
+
+func TestOpenScopedBoundaryRetainsProxySeparation(t *testing.T) {
+	clearDatabaseEnvironment(t)
+	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "local-identity-proxy")
+	_, _, err := openScopedBoundary(context.Background(), proxyURL(), proxyURL(), nil)
+	require.ErrorContains(t, err, "distinct private identity sockets")
 }

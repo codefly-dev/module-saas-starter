@@ -60,6 +60,8 @@ github.com/cloudflare/circl v1.6.3 h1:9GPOhQGF9MCYUeXyMYlqTR6a5gTrgR/fBLXvUgtVcg
 github.com/cloudflare/circl v1.6.3/go.mod h1:2eXP6Qfat4O/Yhh8BznvKnJ+uzEoTQ6jVKJRn81BiS4=
 github.com/codefly-dev/core v0.3.14 h1:tAScbs8CKkNy0hA2FihV0NADINRmFbI6a2PbHsnnGrY=
 github.com/codefly-dev/core v0.3.14/go.mod h1:4V8BP4F5mnRDZvylhC9P5N7rfifpAma5n3dW4YD+gtQ=
+github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go v0.0.0-20260914153942-bc4855310859 h1:frxgg7GFjcaGQIy+GGG+Dq07rFRzMz4fHB9qkAENbzU=
+github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go v0.0.0-20260914153942-bc4855310859/go.mod h1:4hG5k/KOc249N2KphBE4aRgOI+DlTP7CP+ST6OiAwyc=
 github.com/codefly-dev/sdk-go v0.1.65 h1:/AKs/XzaVW5P5VAPXSi8ZOUZHMP3N5bUq92DN6/Y2RM=
 github.com/codefly-dev/sdk-go v0.1.65/go.mod h1:IBVdaC5quw571pOELRCqZdhh6Y6pO5WE2F+jFG0EUEA=
 github.com/codefly-dev/service-postgres v0.0.129 h1:g9HEW8NBB4XWrtaHU2/HZmARwwbBNuaZBJ1raGgQyg0=
