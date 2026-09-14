@@ -52,12 +52,13 @@
 version: 2
 
 updates:
-  # The repository-root tooling module and the published source-read SDK. The
+  # The repository-root tooling module and the published SDKs. The
   # five modules under module/ are base files; see rule 1.
   - package-ecosystem: gomod
     directories:
       - /
       - /libraries/source-read-sdk/go
+      - /libraries/execution-custody-sdk/go
     schedule:
       interval: weekly
     open-pull-requests-limit: 1
