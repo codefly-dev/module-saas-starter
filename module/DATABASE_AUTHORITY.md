@@ -27,6 +27,28 @@ upgrade path: migration 136 does not claim to revoke existing BYPASSRLS role
 attributes. Fresh and upgrade packages use the same normal migration ledger;
 profile selection is explicit and bound to the reviewed source hashes.
 
+## Request connection ownership
+
+The authenticated request boundary uses the published service-postgres `Open`
+constructor. That primitive owns the separate reader/writer pools, startup pings,
+failure cleanup and repeated-close safety. Accounts supplies its verified identity
+adapter and transaction-local `app.current_org_id` / `app.current_user_id` settings.
+Its current request adapter issues Readers only; authentication alone does not
+grant a Writer.
+
+When `POSTGRES_TOKEN_FILE` is configured, `WithAccessTokenProvider` rereads that
+bounded projected file for every new physical connection. The intentionally
+separate legacy/control-plane pool adapts the same provider into its existing pgx
+hook and retains explicit `app_tenant` / `app_control_plane` role selection. An
+unset file preserves local URL credentials. Token projection and its atomic
+replacement remain deployment responsibilities.
+
+Accounts still validates its explicit verified-TLS/private-proxy transport policy
+before construction, including distinct reader/writer proxy sockets. Shared
+transport-policy parsing is a separate primitive extension; adopting the shared
+pool constructor does not change connection-policy acceptance or grant new
+control-plane authority.
+
 ## Roles
 
 | Role | Login | RLS bypass | Intended authority |

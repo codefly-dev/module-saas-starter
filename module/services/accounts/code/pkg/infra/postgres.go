@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"accounts/pkg/auth"
@@ -39,8 +38,8 @@ type PostgresStore struct {
 }
 
 // beforeConnectHook resolves a fresh password for every pool connection attempt.
-// It is the pgxpool.Config.BeforeConnect signature, aliased so one hook wires
-// identically into the legacy pool and the reader/writer capability pools.
+// Legacy/control-plane pools use this pgx hook; request capability pools use
+// service-postgres WithAccessTokenProvider and keep their pools private.
 type beforeConnectHook = func(context.Context, *pgx.ConnConfig) error
 
 const scopedBoundaryOperationTimeout = 5 * time.Second
@@ -65,19 +64,16 @@ func NewPostgresStore(ctx context.Context) (*PostgresStore, error) {
 func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, readWriteConnection string) (*PostgresStore, error) {
 	w := wool.Get(ctx).In("NewPostgresStoreWithCapabilities")
 
-	// One token-resolution path for every pool. In external-identity mode the
-	// database password is a rotating token; the reader, writer, and legacy
-	// pools all attach this same hook so a reconnect after token expiry presents
-	// a current one. nil in local password mode — every pool keeps the password
-	// embedded in its connection URL.
-	hook := tokenFileBeforeConnect()
+	// Both boundaries resolve the same rotating file on every physical connection.
+	// A nil provider preserves local passwords embedded in the capability URLs.
+	provider := tokenFileAccessTokenProvider()
 
-	database, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, hook)
+	database, closeDatabase, err := openScopedBoundary(ctx, readOnlyConnection, readWriteConnection, provider)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to open authenticated Postgres boundary")
 	}
 
-	legacyConfig, err := configureConnection(readWriteConnection, hook)
+	legacyConfig, err := configureConnection(readWriteConnection, accessTokenBeforeConnect(provider))
 	if err != nil {
 		closeDatabase()
 		return nil, w.Wrapf(err, "failed to parse read-write connection string")
@@ -96,95 +92,43 @@ func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, r
 	return store, nil
 }
 
-// openScopedBoundary builds the authenticated reader/writer capability boundary.
-// It mirrors service-postgres's Open — distinct non-owner reader/writer roles,
-// startup ping, single-shot closer — but attaches the token-rotation
-// BeforeConnect hook to both capability pools, which Open (v0.0.107) cannot do:
-// its pools are built internally and it exposes no connection hook. Without this
-// the RLS read/write path would keep authenticating with the token captured at
-// startup and fail once it expired. Revert to scopedpostgres.Open once the
-// library accepts a BeforeConnect (service-postgres#55).
-func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string, hook beforeConnectHook) (*scopedpostgres.Factory, func(), error) {
+// openScopedBoundary validates this module's transport policy, then delegates
+// request-pool ownership, startup checks and credential rotation to service-postgres.
+func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string, provider scopedpostgres.AccessTokenProvider) (*scopedpostgres.Factory, func(), error) {
 	if ctx == nil {
 		return nil, nil, errors.New("scoped Postgres context is required")
 	}
 	if strings.TrimSpace(readOnlyConnection) == "" || strings.TrimSpace(readWriteConnection) == "" {
 		return nil, nil, errors.New("distinct read-only and read-write Postgres connections are required")
 	}
-	ctx, cancel := context.WithTimeout(ctx, scopedBoundaryOperationTimeout)
-	defer cancel()
-
-	readerConfig, err := configureConnection(readOnlyConnection, hook)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse read-only Postgres capability: %w", err)
-	}
-	writerConfig, err := configureConnection(readWriteConnection, hook)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse read-write Postgres capability: %w", err)
-	}
 	profile, err := DatabaseTransportProfile()
 	if err != nil {
 		return nil, nil, err
 	}
+	readerConfig, err := parseDatabaseTransport(readOnlyConnection, profile, provider != nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse read-only Postgres capability: %w", err)
+	}
+	writerConfig, err := parseDatabaseTransport(readWriteConnection, profile, provider != nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse read-write Postgres capability: %w", err)
+	}
 	if profile == "local-identity-proxy" && readerConfig.ConnConfig.Host == writerConfig.ConnConfig.Host {
 		return nil, nil, errors.New("reader and writer require distinct private identity sockets")
 	}
-	// Distinct non-owner reader/writer roles are the physical separation the RLS
-	// boundary depends on; keep the check service-postgres's Open enforced.
-	readerUser := strings.TrimSpace(readerConfig.ConnConfig.User)
-	writerUser := strings.TrimSpace(writerConfig.ConnConfig.User)
-	if readerUser == "" || writerUser == "" || readerUser == writerUser {
-		return nil, nil, errors.New("read-only and read-write Postgres capabilities must use distinct database roles")
-	}
-
-	readerPool, err := openCapabilityPool(ctx, "read-only", readerConfig)
-	if err != nil {
-		return nil, nil, err
-	}
-	writerPool, err := openCapabilityPool(ctx, "read-write", writerConfig)
-	if err != nil {
-		readerPool.Close()
-		return nil, nil, err
-	}
-	closePools := func() {
-		readerPool.Close()
-		writerPool.Close()
-	}
-	factory, err := scopedpostgres.NewFactory(
-		readerPool,
-		writerPool,
-		postgresAuthenticator{},
+	options := []scopedpostgres.Option{
 		scopedpostgres.WithScopeSettings("app.current_org_id", "app.current_user_id"),
 		scopedpostgres.WithOperationTimeout(scopedBoundaryOperationTimeout),
-	)
-	if err != nil {
-		closePools()
-		return nil, nil, err
 	}
-	var once sync.Once
-	return factory, func() { once.Do(closePools) }, nil
-}
-
-// openCapabilityPool opens one capability pool and fails fast if it cannot reach
-// Postgres, so a bad credential or unreachable server surfaces at startup rather
-// than on the first query. The caller owns closing every pool opened before a
-// later one fails.
-func openCapabilityPool(ctx context.Context, label string, config *pgxpool.Config) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("open %s Postgres capability: %w", label, err)
+	if provider != nil {
+		options = append(options, scopedpostgres.WithAccessTokenProvider(provider))
 	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("ping %s Postgres capability: %w", label, err)
-	}
-	return pool, nil
+	return scopedpostgres.Open(ctx, readOnlyConnection, readWriteConnection, postgresAuthenticator{}, options...)
 }
 
 // configureConnection parses a Codefly connection secret into a pool config and
-// attaches the token-rotation hook. It is the single place a pool's password
-// source is wired, so every pool — legacy, reader, writer — resolves the token
-// identically. A nil hook leaves the URL-embedded password in force.
+// attaches credential rotation to the legacy/control-plane pool. Request pools
+// use service-postgres Open. A nil hook preserves the URL-embedded password.
 func configureConnection(connectionURL string, hook beforeConnectHook) (*pgxpool.Config, error) {
 	if strings.TrimSpace(connectionURL) == "" {
 		return nil, errors.New("postgres connection URL is required")
@@ -295,20 +239,28 @@ const databaseTokenFileEnv = "POSTGRES_TOKEN_FILE"
 // without bound on every connection attempt.
 const maxDatabaseTokenBytes = 64 << 10
 
-// tokenFileBeforeConnect returns a pgx BeforeConnect hook that re-reads the
-// rotating token file for every connection attempt, so a pool reconnect after
-// the previous token expired presents a current one instead of the stale
-// password captured when the pool was built. It returns nil when no token file
-// is configured, leaving the password embedded in the connection URL in force —
-// local password mode and external-identity mode share this single path, gated
-// only by the environment.
-func tokenFileBeforeConnect() beforeConnectHook {
+// tokenFileAccessTokenProvider rereads the projected file for each new physical
+// connection. This deployment contract supplies one rotating credential for its
+// database login principals; no token is cached in Accounts. Unset preserves
+// the local password connection URLs.
+func tokenFileAccessTokenProvider() scopedpostgres.AccessTokenProvider {
 	path := strings.TrimSpace(os.Getenv(databaseTokenFileEnv))
 	if path == "" {
 		return nil
 	}
+	return func(ctx context.Context, _ string) (string, error) {
+		return readTokenFile(ctx, path)
+	}
+}
+
+// accessTokenBeforeConnect adapts the shared provider for the intentional legacy
+// and control-plane pool, which still owns its application-role checkout hooks.
+func accessTokenBeforeConnect(provider scopedpostgres.AccessTokenProvider) beforeConnectHook {
+	if provider == nil {
+		return nil
+	}
 	return func(ctx context.Context, connConfig *pgx.ConnConfig) error {
-		token, err := readTokenFile(ctx, path)
+		token, err := provider(ctx, connConfig.User)
 		if err != nil {
 			return err
 		}

@@ -39,6 +39,28 @@ one delivered as a new message or streaming RPC would not. Re-read this section
 when #476 lands rather than trusting that test to notice.
 Keep the Codefly debug log with failures.
 
+### Isolated request-pool qualification
+
+From the repository root, with native PostgreSQL binaries, a Go 1.27 executable
+and cached dependencies:
+
+```sh
+python3 scripts/qualify-scoped-pools.py \
+  --postgres-bin /path/to/postgres/bin --go /path/to/go
+```
+
+This extra qualification invokes the public production constructor against a
+temporary loopback-only PostgreSQL cluster. It checks verified organization/user
+scope and pooled reuse, explicit legacy/control-plane role behavior, rejection of
+an old credential by PostgreSQL, token rotation after backend termination, repeated
+close and cleanup after failed writer startup. The owner connection uses fixture
+trust; application roles must authenticate using SCRAM. The cluster is removed
+after the run. No cloud issuer, provider call or deployed transport is exercised.
+
+The test lives in `qualification/scopedpools`, outside the shared integration
+package startup. It skips without the runner's explicit disposable-fixture DSN
+and is excluded from `pure`; it does not replace the canonical service gate.
+
 ## Planner handoff
 
 [`test-targets.json`](./test-targets.json) is a versioned repository catalog of
