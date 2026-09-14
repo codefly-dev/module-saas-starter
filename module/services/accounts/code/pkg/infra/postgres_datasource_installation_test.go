@@ -83,8 +83,39 @@ func installationSourceByID(t *testing.T, sourceID string) *business.DatasourceS
 func parkForInstallation(t *testing.T, sourceID, reason string) {
 	t.Helper()
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		return testStore.MarkDatasourceSourceInstallationDegraded(ctx, sourceID, reason)
+		_, err := testStore.MarkDatasourceSourceInstallationDegraded(ctx, sourceID, reason, installationReasons)
+		return err
 	}))
+}
+
+// pauseSource writes the operator pause directly: no store method sets it, and
+// the point of the tests below is what the App path's own writes refuse to
+// overwrite.
+func pauseSource(t *testing.T, sourceID string) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		_, err := tx.Exec(ctx, `UPDATE datasource_sources SET status = 'paused' WHERE id = $1`, sourceID)
+		return err
+	}))
+}
+
+// markInstallationDegraded runs the App path's own park through the real store
+// method and reports whether it changed a row.
+func markInstallationDegraded(t *testing.T, sourceID, reason string) bool {
+	t.Helper()
+	var parked bool
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		parked, err = testStore.MarkDatasourceSourceInstallationDegraded(ctx, sourceID, reason, installationReasons)
+		return err
+	}))
+	return parked
+}
+
+var installationReasons = []string{
+	business.DatasourceReasonInstallationRepositoryUnavailable,
+	business.DatasourceReasonInstallationSuspended,
 }
 
 // One GitHub App installation can cover repositories belonging to different
@@ -226,7 +257,9 @@ func TestPostgresListGitHubInstallationsPendingRecheck(t *testing.T) {
 
 // Restoring App access revives only what the App-level reconciler parked. A
 // source the change-set compiler degraded for a fault of its own keeps both its
-// status and its reason, so a webhook cannot clear an unrelated problem.
+// status and its reason, so a webhook cannot clear an unrelated problem — and
+// the reported outcome distinguishes the two, since that is what decides whether
+// a restore reaches the audit trail.
 func TestPostgresClearDatasourceSourceInstallationDegradedMatchesTheReason(t *testing.T) {
 	owner := seedUser(t)
 	org := seedOrg(t, owner)
@@ -241,12 +274,18 @@ func TestPostgresClearDatasourceSourceInstallationDegradedMatchesTheReason(t *te
 	parkForInstallation(t, revoked, business.DatasourceReasonInstallationSuspended)
 	setSourceState(t, oversized, business.DatasourceStatusDegraded, compilerReason)
 
+	var revivedRevoked, revivedOversized string
 	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
-		if err := testStore.ClearDatasourceSourceInstallationDegraded(ctx, revoked, reasons); err != nil {
+		var err error
+		if revivedRevoked, err = testStore.ClearDatasourceSourceInstallationDegraded(ctx, revoked, reasons); err != nil {
 			return err
 		}
-		return testStore.ClearDatasourceSourceInstallationDegraded(ctx, oversized, reasons)
+		revivedOversized, err = testStore.ClearDatasourceSourceInstallationDegraded(ctx, oversized, reasons)
+		return err
 	}))
+	require.Equal(t, business.DatasourceReasonInstallationSuspended, revivedRevoked,
+		"the revive must name the cause it actually replaced, read from the row it matched")
+	require.Empty(t, revivedOversized, "a source parked for another reason was not revived")
 
 	restored := installationSourceByID(t, revoked)
 	require.Equal(t, business.DatasourceStatusActive, restored.Status)
@@ -273,4 +312,59 @@ func TestPostgresSetDatasourceSourceGitHubInstallationIsOrgScoped(t *testing.T) 
 
 	bindInstallation(t, orgOne, source, installation)
 	require.Equal(t, installation, installationSourceByID(t, source).GitHubInstallationID)
+}
+
+// The App path's park is decided entirely inside the UPDATE, because its caller
+// reaches it one or two GitHub round-trips after listing the row and the
+// change-set compiler writes the same column under a different job ordering
+// namespace. Each clause is exercised against a real row here: a caller-side
+// status check would pass all of these and still lose the race.
+func TestPostgresMarkDatasourceSourceInstallationDegradedWritesOnlyWhatItOwns(t *testing.T) {
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+
+	t.Run("parks an active source", func(t *testing.T) {
+		source := seedDatasourceSource(t, org)
+		require.True(t, markInstallationDegraded(t, source, business.DatasourceReasonInstallationSuspended))
+
+		parked := installationSourceByID(t, source)
+		require.Equal(t, business.DatasourceStatusDegraded, parked.Status)
+		require.Equal(t, business.DatasourceReasonInstallationSuspended, parked.StatusReason)
+		require.Nil(t, parked.NextReconcileAt, "a parked source leaves the reconcile sweep")
+	})
+
+	t.Run("re-labels its own park when the cause changes", func(t *testing.T) {
+		source := seedDatasourceSource(t, org)
+		setSourceState(t, source, business.DatasourceStatusDegraded, business.DatasourceReasonInstallationRepositoryUnavailable)
+
+		require.True(t, markInstallationDegraded(t, source, business.DatasourceReasonInstallationSuspended))
+		require.Equal(t, business.DatasourceReasonInstallationSuspended,
+			installationSourceByID(t, source).StatusReason)
+	})
+
+	t.Run("writes no row when the cause is unchanged", func(t *testing.T) {
+		source := seedDatasourceSource(t, org)
+		setSourceState(t, source, business.DatasourceStatusDegraded, business.DatasourceReasonInstallationSuspended)
+
+		require.False(t, markInstallationDegraded(t, source, business.DatasourceReasonInstallationSuspended),
+			"a redelivery must not report a transition")
+	})
+
+	t.Run("refuses another path's degrade", func(t *testing.T) {
+		const compilerReason = "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit"
+		source := seedDatasourceSource(t, org)
+		setSourceState(t, source, business.DatasourceStatusDegraded, compilerReason)
+
+		require.False(t, markInstallationDegraded(t, source, business.DatasourceReasonInstallationSuspended))
+		require.Equal(t, compilerReason, installationSourceByID(t, source).StatusReason,
+			"taking ownership here would make the row revivable while the fault stands")
+	})
+
+	t.Run("refuses an operator pause", func(t *testing.T) {
+		source := seedDatasourceSource(t, org)
+		pauseSource(t, source)
+
+		require.False(t, markInstallationDegraded(t, source, business.DatasourceReasonInstallationSuspended))
+		require.Equal(t, business.DatasourceStatusPaused, installationSourceByID(t, source).Status)
+	})
 }
