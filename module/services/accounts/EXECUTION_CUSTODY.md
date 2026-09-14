@@ -19,9 +19,13 @@ request/response body logging. It is deliberately absent from public gateway
 catalogs. Missing dependencies fail startup. There is no environment-only enable
 switch or unverified fallback.
 
-The versioned wire types and non-retrying HTTPS client are in
-`code/pkg/executioncustody`. This is source delivered with Accounts' existing
-`accounts` Go module, not a newly published standalone SDK. The signed credentials
+The versioned wire types, canonical digest and non-retrying HTTPS client are in
+the [standalone execution custody SDK](../../../libraries/execution-custody-sdk/README.md),
+imported at the exact reviewed pseudo-version in the Accounts service go.mod.
+The server and consumers use one wire/status/digest implementation. The SDK
+requires TLS 1.3, no proxy or custom verification callbacks, bounded complete v1
+JSON, and matching HTTP status/error codes; older service-local client callers
+must adopt those explicit constraints. The signed credentials
 remain canonical Codefly WorkContextV1 tokens. Work Context child derivation shares
 `exchangeVerifiedParent` with the existing `ExchangeAudience` RPC; the broker has
 its own explicit caller-authentication contract before that shared enforcement.
@@ -198,9 +202,10 @@ From the repository root, with local Docker, psql and Go installed:
 
 ```sh
 python3 qualification/execution-custody/run.py
+(cd libraries/execution-custody-sdk/go && go test -race ./... && go vet ./...)
 cd module/services/accounts/code
-go test -race ./pkg/adapters ./pkg/executioncustody
-go vet ./pkg/adapters ./pkg/executioncustody ./pkg/infra
+go test -race ./pkg/adapters
+go vet ./pkg/adapters ./pkg/infra
 ```
 
 The runner creates and removes its own loopback-only PostgreSQL and persistent

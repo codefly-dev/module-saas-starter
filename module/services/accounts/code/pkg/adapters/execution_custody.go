@@ -15,8 +15,8 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
-	wire "accounts/pkg/executioncustody"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+	wire "github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go"
 
 	base "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codefly "github.com/codefly-dev/sdk-go"
@@ -182,26 +182,12 @@ func decodeCustody(w http.ResponseWriter, r *http.Request, out any) error {
 	return nil
 }
 func custodyError(w http.ResponseWriter, err error) {
-	code := status.Code(err)
-	httpCode := http.StatusServiceUnavailable
-	switch code {
-	case codes.InvalidArgument:
-		httpCode = 400
-	case codes.Unauthenticated:
-		httpCode = 401
-	case codes.PermissionDenied:
-		httpCode = 403
-	case codes.NotFound:
-		httpCode = 404
-	case codes.AlreadyExists:
-		httpCode = 409
-	case codes.FailedPrecondition:
-		httpCode = 412
-	default:
-		code = codes.Unavailable
+	failure := wire.Error{Code: status.Code(err).String()}
+	if failure.HTTPStatus() == 0 {
+		failure.Code = "Unavailable"
 	}
-	w.WriteHeader(httpCode)
-	_ = json.NewEncoder(w).Encode(wire.Error{Code: code.String()})
+	w.WriteHeader(failure.HTTPStatus())
+	_ = json.NewEncoder(w).Encode(failure)
 }
 func custodyHash(data []byte) string { v := sha256.Sum256(data); return hex.EncodeToString(v[:]) }
 func custodyJSONHash(v any) string   { data, _ := json.Marshal(v); return custodyHash(data) }

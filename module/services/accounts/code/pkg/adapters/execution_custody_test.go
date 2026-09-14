@@ -29,9 +29,9 @@ import (
 	minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
-	wire "accounts/pkg/executioncustody"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
+	wire "github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go"
 
 	base "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codefly "github.com/codefly-dev/sdk-go"
@@ -72,7 +72,7 @@ func custodyTLS(t *testing.T) (*tls.Config, *tls.Config, *tls.Config, []byte) {
 		require.NoError(t, err)
 		return pair
 	}
-	return &tls.Config{Certificates: []tls.Certificate{cert(2, "")}, ClientCAs: pool}, &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert(3, "spiffe://example.test/worker")}}, &tls.Config{RootCAs: pool, Certificates: []tls.Certificate{cert(4, "spiffe://example.test/other")}}, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	return &tls.Config{Certificates: []tls.Certificate{cert(2, "")}, ClientCAs: pool}, &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, Certificates: []tls.Certificate{cert(3, "spiffe://example.test/worker")}}, &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: pool, Certificates: []tls.Certificate{cert(4, "spiffe://example.test/other")}}, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 }
 
 func TestExecutionCustodyReal(t *testing.T) {
@@ -461,6 +461,10 @@ path "transit/decrypt/api-keys" { capabilities = ["update"] }`)
 		require.NoError(t, err)
 		input := wire.RegisterRequest{Binding: input.Binding, ParentToken: original.Token, TaskExpiresAt: claims.ExpiresAtUnix - 20}
 		input.Binding.AdmissionID = "process-" + uuid.NewString()
+		// A new root session is issuer-owned. Bind this admission to the newly
+		// verified parent, never to a session from an earlier issuance fixture.
+		input.Binding.TaskID = claims.TaskId
+		input.Binding.SessionID = claims.SessionId
 		registered, err := client.Register(ctx, string(ownerToken), input)
 		require.NoError(t, err)
 		immutable := wire.RecoverRequest{Binding: input.Binding, TaskExpiresAt: input.TaskExpiresAt}
