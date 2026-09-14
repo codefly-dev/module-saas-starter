@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2479,
+  "fileCount": 2482,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
@@ -219,6 +219,8 @@
     "services/accounts/code/identity_provider_builder.go": "313610120a6269ea501ab35f971a11afb9d8af3b4dc8facdb82882bb4ae643cf",
     "services/accounts/code/identity_provider_builder_test.go": "c6f1d07fa988dbcb5f983db10c13b0998e04dd9dc9b9e33456e5726453df931d",
     "services/accounts/code/internal/auditmetricstest/audit_test.go": "7b6cfbcf4f8900774f899d229ee7a39ce360c1073d10ffbd16cc269b84e38053",
+    "services/accounts/code/internal/testdb/migration_lock.go": "1bea50ea434c24b1967ebb518e24a870514f246fb097c451c579267331bd8fd6",
+    "services/accounts/code/internal/testdb/migration_lock_test.go": "d38a23eb9a0825f64c78d9426515d87819a83f79478d4df09ea9bb0cff8b2370",
     "services/accounts/code/internal/testdb/package_lock.go": "5ce34d057aa6fe416eaafcddb1790a4956201d5407cffc4c2ffc50ddd1292c96",
     "services/accounts/code/internal/testdb/package_lock_test.go": "e507ccbfca66033586cd4e53cf5747d9d7dadad52da801c110a425848ca87621",
     "services/accounts/code/internal/testdb/timing.go": "d3bf50b60d4e44fb15f8cee82679fc1d40e7b0dc0771097050bdcd4ab6dae330",
@@ -818,7 +820,7 @@
     "services/accounts/code/pkg/infra/database_transport_test.go": "ef20f03dccb5765f1d8ff4e3db0cff58cccfc555e82ddf8ab122e9bd666b2552",
     "services/accounts/code/pkg/infra/event_relay_worker.go": "c5fdeed6a4842ef30ade866315c11404d7a5ccee4d79119267169ec6fcde931f",
     "services/accounts/code/pkg/infra/export_test.go": "cb9c4eb7eddbb65da1115c671c984101acb14471a97992b97b19ad83aa56a84b",
-    "services/accounts/code/pkg/infra/migration_116_test.go": "f62a1219440932b937267c4876bf397fa6ea308e27bf0199bc98fda46a4f444e",
+    "services/accounts/code/pkg/infra/migration_116_test.go": "7639ff8a19d038060eb55b3e1e45c33257134e50b924ab8d540b291bd16ea74a",
     "services/accounts/code/pkg/infra/migration_127_test.go": "b1279ca869fb3f48f3a782718bb4f32d54ce8d1f8cbb07f44ee34d1a0dc28130",
     "services/accounts/code/pkg/infra/migration_130_test.go": "eb4b83a5cc633fce8fbc8bbed6f1c5b329ba627fe55452d815b9925cad6bfdbd",
     "services/accounts/code/pkg/infra/postgres.go": "26c097774a82a7c9ea8fb20d41aa3010172aa3e170037477fe91365886a19e5b",
@@ -2136,6 +2138,7 @@
     "services/store/code/go.sum": "08e294ec88ce85a99ed62ca2bceea8b7c6722e24863ff9daae9efcaf3aeef6fc",
     "services/store/code/main.go": "e64fcf6e7ebbb8d3307f0ba13e4ab00c84d6827fcf4a999a731fce4799a5c45b",
     "services/store/code/main_test.go": "518aeac69ddd17f5560aef6f219600a538ff7ce4ec5f12bbd77f764932212ac3",
+    "services/store/code/migration_lock_parity_test.go": "52ca01f94f563368e13e560620a16ff282795c241e5fc20b3bb28ad8c8ea457b",
     "services/store/code/migration_upgrade_test.go": "6984b99bb117b2c095893fd6d72243156ab7ce921683b5f036409c7cb4ee0011",
     "services/store/code/preflight_package_test.go": "935e4c8eac644dc4fc823094f226ac97f77b01e76901c7567137d3304d001333",
     "services/store/configurations/local-dogfood/README.md": "2cc43f3c40f35c74b4aa37da45bf40e02fe57f967f78fd3d5237aeda04fe3247",
