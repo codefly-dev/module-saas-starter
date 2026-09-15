@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2520,
+  "fileCount": 2521,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
@@ -1155,7 +1155,8 @@
     "services/auth-gateway/code/external/saas-starter/telemetry/saas-starter_telemetry_grpc.pb.go": "e1126e9e3e34b8731711a753fe5702613a2cf05f7667309034dcad9a1c47211e",
     "services/auth-gateway/code/external/users/backend/README": "064db6c505f4eae2799ab60c8fbff3e2114010d32636246a791b5b7e8fe0a03b",
     "services/auth-gateway/code/external/users/backend/users_backend_grpc.pb.go": "75ed07def1cb405513e3cbc0471302157247d4a5ba857b41bd34eb4c55052505",
-    "services/auth-gateway/code/gateway.go": "84be90b17fde7d184e1e45349c8de5f53811baaec313a529ebebeb7b13660fdc",
+    "services/auth-gateway/code/gateway.go": "28e4e3a341d839ac90c1ed4d5c87f1731e1f4d631e6fc0db0ecde1a4d34d4a52",
+    "services/auth-gateway/code/gateway_authority_test.go": "8cf7fee2f507657dc79182bcbc57f81f861e312822060127e886e576344b65f9",
     "services/auth-gateway/code/gateway_integration_test.go": "05955d9645fe1636b2d350a805f7ad859bd942f65086e8c7d98e855e23ede1e2",
     "services/auth-gateway/code/gateway_modules.go": "12ef11f3fbad6de1c16515d70715b627a3b98bf32678a13354fbc0fff1878f2c",
     "services/auth-gateway/code/gateway_modules_test.go": "fb9bf1654a9d2cd9eaf851ded86d0ba375548ecbbad9ed2bf9fa1b6716035e5e",
