@@ -232,6 +232,18 @@ func TestSignedReleasePublishesTheTrustPolicyCoreVerifiesWith(t *testing.T) {
 	}
 }
 
+// A consumer declares the repository in its workspace, its loader normalizes
+// that away, and Core byte-compares the result against the repository the
+// provenance was signed with. A signed URL that normalization would rewrite is
+// therefore one no workspace can match, however it spells it.
+func TestPublishedRepositorySurvivesConsumerNormalization(t *testing.T) {
+	published := strings.TrimSpace(PackageRepository)
+	normalized := strings.TrimSuffix(strings.TrimSuffix(published, "/"), ".git")
+	if normalized != published {
+		t.Fatalf("signed repository %q normalizes to %q, which no workspace could declare", published, normalized)
+	}
+}
+
 func TestSignReleaseRejectsArtifactMetadataDrift(t *testing.T) {
 	repository := newPackageRepository(t)
 	commit := git(t, repository, "rev-parse", "HEAD")

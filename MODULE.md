@@ -408,7 +408,7 @@ signed that package:
 ```yaml
 module-trust:
   repositories:
-    codefly/saas-starter: https://github.com/codefly-dev/module-saas-starter.git
+    codefly/saas-starter: https://github.com/codefly-dev/module-saas-starter
   signers:
     https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main: <base64 Ed25519 public key>
 ```

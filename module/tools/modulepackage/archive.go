@@ -30,8 +30,13 @@ const (
 	// declare to resolve this package by identity. Nothing else in the release
 	// states the signing key, so without it the identity/key pair a consumer
 	// has to write is knowable only inside the publishing job.
-	TrustName                = "module-trust.yaml"
-	PackageRepository        = "https://github.com/codefly-dev/module-saas-starter.git"
+	TrustName = "module-trust.yaml"
+	// PackageRepository carries no ".git" suffix on purpose. A consumer's
+	// workspace loader strips a trailing "/" and ".git" from the repository it
+	// declares, and Core then byte-compares that against the repository the
+	// provenance was signed with, so a suffix here is one no workspace could
+	// ever spell back.
+	PackageRepository        = "https://github.com/codefly-dev/module-saas-starter"
 	ReleaseSignatureIdentity = "https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main"
 	// ReleaseTagPrefix namespaces immutable module-package releases onto a track
 	// independent of the repository's v0.0.x deploy counter. The package semver
