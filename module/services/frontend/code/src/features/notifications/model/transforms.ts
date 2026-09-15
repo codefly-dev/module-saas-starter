@@ -33,7 +33,7 @@ export function toNotification(message: NotificationMessage): Notification {
 		createdAt: message.createdAt
 			? timestampDate(message.createdAt).toISOString()
 			: new Date(0).toISOString(),
-		actionUrl: notificationActionUrl(message.actionUrl),
+		hasAction: message.hasAction,
 	};
 }
 

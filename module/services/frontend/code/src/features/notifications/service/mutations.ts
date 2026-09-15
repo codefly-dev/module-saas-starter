@@ -17,9 +17,17 @@ export const notificationMutations = {
 	 * Rejects with a NOT_FOUND ConnectError when the caller may no longer reach
 	 * the resource. The shape check still runs on the answer: the server settles
 	 * authority, not whether the stored string is a usable local path.
+	 *
+	 * A rejected shape throws rather than resolving undefined — this feeds a
+	 * navigation, and a caller that cannot navigate has to be told, not left with
+	 * a click that silently does nothing.
 	 */
-	resolveAction: async (id: string): Promise<string | undefined> => {
+	resolveAction: async (id: string): Promise<string> => {
 		const { actionUrl } = await client.resolveNotificationAction({ id });
-		return notificationActionUrl(actionUrl);
+		const local = notificationActionUrl(actionUrl);
+		if (!local) {
+			throw new Error("notification destination is not a local path");
+		}
+		return local;
 	},
 };

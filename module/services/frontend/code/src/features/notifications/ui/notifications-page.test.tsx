@@ -54,10 +54,11 @@ vi.mock("../service/mutations", () => ({
 		markRead: mocks.markRead,
 		resolveAction: mocks.resolveAction,
 		markAllRead: vi.fn(async () => undefined),
+		delete: vi.fn(async () => undefined),
 	},
 }));
 
-import { NotificationPanel } from "./notification-panel";
+import { NotificationsPage } from "./notifications-page";
 
 afterEach(() => {
 	cleanup();
@@ -68,28 +69,23 @@ afterEach(() => {
 	mocks.resolveAction.mockResolvedValue("/invitations/accept?token=token");
 });
 
-function renderPanel(onClose = vi.fn()) {
+function renderPage() {
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 	});
 	render(
 		<QueryClientProvider client={queryClient}>
-			<NotificationPanel onClose={onClose} />
+			<NotificationsPage />
 		</QueryClientProvider>,
 	);
-	return onClose;
 }
 
-describe("NotificationPanel", () => {
-	// The list carries no destination at all: it comes back from the server,
-	// which re-authorizes the resource as the link is followed.
+describe("NotificationsPage", () => {
 	it("opens the re-authorized destination and only then marks it read", async () => {
-		const onClose = renderPanel();
+		renderPage();
 
 		fireEvent.click(
-			await screen.findByRole("button", {
-				name: /You've been invited/,
-			}),
+			await screen.findByRole("button", { name: /You've been invited/ }),
 		);
 
 		await waitFor(() => {
@@ -97,22 +93,18 @@ describe("NotificationPanel", () => {
 		});
 		expect(mocks.resolveAction).toHaveBeenCalledWith("notification-1");
 		expect(mocks.markRead).toHaveBeenCalledWith("notification-1");
-		expect(onClose).toHaveBeenCalledOnce();
 	});
 
-	// A link followed after the grant was revoked resolves to NOT_FOUND. The
-	// panel must not navigate — and must not consume the item's unread state for
-	// a click the server refused.
+	// A click the server refuses must not consume the item's unread state, and
+	// must not fall back to any destination the page still holds.
 	it("neither navigates nor marks read when the destination no longer resolves", async () => {
 		mocks.resolveAction.mockRejectedValue(
 			new ConnectError("notification not found", Code.NotFound),
 		);
-		const onClose = renderPanel();
+		renderPage();
 
 		fireEvent.click(
-			await screen.findByRole("button", {
-				name: /You've been invited/,
-			}),
+			await screen.findByRole("button", { name: /You've been invited/ }),
 		);
 
 		await waitFor(() => {
@@ -120,28 +112,5 @@ describe("NotificationPanel", () => {
 		});
 		expect(mocks.push).not.toHaveBeenCalled();
 		expect(mocks.markRead).not.toHaveBeenCalled();
-		expect(onClose).not.toHaveBeenCalled();
-	});
-
-	// A destination that fails the shape gate rejects rather than resolving
-	// undefined, so the click reports an error instead of doing nothing.
-	it("reports an error when the destination is not a local path", async () => {
-		mocks.resolveAction.mockRejectedValue(
-			new Error("notification destination is not a local path"),
-		);
-		const onClose = renderPanel();
-
-		fireEvent.click(
-			await screen.findByRole("button", {
-				name: /You've been invited/,
-			}),
-		);
-
-		await waitFor(() => {
-			expect(mocks.error).toHaveBeenCalled();
-		});
-		expect(mocks.push).not.toHaveBeenCalled();
-		expect(mocks.markRead).not.toHaveBeenCalled();
-		expect(onClose).not.toHaveBeenCalled();
 	});
 });

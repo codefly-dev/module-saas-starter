@@ -28,16 +28,25 @@ const (
 )
 
 type Notification struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	OrgId         string                 `protobuf:"bytes,3,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	Title         string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
-	Body          string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
-	Type          string                 `protobuf:"bytes,6,opt,name=type,proto3" json:"type,omitempty"`
-	ActionUrl     string                 `protobuf:"bytes,7,opt,name=action_url,json=actionUrl,proto3" json:"action_url,omitempty"`
-	ReadAt        *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=read_at,json=readAt,proto3" json:"read_at,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Id     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	UserId string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	OrgId  string                 `protobuf:"bytes,3,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	Title  string                 `protobuf:"bytes,4,opt,name=title,proto3" json:"title,omitempty"`
+	Body   string                 `protobuf:"bytes,5,opt,name=body,proto3" json:"body,omitempty"`
+	Type   string                 `protobuf:"bytes,6,opt,name=type,proto3" json:"type,omitempty"`
+	// No longer populated. The stored destination is a cache of a past grant, so
+	// it is never broadcast with the list; ResolveNotificationAction re-authorizes
+	// and returns it when the link is actually followed. Retained rather than
+	// removed so the field number stays burned and the wire shape is unbroken.
+	//
+	// Deprecated: Marked as deprecated in saas/accounts/v1/notifications.proto.
+	ActionUrl string                 `protobuf:"bytes,7,opt,name=action_url,json=actionUrl,proto3" json:"action_url,omitempty"`
+	ReadAt    *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=read_at,json=readAt,proto3" json:"read_at,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Whether this item has a destination at all — enough to render it as
+	// actionable without handing out the destination itself.
+	HasAction     bool `protobuf:"varint,10,opt,name=has_action,json=hasAction,proto3" json:"has_action,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -114,6 +123,7 @@ func (x *Notification) GetType() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in saas/accounts/v1/notifications.proto.
 func (x *Notification) GetActionUrl() string {
 	if x != nil {
 		return x.ActionUrl
@@ -133,6 +143,13 @@ func (x *Notification) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *Notification) GetHasAction() bool {
+	if x != nil {
+		return x.HasAction
+	}
+	return false
 }
 
 type ListNotificationsRequest struct {
@@ -542,19 +559,22 @@ var File_saas_accounts_v1_notifications_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_notifications_proto_rawDesc = "" +
 	"\n" +
-	"$saas/accounts/v1/notifications.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xb9\x02\n" +
+	"$saas/accounts/v1/notifications.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1bgoogle/protobuf/empty.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xdc\x02\n" +
 	"\fNotification\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12!\n" +
 	"\auser_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x06userId\x12\x1f\n" +
 	"\x06org_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x14\n" +
 	"\x05title\x18\x04 \x01(\tR\x05title\x12\x12\n" +
 	"\x04body\x18\x05 \x01(\tR\x04body\x12\x12\n" +
-	"\x04type\x18\x06 \x01(\tR\x04type\x12\x1d\n" +
+	"\x04type\x18\x06 \x01(\tR\x04type\x12!\n" +
 	"\n" +
-	"action_url\x18\a \x01(\tR\tactionUrl\x123\n" +
+	"action_url\x18\a \x01(\tB\x02\x18\x01R\tactionUrl\x123\n" +
 	"\aread_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\x06readAt\x129\n" +
 	"\n" +
-	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"a\n" +
+	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"has_action\x18\n" +
+	" \x01(\bR\thasAction\"a\n" +
 	"\x18ListNotificationsRequest\x12&\n" +
 	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d \x00R\bpageSize\x12\x1d\n" +
 	"\n" +

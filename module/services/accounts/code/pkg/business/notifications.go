@@ -299,6 +299,14 @@ var ErrNotificationNotFound = errors.New("notification not found")
 // The row is read under the caller's own user-scoped transaction, so the RLS
 // policy on `notifications` rather than a comparison in Go is what makes another
 // user's id indistinguishable from an absent one.
+//
+// Visibility is settled through visibleResources — the same oracle
+// ListNotifications and GetUnreadCount filter on — rather than through a point
+// CheckAccess. The two do not agree: CheckAccess's share branch matches
+// record_shares directly, while the listing branch joins scope_nodes, so a share
+// on an unregistered record is visible to one and not the other. Asking a
+// different question here than the inbox asked would let a link resolve for an
+// item the inbox refuses to show.
 func (s *Service) ResolveNotificationAction(ctx context.Context, userID, id string) (string, error) {
 	w := wool.Get(ctx).In("ResolveNotificationAction")
 	var notification *Notification
@@ -315,17 +323,15 @@ func (s *Service) ResolveNotificationAction(ctx context.Context, userID, id stri
 	if notification.ResourceType == "" {
 		return notification.ActionURL, nil
 	}
-	// An org-less reference cannot be resolved against a scope tree at all, and
-	// notifications.org_id is descriptive and nullable, so the unanswerable
-	// question fails closed.
-	if notification.OrgID == "" {
-		return "", ErrNotificationNotFound
-	}
-	visible, err := s.resourceIsVisible(ctx, userID, notification.OrgID, notification.ResourceType, notification.ResourceID)
+	// visibleResources drops an org-less reference rather than guessing a tenant
+	// for it, so the unanswerable question fails closed here without a second
+	// spelling of that rule.
+	ref := resourceRef{notification.OrgID, notification.ResourceType, notification.ResourceID}
+	visible, err := s.visibleResources(ctx, userID, []resourceRef{ref})
 	if err != nil {
 		return "", w.Wrapf(err, "cannot resolve notification action")
 	}
-	if !visible {
+	if !visible[ref] {
 		return "", ErrNotificationNotFound
 	}
 	return notification.ActionURL, nil
@@ -340,7 +346,7 @@ func (s *Service) MarkRead(ctx context.Context, callerID, id string) error {
 		return err
 	}
 	if callerID == "" || userID != callerID {
-		return wool.Get(ctx).NewError("notification not found")
+		return ErrNotificationNotFound
 	}
 	return s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
 		return s.store.MarkNotificationRead(ctx, id)
@@ -362,7 +368,7 @@ func (s *Service) DeleteNotification(ctx context.Context, callerID, id string) e
 		return err
 	}
 	if callerID == "" || userID != callerID {
-		return wool.Get(ctx).NewError("notification not found")
+		return ErrNotificationNotFound
 	}
 	return s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
 		return s.store.DeleteNotification(ctx, id)
@@ -386,7 +392,7 @@ func (s *Service) resolveNotificationUser(ctx context.Context, id string) (strin
 		return "", err
 	}
 	if userID == "" {
-		return "", wool.Get(ctx).NewError("notification not found")
+		return "", ErrNotificationNotFound
 	}
 	return userID, nil
 }

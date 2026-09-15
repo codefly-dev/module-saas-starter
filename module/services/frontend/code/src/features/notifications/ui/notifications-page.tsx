@@ -30,12 +30,17 @@ export function NotificationsPage() {
 		onError: () => toast.error("Failed to mark all as read"),
 	});
 
+	// Marking read is part of following the link, so it happens only once the
+	// destination has been re-authorized. Marking first would let a click the
+	// server then refuses still consume the item's unread state.
 	const resolveActionMutation = useMutation({
-		mutationFn: (id: string) => notificationMutations.resolveAction(id),
-		onSuccess: (actionUrl) => {
-			if (actionUrl) {
-				router.push(actionUrl);
+		mutationFn: ({ id }: { id: string; unread: boolean }) =>
+			notificationMutations.resolveAction(id),
+		onSuccess: (actionUrl, { id, unread }) => {
+			if (unread) {
+				markReadMutation.mutate(id);
 			}
+			router.push(actionUrl);
 		},
 		onError: () => toast.error("This notification is no longer available"),
 	});
@@ -90,11 +95,15 @@ export function NotificationsPage() {
 									type="button"
 									className="flex-1 text-left"
 									onClick={() => {
+										if (notification.hasAction) {
+											resolveActionMutation.mutate({
+												id: notification.id,
+												unread: !notification.read,
+											});
+											return;
+										}
 										if (!notification.read) {
 											markReadMutation.mutate(notification.id);
-										}
-										if (notification.actionUrl) {
-											resolveActionMutation.mutate(notification.id);
 										}
 									}}
 								>

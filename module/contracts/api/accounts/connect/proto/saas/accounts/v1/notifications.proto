@@ -19,9 +19,16 @@ message Notification {
   string title = 4;
   string body = 5;
   string type = 6;
-  string action_url = 7;
+  // No longer populated. The stored destination is a cache of a past grant, so
+  // it is never broadcast with the list; ResolveNotificationAction re-authorizes
+  // and returns it when the link is actually followed. Retained rather than
+  // removed so the field number stays burned and the wire shape is unbroken.
+  string action_url = 7 [deprecated = true];
   google.protobuf.Timestamp read_at = 8;
   google.protobuf.Timestamp created_at = 9;
+  // Whether this item has a destination at all — enough to render it as
+  // actionable without handing out the destination itself.
+  bool has_action = 10;
 }
 
 message ListNotificationsRequest {

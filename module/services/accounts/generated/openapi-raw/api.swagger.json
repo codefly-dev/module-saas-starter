@@ -8383,7 +8383,8 @@
           "type": "string"
         },
         "actionUrl": {
-          "type": "string"
+          "type": "string",
+          "description": "No longer populated. The stored destination is a cache of a past grant, so\nit is never broadcast with the list; ResolveNotificationAction re-authorizes\nand returns it when the link is actually followed. Retained rather than\nremoved so the field number stays burned and the wire shape is unbroken."
         },
         "readAt": {
           "type": "string",
@@ -8392,6 +8393,10 @@
         "createdAt": {
           "type": "string",
           "format": "date-time"
+        },
+        "hasAction": {
+          "type": "boolean",
+          "description": "Whether this item has a destination at all — enough to render it as\nactionable without handing out the destination itself."
         }
       }
     },
