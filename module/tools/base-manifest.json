@@ -2498,7 +2498,7 @@
     "tools/modulepackage/manifest.go": "10b8d38170bb17218d8aaaae2be802356e7c17f99aff4721ebd05a42d74dd525",
     "tools/modulepackage/modulepackage_test.go": "a6703c60f7aa251a7839fde65a74bb1adbd055517e9519647f0a112343048731",
     "tools/naming-allowlist.json": "186fe1ad13958ee0f34369642b970cc1481d4e302973ccbfa6b07c3fd7eaceb9",
-    "tools/naming-gate.mjs": "ef397d397e2c1a43dccf6d39fc0cf0c85168e7d336853d8b87841b46d5b35524",
+    "tools/naming-gate.mjs": "1e1444df06543e11cbec35c461c99899d950cf2de9fdafa231c2b9a6303fd82f",
     "tools/naming-gate.test.mjs": "d701bb6f32f0a5adfd29481c03954f0e3cef9022ffc1dba86ab01b4f93ef3c74",
     "tools/naming-terms.json": "d58fe0531f6c0ed819acb1aa85618bd6db46a3f4bc8fee761cded9a5fe47feac",
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",

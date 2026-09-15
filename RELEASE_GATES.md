@@ -579,12 +579,17 @@ would narrow the term to that line's handful of words. Run `naming-gate.mjs
 message <file>` locally when you need the line.
 
 It runs from two places, and both are load-bearing. In `ci.yml` it is a step of
-the `base-integrity` job, which is a required context and also runs in the merge
-queue — there the title and body do not exist, and the commits alone are checked.
-In `naming-records.yml` it runs again on the `edited` event, which `ci.yml` does
-not take: a title or body edited after the last push fires nothing else, and
-because this repository squashes with `squash_title: COMMIT_OR_PR_TITLE`, an
-edited title is written into main's permanent history.
+the `base-integrity` job, which is a required context. In `naming-records.yml`
+it runs again on the `edited` event, which `ci.yml` does not take: a title or
+body edited after the last push fires nothing else, and because this repository
+squashes with `squash_title: COMMIT_OR_PR_TITLE`, an edited title is written
+into main's permanent history.
+
+The range and the `merge_group` exclusion follow [Commit
+identity](#commit-identity) exactly, for the same reasons: the base is the
+current base tip read from the merge ref's first parent rather than `base.sha`,
+and a merge-queue entry is not checked, because its range spans every pull
+request batched into it, each already gated on its own run.
 
 Be precise about what this buys. Only `scripts/hooks/commit-msg` prevents
 publication; by the time CI runs, the commit is already pushed to a public
@@ -596,7 +601,7 @@ Locally:
 
 ```sh
 node module/tools/naming-gate.mjs check
-node module/tools/naming-gate.mjs records <base>   # title and body from the environment, plus <base>..HEAD
+node module/tools/naming-gate.mjs records <base> [head]   # title and body from the environment, plus <base>..[head]
 node module/tools/naming-gate.mjs message <file>   # one commit message — what the hook runs
 node module/tools/naming-gate.mjs hash <term>      # digest for a new terms entry
 ```

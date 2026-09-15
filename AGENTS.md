@@ -320,10 +320,10 @@ SDK. See the solution repo for its own instructions.
   git config user.email <id>+<login>@users.noreply.github.com   # once, before your first commit
   ```
 
-  That `git config` replaces the hooks directory wholesale, so any hook already
-  in `.git/hooks` stops running until you unset it. The hook is the only half
-  that runs before publication — CI blocks the merge, by which point the commit
-  is already public.
+  Setting `core.hooksPath` replaces the hooks directory wholesale, so any hook
+  already in `.git/hooks` stops running until you unset it. The hook is the only
+  half that runs before publication — CI blocks the merge, by which point the
+  commit is already public.
 
   The record check in CI names the matching mode and nothing else — not the
   term, not the line — because its log is public and so is the record it points

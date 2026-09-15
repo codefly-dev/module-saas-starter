@@ -122,23 +122,29 @@ jobs:
       # published for good. The failure prints the mode alone — not the term, not the line —
       # because this log is public and so is the record it points into.
       #
+      # Range and exclusions follow the commit-identity step above, for the reasons set out there:
+      # the base is the CURRENT base tip taken from the merge ref's first parent, never
+      # `base.sha`, which is fixed at the pull request's last push and drags in everything the
+      # base branch gained once it moves; and `merge_group` is not checked, because its range
+      # spans every pull request batched into the entry, each already gated on its own run.
+      #
       # This job's `pull_request` trigger takes the default types, so it does not see a title or
       # body EDITED after the last push. naming-records.yml covers that event; this step stays
-      # because it is the copy that runs inside a required context and in the merge queue.
+      # because it is the copy that runs inside a required context.
       - name: Enforce generic placeholder names in the pull request and its commits
-        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        if: github.event_name == 'pull_request'
         env:
           # Through the environment, never interpolated into the script: both are
-          # attacker-controlled text. Neither exists on a merge-queue entry, which checks the
-          # commits alone.
+          # attacker-controlled text.
           NAMING_PR_TITLE: ${{ github.event.pull_request.title }}
           NAMING_PR_BODY: ${{ github.event.pull_request.body }}
-          NAMING_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
-          # The pull request's own head, never the checked-out HEAD: this build checks out the
-          # merge of the branch into the CURRENT base, so a range ending at HEAD would also sweep
-          # in every commit that landed on the base branch since the last sync.
-          NAMING_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
-        run: node module/tools/naming-gate.mjs records "$NAMING_BASE" "$NAMING_HEAD"
+          NAMING_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # HEAD^1 is the current base tip only while HEAD is the merge ref. Assert the second
+          # parent rather than let a `ref:` override silently narrow the range to one commit.
+          git rev-parse -q --verify HEAD^2 >/dev/null ||
+            { echo "expected refs/pull/N/merge as HEAD; the checkout ref must not be overridden"; exit 1; }
+          node module/tools/naming-gate.mjs records "$(git rev-parse HEAD^1)" "$NAMING_HEAD"
 
   authz-coverage:
     name: Authorization coverage

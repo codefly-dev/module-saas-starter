@@ -404,8 +404,7 @@ function reportRecords(errors, scanned) {
         `this log is public, and so is the record it points into. Rewrite the named record with a ` +
         `generic placeholder — "a consuming solution", "the downstream product", "Acme", "Jane ` +
         `Doe", "user@example.com". A commit message is fixed by amending or rebasing that commit, ` +
-        `never by adding one on top; in a merge queue the named commit may belong to another ` +
-        `entry in the batch. To see the line, run the check locally: ` +
+        `never by adding one on top. To see the line, run the check locally: ` +
         `\`node module/tools/naming-gate.mjs message <file>\`. ` +
         `See AGENTS.md §"Naming and confidentiality".`,
     );
@@ -415,14 +414,15 @@ function reportRecords(errors, scanned) {
 }
 
 // The pull request's own text arrives through the environment, never interpolated into a shell
-// command: it is attacker-controlled. It is absent on a merge-queue entry, where only the commits
-// remain to check.
+// command: it is attacker-controlled.
 //
-// `head` must be the pull request's OWN head, never the checked-out HEAD. A pull_request build
-// checks out the merge of the branch into the CURRENT base, while `base` is the base as of the
-// last sync, so a range ending at HEAD sweeps in every commit that has landed on the base branch
-// since — other authors' messages, which this pull request cannot fix and which are already
-// merged and public.
+// Both ends of the range are load-bearing, and CI passes both explicitly rather than letting
+// either be inferred from the checkout. `head` is the pull request's OWN head, never the
+// checked-out HEAD, which is the merge of the branch into the current base. `base` is the CURRENT
+// base tip — in CI, the merge ref's first parent — never `base.sha`, which is fixed at the last
+// push and stops following the base branch afterwards. Get either wrong and the range picks up
+// commits that merely landed on the base branch: other authors' messages, already merged and
+// already public, which this pull request cannot fix.
 function records(base, head) {
   const entries = [];
   for (const [label, text] of [
