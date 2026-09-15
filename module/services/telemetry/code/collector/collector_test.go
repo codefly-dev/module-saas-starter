@@ -77,3 +77,48 @@ func TestCollectorConfigurationFailsClosed(t *testing.T) {
 	})
 	require.ErrorContains(t, err, "HTTPS")
 }
+
+// TestCollectorRequiresExplicitExporter pins the fail-closed behaviour: an empty
+// OBSERVABILITY_EXPORTER used to fall back to "debug", which turned a broken
+// configuration carrier into silent trace loss instead of a startup failure.
+func TestCollectorRequiresExplicitExporter(t *testing.T) {
+	_, err := collector.New(collector.Config{})
+	require.ErrorContains(t, err, "OBSERVABILITY_EXPORTER is required")
+
+	_, err = collector.New(collector.Config{Exporter: "   "})
+	require.ErrorContains(t, err, "OBSERVABILITY_EXPORTER is required")
+}
+
+// TestCollectorEndpointTransportPolicy pins which OTLP/HTTP destinations may be
+// reached in plaintext: only ones that cannot route outside the cluster. The
+// intended target is a same-cluster OTLP collector that forwards onward under
+// TLS; anything reachable from outside the cluster still needs HTTPS.
+func TestCollectorEndpointTransportPolicy(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		endpoint string
+		accepted bool
+	}{
+		{"in-cluster collector FQDN", "http://otel-collector.otel-collector.svc.cluster.local:4318", true},
+		{"in-cluster collector short form", "http://otel-collector.otel-collector.svc:4318", true},
+		{"in-cluster collector trailing dot", "http://otel-collector.otel-collector.svc.cluster.local.:4318", true},
+		{"loopback name", "http://localhost:4318", true},
+		{"loopback address", "http://127.0.0.1:4318", true},
+		{"external plaintext", "http://example.com:4318", false},
+		{"external plaintext subdomain", "http://otel.internal.ops.example.com:4318", false},
+		{"external TLS", "https://example.com", true},
+		{"host merely containing svc", "http://svc.example.com:4318", false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := collector.New(collector.Config{
+				Exporter: "otlphttp",
+				Endpoint: testCase.endpoint,
+			})
+			if testCase.accepted {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorContains(t, err, "HTTPS")
+		})
+	}
+}

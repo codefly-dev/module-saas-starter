@@ -19,6 +19,44 @@ import (
 	"google.golang.org/grpc"
 )
 
+// observabilityConfiguration is the workspace configuration group that carries
+// the collector's upstream-exporter settings (configurations/<env>/observability.env).
+const observabilityConfiguration = "observability"
+
+// workspaceEnv reads a key from a named Codefly workspace configuration,
+// including its secret namespace, and falls back to a plain process variable
+// for deployments that do not use Codefly's configuration provider. It is the
+// same accessor accounts (work.go) and auth-gateway (configuration.go) already
+// use for their declared workspace-configuration-dependencies.
+//
+// The accessor is load-bearing, not cosmetic. telemetry declares
+// `observability` as a workspace-configuration-dependency, and a declared group
+// reaches a deployed pod ONLY under prefixed names —
+// CODEFLY__WORKSPACE_CONFIGURATION__OBSERVABILITY__<KEY>, via envFrom a
+// ConfigMap — while codefly.Init builds an in-process map without ever mutating
+// the process environment. A bare os.Getenv("OBSERVABILITY_EXPORTER") therefore
+// resolved to "" wherever the configuration arrives that way; collector.New
+// defaulted that empty value to "debug", and the collector logged and dropped
+// every span it received while its own ConfigMap said otlphttp.
+func workspaceEnv(ctx context.Context, configuration, key string) string {
+	if value, err := codefly.For(ctx).WorkspaceValue(configuration, key); err == nil && value != "" {
+		return value
+	}
+	return os.Getenv(key)
+}
+
+// resolveExporterConfig reads the three upstream-exporter settings from the
+// observability workspace configuration group, preferring the injected
+// workspace value and falling back to a bare process variable so a local or
+// non-Codefly run still works.
+func resolveExporterConfig(ctx context.Context) collector.Config {
+	return collector.Config{
+		Exporter: workspaceEnv(ctx, observabilityConfiguration, "OBSERVABILITY_EXPORTER"),
+		Endpoint: workspaceEnv(ctx, observabilityConfiguration, "OTEL_EXPORTER_OTLP_ENDPOINT"),
+		Headers:  workspaceEnv(ctx, observabilityConfiguration, "OTEL_EXPORTER_OTLP_HEADERS"),
+	}
+}
+
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -33,11 +71,7 @@ func main() {
 	if port == 0 {
 		log.Fatal("telemetry: Codefly did not inject the collector gRPC port")
 	}
-	sink, err := collector.New(collector.Config{
-		Exporter: os.Getenv("OBSERVABILITY_EXPORTER"),
-		Endpoint: os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
-		Headers:  os.Getenv("OTEL_EXPORTER_OTLP_HEADERS"),
-	})
+	sink, err := collector.New(resolveExporterConfig(ctx))
 	if err != nil {
 		log.Fatal(err)
 	}
