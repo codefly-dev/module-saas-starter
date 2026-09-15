@@ -103,3 +103,28 @@ func TestGetInstallationKeepsLargeIDExact(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "90071992547409911", installation.ID)
 }
+
+// Who administers the account an App is installed on is what entitles a caller
+// to claim that installation, so the account travels with it. Dropping either
+// field would silently reduce the claim check to "is this an organization?".
+func TestGetInstallationCarriesTheAccountItBelongsTo(t *testing.T) {
+	conn, cred := installationConnector(t, &fakeInstallationEndpoint{
+		body: `{"id":4242,"suspended_at":null,"account":{"login":"Acme","type":"Organization"}}`,
+	})
+
+	installation, err := conn.GetInstallation(context.Background(), cred, "4242")
+	require.NoError(t, err)
+	require.Equal(t, "Acme", installation.AccountLogin)
+	require.Equal(t, "Organization", installation.AccountType)
+}
+
+func TestGetInstallationCarriesAPersonalAccount(t *testing.T) {
+	conn, cred := installationConnector(t, &fakeInstallationEndpoint{
+		body: `{"id":4242,"suspended_at":null,"account":{"login":"octocat","type":"User"}}`,
+	})
+
+	installation, err := conn.GetInstallation(context.Background(), cred, "4242")
+	require.NoError(t, err)
+	require.Equal(t, "octocat", installation.AccountLogin)
+	require.Equal(t, githubconnector.AccountTypeUser, installation.AccountType)
+}

@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/jobs"
@@ -74,14 +76,26 @@ func parseGitHubStoredCredential(plaintext string) githubStoredCredential {
 
 // SetGitHubAppRegistration wires the deployment's GitHub App: the id it is
 // registered under, the RSA private key its installation tokens are signed
-// with, and the secret GitHub signs the App's own lifecycle deliveries with.
-// All three are operator-managed deployment configuration, held once here
-// rather than copied onto each source, and never leave accounts. An empty
-// registration leaves every source on its own stored PAT.
-func (s *Service) SetGitHubAppRegistration(appID, privateKeyPEM, webhookSecret string) {
+// with, the URL slug its install link is built from, and the secret GitHub
+// signs the App's own lifecycle deliveries with. All four are operator-managed
+// deployment configuration, held once here rather than copied onto each source,
+// and never leave accounts. An empty registration leaves every source on its
+// own stored PAT.
+func (s *Service) SetGitHubAppRegistration(appID, privateKeyPEM, slug, webhookSecret string) {
 	s.githubAppID = strings.TrimSpace(appID)
 	s.githubAppKeyPEM = strings.TrimSpace(privateKeyPEM)
+	s.githubAppSlug = strings.TrimSpace(slug)
 	s.githubAppWebhookSecret = strings.TrimSpace(webhookSecret)
+}
+
+// SetGitHubAppOAuth wires the App's OAuth client, which tenant onboarding uses
+// to identify the person returning from an install. It is deliberately separate
+// from the signing registration above: that credential acts as the App, this one
+// acts as a user, and only the latter can attribute an installation to a caller.
+// An empty pair leaves App onboarding off.
+func (s *Service) SetGitHubAppOAuth(clientID, clientSecret string) {
+	s.githubAppClientID = strings.TrimSpace(clientID)
+	s.githubAppClientSecret = strings.TrimSpace(clientSecret)
 }
 
 // GitHubAppConfigured reports whether this deployment can mint installation
@@ -227,6 +241,26 @@ func (s *Service) MigrateGitHubSourceToApp(ctx context.Context, actorID, orgID, 
 	installationID, err := s.githubConnector.FindRepositoryInstallation(probeCtx, registration, owner, repoName)
 	if err != nil {
 		return nil, githubInstallationTokenError(err)
+	}
+
+	// Resolving the installation from the repository proves only that *some*
+	// tenant installed the App on it. The source's own repository is caller-chosen
+	// — a PAT the tenant holds today names it — so without this the tenant could
+	// re-point its source at another organization's installation and keep reading
+	// through the App after its PAT is revoked. It is also the routing index an
+	// App-level delivery resolves a source through, so an unowned binding would
+	// additionally draw another tenant's pushes to this source. The connect path
+	// refuses exactly this; migration has to refuse it identically.
+	var claimed bool
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		claimed, err = s.store.GitHubAppInstallationClaimedBy(ctx, installationID, orgID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return nil, status.Error(codes.PermissionDenied,
+			"The GitHub App installation covering that repository is not connected to this organization. Install the App from this organization first, then migrate the source.")
 	}
 
 	// The binding is stamped from the clock rather than counted up from whatever

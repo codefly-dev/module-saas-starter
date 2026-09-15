@@ -11,12 +11,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
 	"accounts/pkg/githubconnector"
@@ -30,8 +33,24 @@ const testInstallationID = 4242
 // resolving which installation covers a repository, and minting an
 // installation token for it.
 type fakeGitHubApp struct {
-	mintStatus   int // non-zero fails the mint with this status
-	lookupStatus int // non-zero fails the installation lookup with this status
+	mintStatus   int  // non-zero fails the mint with this status
+	lookupStatus int  // non-zero fails the installation lookup with this status
+	suspended    bool // the installation resolves but grants nothing
+	// What the installation grants. Nil serves a single default repository.
+	repositories []map[string]any
+	// Who the OAuth user is, and what they are to the installation's account.
+	// The defaults represent the legitimate case: an administrator of the
+	// organization the App is installed on.
+	userLogin        string // empty means "admin-user"
+	accountType      string // empty means "Organization"
+	orgRole          string // empty means "admin"
+	orgState         string // empty means "active"
+	membershipStatus int    // non-zero fails the membership lookup with this status
+	// Non-empty makes the user-token exchange answer GitHub's way: HTTP 200 with
+	// an error member rather than a failure status.
+	oauthError string
+	// Serves every repository page full, so a walk that is not bounded never ends.
+	alwaysFullRepoPages bool
 
 	mu        sync.Mutex
 	mints     int
@@ -40,6 +59,52 @@ type fakeGitHubApp struct {
 
 func (f *fakeGitHubApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
+	case strings.HasSuffix(r.URL.Path, "/login/oauth/access_token"):
+		if f.oauthError != "" {
+			writeAppJSON(w, http.StatusOK, map[string]any{"error": f.oauthError})
+			return
+		}
+		writeAppJSON(w, http.StatusOK, map[string]any{"access_token": "ghu_user", "token_type": "bearer"})
+	case strings.HasPrefix(r.URL.Path, "/user/memberships/orgs/"):
+		if f.membershipStatus != 0 {
+			http.Error(w, `{"message":"forbidden"}`, f.membershipStatus)
+			return
+		}
+		role, state := f.orgRole, f.orgState
+		if role == "" {
+			role = "admin"
+		}
+		if state == "" {
+			state = "active"
+		}
+		writeAppJSON(w, http.StatusOK, map[string]any{"role": role, "state": state})
+	// Must follow the memberships case, whose path also ends beneath /user.
+	case strings.HasSuffix(r.URL.Path, "/user"):
+		login := f.userLogin
+		if login == "" {
+			login = "admin-user"
+		}
+		writeAppJSON(w, http.StatusOK, map[string]any{"login": login})
+	case strings.HasSuffix(r.URL.Path, "/installation/repositories"):
+		if f.alwaysFullRepoPages {
+			full := make([]map[string]any, 0, 100)
+			for i := range 100 {
+				full = append(full, map[string]any{
+					"full_name":      fmt.Sprintf("acme/repo-%d", i),
+					"default_branch": "main",
+				})
+			}
+			writeAppJSON(w, http.StatusOK, map[string]any{"total_count": 100000, "repositories": full})
+			return
+		}
+		repositories := f.repositories
+		if repositories == nil {
+			repositories = []map[string]any{{"full_name": "acme/handbook", "default_branch": "main"}}
+		}
+		writeAppJSON(w, http.StatusOK, map[string]any{
+			"total_count":  len(repositories),
+			"repositories": repositories,
+		})
 	case strings.HasSuffix(r.URL.Path, "/installation"):
 		if f.lookupStatus != 0 {
 			http.Error(w, `{"message":"not installed"}`, f.lookupStatus)
@@ -62,6 +127,25 @@ func (f *fakeGitHubApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"token":      token,
 			"expires_at": time.Now().Add(time.Hour).Format(time.RFC3339),
 		})
+	// Must follow the /access_tokens case: a mint URL shares this prefix.
+	case strings.HasPrefix(r.URL.Path, "/app/installations/"):
+		if f.lookupStatus != 0 {
+			http.Error(w, `{"message":"not found"}`, f.lookupStatus)
+			return
+		}
+		accountType := f.accountType
+		if accountType == "" {
+			accountType = "Organization"
+		}
+		installation := map[string]any{
+			"id":                   testInstallationID,
+			"repository_selection": "selected",
+			"account":              map[string]any{"login": "acme", "type": accountType},
+		}
+		if f.suspended {
+			installation["suspended_at"] = time.Now().UTC().Format(time.RFC3339)
+		}
+		writeAppJSON(w, http.StatusOK, installation)
 	default:
 		http.Error(w, `{"message":"not found"}`, http.StatusNotFound)
 	}
@@ -126,7 +210,9 @@ type appHarness struct {
 // replica restart or a token reaching its hour-long expiry — the points at
 // which the host has to mint again and therefore learns that access changed.
 func (h *appHarness) restart() {
-	h.svc.SetGitHubConnector(githubconnector.NewConnector(githubconnector.WithBaseURL(h.serverURL)))
+	h.svc.SetGitHubConnector(githubconnector.NewConnector(
+		githubconnector.WithBaseURL(h.serverURL),
+		githubconnector.WithOAuthBaseURL(h.serverURL)))
 }
 
 func newAppHarness(t *testing.T, app *fakeGitHubApp) *appHarness {
@@ -137,8 +223,11 @@ func newAppHarness(t *testing.T, app *fakeGitHubApp) *appHarness {
 	store := newDatasourceFakeStore()
 	producer := &recordingProducer{}
 	svc, audit := newDatasourceService(store, producer, &fakeGitHub{defaultBranch: "main", commit: "abc"})
-	svc.SetGitHubConnector(githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL)))
-	svc.SetGitHubAppRegistration("123456", testAppKeyPEM(t), "")
+	svc.SetGitHubConnector(githubconnector.NewConnector(
+		githubconnector.WithBaseURL(server.URL),
+		githubconnector.WithOAuthBaseURL(server.URL)))
+	svc.SetGitHubAppRegistration("123456", testAppKeyPEM(t), "example-app", "")
+	svc.SetGitHubAppOAuth("client-id", "client-secret")
 
 	tokens := &githubTokens{}
 	gh := &fakeGitHub{defaultBranch: "main", commit: "abc"}
@@ -157,6 +246,18 @@ func testAppKeyPEM(t *testing.T) string {
 		Type:  "RSA PRIVATE KEY",
 		Bytes: x509.MarshalPKCS1PrivateKey(key),
 	}))
+}
+
+// claimInstallation binds the fake's installation to an organization, standing
+// in for a completed setup round-trip. Seeded per test rather than in the
+// harness: connecting and migrating both refuse an installation the caller does
+// not hold, and those refusals are asserted by the absence of this call.
+func (h *appHarness) claimInstallation(t *testing.T, orgID string) {
+	t.Helper()
+	claimed, err := h.store.ClaimGitHubAppInstallation(
+		context.Background(), strconv.Itoa(testInstallationID), orgID, "actor-1")
+	require.NoError(t, err)
+	require.True(t, claimed)
 }
 
 // storedCredential returns the plaintext behind a source's envelope. The fake
@@ -199,6 +300,7 @@ func (h *appHarness) credentialAudits() []map[string]any {
 // lands on the source is that binding — never a token, never the app's key.
 func TestMigrateGitHubSourceToApp_BindsTheInstallationTheHostResolved(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	before := h.storedCredential(t, source.ID)
 
@@ -225,6 +327,7 @@ func TestMigrateGitHubSourceToApp_BindsTheInstallationTheHostResolved(t *testing
 
 func TestMigrateGitHubSourceToApp_NarrowsTheTokenToTheSourceRepository(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 
 	_, err := h.svc.MigrateGitHubSourceToApp(context.Background(), "actor-1", testOrg, source.ID)
@@ -247,6 +350,7 @@ func TestMigrateGitHubSourceToApp_KeepsThePATWhenAppAccessIsNotProven(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newAppHarness(t, tc.app)
+			h.claimInstallation(t, testOrg)
 			source := h.addPATSource(t, "acme/docs", "pat-old")
 			before := h.storedCredential(t, source.ID)
 
@@ -263,7 +367,7 @@ func TestMigrateGitHubSourceToApp_KeepsThePATWhenAppAccessIsNotProven(t *testing
 // A source connected before the App lifecycle stored its PAT as bare text.
 func TestGitHubSource_LegacyPATEnvelopeStillAuthenticates(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
-	h.svc.SetGitHubAppRegistration("", "", "")
+	h.svc.SetGitHubAppRegistration("", "", "", "")
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 
 	_, err := h.svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID)
@@ -277,6 +381,7 @@ func TestGitHubSource_LegacyPATEnvelopeStillAuthenticates(t *testing.T) {
 func TestGitHubSource_AppBackedSourceNeverFallsBackToAPAT(t *testing.T) {
 	app := &fakeGitHubApp{}
 	h := newAppHarness(t, app)
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	_, err := h.svc.MigrateGitHubSourceToApp(context.Background(), "actor-1", testOrg, source.ID)
 	require.NoError(t, err)
@@ -335,6 +440,7 @@ func TestGitHubSource_EmptyStoredPATFailsClosed(t *testing.T) {
 func TestGitHubSource_PATReconnectDoesNotResurrectASupersededToken(t *testing.T) {
 	app := &fakeGitHubApp{}
 	h := newAppHarness(t, app)
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	ctx := context.Background()
 
@@ -368,6 +474,7 @@ func TestGitHubSource_PATReconnectDoesNotResurrectASupersededToken(t *testing.T)
 // installation at a new binding, and the old token is never served for it.
 func TestGitHubSource_TokenIsCachedAndReMintedOnRotation(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	ctx := context.Background()
 	_, err := h.svc.MigrateGitHubSourceToApp(ctx, "actor-1", testOrg, source.ID)
@@ -400,4 +507,29 @@ func TestGitHubSource_TokenIsCachedAndReMintedOnRotation(t *testing.T) {
 	_, err = h.svc.SyncDatasourceSource(ctx, "actor-1", testOrg, source.ID)
 	require.NoError(t, err)
 	require.NotEqual(t, firstToken, h.tokens.last(), "a rotated binding must not be served the superseded token")
+}
+
+// The repository a source names is chosen by whoever connected it, so resolving
+// an installation from that repository proves only that some tenant installed
+// the App on it — never that this tenant is entitled to it. Without this refusal
+// an organization could re-point its own PAT-backed source at another
+// organization's installation and keep reading through the App after its PAT is
+// revoked, and the stamped installation would additionally route that
+// installation's App-level deliveries to this source. The connect path refuses
+// the same thing.
+func TestMigrateGitHubSourceToApp_RefusesAnInstallationThisOrganizationDoesNotHold(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{})
+	source := h.addPATSource(t, "victim/private", "pat-old")
+	before := h.storedCredential(t, source.ID)
+	mintsBefore := h.app.mintCount()
+
+	// The installation covering that repository belongs to a different tenant.
+	h.claimInstallation(t, testOtherOrg)
+
+	_, err := h.svc.MigrateGitHubSourceToApp(context.Background(), "actor-1", testOrg, source.ID)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, before, h.storedCredential(t, source.ID),
+		"a refused migration must leave the stored PAT untouched")
+	require.Equal(t, mintsBefore, h.app.mintCount(),
+		"no installation token may be minted for an installation this organization does not hold")
 }

@@ -287,7 +287,10 @@ const (
 	EventDatasourceSourceAccessLost     EventType = "saas.datasource.source.access_lost"
 	EventDatasourceSourceAccessRestored EventType = "saas.datasource.source.access_restored"
 	EventDatasourceBlobFetched          EventType = "saas.datasource.blob_fetched"
-	EventFeatureFlagUpdated             EventType = "saas.feature_flag.updated"
+
+	EventDatasourceGitHubAppSetupStarted   EventType = "saas.datasource.github_app.setup_started"
+	EventDatasourceGitHubAppSetupCompleted EventType = "saas.datasource.github_app.setup_completed"
+	EventFeatureFlagUpdated                EventType = "saas.feature_flag.updated"
 
 	// Domain-event pub/sub (issue #493). A subscription is a standing grant of
 	// delivery, so its create and revoke are audited on the tenant spine; a
@@ -444,6 +447,9 @@ var auditEventCatalog = []AuditEventDefinition{
 	revised(mutation(EventWebhookDeleted, CategorySystem, "A webhook subscription was deleted.", webhookAdminFields...), webhookAdminVersion),
 	revised(mutation(EventWebhookReplayed, CategorySystem, "A webhook delivery was replayed.", webhookAdminFields...), webhookAdminVersion),
 	mutation(EventDatasourceSourceAdded, CategorySystem, "A GitHub datasource was connected.", str("repo")),
+	mutation(EventDatasourceGitHubAppSetupStarted, CategorySystem, "GitHub App setup was started for an organization."),
+	mutation(EventDatasourceGitHubAppSetupCompleted, CategorySystem, "A GitHub App installation was verified and bound to an organization.",
+		str("installation_id")),
 	observation(EventDatasourceSourceSynced, CategorySystem, "A datasource sync was requested.", str("job_id"), str("repo")),
 	revised(mutation(EventDatasourceCredentialUpdated, CategorySystem, "A datasource credential was validated and replaced.",
 		str("repo"), enum("credential_kind", "pat", "app")), 2),
