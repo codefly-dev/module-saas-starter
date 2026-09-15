@@ -46,10 +46,29 @@ describe("connectGitHubSchema", () => {
 		const parsed = connectGitHubSchema.safeParse(legacy);
 
 		expect(parsed.success).toBe(true);
-		expect(parsed.success && parsed.data.method).toBe("pat");
+		// Absent, not defaulted: a default lands in the inferred output type as a
+		// required field, which is a breaking change for those same callers.
+		expect(parsed.success && parsed.data.method).toBeUndefined();
 		expect(
 			connectGitHubSchema.safeParse({ ...legacy, accessToken: undefined })
 				.success,
+		).toBe(false);
+	});
+
+	it("waives the token only for the App method", () => {
+		expect(
+			connectGitHubSchema.safeParse({
+				...valid,
+				method: "app",
+				accessToken: undefined,
+			}).success,
+		).toBe(true);
+		expect(
+			connectGitHubSchema.safeParse({
+				...valid,
+				method: "pat",
+				accessToken: undefined,
+			}).success,
 		).toBe(false);
 	});
 });

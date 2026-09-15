@@ -121,6 +121,9 @@ export function ConnectGitHubForm({
 										)
 									) {
 										form.setValue("repo", "");
+										// The branch was filled in from the repository, so it
+										// describes one that is no longer selected.
+										form.setValue("branch", "");
 									}
 								}}
 							>
@@ -193,9 +196,14 @@ export function ConnectGitHubForm({
 									</option>
 								))}
 							</select>
-							{appRepositories?.some(
-								(candidate) => !candidate.alreadyConnected,
-							) ? (
+							{appRepositories?.length === 0 ? (
+								<p role="status" className="text-xs text-muted-foreground">
+									This installation grants access to no repository. Choose one
+									for it on GitHub to connect it here.
+								</p>
+							) : appRepositories?.some(
+									(candidate) => !candidate.alreadyConnected,
+								) ? (
 								<p className="text-xs text-muted-foreground">
 									The installation grants these repositories. Connecting one
 									needs no token.
@@ -334,7 +342,7 @@ export function ConnectGitHubForm({
 						)}
 					</div>
 
-					{method === "pat" && (
+					{method !== "app" && (
 						<div className="space-y-2">
 							<Label htmlFor={idFor("token")}>Access token</Label>
 							<Input

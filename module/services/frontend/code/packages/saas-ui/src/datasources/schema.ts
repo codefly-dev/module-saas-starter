@@ -9,10 +9,12 @@ export const connectGitHubSchema = z
 		// the host resolves the installation covering the repository — so the
 		// token bound below is conditional rather than a flat `min(1)`.
 		//
-		// Defaulted because this schema is exported: a payload written against an
-		// earlier version carries no `method`, and `pat` is the rule it was
-		// written under.
-		method: z.enum(["app", "pat"]).default("pat"),
+		// Optional rather than defaulted because this schema is exported: a
+		// default lands in the inferred output type as a *required* field, which
+		// would force every external caller constructing these values to name a
+		// mode that did not exist before. Absent therefore reads as the pre-App
+		// rule everywhere — only `app` relaxes the token.
+		method: z.enum(["app", "pat"]).optional(),
 		repo: z
 			.string()
 			.max(255, "Repository name too long")
@@ -38,7 +40,7 @@ export const connectGitHubSchema = z
 		webhookSecret: z.string().max(1024, "Webhook secret too long").optional(),
 	})
 	.superRefine((values, ctx) => {
-		if (values.method === "pat" && !values.accessToken) {
+		if (values.method !== "app" && !values.accessToken) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				path: ["accessToken"],

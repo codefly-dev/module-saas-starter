@@ -143,6 +143,12 @@ function DatasourcesPanelView({
 	const [showConnect, setShowConnect] = useState(!!appSetupReturn);
 	const [beginPending, setBeginPending] = useState(false);
 	const [beginError, setBeginError] = useState<string>();
+	// Repositories connected while this panel has been mounted, whatever the
+	// method used. The completed setup's answer predates them and cannot be
+	// re-asked, so this is the only record that they are now taken.
+	const [connectedRepos, setConnectedRepos] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
 	// Per-row pending sets, not the shared mutation's single `isPending`, so two
 	// rows can sync/delete at once without one clearing the other's spinner and
 	// re-enabling a button whose request is still in flight (double-enqueue).
@@ -188,10 +194,15 @@ function DatasourcesPanelView({
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
 				boundaryNodeId: values.boundaryNodeId || undefined,
-				accessToken: values.method === "pat" ? values.accessToken : undefined,
+				accessToken: values.method === "app" ? undefined : values.accessToken,
 				webhookSecret: values.webhookSecret ?? "",
 			},
-			{ onSuccess: () => setShowConnect(false) },
+			{
+				onSuccess: () => {
+					setConnectedRepos((prev) => new Set(prev).add(values.repo));
+					setShowConnect(false);
+				},
+			},
 		);
 	};
 
@@ -219,9 +230,19 @@ function DatasourcesPanelView({
 		if (appSetupReturn) scrubAppSetupReturn();
 	}, [appSetupReturn]);
 
-	const appRepositories = appSetupActive
-		? appSetup.data?.repositories
-		: undefined;
+	// `alreadyConnected` is answered once, when the setup completes, and that
+	// answer can never be refreshed: the state behind it is redeemable exactly
+	// once, so refetching would report a rejection for a setup that succeeded.
+	// A repository connected since therefore has to be folded in here, or the
+	// picker keeps offering one this organization already holds.
+	const appRepositories = useMemo(() => {
+		const granted = appSetupActive ? appSetup.data?.repositories : undefined;
+		return granted?.map((candidate) =>
+			candidate.alreadyConnected || !connectedRepos.has(candidate.repo)
+				? candidate
+				: { ...candidate, alreadyConnected: true },
+		);
+	}, [appSetupActive, appSetup.data, connectedRepos]);
 	const appSetupPhase = beginPending
 		? "beginning"
 		: appSetupActive && appSetup.isFetching

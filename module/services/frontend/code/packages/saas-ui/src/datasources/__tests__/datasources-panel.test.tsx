@@ -931,6 +931,83 @@ describe("GitHub App onboarding", () => {
 		expect(status).toBeTruthy();
 	});
 
+	it("names an installation that grants no repository at all", async () => {
+		landOn("?installation_id=42&state=s1&code=oauth-1");
+		const client = appClient({
+			completeGitHubAppSetup: vi.fn(async () => ({
+				installationId: "42",
+				repositories: [],
+			})),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		// "already connects every repository" is vacuously true of an empty
+		// installation, and sends the reader looking for connections it has none of.
+		expect(
+			await screen.findByText(/grants access to no repository/i),
+		).toBeTruthy();
+		expect(screen.queryByText(/already connects every repository/i)).toBeNull();
+	});
+
+	it("stops offering a repository connected earlier in the same session", async () => {
+		// `alreadyConnected` is answered once, when the setup completes, and the
+		// state behind it is spent — so nothing can re-ask, and a repository
+		// connected since would otherwise stay on offer and be connected twice.
+		landOn("?installation_id=42&state=s1&code=oauth-1");
+		const client = appClient();
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		fireEvent.change(await screen.findByLabelText("Repository"), {
+			target: { value: "codefly-dev/module-saas-starter" },
+		});
+		fireEvent.change(screen.getByLabelText("Target collection"), {
+			target: { value: "docs" },
+		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "Connect through the GitHub App" }),
+		);
+		await waitFor(() => expect(client.addGitHubSource).toHaveBeenCalledTimes(1));
+
+		// Reopening to connect a second repository the same installation grants.
+		fireEvent.click(
+			await screen.findByRole("button", { name: /connect github/i }),
+		);
+
+		const option = (await screen.findByRole("option", {
+			name: /module-saas-starter/,
+		})) as HTMLOptionElement;
+		expect(option.disabled).toBe(true);
+		expect(option.textContent).toContain("already connected");
+		// Folded in locally: re-redeeming the burned state is not the way to learn it.
+		expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1);
+	});
+
+	it("drops a branch belonging to a repository the method switch cleared", async () => {
+		landOn("?installation_id=42&state=s1&code=oauth-1");
+		renderWithClient(<DatasourcesPanel client={appClient()} orgId="org-1" />);
+
+		// Picking on the App path fills the branch in from the repository.
+		fireEvent.change(await screen.findByLabelText("Repository"), {
+			target: { value: "codefly-dev/module-saas-starter" },
+		});
+		expect(
+			(screen.getByLabelText(/^Branch/) as HTMLInputElement).value,
+		).toBe("main");
+
+		const method = screen.getByLabelText("Authentication");
+		fireEvent.change(method, { target: { value: "pat" } });
+		fireEvent.change(screen.getByLabelText("Repository"), {
+			target: { value: "other/elsewhere" },
+		});
+		fireEvent.change(method, { target: { value: "app" } });
+
+		// The repository is cleared because the picker cannot show it; a branch
+		// describing it must not survive to be submitted for a different one.
+		expect((screen.getByLabelText(/^Branch/) as HTMLInputElement).value).toBe(
+			"",
+		);
+	});
+
 	it("hides the App path when the client cannot complete the return leg", async () => {
 		// begin and complete are independently optional. Offering the install with
 		// no way to redeem what comes back strands the tenant on a completed
