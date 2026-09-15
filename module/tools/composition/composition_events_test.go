@@ -347,6 +347,274 @@ func TestRenderAsyncAPIIsDeterministic(t *testing.T) {
 	}
 }
 
+// followsContribution declares the documents module's own noun as followable
+// over its own tenant-visible fact — the shape FOLLOWS.md specifies.
+func followsContribution() EventsContribution {
+	contribution := documentsContribution()
+	contribution.Follows = []FollowableResource{{
+		ResourceType: "documents.entry",
+		Events:       []string{"documents.entry.ingested"},
+	}}
+	return contribution
+}
+
+func TestBuildEventCatalogMergesFollows(t *testing.T) {
+	catalog, err := buildEventCatalog([]EventsContribution{followsContribution()}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err != nil {
+		t.Fatalf("buildEventCatalog: %v", err)
+	}
+	if len(catalog.Follows) != 1 {
+		t.Fatalf("unexpected follows: %+v", catalog.Follows)
+	}
+	follow := catalog.Follows[0]
+	if follow.ResourceType != "documents.entry" || follow.Namespace != "documents" {
+		t.Fatalf("follow lost its identity: %+v", follow)
+	}
+	if len(follow.Events) != 1 || follow.Events[0] != "documents.entry.ingested" {
+		t.Fatalf("follow lost its events: %+v", follow)
+	}
+}
+
+// TestBuildEventCatalogRejectsFollowsOverAnotherNamespacesFact is the ownership
+// rule. A follow declaration is what makes the host fan an event into a
+// stranger's inbox, so letting a module name a type it does not publish would
+// let it mint notifications about another module's resources.
+func TestBuildEventCatalogRejectsFollowsOverAnotherNamespacesFact(t *testing.T) {
+	billing := documentsContribution()
+	billing.Namespace = "billing"
+	billing.Queues = nil
+	billing.Publishes = nil
+	billing.Consumes = nil
+	billing.Follows = []FollowableResource{{
+		ResourceType: "billing.entry",
+		Events:       []string{"documents.entry.ingested"},
+	}}
+	_, err := buildEventCatalog([]EventsContribution{documentsContribution(), billing}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "does not publish") {
+		t.Fatalf("expected a foreign-fact error, got %v", err)
+	}
+}
+
+// A followable event must be tenant-visible. An internal type is short-circuited
+// by the relay before any subscriber sees it, so declaring one followable
+// promises an inbox item that can never arrive.
+func TestBuildEventCatalogRejectsNonTenantFollowableEvent(t *testing.T) {
+	for _, visibility := range []string{"internal", "external"} {
+		t.Run(visibility, func(t *testing.T) {
+			contribution := followsContribution()
+			contribution.Publishes[0].Visibility = visibility
+			contribution.Consumes = nil
+			_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+			if err == nil || !strings.Contains(err.Error(), "must be tenant-visible") {
+				t.Fatalf("expected a visibility error, got %v", err)
+			}
+		})
+	}
+}
+
+// The platform namespace is refused to module principals, so a resource under it
+// could be followed by nobody the follow path serves. The reservation has to mean
+// the same thing on the follows side as it already does on publish and consume.
+func TestBuildEventCatalogRejectsFollowsInReservedNamespace(t *testing.T) {
+	manifest := modulepackage.Manifest{ReservedNamespaces: []string{"saas"}}
+	platform := documentsContribution()
+	platform.Namespace = "saas"
+	platform.Publishes[0].Type = "saas.session.revoked"
+	platform.Consumes = nil
+	platform.BaseOwned = true
+	platform.Follows = []FollowableResource{{
+		ResourceType: "saas.session",
+		Events:       []string{"saas.session.revoked"},
+	}}
+	_, err := buildEventCatalog([]EventsContribution{platform}, manifest, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("expected a reserved-namespace follows error, got %v", err)
+	}
+}
+
+// TestBuildEventCatalogRejectsFollowableResourceTypeOutsideNamespace is the
+// squatting guard, and it is the follows-side twin of the namespace-ownership
+// rule on published types. resource_type is a persisted key: follow intent is
+// stored as (org_id, user_id, resource_type, resource_id) and the read-time
+// access recheck resolves that pair through generic oracles. A contribution
+// allowed to name another module's noun would mint follow rows that collide in
+// one uniqueness key with the real owner's, and whose access would be rechecked
+// against the wrong module's resource — and, because resource types are unique,
+// it would also permanently lock the rightful owner out of declaring its own.
+func TestBuildEventCatalogRejectsFollowableResourceTypeOutsideNamespace(t *testing.T) {
+	contribution := followsContribution()
+	contribution.Consumes = nil
+	contribution.Follows[0].ResourceType = "billing.invoice"
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "outside namespace") {
+		t.Fatalf("expected a resource-type ownership error, got %v", err)
+	}
+}
+
+// Namespace ownership plus unique namespaces makes a collision between two
+// contributions unreachable, so what the uniqueness check still has to catch is
+// one contribution declaring the same resource type twice.
+func TestBuildEventCatalogRejectsDuplicateFollowableResourceType(t *testing.T) {
+	contribution := followsContribution()
+	contribution.Consumes = nil
+	contribution.Publishes = append(contribution.Publishes, PublishedEvent{
+		Type:       "documents.entry.archived",
+		Schema:     "documents/events/v1/entry.proto#EntryIngested",
+		Visibility: "tenant",
+		Partition:  "{tenant_id}",
+	})
+	contribution.Follows = append(contribution.Follows, FollowableResource{
+		ResourceType: "documents.entry",
+		Events:       []string{"documents.entry.archived"},
+	})
+
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "declared more than once") {
+		t.Fatalf("expected a duplicate-resource-type error, got %v", err)
+	}
+}
+
+// TestBuildEventCatalogRejectsWithdrawnFollowable covers the retraction gate.
+// Follow intent is durable user state: rows in resource_follows outlive any
+// compose, so withdrawing a resource type or one of its events leaves real
+// followers pointing at something the host no longer matches. Nothing reports
+// that at runtime — the fan-out simply stops matching, which looks exactly like a
+// resource nobody follows — so compose is the only place it can be caught.
+func TestBuildEventCatalogRejectsWithdrawnFollowable(t *testing.T) {
+	t.Run("resource type withdrawn entirely", func(t *testing.T) {
+		prior := eventCatalog{Schema: eventsCatalogSchema, Follows: []eventCatalogFollow{{
+			ResourceType: "documents.entry",
+			Namespace:    "documents",
+			Events:       []string{"documents.entry.ingested"},
+		}}}
+		contribution := documentsContribution() // declares no follows at all
+		contribution.Consumes = nil
+		_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), prior)
+		if err == nil || !strings.Contains(err.Error(), "withdrawn") {
+			t.Fatalf("expected a withdrawn-resource error, got %v", err)
+		}
+	})
+
+	t.Run("one event dropped from the declaration", func(t *testing.T) {
+		prior := eventCatalog{Schema: eventsCatalogSchema, Follows: []eventCatalogFollow{{
+			ResourceType: "documents.entry",
+			Namespace:    "documents",
+			Events:       []string{"documents.entry.ingested", "documents.entry.renamed"},
+		}}}
+		contribution := followsContribution() // keeps only documents.entry.ingested
+		contribution.Consumes = nil
+		_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), prior)
+		if err == nil || !strings.Contains(err.Error(), "no longer declares event") {
+			t.Fatalf("expected a withdrawn-event error, got %v", err)
+		}
+	})
+}
+
+// The gate must not freeze the declaration: widening it is how a module adds a
+// change worth notifying on, and rejecting that would make the rule unusable.
+func TestBuildEventCatalogAllowsWideningAFollowable(t *testing.T) {
+	prior := eventCatalog{Schema: eventsCatalogSchema, Follows: []eventCatalogFollow{{
+		ResourceType: "documents.entry",
+		Namespace:    "documents",
+		Events:       []string{"documents.entry.ingested"},
+	}}}
+	contribution := followsContribution()
+	contribution.Consumes = nil
+	contribution.Publishes = append(contribution.Publishes, PublishedEvent{
+		Type:       "documents.entry.archived",
+		Schema:     "documents/events/v1/entry.proto#EntryIngested",
+		Visibility: "tenant",
+		Partition:  "{tenant_id}",
+	})
+	contribution.Follows[0].Events = append(contribution.Follows[0].Events, "documents.entry.archived")
+
+	catalog, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), prior)
+	if err != nil {
+		t.Fatalf("adding a followable event must compose: %v", err)
+	}
+	if len(catalog.Follows) != 1 || len(catalog.Follows[0].Events) != 2 {
+		t.Fatalf("widened declaration lost an event: %+v", catalog.Follows)
+	}
+}
+
+// TestBuildEventCatalogRejectsEventFollowableByTwoResourceTypes keeps the
+// event→resource mapping single-valued. The host matches a delivery on
+// (resource_type, envelope subject), and a subject is one resource's id: two
+// resource types over one event would ask that id to be both of them, and the
+// generated lookup could only answer with whichever declaration sorted last.
+func TestBuildEventCatalogRejectsEventFollowableByTwoResourceTypes(t *testing.T) {
+	contribution := followsContribution()
+	contribution.Consumes = nil
+	contribution.Follows = append(contribution.Follows, FollowableResource{
+		ResourceType: "documents.folder",
+		Events:       []string{"documents.entry.ingested"},
+	})
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "more than one resource type") {
+		t.Fatalf("expected a doubly-followable-event error, got %v", err)
+	}
+}
+
+func TestBuildEventCatalogRejectsMalformedFollowsDeclaration(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		follows []FollowableResource
+		want    string
+	}{
+		{
+			name:    "resource type is not a logical id",
+			follows: []FollowableResource{{ResourceType: "Documents Entry", Events: []string{"documents.entry.ingested"}}},
+			want:    "not a valid logical id",
+		},
+		{
+			name:    "no events",
+			follows: []FollowableResource{{ResourceType: "documents.entry"}},
+			want:    "declares no events",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			contribution := documentsContribution()
+			contribution.Consumes = nil
+			contribution.Follows = testCase.follows
+			_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+			if err == nil || !strings.Contains(err.Error(), testCase.want) {
+				t.Fatalf("expected %q, got %v", testCase.want, err)
+			}
+		})
+	}
+}
+
+func TestRenderEventCatalogProjectsFollows(t *testing.T) {
+	catalog, err := buildEventCatalog([]EventsContribution{followsContribution()}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err != nil {
+		t.Fatalf("buildEventCatalog: %v", err)
+	}
+	files, err := renderEventCatalog(catalog)
+	if err != nil {
+		t.Fatalf("renderEventCatalog: %v", err)
+	}
+	for artifact, want := range map[string]string{
+		EventCatalogOutput:  `"resource_type": "documents.entry"`,
+		EventGoOutput:       `{ResourceType: "documents.entry", Namespace: "documents", Events: []string{"documents.entry.ingested"}},`,
+		AsyncAPIOutput:      `"x-followable-resource": "documents.entry"`,
+		CommunicationOutput: "- **Follows:** `documents.entry`",
+	} {
+		if !strings.Contains(string(files[artifact]), want) {
+			t.Fatalf("%s missing %q:\n%s", artifact, want, files[artifact])
+		}
+	}
+	// The worker resolves an event to its target through this accessor.
+	if !strings.Contains(string(files[EventGoOutput]), "func Followable() []FollowableResource {") {
+		t.Fatalf("the Go projection must expose Followable():\n%s", files[EventGoOutput])
+	}
+	// Published and Consumed hold only scalars, so copying the array suffices for
+	// them; a FollowableResource owns a slice, and handing every caller the same
+	// backing array lets one in-place sort or append rewrite the compiled table.
+	if !strings.Contains(string(files[EventGoOutput]), "entry.Events = append([]string(nil), entry.Events...)") {
+		t.Fatalf("Followable() must copy each Events slice:\n%s", files[EventGoOutput])
+	}
+}
+
 func TestRenderEventDocsHandlesNoConsumers(t *testing.T) {
 	docs := string(renderEventDocs(eventCatalog{
 		Schema: eventsCatalogSchema,

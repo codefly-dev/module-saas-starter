@@ -853,6 +853,11 @@ func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, t
 	if !inCatalog {
 		return "", status.Errorf(codes.FailedPrecondition, "event type %q is not declared in this deployment's event catalog; add it to the module's events contribution and recompose", envelope.GetType())
 	}
+	if resourceType, missing := missingFollowableSubject(envelope); missing {
+		return "", status.Errorf(codes.InvalidArgument,
+			"event type %q is declared followable for resource type %q, so its subject must carry the resource id",
+			envelope.GetType(), resourceType)
+	}
 	// The declared partition template is the ordering domain, and it is what a
 	// caller that omits the key gets. Ordering is not free — publish_domain_event
 	// holds a transaction-scoped advisory lock on the partition until the
@@ -870,6 +875,36 @@ func (s *Service) ModulePublishEvent(ctx context.Context, caller ModuleCaller, t
 		return "", mapPublishError(err)
 	}
 	return envelope.GetId(), nil
+}
+
+// followableLookup is the catalog consulted by the exact-target guard below,
+// indirected through a var so a test can install a declaration. No composed
+// contribution declares a followable resource yet, so without this seam the
+// guard has no reachable failing path at all — and a guard nothing can exercise
+// is one that can be inverted, or deleted outright, with every test still green.
+var followableLookup = eventcatalog.LookupFollowable
+
+// missingFollowableSubject reports the resource type an envelope should have
+// targeted and did not, for a type some contribution declared followable: the
+// envelope subject carries the resource id the host matches a follow on.
+// Publishing without one fails nowhere downstream — it matches no follower and
+// delivers nothing, which is indistinguishable from a resource nobody follows —
+// so the publish is refused here instead.
+//
+// This binds the module publish path only, which is the one that can reach it.
+// The first-party lifecycle producer cannot: every EventType it emits is
+// saas.*-prefixed (audit_registry.go) while the catalog declares the unprefixed
+// domain types, and compose refuses a follows declaration in the reserved saas
+// namespace — so no lifecycle event can ever resolve to a followable resource.
+func missingFollowableSubject(envelope *events.EventEnvelope) (string, bool) {
+	if envelope.GetSubject() != "" {
+		return "", false
+	}
+	declared, followable := followableLookup(envelope.GetType())
+	if !followable {
+		return "", false
+	}
+	return declared.ResourceType, true
 }
 
 // ModuleSubscribe creates, or idempotently re-affirms, a durable subscription
