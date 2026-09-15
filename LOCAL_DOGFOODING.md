@@ -32,9 +32,10 @@ production/background fallback; a local port never belongs in product config.
 
 ## Configure providers through Codefly
 
-WorkOS is the identity adapter. The optional production-grade dogfood stack
-also includes Stripe, Resend, PostHog, Sentry, the in-graph OpenTelemetry
-gateway, and Cloudflare Turnstile:
+WorkOS is the identity adapter. The production-grade dogfood stack also
+includes Stripe, Resend, PostHog, Sentry, the in-graph OpenTelemetry gateway,
+and Cloudflare Turnstile. All of these are optional on this profile except
+`otel.sh`, which is required — see the note after the block:
 
 ```bash
 scripts/setup/workos.sh --env-file /secure/path/workos.env
@@ -63,6 +64,16 @@ Every script is independent, secret-safe, idempotent, and finishes with the
 Codefly doctor. Provider-side creation is opt-in where supported. See
 [`scripts/setup/README.md`](./scripts/setup/README.md) for exact requirements,
 safe provisioning flags, and per-provider acceptance checks.
+
+`otel.sh` is the one script this profile cannot skip. The `telemetry` service
+declares `observability` as a workspace-configuration-dependency, and on
+`local-dogfood` that group exists only once `otel.sh` writes it: the real
+`observability.env` / `observability.secret.env` are Git-ignored, and
+`setup_install_pair` refuses to write a tracked file, so there is no committed
+default to fall back on. Codefly skips a declared group whose files are absent
+rather than failing, and the collector refuses to start without an explicit
+`OBSERVABILITY_EXPORTER` — it will not silently downgrade itself to `debug` and
+drop every span. Run `scripts/setup/otel.sh --debug` to keep telemetry local.
 
 The product callback address always comes from
 `codefly endpoint frontend --type http`. WorkOS and the browser can use its

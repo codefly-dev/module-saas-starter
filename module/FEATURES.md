@@ -672,7 +672,7 @@ Environment variables consumed by the api:
 | `POSTHOG_API_HOST`             | Separate PostHog management/deletion origin                  |
 | `ERROR_TRACKING_MODE`          | Explicit `disabled` or `sentry`; rejects partial config      |
 | `SENTRY_DSN`                   | Server Sentry DSN, required in Sentry mode                   |
-| `OBSERVABILITY_EXPORTER`       | In-graph collector output: `debug` or `otlphttp`             |
+| `OBSERVABILITY_EXPORTER`       | Required in-graph collector output: `debug` or `otlphttp`; the collector refuses to start when it is unset |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`  | External OTLP/HTTP destination used only by the collector    |
 | `OTEL_EXPORTER_OTLP_HEADERS`   | Secret external collector headers                            |
 | `ABUSE_PROTECTION_MODE`        | Explicit `disabled` or `turnstile`                           |
