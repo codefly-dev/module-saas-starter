@@ -33,13 +33,38 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
   shown above live provenance. Loading/error/empty are first-class.
 - `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
-  target collection, access token, webhook secret).
+  target collection, webhook secret, and an access token only on the PAT path).
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
   hooks outside the panel. `datasourceClientOverTransport(transport)` does the same over a
   transport you already own.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+
+### Connecting through the GitHub App
+
+`Connect GitHub` offers the App as the default path and keeps a repository-scoped
+fine-grained PAT as a named alternative for existing connections and development.
+The panel drives `beginGitHubAppSetup`, sends the browser to the install URL the
+host mints, and on the way back redeems `completeGitHubAppSetup` with the echoed
+state, the installation id, and the authorization code GitHub appends when the App
+requests user authorization during installation — the host trades that code to prove
+the caller can reach the installation they name, so the App must be registered with
+it enabled. It then lists the repositories that installation grants,
+skipping the ones this organization already connects and offering each repository's
+reported default branch. Connecting that way sends no access token at all. An
+existing source moves onto the App in place with `migrateGitHubSourceToApp`.
+
+These three client methods are optional. A consumer adapting its own client may
+implement none of them: the App path is then hidden, the PAT path is unaffected,
+and the panel leaves a redirect's parameters and the address bar alone so that
+consumer can handle the return itself.
+
+**Deployment prerequisite.** GitHub returns the browser to the **Setup URL set on
+the App registration**, which nothing in this repo can set or verify. Point it at
+the page that mounts this panel (`https://<host>/admin/datasources` in the portal)
+and enable "Redirect on update", or the tenant installs the App and is returned no
+source and no error. See `module/configurations/local/github-app.env`.
 
 ### Data boundaries
 

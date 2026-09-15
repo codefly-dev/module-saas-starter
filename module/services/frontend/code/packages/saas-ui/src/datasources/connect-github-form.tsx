@@ -4,13 +4,23 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useId } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { type ConnectGitHubValues, connectGitHubSchema } from "./schema.js";
-import type { CollectionAccessView } from "./types.js";
+import type { CollectionAccessView, GitHubAppRepositoryView } from "./types.js";
 import { Button, Input, Label, Textarea } from "@codefly-dev/ui/layout";
 
 interface ConnectGitHubFormProps {
 	collections?: CollectionAccessView[];
 	readableNodeIds?: string[];
 	collectionError?: boolean;
+	/**
+	 * Sends the browser off to install the App. Absent when the client cannot
+	 * drive App onboarding, which drops the App path and leaves the PAT one.
+	 */
+	onBeginAppSetup?: () => void;
+	/** Repositories a completed setup returned; undefined until one completes. */
+	appRepositories?: GitHubAppRepositoryView[];
+	/** Which leg of App setup is in flight, if either. */
+	appSetupPhase?: "beginning" | "completing";
+	appSetupError?: string;
 	onSubmit: (values: ConnectGitHubValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
@@ -24,6 +34,10 @@ export function ConnectGitHubForm({
 	collections,
 	readableNodeIds,
 	collectionError,
+	onBeginAppSetup,
+	appRepositories,
+	appSetupPhase,
+	appSetupError,
 	onCancel,
 	isPending,
 	errorMessage,
@@ -36,6 +50,7 @@ export function ConnectGitHubForm({
 	const form = useForm<ConnectGitHubValues>({
 		resolver: zodResolver(connectGitHubSchema),
 		defaultValues: {
+			method: onBeginAppSetup ? "app" : "pat",
 			repo: "",
 			boundaryNodeId: "",
 			paths: "",
@@ -46,6 +61,8 @@ export function ConnectGitHubForm({
 		},
 	});
 	const { errors } = form.formState;
+	const method = useWatch({ control: form.control, name: "method" });
+	const repo = useWatch({ control: form.control, name: "repo" });
 	const boundaryNodeId = useWatch({
 		control: form.control,
 		name: "boundaryNodeId",
@@ -84,21 +101,143 @@ export function ConnectGitHubForm({
 					className="space-y-4"
 					noValidate
 				>
-					<div className="space-y-2">
-						<Label htmlFor={idFor("repo")}>Repository</Label>
-						<Input
-							id={idFor("repo")}
-							aria-invalid={!!errors.repo}
-							aria-describedby={errors.repo ? idFor("repo-error") : undefined}
-							placeholder="owner/name"
-							{...form.register("repo")}
-						/>
-						{errors.repo && (
-							<p id={idFor("repo-error")} className={errorClass}>
-								{errors.repo.message}
+					{onBeginAppSetup && (
+						<div className="space-y-2">
+							<Label htmlFor={idFor("method")}>Authentication</Label>
+							<select
+								id={idFor("method")}
+								value={method}
+								onChange={(event) => {
+									const next = event.target.value === "pat" ? "pat" : "app";
+									form.setValue("method", next);
+									// The App path can only connect what the installation
+									// grants, and the picker renders blank for anything else —
+									// leaving a repository typed on the PAT path selected would
+									// submit a repository the reader cannot see chosen.
+									if (
+										next === "app" &&
+										!appRepositories?.some(
+											(candidate) => candidate.repo === form.getValues("repo"),
+										)
+									) {
+										form.setValue("repo", "");
+										// The branch was filled in from the repository, so it
+										// describes one that is no longer selected.
+										form.setValue("branch", "");
+									}
+								}}
+							>
+								<option value="app">GitHub App (recommended)</option>
+								<option value="pat">Fine-grained personal access token</option>
+							</select>
+							<p className="text-xs text-muted-foreground">
+								{method === "app"
+									? "Install the app on repositories you choose. Nothing to create, paste, or rotate."
+									: "For an existing connection, or for development. Restrict the token to this repository with Contents: Read-only."}
 							</p>
-						)}
-					</div>
+						</div>
+					)}
+
+					{method === "app" && !appRepositories ? (
+						<div className="space-y-2">
+							<p className="text-sm text-muted-foreground">
+								Installing sends you to GitHub to pick the repositories this
+								organization may read. You come back here to choose the branch
+								and paths.
+							</p>
+							<Button
+								type="button"
+								variant="outline"
+								onClick={onBeginAppSetup}
+								disabled={!!appSetupPhase}
+								aria-busy={!!appSetupPhase}
+							>
+								{appSetupPhase === "completing"
+									? "Completing setup…"
+									: appSetupPhase === "beginning"
+										? "Opening GitHub…"
+										: "Install or select repositories on GitHub"}
+							</Button>
+							{appSetupError && (
+								<p role="alert" className={errorClass}>
+									{appSetupError}
+								</p>
+							)}
+						</div>
+					) : method === "app" ? (
+						<div className="space-y-2">
+							<Label htmlFor={idFor("repo")}>Repository</Label>
+							<select
+								id={idFor("repo")}
+								value={repo ?? ""}
+								onChange={(event) => {
+									form.setValue("repo", event.target.value);
+									form.setValue(
+										"branch",
+										appRepositories?.find(
+											(candidate) => candidate.repo === event.target.value,
+										)?.defaultBranch ?? "",
+									);
+								}}
+							>
+								<option value="">Select a repository</option>
+								{appRepositories?.map((candidate) => (
+									<option
+										key={candidate.repo}
+										value={candidate.repo}
+										disabled={candidate.alreadyConnected}
+									>
+										{candidate.repo}
+										{candidate.alreadyConnected
+											? " · already connected"
+											: candidate.defaultBranch
+												? ` · ${candidate.defaultBranch}`
+												: ""}
+									</option>
+								))}
+							</select>
+							{appRepositories?.length === 0 ? (
+								<p role="status" className="text-xs text-muted-foreground">
+									This installation grants access to no repository. Choose one
+									for it on GitHub to connect it here.
+								</p>
+							) : appRepositories?.some(
+									(candidate) => !candidate.alreadyConnected,
+								) ? (
+								<p className="text-xs text-muted-foreground">
+									The installation grants these repositories. Connecting one
+									needs no token.
+								</p>
+							) : (
+								<p role="status" className="text-xs text-muted-foreground">
+									This organization already connects every repository the
+									installation grants. Add another repository to the
+									installation on GitHub to connect it here.
+								</p>
+							)}
+							{errors.repo && (
+								<p id={idFor("repo-error")} className={errorClass}>
+									{errors.repo.message}
+								</p>
+							)}
+						</div>
+					) : (
+						<div className="space-y-2">
+							<Label htmlFor={idFor("repo")}>Repository</Label>
+							<Input
+								id={idFor("repo")}
+								aria-invalid={!!errors.repo}
+								aria-describedby={errors.repo ? idFor("repo-error") : undefined}
+								placeholder="owner/name"
+								{...form.register("repo")}
+							/>
+							{errors.repo && (
+								<p id={idFor("repo-error")} className={errorClass}>
+									{errors.repo.message}
+								</p>
+							)}
+						</div>
+					)}
 
 					<div className="space-y-2">
 						<Label htmlFor={idFor("paths")}>Paths (optional)</Label>
@@ -203,30 +342,32 @@ export function ConnectGitHubForm({
 						)}
 					</div>
 
-					<div className="space-y-2">
-						<Label htmlFor={idFor("token")}>Access token</Label>
-						<Input
-							id={idFor("token")}
-							aria-invalid={!!errors.accessToken}
-							aria-describedby={
-								errors.accessToken ? idFor("token-error") : undefined
-							}
-							type="password"
-							placeholder="PAT or GitHub App installation token"
-							{...form.register("accessToken")}
-						/>
-						<p className="text-xs text-muted-foreground">
-							Use a fine-grained PAT restricted to this repository with
-							Contents: Read-only. Your organization may require approval or SSO
-							authorization. Repository and branch access are verified before
-							saving.
-						</p>
-						{errors.accessToken && (
-							<p id={idFor("token-error")} className={errorClass}>
-								{errors.accessToken.message}
+					{method !== "app" && (
+						<div className="space-y-2">
+							<Label htmlFor={idFor("token")}>Access token</Label>
+							<Input
+								id={idFor("token")}
+								aria-invalid={!!errors.accessToken}
+								aria-describedby={
+									errors.accessToken ? idFor("token-error") : undefined
+								}
+								type="password"
+								placeholder="PAT or GitHub App installation token"
+								{...form.register("accessToken")}
+							/>
+							<p className="text-xs text-muted-foreground">
+								Use a fine-grained PAT restricted to this repository with
+								Contents: Read-only. Your organization may require approval or
+								SSO authorization. Repository and branch access are verified
+								before saving.
 							</p>
-						)}
-					</div>
+							{errors.accessToken && (
+								<p id={idFor("token-error")} className={errorClass}>
+									{errors.accessToken.message}
+								</p>
+							)}
+						</div>
+					)}
 
 					<div className="space-y-2">
 						<Label htmlFor={idFor("secret")}>Webhook secret (optional)</Label>
@@ -262,7 +403,11 @@ export function ConnectGitHubForm({
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isPending} aria-busy={isPending}>
-							{isPending ? "Validating GitHub access…" : "Validate and connect"}
+							{isPending
+								? "Validating GitHub access…"
+								: method === "app"
+									? "Connect through the GitHub App"
+									: "Validate and connect"}
 						</Button>
 					</div>
 				</form>

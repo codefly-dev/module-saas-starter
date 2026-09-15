@@ -144,12 +144,41 @@ export function datasourceClientOverTransport(
 				repo: input.repo,
 				paths: input.paths,
 				branch: input.branch,
-				accessToken: input.accessToken,
+				accessToken: input.accessToken ?? "",
 				webhookSecret: input.webhookSecret,
 				boundary: input.boundaryNodeId
 					? { case: "boundaryNodeId", value: input.boundaryNodeId }
 					: { case: "collectionLabel", value: input.targetCollection },
 			});
+		},
+		async beginGitHubAppSetup(orgId) {
+			const response = await client.beginGitHubAppSetup({ orgId });
+			return {
+				installUrl: response.installUrl,
+				state: response.state,
+				expiresAt: response.expiresAt
+					? timestampDate(response.expiresAt).toISOString()
+					: undefined,
+			};
+		},
+		async completeGitHubAppSetup(orgId, state, installationId, code) {
+			const response = await client.completeGitHubAppSetup({
+				orgId,
+				state,
+				installationId,
+				code,
+			});
+			return {
+				installationId: response.installationId,
+				repositories: response.repositories.map((repository) => ({
+					repo: repository.repo,
+					defaultBranch: repository.defaultBranch,
+					alreadyConnected: repository.alreadyConnected,
+				})),
+			};
+		},
+		async migrateGitHubSourceToApp(orgId, id) {
+			await client.migrateGitHubSourceToApp({ orgId, id });
 		},
 		async syncSource(orgId, id, accessToken) {
 			const response = await client.syncSource({

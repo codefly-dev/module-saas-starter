@@ -20,7 +20,7 @@ import {
 	QueryClientProvider,
 	useQuery,
 } from "@tanstack/react-query";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { CollectionGrants } from "./collection-access.js";
 import { ConnectGitHubForm } from "./connect-github-form.js";
 import { createDatasourceClient, type GatewayBinding } from "./gateway.js";
@@ -120,7 +120,35 @@ function DatasourcesPanelView({
 	const [reconnecting, setReconnecting] = useState<DatasourceView | null>(null);
 	const [reconnectPending, setReconnectPending] = useState(false);
 	const [reconnectError, setReconnectError] = useState<string>();
-	const [showConnect, setShowConnect] = useState(false);
+	const beginAppSetup = client.beginGitHubAppSetup?.bind(client);
+	const completeAppSetup = client.completeGitHubAppSetup?.bind(client);
+	const migrateToApp = client.migrateGitHubSourceToApp?.bind(client);
+
+	// The return leg, captured once during the first render: the redirect's
+	// parameters are a property of the URL the page loaded with, so the value has
+	// to survive the scrub below rather than be re-read from an address that no
+	// longer carries them.
+	//
+	// Claimed only when this client can actually redeem them, and only for the
+	// organization on screen when they landed. A consumer adapting its own client
+	// may implement none of the App calls and handle the redirect itself, and must
+	// keep both its parameters and its address bar; and the state is redeemable
+	// only by the organization that began it, so re-firing it after an org switch
+	// would report a rejection for a setup that in fact succeeded.
+	const [appSetupReturn] = useState(() => {
+		if (!completeAppSetup) return null;
+		const params = readAppSetupReturn();
+		return params && { ...params, orgId };
+	});
+	const [showConnect, setShowConnect] = useState(!!appSetupReturn);
+	const [beginPending, setBeginPending] = useState(false);
+	const [beginError, setBeginError] = useState<string>();
+	// Repositories connected while this panel has been mounted, whatever the
+	// method used. The completed setup's answer predates them and cannot be
+	// re-asked, so this is the only record that they are now taken.
+	const [connectedRepos, setConnectedRepos] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
 	// Per-row pending sets, not the shared mutation's single `isPending`, so two
 	// rows can sync/delete at once without one clearing the other's spinner and
 	// re-enabling a button whose request is still in flight (double-enqueue).
@@ -128,6 +156,9 @@ function DatasourcesPanelView({
 		() => new Set(),
 	);
 	const [deletingIds, setDeletingIds] = useState<ReadonlySet<string>>(
+		() => new Set(),
+	);
+	const [migratingIds, setMigratingIds] = useState<ReadonlySet<string>>(
 		() => new Set(),
 	);
 	// Row action errors have no other surface (no toast dependency, no global
@@ -163,11 +194,99 @@ function DatasourcesPanelView({
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
 				boundaryNodeId: values.boundaryNodeId || undefined,
-				accessToken: values.accessToken,
+				accessToken: values.method === "app" ? undefined : values.accessToken,
 				webhookSecret: values.webhookSecret ?? "",
 			},
-			{ onSuccess: () => setShowConnect(false) },
+			{
+				onSuccess: () => {
+					setConnectedRepos((prev) => new Set(prev).add(values.repo));
+					setShowConnect(false);
+				},
+			},
 		);
+	};
+
+	const appSetupActive = !!appSetupReturn && appSetupReturn.orgId === orgId;
+	const appSetup = useQuery({
+		queryKey: ["github-app-setup", appSetupReturn?.orgId, appSetupReturn?.state],
+		queryFn: () =>
+			completeAppSetup!(
+				appSetupReturn!.orgId,
+				appSetupReturn!.state,
+				appSetupReturn!.installationId,
+				appSetupReturn!.code,
+			),
+		enabled: appSetupActive,
+		// The state is redeemable exactly once, so a retry or a background refetch
+		// would report a rejection for a setup that in fact succeeded.
+		retry: false,
+		staleTime: Number.POSITIVE_INFINITY,
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
+	});
+	// Burn the state out of the address bar for the same reason, and to keep it out
+	// of browser history and same-origin referrers.
+	useEffect(() => {
+		if (appSetupReturn) scrubAppSetupReturn();
+	}, [appSetupReturn]);
+
+	// `alreadyConnected` is answered once, when the setup completes, and that
+	// answer can never be refreshed: the state behind it is redeemable exactly
+	// once, so refetching would report a rejection for a setup that succeeded.
+	// A repository connected since therefore has to be folded in here, or the
+	// picker keeps offering one this organization already holds.
+	const appRepositories = useMemo(() => {
+		const granted = appSetupActive ? appSetup.data?.repositories : undefined;
+		return granted?.map((candidate) =>
+			candidate.alreadyConnected || !connectedRepos.has(candidate.repo)
+				? candidate
+				: { ...candidate, alreadyConnected: true },
+		);
+	}, [appSetupActive, appSetup.data, connectedRepos]);
+	const appSetupPhase = beginPending
+		? "beginning"
+		: appSetupActive && appSetup.isFetching
+			? "completing"
+			: undefined;
+	const appSetupError = beginError
+		? beginError
+		: appSetupActive && appSetup.isError
+			? messageOf(appSetup.error)
+			: undefined;
+
+	const handleBeginAppSetup = async () => {
+		if (!beginAppSetup) return;
+		setBeginError(undefined);
+		setBeginPending(true);
+		try {
+			const handle = await beginAppSetup(orgId);
+			// Navigating away, so the pending flag is deliberately left set: the
+			// button must not re-enable under a browser that is already unloading.
+			window.location.assign(handle.installUrl);
+		} catch (error) {
+			setBeginError(messageOf(error));
+			setBeginPending(false);
+		}
+	};
+
+	const handleMigrateToApp = async (source: DatasourceView) => {
+		if (!migrateToApp) return;
+		setSyncNotice(null);
+		setActionError(null);
+		setMigratingIds((prev) => new Set(prev).add(source.id));
+		try {
+			await migrateToApp(orgId, source.id);
+			setSyncNotice(
+				`${source.repo} now authenticates through the GitHub App. Its stored token is no longer used.`,
+			);
+			await list.refetch();
+		} catch (error) {
+			setActionError(
+				`Couldn't move ${source.repo} onto the GitHub App: ${messageOf(error)}`,
+			);
+		} finally {
+			setMigratingIds((prev) => without(prev, source.id));
+		}
 	};
 
 	const handleSync = async (source: DatasourceView) => {
@@ -342,6 +461,8 @@ function DatasourcesPanelView({
 					}}
 					sources={sources}
 					boundaries={boundaries}
+					onMigrateToApp={migrateToApp ? handleMigrateToApp : undefined}
+					migratingIds={migratingIds}
                     permissionsResolved={scopes.isSuccess && !scopes.isError}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
@@ -383,6 +504,15 @@ function DatasourcesPanelView({
 			)}
 			{showConnect && (
 				<ConnectGitHubForm
+					// Both legs or neither: an install the panel cannot redeem on the
+					// way back strands the tenant on a completed GitHub install with
+					// nothing to show for it.
+					onBeginAppSetup={
+						beginAppSetup && completeAppSetup ? handleBeginAppSetup : undefined
+					}
+					appRepositories={appRepositories}
+					appSetupPhase={appSetupPhase}
+					appSetupError={appSetupError}
 					collections={collections.isError ? [] : collections.data}
 					readableNodeIds={
 						scopes.isSuccess && !scopes.isError
@@ -418,6 +548,45 @@ function PanelMessage({
 		>
 			{children}
 		</div>
+	);
+}
+
+/**
+ * The parameters GitHub appends to the App's configured setup URL when it sends
+ * the browser back: the installation it claims was installed, and the state we
+ * minted. Both are required — `setup_action` is deliberately not consulted, so
+ * an existing installation gaining repositories (`update`) lands here exactly as
+ * a first install does.
+ *
+ * Returns null under SSR, where the panel renders before any address exists.
+ */
+function readAppSetupReturn(): {
+	state: string;
+	installationId: string;
+	code: string;
+} | null {
+	if (typeof window === "undefined") return null;
+	const params = new URLSearchParams(window.location.search);
+	const state = params.get("state");
+	const installationId = params.get("installation_id");
+	// `code` is deliberately not part of the trigger. It is absent when the App
+	// was registered without "Request user authorization (OAuth) during
+	// installation", and the host answers that with the error naming the setting
+	// — which an operator can act on, where ignoring the return says nothing.
+	return state && installationId
+		? { state, installationId, code: params.get("code") ?? "" }
+		: null;
+}
+
+function scrubAppSetupReturn(): void {
+	const params = new URLSearchParams(window.location.search);
+	for (const key of ["state", "installation_id", "setup_action", "code"])
+		params.delete(key);
+	const query = params.toString();
+	window.history.replaceState(
+		null,
+		"",
+		`${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
 	);
 }
 
@@ -516,20 +685,24 @@ function SourcesTable({
     permissionsResolved,
 	syncingIds,
 	deletingIds,
+	migratingIds,
 	onSync,
 	onDelete,
 	onActivity,
 	onReconnect,
+	onMigrateToApp,
 }: {
 	sources: DatasourceView[];
 	boundaries: ReadonlyMap<string, AccessibleScopeView>;
     permissionsResolved: boolean;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
+	migratingIds: ReadonlySet<string>;
 	onSync: (source: DatasourceView) => void;
 	onDelete: (source: DatasourceView) => void;
 	onActivity?: (source: DatasourceView) => void;
 	onReconnect: (source: DatasourceView) => void;
+	onMigrateToApp?: (source: DatasourceView) => void;
 }) {
 	return (
 		<div className="overflow-x-auto rounded-lg border">
@@ -592,6 +765,19 @@ function SourcesTable({
 											onClick={() => onReconnect(source)}
 										>
 											Reconnect
+										</Button>
+									)}
+									{onMigrateToApp && source.provider === "github" && (
+										<Button
+											type="button"
+											variant="outline"
+											size="sm"
+											disabled={migratingIds.has(source.id)}
+											onClick={() => onMigrateToApp(source)}
+										>
+											{migratingIds.has(source.id)
+												? "Moving to the App…"
+												: "Use GitHub App"}
 										</Button>
 									)}
 									{onActivity && (
