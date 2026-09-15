@@ -2503,7 +2503,7 @@
     "tools/composition/composition_events_hardening_test.go": "ae9ee3c2d1223c59dbc53faeffbf47f39f09a93622f6012a19d265009ec8b6aa",
     "tools/composition/composition_events_test.go": "0f48c325f96ea978b5906d8deef3343dff87db9b767a6574afd397dd0884862f",
     "tools/composition/composition_test.go": "0179cb5c6e833cab00c67b6ac0db7e6e809ccc7477bd8ffa589ffa708a45ee50",
-    "tools/composition/fixtures_test.go": "e45d09d30c7021ba72c6b10b5236c368aa3b24b00e0d2e29168e0374a9bc9855",
+    "tools/composition/fixtures_test.go": "8d82cd492725f5928879aacc59f2950c4a5fb6cdcf4da2fc3c48eadbd215e952",
     "tools/database_authority_inventory_parse_test.go": "d5b25bdf8e7a22dd383746deafc31aa9773ac327abae753a318459aa93d06719",
     "tools/database_authority_inventory_test.go": "ce2ab00a7e67427bd5fb602b1e2fa1ae2ea37b4abfb10088e85374251e8061dd",
     "tools/generate-public-config.mjs": "30728d543f12933939bb59277aef1e8d812ec0b1b1b7d19172600c7625fa47a7",
