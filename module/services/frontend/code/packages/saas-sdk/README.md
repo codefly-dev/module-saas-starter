@@ -195,28 +195,46 @@ vendored contract, the facade and `library.codefly.yaml`, leaving a
 half-regenerated tree. Install the workspace and re-run, or `git checkout` the
 `generated` directory to get back to a known state.
 
-**Regenerate with the codefly version CI pins, and check the result.** The
-buf step above is a backstop, not a substitute for the pin: the generation
-recipe is `//go:embed`-ed into the CLI through the core it vendors, so which
-`codefly` you run still decides the emitted shape. `codefly@v0.1.145` vendors
-`core v0.3.20` and emits all nine third-party descriptors; a `development`
-build vendoring `core v0.3.25` calls `MarkForeignImports`, which suppresses
-foreign-namespace files and silently *deletes* the six `google/protobuf`
-well-known types from the generated tree. That is not hypothetical — it was
-committed here once and nothing local caught it, because `tsc` compiles from
-`src` only.
+**Regenerate through the script, never the client step alone.** Which `codefly`
+you run decides what the *client* step emits — the generation recipe is
+`//go:embed`-ed into the CLI through the core it vendors, and a build that calls
+`MarkForeignImports` suppresses foreign-namespace files. The buf step that
+follows is what makes the result reproducible anyway: it regenerates the whole
+import closure through the `@bufbuild/protoc-gen-es` version
+`module/services/frontend/code/package.json` pins, so the committed bindings sit
+on that pin. Run the client step by itself and they sit on whatever the
+companion image carries instead — which is how this tree once landed on a
+generator this repository does not pin, together with a foreign descriptor set
+that did not match it (#728), with nothing local catching either because `tsc`
+compiles from `src` only.
 
-`scripts/ci/install-codefly.sh` is the authority for the pinned version.
+**The descriptor count is an output, not a target.** At the current pin the tree
+vendors three third-party descriptors — `buf/validate` and the two `google/api`
+files. The `google/protobuf` well-known types are absent because the generator
+resolves every WKT to `@bufbuild/protobuf/wkt`; vendoring them would add files
+nothing imports. The client step still writes them, and `buf.gen.sdk.yaml`
+declares no `clean`, so the backstop supersedes what it re-emits and leaves those
+behind — `scripts/generate.mjs` therefore prunes every third-party descriptor the
+regenerated tree no longer imports, which is what makes the command above
+reproduce the committed tree rather than a superset of it. A different pin may
+emit them relatively again; then they are imported, and kept. Never restore or
+delete a descriptor by hand to reach a remembered number — regenerate, and let
+the gate below judge the result.
+
+`scripts/ci/install-codefly.sh` is the authority for the pinned CLI version.
 Check what you are about to run, and what you got:
 
 ```bash
 go version -m "$(which codefly)" | grep core   # want v0.3.20
-git ls-files -- '*/generated/typescript/src/gen/*' | grep -cE '/(google|buf)/'  # want 9
+head -1 generated/typescript/src/gen/saas/accounts/v1/datasource_pb.ts
+# want the @bufbuild/protoc-gen-es version the frontend workspace pins
 ```
 
 Run `npm run generate:bindings` alone after changing the source proto locally.
-The generated tree integrity and module composition contract-digest tests gate
-both dependency closure and vendored provenance.
+`TestGeneratedLibraryBindingsMatchThePinnedGenerator` (module composition) holds
+the bindings to that pin, to a closed import graph, and to carrying no
+third-party descriptor nothing imports; the contract-digest test beside it holds
+the vendored provenance.
 
 Because that closure is per **file**, which proto file an RPC lives in decides
 whether it can ship at all. Adding a service to `--services` ships every message
