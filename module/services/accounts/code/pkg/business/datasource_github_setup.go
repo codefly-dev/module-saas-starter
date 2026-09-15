@@ -45,6 +45,13 @@ var githubAppMetadataPermissions = map[string]string{"metadata": "read"}
 // which installation ids exist.
 const githubInstallationUnattributableMessage = "That GitHub App installation could not be attributed to you. Install the App from the GitHub account or organization you administer and approve the authorization request, then connect again."
 
+// githubInstallationAdministrationUnreadableMessage answers the one failure that
+// is not a denial: GitHub would not say whether the caller administers the
+// account, so the host refuses rather than assuming either way. Reading it
+// requires the App's organization `members: read` permission, which is operator
+// configuration — naming it is what makes the refusal actionable.
+const githubInstallationAdministrationUnreadableMessage = "This deployment's GitHub App cannot read organization membership, so it cannot confirm that you administer that installation. Grant the App the organization \"Members: Read\" permission and approve it for the organization, then connect again."
+
 // ErrGitHubAppSetupRejected is the single answer to every failed redemption:
 // unknown, expired, already consumed, or begun by a different user. One error
 // for all of them keeps the endpoint from reporting which states exist.
@@ -169,9 +176,10 @@ func (s *Service) BeginGitHubAppSetup(ctx context.Context, actorID, orgID string
 // installation by naming its id, which is a small integer arriving from a
 // browser. So the authorization is the user-to-server exchange: the code GitHub
 // appended to the redirect is traded for a token acting as the person holding
-// it, and that person must be able to reach the installation. Only then is it
-// claimed, where the table's primary key refuses one another tenant already
-// holds.
+// it, and that person must administer the account the installation belongs to —
+// not merely reach it, which every member of that organization does. Only then
+// is it claimed, where the table's primary key refuses one another tenant
+// already holds.
 func (s *Service) CompleteGitHubAppSetup(ctx context.Context, actorID, orgID, state, installationID, code string) (*GitHubAppInstallation, error) {
 	if !s.githubAppOnboardingReady() {
 		return nil, status.Error(codes.FailedPrecondition,
@@ -204,7 +212,7 @@ func (s *Service) CompleteGitHubAppSetup(ctx context.Context, actorID, orgID, st
 		return nil, status.Error(codes.FailedPrecondition,
 			"That GitHub App installation is suspended, so it grants no access. Unsuspend it on GitHub, then connect again.")
 	}
-	if err := s.verifyInstallationReachableByCaller(probeCtx, installation.ID, code); err != nil {
+	if err := s.verifyInstallationAdministeredByCaller(probeCtx, installation, code); err != nil {
 		return nil, err
 	}
 
@@ -232,10 +240,10 @@ func (s *Service) CompleteGitHubAppSetup(ctx context.Context, actorID, orgID, st
 	return &GitHubAppInstallation{InstallationID: installation.ID, Repositories: repositories}, nil
 }
 
-// verifyInstallationReachableByCaller proves the person who came back from the
-// install can actually reach the installation they are presenting, by trading
-// GitHub's authorization code for a user-to-server token and asking GitHub what
-// that user reaches.
+// verifyInstallationAdministeredByCaller proves the person who came back from
+// the install administers the account the installation belongs to, by trading
+// GitHub's authorization code for a user-to-server token and asking GitHub who
+// that user is to that account.
 //
 // This is the whole authorization of the claim. Everything else in the flow —
 // the one-time state, the app-authenticated lookup — establishes that a request
@@ -243,11 +251,20 @@ func (s *Service) CompleteGitHubAppSetup(ctx context.Context, actorID, orgID, st
 // caller is entitled to the installation, because the id is an enumerable
 // integer supplied by the browser.
 //
-// Every failure answers the same way: a rejected code, a code for a different
-// person, and an installation that person cannot reach are indistinguishable to
-// the caller, so the endpoint does not become an oracle for which installations
-// exist.
-func (s *Service) verifyInstallationReachableByCaller(ctx context.Context, installationID, code string) error {
+// Reachability is deliberately not the test. An installation is reachable by
+// every member of the organization it is installed on, so authorizing on reach
+// would let any member claim their organization's installation for a tenant they
+// control — and then connect every repository it grants, including ones they
+// cannot read themselves, since the installation token is not their token. Only
+// an administrator may install or reconfigure the App, so administration is the
+// property that matches the authority being claimed.
+//
+// Every refusal answers the same way: a rejected code, a code for a different
+// person, and an account that person does not administer are indistinguishable
+// to the caller, so the endpoint does not become an oracle for which
+// installations exist. The one exception is GitHub refusing to answer at all,
+// which is an operator misconfiguration rather than a denial and says so.
+func (s *Service) verifyInstallationAdministeredByCaller(ctx context.Context, installation githubconnector.AppInstallation, code string) error {
 	userToken, err := s.githubConnector.ExchangeUserCode(ctx, s.githubAppClientID, s.githubAppClientSecret, code)
 	if err != nil {
 		if errors.Is(err, githubconnector.ErrUserCodeRejected) {
@@ -255,11 +272,14 @@ func (s *Service) verifyInstallationReachableByCaller(ctx context.Context, insta
 		}
 		return githubInstallationTokenError(err)
 	}
-	reachable, err := s.githubConnector.UserAdministersInstallation(ctx, userToken, installationID)
+	administers, err := s.githubConnector.UserAdministersAccount(ctx, userToken, installation.AccountLogin, installation.AccountType)
 	if err != nil {
+		if errors.Is(err, githubconnector.ErrAccountAdministrationUnreadable) {
+			return status.Error(codes.FailedPrecondition, githubInstallationAdministrationUnreadableMessage)
+		}
 		return githubInstallationTokenError(err)
 	}
-	if !reachable {
+	if !administers {
 		return status.Error(codes.PermissionDenied, githubInstallationUnattributableMessage)
 	}
 	return nil

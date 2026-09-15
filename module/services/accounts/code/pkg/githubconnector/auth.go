@@ -33,7 +33,17 @@ type InstallationToken struct {
 type AppInstallation struct {
 	ID          string
 	SuspendedAt *time.Time
+	// The account the App is installed on: an organization, or a single user.
+	// Who administers this account is what entitles a caller to claim the
+	// installation, so both travel with it.
+	AccountLogin string
+	AccountType  string
 }
+
+// AccountTypeUser is the account type GitHub reports for an installation on a
+// personal account rather than an organization. Its administrator is that user
+// and nobody else, so administration is an identity comparison there.
+const AccountTypeUser = "User"
 
 // MintInstallationToken exchanges the App credential for an installation access
 // token: it signs a short-lived app JWT with the app's private key and POSTs to
@@ -133,11 +143,20 @@ func (c *Connector) GetInstallation(ctx context.Context, cred AppCredential, ins
 	var out struct {
 		ID          json.Number `json:"id"`
 		SuspendedAt *time.Time  `json:"suspended_at"`
+		Account     struct {
+			Login string `json:"login"`
+			Type  string `json:"type"`
+		} `json:"account"`
 	}
 	if err := c.do(req, &out); err != nil {
 		return AppInstallation{}, fmt.Errorf("get installation: %w", err)
 	}
-	return AppInstallation{ID: out.ID.String(), SuspendedAt: out.SuspendedAt}, nil
+	return AppInstallation{
+		ID:           out.ID.String(),
+		SuspendedAt:  out.SuspendedAt,
+		AccountLogin: out.Account.Login,
+		AccountType:  out.Account.Type,
+	}, nil
 }
 
 // scopedMintBody renders the narrowing request GitHub's create-installation-

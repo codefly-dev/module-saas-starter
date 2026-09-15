@@ -2,18 +2,12 @@ package githubconnector
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 )
-
-// maxUserInstallationPages bounds the user-installation walk. A person who can
-// reach more installations than this through one App is not a case this flow
-// serves, and an unbounded walk would let one request issue arbitrarily many
-// round trips.
-const maxUserInstallationPages = 20
 
 // ErrUserCodeRejected is the single answer to every failed user-token exchange:
 // an unknown, expired, already-redeemed or mismatched code. One error for all of
@@ -55,37 +49,80 @@ func (c *Connector) ExchangeUserCode(ctx context.Context, clientID, clientSecret
 	return out.AccessToken, nil
 }
 
-// UserAdministersInstallation reports whether the user behind userToken can
-// actually reach the installation. GitHub answers this from the user's own
-// authorization, so it is what binds an installation id — which arrives from a
-// browser redirect and is trivially enumerable — to a human entitled to it.
-func (c *Connector) UserAdministersInstallation(ctx context.Context, userToken, installationID string) (bool, error) {
-	for page := 1; page <= maxUserInstallationPages; page++ {
-		endpoint := fmt.Sprintf("%s/user/installations?per_page=%d&page=%d",
-			c.baseURL, installationRepositoryPageSize, page)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+// ErrAccountAdministrationUnreadable means GitHub refused to answer whether the
+// caller administers the account, rather than answering "no". The App's
+// user-to-server token needs the organization `members: read` permission to ask;
+// without it the question cannot be decided, so the caller must fail closed
+// rather than read a refusal as an absence of authority.
+var ErrAccountAdministrationUnreadable = fmt.Errorf("github did not permit reading the caller's account administration")
+
+// UserAdministersAccount reports whether the user behind userToken administers
+// the account an installation belongs to.
+//
+// This is deliberately not "can the user see the installation". `GET
+// /user/installations` answers that, and it includes every installation reachable
+// through ordinary organization membership — so it would let any member of an
+// organization claim that organization's installation for a tenant they control.
+// Only an administrator of the account may install or reconfigure an App on it,
+// so administration is the property that entitles a caller to claim it.
+//
+// A personal-account installation has exactly one administrator, the account
+// itself, so there it is an identity comparison.
+func (c *Connector) UserAdministersAccount(ctx context.Context, userToken, accountLogin, accountType string) (bool, error) {
+	if strings.TrimSpace(accountLogin) == "" {
+		return false, fmt.Errorf("administers account: installation carries no account login")
+	}
+	if strings.EqualFold(accountType, AccountTypeUser) {
+		login, err := c.authenticatedUserLogin(ctx, userToken)
 		if err != nil {
 			return false, err
 		}
-		req.Header.Set("Authorization", "Bearer "+userToken)
-		setGitHubHeaders(req)
+		return strings.EqualFold(login, accountLogin), nil
+	}
 
-		var out struct {
-			Installations []struct {
-				ID json.Number `json:"id"`
-			} `json:"installations"`
-		}
-		if err := c.do(req, &out); err != nil {
-			return false, fmt.Errorf("list user installations: %w", err)
-		}
-		for _, installation := range out.Installations {
-			if installation.ID.String() == installationID {
-				return true, nil
+	endpoint := fmt.Sprintf("%s/user/memberships/orgs/%s", c.baseURL, url.PathEscape(accountLogin))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	setGitHubHeaders(req)
+
+	var out struct {
+		Role  string `json:"role"`
+		State string `json:"state"`
+	}
+	if err := c.do(req, &out); err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			// Not a member at all: a decided "no", not a failure to ask.
+			if apiErr.StatusCode == http.StatusNotFound {
+				return false, nil
+			}
+			if apiErr.StatusCode == http.StatusForbidden || apiErr.StatusCode == http.StatusUnauthorized {
+				return false, ErrAccountAdministrationUnreadable
 			}
 		}
-		if len(out.Installations) < installationRepositoryPageSize {
-			return false, nil
-		}
+		return false, fmt.Errorf("read organization membership: %w", err)
 	}
-	return false, nil
+	// An invited-but-unaccepted admin is `pending`, and does not yet administer.
+	return strings.EqualFold(out.Role, "admin") && strings.EqualFold(out.State, "active"), nil
+}
+
+// authenticatedUserLogin resolves who a user-to-server token acts as.
+func (c *Connector) authenticatedUserLogin(ctx context.Context, userToken string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/user", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	setGitHubHeaders(req)
+
+	var out struct {
+		Login string `json:"login"`
+	}
+	if err := c.do(req, &out); err != nil {
+		return "", fmt.Errorf("get authenticated user: %w", err)
+	}
+	return out.Login, nil
 }

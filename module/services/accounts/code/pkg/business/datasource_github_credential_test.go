@@ -38,9 +38,14 @@ type fakeGitHubApp struct {
 	suspended    bool // the installation resolves but grants nothing
 	// What the installation grants. Nil serves a single default repository.
 	repositories []map[string]any
-	// Installations the OAuth user can reach. Nil means just testInstallationID,
-	// so the default harness represents a caller who did install what they present.
-	userInstallations []int
+	// Who the OAuth user is, and what they are to the installation's account.
+	// The defaults represent the legitimate case: an administrator of the
+	// organization the App is installed on.
+	userLogin        string // empty means "admin-user"
+	accountType      string // empty means "Organization"
+	orgRole          string // empty means "admin"
+	orgState         string // empty means "active"
+	membershipStatus int    // non-zero fails the membership lookup with this status
 	// Non-empty makes the user-token exchange answer GitHub's way: HTTP 200 with
 	// an error member rather than a failure status.
 	oauthError string
@@ -60,19 +65,26 @@ func (f *fakeGitHubApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeAppJSON(w, http.StatusOK, map[string]any{"access_token": "ghu_user", "token_type": "bearer"})
-	case strings.HasSuffix(r.URL.Path, "/user/installations"):
-		reachable := f.userInstallations
-		if reachable == nil {
-			reachable = []int{testInstallationID}
+	case strings.HasPrefix(r.URL.Path, "/user/memberships/orgs/"):
+		if f.membershipStatus != 0 {
+			http.Error(w, `{"message":"forbidden"}`, f.membershipStatus)
+			return
 		}
-		installations := make([]map[string]any, 0, len(reachable))
-		for _, id := range reachable {
-			installations = append(installations, map[string]any{"id": id})
+		role, state := f.orgRole, f.orgState
+		if role == "" {
+			role = "admin"
 		}
-		writeAppJSON(w, http.StatusOK, map[string]any{
-			"total_count":   len(installations),
-			"installations": installations,
-		})
+		if state == "" {
+			state = "active"
+		}
+		writeAppJSON(w, http.StatusOK, map[string]any{"role": role, "state": state})
+	// Must follow the memberships case, whose path also ends beneath /user.
+	case strings.HasSuffix(r.URL.Path, "/user"):
+		login := f.userLogin
+		if login == "" {
+			login = "admin-user"
+		}
+		writeAppJSON(w, http.StatusOK, map[string]any{"login": login})
 	case strings.HasSuffix(r.URL.Path, "/installation/repositories"):
 		if f.alwaysFullRepoPages {
 			full := make([]map[string]any, 0, 100)
@@ -121,10 +133,14 @@ func (f *fakeGitHubApp) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"message":"not found"}`, f.lookupStatus)
 			return
 		}
+		accountType := f.accountType
+		if accountType == "" {
+			accountType = "Organization"
+		}
 		installation := map[string]any{
 			"id":                   testInstallationID,
 			"repository_selection": "selected",
-			"account":              map[string]any{"login": "acme"},
+			"account":              map[string]any{"login": "acme", "type": accountType},
 		}
 		if f.suspended {
 			installation["suspended_at"] = time.Now().UTC().Format(time.RFC3339)

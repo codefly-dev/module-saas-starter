@@ -2,6 +2,7 @@ package business_test
 
 import (
 	"context"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -106,11 +107,15 @@ func TestCompleteGitHubAppSetup_RefusesAnUnknownState(t *testing.T) {
 // not: an organization naming another tenant's installation id, which is a small
 // integer arriving from a browser. Asking GitHub as the App answers "yes, that
 // installation exists" for every tenant's installation, so the refusal has to
-// come from the authorizing user not being able to reach it.
-func TestCompleteGitHubAppSetup_RefusesAnInstallationTheCallerCannotReach(t *testing.T) {
-	// The person returning from the install reaches installation 99; they are
-	// presenting 4242, which belongs to somebody else and is unclaimed.
-	h := newAppHarness(t, &fakeGitHubApp{userInstallations: []int{99}})
+// come from the authorizing user not administering the account it belongs to.
+//
+// Reach is not enough and is the sharper version of this attack: every ordinary
+// member of an organization reaches its installation, so authorizing on reach
+// would let a member claim their own employer's installation into a tenant they
+// control, and then connect every repository it grants — including ones they
+// cannot read themselves, because the installation token is not their token.
+func TestCompleteGitHubAppSetup_RefusesACallerWhoOnlyBelongsToTheOrganization(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{orgRole: "member"})
 	handle := beginSetup(t, h, "actor-1", testOrg)
 
 	_, err := completeSetup(h, "actor-1", testOrg, handle.State, "4242")
@@ -119,7 +124,50 @@ func TestCompleteGitHubAppSetup_RefusesAnInstallationTheCallerCannotReach(t *tes
 	claimed, err := h.store.GitHubAppInstallationClaimedBy(context.Background(), "4242", testOrg)
 	require.NoError(t, err)
 	require.False(t, claimed,
-		"an installation the caller cannot reach must not be claimed, even when it is unclaimed")
+		"a member who does not administer the account must not claim its installation, even unclaimed")
+}
+
+// An admin who has been invited but has not accepted does not administer yet.
+func TestCompleteGitHubAppSetup_RefusesAPendingAdministrator(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{orgRole: "admin", orgState: "pending"})
+	handle := beginSetup(t, h, "actor-1", testOrg)
+
+	_, err := completeSetup(h, "actor-1", testOrg, handle.State, "4242")
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+// GitHub refusing to answer is not a denial: the App lacks the permission to ask.
+// Failing closed is right, but it must say so, or an operator reads a
+// configuration gap as the tenant's fault.
+func TestCompleteGitHubAppSetup_RefusesWhenAdministrationCannotBeRead(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{membershipStatus: http.StatusForbidden})
+	handle := beginSetup(t, h, "actor-1", testOrg)
+
+	_, err := completeSetup(h, "actor-1", testOrg, handle.State, "4242")
+	require.Equal(t, codes.FailedPrecondition, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "Members: Read")
+
+	claimed, err := h.store.GitHubAppInstallationClaimedBy(context.Background(), "4242", testOrg)
+	require.NoError(t, err)
+	require.False(t, claimed, "an undecidable administration check must not claim")
+}
+
+// A personal-account installation has exactly one administrator: the account.
+func TestCompleteGitHubAppSetup_AcceptsThePersonalAccountOwner(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{accountType: "User", userLogin: "acme"})
+	handle := beginSetup(t, h, "actor-1", testOrg)
+
+	installation, err := completeSetup(h, "actor-1", testOrg, handle.State, "4242")
+	require.NoError(t, err)
+	require.Equal(t, "4242", installation.InstallationID)
+}
+
+func TestCompleteGitHubAppSetup_RefusesAnotherPersonalAccount(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{accountType: "User", userLogin: "somebody-else"})
+	handle := beginSetup(t, h, "actor-1", testOrg)
+
+	_, err := completeSetup(h, "actor-1", testOrg, handle.State, "4242")
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
 // A code that GitHub refuses is reported exactly like an installation the user
