@@ -186,6 +186,157 @@ func TestPostgresListDatasourceSourcesByGitHubInstallationPages(t *testing.T) {
 	require.Equal(t, seeded, walked, "paging must visit every source exactly once")
 }
 
+// setSourceRepo points a seeded source at a named repository. The shared seed
+// helper writes one fixed repo, and the lookup below filters on it.
+func setSourceRepo(t *testing.T, sourceID, repo string) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		_, err := tx.Exec(ctx, `UPDATE datasource_sources SET repo=$2 WHERE id=$1`, sourceID, repo)
+		return err
+	}))
+}
+
+func activeSourcesForInstallationRepo(t *testing.T, installationID, repo, afterID string, limit int) []*business.DatasourceSource {
+	t.Helper()
+	var sources []*business.DatasourceSource
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		sources, err = testStore.ListActiveDatasourceSourcesByGitHubInstallationRepo(ctx, installationID, repo, afterID, limit)
+		return err
+	}))
+	return sources
+}
+
+// An App-level content delivery names an installation and a repository and no
+// tenant, so the fan-out's lookup spans organizations — and must still return
+// only the sources bound to that installation, pointed at that repository.
+func TestPostgresListActiveSourcesByGitHubInstallationRepoScopesToInstallationAndRepo(t *testing.T) {
+	delivered := uniqueInstallationID()
+	other := uniqueInstallationID()
+
+	owner := seedUser(t)
+	orgOne := seedOrg(t, owner)
+	orgTwo := seedOrg(t, owner)
+
+	first := seedDatasourceSource(t, orgOne)
+	second := seedDatasourceSource(t, orgTwo)
+	otherRepo := seedDatasourceSource(t, orgOne)
+	otherInstallation := seedDatasourceSource(t, orgOne)
+	unbound := seedDatasourceSource(t, orgOne)
+	notGitHub := seedDatasourceSource(t, orgOne)
+
+	for _, id := range []string{first, second, otherInstallation, unbound, notGitHub} {
+		setSourceRepo(t, id, "acme/docs")
+	}
+	setSourceRepo(t, otherRepo, "acme/specs")
+
+	bindInstallation(t, orgOne, first, delivered)
+	bindInstallation(t, orgTwo, second, delivered)
+	bindInstallation(t, orgOne, otherRepo, delivered)
+	bindInstallation(t, orgOne, otherInstallation, other)
+	bindInstallation(t, orgOne, notGitHub, delivered)
+	setSourceProvider(t, notGitHub, business.DatasourceProviderAPI)
+
+	found := activeSourcesForInstallationRepo(t, delivered, "acme/docs", "", 100)
+	ids := make([]string, 0, len(found))
+	for _, source := range found {
+		ids = append(ids, source.ID)
+		// The fan-out stamps the tenant and boundary from this projection, so a
+		// row that came back without them would bind a delivery to no tenant.
+		require.NotEmpty(t, source.OrgID)
+		require.NotEmpty(t, source.BoundaryNodeID)
+	}
+	require.ElementsMatch(t, []string{first, second}, ids,
+		"both tenants' sources for the delivered repository, and nothing else")
+	require.NotContains(t, ids, otherRepo, "a push names one repository")
+	require.NotContains(t, ids, otherInstallation)
+	require.NotContains(t, ids, unbound, "a PAT-backed source receives its own webhook, not the App's")
+	require.NotContains(t, ids, notGitHub)
+}
+
+// The active predicate is what revokes eligibility. A source parked by the
+// installation reconciler (a suspended installation, a deselected repository),
+// degraded by the compiler or paused by an operator must not receive a push,
+// and no receipt-time cache stands between that row and this read.
+func TestPostgresListActiveSourcesByGitHubInstallationRepoExcludesIneligible(t *testing.T) {
+	const compilerReason = "snapshot manifest is 1048576 bytes, over the 983040-byte ingest limit"
+	installation := uniqueInstallationID()
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+
+	active := seedDatasourceSource(t, org)
+	paused := seedDatasourceSource(t, org)
+	compilerParked := seedDatasourceSource(t, org)
+	suspended := seedDatasourceSource(t, org)
+
+	for _, id := range []string{active, paused, compilerParked, suspended} {
+		setSourceRepo(t, id, "acme/docs")
+		bindInstallation(t, org, id, installation)
+	}
+	setSourceState(t, paused, business.DatasourceStatusPaused, "")
+	setSourceState(t, compilerParked, business.DatasourceStatusDegraded, compilerReason)
+	parkForInstallation(t, suspended, business.DatasourceReasonInstallationSuspended)
+
+	found := activeSourcesForInstallationRepo(t, installation, "acme/docs", "", 100)
+	require.Len(t, found, 1)
+	require.Equal(t, active, found[0].ID,
+		"only the active source is eligible for a content delivery")
+}
+
+// GitHub's repository names are case-insensitive. A delivery carries the
+// repository's current casing while the row carries whatever it was connected
+// with, so the match has to be too — otherwise a rename that only changes case
+// silently stops delivering.
+func TestPostgresListActiveSourcesByGitHubInstallationRepoMatchesCaseInsensitively(t *testing.T) {
+	installation := uniqueInstallationID()
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+
+	source := seedDatasourceSource(t, org)
+	setSourceRepo(t, source, "Acme/Docs")
+	bindInstallation(t, org, source, installation)
+
+	for _, delivered := range []string{"acme/docs", "Acme/Docs", "ACME/DOCS"} {
+		found := activeSourcesForInstallationRepo(t, installation, delivered, "", 100)
+		require.Len(t, found, 1, delivered)
+		require.Equal(t, source, found[0].ID, delivered)
+	}
+}
+
+// One installation can hold more sources for a repository than a single read
+// returns — the same repository connected by several tenants — so the lookup
+// pages by id and the fan-out walks it with the last id it saw.
+func TestPostgresListActiveSourcesByGitHubInstallationRepoPages(t *testing.T) {
+	installation := uniqueInstallationID()
+	owner := seedUser(t)
+	org := seedOrg(t, owner)
+
+	seeded := map[string]bool{}
+	for range 3 {
+		id := seedDatasourceSource(t, org)
+		setSourceRepo(t, id, "acme/docs")
+		bindInstallation(t, org, id, installation)
+		seeded[id] = true
+	}
+
+	walked := map[string]bool{}
+	after := ""
+	for range 5 {
+		page := activeSourcesForInstallationRepo(t, installation, "acme/docs", after, 2)
+		if len(page) == 0 {
+			break
+		}
+		require.LessOrEqual(t, len(page), 2, "a page never exceeds the limit")
+		for _, source := range page {
+			require.Greater(t, source.ID, after, "each page starts strictly after the cursor")
+			walked[source.ID] = true
+			after = source.ID
+		}
+	}
+	require.Equal(t, seeded, walked, "every eligible source is reached exactly once")
+}
+
 // The park re-tests the status inside the UPDATE. The reconciler decides what to
 // park from a read taken before it called GitHub, so an operator pause or a
 // compiler degrade landing in between must survive — otherwise a webhook erases

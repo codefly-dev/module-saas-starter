@@ -4,7 +4,11 @@ import type { Notification, NotificationType } from "./types";
 
 const notificationActionBase = new URL("https://notification.invalid");
 
-function notificationActionUrl(actionUrl: string): string | undefined {
+/**
+ * Narrows a stored action URL to a same-origin path. Shape only — authority is
+ * a separate question, settled server-side when the link is followed.
+ */
+export function notificationActionUrl(actionUrl: string): string | undefined {
 	if (!actionUrl.startsWith("/")) {
 		return undefined;
 	}
@@ -29,7 +33,7 @@ export function toNotification(message: NotificationMessage): Notification {
 		createdAt: message.createdAt
 			? timestampDate(message.createdAt).toISOString()
 			: new Date(0).toISOString(),
-		actionUrl: notificationActionUrl(message.actionUrl),
+		hasAction: message.hasAction,
 	};
 }
 

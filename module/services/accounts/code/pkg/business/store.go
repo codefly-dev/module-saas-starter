@@ -184,6 +184,18 @@ type Store interface {
 	// installation and nothing else, and its receiver is unauthenticated, so
 	// there is no tenant to scope the lookup to. Control-plane.
 	ListDatasourceSourcesByGitHubInstallation(ctx context.Context, installationID, afterID string, limit int) ([]*DatasourceSource, error)
+	// ListActiveDatasourceSourcesByGitHubInstallationRepo returns one page of the
+	// currently eligible GitHub sources an App-level content delivery concerns:
+	// bound to the delivered installation, pointed at the delivered repository,
+	// and active. It spans tenants for the same reason the listing above does —
+	// one installation can serve sources in several organizations and the
+	// delivery names none of them — so a caller fans out to every row it
+	// returns and infers no global tenant. Status is part of the predicate
+	// rather than a caller-side filter: a suspended installation, a deselected
+	// repository and an operator pause all leave the row non-active, so
+	// eligibility is re-read here on every delivery instead of being cached.
+	// Control-plane.
+	ListActiveDatasourceSourcesByGitHubInstallationRepo(ctx context.Context, installationID, repo, afterID string, limit int) ([]*DatasourceSource, error)
 	// ListGitHubInstallationsPendingRecheck returns one page of the distinct
 	// installations still holding a source parked for one of reasons, so
 	// restoration does not depend on a single webhook delivery arriving. offset
@@ -577,6 +589,11 @@ type Store interface {
 	MarkNotificationRead(ctx context.Context, id string) error
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	DeleteNotification(ctx context.Context, id string) error
+	// GetNotification reads one notification by id. Run under WithUserTx: the
+	// RLS policy on `notifications` is the access floor, so an id belonging to
+	// another user reads as absent rather than forbidden. Returns (nil, nil) on
+	// miss.
+	GetNotification(ctx context.Context, id string) (*Notification, error)
 	// GetNotificationUserID resolves notification.id → user_id.
 	// Called under WithControlPlane by Service methods that only have an
 	// id (MarkRead / DeleteNotification) and need to enter the

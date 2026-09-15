@@ -2,6 +2,7 @@ package business
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	gen "accounts/pkg/gen/saas/accounts/v1"
@@ -279,6 +280,63 @@ func (s *Service) visibleResources(ctx context.Context, userID string, refs []re
 	return visible, nil
 }
 
+// ErrNotificationNotFound reports that no notification with this id is readable
+// by the caller. A follow item whose resource the caller may no longer see
+// reports exactly this error too: the two answers have to be indistinguishable,
+// or following a link becomes an existence oracle for a revoked resource.
+var ErrNotificationNotFound = errors.New("notification not found")
+
+// ResolveNotificationAction re-authorizes a notification's deep link at the
+// moment it is followed, and returns where to go.
+//
+// The stored action_url is a cache of a past grant, exactly as the title and
+// body beside it are. Filtering the inbox at read time narrows the window but
+// cannot close it: a page fetched at T is filtered against visibility at T, and
+// the link may be followed minutes later, after a revocation, from a page still
+// holding the item. So the resource is rechecked here — one point check, since
+// exactly one resource is in question.
+//
+// The row is read under the caller's own user-scoped transaction, so the RLS
+// policy on `notifications` rather than a comparison in Go is what makes another
+// user's id indistinguishable from an absent one.
+//
+// Visibility is settled through visibleResources — the same oracle
+// ListNotifications and GetUnreadCount filter on — rather than through a point
+// CheckAccess. The two do not agree: CheckAccess's share branch matches
+// record_shares directly, while the listing branch joins scope_nodes, so a share
+// on an unregistered record is visible to one and not the other. Asking a
+// different question here than the inbox asked would let a link resolve for an
+// item the inbox refuses to show.
+func (s *Service) ResolveNotificationAction(ctx context.Context, userID, id string) (string, error) {
+	w := wool.Get(ctx).In("ResolveNotificationAction")
+	var notification *Notification
+	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
+		n, err := s.store.GetNotification(ctx, id)
+		notification = n
+		return err
+	}); err != nil {
+		return "", w.Wrapf(err, "cannot resolve notification action")
+	}
+	if notification == nil || notification.ActionURL == "" {
+		return "", ErrNotificationNotFound
+	}
+	if notification.ResourceType == "" {
+		return notification.ActionURL, nil
+	}
+	// visibleResources drops an org-less reference rather than guessing a tenant
+	// for it, so the unanswerable question fails closed here without a second
+	// spelling of that rule.
+	ref := resourceRef{notification.OrgID, notification.ResourceType, notification.ResourceID}
+	visible, err := s.visibleResources(ctx, userID, []resourceRef{ref})
+	if err != nil {
+		return "", w.Wrapf(err, "cannot resolve notification action")
+	}
+	if !visible[ref] {
+		return "", ErrNotificationNotFound
+	}
+	return notification.ActionURL, nil
+}
+
 // MarkRead marks a caller-owned notification as read. Resolve and compare the
 // owner before entering the user-scoped transaction so an ID substitution is
 // indistinguishable from a missing notification.
@@ -288,7 +346,7 @@ func (s *Service) MarkRead(ctx context.Context, callerID, id string) error {
 		return err
 	}
 	if callerID == "" || userID != callerID {
-		return wool.Get(ctx).NewError("notification not found")
+		return ErrNotificationNotFound
 	}
 	return s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
 		return s.store.MarkNotificationRead(ctx, id)
@@ -310,7 +368,7 @@ func (s *Service) DeleteNotification(ctx context.Context, callerID, id string) e
 		return err
 	}
 	if callerID == "" || userID != callerID {
-		return wool.Get(ctx).NewError("notification not found")
+		return ErrNotificationNotFound
 	}
 	return s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
 		return s.store.DeleteNotification(ctx, id)
@@ -334,7 +392,7 @@ func (s *Service) resolveNotificationUser(ctx context.Context, id string) (strin
 		return "", err
 	}
 	if userID == "" {
-		return "", wool.Get(ctx).NewError("notification not found")
+		return "", ErrNotificationNotFound
 	}
 	return userID, nil
 }

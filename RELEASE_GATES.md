@@ -765,4 +765,31 @@ To cut an immutable module-package release:
 2. Commit it as `release: module-package/vX.Y.Z`.
 3. Tag that commit with an annotated `module-package/vX.Y.Z` tag and push it.
 
+The signing keypair is a one-time setup, and the publication job fails before
+creating a release without it:
+
+```bash
+openssl genpkey -algorithm ed25519 -out provenance.pem
+# The last 32 bytes of each DER encoding are the raw seed and the raw
+# public key, which is what the signer decodes.
+openssl pkey -in provenance.pem -outform DER | tail -c 32 | base64 \
+  | gh secret set RELEASE_PROVENANCE_PRIVATE_KEY
+openssl pkey -in provenance.pem -pubout -outform DER | tail -c 32 | base64 \
+  | gh secret set RELEASE_PROVENANCE_PUBLIC_KEY
+rm provenance.pem
+```
+
+The two are set independently on purpose: `sign-provenance` derives the public
+key from the private one and refuses to sign unless it matches the configured
+trust key, so a swapped private key cannot quietly re-sign releases under the
+identity consumers already trust. Rotating is the same procedure again; each
+release publishes the key it was signed with, so a consumer pinned to an older
+release keeps verifying that one against the key it already recorded.
+
+Publishing the public half is the release's own job — it writes the
+`module-trust.yaml` asset and the same block into the release notes, derived
+from the key it verified the signature against. There is no separate step, and
+nothing to copy by hand. What a consumer does with it is in
+[MODULE.md § Pinning the package by identity](./MODULE.md#pinning-the-package-by-identity).
+
 [#405]: https://github.com/codefly-dev/module-saas-starter/issues/405
