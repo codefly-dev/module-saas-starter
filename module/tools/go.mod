@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
-	github.com/codefly-dev/core v0.3.20
+	github.com/codefly-dev/core v0.3.32-0.20260915125417-552ee9b9a8c4
 	github.com/yoheimuta/go-protoparser/v4 v4.14.2
 	golang.org/x/tools v0.49.0
 	google.golang.org/protobuf v1.36.12
@@ -20,7 +20,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
