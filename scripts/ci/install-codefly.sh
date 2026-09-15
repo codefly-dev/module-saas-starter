@@ -7,8 +7,8 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   exit 1
 fi
 
-version=0.1.145
-checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
+version=0.1.151
+checksum=eca1e72c8fca8d61626ea8a9f0a969f47d4a64871ffca25b3355e068f009706c
 archive="codefly_${version}_linux_amd64.tar.gz"
 scratch="$(mktemp -d)"
 trap 'rm -rf "${scratch}"' EXIT
