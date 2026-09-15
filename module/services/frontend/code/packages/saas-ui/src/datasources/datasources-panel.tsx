@@ -482,7 +482,12 @@ function DatasourcesPanelView({
 			)}
 			{showConnect && (
 				<ConnectGitHubForm
-					onBeginAppSetup={beginAppSetup ? handleBeginAppSetup : undefined}
+					// Both legs or neither: an install the panel cannot redeem on the
+					// way back strands the tenant on a completed GitHub install with
+					// nothing to show for it.
+					onBeginAppSetup={
+						beginAppSetup && completeAppSetup ? handleBeginAppSetup : undefined
+					}
 					appRepositories={appRepositories}
 					appSetupPhase={appSetupPhase}
 					appSetupError={appSetupError}
