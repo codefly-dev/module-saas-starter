@@ -141,9 +141,13 @@ describe("createDatasourceClient", () => {
 					paths: [],
 					branch: "main",
 					targetCollection: "Example",
-					accessToken: "",
 					webhookSecret: "",
 				}),
+			beginGitHubAppSetup: () => client.beginGitHubAppSetup!("org-1"),
+			completeGitHubAppSetup: () =>
+				client.completeGitHubAppSetup!("org-1", "state-1", "42"),
+			migrateGitHubSourceToApp: () =>
+				client.migrateGitHubSourceToApp!("org-1", "ds-1"),
 			syncSource: () => client.syncSource("org-1", "ds-1"),
 			deleteSource: () => client.deleteSource("org-1", "ds-1"),
 		} satisfies Partial<Record<keyof typeof client, () => Promise<unknown>>>;
