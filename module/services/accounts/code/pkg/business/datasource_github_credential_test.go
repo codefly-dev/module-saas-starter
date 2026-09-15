@@ -11,12 +11,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/business"
 	"accounts/pkg/githubconnector"
@@ -229,6 +232,18 @@ func testAppKeyPEM(t *testing.T) string {
 	}))
 }
 
+// claimInstallation binds the fake's installation to an organization, standing
+// in for a completed setup round-trip. Seeded per test rather than in the
+// harness: connecting and migrating both refuse an installation the caller does
+// not hold, and those refusals are asserted by the absence of this call.
+func (h *appHarness) claimInstallation(t *testing.T, orgID string) {
+	t.Helper()
+	claimed, err := h.store.ClaimGitHubAppInstallation(
+		context.Background(), strconv.Itoa(testInstallationID), orgID, "actor-1")
+	require.NoError(t, err)
+	require.True(t, claimed)
+}
+
 // storedCredential returns the plaintext behind a source's envelope. The fake
 // cipher embeds the purpose, so this also proves the envelope stayed bound to
 // the source it belongs to.
@@ -269,6 +284,7 @@ func (h *appHarness) credentialAudits() []map[string]any {
 // lands on the source is that binding — never a token, never the app's key.
 func TestMigrateGitHubSourceToApp_BindsTheInstallationTheHostResolved(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	before := h.storedCredential(t, source.ID)
 
@@ -295,6 +311,7 @@ func TestMigrateGitHubSourceToApp_BindsTheInstallationTheHostResolved(t *testing
 
 func TestMigrateGitHubSourceToApp_NarrowsTheTokenToTheSourceRepository(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 
 	_, err := h.svc.MigrateGitHubSourceToApp(context.Background(), "actor-1", testOrg, source.ID)
@@ -317,6 +334,7 @@ func TestMigrateGitHubSourceToApp_KeepsThePATWhenAppAccessIsNotProven(t *testing
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newAppHarness(t, tc.app)
+			h.claimInstallation(t, testOrg)
 			source := h.addPATSource(t, "acme/docs", "pat-old")
 			before := h.storedCredential(t, source.ID)
 
@@ -347,6 +365,7 @@ func TestGitHubSource_LegacyPATEnvelopeStillAuthenticates(t *testing.T) {
 func TestGitHubSource_AppBackedSourceNeverFallsBackToAPAT(t *testing.T) {
 	app := &fakeGitHubApp{}
 	h := newAppHarness(t, app)
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	_, err := h.svc.MigrateGitHubSourceToApp(context.Background(), "actor-1", testOrg, source.ID)
 	require.NoError(t, err)
@@ -405,6 +424,7 @@ func TestGitHubSource_EmptyStoredPATFailsClosed(t *testing.T) {
 func TestGitHubSource_PATReconnectDoesNotResurrectASupersededToken(t *testing.T) {
 	app := &fakeGitHubApp{}
 	h := newAppHarness(t, app)
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	ctx := context.Background()
 
@@ -438,6 +458,7 @@ func TestGitHubSource_PATReconnectDoesNotResurrectASupersededToken(t *testing.T)
 // installation at a new binding, and the old token is never served for it.
 func TestGitHubSource_TokenIsCachedAndReMintedOnRotation(t *testing.T) {
 	h := newAppHarness(t, &fakeGitHubApp{})
+	h.claimInstallation(t, testOrg)
 	source := h.addPATSource(t, "acme/docs", "pat-old")
 	ctx := context.Background()
 	_, err := h.svc.MigrateGitHubSourceToApp(ctx, "actor-1", testOrg, source.ID)
@@ -470,4 +491,29 @@ func TestGitHubSource_TokenIsCachedAndReMintedOnRotation(t *testing.T) {
 	_, err = h.svc.SyncDatasourceSource(ctx, "actor-1", testOrg, source.ID)
 	require.NoError(t, err)
 	require.NotEqual(t, firstToken, h.tokens.last(), "a rotated binding must not be served the superseded token")
+}
+
+// The repository a source names is chosen by whoever connected it, so resolving
+// an installation from that repository proves only that some tenant installed
+// the App on it — never that this tenant is entitled to it. Without this refusal
+// an organization could re-point its own PAT-backed source at another
+// organization's installation and keep reading through the App after its PAT is
+// revoked, and the stamped installation would additionally route that
+// installation's App-level deliveries to this source. The connect path refuses
+// the same thing.
+func TestMigrateGitHubSourceToApp_RefusesAnInstallationThisOrganizationDoesNotHold(t *testing.T) {
+	h := newAppHarness(t, &fakeGitHubApp{})
+	source := h.addPATSource(t, "victim/private", "pat-old")
+	before := h.storedCredential(t, source.ID)
+	mintsBefore := h.app.mintCount()
+
+	// The installation covering that repository belongs to a different tenant.
+	h.claimInstallation(t, testOtherOrg)
+
+	_, err := h.svc.MigrateGitHubSourceToApp(context.Background(), "actor-1", testOrg, source.ID)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Equal(t, before, h.storedCredential(t, source.ID),
+		"a refused migration must leave the stored PAT untouched")
+	require.Equal(t, mintsBefore, h.app.mintCount(),
+		"no installation token may be minted for an installation this organization does not hold")
 }

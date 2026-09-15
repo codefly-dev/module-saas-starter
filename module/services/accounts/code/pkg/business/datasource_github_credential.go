@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/codefly-dev/core/wool"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/jobs"
@@ -239,6 +241,26 @@ func (s *Service) MigrateGitHubSourceToApp(ctx context.Context, actorID, orgID, 
 	installationID, err := s.githubConnector.FindRepositoryInstallation(probeCtx, registration, owner, repoName)
 	if err != nil {
 		return nil, githubInstallationTokenError(err)
+	}
+
+	// Resolving the installation from the repository proves only that *some*
+	// tenant installed the App on it. The source's own repository is caller-chosen
+	// — a PAT the tenant holds today names it — so without this the tenant could
+	// re-point its source at another organization's installation and keep reading
+	// through the App after its PAT is revoked. It is also the routing index an
+	// App-level delivery resolves a source through, so an unowned binding would
+	// additionally draw another tenant's pushes to this source. The connect path
+	// refuses exactly this; migration has to refuse it identically.
+	var claimed bool
+	if err := s.store.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
+		claimed, err = s.store.GitHubAppInstallationClaimedBy(ctx, installationID, orgID)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	if !claimed {
+		return nil, status.Error(codes.PermissionDenied,
+			"The GitHub App installation covering that repository is not connected to this organization. Install the App from this organization first, then migrate the source.")
 	}
 
 	// The binding is stamped from the clock rather than counted up from whatever
