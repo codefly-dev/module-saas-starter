@@ -64,8 +64,13 @@ run(
 );
 
 const generated = join(sdk, "generated/typescript/src/gen");
-const bindings = () =>
-	readdirSync(generated, { recursive: true })
+// The facade sits beside `gen/` and imports into it, so the import graph is the
+// whole generated source tree. Deciding "nothing imports this" from `gen/` alone
+// would call a descriptor reached only from the facade stale, and delete a module
+// the package's own entry point imports.
+const generatedSource = join(sdk, "generated/typescript/src");
+const listTypeScript = (root) =>
+	readdirSync(root, { recursive: true })
 		.map(String)
 		.filter((path) => path.endsWith(".ts"));
 
@@ -76,24 +81,30 @@ const bindings = () =>
 // run — present, at whichever version wrote them, and imported by nothing.
 // Dropping them is what makes this command reproduce the committed tree. To a
 // fixed point: removing one can orphan another that only it imported.
-const thirdPartyRoots = ["buf", "google"];
+//
+// Only that tree may be pruned. Every other proto the vendored contract names is
+// REQUIRED on disk by assertLibraryBindingsMatchContract (module/tools/
+// composition), which skips exactly this prefix — so deleting a `buf/validate` or
+// `google/api` binding would leave no tree that satisfies both gates.
+const wellKnownTypeRoot = "google/protobuf/";
 const importTarget = (from, specifier) => {
-	const target = resolve(dirname(join(generated, from)), specifier);
+	const target = resolve(dirname(join(generatedSource, from)), specifier);
 	if (target.endsWith(".js")) return `${target.slice(0, -3)}.ts`;
 	return target.endsWith(".ts") ? target : `${target}.ts`;
 };
 for (let pruning = true; pruning; ) {
 	pruning = false;
-	const present = bindings();
 	const imported = new Set();
-	for (const path of present) {
-		const source = readFileSync(join(generated, path), "utf8");
-		for (const [, specifier] of source.matchAll(/from\s*"(\.[^"]*)"/g)) {
-			imported.add(importTarget(path, specifier));
+	for (const path of listTypeScript(generatedSource)) {
+		const source = readFileSync(join(generatedSource, path), "utf8");
+		// Both quote styles: a specifier this misses is a dependency believed to be
+		// unreferenced, and then deleted.
+		for (const [, specifier] of source.matchAll(/from\s*["']([^"']+)["']/g)) {
+			if (specifier.startsWith(".")) imported.add(importTarget(path, specifier));
 		}
 	}
-	for (const path of present) {
-		if (!thirdPartyRoots.includes(path.split(sep)[0])) continue;
+	for (const path of listTypeScript(generated)) {
+		if (!path.split(sep).join("/").startsWith(wellKnownTypeRoot)) continue;
 		if (imported.has(join(generated, path))) continue;
 		rmSync(join(generated, path));
 		pruning = true;
@@ -101,7 +112,7 @@ for (let pruning = true; pruning; ) {
 }
 
 // Keep generated EOF formatting deterministic across plugin versions.
-for (const path of bindings()) {
+for (const path of listTypeScript(generated)) {
 	const file = join(generated, path);
 	writeFileSync(file, readFileSync(file, "utf8").trimEnd() + "\n");
 }

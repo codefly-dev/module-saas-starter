@@ -27,8 +27,9 @@ interface GenerationCall {
 
 interface GenerationRun {
 	calls: GenerationCall[];
-	// The bindings left on disk when the script returned, so a step that removes
-	// generated files is observable and not merely inferred from the calls.
+	// What the script left on disk, relative to the generated source root, so a
+	// step that removes generated files is observable and not merely inferred
+	// from the calls.
 	generated: string[];
 }
 
@@ -37,7 +38,8 @@ interface GenerationRun {
 // that never reaches it leaves the second step — the one that re-emits foreign
 // descriptors the client step may omit — unreachable from any documented command.
 // `seed` stands in for what the two generation steps would have written, since
-// the fixture's `codefly` only records how it was called.
+// the fixture's `codefly` only records how it was called. Its paths are relative
+// to the generated source root, so a test can seed the facade beside `gen/`.
 function runPackageScript(
 	script: string,
 	args: string[] = [],
@@ -51,11 +53,11 @@ function runPackageScript(
 		);
 		const accounts = join(temp, "module/services/accounts");
 		mkdirSync(join(fixtureSdk, "scripts"), { recursive: true });
-		const gen = join(fixtureSdk, "generated/typescript/src/gen");
-		mkdirSync(gen, { recursive: true });
+		const generatedSource = join(fixtureSdk, "generated/typescript/src");
+		mkdirSync(join(generatedSource, "gen"), { recursive: true });
 		for (const [path, source] of Object.entries(seed)) {
-			mkdirSync(dirname(join(gen, path)), { recursive: true });
-			writeFileSync(join(gen, path), source);
+			mkdirSync(dirname(join(generatedSource, path)), { recursive: true });
+			writeFileSync(join(generatedSource, path), source);
 		}
 		mkdirSync(join(accounts, "proto"), { recursive: true });
 		writeFileSync(
@@ -89,7 +91,7 @@ function runPackageScript(
 				.trim()
 				.split("\n")
 				.map((line) => JSON.parse(line) as GenerationCall),
-			generated: readdirSync(gen, { recursive: true })
+			generated: readdirSync(generatedSource, { recursive: true })
 				.map(String)
 				.filter((path) => path.endsWith(".ts"))
 				.map((path) => path.replaceAll("\\", "/"))
@@ -192,18 +194,63 @@ it("generated audit field contracts equal the exported descriptor, not merely it
 // committed tree, or the documented command cannot be followed without a red gate.
 // The transitive case is the reason this prunes to a fixed point rather than once:
 // `duration_pb` is reachable only from a descriptor that is itself unreachable.
-it("drops third-party descriptors the regenerated bindings no longer import", () => {
+it("drops well-known-type descriptors the regenerated bindings no longer import", () => {
 	const { generated } = runPackageScript("generate", ["--force"], {
-		"saas/accounts/v1/audit_pb.ts":
+		"gen/saas/accounts/v1/audit_pb.ts":
 			'import { file_buf_validate } from "../../../buf/validate/validate_pb";\n',
-		"buf/validate/validate_pb.ts": "export const file_buf_validate = 1;\n",
-		"google/protobuf/descriptor_pb.ts":
+		"gen/buf/validate/validate_pb.ts": "export const file_buf_validate = 1;\n",
+		"gen/google/protobuf/descriptor_pb.ts":
 			'import { file_google_protobuf_duration } from "./duration_pb";\n',
-		"google/protobuf/duration_pb.ts":
+		"gen/google/protobuf/duration_pb.ts":
 			"export const file_google_protobuf_duration = 1;\n",
 	});
 	expect(generated).toEqual([
-		"buf/validate/validate_pb.ts",
-		"saas/accounts/v1/audit_pb.ts",
+		"gen/buf/validate/validate_pb.ts",
+		"gen/saas/accounts/v1/audit_pb.ts",
+	]);
+});
+
+// `assertLibraryBindingsMatchContract` (module/tools/composition) REQUIRES a
+// binding on disk for every proto the vendored contract names except
+// `google/protobuf/`, which it skips because a well-known type may arrive either
+// way. Pruning outside that tree would leave no state satisfying both gates:
+// this step deletes the file, that gate demands it, and regenerating to fix
+// either one re-breaks the other. `google/api/http_pb` is the sharp case — in the
+// real tree its only importer is `annotations_pb`, so a rule keyed on the
+// `google` root alone removes both the moment that single import moves.
+it("keeps descriptors the vendored contract requires on disk, even unimported", () => {
+	const { generated } = runPackageScript("generate", ["--force"], {
+		"gen/saas/accounts/v1/audit_pb.ts": "export const audit = 1;\n",
+		"gen/buf/validate/validate_pb.ts": "export const file_buf_validate = 1;\n",
+		"gen/google/api/annotations_pb.ts":
+			'import { HttpRule } from "./http_pb";\nexport const ann = 1;\n',
+		"gen/google/api/http_pb.ts": "export const HttpRule = 1;\n",
+		"gen/google/protobuf/timestamp_pb.ts": "export const ts = 1;\n",
+	});
+	expect(generated).toEqual([
+		"gen/buf/validate/validate_pb.ts",
+		"gen/google/api/annotations_pb.ts",
+		"gen/google/api/http_pb.ts",
+		"gen/saas/accounts/v1/audit_pb.ts",
+	]);
+});
+
+// The facade is generated beside `gen/` and imports into it, so it is part of the
+// import graph. Reading that graph from `gen/` alone would call a descriptor
+// reached only from the facade stale and delete a module the package's own entry
+// point imports — a broken build produced by the command that documents itself as
+// reproducing the committed tree.
+it("counts the facade's imports, not only those between bindings", () => {
+	const { generated } = runPackageScript("generate", ["--force"], {
+		"accounts_facade.ts":
+			'import { Timestamp } from "./gen/google/protobuf/timestamp_pb";\nexport const New = 1;\n',
+		"gen/saas/accounts/v1/audit_pb.ts": "export const audit = 1;\n",
+		"gen/google/protobuf/timestamp_pb.ts": "export const Timestamp = 1;\n",
+		"gen/google/protobuf/struct_pb.ts": "export const Struct = 1;\n",
+	});
+	expect(generated).toEqual([
+		"accounts_facade.ts",
+		"gen/google/protobuf/timestamp_pb.ts",
+		"gen/saas/accounts/v1/audit_pb.ts",
 	]);
 });
