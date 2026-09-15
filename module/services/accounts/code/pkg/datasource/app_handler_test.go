@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"accounts/pkg/datasource"
@@ -232,4 +233,149 @@ func TestAppWebhookRejectsNonPost(t *testing.T) {
 		method: http.MethodGet, event: "installation", delivery: "get", body: suspendDelivery,
 	})
 	require.Equal(t, http.StatusMethodNotAllowed, response.StatusCode)
+}
+
+// appPushBody is a push as GitHub delivers it to an App: the installation and
+// repository that route it, plus the ref and commits that only the compiler
+// downstream ever reads.
+func appPushBody(installationID, repo string) string {
+	return `{"ref":"refs/heads/main","before":"aaa","after":"bbb",` +
+		`"installation":{"id":` + installationID + `},` +
+		`"repository":{"full_name":"` + repo + `","default_branch":"main"},` +
+		`"commits":[{"id":"bbb","modified":["docs/intro.md"]}]}`
+}
+
+// A verified push is accepted as ONE durable delivery and nothing more. The
+// receiver does not resolve sources, call GitHub or fan out on the request:
+// that is the retryable half, and doing it here would lose a partial fan-out
+// with the request.
+func TestAppWebhookAcceptsContentPush(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	body := appPushBody("4242", "acme/docs")
+	response := postAppDelivery(t, server, appDelivery{
+		event: "push", delivery: "push-1", body: body,
+	})
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	require.EqualValues(t, 1, producer.inserts.Load(), "one delivery, not one per source")
+
+	request, ok := producer.request("push-1")
+	require.True(t, ok, "a verified push must be persisted before it is acknowledged")
+	job := request.GetJob()
+
+	// It rides the existing per-source delivery queue — no new queue — under its
+	// own topic, because it is a fan-out request and not yet any source's
+	// delivery.
+	require.Equal(t, datasource.GitHubWebhookQueue, job.GetQueue())
+	require.Equal(t, datasource.GitHubAppPushTopic, job.GetTopic())
+
+	// The exact verified bytes are retained: this is the push the compiler
+	// consumes once the fan-out resolves who it belongs to, and GitHub offers no
+	// way to re-fetch a delivery.
+	require.Equal(t, body, string(job.GetPayload()))
+
+	require.Equal(t, "push", job.GetAttributes()["github.event"])
+	require.Equal(t, "4242", job.GetAttributes()["datasource.installation_id"])
+	require.Equal(t, "acme/docs", job.GetAttributes()["github.repo"])
+	require.Equal(t, "push-1", job.GetAttributes()["datasource.delivery_id"])
+
+	// The original delivery id alone keys the durable delivery; the per-source
+	// keys are derived from it downstream.
+	require.Equal(t, "push-1", job.GetIdempotencyKey())
+}
+
+// Ordering is per repository, not per installation: two repositories under one
+// installation must not serialize behind each other, while two pushes to the
+// same repository must, so the per-source deliveries they produce inherit
+// GitHub's order.
+func TestAppWebhookPushOrderingIsPerRepository(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	for _, d := range []struct{ delivery, repo string }{
+		{"push-docs-1", "acme/docs"},
+		{"push-docs-2", "acme/docs"},
+		{"push-specs-1", "acme/specs"},
+	} {
+		response := postAppDelivery(t, server, appDelivery{
+			event: "push", delivery: d.delivery, body: appPushBody("4242", d.repo),
+		})
+		require.Equal(t, http.StatusOK, response.StatusCode, d.delivery)
+	}
+
+	ordering := func(delivery string) []string {
+		request, ok := producer.request(delivery)
+		require.True(t, ok, delivery)
+		return request.GetJob().GetOrdering().GetComponents()
+	}
+	require.Equal(t, []string{"app", "4242", "acme/docs"}, ordering("push-docs-1"))
+	require.Equal(t, ordering("push-docs-1"), ordering("push-docs-2"))
+	require.NotEqual(t, ordering("push-docs-1"), ordering("push-specs-1"))
+}
+
+// GitHub redelivers on its own and an operator can replay from the deliveries
+// page. The delivery id keys the job, so a replay cannot become a second
+// logical change.
+func TestAppWebhookPushRedeliveryIsIdempotent(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	body := appPushBody("4242", "acme/docs")
+	first := postAppDelivery(t, server, appDelivery{event: "push", delivery: "same-push", body: body})
+	second := postAppDelivery(t, server, appDelivery{event: "push", delivery: "same-push", body: body})
+	require.Equal(t, http.StatusOK, first.StatusCode)
+	require.Equal(t, http.StatusOK, second.StatusCode)
+	require.EqualValues(t, 1, producer.inserts.Load())
+}
+
+// A push signed with anything other than the App's own webhook secret — a
+// source's push secret, say — cannot produce downstream output.
+func TestAppWebhookRejectsForgedPushSignature(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	response := postAppDelivery(t, server, appDelivery{
+		event: "push", delivery: "forged-push", body: appPushBody("4242", "acme/docs"),
+		signWith: "whsec_some_other_secret",
+	})
+	require.Equal(t, http.StatusUnauthorized, response.StatusCode)
+	require.Zero(t, producer.inserts.Load())
+}
+
+// A push names its repository and its installation. Verified or not, one
+// missing either cannot be routed to a source and will not route on
+// redelivery, so it is refused rather than retried forever.
+func TestAppWebhookRejectsUnroutablePush(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	for name, body := range map[string]string{
+		"no repository":  `{"ref":"refs/heads/main","after":"bbb","installation":{"id":4242}}`,
+		"empty repository": `{"ref":"refs/heads/main","after":"bbb","installation":{"id":4242},` +
+			`"repository":{"full_name":"  "}}`,
+		"no installation": `{"ref":"refs/heads/main","after":"bbb","repository":{"full_name":"acme/docs"}}`,
+	} {
+		response := postAppDelivery(t, server, appDelivery{
+			event: "push", delivery: "unroutable-" + name, body: body,
+		})
+		require.Equal(t, http.StatusBadRequest, response.StatusCode, name)
+	}
+	require.Zero(t, producer.inserts.Load())
+}
+
+// The body bound applies to a push exactly as it does to a lifecycle delivery:
+// the inbox retains at most 1 MiB per job, and an oversized push converges
+// through reconciliation instead.
+func TestAppWebhookRejectsOversizedPush(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	oversized := `{"ref":"refs/heads/main","after":"bbb","installation":{"id":4242},` +
+		`"repository":{"full_name":"acme/docs"},"padding":"` + strings.Repeat("x", 1024*1024) + `"}`
+	response := postAppDelivery(t, server, appDelivery{
+		event: "push", delivery: "oversized-push", body: oversized,
+	})
+	require.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
+	require.Zero(t, producer.inserts.Load())
 }

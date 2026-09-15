@@ -880,17 +880,20 @@ func doWork(ctx context.Context) (Clean, error) {
 		w.Info("GitHub datasource webhook enabled")
 	}
 
-	// The App's own lifecycle deliveries arrive at a second, App-wide endpoint.
-	// `installation` and `installation_repositories` are delivered only to the
-	// App registration's webhook URL and signed with the registration's own
-	// secret, so neither the per-source path nor a per-source secret can receive
-	// them. Mounting is gated on an actual registration, so a deployment that
+	// The App's own deliveries arrive at a second, App-wide endpoint, signed
+	// with the registration's own secret. `installation` and
+	// `installation_repositories` are delivered only to the App registration's
+	// webhook URL, so neither the per-source path nor a per-source secret can
+	// receive them. `push` is here for a related reason (issue #734): an
+	// App-backed source authenticates through the installation and stores no
+	// push secret, so the per-source receiver could never verify its pushes.
+	// Mounting is gated on an actual registration, so a deployment that
 	// registered no App exposes no such surface.
 	if service.GitHubAppWebhookConfigured() {
 		adapters.RegisterHTTPRoute(datasource.GitHubAppWebhookPath, datasource.NewAppHandler(
 			datasource.AppHandlerDeps{Producer: jobStore, Registration: service},
 		))
-		w.Info("GitHub App lifecycle webhook enabled")
+		w.Info("GitHub App webhook enabled")
 	} else if service.GitHubAppConfigured() {
 		// Half a registration is the dangerous shape: sources mint App tokens and
 		// look healthy, while GitHub's lifecycle deliveries land on a route that
