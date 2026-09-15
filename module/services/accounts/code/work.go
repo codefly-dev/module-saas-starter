@@ -629,11 +629,10 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
-	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen)
+	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen, installerHandler)
 	if err != nil {
 		return nil, err
 	}
-	mountExecutionInstaller(custodyServer, installerHandler)
 
 	// Local development surfaces the underlying Authenticate failure reason for
 	// debugging; every deployed environment returns generic auth errors so the

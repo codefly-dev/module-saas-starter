@@ -99,8 +99,6 @@ func newInstallerListener(t *testing.T, enabled bool) installerListenerFixture {
 	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "verified-tls")
 	t.Setenv("CODEFLY_INTERNAL_TOKEN", strings.Repeat("i", 48))
 	jwt := ed25519minter.New(ed25519minter.Config{Issuer: "example.accounts", Audience: "example.accounts"}, key, nil)
-	host, err := configuredExecutionCustody(nil, infra.NewVaultClientDirect("https://example.invalid", ""), jwt, jwt.KeyID(), key, true, false)
-	require.NoError(t, err)
 	singleton := adapters.WorkContextSingleton()
 	previous := *singleton
 	t.Cleanup(func() { *singleton = previous })
@@ -125,7 +123,9 @@ func newInstallerListener(t *testing.T, enabled bool) installerListenerFixture {
 	if !enabled {
 		require.Nil(t, handler)
 	}
-	mountExecutionInstaller(host, handler)
+	// Use the production host constructor: the fixture must not mount routes.
+	host, err := configuredExecutionCustody(nil, infra.NewVaultClientDirect("https://example.invalid", ""), jwt, jwt.KeyID(), key, true, false, handler)
+	require.NoError(t, err)
 	addresses := map[string]string{}
 	stop, err := startExecutionCustodyWithListener(host, func(name string) (net.Listener, error) {
 		l, e := net.Listen("tcp", "127.0.0.1:0")
@@ -187,11 +187,29 @@ func TestExecutionInstallerTLSRoutesAndAuthentication(t *testing.T) {
 		status, _ := f.call(t, "POST", "/v1/module-installations/token", body)
 		require.Equal(t, 403, status)
 	}
+	originalRequest := f.request
 	f.request.AllowedScopes = []string{"*"}
 	raw, err = json.Marshal(f.request)
 	require.NoError(t, err)
 	status, _ := f.call(t, "POST", "/v1/module-installations/apply", string(raw), token)
 	require.Equal(t, 403, status)
+	require.Len(t, f.store.observed(), 3)
+	// Narrow the live policy while retaining the previously accepted request
+	// and token. Denial must happen before reaching persistence on every route.
+	policyRaw, err := os.ReadFile(f.policyPath)
+	require.NoError(t, err)
+	var policy business.InstallerPolicy
+	require.NoError(t, json.Unmarshal(policyRaw, &policy))
+	policy.Delegations[0].AllowedScopes = []string{"example.other"}
+	policyRaw, err = json.Marshal(policy)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(f.policyPath, policyRaw, 0600))
+	raw, err = json.Marshal(originalRequest)
+	require.NoError(t, err)
+	for _, mode := range []string{"inspect", "apply", "verify"} {
+		status, _ = f.call(t, "POST", "/v1/module-installations/"+mode, string(raw), token)
+		require.Equal(t, 403, status)
+	}
 	require.Len(t, f.store.observed(), 3)
 	require.NoError(t, os.WriteFile(f.policyPath, []byte(`{"version":"accounts.module-installation-policy/v1","delegations":[]}`), 0600))
 	status, _ = f.call(t, "POST", "/v1/module-installations/inspect", string(raw), token)
@@ -245,4 +263,15 @@ func TestExecutionInstallerPolicyConfiguration(t *testing.T) {
 	require.Error(t, err)
 	// Existing deployments without a custody listener retain their REST path.
 	require.NotPanics(t, func() { mountExecutionInstaller(nil, http.NotFoundHandler()) })
+}
+
+func TestExecutionInstallerTLSRejectsUntrustedCertificate(t *testing.T) {
+	f := newInstallerListener(t, true)
+	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: x509.NewCertPool(), MinVersion: tls.VersionTLS13}}
+	t.Cleanup(transport.CloseIdleConnections)
+	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+	_, err := client.Get(f.origin + "/v1/auth/.well-known/jwks.json")
+	var unknownAuthority x509.UnknownAuthorityError
+	require.ErrorAs(t, err, &unknownAuthority)
+	require.Empty(t, f.store.observed())
 }

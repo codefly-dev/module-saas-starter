@@ -76,8 +76,8 @@ role administrator.
 
 ## Executable HTTP contract
 
-Call Accounts' REST listener directly over the existing trusted TLS/mesh
-transport. The new paths are opt-in raw HTTP handlers; they do not change the
+Call Accounts' configured private HTTPS listener, or its REST listener over
+the existing trusted TLS/mesh transport. The new paths are opt-in raw HTTP handlers; they do not change the
 public ORG_ADMIN RPCs or install a gateway route. The installation Job requires
 an explicit network/mesh route to these paths, and must verify the Accounts CA.
 The handlers validate their own credentials; neither the shared internal token
@@ -182,7 +182,7 @@ is not a substitute for any of them.
 From `module/services/accounts/code`:
 
 ```sh
-go test -race -tags=pure ./pkg/adapters ./pkg/infra
+go test -race -tags=pure . ./pkg/adapters ./pkg/infra
 python3 tools/test_module_installer.py
 python3 tools/test_module_installer.py --managed-baseline
 ```
@@ -208,6 +208,11 @@ single installation audit after repeated application. The optional
 the test hands it a temporary scenario containing the ephemeral HTTPS endpoint,
 CA and local fixture credentials to qualify a consumer implementation against
 this actual API. Those temporary files disappear with the test.
+
+The host tests use the same private-host constructor as normal startup and
+validated loopback TLS for all four operations and denial/default dispatch.
+Their persistence is a test double; database transaction claims come only from
+the separate PostgreSQL tests.
 
 These checks establish local authentication and organization registration
 repeatability. They do not establish fresh-cluster deployment, runtime secret
