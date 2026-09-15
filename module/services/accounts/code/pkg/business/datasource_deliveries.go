@@ -212,6 +212,13 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 		if envelope.GetQueue() != DatasourceDeliveryQueue {
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery job routing", false)
 		}
+		// An App-level content delivery names an installation and a repository
+		// rather than a source — resolving which sources it concerns is the
+		// fan-out's whole job — so it is dispatched ahead of the per-source
+		// lookup and the per-source failure audit below.
+		if envelope.GetTopic() == datasourceAppPushTopic {
+			return s.handleGitHubAppPushJob(ctx, envelope)
+		}
 		sourceID := envelope.GetAttributes()[attrSourceID]
 		if sourceID == "" {
 			return jobs.NewProcessingError("datasource.invalid_job", "datasource delivery job has no source id", false)

@@ -290,6 +290,33 @@ func (f *datasourceFakeStore) ListDatasourceSourcesByGitHubInstallation(_ contex
 	return out, nil
 }
 
+func (f *datasourceFakeStore) ListActiveDatasourceSourcesByGitHubInstallationRepo(_ context.Context, installationID, repo, afterID string, limit int) ([]*business.DatasourceSource, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []*business.DatasourceSource
+	for _, s := range f.sources {
+		// Mirror every clause of the real query, including the case-insensitive
+		// repository match and the active-only predicate that is what revokes a
+		// parked or paused source's eligibility.
+		if s.GitHubInstallationID != installationID || s.Provider != business.DatasourceProviderGitHub {
+			continue
+		}
+		if !strings.EqualFold(s.Repo, repo) || s.Status != business.DatasourceStatusActive {
+			continue
+		}
+		if afterID != "" && s.ID <= afterID {
+			continue
+		}
+		cp := *s
+		out = append(out, &cp)
+	}
+	slices.SortFunc(out, func(a, b *business.DatasourceSource) int { return strings.Compare(a.ID, b.ID) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (f *datasourceFakeStore) pendingRecheck(reasons []string) []string {
 	var out []string
 	for _, s := range f.sources {

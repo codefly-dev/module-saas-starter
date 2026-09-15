@@ -350,6 +350,48 @@ func (s *PostgresStore) ListDatasourceSourcesByGitHubInstallation(ctx context.Co
 	return sources, rows.Err()
 }
 
+// ListActiveDatasourceSourcesByGitHubInstallationRepo returns one page of the
+// sources an App-level content delivery concerns, ordered by id and starting
+// after afterID. It is the push-path sibling of the listing above: a content
+// delivery names an installation and a repository, where a lifecycle delivery
+// names only an installation.
+//
+// Repository names are compared case-insensitively because GitHub's are: the
+// delivery carries whatever casing the repository currently has, while the
+// stored repo carries the casing it was connected with, and a case difference
+// between the two is the same repository.
+//
+// Only active sources are returned. A source parked by the installation
+// reconciler (suspension, a deselected repository), degraded by the compiler or
+// paused by an operator is not eligible for a push, and a disconnected one has
+// no row at all — so this predicate is what revokes eligibility, with no
+// receipt-time cache to invalidate.
+func (s *PostgresStore) ListActiveDatasourceSourcesByGitHubInstallationRepo(ctx context.Context, installationID, repo, afterID string, limit int) ([]*business.DatasourceSource, error) {
+	rows, err := s.getQueryExecutor(ctx).Query(ctx,
+		`SELECT `+datasourceSourceColumns+`
+		   FROM datasource_sources
+		  WHERE github_installation_id = $1
+		    AND provider = 'github'
+		    AND LOWER(repo) = LOWER($2)
+		    AND status = 'active'
+		    AND ($3 = '' OR id::text > $3)
+		  ORDER BY id::text
+		  LIMIT $4`, installationID, repo, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sources []*business.DatasourceSource
+	for rows.Next() {
+		source, err := scanDatasourceSource(rows)
+		if err != nil {
+			return nil, err
+		}
+		sources = append(sources, source)
+	}
+	return sources, rows.Err()
+}
+
 // SetDatasourceSourceGitHubInstallation stamps the routing index an App-level
 // delivery resolves sources through. Runs under the caller's WithOrgTx, beside
 // the credential envelope it indexes.
