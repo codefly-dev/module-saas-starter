@@ -18,6 +18,7 @@ import (
 	"accounts/pkg/cache"
 	"accounts/pkg/datasource"
 	"accounts/pkg/email"
+	"accounts/pkg/eventcatalog"
 	"accounts/pkg/githubconnector"
 	"accounts/pkg/infra"
 	"accounts/pkg/jobs"
@@ -208,6 +209,44 @@ func doWork(ctx context.Context) (Clean, error) {
 	)
 	service.SetModuleEventTransport(eventTransport)
 	eventRelayWorker := infra.NewEventRelayWorker(eventTransport, 0)
+
+	// The follow bridge (FOLLOWS.md) is host-internal, which is what keeps it
+	// inside the boundary: the composed catalog declares which resources are
+	// followable, the host subscribes itself over exactly those types on its own
+	// reserved queue, and the worker resolves access through the store directly
+	// rather than through a module-facing RPC. Declaring nothing leaves every
+	// piece of this inert.
+	declared := eventcatalog.Followable()
+	followables := make([]business.FollowableResource, 0, len(declared))
+	for _, followable := range declared {
+		followables = append(followables, business.FollowableResource{
+			ResourceType: followable.ResourceType,
+			Events:       followable.Events,
+		})
+	}
+	service.SetFollowables(followables)
+	// Materialization is idempotent, so a restart converges on the rows that
+	// already exist. It deliberately does not fail startup: VerifyEventWiring
+	// short-circuits on a wired transport and never reaches the database, so this
+	// is the only write at boot, and returning its error would turn a momentary
+	// database outage into a crash-loop for the whole service. Leaving the host
+	// unsubscribed would silently drop every followable event, so the failure is
+	// loud and retried in the background rather than tolerated.
+	if err := service.MaterializeFollowSubscriptions(ctx); err != nil {
+		wool.Get(ctx).In("follows").Error(
+			"cannot materialize follow subscriptions; retrying in the background",
+			wool.ErrField(err))
+		go retryFollowSubscriptions(ctx, service)
+	}
+	followFanoutWorker, err := jobs.NewWorker(jobs.WorkerConfig{
+		Store:      jobStore,
+		Queue:      business.FollowFanoutQueue,
+		Handler:    service.FollowFanoutHandler(),
+		RetryDelay: business.FollowFanoutRetryDelay,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	// Fail fast if a deployment ever ends up with live subscriptions but no
 	// transport: without one, every publish is a silent no-op and subscribers
@@ -987,6 +1026,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	datasourceDeliveryWorker.Start(ctx)
 	datasourceInstallationWorker.Start(ctx)
 	eventRelayWorker.Start(ctx)
+	followFanoutWorker.Start(ctx)
 
 	return func() {
 		closeCustody()
@@ -1063,6 +1103,12 @@ func doWork(ctx context.Context) (Clean, error) {
 		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
 		if err := eventRelayWorker.Shutdown(shutdownCtx); err != nil {
 			sw.Warn("domain-event relay worker shutdown timed out", wool.ErrField(err))
+		}
+		cancel()
+		sw.Info("stopping follow fan-out worker")
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), 30*time.Second)
+		if err := followFanoutWorker.Shutdown(shutdownCtx); err != nil {
+			sw.Warn("follow fan-out worker shutdown timed out", wool.ErrField(err))
 		}
 		cancel()
 		sw.Info("closing outbound webhook projection database pool")
@@ -1179,6 +1225,34 @@ func configuredExternalAuditSink() (business.ExternalAuditSink, error) {
 // have NO app-layer throttle: abuse protection disabled AND no rate limiter
 // wired (no Redis). Either guard alone is a backstop; only the combination
 // leaves them open.
+// retryFollowSubscriptions re-attempts follow subscription materialization
+// until it lands. A host with no subscription receives no followable event, and
+// that loss is invisible at runtime — this is what closes the gap left by a
+// database outage during boot without holding the service hostage to it. It
+// backs off so a sustained outage does not become sustained load, and reports
+// every attempt so the gap stays visible while it is open.
+func retryFollowSubscriptions(ctx context.Context, service *business.Service) {
+	const maxDelay = 5 * time.Minute
+	delay := 5 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		if err := service.MaterializeFollowSubscriptions(ctx); err != nil {
+			wool.Get(ctx).In("follows").Warn(
+				"retrying follow subscription materialization", wool.ErrField(err))
+			if delay < maxDelay {
+				delay *= 2
+			}
+			continue
+		}
+		wool.Get(ctx).In("follows").Info("follow subscriptions materialized after retry")
+		return
+	}
+}
+
 func anonymousEndpointsUnprotected(abuseDisabled, rateLimiterWired bool) bool {
 	return abuseDisabled && !rateLimiterWired
 }

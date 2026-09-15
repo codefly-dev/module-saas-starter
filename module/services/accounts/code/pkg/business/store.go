@@ -344,6 +344,11 @@ type Store interface {
 	// and cursor-paginated on it (afterPath ""=first page); at most limit rows.
 	// Confined to orgID with an explicit predicate on top of the RLS tenant floor.
 	ListAccessibleScopes(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, afterPath string, limit int) ([]*gen.AccessibleScope, error)
+	// ListAccessibleResourceIDs narrows candidates to the placed records the
+	// subject may currently act on, through the same grant + share union as
+	// ListAccessibleScopes — one call for a set of ids a reader already holds,
+	// rather than a point check each. Run under WithOrgTx.
+	ListAccessibleResourceIDs(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action string, candidates []string) ([]string, error)
 	CanReadScopeNode(ctx context.Context, orgID, subjectID string, subjectKind gen.SubjectKind, resourceType, action, nodeID string) (bool, error)
 	RegisterScopeNode(ctx context.Context, node *gen.ScopeNode) error
 	// GetOrCreateCollectionNode reuses an existing collection node with node.Label
@@ -535,6 +540,10 @@ type Store interface {
 	CreateNotification(ctx context.Context, n *Notification) error
 	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error)
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
+	// ListUnreadResourceReferences groups the user's unread follow items by the
+	// resource they refer to, so the caller can recheck visibility per resource
+	// and discount what is no longer readable. Run under WithUserTx.
+	ListUnreadResourceReferences(ctx context.Context, userID string) ([]UnreadResourceReference, error)
 	MarkNotificationRead(ctx context.Context, id string) error
 	MarkAllNotificationsRead(ctx context.Context, userID string) error
 	DeleteNotification(ctx context.Context, id string) error
@@ -548,6 +557,25 @@ type Store interface {
 	// policy on resource_follows confines them to that user's own rows.
 	CreateResourceFollow(ctx context.Context, follow *ResourceFollow) error
 	RevokeResourceFollow(ctx context.Context, userID, resourceType, resourceID string) error
+
+	// ListResourceFollowers answers who currently follows one resource, one
+	// bounded page at a time. It reads across users, so it runs under
+	// WithControlPlane rather than any one follower's transaction; the result is
+	// only a candidate set, and each candidate's access and follow are rechecked
+	// before anything is written. Nothing bounds how many people follow one
+	// instance, so the caller pages with `after` (the last user id it saw) rather
+	// than materializing the whole set.
+	ListResourceFollowers(ctx context.Context, orgID, resourceType, resourceID, after string, limit int) ([]string, error)
+	// ExistingNotificationIDs reports which of the given notification ids already
+	// exist. Notification ids are derived from the delivery key, so a fan-out
+	// retry uses this to skip the followers it already wrote instead of redoing
+	// the access check and the write for every one of them.
+	ExistingNotificationIDs(ctx context.Context, ids []string) (map[string]struct{}, error)
+	// ResourceFollowIsLive re-reads one follower's own follow. It runs inside the
+	// follower's WithUserTx alongside the notification write, which is what makes
+	// a follow revoked before that read suppress the item and stops a replay
+	// resurrecting a removed follow.
+	ResourceFollowIsLive(ctx context.Context, orgID, userID, resourceType, resourceID string) (bool, error)
 
 	// MFA — exposed on the main Store interface so the auth layer's
 	// requireMFA gate can check enrollment without casting to MFAStore.
