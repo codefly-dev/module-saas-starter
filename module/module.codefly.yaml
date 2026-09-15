@@ -8,6 +8,14 @@ interface:
         - service: accounts
           endpoint: connect
           visibility: module
+          # `codefly publish clients` publishes saas-starter-accounts-client
+          # (go / typescript / python) at the package version. The facade is
+          # restricted to the public surface a solution may reach; a generated
+          # binding is one proto file, so a service that must not ship keeps
+          # its messages in its own .proto (see accessible_scopes.proto).
+          clients:
+              languages: [go, typescript, python]
+              services: [AccessibleScopeService, AuditService, DatasourceService, WebhookService]
         - service: accounts
           endpoint: custody
           visibility: module
@@ -20,6 +28,10 @@ interface:
         - service: auth-gateway
           endpoint: grpc
           visibility: module
+          # Reached only through the mesh by this module's own services; no
+          # out-of-module consumer exists, so no client is published for it.
+          clients:
+              publish: false
         - service: frontend
           endpoint: http
           visibility: public

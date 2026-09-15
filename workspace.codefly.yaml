@@ -3,6 +3,18 @@ layout: modules
 modules:
     - name: saas-starter
 
+# Durable stores `codefly publish clients` / `codefly publish library` publish
+# generated client libraries to, and `codefly install library` resolves from:
+# a GitHub repository tagged per version for go/python
+# (github.com/codefly-dev/<library>-go|-python, created ahead of the first
+# publish), the org's GitHub Packages registry for typescript. Credentials
+# (GH_TOKEN / NODE_AUTH_TOKEN) belong to release CI, never to a runtime.
+libraries:
+    publish:
+        go: {owner: codefly-dev}
+        typescript: {registry: https://npm.pkg.github.com, scope: "@codefly-dev"}
+        python: {owner: codefly-dev}
+
 # Repository publication (repo-url, branch, revision, checkout, Argo/Flux
 # Application assembly) is owned by the CLI/server promotion driver, not the
 # module plugin. The plugin renders module-owned Kubernetes overlays and a
