@@ -90,23 +90,33 @@ func TestCollectorRequiresExplicitExporter(t *testing.T) {
 }
 
 // TestCollectorEndpointTransportPolicy pins which OTLP/HTTP destinations may be
-// reached in plaintext: only ones that cannot route outside the cluster. The
-// intended target is a same-cluster OTLP collector that forwards onward under
-// TLS; anything reachable from outside the cluster still needs HTTPS.
+// reached in plaintext: loopback only, because loopback never leaves the pod.
+//
+// The cluster-internal cases are the regression. Exempting *.svc /
+// *.svc.cluster.local from the HTTPS requirement looks safe — those names
+// resolve only inside the cluster — but this module grants telemetry exactly one
+// egress path: public_egress_ports [443] in
+// deployment/topology.bindings.codefly.yaml, rendered as
+// allow-telemetry-public-egress (TCP 443 to public IP space, private ranges
+// excepted) over a namespace-wide default-deny with no allow-intra-namespace
+// rule. A ClusterIP on 4318 is denied there no matter what this package accepts,
+// so accepting it only converts a startup error into a 10s export timeout per
+// batch. Reaching an in-cluster collector is a topology change, not a transport
+// exemption in application code.
 func TestCollectorEndpointTransportPolicy(t *testing.T) {
 	for _, testCase := range []struct {
 		name     string
 		endpoint string
 		accepted bool
 	}{
-		{"in-cluster collector FQDN", "http://otel-collector.otel-collector.svc.cluster.local:4318", true},
-		{"in-cluster collector short form", "http://otel-collector.otel-collector.svc:4318", true},
-		{"in-cluster collector trailing dot", "http://otel-collector.otel-collector.svc.cluster.local.:4318", true},
 		{"loopback name", "http://localhost:4318", true},
 		{"loopback address", "http://127.0.0.1:4318", true},
+		{"external TLS", "https://example.com", true},
+		{"in-cluster collector FQDN is not reachable and not exempt",
+			"http://otel-collector.otel-collector.svc.cluster.local:4318", false},
+		{"in-cluster collector short form", "http://otel-collector.otel-collector.svc:4318", false},
 		{"external plaintext", "http://example.com:4318", false},
 		{"external plaintext subdomain", "http://otel.internal.ops.example.com:4318", false},
-		{"external TLS", "https://example.com", true},
 		{"host merely containing svc", "http://svc.example.com:4318", false},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

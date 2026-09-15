@@ -68,7 +68,10 @@ func New(config Config) (*Collector, error) {
 	// ConfigMap said otlphttp. Refusing to start surfaces the same fault in one
 	// line of pod logs.
 	if exporter == "" {
-		return nil, errors.New("telemetry: OBSERVABILITY_EXPORTER is required and must be debug or otlphttp")
+		return nil, errors.New(
+			"telemetry: OBSERVABILITY_EXPORTER is required and must be debug or otlphttp; " +
+				"the observability workspace configuration did not reach this process " +
+				"(on the local-dogfood profile, run scripts/setup/otel.sh --debug)")
 	}
 	switch exporter {
 	case "debug":
@@ -80,15 +83,23 @@ func New(config Config) (*Collector, error) {
 		if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
 			return nil, errors.New("telemetry: OTLP/HTTP endpoint must be absolute")
 		}
-		// Plaintext OTLP/HTTP is allowed only to a destination that cannot leave
-		// the cluster: loopback, or a cluster-internal Kubernetes service DNS
-		// name (*.svc / *.svc.cluster.local). The intended target is a
-		// same-cluster OTLP collector that forwards onward on the operator's
-		// behalf, so the hop that does leave the cluster is that collector's and
-		// it makes it under TLS. Anything reachable from outside the cluster
-		// must still prove itself with HTTPS.
-		if endpoint.Scheme != "https" && (endpoint.Scheme != "http" || !inClusterDestination(endpoint.Hostname())) {
-			return nil, errors.New("telemetry: OTLP/HTTP endpoint must use HTTPS outside the cluster")
+		// Plaintext is allowed only to loopback, which never leaves the pod and so
+		// is governed by no network policy. Everything else must be HTTPS, because
+		// that is the only egress this module actually grants telemetry:
+		// deployment/topology.bindings.codefly.yaml declares public_egress_ports
+		// [443], which renders allow-telemetry-public-egress — TCP 443 to public IP
+		// space with 10/8, 172.16/12, 192.168/16 and fc00::/7 excepted — on top of a
+		// namespace-wide default-deny that has no allow-intra-namespace rule.
+		//
+		// A cluster-internal plaintext address (a *.svc name on 4318) is therefore
+		// denied at the network layer no matter what this check says; accepting it
+		// here would only move the failure from a startup error to a 10s export
+		// timeout per batch. Reaching an in-cluster collector is a topology change —
+		// a declared dependency edge with its regenerated NetworkPolicy — not a
+		// transport exemption in application code.
+		local := endpoint.Hostname() == "localhost" || endpoint.Hostname() == "127.0.0.1"
+		if endpoint.Scheme != "https" && (endpoint.Scheme != "http" || !local) {
+			return nil, errors.New("telemetry: OTLP/HTTP endpoint must use HTTPS")
 		}
 		config.Endpoint = endpoint.String()
 	default:
@@ -113,18 +124,6 @@ func New(config Config) (*Collector, error) {
 		client:   client,
 		logger:   logger,
 	}, nil
-}
-
-// inClusterDestination reports whether a plaintext OTLP/HTTP host is one that
-// cannot route outside the cluster — loopback, or a Kubernetes cluster-internal
-// service DNS name. Anything else has to prove itself with TLS.
-func inClusterDestination(host string) bool {
-	host = strings.ToLower(strings.TrimSuffix(host, "."))
-	switch host {
-	case "localhost", "127.0.0.1", "::1":
-		return true
-	}
-	return strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".svc.cluster.local")
 }
 
 func (s *TraceService) Export(
