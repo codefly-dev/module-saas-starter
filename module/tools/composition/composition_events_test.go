@@ -432,19 +432,108 @@ func TestBuildEventCatalogRejectsFollowsInReservedNamespace(t *testing.T) {
 	}
 }
 
-func TestBuildEventCatalogRejectsDuplicateFollowableResourceType(t *testing.T) {
-	first := followsContribution()
-	first.Consumes = nil
-	second := followsContribution()
-	second.Namespace = "records"
-	second.Queues = nil
-	second.Consumes = nil
-	second.Publishes[0].Type = "records.entry.ingested"
-	second.Follows[0].Events = []string{"records.entry.ingested"}
+// TestBuildEventCatalogRejectsFollowableResourceTypeOutsideNamespace is the
+// squatting guard, and it is the follows-side twin of the namespace-ownership
+// rule on published types. resource_type is a persisted key: follow intent is
+// stored as (org_id, user_id, resource_type, resource_id) and the read-time
+// access recheck resolves that pair through generic oracles. A contribution
+// allowed to name another module's noun would mint follow rows that collide in
+// one uniqueness key with the real owner's, and whose access would be rechecked
+// against the wrong module's resource — and, because resource types are unique,
+// it would also permanently lock the rightful owner out of declaring its own.
+func TestBuildEventCatalogRejectsFollowableResourceTypeOutsideNamespace(t *testing.T) {
+	contribution := followsContribution()
+	contribution.Consumes = nil
+	contribution.Follows[0].ResourceType = "billing.invoice"
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "outside namespace") {
+		t.Fatalf("expected a resource-type ownership error, got %v", err)
+	}
+}
 
-	_, err := buildEventCatalog([]EventsContribution{first, second}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
-	if err == nil || !strings.Contains(err.Error(), "more than one contribution") {
+// Namespace ownership plus unique namespaces makes a collision between two
+// contributions unreachable, so what the uniqueness check still has to catch is
+// one contribution declaring the same resource type twice.
+func TestBuildEventCatalogRejectsDuplicateFollowableResourceType(t *testing.T) {
+	contribution := followsContribution()
+	contribution.Consumes = nil
+	contribution.Publishes = append(contribution.Publishes, PublishedEvent{
+		Type:       "documents.entry.archived",
+		Schema:     "documents/events/v1/entry.proto#EntryIngested",
+		Visibility: "tenant",
+		Partition:  "{tenant_id}",
+	})
+	contribution.Follows = append(contribution.Follows, FollowableResource{
+		ResourceType: "documents.entry",
+		Events:       []string{"documents.entry.archived"},
+	})
+
+	_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), eventCatalog{})
+	if err == nil || !strings.Contains(err.Error(), "declared more than once") {
 		t.Fatalf("expected a duplicate-resource-type error, got %v", err)
+	}
+}
+
+// TestBuildEventCatalogRejectsWithdrawnFollowable covers the retraction gate.
+// Follow intent is durable user state: rows in resource_follows outlive any
+// compose, so withdrawing a resource type or one of its events leaves real
+// followers pointing at something the host no longer matches. Nothing reports
+// that at runtime — the fan-out simply stops matching, which looks exactly like a
+// resource nobody follows — so compose is the only place it can be caught.
+func TestBuildEventCatalogRejectsWithdrawnFollowable(t *testing.T) {
+	t.Run("resource type withdrawn entirely", func(t *testing.T) {
+		prior := eventCatalog{Schema: eventsCatalogSchema, Follows: []eventCatalogFollow{{
+			ResourceType: "documents.entry",
+			Namespace:    "documents",
+			Events:       []string{"documents.entry.ingested"},
+		}}}
+		contribution := documentsContribution() // declares no follows at all
+		contribution.Consumes = nil
+		_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), prior)
+		if err == nil || !strings.Contains(err.Error(), "withdrawn") {
+			t.Fatalf("expected a withdrawn-resource error, got %v", err)
+		}
+	})
+
+	t.Run("one event dropped from the declaration", func(t *testing.T) {
+		prior := eventCatalog{Schema: eventsCatalogSchema, Follows: []eventCatalogFollow{{
+			ResourceType: "documents.entry",
+			Namespace:    "documents",
+			Events:       []string{"documents.entry.ingested", "documents.entry.renamed"},
+		}}}
+		contribution := followsContribution() // keeps only documents.entry.ingested
+		contribution.Consumes = nil
+		_, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), prior)
+		if err == nil || !strings.Contains(err.Error(), "no longer declares event") {
+			t.Fatalf("expected a withdrawn-event error, got %v", err)
+		}
+	})
+}
+
+// The gate must not freeze the declaration: widening it is how a module adds a
+// change worth notifying on, and rejecting that would make the rule unusable.
+func TestBuildEventCatalogAllowsWideningAFollowable(t *testing.T) {
+	prior := eventCatalog{Schema: eventsCatalogSchema, Follows: []eventCatalogFollow{{
+		ResourceType: "documents.entry",
+		Namespace:    "documents",
+		Events:       []string{"documents.entry.ingested"},
+	}}}
+	contribution := followsContribution()
+	contribution.Consumes = nil
+	contribution.Publishes = append(contribution.Publishes, PublishedEvent{
+		Type:       "documents.entry.archived",
+		Schema:     "documents/events/v1/entry.proto#EntryIngested",
+		Visibility: "tenant",
+		Partition:  "{tenant_id}",
+	})
+	contribution.Follows[0].Events = append(contribution.Follows[0].Events, "documents.entry.archived")
+
+	catalog, err := buildEventCatalog([]EventsContribution{contribution}, modulepackage.Manifest{}, eventsProtoRoot(t), prior)
+	if err != nil {
+		t.Fatalf("adding a followable event must compose: %v", err)
+	}
+	if len(catalog.Follows) != 1 || len(catalog.Follows[0].Events) != 2 {
+		t.Fatalf("widened declaration lost an event: %+v", catalog.Follows)
 	}
 }
 
@@ -517,6 +606,12 @@ func TestRenderEventCatalogProjectsFollows(t *testing.T) {
 	// The worker resolves an event to its target through this accessor.
 	if !strings.Contains(string(files[EventGoOutput]), "func Followable() []FollowableResource {") {
 		t.Fatalf("the Go projection must expose Followable():\n%s", files[EventGoOutput])
+	}
+	// Published and Consumed hold only scalars, so copying the array suffices for
+	// them; a FollowableResource owns a slice, and handing every caller the same
+	// backing array lets one in-place sort or append rewrite the compiled table.
+	if !strings.Contains(string(files[EventGoOutput]), "entry.Events = append([]string(nil), entry.Events...)") {
+		t.Fatalf("Followable() must copy each Events slice:\n%s", files[EventGoOutput])
 	}
 }
 

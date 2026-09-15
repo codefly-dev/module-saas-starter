@@ -55,7 +55,13 @@ var followableIndex = func() map[string]FollowableResource {
 // rather than silently matching no follower.
 func LookupFollowable(eventType string) (FollowableResource, bool) {
 	f, ok := followableIndex[eventType]
-	return f, ok
+	if !ok {
+		return FollowableResource{}, false
+	}
+	// The index shares its Events slices with the compiled table, so a caller that
+	// sorts or appends in place would rewrite that table for every later lookup.
+	f.Events = append([]string(nil), f.Events...)
+	return f, true
 }
 
 // IsInternalPublished reports whether the event type is a published type declared

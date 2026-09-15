@@ -245,8 +245,22 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 			if !logicalIDPattern.MatchString(followable.ResourceType) {
 				return eventCatalog{}, fmt.Errorf("followable resource type %q is not a valid logical id", followable.ResourceType)
 			}
+			// A resource type is a persisted key: follow intent is stored as
+			// (org_id, user_id, resource_type, resource_id), and the read-time
+			// access recheck resolves that pair through generic oracles. A
+			// contribution naming a resource type outside its own namespace would
+			// therefore mint follow rows over another module's noun — colliding in
+			// one uniqueness key with the real owner's rows, and rechecked against
+			// the wrong module's resource. Ownership is enforced the same way it is
+			// for a published type above.
+			if !strings.HasPrefix(followable.ResourceType, contribution.Namespace+".") {
+				return eventCatalog{}, fmt.Errorf("followable resource type %q is outside namespace %q", followable.ResourceType, contribution.Namespace)
+			}
+			// Namespace ownership plus unique namespaces already makes a collision
+			// between two contributions impossible; what remains reachable is one
+			// contribution declaring the same resource type twice.
 			if _, duplicate := followedResources[followable.ResourceType]; duplicate {
-				return eventCatalog{}, fmt.Errorf("followable resource type %q is declared by more than one contribution", followable.ResourceType)
+				return eventCatalog{}, fmt.Errorf("followable resource type %q is declared more than once", followable.ResourceType)
 			}
 			followedResources[followable.ResourceType] = struct{}{}
 			if len(followable.Events) == 0 {
@@ -328,6 +342,10 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 		})
 	}
 
+	if err := checkFollowRetraction(catalog.Follows, prior.Follows); err != nil {
+		return eventCatalog{}, err
+	}
+
 	// Both comparators must be TOTAL over the values they can see, because
 	// sort.Slice is not stable: any pair it considers equal may come out in
 	// either order, and these slices are written straight into four
@@ -370,6 +388,42 @@ func followableIndex(catalog eventCatalog) map[string]string {
 		}
 	}
 	return index
+}
+
+// checkFollowRetraction refuses a declaration that withdraws a followable
+// resource, or one of its events, that a previous compose published. This is the
+// follows-side counterpart of checkBreakingChange, and it guards something the
+// publish side does not have: follow intent is durable user state. Rows in
+// resource_follows outlive any compose, so dropping a resource type leaves every
+// follower's row referencing a type the host no longer matches, and dropping one
+// event silently stops the notifications those people asked for. Neither shows up
+// as an error anywhere at runtime — the fan-out simply never matches, which is
+// indistinguishable from a resource nobody follows — so the retraction has to be
+// refused here, where a human is still reading the output. Unlike a published
+// field there is no major-version escape hatch: retiring a followable resource
+// needs a decision about the live rows, and this is what forces that decision to
+// be made deliberately rather than discovered by its absence.
+func checkFollowRetraction(current, prior []eventCatalogFollow) error {
+	declared := map[string]map[string]struct{}{}
+	for _, follow := range current {
+		events := make(map[string]struct{}, len(follow.Events))
+		for _, eventType := range follow.Events {
+			events[eventType] = struct{}{}
+		}
+		declared[follow.ResourceType] = events
+	}
+	for _, was := range prior {
+		events, stillDeclared := declared[was.ResourceType]
+		if !stillDeclared {
+			return fmt.Errorf("followable resource type %q was declared by a previous compose and is now withdrawn; existing follows of it would silently stop matching", was.ResourceType)
+		}
+		for _, eventType := range was.Events {
+			if _, kept := events[eventType]; !kept {
+				return fmt.Errorf("followable resource type %q no longer declares event %q; followers of it would silently stop being notified", was.ResourceType, eventType)
+			}
+		}
+	}
+	return nil
 }
 
 // checkBreakingChange reuses the CONTRACT_VERSIONING.md rule that a field can
@@ -553,7 +607,12 @@ func renderEventCatalogGo(catalog eventCatalog) string {
 		}
 		body.WriteString("}},\n")
 	}
-	body.WriteString("}\n\nfunc Published() []PublishedEvent {\n\treturn append([]PublishedEvent(nil), published[:]...)\n}\n\nfunc Consumed() []ConsumedEvent {\n\treturn append([]ConsumedEvent(nil), consumed[:]...)\n}\n\nfunc Followable() []FollowableResource {\n\treturn append([]FollowableResource(nil), followable[:]...)\n}\n")
+	// Followable copies each Events slice rather than the struct alone. Published
+	// and Consumed hold only scalars, so copying the array is enough for them; a
+	// shallow copy here would hand every caller the same backing array, and one
+	// caller sorting or appending in place would rewrite the compiled table for
+	// every later lookup in the process.
+	body.WriteString("}\n\nfunc Published() []PublishedEvent {\n\treturn append([]PublishedEvent(nil), published[:]...)\n}\n\nfunc Consumed() []ConsumedEvent {\n\treturn append([]ConsumedEvent(nil), consumed[:]...)\n}\n\nfunc Followable() []FollowableResource {\n\tout := make([]FollowableResource, 0, len(followable))\n\tfor _, entry := range followable {\n\t\tentry.Events = append([]string(nil), entry.Events...)\n\t\tout = append(out, entry)\n\t}\n\treturn out\n}\n")
 	return body.String()
 }
 

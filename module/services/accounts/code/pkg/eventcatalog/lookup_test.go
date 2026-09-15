@@ -76,6 +76,33 @@ func TestLookupFollowable(t *testing.T) {
 	}
 }
 
+// TestLookupFollowableDoesNotAliasTheTable proves the returned Events slice is a
+// copy. The index shares its slices with the compiled table, so a caller sorting
+// or appending in place would silently rewrite what every later lookup in the
+// process sees — a corruption with no error and no way back.
+func TestLookupFollowableDoesNotAliasTheTable(t *testing.T) {
+	original := followableIndex
+	t.Cleanup(func() { followableIndex = original })
+	followableIndex = map[string]FollowableResource{
+		"documents.entry.renamed": {
+			ResourceType: "documents.entry",
+			Namespace:    "documents",
+			Events:       []string{"documents.entry.renamed", "documents.entry.version_minted"},
+		},
+	}
+
+	first, ok := LookupFollowable("documents.entry.renamed")
+	if !ok {
+		t.Fatal("test premise broken: the installed declaration must resolve")
+	}
+	first.Events[0] = "mutated"
+
+	second, _ := LookupFollowable("documents.entry.renamed")
+	if second.Events[0] != "documents.entry.renamed" {
+		t.Fatalf("a caller mutating its copy rewrote the shared table: %+v", second.Events)
+	}
+}
+
 // TestFollowableIndexCoversTheComposedTable guards the wiring the test above
 // cannot: substituting the index would keep passing even if the generated
 // `followable` array were never indexed at all. The composed table is empty

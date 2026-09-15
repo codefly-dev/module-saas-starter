@@ -185,5 +185,10 @@ func Consumed() []ConsumedEvent {
 }
 
 func Followable() []FollowableResource {
-	return append([]FollowableResource(nil), followable[:]...)
+	out := make([]FollowableResource, 0, len(followable))
+	for _, entry := range followable {
+		entry.Events = append([]string(nil), entry.Events...)
+		out = append(out, entry)
+	}
+	return out
 }
