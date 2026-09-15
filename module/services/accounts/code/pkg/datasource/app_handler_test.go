@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"accounts/pkg/datasource"
+	"accounts/pkg/jobs"
 
 	"github.com/stretchr/testify/require"
 )
@@ -309,7 +311,9 @@ func TestAppWebhookPushOrderingIsPerRepository(t *testing.T) {
 		require.True(t, ok, delivery)
 		return request.GetJob().GetOrdering().GetComponents()
 	}
-	require.Equal(t, []string{"app", "4242", "acme/docs"}, ordering("push-docs-1"))
+	// The repository rides as a fixed-width digest rather than by name, so the
+	// key is asserted by shape and by equality rather than literally.
+	require.Equal(t, []string{"app", "4242"}, ordering("push-docs-1")[:2])
 	require.Equal(t, ordering("push-docs-1"), ordering("push-docs-2"))
 	require.NotEqual(t, ordering("push-docs-1"), ordering("push-specs-1"))
 }
@@ -362,6 +366,67 @@ func TestAppWebhookRejectsUnroutablePush(t *testing.T) {
 		require.Equal(t, http.StatusBadRequest, response.StatusCode, name)
 	}
 	require.Zero(t, producer.inserts.Load())
+}
+
+// GitHub permits a 39-character owner and a 100-character repository, so a full
+// name reaches 140 characters while a job ordering component is capped at 128.
+// Naming the repository directly in that key made such a push fail validation
+// at enqueue, which the receiver answers 400 — and GitHub never retries a 4xx,
+// so live delivery for that repository ended permanently while looking like a
+// malformed delivery. The digest is fixed-width, so the longest legal name is
+// still accepted.
+func TestAppWebhookAcceptsPushForLongestLegalRepository(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	repo := strings.Repeat("o", 39) + "/" + strings.Repeat("r", 100)
+	require.Greater(t, len(repo), 128, "the fixture must exceed the ordering-component bound")
+
+	response := postAppDelivery(t, server, appDelivery{
+		event: "push", delivery: "push-long", body: appPushBody("4242", repo),
+	})
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	request, ok := producer.request("push-long")
+	require.True(t, ok, "a push for a legal repository name must be recorded")
+	job := request.GetJob()
+	components := job.GetOrdering().GetComponents()
+	require.Len(t, components, 3)
+	require.Len(t, components[2], 64, "the repository rides as a fixed-width digest")
+	require.Equal(t, repo, job.GetAttributes()["github.repo"],
+		"the plain name stays on the attributes, where the bound is 1024")
+
+	// The fake producer validates the command but never renders the canonical
+	// ordering key, which production does on every enqueue
+	// (infra.prepareJobEnqueue) and which carries a separate 255-byte bound. So
+	// assert it here: the component bound passing is not evidence that the key
+	// this job actually serializes on can be built.
+	canonical, err := jobs.CanonicalOrderingKey(job.GetOrdering())
+	require.NoError(t, err, "production renders this key even though the fake producer does not")
+	require.LessOrEqual(t, len(canonical), 255)
+}
+
+// Repository names are case-insensitive and the eligibility lookup matches them
+// that way, so two spellings of one repository must serialize behind a single
+// FIFO key instead of fanning out concurrently.
+func TestAppWebhookPushOrderingIsCaseInsensitive(t *testing.T) {
+	producer := newFakeJobProducer()
+	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
+
+	for i, repo := range []string{"acme/docs", "Acme/Docs", "ACME/DOCS"} {
+		response := postAppDelivery(t, server, appDelivery{
+			event: "push", delivery: fmt.Sprintf("case-%d", i), body: appPushBody("4242", repo),
+		})
+		require.Equal(t, http.StatusOK, response.StatusCode, repo)
+	}
+	first, ok := producer.request("case-0")
+	require.True(t, ok)
+	for _, id := range []string{"case-1", "case-2"} {
+		other, ok := producer.request(id)
+		require.True(t, ok, id)
+		require.Equal(t, first.GetJob().GetOrdering().GetComponents(),
+			other.GetJob().GetOrdering().GetComponents(), id)
+	}
 }
 
 // The body bound applies to a push exactly as it does to a lifecycle delivery:

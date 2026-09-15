@@ -22,6 +22,7 @@ package business
 
 import (
 	"context"
+	"errors"
 
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
@@ -123,15 +124,44 @@ func (s *Service) FanOutGitHubAppPush(ctx context.Context, installationID, repo,
 				// jobs resolve to themselves on that walk, so recovery neither
 				// duplicates nor skips.
 				w.Warn("fan out app push failed", wool.Field("source", source.ID), wool.ErrField(err))
-				failure = keepRetryable(failure, err)
+				failure = keepRetryable(failure, classifyAppPushEnqueue(err))
 				continue
 			}
 			fanned++
 		}
 		if len(page) < datasourceAppPushPageSize {
+			if fanned == 0 && failure == nil {
+				// A verified push that reached no source is the state an operator
+				// has to be able to tell apart from a push that never arrived: a
+				// paused source, a disconnected one and a repository no longer
+				// selected all look identical from outside.
+				w.Info("app push matched no eligible source",
+					wool.Field("installation", installationID), wool.Field("repo", repo))
+			}
 			return fanned, failure
 		}
 	}
+}
+
+// classifyAppPushEnqueue names what one source's failed enqueue means for the
+// whole delivery. A command the platform refused cannot become valid by being
+// sent again, so it is terminal; an unavailable inbox or a transport fault is
+// the transient kind the delivery must come back for.
+//
+// Both branches are classified, not just the terminal one. keepRetryable
+// prefers a retryable *jobs.ProcessingError, and the worker treats a bare error
+// as retryable only when nothing else outranks it — so leaving the transient
+// case unclassified would let one source's terminal refusal decide the whole
+// delivery and dead-letter it, stranding the sources whose enqueue merely
+// needed retrying. The raw error is logged at the call site, so classifying
+// loses no diagnostic detail.
+func classifyAppPushEnqueue(err error) error {
+	if errors.Is(err, jobs.ErrInvalidCommand) {
+		return jobs.NewProcessingError("datasource.app_push_refused",
+			"A GitHub App push delivery produced a job the platform refused, so that source was skipped. This will not retry.", false)
+	}
+	return jobs.NewProcessingError("datasource.app_push_enqueue_failed",
+		"Could not record a GitHub App push delivery for one of its sources. This job may retry.", true)
 }
 
 // enqueueAppPushDelivery records one source's copy of an App-level push as an

@@ -37,6 +37,8 @@ package datasource
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -264,10 +266,12 @@ func lifecycleJob(body []byte, event, deliveryID string) (*jobsv1.NewJob, error)
 // is stable across redelivery, and the per-source keys the fan-out derives from
 // it are what keep each source's copy distinct.
 //
-// The ordering key names the installation and repository because no source is
-// known yet. It shares the per-source delivery namespace, so two pushes to one
-// repository fan out in the order GitHub sent them, and the per-source
-// deliveries they produce inherit that order behind each source's own key.
+// The ordering key names the installation and a digest of the repository,
+// because no source is known yet. It shares the per-source delivery namespace,
+// so two pushes to one repository fan out in the order GitHub sent them, and
+// the per-source deliveries they produce inherit that order behind each
+// source's own key. The repository is digested rather than named for the
+// reasons on repoOrderingComponent.
 func contentJob(body []byte, event, deliveryID string) (*jobsv1.NewJob, error) {
 	installationID, repo, err := deliveryRouting(body)
 	if err != nil {
@@ -284,7 +288,7 @@ func contentJob(body []byte, event, deliveryID string) (*jobsv1.NewJob, error) {
 		Source:    GitHubAppWebhookSource,
 		Ordering: &jobsv1.JobOrderingKey{
 			Namespace:  deliveryOrderingNamespace,
-			Components: []string{"app", installationID, repo},
+			Components: []string{"app", installationID, repoOrderingComponent(repo)},
 		},
 		IdempotencyKey: deliveryID,
 		SchemaVersion:  GitHubWebhookSchemaVersion,
@@ -298,6 +302,27 @@ func contentJob(body []byte, event, deliveryID string) (*jobsv1.NewJob, error) {
 			attrDeliveryID:     deliveryID,
 		},
 	}, nil
+}
+
+// repoOrderingComponent renders a repository as a bounded, case-insensitive
+// FIFO ordering component.
+//
+// The name cannot ride in the key as-is. saas.jobs.v1.JobOrderingKey caps each
+// component at 128 bytes, while GitHub permits a 39-character owner and a
+// 100-character repository — so `owner/name` reaches 140, and a long one is
+// refused at enqueue as an invalid command. The receiver answers that 400,
+// which GitHub never retries, so live delivery for that repository would end
+// permanently while looking like a malformed delivery. A digest is fixed-width,
+// so no legal name can overflow the bound.
+//
+// The name is lowercased first because GitHub's are case-insensitive and the
+// eligibility lookup matches them that way (LOWER(repo)). Digesting the raw
+// casing would give two spellings of one repository two different FIFO keys and
+// let their deliveries fan out concurrently, which is the ordering this key
+// exists to impose.
+func repoOrderingComponent(repo string) string {
+	digest := sha256.Sum256([]byte(strings.ToLower(repo)))
+	return hex.EncodeToString(digest[:])
 }
 
 // deliveryRouting reads the facts a verified delivery is routed by: the

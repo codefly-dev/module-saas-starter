@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
+	"accounts/pkg/datasource"
 	jobsv1 "accounts/pkg/gen/saas/jobs/v1"
 	"accounts/pkg/jobs"
 )
@@ -128,8 +129,16 @@ func TestFanOutGitHubAppPushReachesEveryEligibleTenant(t *testing.T) {
 		// the change-set compiler handles it with no knowledge of where it
 		// entered.
 		require.Equal(t, business.DatasourceDeliveryQueue, job.GetQueue())
-		require.Equal(t, "datasource.github.push", job.GetTopic())
 		require.Equal(t, appPushDeliveryBody, string(job.GetPayload()))
+
+		// The fan-out enqueues onto the receiver's own push topic, so it must
+		// stamp the receiver's topic and schema version: one consumer must not
+		// see two different envelopes depending on which producer sent it. The
+		// production constants cannot be shared — pkg/datasource imports
+		// business, so business importing it back is a cycle — but this external
+		// test package can import both, which is what couples them here.
+		require.Equal(t, datasource.GitHubWebhookTopic, job.GetTopic())
+		require.EqualValues(t, datasource.GitHubWebhookSchemaVersion, job.GetSchemaVersion())
 
 		// Tenant and boundary are bound server-side from the source row.
 		require.Equal(t, source.OrgID, job.GetAttributes()["datasource.org_id"])
@@ -287,7 +296,7 @@ func TestDatasourceDeliveryJobRoutesAppPushToFanOut(t *testing.T) {
 
 	err := svc.NewDatasourceDeliveryJobHandler()(context.Background(), &jobsv1.JobEnvelope{
 		Queue: business.DatasourceDeliveryQueue,
-		Topic: "datasource.github.app_push",
+		Topic: datasource.GitHubAppPushTopic,
 		Attributes: map[string]string{
 			"datasource.installation_id": testPushInstallation,
 			"github.repo":                testPushRepo,
@@ -321,4 +330,46 @@ func TestDatasourceDeliveryJobRejectsUnroutableAppPush(t *testing.T) {
 		require.False(t, processing.Retryable, name)
 	}
 	require.Empty(t, producer.recorded())
+}
+
+// A job the platform refused cannot become valid by being sent again. Left as a
+// bare error it inherited the worker's default retryable classification and
+// burned all 24 attempts re-sending it, so the fan-out names it terminal.
+func TestFanOutGitHubAppPushTreatsRefusedCommandAsTerminal(t *testing.T) {
+	store := newDatasourceFakeStore()
+	producer := &appPushProducer{failFor: map[string]error{
+		"source-a": fmt.Errorf("%w: ordering component too long", jobs.ErrInvalidCommand),
+	}}
+	svc := newAppPushService(store, producer)
+	seedPushSource(t, store, "source-a", testOrg, testPushRepo, testPushInstallation, business.DatasourceStatusActive)
+
+	fanned, err := svc.FanOutGitHubAppPush(context.Background(),
+		testPushInstallation, testPushRepo, testPushDelivery, []byte(appPushDeliveryBody))
+	require.Zero(t, fanned)
+	var processing *jobs.ProcessingError
+	require.ErrorAs(t, err, &processing)
+	require.False(t, processing.Retryable, "a refused command must not be retried")
+}
+
+// One source's terminal refusal must not decide the whole delivery: a transient
+// failure on any other source has to keep it alive, or the sources whose
+// enqueue merely needed retrying are silently dropped when the delivery
+// dead-letters. This is why both branches are classified, not just the terminal
+// one — keepRetryable only prefers a retryable *ProcessingError*.
+func TestFanOutGitHubAppPushKeepsDeliveryAliveForTransientFailure(t *testing.T) {
+	store := newDatasourceFakeStore()
+	producer := &appPushProducer{failFor: map[string]error{
+		"source-a": fmt.Errorf("%w: refused", jobs.ErrInvalidCommand),
+		"source-b": errors.New("inbox unavailable"),
+	}}
+	svc := newAppPushService(store, producer)
+	seedPushSource(t, store, "source-a", testOrg, testPushRepo, testPushInstallation, business.DatasourceStatusActive)
+	seedPushSource(t, store, "source-b", testSecondOrg, testPushRepo, testPushInstallation, business.DatasourceStatusActive)
+
+	_, err := svc.FanOutGitHubAppPush(context.Background(),
+		testPushInstallation, testPushRepo, testPushDelivery, []byte(appPushDeliveryBody))
+	var processing *jobs.ProcessingError
+	require.ErrorAs(t, err, &processing)
+	require.True(t, processing.Retryable,
+		"the transient failure must outrank the refusal so the delivery comes back")
 }
