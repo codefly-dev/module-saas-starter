@@ -457,48 +457,51 @@ function LastSyncCell({ source }: { source: DatasourceView }) {
 	);
 }
 
-const statusLabels: Record<DatasourceStatusName, string> = {
-	active: "Active",
-	paused: "Paused",
-	degraded: "Degraded",
-	unknown: "Unknown",
-};
-
-const statusVariants: Record<
-	DatasourceStatusName,
-	"outline" | "secondary" | "destructive"
+/**
+ * How each status that is not `active` presents. Active is deliberately absent:
+ * it is the state of nearly every row, so badging it too would bury the states
+ * that need a reader under a column of noise — and it and `unknown` would then
+ * differ by their label alone.
+ */
+const statusPresentation: Record<
+	Exclude<DatasourceStatusName, "active">,
+	{ label: string; variant: "outline" | "secondary" | "destructive" }
 > = {
-	active: "outline",
-	paused: "secondary",
-	degraded: "destructive",
-	unknown: "outline",
+	paused: { label: "Paused", variant: "secondary" },
+	degraded: { label: "Degraded", variant: "destructive" },
+	unknown: { label: "Unknown", variant: "outline" },
 };
 
 /**
- * A source's lifecycle state and, for one the host parked, the reason it
+ * A source's lifecycle state and, once it has left active, the reason the host
  * published. Shown in the row rather than behind History because the tenant
  * never caused this state and so has no reason to go looking for it.
  *
- * Degrading stops future pulls and withdraws nothing, so the line names what
- * stopped: without it a red badge reads as "your content is gone", which would
- * send a reader to re-ingest content that is still there.
+ * The reason renders for whatever status carries one. The wire scopes it to
+ * "why the source left active" rather than to one particular way of leaving,
+ * so keying it to `degraded` would drop a paused source's explanation exactly
+ * as this panel used to drop a degraded one.
+ *
+ * Degrading clears the source's reconcile schedule and an incremental delivery
+ * never lifts it, so nothing resumes on its own: the line has to name Sync, or
+ * a reader who fixes the cause waits for a pull that cannot come. It also says
+ * what stopped, since a red badge alone reads as "your content is gone" and
+ * would send them to re-ingest content that is still there.
  */
 function StatusCell({ source }: { source: DatasourceView }) {
+	const presentation =
+		source.status === "active" ? undefined : statusPresentation[source.status];
 	return (
 		<div className="space-y-0.5">
-			<Badge variant={statusVariants[source.status]}>
-				{statusLabels[source.status]}
-			</Badge>
+			{presentation && (
+				<Badge variant={presentation.variant}>{presentation.label}</Badge>
+			)}
+			{source.statusReason && <p className="text-xs">{source.statusReason}</p>}
 			{source.status === "degraded" && (
-				<>
-					{source.statusReason && (
-						<p className="text-xs">{source.statusReason}</p>
-					)}
-					<p className="text-xs text-muted-foreground">
-						New pulls have stopped until this is resolved. Content already
-						ingested stays readable.
-					</p>
-				</>
+				<p className="text-xs text-muted-foreground">
+					Scheduled pulls have stopped; use Sync to retry once the cause is
+					fixed. Content already ingested stays readable.
+				</p>
 			)}
 		</div>
 	);
