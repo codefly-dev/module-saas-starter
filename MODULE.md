@@ -389,6 +389,44 @@ codefly sync module <name> --to <newtag>            # dry-run
 codefly sync module <name> --to <newtag> --apply
 ```
 
+### Pinning the package by identity
+
+A workspace can skip the sync-into-the-consumer route and resolve the published
+module package at run time instead. The reference names the source repository
+and a package version rather than a path:
+
+```yaml
+modules:
+  - name: saas-starter
+    source: codefly-dev/module-saas-starter
+    version: "0.1.0"
+```
+
+Resolution fails closed, so the workspace must also say who it trusts to have
+signed that package:
+
+```yaml
+module-trust:
+  repositories:
+    codefly/saas-starter: https://github.com/codefly-dev/module-saas-starter.git
+  signers:
+    https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main: <base64 Ed25519 public key>
+```
+
+`codefly/saas-starter` is the package id from
+`module/module.package.codefly.yaml`; the signer is the workflow identity the
+release was signed under. Every `module-package/vX.Y.Z` release publishes both
+with the public key filled in — copy the block out of the release notes, or
+download the release's `module-trust.yaml` asset. That asset is written during
+signing from the key the signature was just verified against, so the key a
+release publishes is the key that verifies it.
+
+Codefly then fetches the release, checks its detached signature and archive
+digest against this policy, and materializes it into a content-addressed cache.
+Nothing is written into the consumer's tree, so there is no base manifest to
+keep fresh and no sibling checkout to arrange — which is what makes this the
+CI-portable route. Overlay discipline below applies to the sync route.
+
 ### Overlay discipline
 
 Base files are **upstream-owned**. Every base file's `sha256` is recorded in
