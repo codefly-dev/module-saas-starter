@@ -96,8 +96,11 @@ export function OrgMembersPanel({
 			col.accessor("userId", {
 				header: "User ID",
 				cell: (info) => (
-					<span className="font-mono text-xs">
-						{truncateUUID(info.getValue())}
+					<span
+						className="select-all font-mono text-xs"
+						title={info.getValue()}
+					>
+						{info.getValue()}
 					</span>
 				),
 			}),
