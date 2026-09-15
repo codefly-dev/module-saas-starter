@@ -900,7 +900,10 @@ func (h *notificationConnectHandler) MarkRead(ctx context.Context, req *connect.
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.MarkRead(ctx, userID, req.Msg.Id); err != nil {
-		return nil, err
+		if errors.Is(err, business.ErrNotificationNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
 }
@@ -924,9 +927,31 @@ func (h *notificationConnectHandler) DeleteNotification(ctx context.Context, req
 		return nil, translateGRPCError(err)
 	}
 	if err := h.svc.DeleteNotification(ctx, userID, req.Msg.Id); err != nil {
-		return nil, err
+		if errors.Is(err, business.ErrNotificationNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
 	}
 	return connect.NewResponse(&emptypb.Empty{}), nil
+}
+
+// ResolveNotificationAction re-authorizes a deep link as it is followed. A
+// notification the caller may no longer reach is NOT_FOUND, never denied, so an
+// id substitution and a revoked resource look the same from outside.
+func (h *notificationConnectHandler) ResolveNotificationAction(ctx context.Context, req *connect.Request[gen.ResolveNotificationActionRequest]) (*connect.Response[gen.ResolveNotificationActionResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	userID, err := callerID(ctx)
+	if err != nil {
+		return nil, translateGRPCError(err)
+	}
+	actionURL, err := h.svc.ResolveNotificationAction(ctx, userID, req.Msg.Id)
+	if err != nil {
+		if errors.Is(err, business.ErrNotificationNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
+	}
+	return connect.NewResponse(&gen.ResolveNotificationActionResponse{ActionUrl: actionURL}), nil
 }
 
 // ============================================================================
@@ -1284,7 +1309,7 @@ func notificationToProto(n *business.Notification) *gen.Notification {
 		Title:     n.Title,
 		Body:      n.Body,
 		Type:      n.Type,
-		ActionUrl: n.ActionURL,
+		HasAction: n.ActionURL != "",
 	}
 	if !n.CreatedAt.IsZero() {
 		out.CreatedAt = timestamppb.New(n.CreatedAt)

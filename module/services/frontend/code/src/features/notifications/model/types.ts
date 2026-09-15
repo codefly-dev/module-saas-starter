@@ -15,5 +15,7 @@ export interface Notification {
 	type: NotificationType;
 	read: boolean;
 	createdAt: string;
-	actionUrl?: string;
+	/** Whether the item has a destination. The destination itself is fetched,
+	 *  and re-authorized, only when the link is followed. */
+	hasAction: boolean;
 }

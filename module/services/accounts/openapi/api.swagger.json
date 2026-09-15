@@ -2796,6 +2796,7 @@
     "v1Notification": {
       "properties": {
         "actionUrl": {
+          "description": "No longer populated. The stored destination is a cache of a past grant, so\nit is never broadcast with the list; ResolveNotificationAction re-authorizes\nand returns it when the link is actually followed. Retained rather than\nremoved so the field number stays burned and the wire shape is unbroken.",
           "type": "string"
         },
         "body": {
@@ -2804,6 +2805,10 @@
         "createdAt": {
           "format": "date-time",
           "type": "string"
+        },
+        "hasAction": {
+          "description": "Whether this item has a destination at all — enough to render it as\nactionable without handing out the destination itself.",
+          "type": "boolean"
         },
         "id": {
           "type": "string"
