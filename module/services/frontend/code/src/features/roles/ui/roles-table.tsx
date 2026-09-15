@@ -10,7 +10,6 @@ import {
 import { Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
-import { truncateUUID } from "@/shared/lib/utils";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -84,8 +83,11 @@ export function RolesTable({
 			col.accessor("id", {
 				header: "ID",
 				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
+					<span
+						className="select-all font-mono text-xs text-muted-foreground"
+						title={info.getValue()}
+					>
+						{info.getValue()}
 					</span>
 				),
 			}),
