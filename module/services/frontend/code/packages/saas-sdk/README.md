@@ -212,9 +212,14 @@ compiles from `src` only.
 vendors three third-party descriptors — `buf/validate` and the two `google/api`
 files. The `google/protobuf` well-known types are absent because the generator
 resolves every WKT to `@bufbuild/protobuf/wkt`; vendoring them would add files
-nothing imports. A different pin may emit them relatively again. Never restore a
-descriptor by hand to reach a remembered number — regenerate, and let the gate
-below judge the result.
+nothing imports. The client step still writes them, and `buf.gen.sdk.yaml`
+declares no `clean`, so the backstop supersedes what it re-emits and leaves those
+behind — `scripts/generate.mjs` therefore prunes every third-party descriptor the
+regenerated tree no longer imports, which is what makes the command above
+reproduce the committed tree rather than a superset of it. A different pin may
+emit them relatively again; then they are imported, and kept. Never restore or
+delete a descriptor by hand to reach a remembered number — regenerate, and let
+the gate below judge the result.
 
 `scripts/ci/install-codefly.sh` is the authority for the pinned CLI version.
 Check what you are about to run, and what you got:
