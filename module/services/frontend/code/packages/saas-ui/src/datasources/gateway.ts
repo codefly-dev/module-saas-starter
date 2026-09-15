@@ -161,11 +161,12 @@ export function datasourceClientOverTransport(
 					: undefined,
 			};
 		},
-		async completeGitHubAppSetup(orgId, state, installationId) {
+		async completeGitHubAppSetup(orgId, state, installationId, code) {
 			const response = await client.completeGitHubAppSetup({
 				orgId,
 				state,
 				installationId,
+				code,
 			});
 			return {
 				installationId: response.installationId,

@@ -157,11 +157,18 @@ export interface DatasourceClient {
 	 * drops the App path and leaves the PAT one.
 	 */
 	beginGitHubAppSetup?(orgId: string): Promise<GitHubAppSetupHandle>;
-	/** Redeems the state the redirect echoed back and claims the installation. */
+	/**
+	 * Redeems the state the redirect echoed back and claims the installation.
+	 * `code` is the authorization code GitHub appends when the App requests user
+	 * authorization during installation; the host trades it to prove the caller
+	 * can reach the installation they name, so an empty one is refused there
+	 * rather than filtered out here.
+	 */
 	completeGitHubAppSetup?(
 		orgId: string,
 		state: string,
 		installationId: string,
+		code: string,
 	): Promise<GitHubAppInstallationView>;
 	/** Rebinds an existing source's credential onto the App, in place. */
 	migrateGitHubSourceToApp?(orgId: string, id: string): Promise<void>;

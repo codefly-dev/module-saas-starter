@@ -203,6 +203,7 @@ function DatasourcesPanelView({
 				appSetupReturn!.orgId,
 				appSetupReturn!.state,
 				appSetupReturn!.installationId,
+				appSetupReturn!.code,
 			),
 		enabled: appSetupActive,
 		// The state is redeemable exactly once, so a retry or a background refetch
@@ -541,17 +542,24 @@ function PanelMessage({
 function readAppSetupReturn(): {
 	state: string;
 	installationId: string;
+	code: string;
 } | null {
 	if (typeof window === "undefined") return null;
 	const params = new URLSearchParams(window.location.search);
 	const state = params.get("state");
 	const installationId = params.get("installation_id");
-	return state && installationId ? { state, installationId } : null;
+	// `code` is deliberately not part of the trigger. It is absent when the App
+	// was registered without "Request user authorization (OAuth) during
+	// installation", and the host answers that with the error naming the setting
+	// — which an operator can act on, where ignoring the return says nothing.
+	return state && installationId
+		? { state, installationId, code: params.get("code") ?? "" }
+		: null;
 }
 
 function scrubAppSetupReturn(): void {
 	const params = new URLSearchParams(window.location.search);
-	for (const key of ["state", "installation_id", "setup_action"])
+	for (const key of ["state", "installation_id", "setup_action", "code"])
 		params.delete(key);
 	const query = params.toString();
 	window.history.replaceState(
