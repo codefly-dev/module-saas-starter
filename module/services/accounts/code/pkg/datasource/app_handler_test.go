@@ -351,7 +351,7 @@ func TestAppWebhookRejectsUnroutablePush(t *testing.T) {
 	server := newAppTestServer(t, producer, staticAppRegistration{secret: testAppWebhookSecret})
 
 	for name, body := range map[string]string{
-		"no repository":  `{"ref":"refs/heads/main","after":"bbb","installation":{"id":4242}}`,
+		"no repository": `{"ref":"refs/heads/main","after":"bbb","installation":{"id":4242}}`,
 		"empty repository": `{"ref":"refs/heads/main","after":"bbb","installation":{"id":4242},` +
 			`"repository":{"full_name":"  "}}`,
 		"no installation": `{"ref":"refs/heads/main","after":"bbb","repository":{"full_name":"acme/docs"}}`,
