@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { DatasourceStatus } from "@codefly-dev/saas-sdk";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DatasourcesPanel } from "../datasources-panel.js";
@@ -205,6 +206,75 @@ describe("createDatasourceClient", () => {
 
 		expect(view.lastIngestedAt).toBeUndefined();
 		expect(view.lastIngestedCommit).toBeUndefined();
+	});
+
+	it("carries a degraded source and its reason across the boundary", async () => {
+		// Collapsing DEGRADED into "unknown" and dropping the reason is what made
+		// the tenant-readable reason unreadable.
+		const [source] = oneSource.datasources;
+		stubFetch({
+			datasources: [
+				{
+					...source,
+					status: "DATASOURCE_STATUS_DEGRADED",
+					statusReason:
+						"snapshot manifest is 12582912 bytes, over the 8388608-byte ingest limit",
+				},
+			],
+		});
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/wiki/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const [view] = await client.listSources("org-1");
+
+		expect(view.status).toBe("degraded");
+		expect(view.statusReason).toBe(
+			"snapshot manifest is 12582912 bytes, over the 8388608-byte ingest limit",
+		);
+	});
+
+	it("maps every status the wire can carry to a named state", async () => {
+		// The server pins its own switch over every stored status
+		// (TestDatasourceStatusToProto_MapsEveryStoredStatus). Without the same
+		// pin here, a status added to the enum and left unmapped reaches a tenant
+		// as "Unknown" with no test failing — which is how DEGRADED arrived.
+		const [source] = oneSource.datasources;
+		const statuses = Object.values(DatasourceStatus).filter(
+			(value): value is DatasourceStatus =>
+				typeof value === "number" && value !== DatasourceStatus.UNSPECIFIED,
+		);
+		expect(statuses.length).toBeGreaterThan(0);
+
+		for (const status of statuses) {
+			stubFetch({ datasources: [{ ...source, status }] });
+			const client = createDatasourceClient({
+				apiBase: "/api/solutions/wiki/proxy",
+				getAccessToken: () => "test-token",
+			});
+
+			const [view] = await client.listSources("org-1");
+
+			expect(view.status, `unmapped DatasourceStatus ${status}`).not.toBe(
+				"unknown",
+			);
+		}
+	});
+
+	it("leaves the reason unset for a source that never left active", async () => {
+		// The wire carries an empty string, not an absent field.
+		const [source] = oneSource.datasources;
+		stubFetch({ datasources: [{ ...source, statusReason: "" }] });
+		const client = createDatasourceClient({
+			apiBase: "/api/solutions/wiki/proxy",
+			getAccessToken: () => "test-token",
+		});
+
+		const [view] = await client.listSources("org-1");
+
+		expect(view.status).toBe("active");
+		expect(view.statusReason).toBeUndefined();
 	});
 
 	it("reads the current token on each request", async () => {

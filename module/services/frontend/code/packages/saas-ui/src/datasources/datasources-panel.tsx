@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	Badge,
 	Button,
 	Input,
 	Label,
@@ -34,6 +35,7 @@ import type { ConnectGitHubValues } from "./schema.js";
 import type {
 	AccessibleScopeView,
 	DatasourceClient,
+	DatasourceStatusName,
 	DatasourceView,
 } from "./types.js";
 import {
@@ -455,6 +457,56 @@ function LastSyncCell({ source }: { source: DatasourceView }) {
 	);
 }
 
+/**
+ * How each status that is not `active` presents. Active is deliberately absent:
+ * it is the state of nearly every row, so badging it too would bury the states
+ * that need a reader under a column of noise — and it and `unknown` would then
+ * differ by their label alone.
+ */
+const statusPresentation: Record<
+	Exclude<DatasourceStatusName, "active">,
+	{ label: string; variant: "outline" | "secondary" | "destructive" }
+> = {
+	paused: { label: "Paused", variant: "secondary" },
+	degraded: { label: "Degraded", variant: "destructive" },
+	unknown: { label: "Unknown", variant: "outline" },
+};
+
+/**
+ * A source's lifecycle state and, once it has left active, the reason the host
+ * published. Shown in the row rather than behind History because the tenant
+ * never caused this state and so has no reason to go looking for it.
+ *
+ * The reason renders for whatever status carries one. The wire scopes it to
+ * "why the source left active" rather than to one particular way of leaving,
+ * so keying it to `degraded` would drop a paused source's explanation exactly
+ * as this panel used to drop a degraded one.
+ *
+ * Degrading clears the source's reconcile schedule and an incremental delivery
+ * never lifts it, so nothing resumes on its own: the line has to name Sync, or
+ * a reader who fixes the cause waits for a pull that cannot come. It also says
+ * what stopped, since a red badge alone reads as "your content is gone" and
+ * would send them to re-ingest content that is still there.
+ */
+function StatusCell({ source }: { source: DatasourceView }) {
+	const presentation =
+		source.status === "active" ? undefined : statusPresentation[source.status];
+	return (
+		<div className="space-y-0.5">
+			{presentation && (
+				<Badge variant={presentation.variant}>{presentation.label}</Badge>
+			)}
+			{source.statusReason && <p className="text-xs">{source.statusReason}</p>}
+			{source.status === "degraded" && (
+				<p className="text-xs text-muted-foreground">
+					Scheduled pulls have stopped; use Sync to retry once the cause is
+					fixed. Content already ingested stays readable.
+				</p>
+			)}
+		</div>
+	);
+}
+
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
 
@@ -485,6 +537,7 @@ function SourcesTable({
 				<TableHeader className="border-b bg-muted/40">
 					<TableRow>
 						<TableHead className={headerClass}>Repository</TableHead>
+						<TableHead className={headerClass}>Status</TableHead>
 						<TableHead className={headerClass}>Paths</TableHead>
 						<TableHead className={headerClass}>Branch</TableHead>
 						<TableHead className={headerClass}>Boundary</TableHead>
@@ -500,6 +553,9 @@ function SourcesTable({
 						<TableRow key={source.id} className="border-b last:border-0">
 							<TableCell className={cn(cellClass, "font-mono")}>
 								{source.repo}
+							</TableCell>
+							<TableCell className={cellClass}>
+								<StatusCell source={source} />
 							</TableCell>
 							<TableCell className={cellClass}>
 								{source.paths.length === 0 ? (

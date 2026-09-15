@@ -92,6 +92,82 @@ describe("DatasourcesPanel", () => {
 		expect(client.listSources).toHaveBeenCalledWith("org-1");
 	});
 
+	it("surfaces a degraded source and its reason without being asked", async () => {
+		// The host sets this state, never the tenant, so nothing prompts a reader
+		// to open History looking for it.
+		const degraded: DatasourceView = {
+			...sampleSource,
+			status: "degraded",
+			statusReason:
+				"snapshot manifest is 12582912 bytes, over the 8388608-byte ingest limit",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [degraded]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Degraded")).toBeTruthy();
+		expect(screen.getByText(/over the 8388608-byte ingest limit/)).toBeTruthy();
+	});
+
+	it("names the action that restarts a degraded source", async () => {
+		// Degrading clears the reconcile schedule and only a full snapshot lifts
+		// it, so an ordinary delivery never will: copy that says pulls stopped
+		// without naming Sync leaves a tenant who fixed the cause waiting on a
+		// pull that cannot come. It must also not imply content was withdrawn.
+		const degraded: DatasourceView = {
+			...sampleSource,
+			status: "degraded",
+			statusReason: "snapshot manifest is over the ingest limit",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [degraded]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const explanation = await screen.findByText(/pulls have stopped/i);
+		expect(explanation.textContent).toMatch(/sync/i);
+		expect(explanation.textContent).toMatch(/stays readable/i);
+	});
+
+	it("renders the reason for a status other than degraded", async () => {
+		// status_reason is scoped to "why the source left active", not to one way
+		// of leaving it, so gating the render on `degraded` drops a paused
+		// source's explanation — the same dropped reason this column exists for.
+		const paused: DatasourceView = {
+			...sampleSource,
+			status: "paused",
+			statusReason: "paused by an organization administrator",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [paused]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Paused")).toBeTruthy();
+		expect(
+			screen.getByText("paused by an organization administrator"),
+		).toBeTruthy();
+	});
+
+	it("renders a degraded source the host published no reason for", async () => {
+		// status_reason is a plain string on the wire, so an empty one maps to no
+		// reason at all; the state itself still has to reach the reader.
+		const degraded: DatasourceView = { ...sampleSource, status: "degraded" };
+		const client = fakeClient({ listSources: vi.fn(async () => [degraded]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Degraded")).toBeTruthy();
+		expect(screen.getByText(/pulls have stopped/i)).toBeTruthy();
+	});
+
+	it("leaves the status cell quiet for an active source", async () => {
+		// Nearly every row is active, so badging it too buries the states that
+		// need a reader — and it would sit one label away from `unknown`.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		await screen.findByText(sampleSource.repo);
+		expect(screen.queryByText("Active")).toBeNull();
+		expect(screen.queryByText(/pulls have stopped/i)).toBeNull();
+	});
+
 	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {
 		// A tenant pressing "Sync now" on a github source dispatches a forced
 		// reconcile, which advances this same clock — so a label naming the
