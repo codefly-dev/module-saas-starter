@@ -17,15 +17,26 @@ import (
 	"strings"
 
 	corecomposition "github.com/codefly-dev/core/composition"
+	"gopkg.in/yaml.v3"
 )
 
 const (
-	ArchiveName              = "module.tar"
-	ChecksumName             = "module.tar.sha256"
-	MetadataName             = "artifact.json"
-	ProvenanceName           = "provenance.json"
-	SignatureName            = "provenance.sig"
-	PackageRepository        = "https://github.com/codefly-dev/module-saas-starter.git"
+	ArchiveName    = "module.tar"
+	ChecksumName   = "module.tar.sha256"
+	MetadataName   = "artifact.json"
+	ProvenanceName = "provenance.json"
+	SignatureName  = "provenance.sig"
+	// TrustName carries the `module-trust` block a consuming workspace must
+	// declare to resolve this package by identity. Nothing else in the release
+	// states the signing key, so without it the identity/key pair a consumer
+	// has to write is knowable only inside the publishing job.
+	TrustName = "module-trust.yaml"
+	// PackageRepository carries no ".git" suffix on purpose. A consumer's
+	// workspace loader strips a trailing "/" and ".git" from the repository it
+	// declares, and Core then byte-compares that against the repository the
+	// provenance was signed with, so a suffix here is one no workspace could
+	// ever spell back.
+	PackageRepository        = "https://github.com/codefly-dev/module-saas-starter"
 	ReleaseSignatureIdentity = "https://github.com/codefly-dev/module-saas-starter/.github/workflows/ci.yml@refs/heads/main"
 	// ReleaseTagPrefix namespaces immutable module-package releases onto a track
 	// independent of the repository's v0.0.x deploy counter. The package semver
@@ -315,7 +326,48 @@ func SignRelease(options SignOptions) (*corecomposition.Provenance, error) {
 		_ = os.Remove(filepath.Join(options.ReleaseDir, ProvenanceName))
 		return nil, err
 	}
+	// Derived from the key the signature was just verified against, so the
+	// published signer cannot drift from the one that signed this release.
+	trust, err := encodeTrust(manifest.ID, repository, identity, expectedPublicKey)
+	if err != nil {
+		_ = os.Remove(filepath.Join(options.ReleaseDir, ProvenanceName))
+		_ = os.Remove(filepath.Join(options.ReleaseDir, SignatureName))
+		return nil, err
+	}
+	if err := writeNewFile(filepath.Join(options.ReleaseDir, TrustName), trust); err != nil {
+		_ = os.Remove(filepath.Join(options.ReleaseDir, ProvenanceName))
+		_ = os.Remove(filepath.Join(options.ReleaseDir, SignatureName))
+		return nil, err
+	}
 	return provenance, nil
+}
+
+type trustDocument struct {
+	ModuleTrust trustPolicy `yaml:"module-trust"`
+}
+
+type trustPolicy struct {
+	Repositories map[string]string `yaml:"repositories"`
+	Signers      map[string]string `yaml:"signers"`
+}
+
+func encodeTrust(packageID, repository, identity string, publicKey ed25519.PublicKey) ([]byte, error) {
+	var body bytes.Buffer
+	fmt.Fprintf(&body, "# Trust policy for %s module packages.\n", packageID)
+	body.WriteString("# Merge into the consuming workspace's workspace.codefly.yaml.\n")
+	encoder := yaml.NewEncoder(&body)
+	encoder.SetIndent(2)
+	document := trustDocument{ModuleTrust: trustPolicy{
+		Repositories: map[string]string{packageID: repository},
+		Signers:      map[string]string{identity: base64.StdEncoding.EncodeToString(publicKey)},
+	}}
+	if err := encoder.Encode(document); err != nil {
+		return nil, fmt.Errorf("encode module trust policy: %w", err)
+	}
+	if err := encoder.Close(); err != nil {
+		return nil, fmt.Errorf("encode module trust policy: %w", err)
+	}
+	return body.Bytes(), nil
 }
 
 func requireJSONEnd(decoder *json.Decoder) error {

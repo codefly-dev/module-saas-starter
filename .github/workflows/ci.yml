@@ -942,6 +942,19 @@ jobs:
           gh attestation verify \
             "${RUNNER_TEMP}/release/module.tar" \
             --repo "${GITHUB_REPOSITORY}"
+          version="${GITHUB_REF_NAME#module-package/v}"
+          {
+            echo "## Pinning this package"
+            echo
+            echo "Merge into the consuming workspace's \`workspace.codefly.yaml\`:"
+            echo
+            echo '```yaml'
+            cat "${RUNNER_TEMP}/release/module-trust.yaml"
+            echo '```'
+            echo
+            echo "Then reference the module with \`source: codefly-dev/module-saas-starter\`" \
+              "and \`version: \"${version}\"\`."
+          } > "${RUNNER_TEMP}/release-notes.md"
           draft_created=false
           cleanup_draft() {
             if [[ "${draft_created}" == "true" ]]; then
@@ -949,9 +962,16 @@ jobs:
             fi
           }
           trap cleanup_draft EXIT
+          # --latest=false keeps the repository's "Latest release" on the
+          # v0.0.x deploy counter: the two tracks are separate version axes,
+          # and GitHub would otherwise promote whichever published last. It is
+          # repeated on the publishing edit below because a draft cannot hold
+          # latest status, so the value given here may never be recorded.
           gh release create "${GITHUB_REF_NAME}" \
             --draft \
             --verify-tag \
+            --latest=false \
+            --notes-file "${RUNNER_TEMP}/release-notes.md" \
             --generate-notes
           draft_created=true
           gh release upload "${GITHUB_REF_NAME}" "${RUNNER_TEMP}"/release/*
@@ -963,7 +983,7 @@ jobs:
             --tag "${GITHUB_REF_NAME}" \
             --commit "${GITHUB_SHA}" \
             --remote-refs "${RUNNER_TEMP}/remote-refs-before-publish"
-          gh release edit "${GITHUB_REF_NAME}" --draft=false
+          gh release edit "${GITHUB_REF_NAME}" --draft=false --latest=false
           draft_created=false
           gh release verify "${GITHUB_REF_NAME}"
 
