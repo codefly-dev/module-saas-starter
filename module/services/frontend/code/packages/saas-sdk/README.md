@@ -221,8 +221,10 @@ emit them relatively again; then they are imported, and kept. Never restore or
 delete a descriptor by hand to reach a remembered number — regenerate, and let
 the gate below judge the result.
 
-`scripts/ci/install-codefly.sh` is the authority for the pinned CLI version.
-Check what you are about to run, and what you got:
+`scripts/ci/install-codefly.sh` is the authority for the default service-phase
+CLI pin. The workflow's affected-service planner explicitly selects its newer,
+plan-only pin from that installer's checksum allowlist. Check what you are about
+to run, and what you got:
 
 ```bash
 go version -m "$(which codefly)" | grep core   # want v0.3.20

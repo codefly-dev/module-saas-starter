@@ -32,7 +32,7 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
     const digest = createHash('sha256').update(readFileSync(archive)).digest('hex');
     const installer = readFileSync(join(root, 'scripts/ci/install-codefly.sh'), 'utf8');
     writeFileSync(join(dir, 'installer.sh'), installer
-      .replace(/^checksum=.+$/m, `checksum=${digest}`)
+      .replace(/checksum=[a-f0-9]{64}/g, `checksum=${digest}`)
       .replace('https://github.com/codefly-dev/cli/releases/download/v${version}/${archive}', `http://127.0.0.1:${server.address().port}/archive`));
     writeFileSync(join(dir, 'uname'), '#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo x86_64; fi\n', { mode: 0o755 });
     const pathFile = join(dir, 'github-path');
@@ -58,6 +58,28 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
     await new Promise(resolve => server.close(resolve));
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('only affected-service planning opts into the newer CLI', () => {
+  const installs = Object.entries(workflow.jobs).flatMap(([jobName, job]) =>
+    (job.steps ?? [])
+      .filter(step => step.run === 'bash scripts/ci/install-codefly.sh')
+      .map(step => ({ jobName, version: step.env?.CODEFLY_VERSION })),
+  );
+  assert.ok(installs.length > 1);
+  assert.deepEqual(
+    installs.filter(install => install.version !== undefined),
+    [{ jobName: 'codefly-plan', version: '0.1.151' }],
+  );
+});
+
+test('the CLI installer rejects versions outside its checksum allowlist', () => {
+  const result = spawnSync('bash', [join(root, 'scripts/ci/install-codefly.sh')], {
+    encoding: 'utf8',
+    env: { ...process.env, CODEFLY_VERSION: '0.1.999' },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Unsupported Codefly CI version: 0\.1\.999/);
 });
 
 test('the required Codefly quality check accepts only a successful phase matrix', () => {

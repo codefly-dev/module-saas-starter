@@ -2,13 +2,27 @@
 # The hosted CI runner is Linux x64. Keep the release and archive digest paired.
 set -euo pipefail
 
+version="${CODEFLY_VERSION:-0.1.145}"
+case "${version}" in
+  0.1.145)
+    checksum=a6e1a0e7f4adae8b2701dcea7e05cb03f1ac49c85ee96b4ac98dd2fa20dcc4c7
+    ;;
+  0.1.151)
+    # The affected-service planner needs the integrity-input classification
+    # added in 0.1.151. Service phases remain on the agent-compatible default.
+    checksum=eca1e72c8fca8d61626ea8a9f0a969f47d4a64871ffca25b3355e068f009706c
+    ;;
+  *)
+    echo "Unsupported Codefly CI version: ${version}" >&2
+    exit 1
+    ;;
+esac
+
 if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   echo 'The CI Codefly installer requires Linux x64' >&2
   exit 1
 fi
 
-version=0.1.151
-checksum=eca1e72c8fca8d61626ea8a9f0a969f47d4a64871ffca25b3355e068f009706c
 archive="codefly_${version}_linux_amd64.tar.gz"
 scratch="$(mktemp -d)"
 trap 'rm -rf "${scratch}"' EXIT
