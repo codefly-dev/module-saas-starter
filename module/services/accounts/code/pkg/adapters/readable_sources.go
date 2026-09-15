@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
 
@@ -71,7 +72,19 @@ func (s *ModuleCapabilitiesServer) ListReadableSourceCollections(ctx context.Con
 	for _, actor := range claims.GetActorChain() {
 		subjects = append(subjects, actor.GetPrincipalId())
 	}
-	return service.ReadableSourceCollections(ctx, claims.GetTenantId(), subjects, resources, req, func(ctx context.Context) error {
+	// The capability's own sealed scopes decide which collection details this
+	// viewer may inspect: nothing is disclosed that the mint did not already
+	// verify against live RBAC, and requireCurrentAuthority below re-resolves
+	// every one of them, so a revoked permission fails the whole call rather
+	// than quietly widening what the next page shows.
+	seals := func(resource, action string) bool {
+		return codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: resource, Action: action}) == nil
+	}
+	disclosure := business.CollectionMetadataDisclosure{
+		Grants:        seals("roles", "read"),
+		SyncRequester: seals("audit", "read"),
+	}
+	return service.ReadableSourceCollections(ctx, claims.GetTenantId(), subjects, resources, disclosure, req, func(ctx context.Context) error {
 		_, err := authority.requireCurrentAuthority(ctx, claims.GetTenantId(), claims)
 		return err
 	})

@@ -22,12 +22,21 @@ type sourceReadCursor struct {
 	ExpiresAt time.Time
 }
 
+// CollectionMetadataDisclosure names the collection details the viewer's
+// capability seals authority over. A detail it does not name is reported as
+// withheld rather than as absent, so a consumer can tell "you may not see who
+// can read this" from "nobody can".
+type CollectionMetadataDisclosure struct {
+	Grants        bool
+	SyncRequester bool
+}
+
 // ReadableSourceCollections checks authority and reads one joined page in a
 // single repeatable-read snapshot. Cursors bind identity and durable revisions;
 // expiration of a standing grant also forces enumeration to restart. resources
 // names the permission resource types the calling module's content is governed
 // by, which is what read grants are intersected against.
-func (s *Service) ReadableSourceCollections(ctx context.Context, org string, subjects []string, resources []string, req *gen.ListReadableSourceCollectionsRequest, authorize func(context.Context) error) (*gen.ListReadableSourceCollectionsResponse, error) {
+func (s *Service) ReadableSourceCollections(ctx context.Context, org string, subjects []string, resources []string, disclosure CollectionMetadataDisclosure, req *gen.ListReadableSourceCollectionsRequest, authorize func(context.Context) error) (*gen.ListReadableSourceCollectionsResponse, error) {
 	if org == "" || len(subjects) == 0 || authorize == nil {
 		return nil, status.Error(codes.PermissionDenied, "viewer identity required")
 	}
@@ -98,10 +107,64 @@ func (s *Service) ReadableSourceCollections(ctx context.Context, org string, sub
 			}
 			out.NextPageToken = base64.RawURLEncoding.EncodeToString(raw)
 		}
-		return nil
+		return s.discloseCollectionMetadata(ctx, org, resources, disclosure, out.Collections)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+// discloseCollectionMetadata attaches the details this viewer may inspect to a
+// page already narrowed to collections they can read, and marks every row with
+// what was disclosed. Both extra reads stay inside the caller's snapshot, so the
+// grants and the sync record describe the same instant as the page itself.
+func (s *Service) discloseCollectionMetadata(ctx context.Context, org string, resources []string, disclosure CollectionMetadataDisclosure, collections []*gen.ReadableSourceCollection) error {
+	if len(collections) == 0 {
+		return nil
+	}
+	grantDisclosure := gen.MetadataDisclosure_METADATA_DISCLOSURE_WITHHELD
+	if disclosure.Grants {
+		grantDisclosure = gen.MetadataDisclosure_METADATA_DISCLOSURE_DISCLOSED
+	}
+	requesterDisclosure := gen.MetadataDisclosure_METADATA_DISCLOSURE_WITHHELD
+	if disclosure.SyncRequester {
+		requesterDisclosure = gen.MetadataDisclosure_METADATA_DISCLOSURE_DISCLOSED
+	}
+	var boundaries, sources []string
+	for _, collection := range collections {
+		collection.GrantDisclosure = grantDisclosure
+		if collection.Sync == nil {
+			collection.Sync = &gen.CollectionSyncProvenance{}
+		}
+		collection.Sync.RequesterDisclosure = requesterDisclosure
+		if !slices.Contains(boundaries, collection.BoundaryId) {
+			boundaries = append(boundaries, collection.BoundaryId)
+		}
+		sources = append(sources, collection.SourceId)
+	}
+	if disclosure.Grants {
+		grants, err := s.store.ReadableCollectionGrants(ctx, org, boundaries, resources)
+		if err != nil {
+			return err
+		}
+		for _, collection := range collections {
+			collection.ReadGrants = grants[collection.BoundaryId]
+		}
+	}
+	if disclosure.SyncRequester {
+		requests, err := s.store.LatestSourceSyncRequests(ctx, org, sources)
+		if err != nil {
+			return err
+		}
+		for _, collection := range collections {
+			request, ok := requests[collection.SourceId]
+			if !ok {
+				continue
+			}
+			collection.Sync.RequestedAt = request.GetRequestedAt()
+			collection.Sync.RequestedByLabel = request.GetRequestedByLabel()
+		}
+	}
+	return nil
 }

@@ -9,6 +9,7 @@ import (
 
 	"accounts/pkg/auth"
 	"accounts/pkg/business"
+	gen "accounts/pkg/gen/saas/accounts/v1"
 	"accounts/pkg/infra"
 	"time"
 
@@ -71,6 +72,86 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.Msg.Collections, 1)
 	require.Equal(t, source, result.Msg.Collections[0].SourceId)
+	require.Equal(t, "Example Collection", result.Msg.Collections[0].BoundaryLabel)
+	// This viewer is an ordinary org member, so the details an administrator's
+	// collection view carries are withheld rather than silently absent.
+	require.Equal(t, gen.MetadataDisclosure_METADATA_DISCLOSURE_WITHHELD, result.Msg.Collections[0].GrantDisclosure)
+	require.Equal(t, gen.MetadataDisclosure_METADATA_DISCLOSURE_WITHHELD, result.Msg.Collections[0].Sync.RequesterDisclosure)
+
+	// Widening the viewer's own authority — still no organization-admin tenancy —
+	// is what discloses them.
+	exec(`UPDATE datasource_sources SET last_ingested_at=now(), last_ingested_commit='0e57a1c', last_delivery_id='delivery-1' WHERE id=$1`, source)
+	// The typed registry is seeded at service boot, which this harness does not run.
+	exec(`INSERT INTO audit_event_types(name,category,owner) VALUES($1,'system','accounts') ON CONFLICT(name) DO NOTHING`, string(business.EventDatasourceSourceSynced))
+	exec(`INSERT INTO audit_events(id,event_type,actor_id,actor_type,resource,resource_id,org_id)
+ VALUES(gen_random_uuid(),$1,$2,'user','datasource',$3,$4)`, string(business.EventDatasourceSourceSynced), readOwner, source, readOrg)
+	inspector := uuid.NewString()
+	exec(`INSERT INTO roles(id,name,org_id) VALUES($1,'inspector',$2)`, inspector, readOrg)
+	exec(`INSERT INTO role_permissions(role_id,resource,action) VALUES($1,'roles','read'),($1,'audit','read')`, inspector)
+	exec(`INSERT INTO role_assignments(org_id,subject_id,subject_kind,role_id) VALUES($1,$2,'principal',$3)`, readOrg, readOwner, inspector)
+	resolve := func(permissions ...business.WorkContextPermission) {
+		t.Helper()
+		require.NoError(t, store.WithSourceReadSnapshot(verified, readOrg, func(ctx context.Context) error {
+			current, err := store.ResolveWorkContextAuthority(ctx, readOrg, readOwner, "", permissions)
+			facts.facts = current
+			return err
+		}))
+	}
+	inspect := []business.WorkContextPermission{{ResourceKind: "documents", Action: "read"}, {ResourceKind: "roles", Action: "read"}, {ResourceKind: "audit", Action: "read"}}
+	resolve(inspect...)
+	detailed := mint("documents", "documents", "read", "roles:read", "audit:read")
+	result, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(detailed))
+	require.NoError(t, err)
+	collection := result.Msg.Collections[0]
+	require.Equal(t, gen.MetadataDisclosure_METADATA_DISCLOSURE_DISCLOSED, collection.GrantDisclosure)
+	require.Len(t, collection.ReadGrants, 1)
+	// Registration seeds a human principal's display name from its primary email.
+	require.Equal(t, "reader@example.com", collection.ReadGrants[0].SubjectLabel)
+	require.Equal(t, "reader", collection.ReadGrants[0].RoleName)
+	require.False(t, collection.ReadGrants[0].Inherited)
+	require.Equal(t, gen.SourceSyncStage_SOURCE_SYNC_STAGE_CHANGES_ENQUEUED, collection.Sync.Stage)
+	require.Equal(t, "0e57a1c", collection.Sync.Revision)
+	require.Equal(t, "delivery-1", collection.Sync.Trigger)
+	require.Equal(t, gen.MetadataDisclosure_METADATA_DISCLOSURE_DISCLOSED, collection.Sync.RequesterDisclosure)
+	require.Equal(t, "reader@example.com", collection.Sync.RequestedByLabel)
+	// The request and the enqueue are different occurrences, and the projection
+	// keeps them apart rather than reporting one timestamp for both.
+	require.NotEqual(t, collection.Sync.At.AsTime(), collection.Sync.RequestedAt.AsTime())
+
+	// A grant on an ancestor of the boundary confers read and is reported as
+	// inherited; the administrator's view and this one agree on the set.
+	grandparent := uuid.NewString()
+	exec(`INSERT INTO scope_nodes(id,org_id,scope_path,kind,label) VALUES($1,$2,'root','collection','Example Root')`, grandparent, readOrg)
+	exec(`INSERT INTO scope_grants(org_id,subject_id,subject_kind,scope_path,role_id) VALUES($1,$2,'principal','root',$3)`, readOrg, readOwner, role)
+	resolve(inspect...)
+	result, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(mint("documents", "documents", "read", "roles:read", "audit:read")))
+	require.NoError(t, err)
+	inherited := map[string]bool{}
+	for _, grant := range result.Msg.Collections[0].ReadGrants {
+		inherited[grant.ScopePath] = grant.Inherited
+	}
+	require.Equal(t, map[string]bool{"root.collection": false, "root": true}, inherited)
+	exec(`DELETE FROM scope_grants WHERE org_id=$1 AND scope_path='root'`, readOrg)
+
+	// Revoking the permission the disclosure rests on fails the whole call rather
+	// than quietly narrowing the next page, because the capability sealed it.
+	exec(`DELETE FROM role_assignments WHERE org_id=$1 AND role_id=$2`, readOrg, inspector)
+	_, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(detailed))
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	exec(`INSERT INTO role_assignments(org_id,subject_id,subject_kind,role_id) VALUES($1,$2,'principal',$3)`, readOrg, readOwner, inspector)
+
+	// Another tenant's collections and their metadata are outside the snapshot.
+	require.NoError(t, store.WithSourceReadSnapshot(verified, readOrg, func(snapshot context.Context) error {
+		grants, err := store.ReadableCollectionGrants(snapshot, uuid.NewString(), []string{boundary}, []string{"documents"})
+		require.NoError(t, err)
+		require.Empty(t, grants)
+		requests, err := store.LatestSourceSyncRequests(snapshot, uuid.NewString(), []string{source})
+		require.NoError(t, err)
+		require.Empty(t, requests)
+		return nil
+	}))
+	resolve(business.WorkContextPermission{ResourceKind: "documents", Action: "read"})
+	token = mint("documents", "documents", "read")
 
 	// Tenant size and irrelevant scope count cannot disable one readable source.
 	hidden := uuid.NewString()

@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
 	"github.com/jackc/pgx/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type sourceReadSnapshotKey struct{}
@@ -93,7 +95,8 @@ func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string,
 		resources = []string{}
 	}
 	rows, err := tx.Query(ctx, `SELECT s.id::text, s.boundary_node_id::text, s.provider,
- COALESCE(s.repo,''), COALESCE(s.branch,''), s.paths
+ COALESCE(s.repo,''), COALESCE(s.branch,''), s.paths, COALESCE(n.label,''),
+ s.last_ingested_at, COALESCE(s.last_ingested_commit,''), COALESCE(s.last_delivery_id,'')
  FROM datasource_sources s JOIN scope_nodes n ON n.id=s.boundary_node_id AND n.org_id=s.org_id
  WHERE s.org_id=$1 AND ($3::uuid IS NULL OR s.id > $3::uuid)
  AND NOT EXISTS (
@@ -118,8 +121,19 @@ func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string,
 	var out []*gen.ReadableSourceCollection
 	for rows.Next() {
 		source := &gen.ReadableSourceCollection{}
-		if err := rows.Scan(&source.SourceId, &source.BoundaryId, &source.Origin, &source.Container, &source.Ref, &source.Paths); err != nil {
+		var enqueuedAt *time.Time
+		var revision, delivery string
+		if err := rows.Scan(&source.SourceId, &source.BoundaryId, &source.Origin, &source.Container, &source.Ref, &source.Paths,
+			&source.BoundaryLabel, &enqueuedAt, &revision, &delivery); err != nil {
 			return nil, err
+		}
+		if enqueuedAt != nil {
+			source.Sync = &gen.CollectionSyncProvenance{
+				Stage:    gen.SourceSyncStage_SOURCE_SYNC_STAGE_CHANGES_ENQUEUED,
+				At:       timestamppb.New(*enqueuedAt),
+				Revision: revision,
+				Trigger:  delivery,
+			}
 		}
 		if source.Origin != "github" {
 			return nil, status.Error(codes.Unimplemented, "source read projection is not supported for this provider")
@@ -139,4 +153,88 @@ func nullableSourceCursor(after string) any {
 		return nil
 	}
 	return after
+}
+
+// ReadableCollectionGrants returns, per boundary node, the active grants that
+// confer read on that collection's content — the same scope-tree grants
+// ListCollectionAccess projects to an organization administrator, intersected
+// with the calling module's declared resource types so the two surfaces cannot
+// disagree about what a read grant is.
+//
+// A grant is reported for the boundary whenever its path is an ancestor-or-self
+// of the boundary's, which is how scope_grants inherit; `inherited` is the
+// strict-ancestor case, so a consumer can tell a grant made on this collection
+// from one it received from above.
+func (s *PostgresStore) ReadableCollectionGrants(ctx context.Context, org string, boundaries []string, resources []string) (map[string][]*gen.ReadableCollectionGrant, error) {
+	tx, err := sourceReadExecutor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if resources == nil {
+		resources = []string{}
+	}
+	rows, err := tx.Query(ctx, `SELECT n.id::text,
+ COALESCE(t.name, p.display_name, g.subject_id::text), g.subject_kind, r.name,
+ g.scope_path::text, g.scope_path <> n.scope_path, g.expires_at
+ FROM scope_nodes n JOIN scope_grants g ON g.org_id=n.org_id AND g.scope_path @> n.scope_path
+ JOIN roles r ON r.id=g.role_id
+ LEFT JOIN principals p ON g.subject_kind='principal' AND p.id=g.subject_id
+ LEFT JOIN teams t ON g.subject_kind='team' AND t.id=g.subject_id
+ WHERE n.org_id=$1 AND n.id=ANY($2::uuid[])
+ AND (g.expires_at IS NULL OR g.expires_at > now())
+ AND cardinality($3::text[])>0
+ AND EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id=g.role_id
+ AND (rp.resource='*' OR rp.resource=ANY($3::text[])) AND (rp.action='*' OR rp.action='read'))
+ ORDER BY n.id, g.created_at, g.id`, org, boundaries, resources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string][]*gen.ReadableCollectionGrant, len(boundaries))
+	for rows.Next() {
+		var boundary string
+		grant := &gen.ReadableCollectionGrant{}
+		var expires *time.Time
+		if err := rows.Scan(&boundary, &grant.SubjectLabel, &grant.SubjectKind, &grant.RoleName,
+			&grant.ScopePath, &grant.Inherited, &expires); err != nil {
+			return nil, err
+		}
+		if expires != nil {
+			grant.ExpiresAt = timestamppb.New(*expires)
+		}
+		out[boundary] = append(out[boundary], grant)
+	}
+	return out, rows.Err()
+}
+
+// LatestSourceSyncRequests returns, per source, when a sync was last requested
+// and by whom. ADR 0008 keeps that actor in the audit trail and nowhere else, so
+// this reads the trail rather than a column, and it is a separate occurrence
+// from the ingest stage the source row records.
+func (s *PostgresStore) LatestSourceSyncRequests(ctx context.Context, org string, sources []string) (map[string]*gen.CollectionSyncProvenance, error) {
+	tx, err := sourceReadExecutor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := tx.Query(ctx, `SELECT DISTINCT ON (a.resource_id) a.resource_id, a.created_at,
+ COALESCE(p.display_name, a.actor_id::text, '')
+ FROM audit_events a LEFT JOIN principals p ON p.id=a.actor_id
+ WHERE a.org_id=$1 AND a.resource='datasource' AND a.resource_id=ANY($2::text[])
+ AND a.event_type=$3
+ ORDER BY a.resource_id, a.created_at DESC, a.id DESC`, org, sources, string(business.EventDatasourceSourceSynced))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]*gen.CollectionSyncProvenance, len(sources))
+	for rows.Next() {
+		var source string
+		var requestedAt time.Time
+		var label string
+		if err := rows.Scan(&source, &requestedAt, &label); err != nil {
+			return nil, err
+		}
+		out[source] = &gen.CollectionSyncProvenance{RequestedAt: timestamppb.New(requestedAt), RequestedByLabel: label}
+	}
+	return out, rows.Err()
 }

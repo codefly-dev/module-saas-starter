@@ -406,6 +406,10 @@ message ModuleReplayEventsResponse {
 // calls at startup, before any user request exists, and which authorize on the
 // registrant's own registration secret.
 // Non-secret, current-viewer source read projection.
+//
+// One row per feeding source, so a boundary fed by several sources is reported
+// once per source and a consumer groups by boundary_id to build a collection
+// tree. Pagination is by source, so a boundary's sources may span pages.
 message ReadableSourceCollection {
   string source_id = 1;
   string boundary_id = 2;
@@ -413,6 +417,77 @@ message ReadableSourceCollection {
   string container = 4;
   string ref = 5;
   repeated string paths = 6;
+  // The boundary's display name as the scope tree records it.
+  string boundary_label = 7;
+  // Whether read_grants is this viewer's complete view or was withheld.
+  MetadataDisclosure grant_disclosure = 8;
+  // Active scope-tree grants conferring read on this collection's content, the
+  // same set PermissionService/ListCollectionAccess projects to an organization
+  // administrator. A record share is not a collection grant and is not listed
+  // here, so the two surfaces cannot disagree about what a grant is.
+  repeated ReadableCollectionGrant read_grants = 9;
+  CollectionSyncProvenance sync = 10;
+}
+
+// MetadataDisclosure separates "the host withheld this from you" from "there is
+// nothing to report". A viewer whose capability seals no authority over a detail
+// reads WITHHELD and an empty projection of it; under DISCLOSED the projection
+// is complete for this viewer, so an empty one is a real absence.
+enum MetadataDisclosure {
+  METADATA_DISCLOSURE_UNSPECIFIED = 0;
+  METADATA_DISCLOSURE_DISCLOSED = 1;
+  METADATA_DISCLOSURE_WITHHELD = 2;
+}
+
+// ReadableCollectionGrant is one active grant conferring read on a collection's
+// content. It carries display labels rather than the subject, role and grantor
+// identifiers the administrator's view projects. inherited is set when the grant
+// sits on an ancestor of the boundary rather than on the boundary node itself:
+// an inheriting grant is as real as a direct one, and a tree that dropped it
+// would under-report who can read the collection.
+message ReadableCollectionGrant {
+  string subject_label = 1;
+  // "principal" or "team".
+  string subject_kind = 2;
+  string role_name = 3;
+  string scope_path = 4;
+  bool inherited = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// SourceSyncStage names which occurrence CollectionSyncProvenance.at records.
+// The host reports no ingestion-completion stage: once a change set is durably
+// enqueued the consuming module owns the rest, and no host-side fact observes it
+// finishing. A module that needs "ingested" derives it from its own work.
+enum SourceSyncStage {
+  // Nothing has advanced this source yet.
+  SOURCE_SYNC_STAGE_UNSPECIFIED = 0;
+  // Every operation of a provider delivery is durably queued as a change set.
+  // This is enqueue completion, not ingestion completion.
+  SOURCE_SYNC_STAGE_CHANGES_ENQUEUED = 1;
+}
+
+// CollectionSyncProvenance is the host's record of how one feeding source last
+// advanced. requested_at/requested_by_label describe a DIFFERENT occurrence from
+// stage/at — a sync someone asked for, not the ingest it asked for — and are
+// never merged into one "last synced by X at T" line: the request is recorded on
+// the request path, the stage on the ingest path, and a request may be followed
+// by no stage at all.
+//
+// docs/adr/0008-datasource-sync-actor-provenance.md keeps the audit trail the
+// only record of who triggered a sync, so the requester is read from there and
+// disclosed only to a viewer whose capability seals audit:read.
+message CollectionSyncProvenance {
+  SourceSyncStage stage = 1;
+  google.protobuf.Timestamp at = 2;
+  // The provider revision the stage was reached at (a commit, for GitHub).
+  string revision = 3;
+  // The provider delivery that drove it.
+  string trigger = 4;
+  // Whether the requester fields are this viewer's complete view or withheld.
+  MetadataDisclosure requester_disclosure = 5;
+  google.protobuf.Timestamp requested_at = 6;
+  string requested_by_label = 7;
 }
 // Tenant and viewer come exclusively from the verified Work Context.
 message ListReadableSourceCollectionsRequest {
