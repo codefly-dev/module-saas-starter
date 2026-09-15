@@ -92,6 +92,56 @@ describe("DatasourcesPanel", () => {
 		expect(client.listSources).toHaveBeenCalledWith("org-1");
 	});
 
+	it("surfaces a degraded source and its reason without being asked", async () => {
+		// The host sets this state, never the tenant, so nothing prompts a reader
+		// to open History looking for it.
+		const degraded: DatasourceView = {
+			...sampleSource,
+			status: "degraded",
+			statusReason:
+				"snapshot manifest is 12582912 bytes, over the 8388608-byte ingest limit",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [degraded]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Degraded")).toBeTruthy();
+		expect(screen.getByText(/over the 8388608-byte ingest limit/)).toBeTruthy();
+	});
+
+	it("says pulls stopped rather than implying ingested content was withdrawn", async () => {
+		const degraded: DatasourceView = {
+			...sampleSource,
+			status: "degraded",
+			statusReason: "snapshot manifest is over the ingest limit",
+		};
+		const client = fakeClient({ listSources: vi.fn(async () => [degraded]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const explanation = await screen.findByText(/pulls have stopped/i);
+		expect(explanation.textContent).toMatch(/stays readable/i);
+	});
+
+	it("renders a degraded source the host published no reason for", async () => {
+		// status_reason is a plain string on the wire, so an empty one maps to no
+		// reason at all; the state itself still has to reach the reader.
+		const degraded: DatasourceView = { ...sampleSource, status: "degraded" };
+		const client = fakeClient({ listSources: vi.fn(async () => [degraded]) });
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Degraded")).toBeTruthy();
+		expect(screen.getByText(/pulls have stopped/i)).toBeTruthy();
+	});
+
+	it("shows an active source's status without a degraded explanation", async () => {
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText("Active")).toBeTruthy();
+		expect(screen.queryByText(/pulls have stopped/i)).toBeNull();
+	});
+
 	it("labels the ingest by what moved the clock, not by one of its triggers", async () => {
 		// A tenant pressing "Sync now" on a github source dispatches a forced
 		// reconcile, which advances this same clock — so a label naming the

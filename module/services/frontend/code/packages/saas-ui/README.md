@@ -25,7 +25,7 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
 
 - `<DatasourcesPanel gateway={{ apiBase, getAccessToken }} orgId={…} />` or
   `<DatasourcesPanel client={…} orgId={…} />` — lists an org's connected sources
-  (repo · paths · branch · boundary · webhook · last sync) with per-row **Sync**/**Delete** and
+  (repo · status · paths · branch · boundary · webhook · last sync) with per-row **Sync**/**Delete** and
   a **Connect GitHub** action. The last-sync cell shows whichever clock applies:
   `last_synced_at` for a provider that pulls, or `last ingest <date, time> ·
   <short commit>` for a github source, whose change sets the compiler enqueues

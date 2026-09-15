@@ -1,6 +1,7 @@
 "use client";
 
 import {
+	Badge,
 	Button,
 	Input,
 	Label,
@@ -34,6 +35,7 @@ import type { ConnectGitHubValues } from "./schema.js";
 import type {
 	AccessibleScopeView,
 	DatasourceClient,
+	DatasourceStatusName,
 	DatasourceView,
 } from "./types.js";
 import {
@@ -455,6 +457,53 @@ function LastSyncCell({ source }: { source: DatasourceView }) {
 	);
 }
 
+const statusLabels: Record<DatasourceStatusName, string> = {
+	active: "Active",
+	paused: "Paused",
+	degraded: "Degraded",
+	unknown: "Unknown",
+};
+
+const statusVariants: Record<
+	DatasourceStatusName,
+	"outline" | "secondary" | "destructive"
+> = {
+	active: "outline",
+	paused: "secondary",
+	degraded: "destructive",
+	unknown: "outline",
+};
+
+/**
+ * A source's lifecycle state and, for one the host parked, the reason it
+ * published. Shown in the row rather than behind History because the tenant
+ * never caused this state and so has no reason to go looking for it.
+ *
+ * Degrading stops future pulls and withdraws nothing, so the line names what
+ * stopped: without it a red badge reads as "your content is gone", which would
+ * send a reader to re-ingest content that is still there.
+ */
+function StatusCell({ source }: { source: DatasourceView }) {
+	return (
+		<div className="space-y-0.5">
+			<Badge variant={statusVariants[source.status]}>
+				{statusLabels[source.status]}
+			</Badge>
+			{source.status === "degraded" && (
+				<>
+					{source.statusReason && (
+						<p className="text-xs">{source.statusReason}</p>
+					)}
+					<p className="text-xs text-muted-foreground">
+						New pulls have stopped until this is resolved. Content already
+						ingested stays readable.
+					</p>
+				</>
+			)}
+		</div>
+	);
+}
+
 const headerClass = "px-3 py-2 text-left font-medium text-muted-foreground";
 const cellClass = "px-3 py-2 align-middle";
 
@@ -485,6 +534,7 @@ function SourcesTable({
 				<TableHeader className="border-b bg-muted/40">
 					<TableRow>
 						<TableHead className={headerClass}>Repository</TableHead>
+						<TableHead className={headerClass}>Status</TableHead>
 						<TableHead className={headerClass}>Paths</TableHead>
 						<TableHead className={headerClass}>Branch</TableHead>
 						<TableHead className={headerClass}>Boundary</TableHead>
@@ -500,6 +550,9 @@ function SourcesTable({
 						<TableRow key={source.id} className="border-b last:border-0">
 							<TableCell className={cn(cellClass, "font-mono")}>
 								{source.repo}
+							</TableCell>
+							<TableCell className={cellClass}>
+								<StatusCell source={source} />
 							</TableCell>
 							<TableCell className={cellClass}>
 								{source.paths.length === 0 ? (

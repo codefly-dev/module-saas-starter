@@ -12,7 +12,11 @@ import {
 	type Transport,
 } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import type { DatasourceClient, DatasourceView } from "./types.js";
+import type {
+	DatasourceClient,
+	DatasourceStatusName,
+	DatasourceView,
+} from "./types.js";
 
 /**
  * A solution remote's whole backend seam: the same-origin gateway base and the
@@ -199,6 +203,12 @@ export function createDatasourceClient(
 	);
 }
 
+const statusNames: Partial<Record<DatasourceStatus, DatasourceStatusName>> = {
+	[DatasourceStatus.ACTIVE]: "active",
+	[DatasourceStatus.PAUSED]: "paused",
+	[DatasourceStatus.DEGRADED]: "degraded",
+};
+
 function toDatasourceView(source: Datasource): DatasourceView {
 	return {
 		id: source.id,
@@ -210,12 +220,8 @@ function toDatasourceView(source: Datasource): DatasourceView {
 		branch: source.github?.branch ?? "",
 		boundaryNodeId: source.boundaryNodeId,
 		webhookConfigured: source.webhookConfigured,
-		status:
-			source.status === DatasourceStatus.ACTIVE
-				? "active"
-				: source.status === DatasourceStatus.PAUSED
-					? "paused"
-					: "unknown",
+		status: statusNames[source.status] ?? "unknown",
+		statusReason: source.statusReason || undefined,
 		lastSyncedAt: source.lastSyncedAt
 			? timestampDate(source.lastSyncedAt).toISOString()
 			: undefined,

@@ -21,10 +21,17 @@ const source: DatasourceView = {
 	lastSyncedAt: undefined,
 	createdAt: undefined,
 };
+const degradedSource: DatasourceView = {
+	...source,
+	id: "example-degraded-source",
+	status: "degraded",
+	statusReason:
+		"snapshot manifest is 12582912 bytes, over the 8388608-byte ingest limit",
+};
 function Preview({
 	state,
 }: {
-	state: "populated" | "empty" | "loading" | "error";
+	state: "populated" | "empty" | "loading" | "error" | "degraded";
 }) {
 	const [queryClient] = useState(
 		() => new QueryClient({ defaultOptions: { queries: { retry: false } } }),
@@ -33,6 +40,7 @@ function Preview({
 		listSources: async () => {
 			if (state === "loading") return new Promise(() => {});
 			if (state === "error") throw new Error("Example provider unavailable");
+			if (state === "degraded") return [degradedSource];
 			return state === "empty" ? [] : [source];
 		},
 		listAccessibleScopes: async () => [
@@ -63,6 +71,7 @@ export const Populated = { render: () => <Preview state="populated" /> };
 export const Empty = { render: () => <Preview state="empty" /> };
 export const Loading = { render: () => <Preview state="loading" /> };
 export const ProviderError = { render: () => <Preview state="error" /> };
+export const Degraded = { render: () => <Preview state="degraded" /> };
 export const ConnectionValidation = {
 	render: function ConnectionValidationStory() {
 		const [message, setMessage] = useState<string>();

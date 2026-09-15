@@ -6,7 +6,7 @@
 
 export type DatasourceProviderName = "github" | "unknown";
 
-export type DatasourceStatusName = "active" | "paused" | "unknown";
+export type DatasourceStatusName = "active" | "paused" | "degraded" | "unknown";
 
 /** A connected datasource, already mapped out of protobuf at the boundary. */
 export interface DatasourceView {
@@ -20,6 +20,16 @@ export interface DatasourceView {
 	boundaryNodeId: string;
 	webhookConfigured: boolean;
 	status: DatasourceStatusName;
+	/**
+	 * Why the source left `active`, in prose a tenant can act on; absent while it
+	 * is active. The host writes it from a closed set of named reasons — never
+	 * the tenant, and never raw provider error text — so it is safe to render as
+	 * it arrives.
+	 *
+	 * Optional so that a consumer adapting its own client to `DatasourceClient`
+	 * keeps compiling without it.
+	 */
+	statusReason?: string | undefined;
 	lastSyncedAt: string | undefined;
 	/**
 	 * When the change-set compiler last durably enqueued a change set — advanced
