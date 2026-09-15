@@ -135,7 +135,7 @@
     "deployment/generated/contributed-roles.json": "a0b81f8c091957efad4a3ee347d4a5027c931545f99ad6f559fed18c9895b377",
     "deployment/generated/contributed-topology.json": "2587ff298706c222b76a50b6c47448b1001748f865f98cd0250a2cfe4a64c68f",
     "deployment/generated/event-catalog.json": "2252a3cd30ad1798e5573c6fd943ccdc2c551ed3efd3895f8ab2a86c82767a08",
-    "deployment/topology.bindings.codefly.yaml": "4f3178345823a1185339bbecbacf4a5012bdfa1e7ef73dae7d281672d1dbe0ae",
+    "deployment/topology.bindings.codefly.yaml": "f69d6942bb3eccd0501f7f7e64b58c83dbdafa692eeebb13a1e6c9f1a71d18ba",
     "docs/IDENTITY_ACCESS_PLAN.md": "ad620230ff0a2fafcd57a5b0adc55bc8619c775d367e4605dcdffe96d8185aa7",
     "docs/adr/0001-frontend-plugin-packaging.md": "6dd43a979c81a0cfb8fd93646e73abd641364718fedc4817f937b2c553d6e2ee",
     "docs/adr/0002-remote-ui-tier-boundary.md": "a90fa59d7ad82f0c370cbe9ab3cae39c4c4316277cccbe92d40808a73647d1ee",
