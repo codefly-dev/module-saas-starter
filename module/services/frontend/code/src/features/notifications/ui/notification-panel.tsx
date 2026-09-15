@@ -27,6 +27,22 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 		},
 	});
 
+	// Marking read is part of following the link, so it happens only once the
+	// destination has been re-authorized. Marking first would let a click the
+	// server then refuses still consume the item's unread state.
+	const resolveActionMutation = useMutation({
+		mutationFn: ({ id }: { id: string; unread: boolean }) =>
+			notificationMutations.resolveAction(id),
+		onSuccess: (actionUrl, { id, unread }) => {
+			if (unread) {
+				markReadMutation.mutate(id);
+			}
+			onClose();
+			router.push(actionUrl);
+		},
+		onError: () => toast.error("This notification is no longer available"),
+	});
+
 	const markAllReadMutation = useMutation({
 		mutationFn: () => notificationMutations.markAllRead(),
 		onSuccess: () => {
@@ -82,12 +98,15 @@ export function NotificationPanel({ onClose }: NotificationPanelProps) {
 								!notification.read ? "bg-muted/30" : ""
 							}`}
 							onClick={() => {
+								if (notification.hasAction) {
+									resolveActionMutation.mutate({
+										id: notification.id,
+										unread: !notification.read,
+									});
+									return;
+								}
 								if (!notification.read) {
 									markReadMutation.mutate(notification.id);
-								}
-								if (notification.actionUrl) {
-									onClose();
-									router.push(notification.actionUrl);
 								}
 							}}
 						>
