@@ -97,6 +97,9 @@ func newInstallerListener(t *testing.T, enabled bool) installerListenerFixture {
 	require.NoError(t, err)
 	t.Setenv("EXECUTION_CUSTODY_CONFIG_FILE", write("custody.json", raw))
 	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "verified-tls")
+	// Codefly CI supplies workspace configuration, which precedes plain env.
+	// Keep this fixture credential authoritative in either runner.
+	t.Setenv("CODEFLY__WORKSPACE_CONFIGURATION__INTERNAL-AUTH__CODEFLY_INTERNAL_TOKEN", strings.Repeat("i", 48))
 	t.Setenv("CODEFLY_INTERNAL_TOKEN", strings.Repeat("i", 48))
 	jwt := ed25519minter.New(ed25519minter.Config{Issuer: "example.accounts", Audience: "example.accounts"}, key, nil)
 	singleton := adapters.WorkContextSingleton()
