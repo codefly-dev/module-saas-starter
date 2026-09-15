@@ -14,12 +14,23 @@ import (
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type sourceReadCursor struct {
 	Scope     string
 	After     string
 	ExpiresAt time.Time
+}
+
+// SourceSyncRequest is one source's most recent "a sync was requested" record,
+// read from the audit trail. It is deliberately not a CollectionSyncProvenance:
+// that message also carries the ingest facts, which this record knows nothing
+// about, and a carrier able to hold them invites a caller to assign the whole
+// message and silently drop them.
+type SourceSyncRequest struct {
+	RequestedAt time.Time
+	RequestedBy string
 }
 
 // CollectionMetadataDisclosure names the collection details the viewer's
@@ -162,8 +173,8 @@ func (s *Service) discloseCollectionMetadata(ctx context.Context, org string, re
 			if !ok {
 				continue
 			}
-			collection.Sync.RequestedAt = request.GetRequestedAt()
-			collection.Sync.RequestedByLabel = request.GetRequestedByLabel()
+			collection.Sync.RequestedAt = timestamppb.New(request.RequestedAt)
+			collection.Sync.RequestedByLabel = request.RequestedBy
 		}
 	}
 	return nil

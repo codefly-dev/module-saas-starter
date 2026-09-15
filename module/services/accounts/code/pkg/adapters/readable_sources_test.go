@@ -55,7 +55,7 @@ type readProjectionStore struct {
 	expires                 time.Time
 
 	collectionGrants           map[string][]*gen.ReadableCollectionGrant
-	syncRequests               map[string]*gen.CollectionSyncProvenance
+	syncRequests               map[string]business.SourceSyncRequest
 	grantCalls, requesterCalls int
 	grantResources             []string
 }
@@ -138,12 +138,12 @@ func (f *readProjectionStore) ReadableCollectionGrants(_ context.Context, org st
 	return out, f.err
 }
 
-func (f *readProjectionStore) LatestSourceSyncRequests(_ context.Context, org string, sources []string) (map[string]*gen.CollectionSyncProvenance, error) {
+func (f *readProjectionStore) LatestSourceSyncRequests(_ context.Context, org string, sources []string) (map[string]business.SourceSyncRequest, error) {
 	f.requesterCalls++
 	if org != readOrg {
 		return nil, errors.New("unexpected tenant")
 	}
-	out := map[string]*gen.CollectionSyncProvenance{}
+	out := map[string]business.SourceSyncRequest{}
 	for _, source := range sources {
 		if request, ok := f.syncRequests[source]; ok {
 			out[source] = request
@@ -171,7 +171,7 @@ func sourceReadFixture(t *testing.T) (*readProjectionStore, *workContextAuthorit
 			{SubjectLabel: "Example Reader", SubjectKind: "principal", RoleName: "reader", ScopePath: "a"},
 			{SubjectLabel: "Example Team", SubjectKind: "team", RoleName: "reader", ScopePath: "root", Inherited: true},
 		}},
-		syncRequests: map[string]*gen.CollectionSyncProvenance{sourceA: {RequestedAt: timestamppb.New(syncRequestedAt), RequestedByLabel: "Example Operator"}},
+		syncRequests: map[string]business.SourceSyncRequest{sourceA: {RequestedAt: syncRequestedAt, RequestedBy: "Example Operator"}},
 		sources: []*business.DatasourceSource{
 			{ID: sourceA, OrgID: readOrg, Provider: "github", Repo: "acme/handbook", BoundaryNodeID: "boundary-a", Branch: "main", Paths: []string{"docs/"},
 				LastIngestedAt: &changesEnqueuedAt, LastIngestedCommit: "0e57a1c", LastDeliveryID: "delivery-1"},

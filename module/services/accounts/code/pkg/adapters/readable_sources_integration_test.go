@@ -118,6 +118,33 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	// keeps them apart rather than reporting one timestamp for both.
 	require.NotEqual(t, collection.Sync.At.AsTime(), collection.Sync.RequestedAt.AsTime())
 
+	// Only the NEWEST request is reported. This is the whole point of the lookup
+	// and the one thing a single-row fixture cannot show: with several requests
+	// on one source, an ordering that lost this would still look correct.
+	later := uuid.NewString()
+	exec(`INSERT INTO users(uuid,primary_email) VALUES($1,'second-operator@example.com')`, later)
+	exec(`INSERT INTO organization_members(org_id,user_id,role) VALUES($1,$2,'member')`, readOrg, later)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE uuid=$1`, later)
+		_, _ = pool.Exec(ctx, `DELETE FROM principals WHERE id=$1`, later)
+	})
+	// The winner is written last at now() and the losers backdated, because
+	// audit_events is append-only: the row the block above wrote is still there
+	// and is itself recent, so the newest row has to be one this block controls.
+	exec(`INSERT INTO audit_events(id,event_type,actor_id,actor_type,resource,resource_id,org_id,created_at)
+ VALUES(gen_random_uuid(),$1,$2,'user','datasource',$3,$4,now()-interval '1 hour'),
+       (gen_random_uuid(),$1,$2,'user','datasource',$3,$4,now()-interval '2 hours'),
+       (gen_random_uuid(),$1,$5,'user','datasource',$3,$4,now())`,
+		string(business.EventDatasourceSourceSynced), readOwner, source, readOrg, later)
+	// Adding a member moved the organization's authorization revision.
+	resolve(inspect...)
+	result, err = client.ListReadableSourceCollections(ctx, sourceReadRequest(mint("documents", "documents", "read", "roles:read", "audit:read")))
+	require.NoError(t, err)
+	require.Equal(t, "second-operator@example.com", result.Msg.Collections[0].Sync.RequestedByLabel,
+		"the most recent request must win regardless of insertion order")
+	newest := result.Msg.Collections[0].Sync.RequestedAt.AsTime()
+	require.True(t, time.Since(newest) < 2*time.Minute, "reported request %s is not the newest", newest)
+
 	// A grant on an ancestor of the boundary confers read and is reported as
 	// inherited; the administrator's view and this one agree on the set.
 	grandparent := uuid.NewString()

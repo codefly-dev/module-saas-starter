@@ -127,14 +127,6 @@ func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string,
 			&source.BoundaryLabel, &enqueuedAt, &revision, &delivery); err != nil {
 			return nil, err
 		}
-		if enqueuedAt != nil {
-			source.Sync = &gen.CollectionSyncProvenance{
-				Stage:    gen.SourceSyncStage_SOURCE_SYNC_STAGE_CHANGES_ENQUEUED,
-				At:       timestamppb.New(*enqueuedAt),
-				Revision: revision,
-				Trigger:  delivery,
-			}
-		}
 		if source.Origin != "github" {
 			return nil, status.Error(codes.Unimplemented, "source read projection is not supported for this provider")
 		}
@@ -143,6 +135,14 @@ func (s *PostgresStore) ListReadableSourcesPage(ctx context.Context, org string,
 		}
 		if source.Ref != "" && !strings.HasPrefix(source.Ref, "refs/") {
 			source.Ref = "refs/heads/" + source.Ref
+		}
+		if enqueuedAt != nil {
+			source.Sync = &gen.CollectionSyncProvenance{
+				Stage:    gen.SourceSyncStage_SOURCE_SYNC_STAGE_CHANGES_ENQUEUED,
+				At:       timestamppb.New(*enqueuedAt),
+				Revision: revision,
+				Trigger:  delivery,
+			}
 		}
 		out = append(out, source)
 	}
@@ -211,30 +211,45 @@ func (s *PostgresStore) ReadableCollectionGrants(ctx context.Context, org string
 // and by whom. ADR 0008 keeps that actor in the audit trail and nowhere else, so
 // this reads the trail rather than a column, and it is a separate occurrence
 // from the ingest stage the source row records.
-func (s *PostgresStore) LatestSourceSyncRequests(ctx context.Context, org string, sources []string) (map[string]*gen.CollectionSyncProvenance, error) {
+//
+// The lookup is per source rather than one grouped scan. audit_events is range
+// partitioned on created_at with no bound this read could supply — the last
+// request may be arbitrarily old — so a DISTINCT ON over the whole set has to
+// read every matching row in every retained partition and sort it to keep one
+// row per source: measured at 40k rows sorted to return 100. Per source, the
+// (org_id, resource, resource_id, created_at DESC) index yields the newest row
+// first and LIMIT 1 stops there.
+//
+// Ordering on created_at alone is what keeps that index usable. The id tiebreak
+// it replaces was not a "later" ordering to begin with — ids are random v4 —
+// only an arbitrary stable one, and two requests for one source landing on the
+// same timestamp are separate transactions with equally true answers.
+func (s *PostgresStore) LatestSourceSyncRequests(ctx context.Context, org string, sources []string) (map[string]business.SourceSyncRequest, error) {
 	tx, err := sourceReadExecutor(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rows, err := tx.Query(ctx, `SELECT DISTINCT ON (a.resource_id) a.resource_id, a.created_at,
- COALESCE(p.display_name, a.actor_id::text, '')
- FROM audit_events a LEFT JOIN principals p ON p.id=a.actor_id
- WHERE a.org_id=$1 AND a.resource='datasource' AND a.resource_id=ANY($2::text[])
+	rows, err := tx.Query(ctx, `SELECT requested.id, event.created_at,
+ COALESCE(p.display_name, event.actor_id::text, '')
+ FROM unnest($2::text[]) AS requested(id)
+ CROSS JOIN LATERAL (
+ SELECT a.created_at, a.actor_id FROM audit_events a
+ WHERE a.org_id=$1 AND a.resource='datasource' AND a.resource_id=requested.id
  AND a.event_type=$3
- ORDER BY a.resource_id, a.created_at DESC, a.id DESC`, org, sources, string(business.EventDatasourceSourceSynced))
+ ORDER BY a.created_at DESC LIMIT 1) event
+ LEFT JOIN principals p ON p.id=event.actor_id`, org, sources, string(business.EventDatasourceSourceSynced))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make(map[string]*gen.CollectionSyncProvenance, len(sources))
+	out := make(map[string]business.SourceSyncRequest, len(sources))
 	for rows.Next() {
 		var source string
-		var requestedAt time.Time
-		var label string
-		if err := rows.Scan(&source, &requestedAt, &label); err != nil {
+		var request business.SourceSyncRequest
+		if err := rows.Scan(&source, &request.RequestedAt, &request.RequestedBy); err != nil {
 			return nil, err
 		}
-		out[source] = &gen.CollectionSyncProvenance{RequestedAt: timestamppb.New(requestedAt), RequestedByLabel: label}
+		out[source] = request
 	}
 	return out, rows.Err()
 }

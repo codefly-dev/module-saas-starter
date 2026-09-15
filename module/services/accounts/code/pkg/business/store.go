@@ -103,7 +103,7 @@ type Store interface {
 	SourceReadRevision(context.Context, string, []string) (string, time.Time, error)
 	ListReadableSourcesPage(context.Context, string, []string, []string, string, int) ([]*gen.ReadableSourceCollection, error)
 	ReadableCollectionGrants(context.Context, string, []string, []string) (map[string][]*gen.ReadableCollectionGrant, error)
-	LatestSourceSyncRequests(context.Context, string, []string) (map[string]*gen.CollectionSyncProvenance, error)
+	LatestSourceSyncRequests(context.Context, string, []string) (map[string]SourceSyncRequest, error)
 	ListDatasourceSources(ctx context.Context, orgID string) ([]*DatasourceSource, error)
 	GetDatasourceSource(ctx context.Context, orgID, id string) (*DatasourceSource, error)
 	DeleteDatasourceSource(ctx context.Context, orgID, id string) error
