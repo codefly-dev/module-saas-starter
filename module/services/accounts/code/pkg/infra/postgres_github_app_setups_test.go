@@ -243,3 +243,26 @@ func TestPostgresDeleteExpiredGitHubAppSetupsSweepsOnlyLapsedRows(t *testing.T) 
 	require.False(t, setupRowExists(t, org, lapsed))
 	require.True(t, setupRowExists(t, org, live))
 }
+
+// The claim is the organization's durable binding to its installation, so it
+// has to outlive the person who established it. Cascading on verified_by would
+// un-claim the installation the moment that admin is erased — silently, because
+// existing sources keep fetching from their credential envelope while new
+// connects start refusing, and the freed installation becomes claimable by any
+// other tenant that can reach it.
+func TestPostgresGitHubAppInstallationOutlivesTheVerifyingUser(t *testing.T) {
+	owner := seedUser(t)
+	verifier := seedUser(t)
+	org := seedOrg(t, owner)
+	installation := uniqueAppInstallationID()
+	require.True(t, claimInstallation(t, org, installation, verifier))
+
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key with WithControlPlane
+		_, err := tx.Exec(ctx, `DELETE FROM users WHERE uuid = $1`, verifier)
+		return err
+	}))
+
+	require.True(t, installationHeldBy(t, org, installation),
+		"erasing the verifying user must not un-claim the organization's installation")
+}

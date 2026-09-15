@@ -37,7 +37,12 @@ CREATE POLICY app_control_plane_explicit_rows ON public.github_app_setups
 CREATE TABLE public.github_app_installations (
  installation_id TEXT PRIMARY KEY CHECK (installation_id ~ '^[0-9]+$'),
  org_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
- verified_by UUID NOT NULL REFERENCES public.users(uuid) ON DELETE CASCADE,
+ -- Who verified the claim is an audit attribute, so it goes NULL when that user
+ -- is erased. It must not cascade: the row is the organization's durable binding
+ -- to its installation, and deleting the admin who ran setup would silently
+ -- un-claim it — existing sources keep fetching from the envelope, new connects
+ -- start refusing, and the installation becomes claimable by another tenant.
+ verified_by UUID REFERENCES public.users(uuid) ON DELETE SET NULL,
  verified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX github_app_installations_org ON public.github_app_installations(org_id);
