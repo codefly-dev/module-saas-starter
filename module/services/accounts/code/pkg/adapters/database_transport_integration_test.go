@@ -64,7 +64,8 @@ func TestAccountsLocalProxyStore(t *testing.T) {
 		b, _ := strconv.Atoi(strings.Split(filepath.Base(migrations[j]), "_")[0])
 		return a < b
 	})
-	require.Len(t, migrations, 134)
+	// This is the reviewed file count, not the schema version: numbering has gaps.
+	require.Len(t, migrations, 136)
 	for _, path := range migrations {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
