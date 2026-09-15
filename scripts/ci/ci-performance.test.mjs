@@ -74,6 +74,67 @@ test('the required Codefly quality check accepts only a successful phase matrix'
   }
 });
 
+test('only the test phase installs the isolated-session source tool after disk preparation', () => {
+  const job = workflow.jobs['codefly-quality-phases'];
+  const release = job.steps.find(step => step.name === 'Install Codefly');
+  const source = job.steps.find(step => step.name === 'Install isolated-session Codefly test tool');
+  const disk = job.steps.findIndex(step => step.name === 'Ensure runner disk space');
+  assert.equal(release.if, "matrix.phase != 'test'");
+  assert.equal(release.run, 'bash scripts/ci/install-codefly.sh');
+  assert.equal(source.if, "matrix.phase == 'test'");
+  assert.equal(source.run, 'bash scripts/ci/install-codefly-test.sh');
+  assert.ok(job.steps.indexOf(source) > disk);
+  assert.equal(job['timeout-minutes'], '30');
+  for (const [name, other] of Object.entries(workflow.jobs)) {
+    if (name === 'codefly-quality-phases') continue;
+    assert.ok(!JSON.stringify(other).includes('install-codefly-test.sh'), name);
+  }
+});
+
+test('the source test-tool installer rejects wrong provenance or failed builds before exposing a tool', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ci-cli-source-'));
+  const commit = '7a3a895a1ea308ea838e9e165221fc875d2563bb';
+  const tree = 'ea209937b139e02138990039985c684228d9af8d';
+  try {
+    writeFileSync(join(dir, 'uname'), '#!/bin/sh\nif [ "$1" = -s ]; then echo Linux; else echo x86_64; fi\n', { mode: 0o755 });
+    writeFileSync(join(dir, 'git'), `#!/bin/bash
+if [[ "$1" == init ]]; then mkdir -p "\${@: -1}"; exit; fi
+if [[ "$3" == rev-parse ]]; then
+  if [[ "$SCENARIO" == wrong-source ]]; then echo wrong; exit; fi
+  if [[ "$4" == HEAD ]]; then echo '${commit}'; else echo '${tree}'; fi
+fi
+`, { mode: 0o755 });
+    writeFileSync(join(dir, 'go'), `#!/bin/bash
+if [[ "$1" == env ]]; then
+  if [[ "$SCENARIO" == wrong-go ]]; then echo go1.26.0; else echo go1.27.0; fi
+elif [[ "$1" == build ]]; then
+  [[ "$SCENARIO" == build-failure ]] && exit 17
+  while [[ "$1" != -o ]]; do shift; done
+  printf '#!/bin/sh\\necho source-test-tool\\n' > "$2"
+elif [[ "$1" == version ]]; then
+  if [[ "$SCENARIO" == wrong-binary ]]; then echo vcs.revision=wrong; else echo vcs.revision=${commit}; fi
+  echo vcs.modified=false
+fi
+`, { mode: 0o755 });
+    for (const scenario of ['wrong-go', 'wrong-source', 'build-failure', 'wrong-binary', 'success']) {
+      const pathFile = join(dir, 'github-path');
+      writeFileSync(pathFile, '');
+      const result = spawnSync('bash', [join(root, 'scripts/ci/install-codefly-test.sh')], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, GITHUB_PATH: pathFile, SCENARIO: scenario },
+      });
+      assert.equal(result.status === 0, scenario === 'success', `${scenario}: ${result.stderr}`);
+      assert.equal(readFileSync(pathFile, 'utf8'), scenario === 'success' ? `${dir}/codefly-test-bin\n` : '');
+    }
+    const provenance = JSON.parse(readFileSync(join(dir, 'codefly-test-bin/provenance.json'), 'utf8'));
+    assert.equal(provenance.commit, commit);
+    assert.equal(provenance.tree, tree);
+    assert.equal(provenance.binary_sha256, createHash('sha256').update(readFileSync(join(dir, 'codefly-test-bin/codefly'))).digest('hex'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('every quality phase runs independently with the original service selection', () => {
   const job = workflow.jobs['codefly-quality-phases'];
   assert.deepEqual(job.strategy.matrix.phase, ['verify,sync-drift', 'lint', 'compile', 'test']);

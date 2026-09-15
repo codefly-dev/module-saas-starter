@@ -92,8 +92,9 @@ func NewPostgresStoreWithCapabilities(ctx context.Context, readOnlyConnection, r
 	return store, nil
 }
 
-// openScopedBoundary validates this module's transport policy, then delegates
-// request-pool ownership, startup checks and credential rotation to service-postgres.
+// openScopedBoundary selects this module's transport policy; service-postgres
+// validates each actual parsed configuration and owns request-pool lifecycle,
+// startup checks and credential rotation.
 func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnection string, provider scopedpostgres.AccessTokenProvider) (*scopedpostgres.Factory, func(), error) {
 	if ctx == nil {
 		return nil, nil, errors.New("scoped Postgres context is required")
@@ -105,18 +106,13 @@ func openScopedBoundary(ctx context.Context, readOnlyConnection, readWriteConnec
 	if err != nil {
 		return nil, nil, err
 	}
-	readerConfig, err := parseDatabaseTransport(readOnlyConnection, profile, provider != nil)
+	policy, err := databaseConnectionProfile(profile)
 	if err != nil {
-		return nil, nil, fmt.Errorf("parse read-only Postgres capability: %w", err)
-	}
-	writerConfig, err := parseDatabaseTransport(readWriteConnection, profile, provider != nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse read-write Postgres capability: %w", err)
-	}
-	if profile == "local-identity-proxy" && readerConfig.ConnConfig.Host == writerConfig.ConnConfig.Host {
-		return nil, nil, errors.New("reader and writer require distinct private identity sockets")
+		return nil, nil, err
 	}
 	options := []scopedpostgres.Option{
+		scopedpostgres.WithConnectionProfiles(policy, policy),
+		scopedpostgres.WithDistinctProxySockets(),
 		scopedpostgres.WithScopeSettings("app.current_org_id", "app.current_user_id"),
 		scopedpostgres.WithOperationTimeout(scopedBoundaryOperationTimeout),
 	}
