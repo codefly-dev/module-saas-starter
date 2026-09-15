@@ -186,12 +186,12 @@ func doWork(ctx context.Context) (Clean, error) {
 	service.SetModuleCapabilities(store, jobStore, modulePrincipals)
 	// Explicit organization delegation is separate from module identity. A
 	// projected policy is refreshed by the delivery system and read per call.
-	if policyPath := os.Getenv("MODULE_INSTALLER_POLICY_FILE"); policyPath != "" {
-		handler, err := adapters.NewModuleInstallationHTTPHandler(service, policyPath)
-		if err != nil {
-			return nil, fmt.Errorf("configure module installer policy: %w", err)
-		}
-		adapters.RegisterHTTPRoute("/v1/module-installations/", handler)
+	installerHandler, err := configuredModuleInstaller(service)
+	if err != nil {
+		return nil, fmt.Errorf("configure module installer policy: %w", err)
+	}
+	if installerHandler != nil {
+		adapters.RegisterHTTPRoute("/v1/module-installations/", installerHandler)
 	}
 
 	// Domain-event pub/sub (issue #493): the reference events.Transport over the
@@ -629,7 +629,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
-	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen)
+	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen, installerHandler)
 	if err != nil {
 		return nil, err
 	}

@@ -62,7 +62,7 @@ func projectedCustodyFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultClient, minter auth.JWTMinter, keyID string, key ed25519.PrivateKey, revokerWired, failOpen bool) (*executionCustodyHost, error) {
+func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultClient, minter auth.JWTMinter, keyID string, key ed25519.PrivateKey, revokerWired, failOpen bool, installer http.Handler) (*executionCustodyHost, error) {
 	path := strings.TrimSpace(workspaceEnv("security", "EXECUTION_CUSTODY_CONFIG_FILE"))
 	if path == "" {
 		return nil, nil
@@ -126,6 +126,8 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 			return nil, err
 		}
 	}
+	// Compose every private HTTP route before returning a host that can start.
+	mountExecutionInstaller(host, installer)
 	return host, nil
 }
 
