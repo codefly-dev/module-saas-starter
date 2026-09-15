@@ -59,8 +59,16 @@ func (c *Collector) LogsService() *LogsService { return &LogsService{collector: 
 
 func New(config Config) (*Collector, error) {
 	exporter := strings.ToLower(strings.TrimSpace(config.Exporter))
+	// Fail closed on an empty exporter instead of defaulting to "debug".
+	// An empty value never meant "the operator chose debug" — every committed
+	// observability.env sets this key explicitly, and scripts/setup/otel.sh
+	// always writes it — it meant the configuration never reached the process.
+	// Defaulting it to debug turned that into SILENT trace loss: the collector
+	// logged "received OTLP signal" and dropped every span while its own
+	// ConfigMap said otlphttp. Refusing to start surfaces the same fault in one
+	// line of pod logs.
 	if exporter == "" {
-		exporter = "debug"
+		return nil, errors.New("telemetry: OBSERVABILITY_EXPORTER is required and must be debug or otlphttp")
 	}
 	switch exporter {
 	case "debug":
@@ -72,9 +80,15 @@ func New(config Config) (*Collector, error) {
 		if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
 			return nil, errors.New("telemetry: OTLP/HTTP endpoint must be absolute")
 		}
-		local := endpoint.Hostname() == "localhost" || endpoint.Hostname() == "127.0.0.1"
-		if endpoint.Scheme != "https" && (endpoint.Scheme != "http" || !local) {
-			return nil, errors.New("telemetry: OTLP/HTTP endpoint must use HTTPS")
+		// Plaintext OTLP/HTTP is allowed only to a destination that cannot leave
+		// the cluster: loopback, or a cluster-internal Kubernetes service DNS
+		// name (*.svc / *.svc.cluster.local). The intended target is a
+		// same-cluster OTLP collector that forwards onward on the operator's
+		// behalf, so the hop that does leave the cluster is that collector's and
+		// it makes it under TLS. Anything reachable from outside the cluster
+		// must still prove itself with HTTPS.
+		if endpoint.Scheme != "https" && (endpoint.Scheme != "http" || !inClusterDestination(endpoint.Hostname())) {
+			return nil, errors.New("telemetry: OTLP/HTTP endpoint must use HTTPS outside the cluster")
 		}
 		config.Endpoint = endpoint.String()
 	default:
@@ -99,6 +113,18 @@ func New(config Config) (*Collector, error) {
 		client:   client,
 		logger:   logger,
 	}, nil
+}
+
+// inClusterDestination reports whether a plaintext OTLP/HTTP host is one that
+// cannot route outside the cluster — loopback, or a Kubernetes cluster-internal
+// service DNS name. Anything else has to prove itself with TLS.
+func inClusterDestination(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return strings.HasSuffix(host, ".svc") || strings.HasSuffix(host, ".svc.cluster.local")
 }
 
 func (s *TraceService) Export(
