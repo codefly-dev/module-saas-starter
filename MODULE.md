@@ -417,9 +417,15 @@ module-trust:
 `module/module.package.codefly.yaml`; the signer is the workflow identity the
 release was signed under. Every `module-package/vX.Y.Z` release publishes both
 with the public key filled in — copy the block out of the release notes, or
-download the release's `module-trust.yaml` asset. That asset is written during
-signing from the key the signature was just verified against, so the key a
-release publishes is the key that verifies it.
+download the release's `module-trust.yaml` asset, which is written during
+signing from the key the signature was verified against and so always matches
+that release.
+
+Neither the notes nor that asset are themselves signed, so taking the key from
+a release is trust on first use, not proof of it. What pinning buys is
+everything after: once the key is in your workspace, every later release must
+be signed by it or resolution fails closed. Establish it once, deliberately,
+and review changes to it as you would any other credential in your repository.
 
 Codefly then fetches the release, checks its detached signature and archive
 digest against this policy, and materializes it into a content-addressed cache.

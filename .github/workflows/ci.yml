@@ -964,7 +964,9 @@ jobs:
           trap cleanup_draft EXIT
           # --latest=false keeps the repository's "Latest release" on the
           # v0.0.x deploy counter: the two tracks are separate version axes,
-          # and GitHub would otherwise promote whichever published last.
+          # and GitHub would otherwise promote whichever published last. It is
+          # repeated on the publishing edit below because a draft cannot hold
+          # latest status, so the value given here may never be recorded.
           gh release create "${GITHUB_REF_NAME}" \
             --draft \
             --verify-tag \
@@ -981,7 +983,7 @@ jobs:
             --tag "${GITHUB_REF_NAME}" \
             --commit "${GITHUB_SHA}" \
             --remote-refs "${RUNNER_TEMP}/remote-refs-before-publish"
-          gh release edit "${GITHUB_REF_NAME}" --draft=false
+          gh release edit "${GITHUB_REF_NAME}" --draft=false --latest=false
           draft_created=false
           gh release verify "${GITHUB_REF_NAME}"
 

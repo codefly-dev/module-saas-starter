@@ -351,9 +351,6 @@ type trustPolicy struct {
 	Signers      map[string]string `yaml:"signers"`
 }
 
-// encodeTrust renders the consumer-side trust policy. The repository is
-// written exactly as the provenance states it, which a consumer normalizes
-// before comparing, so the two can never disagree on spelling.
 func encodeTrust(packageID, repository, identity string, publicKey ed25519.PublicKey) ([]byte, error) {
 	var body bytes.Buffer
 	fmt.Fprintf(&body, "# Trust policy for %s module packages.\n", packageID)
