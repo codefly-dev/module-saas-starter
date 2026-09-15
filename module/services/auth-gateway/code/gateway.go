@@ -381,6 +381,13 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 		r.URL.RawPath = ""
 	}
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
+	director := proxy.Director
+	proxy.Director = func(out *http.Request) {
+		director(out)
+		// Route HTTP authority to the selected backend, including through a
+		// mesh proxy that selects virtual hosts independently of the dial target.
+		out.Host = upstream.Host
+	}
 	if isRuntimeRegisteredRoute(entry) && g.registeredTransport != nil {
 		// A runtime-registered upstream — module or solution — merely names a mesh
 		// host that its registrant chose; re-validate the resolved address at dial
