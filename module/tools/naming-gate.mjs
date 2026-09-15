@@ -15,7 +15,19 @@
 // the rule dozens of times. This repository is public. Zero-tolerance.
 //
 //   node tools/naming-gate.mjs check          # fail on any real name in content or filenames
+//   node tools/naming-gate.mjs records <base> [head]  # ... in the pull request and its commits
+//   node tools/naming-gate.mjs message <file> # ... in one commit message (the commit-msg hook)
 //   node tools/naming-gate.mjs hash <term>    # compute the digest for a new naming-terms entry
+//
+// AGENTS.md binds the rule to "issues, PRs, ... commit messages" too, and those are the copies
+// that cannot be taken back: GitHub retains prior revisions of an edited body and serves them
+// through its API, and a commit message cannot be edited at all without rewriting history.
+//
+// Be exact about what each half buys, because the difference is the whole reason both exist. The
+// hook runs before the message exists, so it prevents. The CI check runs on content that has
+// ALREADY been pushed to a public repository, so it blocks the merge, not the publication. Either
+// way they report only the mode that matched — printing the term into a public CI log would
+// republish precisely what the gate exists to keep out of it.
 //
 // The forbidden terms are stored as SHA-256 digests, never literals. A guard that spelled the
 // names would itself be the worst violation in the tree: one public file enumerating every
@@ -30,8 +42,9 @@
 // The module root is the parent of tools/, so this works identically in canonical's `module/`
 // and a consumer's `modules/<name>/`.
 
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync, lstatSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, lstatSync, existsSync, realpathSync } from "node:fs";
 import { join, relative, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -143,11 +156,12 @@ function loadAllowlist(root = MODULE_ROOT) {
 // acronym branch is ordered first and guarded so `APIKey` yields API + Key, not APIK + ey.
 const CASE_UNIT_RE = /[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|[0-9]+/g;
 
-// Every (mode, digest) a single slug occurrence can satisfy.
-function slugHits(raw, terms) {
+// Every match a single slug occurrence produces, each carrying the mode that caught it. The tree
+// scan reports the text; the record checks report only the mode.
+function slugMatches(raw, terms) {
   const hits = [];
   const lower = raw.toLowerCase();
-  if (terms.slug.has(digest(lower))) hits.push(raw);
+  if (terms.slug.has(digest(lower))) hits.push({ text: raw, mode: "slug" });
 
   // Each separator part contributes itself AND, when it is a camelCase/PascalCase identifier,
   // its case units. Splitting on separators alone never saw a name fused into an identifier —
@@ -165,26 +179,51 @@ function slugHits(raw, terms) {
   const compound = units.length > 1;
   for (const part of units) {
     const h = digest(part.toLowerCase());
-    if (terms.word.has(h)) hits.push(part);
-    else if (compound && terms.compound.has(h)) hits.push(part);
-    else if (terms.proper.has(h) && /^[A-Z][a-z]+$/.test(part)) hits.push(part);
+    if (terms.word.has(h)) hits.push({ text: part, mode: "word" });
+    else if (compound && terms.compound.has(h)) hits.push({ text: part, mode: "compound" });
+    else if (terms.proper.has(h) && /^[A-Z][a-z]+$/.test(part)) hits.push({ text: part, mode: "proper" });
   }
   return hits;
 }
 
-function phraseHits(line, terms) {
+// Phrase terms are matched across the WHOLE text, not line by line, and that is the whole point:
+// a spaced name is the one shape a line break splits in half. Commit bodies are conventionally
+// wrapped at 72 columns and pull request bodies are hand-wrapped prose, so "North Star\nMutual"
+// is the normal way such a name appears — and a per-line n-gram never saw it. Phrase mode carries
+// the tier with no single distinctive word (a customer, a real person), which is the tier with no
+// second line of defence. Each hit reports the line its first word starts on.
+//
+// Parallel arrays, and the n-gram grown by appending rather than re-joined: the tree scan walks
+// millions of words, so a small object per word and a fresh array per n-gram would be pure
+// garbage. Spanning lines already costs ~30% more n-grams than the per-line scan did; there is no
+// reason to pay for the allocations too.
+function phraseMatches(text, terms) {
   if (!terms.phrase.size) return [];
-  const words = line.match(WORD_RE);
-  if (!words) return [];
+  const words = [];
+  const lines = [];
+  text.split("\n").forEach((line, i) => {
+    for (const word of line.match(WORD_RE) ?? []) {
+      words.push(word);
+      lines.push(i + 1);
+    }
+  });
+
   const hits = [];
   for (let i = 0; i < words.length; i += 1) {
+    let phrase = words[i];
     for (let n = 2; n <= 3 && i + n <= words.length; n += 1) {
-      const gram = words.slice(i, i + n);
-      if (terms.phrase.has(digest(gram.join(" ").toLowerCase()))) hits.push(gram.join(" "));
+      phrase += ` ${words[i + n - 1]}`;
+      if (terms.phrase.has(digest(phrase.toLowerCase()))) {
+        hits.push({ text: phrase, mode: "phrase", line: lines[i] });
+      }
     }
   }
   return hits;
 }
+
+// Slug matches stay per line: a separator run or an identifier cannot span a newline.
+const slugLineMatches = (line, terms) =>
+  (line.match(SLUG_RE) ?? []).flatMap((slug) => slugMatches(slug, terms));
 
 function walk(dir, out, base) {
   for (const name of readdirSync(dir)) {
@@ -227,7 +266,7 @@ export function namingErrors(moduleRoot = MODULE_ROOT, scanRoot = canonicalScanR
 
     // A content-only scan misses a file that names a product in its own filename — which is
     // how the worst offender in the tree shipped to every consumer.
-    for (const hit of new Set(rel.split("/").flatMap((seg) => slugHits(seg, terms)))) {
+    for (const hit of new Set(rel.split("/").flatMap((seg) => slugMatches(seg, terms).map((m) => m.text)))) {
       errors.push(`${rel}: forbidden name in path (${hit})`);
     }
 
@@ -251,14 +290,165 @@ export function namingErrors(moduleRoot = MODULE_ROOT, scanRoot = canonicalScanR
     if (source.includes("\0")) continue; // binary that slipped the extension list
 
     source.split("\n").forEach((line, i) => {
-      const hits = new Set([
-        ...(line.match(SLUG_RE) ?? []).flatMap((slug) => slugHits(slug, terms)),
-        ...phraseHits(line, terms),
-      ]);
+      const hits = new Set(slugLineMatches(line, terms).map((m) => m.text));
       for (const hit of hits) errors.push(`${rel}:${i + 1}: forbidden name (${hit})`);
     });
+    for (const hit of phraseMatches(source, terms)) {
+      errors.push(`${rel}:${hit.line}: forbidden name (${hit.text})`);
+    }
   }
-  return errors.sort();
+  // Deduplicated because a phrase repeated on one line is one violation, which the per-line Set
+  // used to guarantee and a whole-file scan no longer does.
+  return [...new Set(errors)].sort();
+}
+
+// Records — a pull request title or body, a commit message — scanned with the same terms and the
+// same matcher as the tree, reported WITHOUT the matched text.
+//
+// `lines` is off wherever the output reaches a public CI log, and that is not caution for its own
+// sake. The record a line number points into is public and STAYS public (GitHub keeps prior
+// revisions of an edited body), so naming the line narrows the term to that line's handful of
+// words, and the mode says whether it is a single token or a phrase. Against a digest list that is
+// itself public, that is the difference between mounting a dictionary attack and confirming the
+// term in a few hashes. The hook passes `lines` because its output never leaves the machine.
+export function messageErrors(entries, moduleRoot = MODULE_ROOT, { lines = false } = {}) {
+  const terms = loadTerms(moduleRoot);
+  if (!terms) return ["tools/naming-terms.json is missing or not valid JSON"];
+
+  const errors = [];
+  for (const { label, text } of entries) {
+    const record = text ?? "";
+    const firstLineOf = new Map();
+    record.split("\n").forEach((line, i) => {
+      for (const { mode } of slugLineMatches(line, terms)) {
+        if (!firstLineOf.has(mode)) firstLineOf.set(mode, i + 1);
+      }
+    });
+    for (const { mode, line } of phraseMatches(record, terms)) {
+      if (!firstLineOf.has(mode)) firstLineOf.set(mode, line);
+    }
+    for (const mode of [...firstLineOf.keys()].sort()) {
+      errors.push(`${lines ? `${label}:${firstLineOf.get(mode)}` : label}: forbidden name (mode: ${mode})`);
+    }
+  }
+  return errors;
+}
+
+// git hands the commit-msg hook the whole buffer. Everything below the scissors line is the
+// verbose diff — tree content the `check` scan already owns — so it is blanked rather than
+// dropped, keeping the line count so a reported line still matches the editor.
+//
+// Comment lines are deliberately NOT stripped. git removes them only under `cleanup=strip`, the
+// editor default; `-m` and `-F` use `cleanup=whitespace`, which keeps them, so a line such as
+// "#123 rolled out for <name>" reaches the stored message intact. Stripping it here blanked
+// exactly the text the gate exists to read. Scanning git's own template costs nothing in return:
+// it is generic English, and the one part that is not — the branch name it echoes back — is
+// itself pushed to a public remote.
+const SCISSORS_RE = /^#\s*-+\s*>8\s*-+/;
+export function commitMessageBody(raw) {
+  let cut = false;
+  return raw
+    .split("\n")
+    .map((line) => {
+      if (SCISSORS_RE.test(line)) cut = true;
+      return cut ? "" : line;
+    })
+    .join("\n");
+}
+
+// %x1f separates the sha from the message and a NUL terminates each record. NUL is the only byte
+// that cannot occur inside the message — git refuses it in a commit object — whereas a message may
+// legally carry any other control byte. A literal \x1e in a body used to end a record early, and
+// everything after it went unscanned while the run still reported a clean count.
+function commitEntries(base, head) {
+  const range = `${base}..${head}`;
+  const git = (args) => {
+    try {
+      return execFileSync("git", args, {
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "inherit"],
+      });
+    } catch {
+      console.error(`naming-gate: cannot read commits in ${range}`);
+      process.exit(1);
+    }
+  };
+
+  const entries = git(["log", "--format=%H%x1f%B%x00", range])
+    .split("\0")
+    .filter((record) => record.includes("\x1f"))
+    .map((record) => {
+      const [sha, ...rest] = record.replace(/^\n/, "").split("\x1f");
+      return { label: `commit ${sha.slice(0, 8)} message`, text: rest.join("\x1f") };
+    });
+
+  // Coverage is asserted, never assumed: if parsing ever loses a commit, fail loudly instead of
+  // reporting a clean scan of fewer records than the range actually holds.
+  const expected = Number(git(["rev-list", "--count", range]).trim());
+  if (entries.length !== expected) {
+    console.error(
+      `naming-gate: parsed ${entries.length} commit message(s) but ${range} holds ${expected}`,
+    );
+    process.exit(1);
+  }
+  return entries;
+}
+
+function reportRecords(errors, scanned) {
+  if (errors.length) {
+    console.error("naming-gate: a real customer, product, or consumer name in a record that cannot be retracted:");
+    errors.forEach((error) => console.error(`    ${error}`));
+    console.error(
+      `\nFAIL: ${errors.length} forbidden name(s). Neither the term nor its position is printed — ` +
+        `this log is public, and so is the record it points into. Rewrite the named record with a ` +
+        `generic placeholder — "a consuming solution", "the downstream product", "Acme", "Jane ` +
+        `Doe", "user@example.com". A commit message is fixed by amending or rebasing that commit, ` +
+        `never by adding one on top. To see the line, run the check locally: ` +
+        `\`node module/tools/naming-gate.mjs message <file>\`. ` +
+        `See AGENTS.md §"Naming and confidentiality".`,
+    );
+    process.exit(1);
+  }
+  console.log(`✓ no real customer, product, or consumer names in ${scanned} record(s).`);
+}
+
+// The pull request's own text arrives through the environment, never interpolated into a shell
+// command: it is attacker-controlled.
+//
+// Both ends of the range are load-bearing, and CI passes both explicitly rather than letting
+// either be inferred from the checkout. `head` is the pull request's OWN head, never the
+// checked-out HEAD, which is the merge of the branch into the current base. `base` is the CURRENT
+// base tip — in CI, the merge ref's first parent — never `base.sha`, which is fixed at the last
+// push and stops following the base branch afterwards. Get either wrong and the range picks up
+// commits that merely landed on the base branch: other authors' messages, already merged and
+// already public, which this pull request cannot fix.
+function records(base, head) {
+  const entries = [];
+  for (const [label, text] of [
+    ["pull request title", process.env.NAMING_PR_TITLE],
+    ["pull request body", process.env.NAMING_PR_BODY],
+  ]) {
+    if (text) entries.push({ label, text });
+  }
+  entries.push(...commitEntries(base, head));
+  // A run that scanned nothing is not a pass. Without this, a base ref that resolves to HEAD (or
+  // an event with no title, body or commits) prints a tick and exits 0 — a gate that has quietly
+  // stopped covering anything, which is the one failure mode nobody goes looking for.
+  if (!entries.length) {
+    console.error(
+      `naming-gate: nothing to scan — no pull request title or body in the environment, and no ` +
+        `commits in ${base}..${head}. Reporting success here would mean the gate covered nothing.`,
+    );
+    process.exit(1);
+  }
+  reportRecords(messageErrors(entries), entries.length);
+}
+
+function message(path) {
+  const entries = [{ label: "commit message", text: commitMessageBody(readFileSync(path, "utf8")) }];
+  // Local output, so it may carry the line number the CI path withholds.
+  reportRecords(messageErrors(entries, MODULE_ROOT, { lines: true }), entries.length);
 }
 
 function check() {
@@ -277,10 +467,34 @@ function check() {
   console.log("✓ no real customer, product, or consumer names in tracked content or filenames.");
 }
 
-if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
+// node resolves the main module through symlinks but leaves argv[1] exactly as written, so
+// comparing the two literally makes every command silently do nothing — exit 0, print nothing,
+// indistinguishable from a clean run — whenever the invoking path crosses a symlink. That is
+// reachable here, not theoretical: `modules/saas-starter` is a symlink to `module/`, which is the
+// composed view Codefly runs against, and /tmp is a symlink on macOS.
+const realPath = (path) => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+if (process.argv[1] && realPath(process.argv[1]) === realPath(SCRIPT_PATH)) {
   const cmd = process.argv[2];
   if (cmd === "check") check();
-  else if (cmd === "hash") {
+  else if (cmd === "records" || cmd === "message") {
+    const argument = process.argv[3];
+    if (!argument) {
+      console.error(
+        `usage: naming-gate.mjs ${cmd} ` +
+          `<${cmd === "records" ? "base-ref> [head-ref]" : "message-file>"}`,
+      );
+      process.exit(2);
+    }
+    if (cmd === "records") records(argument, process.argv[4] || "HEAD");
+    else message(argument);
+  } else if (cmd === "hash") {
     const term = process.argv[3];
     if (!term) {
       console.error("usage: naming-gate.mjs hash <term>");
@@ -288,7 +502,7 @@ if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) {
     }
     console.log(digest(term.toLowerCase()));
   } else {
-    console.error("usage: naming-gate.mjs <check|hash>");
+    console.error("usage: naming-gate.mjs <check|records|message|hash>");
     process.exit(2);
   }
 }

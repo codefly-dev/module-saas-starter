@@ -566,11 +566,51 @@ rather than literals — a plaintext list would itself be the worst violation in
 the tree. That is not secrecy (short digests are dictionary-attackable); it only
 avoids stating the relationship.
 
+The same rule binds the records around the tree — AGENTS.md names "issues, PRs,
+… commit messages" — and those are the copies that cannot be taken back: GitHub
+retains prior revisions of an edited body and serves them through its API, and a
+commit message cannot be edited at all without rewriting history. So a second
+step, `naming-gate.mjs records`, runs the same digests through the same matcher
+over the pull request's **title**, its **body**, and every **commit message** in
+the range, and fails the pull request before it can merge. It reports the
+matching mode and nothing else — not the term, and not the line: that log is
+public, and so is the record a line number would point into, so naming the line
+would narrow the term to that line's handful of words. Run `naming-gate.mjs
+message <file>` locally when you need the line.
+
+It runs from two places, and both are load-bearing. In `ci.yml` it is a step of
+the `base-integrity` job, which is a required context. In `naming-records.yml`
+it runs again on the `edited` event, which `ci.yml` does not take: a title or
+body edited after the last push fires nothing else, and because this repository
+squashes with `squash_title: COMMIT_OR_PR_TITLE`, an edited title is written
+into main's permanent history.
+
+The range and the `merge_group` exclusion follow [Commit
+identity](#commit-identity) exactly, for the same reasons: the base is the
+current base tip read from the merge ref's first parent rather than `base.sha`,
+and a merge-queue entry is not checked, because its range spans every pull
+request batched into it, each already gated on its own run.
+
+Be precise about what this buys. Only `scripts/hooks/commit-msg` prevents
+publication; by the time CI runs, the commit is already pushed to a public
+repository, so CI blocks the merge rather than the leak. Cleaning up a record
+that is already published is a separate remediation and only a partial one, for
+the same two reasons that make the check worth having.
+
 Locally:
 
 ```sh
 node module/tools/naming-gate.mjs check
-node module/tools/naming-gate.mjs hash <term>   # digest for a new terms entry
+node module/tools/naming-gate.mjs records <base> [head]   # title and body from the environment, plus <base>..[head]
+node module/tools/naming-gate.mjs message <file>   # one commit message — what the hook runs
+node module/tools/naming-gate.mjs hash <term>      # digest for a new terms entry
+```
+
+`scripts/hooks/commit-msg` runs the `message` check before the commit exists at
+all. It is opt-in, because it takes over `core.hooksPath` for the repository:
+
+```sh
+git config core.hooksPath scripts/hooks
 ```
 
 A genuine exception — a copyright holder, a CODEOWNERS handle — goes in
