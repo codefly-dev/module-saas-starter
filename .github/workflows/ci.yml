@@ -44,6 +44,8 @@ jobs:
         run: node --test module/tools/rls-migration-gate.test.mjs
       - name: Verify managed baseline provenance and explicit source selection
         run: python3 -m unittest discover -s qualification/managed-database -p 'test_*.py'
+      - name: Verify npm input identity and paired dependency routing
+        run: python3 -m unittest discover -s module/tools -p 'test_npm_intake.py'
       - name: Test the migration pairing gate
         run: node --test module/tools/migration-pairing-gate.test.mjs
       - name: Test the migration reference gate

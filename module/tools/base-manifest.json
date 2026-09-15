@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2538,
+  "fileCount": 2541,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
@@ -2485,6 +2485,7 @@
     "services/telemetry/proto/buf.gen.yaml": "b9c08bb6f69ed7ad3da3a506afb9349dc253471fa74387db51e4ee0a01208834",
     "services/telemetry/proto/buf.yaml": "cfc17c0c357505380e451ced144f756c88e5d7f391dba2f6a88376612ac1e16d",
     "services/telemetry/proto/saas/telemetry/v1/schema_marker.proto": "456f93eddbe9452c7406611724ca31dbd9835251fe8f8455c682003f0a98f577",
+    "tools/NPM_INTAKE.md": "87d230dfb07966948c073c1c26c51557735fa7d47473f433bc66c203a7d386fb",
     "tools/api_contract_catalog_test.go": "ea7f5a31e32f67b0d8e0ea0a5f90de437379979645a66b54bd8dc35a57ab6c21",
     "tools/authz-coverage-allowlist.json": "2b8805301de3f6abc8771a1bb7156afd73cb0eb1b293f0d518e7e1e571b2a76c",
     "tools/authz-coverage-gate.mjs": "3c03ec3907fb891ac5e7a6861d9075fb93ab6e1f0f75ac809c26aff72c9a387e",
@@ -2531,6 +2532,7 @@
     "tools/naming-gate.mjs": "1e1444df06543e11cbec35c461c99899d950cf2de9fdafa231c2b9a6303fd82f",
     "tools/naming-gate.test.mjs": "d701bb6f32f0a5adfd29481c03954f0e3cef9022ffc1dba86ab01b4f93ef3c74",
     "tools/naming-terms.json": "d58fe0531f6c0ed819acb1aa85618bd6db46a3f4bc8fee761cded9a5fe47feac",
+    "tools/npm_intake.py": "33ad2bcf97bc553883e7df395c71cce9912d78d2f87975f9dbac68e12baefc0b",
     "tools/proto_generation_test.go": "993e2bc7f10bde428ad9b9bea8c7c88a6fa129a8a092689a33f9bc1a9a40509f",
     "tools/rls-migration-gate.mjs": "1ff4b62400dfe35a5eb7e7ea273b839050cf9244e1f8f4fd912db013fa4f1c82",
     "tools/rls-migration-gate.test.mjs": "566abd9a578146436010892c14dc69b83453edf6ef4fa26edb74afcbabf8ba8c",
@@ -2539,6 +2541,7 @@
     "tools/story-trace-gate.mjs": "48fdeb8d7618aca4629185066c665915662aa221f8abb7310673e4ba2b59d565",
     "tools/story-trace-gate.test.mjs": "533fe446ad510aecd2ac8c0b6aab6ec0c8740752155512bd18e45bad387d9f66",
     "tools/test-targets-gate.mjs": "99a2e0cb49291081fceff1e5c549a03dad1c56024e76c0cb69a08f147da34245",
-    "tools/test-targets-gate.test.mjs": "34234682752317d296f2282c1f616b1ffa7381aa9615e6082af13f1bf51815ca"
+    "tools/test-targets-gate.test.mjs": "34234682752317d296f2282c1f616b1ffa7381aa9615e6082af13f1bf51815ca",
+    "tools/test_npm_intake.py": "3f201e25143476d741b70753e1958ae5cb94d1c98c00350d736638097e2056f8"
   }
 }
