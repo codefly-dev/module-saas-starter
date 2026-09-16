@@ -248,7 +248,9 @@ Tracked historically as #209 (closed).
 - **Fix:** add an `async headers()` block to the frontend config mirroring
   marketing (`X-Frame-Options: DENY` / CSP `frame-ancestors 'none'`,
   `Referrer-Policy`, `nosniff`, COOP) with a CSP whose `script-src` / `connect-src`
-  allowlist the registered solution-manifest origins.
+  / `style-src` allowlist the registered solution-manifest origins (`style-src`
+  added by #778: a remote's CSS chunk loads as an external stylesheet URL, which
+  `'unsafe-inline'` never admits).
 - **Status:** Open — #210. Test layer: Plan Part C Layer 4 of the consuming platform's hardening plan.
 
 ### M8 — Anonymous endpoints have no app-layer rate limit; abuse is opt-in
