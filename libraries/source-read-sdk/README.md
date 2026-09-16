@@ -17,7 +17,7 @@ result, err := client.ModuleCapabilities().
 `http://`, certificate-verified TLS for `https://`). Credentials are supplied
 through Connect interceptors. `New(gateway, options...)` also enforces gRPC;
 a custom gateway must provide an HTTP/2-capable client.
-Every call must carry one original signed viewer Work Context in
+Source projection calls must carry one original signed viewer Work Context in
 `x-codefly-work-context`, audience the calling module's registration prefix and
 kind-wide `read` on a resource type that module declares its content under, plus
 the cluster-internal perimeter credential. Only the declared types are honoured;
@@ -52,3 +52,25 @@ contract from this version instead of importing a second duplicate descriptor se
 The generator trims the descriptor set to the selected service’s transitive
 imports before invoking Codefly, then pins the facade to the internal gRPC
 protocol. Unrelated Accounts services are not generated.
+
+## Delegated read-only audience exchange
+
+The same public client exposes:
+
+```go
+child, err := client.ModuleCapabilities().ExchangeDelegatedReadAudience(ctx,
+    &accountsv1.ModuleExchangeDelegatedReadAudienceRequest{
+        BindingId: "installed-read",
+        ParentWorkContextToken: originalViewerToken,
+    })
+```
+
+For this method, the interceptor sends the **calling module's own** signed Work
+Context in `x-codefly-work-context` and the internal perimeter credential in
+`x-codefly-internal-token`. The viewer parent is exclusively in the request body.
+Do not substitute the viewer for the module credential or the module for the
+viewer parent. Installation fixes the incoming audience, target audience and
+read scopes; the parent must already admit them. Before using `child.token`, the
+consumer must verify its signature, target audience and preserved viewer lineage.
+Do not log request/response bodies or credentials. This read-only exchange does
+not grant mutation scopes or provide durable bearer custody.

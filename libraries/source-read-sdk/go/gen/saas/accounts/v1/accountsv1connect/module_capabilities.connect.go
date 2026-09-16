@@ -35,9 +35,18 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure is the fully-qualified name of
+	// the ModuleCapabilitiesService's ExchangeDelegatedReadAudience RPC.
+	ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
+	// ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's CheckWorkContextRecordAccess RPC.
+	ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
 	// ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure is the fully-qualified name of
 	// the ModuleCapabilitiesService's ListReadableSourceCollections RPC.
 	ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
+	// ModuleCapabilitiesServicePlaceRecordProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's PlaceRecord RPC.
+	ModuleCapabilitiesServicePlaceRecordProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
 	// ModuleCapabilitiesServiceEnqueueJobProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EnqueueJob RPC.
 	ModuleCapabilitiesServiceEnqueueJobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
@@ -100,11 +109,21 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
 	// The forwarded viewer Work Context names the calling module in its audience;
 	// this read verifies it carries kind-wide read on a content resource type that
 	// module declares, and current owner/actor and collection grants.
 	// The internal listener remains mandatory; callers cannot supply identities.
 	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
+	// PlaceRecord places one of the caller's own records at a scope node, so the
+	// access oracles can resolve it. Bounded by the resource types the caller
+	// principal's grant declares.
+	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -168,10 +187,28 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		exchangeDelegatedReadAudience: connect.NewClient[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedReadAudience")),
+			connect.WithClientOptions(opts...),
+		),
+		checkWorkContextRecordAccess: connect.NewClient[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("CheckWorkContextRecordAccess")),
+			connect.WithClientOptions(opts...),
+		),
 		listReadableSourceCollections: connect.NewClient[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListReadableSourceCollections")),
+			connect.WithClientOptions(opts...),
+		),
+		placeRecord: connect.NewClient[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServicePlaceRecordProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PlaceRecord")),
 			connect.WithClientOptions(opts...),
 		),
 		enqueueJob: connect.NewClient[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse](
@@ -293,7 +330,10 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
+	exchangeDelegatedReadAudience *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext]
+	checkWorkContextRecordAccess  *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
 	listReadableSourceCollections *connect.Client[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse]
+	placeRecord                   *connect.Client[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse]
 	enqueueJob                    *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
 	claimJobs                     *connect.Client[v1.ModuleClaimJobsRequest, v1.ModuleClaimJobsResponse]
 	heartbeatJob                  *connect.Client[v1.ModuleHeartbeatJobRequest, v1.ModuleHeartbeatJobResponse]
@@ -315,10 +355,27 @@ type moduleCapabilitiesServiceClient struct {
 	replayEvents                  *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
 }
 
+// ExchangeDelegatedReadAudience calls
+// saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience.
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return c.exchangeDelegatedReadAudience.CallUnary(ctx, req)
+}
+
+// CheckWorkContextRecordAccess calls
+// saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess.
+func (c *moduleCapabilitiesServiceClient) CheckWorkContextRecordAccess(ctx context.Context, req *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {
+	return c.checkWorkContextRecordAccess.CallUnary(ctx, req)
+}
+
 // ListReadableSourceCollections calls
 // saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections.
 func (c *moduleCapabilitiesServiceClient) ListReadableSourceCollections(ctx context.Context, req *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
 	return c.listReadableSourceCollections.CallUnary(ctx, req)
+}
+
+// PlaceRecord calls saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord.
+func (c *moduleCapabilitiesServiceClient) PlaceRecord(ctx context.Context, req *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error) {
+	return c.placeRecord.CallUnary(ctx, req)
 }
 
 // EnqueueJob calls saas.accounts.v1.ModuleCapabilitiesService.EnqueueJob.
@@ -420,11 +477,21 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
 	// The forwarded viewer Work Context names the calling module in its audience;
 	// this read verifies it carries kind-wide read on a content resource type that
 	// module declares, and current owner/actor and collection grants.
 	// The internal listener remains mandatory; callers cannot supply identities.
 	ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error)
+	// PlaceRecord places one of the caller's own records at a scope node, so the
+	// access oracles can resolve it. Bounded by the resource types the caller
+	// principal's grant declares.
+	PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error)
 	// EnqueueJob appends durable work for a tenant- or subject-scoped queue.
 	EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error)
 	// ClaimJobs leases a bounded batch of ready jobs from an allowed queue.
@@ -484,10 +551,28 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
+		svc.ExchangeDelegatedReadAudience,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedReadAudience")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
+		svc.CheckWorkContextRecordAccess,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("CheckWorkContextRecordAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceListReadableSourceCollectionsHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
 		svc.ListReadableSourceCollections,
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListReadableSourceCollections")),
+		connect.WithHandlerOptions(opts...),
+	)
+	moduleCapabilitiesServicePlaceRecordHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServicePlaceRecordProcedure,
+		svc.PlaceRecord,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("PlaceRecord")),
 		connect.WithHandlerOptions(opts...),
 	)
 	moduleCapabilitiesServiceEnqueueJobHandler := connect.NewUnaryHandler(
@@ -606,8 +691,14 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure:
+			moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure:
+			moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure:
 			moduleCapabilitiesServiceListReadableSourceCollectionsHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServicePlaceRecordProcedure:
+			moduleCapabilitiesServicePlaceRecordHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEnqueueJobProcedure:
 			moduleCapabilitiesServiceEnqueueJobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceClaimJobsProcedure:
@@ -655,8 +746,20 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
 
+func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess is not implemented"))
+}
+
 func (UnimplementedModuleCapabilitiesServiceHandler) ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) PlaceRecord(context.Context, *connect.Request[v1.ModulePlaceRecordRequest]) (*connect.Response[v1.ModulePlaceRecordResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.PlaceRecord is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) EnqueueJob(context.Context, *connect.Request[v1.ModuleEnqueueJobRequest]) (*connect.Response[v1.ModuleEnqueueJobResponse], error) {

@@ -66,6 +66,11 @@ func generate(root string) error {
 	var narrowed descriptorpb.FileDescriptorSet
 	for _, f := range set.File {
 		if needed[f.GetName()] {
+			// Imported files supply message types, not extra client services.
+			f = proto.Clone(f).(*descriptorpb.FileDescriptorProto)
+			if f.GetName() != "saas/accounts/v1/module_capabilities.proto" {
+				f.Service = nil
+			}
 			narrowed.File = append(narrowed.File, f)
 		}
 	}
