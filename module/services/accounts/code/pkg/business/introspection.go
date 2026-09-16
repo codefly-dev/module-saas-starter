@@ -150,6 +150,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"ModuleCapabilitiesService/RequestApproval":               "Open a pending approval whose resume job the module claims.",
 	"ModuleCapabilitiesService/GetApproval":                   "Read one approval request on the caller's tenant.",
 	"ModuleCapabilitiesService/CancelApproval":                "Withdraw a still-open approval request.",
+	"ModuleCapabilitiesService/CheckWorkContextRecordAccess":  "Check exact placed-record access under current delegated viewer authority.",
 	"ModuleCapabilitiesService/ListReadableSourceCollections": "List source collections the verified viewer may currently read.",
 	"ModuleCapabilitiesService/PlaceRecord":                   "Place one of the caller's own records at a scope node.",
 	"ModuleCapabilitiesService/EmitAuditEvent":                "Emit a registered audit event on the tenant's spine.",

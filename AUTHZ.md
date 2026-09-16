@@ -894,3 +894,20 @@ runs. It carries no repository, revision, or Argo resource.
 - **Don't omit the empty-orgID guard.** WithOrgTx rejects "" — this
   is the load-bearing check that prevents a missing-context bug from
   silently matching the empty tenant.
+
+### Forwarded Work Context record decisions
+
+`ModuleCapabilitiesService.CheckWorkContextRecordAccess` is the internal,
+read-only exact-record companion to the subject-taking administrative oracle.
+It verifies one signed viewer Work Context, derives tenant/owner/all actors,
+checks the audience's declared resource type and the SDK's attenuated
+kind/action/record scope, and rechecks current authorization revision and every
+actor-chain hop's revocation. Delegated calls require the durable chain journal.
+
+Every subject must pass the existing `CheckAccess` resolver for the record's true
+placement within one tenant read snapshot. The allowed response carries the
+actual placed node ID; denied or unplaced records disclose no placement. An
+internal token, a caller-provided subject, or a caller-selected scope path cannot
+replace viewer authority. The caller can project a bounded installed set by
+checking its exact owned resource IDs; this RPC does not enumerate other records
+or create a new permission vocabulary. `PlaceRecord` remains installation-owned.

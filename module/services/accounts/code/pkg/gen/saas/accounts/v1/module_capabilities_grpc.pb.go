@@ -21,6 +21,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName  = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
 	ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
 	ModuleCapabilitiesService_PlaceRecord_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
 	ModuleCapabilitiesService_EnqueueJob_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
@@ -48,6 +49,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ModuleCapabilitiesServiceClient interface {
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error)
 	// The forwarded viewer Work Context names the calling module in its audience;
 	// this read verifies it carries kind-wide read on a content resource type that
 	// module declares, and current owner/actor and collection grants.
@@ -115,6 +119,16 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CheckWorkContextRecordAccessResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) ListReadableSourceCollections(ctx context.Context, in *ListReadableSourceCollectionsRequest, opts ...grpc.CallOption) (*ListReadableSourceCollectionsResponse, error) {
@@ -340,6 +354,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
 type ModuleCapabilitiesServiceServer interface {
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error)
 	// The forwarded viewer Work Context names the calling module in its audience;
 	// this read verifies it carries kind-wide read on a content resource type that
 	// module declares, and current owner/actor and collection grants.
@@ -409,6 +426,9 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckWorkContextRecordAccess not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) ListReadableSourceCollections(context.Context, *ListReadableSourceCollectionsRequest) (*ListReadableSourceCollectionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListReadableSourceCollections not implemented")
 }
@@ -492,6 +512,24 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_CheckWorkContextRecordAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckWorkContextRecordAccessRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).CheckWorkContextRecordAccess(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).CheckWorkContextRecordAccess(ctx, req.(*CheckWorkContextRecordAccessRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_ListReadableSourceCollections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -872,6 +910,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CheckWorkContextRecordAccess",
+			Handler:    _ModuleCapabilitiesService_CheckWorkContextRecordAccess_Handler,
+		},
 		{
 			MethodName: "ListReadableSourceCollections",
 			Handler:    _ModuleCapabilitiesService_ListReadableSourceCollections_Handler,

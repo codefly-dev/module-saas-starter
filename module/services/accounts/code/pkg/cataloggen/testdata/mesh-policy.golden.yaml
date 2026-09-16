@@ -32,6 +32,7 @@ spec:
               - /saas.accounts.v1.IdentityService/ResolveIdentity
               - /saas.accounts.v1.ModuleCapabilitiesService/AckJob
               - /saas.accounts.v1.ModuleCapabilitiesService/CancelApproval
+              - /saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess
               - /saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs
               - /saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent
               - /saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob
