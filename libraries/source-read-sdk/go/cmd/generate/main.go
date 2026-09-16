@@ -179,6 +179,13 @@ func generate(root string) error {
 	if err = dependency.Run(); err != nil {
 		return err
 	}
+	tidy := exec.Command("go", "mod", "tidy")
+	tidy.Dir = filepath.Join(output, "go")
+	tidy.Stdout = os.Stdout
+	tidy.Stderr = os.Stderr
+	if err = tidy.Run(); err != nil {
+		return err
+	}
 	facade := filepath.Join(output, "go/accounts_facade.pb.go")
 	raw, err = os.ReadFile(facade)
 	if err != nil {
