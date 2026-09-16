@@ -547,7 +547,37 @@ message ModulePlaceRecordResponse {
   string node_id = 1 [(buf.validate.field).string.uuid = true];
 }
 
+// Exact-record delegated oracle. Tenant and subjects come only from the signed
+// forwarded Work Context; a caller cannot provide a scope path or principal.
+message CheckWorkContextRecordAccessRequest {
+  string resource_type = 1 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+  string resource_id = 2 [(buf.validate.field).string = {min_len: 1, max_len: 512}];
+  string action = 3 [(buf.validate.field).string = {min_len: 1, max_len: 256}];
+}
+message CheckWorkContextRecordAccessResponse {
+  // False also covers an unplaced or inaccessible record; no scope is disclosed.
+  bool allowed = 1;
+  // Actual placed node, disclosed only when every current subject is allowed.
+  string scope_node_id = 2;
+}
+
 service ModuleCapabilitiesService {
+  // Checks current owner and every delegated actor against true record placement,
+  // intersected with the verified capability's attenuated resource/action scope.
+  rpc CheckWorkContextRecordAccess(CheckWorkContextRecordAccessRequest) returns (CheckWorkContextRecordAccessResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
   // The forwarded viewer Work Context names the calling module in its audience;
   // this read verifies it carries kind-wide read on a content resource type that
   // module declares, and current owner/actor and collection grants.

@@ -36,6 +36,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's CheckWorkContextRecordAccess RPC.
+	ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
 	// ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure is the fully-qualified name of
 	// the ModuleCapabilitiesService's ListReadableSourceCollections RPC.
 	ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
@@ -104,6 +107,9 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
 	// The forwarded viewer Work Context names the calling module in its audience;
 	// this read verifies it carries kind-wide read on a content resource type that
 	// module declares, and current owner/actor and collection grants.
@@ -176,6 +182,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		checkWorkContextRecordAccess: connect.NewClient[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("CheckWorkContextRecordAccess")),
+			connect.WithClientOptions(opts...),
+		),
 		listReadableSourceCollections: connect.NewClient[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
@@ -307,6 +319,7 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
+	checkWorkContextRecordAccess  *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
 	listReadableSourceCollections *connect.Client[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse]
 	placeRecord                   *connect.Client[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse]
 	enqueueJob                    *connect.Client[v1.ModuleEnqueueJobRequest, v1.ModuleEnqueueJobResponse]
@@ -328,6 +341,12 @@ type moduleCapabilitiesServiceClient struct {
 	unsubscribe                   *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
 	listSubscriptions             *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
 	replayEvents                  *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+}
+
+// CheckWorkContextRecordAccess calls
+// saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess.
+func (c *moduleCapabilitiesServiceClient) CheckWorkContextRecordAccess(ctx context.Context, req *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {
+	return c.checkWorkContextRecordAccess.CallUnary(ctx, req)
 }
 
 // ListReadableSourceCollections calls
@@ -440,6 +459,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// Checks current owner and every delegated actor against true record placement,
+	// intersected with the verified capability's attenuated resource/action scope.
+	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
 	// The forwarded viewer Work Context names the calling module in its audience;
 	// this read verifies it carries kind-wide read on a content resource type that
 	// module declares, and current owner/actor and collection grants.
@@ -508,6 +530,12 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
+		svc.CheckWorkContextRecordAccess,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("CheckWorkContextRecordAccess")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceListReadableSourceCollectionsHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure,
 		svc.ListReadableSourceCollections,
@@ -636,6 +664,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure:
+			moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure:
 			moduleCapabilitiesServiceListReadableSourceCollectionsHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServicePlaceRecordProcedure:
@@ -686,6 +716,10 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess is not implemented"))
+}
 
 func (UnimplementedModuleCapabilitiesServiceHandler) ListReadableSourceCollections(context.Context, *connect.Request[v1.ListReadableSourceCollectionsRequest]) (*connect.Response[v1.ListReadableSourceCollectionsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListReadableSourceCollections is not implemented"))

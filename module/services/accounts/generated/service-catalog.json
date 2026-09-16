@@ -171,6 +171,7 @@
       "procedures": [
         "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
         "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
+        "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
         "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
         "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
@@ -4102,6 +4103,48 @@
       },
       "policy_tier": "internal",
       "description": "Withdraw a still-open approval request.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "CheckWorkContextRecordAccess",
+      "input_type": "saas.accounts.v1.CheckWorkContextRecordAccessRequest",
+      "output_type": "saas.accounts.v1.CheckWorkContextRecordAccessResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "internal",
+      "description": "Check exact placed-record access under current delegated viewer authority.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
