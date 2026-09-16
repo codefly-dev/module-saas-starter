@@ -139,6 +139,46 @@ func generate(root string) error {
 	if err := cmd.Run(); err != nil {
 		return err
 	}
+	// Regenerate owned bindings with canonical shared Host descriptor imports.
+	// The public SDK and an embedded owner must not register a second policy,
+	// jobs or Work Context descriptor under the same protobuf full name.
+	own := "github.com/codefly-dev/module-saas-starter/libraries/source-read-sdk/go/gen/"
+	shared := "github.com/codefly-dev/saas-sdk-go/gen/"
+	options := []string{"paths=source_relative",
+		"Msaas/accounts/v1/module_capabilities.proto=" + own + "saas/accounts/v1;accountsv1",
+		"Msaas/accounts/v1/module_registration.proto=" + own + "saas/accounts/v1;accountsv1",
+		"Msaas/events/v1/events.proto=" + own + "saas/events/v1;eventsv1",
+		"Msaas/accounts/v1/work_contexts.proto=" + shared + "saas/accounts/v1",
+		"Msaas/jobs/v1/jobs.proto=" + shared + "saas/jobs/v1",
+		"Msaas/policy/v1/options.proto=" + shared + "saas/policy/v1"}
+	template, err := json.Marshal(map[string]any{"version": "v1", "plugins": []any{
+		map[string]any{"name": "go", "out": filepath.Join(output, "go/gen"), "opt": options},
+		map[string]any{"name": "connect-go", "out": filepath.Join(output, "go/gen"), "opt": options},
+	}})
+	if err != nil {
+		return err
+	}
+	if err = os.RemoveAll(filepath.Join(output, "go/gen")); err != nil {
+		return err
+	}
+	bindings := exec.Command("buf", "generate", filepath.Join(temp, "contracts/api/contract.binpb"), "--path", "saas/accounts/v1/module_capabilities.proto", "--path", "saas/accounts/v1/module_registration.proto", "--path", "saas/events/v1/events.proto", "--template", string(template))
+	bindings.Stdout = os.Stdout
+	bindings.Stderr = os.Stderr
+	if err = bindings.Run(); err != nil {
+		return err
+	}
+	// Preserve the facade's public result name without duplicating its descriptor.
+	alias := []byte("package accountsv1\n\nimport shared \"github.com/codefly-dev/saas-sdk-go/gen/saas/accounts/v1\"\n\n// IssuedWorkContext is the canonical shared Host wire type.\ntype IssuedWorkContext = shared.IssuedWorkContext\n")
+	if err = os.WriteFile(filepath.Join(output, "go/gen/saas/accounts/v1/shared.go"), alias, 0644); err != nil {
+		return err
+	}
+	dependency := exec.Command("go", "mod", "edit", "-require=github.com/codefly-dev/saas-sdk-go@v0.0.3-0.20260903161219-eec695334b45")
+	dependency.Dir = filepath.Join(output, "go")
+	dependency.Stdout = os.Stdout
+	dependency.Stderr = os.Stderr
+	if err = dependency.Run(); err != nil {
+		return err
+	}
 	facade := filepath.Join(output, "go/accounts_facade.pb.go")
 	raw, err = os.ReadFile(facade)
 	if err != nil {

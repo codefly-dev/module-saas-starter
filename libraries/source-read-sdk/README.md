@@ -45,9 +45,11 @@ codefly generate contracts saas-starter
 (cd libraries/source-read-sdk/go && go run ./cmd/generate --root ../../..)
 ```
 
-Use one generated binding set per protobuf full name in a Go binary. Applications
-already embedding Accounts generated bindings should regenerate their owned
-contract from this version instead of importing a second duplicate descriptor set.
+The generated client imports policy, jobs and Work Context descriptors from
+`github.com/codefly-dev/saas-sdk-go`; it does not vendor duplicates. It can be
+composed with consumers of that SDK in one Go binary. Applications embedding
+private Accounts module-capability descriptors must still use one binding set
+for those owner types.
 
 The generator trims the descriptor set to the selected service’s transitive
 imports before invoking Codefly, then pins the facade to the internal gRPC

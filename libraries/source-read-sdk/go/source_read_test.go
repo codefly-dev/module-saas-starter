@@ -152,3 +152,11 @@ func TestPublicSDKDelegatedExchangePreservesSeparateCredentials(t *testing.T) {
 		})
 	}
 }
+
+func TestSharedDescriptorsAreNotVendored(t *testing.T) {
+	for _, path := range []string{"gen/saas/policy", "gen/saas/jobs", "gen/saas/accounts/v1/work_contexts.pb.go"} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("shared descriptor must come from public SDK, found %s: %v", path, err)
+		}
+	}
+}
