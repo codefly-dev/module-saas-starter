@@ -91,6 +91,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/AckJob": "jobs",
   "ModuleCapabilitiesService/CancelApproval": "approvals",
   "ModuleCapabilitiesService/ClaimJobs": "jobs",
+  "ModuleCapabilitiesService/CheckWorkContextRecordAccess": "authorization",
   "ModuleCapabilitiesService/EmitAuditEvent": "audit",
   "ModuleCapabilitiesService/EnqueueJob": "jobs",
   "ModuleCapabilitiesService/FetchDatasourceBlob": "datasource",

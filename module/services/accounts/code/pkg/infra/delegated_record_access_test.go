@@ -7,8 +7,9 @@ import (
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 	"context"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDelegatedRecordAccessUsesRealPlacementAndAllSubjects(t *testing.T) {

@@ -3,13 +3,14 @@ package adapters
 import (
 	"accounts/pkg/auth"
 	gen "accounts/pkg/gen/saas/accounts/v1"
-	"connectrpc.com/connect"
 	"context"
+	"slices"
+
+	"connectrpc.com/connect"
 	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"slices"
 )
 
 func (s *ModuleCapabilitiesServer) CheckWorkContextRecordAccess(ctx context.Context, req *gen.CheckWorkContextRecordAccessRequest) (*gen.CheckWorkContextRecordAccessResponse, error) {
