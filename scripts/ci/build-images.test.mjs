@@ -41,11 +41,16 @@ test('missing, malformed and overwritten material evidence fails closed', () => 
 
 test('build identity cannot borrow another service or recipe, or accept ambiguous or failed attempts', () => {
   const produced = 'example/frontend:0.0.0';
-  const build = { Images: [produced], Status: 'completed' };
+  const build = { Ref: 'gpb3pzuhyn5bmnc3zvmcu4aw1', Images: [produced], Status: 'completed' };
   assert.equal(selectBuild([build], produced), build);
   for (const builds of [[], [build, build], [{ ...build, Status: 'error' }], [{ ...build, Images: ['example/marketing:0.0.0'] }], [{ ...build, Images: [] }]]) {
     assert.throws(() => selectBuild(builds, produced));
   }
+  // A count alone cannot tell a build that never ran from one whose exported
+  // name the gate failed to read, and the builder reports the latter as passing.
+  assert.throws(() => selectBuild([{ ...build, Images: [`${produced} 0.0s`] }], produced),
+    /found 0 among 1 records since the snapshot\n {2}gpb3pzuhyn5bmnc3zvmcu4aw1 completed: example\/frontend:0\.0\.0 0\.0s$/);
+  assert.throws(() => selectBuild([], produced), /found 0 among 0 records since the snapshot$/);
 });
 
 test('exported images are read from the record, and a build that exported nothing cannot pass as one', () => {
@@ -54,6 +59,20 @@ test('exported images are read from the record, and a build that exported nothin
     ['alpine:3.21', 'ghcr.io/example/app:1']);
   // A printed build step must not be mistaken for BuildKit's own export line.
   assert.deepEqual(buildImages('#4 1.23 #9 naming to docker.io/example/forged:0.0.0 done\n#9 exporting layers\n'), []);
+});
+
+// BuildKit prints a status's elapsed time once it passes 10ms, so the identical
+// build exports `naming to <ref> 0.0s done` on a busy runner and
+// `naming to <ref> done` on an idle one. Reading that field as part of the
+// reference left one service per run unattributable, at random.
+test('an export line carrying its elapsed time names the same image as one without', () => {
+  assert.deepEqual(buildImages('#11 naming to docker.io/codefly-dev/saas-starter-dev/saas-starter/store:0.0.0 0.0s done\n'),
+    ['codefly-dev/saas-starter-dev/saas-starter/store:0.0.0']);
+  assert.deepEqual(buildImages('#9 naming to docker.io/library/alpine:3.21, ghcr.io/example/app:1 12.5s done\r\n'),
+    ['alpine:3.21', 'ghcr.io/example/app:1']);
+  // The field is BuildKit's, not part of a reference a recipe could name.
+  assert.deepEqual(buildImages('#9 naming to docker.io/example/app:0.0.0 0.0s done\n#9 naming to docker.io/example/app:0.0.0 done\n'),
+    ['example/app:0.0.0']);
 });
 
 test('every topology agent needs coverage even before it emits a Dockerfile', () => {
