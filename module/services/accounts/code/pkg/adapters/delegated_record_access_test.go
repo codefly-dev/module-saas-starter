@@ -173,11 +173,14 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 
 // An exchanged read audience is the fourth capability shape reaching this oracle:
 // authority re-audienced from a verified parent viewer context rather than minted
-// fresh. The exchange reseals the parent under the installed binding's scopes and
-// carries the parent's delegation hops across untouched, so two things must hold
-// once the result is presented here — the oracle reads the resealed scopes and not
-// the wider parent's, and it still intersects every hop rather than collapsing the
-// chain into the owner the exchange acted for.
+// fresh. Where the attenuation lands is not where it looks: once a delegation
+// chain is present the sealed scope enforced here is the OUTERMOST hop's granted
+// scopes, which REPLACE rather than intersect the top-level authority scopes, so
+// the exchange narrows that hop and leaves the top level at the parent's width.
+// The assertions below turn on that, and it is pinned rather than assumed — read
+// only the top-level scopes and this capability looks kind-wide. What must hold
+// is that the oracle enforces the narrowed hop, and that it still checks every hop
+// against live grants rather than collapsing the chain into the owner.
 func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T) {
 	_, facts, client, _ := sourceReadFixture(t)
 	store := &exactRecordStore{}
@@ -202,7 +205,15 @@ func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T
 	require.NoError(t, err)
 	exchanged, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent.Encoded()))
 	require.NoError(t, err)
+	issued, err := codefly.ParseWorkContextToken(exchanged.Msg.Token)
+	require.NoError(t, err)
+	child, err := workContextSingleton.verifier.Verify(issued, codefly.WorkContextExpectations{Audience: "rows"})
+	require.NoError(t, err)
+	require.Empty(t, child.AuthorityScopes[0].ResourceIds, "the top-level scope stays at the parent's width")
+	require.Equal(t, []string{"record-a"}, child.ActorChain[len(child.ActorChain)-1].GrantedScopes[0].ResourceIds,
+		"the binding narrows the outermost hop, which is the scope the oracle actually enforces")
 
+	journal.ids = nil
 	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(exchanged.Msg.Token, "record-a"))
 	require.NoError(t, err)
 	require.True(t, out.Msg.Allowed)
