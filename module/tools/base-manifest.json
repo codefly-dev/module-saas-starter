@@ -267,7 +267,7 @@
     "services/accounts/code/pkg/adapters/datasource_handler.go": "bfe905212336a9155ac5a9d5bdc1a65350989d440b81f37b3f1c876c528c5b4d",
     "services/accounts/code/pkg/adapters/datasource_handler_test.go": "bf2f6dd7e153d2785d81f464669a2f8163c3f459cd6518886d6b15df72eac1e2",
     "services/accounts/code/pkg/adapters/delegated_read_audience.go": "c8a58603e35403e17dbe622c7fbea26eec96b7e7cdee31fbf30c46bb2044c197",
-    "services/accounts/code/pkg/adapters/delegated_read_audience_test.go": "5037e00707a7fd8fd317f37b6fa7055f054b2d0115400e93f8d854a5321e7045",
+    "services/accounts/code/pkg/adapters/delegated_read_audience_test.go": "4bdcf4497a85e85f823d0c82e54b2a76aff6dd402e50318dd87c4c0d5e0095a8",
     "services/accounts/code/pkg/adapters/delegated_record_access.go": "50a05e72295ddea4fc7be837c0025bff5cfc03bf37190d136aa14cdc540044ec",
     "services/accounts/code/pkg/adapters/delegated_record_access_test.go": "57dd6a4431deb01f2ad271cc3879781e90f5a2564c1ff7afd5bc9619ddfd2162",
     "services/accounts/code/pkg/adapters/delegation_ceiling_test.go": "303ce7686720d952b727e087c46935aa69b9cabc522a3940af4187a1aa3b4873",

@@ -174,15 +174,26 @@ func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
 	installReadBinding()
 	for _, tc := range []struct {
 		name, owner, tenant, audience, module, moduleTenant string
+		kind, refusal                                       string
 		ids                                                 []string
 	}{
 		{name: "foreign module", owner: readOwner, tenant: readOrg, audience: "example", module: "foreign", moduleTenant: readOrg},
 		{name: "foreign module tenant", owner: readOwner, tenant: readOrg, audience: "example", module: "example", moduleTenant: "019f6bf7-0000-7000-8000-000000000001"},
 		{name: "foreign parent tenant", owner: readOwner, tenant: "019f6bf7-0000-7000-8000-000000000001", audience: "example", module: "example", moduleTenant: readOrg},
 		{name: "narrow resource cannot become kind wide", owner: readOwner, tenant: readOrg, audience: "example", module: "example", moduleTenant: readOrg, ids: []string{"one-result"}},
+		// The third widening axis. The binding is deployment-owned policy, so a
+		// kind the parent never carried must be refused as it is for actions and
+		// resource ids — asserted on the widening refusal itself, since every
+		// other gate here would also produce a bare error.
+		{name: "binding cannot name a kind the parent lacks", owner: readOwner, tenant: readOrg, audience: "example", module: "example", moduleTenant: readOrg,
+			kind: "ledger", refusal: "widens authority"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			parent, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: tc.audience, TenantID: tc.tenant, OwnerPrincipalID: tc.owner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: "results", Actions: []string{"read"}, ResourceIds: tc.ids}}})
+			kind := tc.kind
+			if kind == "" {
+				kind = "results"
+			}
+			parent, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: tc.audience, TenantID: tc.tenant, OwnerPrincipalID: tc.owner, TaskID: "task", SessionID: "session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: []*basev0.WorkScopeV1{{ResourceKind: kind, Actions: []string{"read"}, ResourceIds: tc.ids}}})
 			require.NoError(t, err)
 			module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID(tc.module), Tenant: tc.moduleTenant})
 			require.NoError(t, err)
@@ -191,6 +202,9 @@ func TestDelegatedReadExchangeModuleAndParentBinding(t *testing.T) {
 			out, err := client.ExchangeDelegatedReadAudience(context.Background(), req)
 			require.Error(t, err)
 			require.Nil(t, out)
+			if tc.refusal != "" {
+				require.ErrorContains(t, err, tc.refusal)
+			}
 		})
 	}
 }
