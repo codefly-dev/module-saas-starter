@@ -60,7 +60,12 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
   }
 });
 
-function assertOnlyPlanningUsesNewerCodefly(candidateWorkflow) {
+// The newer CLI carries a Core whose service runtime outruns the published agent
+// fleet, so every phase that RUNS a service stays on the installer default. Jobs
+// that only read the module definition are unaffected and may opt in: contract
+// checking must, because the package manifest declares fixtures and the default
+// CLI's Core rejects that key outright.
+function assertOnlyNonServiceJobsUseNewerCodefly(candidateWorkflow) {
   const installs = Object.entries(candidateWorkflow.jobs).flatMap(([jobName, job]) =>
     (job.steps ?? [])
       .filter(step => step.run === 'bash scripts/ci/install-codefly.sh')
@@ -73,27 +78,31 @@ function assertOnlyPlanningUsesNewerCodefly(candidateWorkflow) {
       })),
   );
   assert.ok(installs.length > 1);
+  const byJob = ({ jobName: a }, { jobName: b }) => a.localeCompare(b);
   assert.deepEqual(
-    installs.filter(install => install.version !== '0.1.145'),
-    [{ jobName: 'codefly-plan', version: '0.1.151' }],
+    installs.filter(install => install.version !== '0.1.145').sort(byJob),
+    [
+      { jobName: 'codefly-plan', version: '0.1.151' },
+      { jobName: 'sdk-boundary', version: '0.1.151' },
+    ].sort(byJob),
   );
 }
 
-test('only affected-service planning opts into the newer CLI', () => {
-  assertOnlyPlanningUsesNewerCodefly(workflow);
+test('only jobs that never run a service opt into the newer CLI', () => {
+  assertOnlyNonServiceJobsUseNewerCodefly(workflow);
 });
 
 test('the CLI scope guard includes inherited workflow and job environments', () => {
   const workflowOverride = structuredClone(workflow);
   workflowOverride.env = { ...workflowOverride.env, CODEFLY_VERSION: '0.1.151' };
-  assert.throws(() => assertOnlyPlanningUsesNewerCodefly(workflowOverride), assert.AssertionError);
+  assert.throws(() => assertOnlyNonServiceJobsUseNewerCodefly(workflowOverride), assert.AssertionError);
 
   const jobOverride = structuredClone(workflow);
   jobOverride.jobs['codefly-quality-phases'].env = {
     ...jobOverride.jobs['codefly-quality-phases'].env,
     CODEFLY_VERSION: '0.1.151',
   };
-  assert.throws(() => assertOnlyPlanningUsesNewerCodefly(jobOverride), assert.AssertionError);
+  assert.throws(() => assertOnlyNonServiceJobsUseNewerCodefly(jobOverride), assert.AssertionError);
 });
 
 test('the CLI installer rejects versions outside its checksum allowlist', () => {
