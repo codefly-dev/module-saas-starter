@@ -379,11 +379,20 @@ func (s *Service) ModuleHeartbeatJob(ctx context.Context, caller ModuleCaller, r
 }
 
 // ModuleAckJob completes a leased job successfully.
-func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, req *jobsv1.CompleteJobRequest) error {
+func (s *Service) ModuleAckJob(ctx context.Context, caller ModuleCaller, lease *jobsv1.JobLeaseReference, executionKind, executionID string) error {
 	w := wool.Get(ctx).In("ModuleAckJob")
-	if _, err := s.moduleGrant(caller); err != nil {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
 		return err
 	}
+	var execution *jobsv1.JobExecutionReference
+	if (executionKind == "") != (executionID == "") {
+		return status.Error(codes.InvalidArgument, "execution kind and id must be supplied together")
+	}
+	if executionKind != "" {
+		execution = &jobsv1.JobExecutionReference{Owner: grant.Prefix, Kind: executionKind, Id: executionID}
+	}
+	req := &jobsv1.CompleteJobRequest{Lease: lease, Execution: execution}
 	if err := s.moduleJobStore.Complete(ctx, req); err != nil {
 		return moduleJobError(w, err)
 	}
@@ -791,8 +800,8 @@ func (s *Service) ModuleFetchDatasourceBlob(ctx context.Context, caller ModuleCa
 	if err != nil {
 		return nil, "", err
 	}
-	if !grant.allowsQueue(datasourceIngestQueue) {
-		return nil, "", status.Errorf(codes.PermissionDenied, "principal %s may not fetch datasource blobs: the %q queue grant is required", caller.PrincipalID, datasourceIngestQueue)
+	if !grant.allowsQueue(DatasourceIngestQueue) {
+		return nil, "", status.Errorf(codes.PermissionDenied, "principal %s may not fetch datasource blobs: the %q queue grant is required", caller.PrincipalID, DatasourceIngestQueue)
 	}
 	if s.datasourceCipher == nil || s.newGitHubClient == nil {
 		return nil, "", status.Error(codes.FailedPrecondition, "datasource connector is not configured")

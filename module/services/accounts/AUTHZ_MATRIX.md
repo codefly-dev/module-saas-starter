@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **206 RPCs** across **32 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **207 RPCs** across **32 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -45,6 +45,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.DatasourceService/DeleteSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.source.removed | FORBIDDEN / STANDARD_WRITE | INTERNAL → INTERNAL | Remove a connected datasource and its stored credentials. |
 | `/saas.accounts.v1.DatasourceService/GetDatasourceCatalog` | unary | `—` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | — | FORBIDDEN / STANDARD_READ | INTERNAL → INTERNAL | List the available datasource provider types and their connect metadata. |
 | `/saas.accounts.v1.DatasourceService/GetSource` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | Read one connected datasource in the org. |
+| `/saas.accounts.v1.DatasourceService/GetSourceSync` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | Read durable lifecycle and module-reported execution references for one source sync. |
 | `/saas.accounts.v1.DatasourceService/ListSources` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | INTERNAL → CONFIDENTIAL | List the org's connected datasources. |
 | `/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.credential.updated | FORBIDDEN / STANDARD_WRITE | INTERNAL → CONFIDENTIAL | Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history. |
 | `/saas.accounts.v1.DatasourceService/SyncSource` | unary | `—` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.datasource.source.synced | FORBIDDEN / STANDARD_WRITE | SECRET → INTERNAL | Pull the source's current contents and enqueue ingestion deliveries. |
@@ -220,7 +221,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `auth`: 40
 - `internal`: 40
 - `mfa`: 3
-- `org_admin`: 44
+- `org_admin`: 45
 - `org_member`: 39
 - `platform_admin`: 24
 - `public`: 16

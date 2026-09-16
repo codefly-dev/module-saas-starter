@@ -4,6 +4,7 @@ package saas.accounts.v1;
 
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
+import "saas/jobs/v1/jobs.proto";
 import "saas/policy/v1/options.proto";
 
 // ============================================================================
@@ -358,6 +359,24 @@ message SyncSourceResponse {
   string job_id = 1;
 }
 
+message GetSourceSyncRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string source_id = 2 [(buf.validate.field).string.uuid = true];
+  string job_id = 3 [(buf.validate.field).string.uuid = true];
+}
+
+message SourceSyncDelivery {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.JobState state = 2 [(buf.validate.field).required = true];
+  saas.jobs.v1.JobExecutionReference execution = 3;
+}
+
+message GetSourceSyncResponse {
+  string job_id = 1 [(buf.validate.field).string.uuid = true];
+  saas.jobs.v1.JobState state = 2 [(buf.validate.field).required = true];
+  repeated SourceSyncDelivery deliveries = 3;
+}
+
 message DeleteSourceRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string id = 2 [(buf.validate.field).string.uuid = true];
@@ -566,6 +585,26 @@ service DatasourceService {
       rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
       request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_INTERNAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // GetSourceSync projects durable lifecycle and module-reported execution
+  // references for one sync without exposing job payloads or attributes.
+  rpc GetSourceSync(GetSourceSyncRequest) returns (GetSourceSyncResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
+      request_sensitivity: SENSITIVITY_INTERNAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
   }

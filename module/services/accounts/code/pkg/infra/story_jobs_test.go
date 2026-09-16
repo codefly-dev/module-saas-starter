@@ -100,9 +100,9 @@ func TestStory_HOST_JOB_001(t *testing.T) {
 	revived := claimModuleJobs(t, module, caller, queue, "module-worker-replay").GetJobs()
 	require.Len(t, revived, 1)
 	require.Equal(t, replayed.GetJobId(), revived[0].GetId())
-	require.NoError(t, module.ModuleAckJob(testCtx, caller, &jobsv1.CompleteJobRequest{
-		Lease: executionLease(revived[0]),
-	}))
+	require.NoError(t, module.ModuleAckJob(
+		testCtx, caller, executionLease(revived[0]), "", "",
+	))
 
 	// The original stays dead-lettered: a replay is new work, not a resurrection.
 	source, err := store.GetJob(testCtx, &jobsv1.GetJobRequest{JobId: jobID.String()})

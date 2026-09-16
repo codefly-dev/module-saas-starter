@@ -510,8 +510,12 @@ func (x *ModuleHeartbeatJobResponse) GetLease() *v1.JobLease {
 
 // ModuleAckJobRequest completes a leased job successfully.
 type ModuleAckJobRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Lease         *v1.JobLeaseReference  `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Lease *v1.JobLeaseReference  `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	// execution is supplied only after the external owner admitted immutable
+	// work. The Host derives owner from the authenticated module principal.
+	ExecutionKind string `protobuf:"bytes,2,opt,name=execution_kind,json=executionKind,proto3" json:"execution_kind,omitempty"`
+	ExecutionId   string `protobuf:"bytes,3,opt,name=execution_id,json=executionId,proto3" json:"execution_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -551,6 +555,20 @@ func (x *ModuleAckJobRequest) GetLease() *v1.JobLeaseReference {
 		return x.Lease
 	}
 	return nil
+}
+
+func (x *ModuleAckJobRequest) GetExecutionKind() string {
+	if x != nil {
+		return x.ExecutionKind
+	}
+	return ""
+}
+
+func (x *ModuleAckJobRequest) GetExecutionId() string {
+	if x != nil {
+		return x.ExecutionId
+	}
+	return ""
 }
 
 // ModuleNackJobRequest fails a leased job. retryable selects a retryable
@@ -2786,9 +2804,11 @@ const file_saas_accounts_v1_module_capabilities_proto_rawDesc = "" +
 	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12M\n" +
 	"\textension\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\x14\xbaH\x11\xc8\x01\x01\xaa\x01\v\"\x03\b\x90\x1c2\x04\x10\xc0\x84=R\textension\"R\n" +
 	"\x1aModuleHeartbeatJobResponse\x124\n" +
-	"\x05lease\x18\x01 \x01(\v2\x16.saas.jobs.v1.JobLeaseB\x06\xbaH\x03\xc8\x01\x01R\x05lease\"T\n" +
+	"\x05lease\x18\x01 \x01(\v2\x16.saas.jobs.v1.JobLeaseB\x06\xbaH\x03\xc8\x01\x01R\x05lease\"\xc9\x01\n" +
 	"\x13ModuleAckJobRequest\x12=\n" +
-	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\"\xe6\x01\n" +
+	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12F\n" +
+	"\x0eexecution_kind\x18\x02 \x01(\tB\x1f\xbaH\x1cr\x1a\x18@2\x16^$|^[a-z][a-z0-9_.-]*$R\rexecutionKind\x12+\n" +
+	"\fexecution_id\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xff\x01R\vexecutionId\"\xe6\x01\n" +
 	"\x14ModuleNackJobRequest\x12=\n" +
 	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12:\n" +
 	"\afailure\x18\x02 \x01(\v2\x18.saas.jobs.v1.JobFailureB\x06\xbaH\x03\xc8\x01\x01R\afailure\x12\x1c\n" +

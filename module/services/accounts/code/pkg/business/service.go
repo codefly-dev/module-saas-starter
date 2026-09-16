@@ -66,14 +66,15 @@ type Service struct {
 	githubConnector           *githubconnector.Connector // mints installation tokens and pulls repo contents (#274 connector store)
 	datasourceCipher          SecretCipher               // encrypts per-source DatasourceService credentials + webhook secrets
 	datasourceJobs            jobs.Producer              // privileged inbox producer for datasource ingest deliveries
-	githubBaseURL             string                     // api.github.com override for the datasource connector
-	githubAppID               string                     // deployment's GitHub App registration; empty leaves sources on their own PAT
-	githubAppKeyPEM           string                     // the App's RSA signing key, deployment custody — never copied onto a source
-	githubAppWebhookSecret    string                     // signs the App's own lifecycle deliveries; App-wide, never per source
-	githubAppSlug             string                     // the App's URL slug, used to build its install link; empty disables App onboarding
-	githubAppClientID         string                     // the App's OAuth client, which identifies the person returning from an install
-	githubAppClientSecret     string                     // its secret; without the pair, an installation cannot be attributed to a caller
-	datasourceTicketSigner    *datasourceTicketSigner    // mints/verifies opaque content tickets for oversized change-set blobs
+	datasourceSyncOperations  DatasourceSyncOperationStore
+	githubBaseURL             string                  // api.github.com override for the datasource connector
+	githubAppID               string                  // deployment's GitHub App registration; empty leaves sources on their own PAT
+	githubAppKeyPEM           string                  // the App's RSA signing key, deployment custody — never copied onto a source
+	githubAppWebhookSecret    string                  // signs the App's own lifecycle deliveries; App-wide, never per source
+	githubAppSlug             string                  // the App's URL slug, used to build its install link; empty disables App onboarding
+	githubAppClientID         string                  // the App's OAuth client, which identifies the person returning from an install
+	githubAppClientSecret     string                  // its secret; without the pair, an installation cannot be attributed to a caller
+	datasourceTicketSigner    *datasourceTicketSigner // mints/verifies opaque content tickets for oversized change-set blobs
 	newGitHubClient           func(token string) GitHubContentClient
 	newAPIClient              func(cfg APIDatasourceConfig, credential string) APIContentClient
 	newCrawlerClient          func(cfg CrawlerDatasourceConfig) CrawlerContentClient

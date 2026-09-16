@@ -613,7 +613,7 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 
 	// head == cursor: nothing to do.
 	source := githubSource(t, svc, "main", []string{"docs"}, "HEAD")
-	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, false)
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,12 +623,34 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 
 	// head != cursor: one snapshot.
 	source.LastIngestedCommit = "OLD"
-	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, false)
+	requestJobID := "11111111-1111-1111-1111-111111111111"
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, false, requestJobID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !enqueued || len(producer.jobs) != 1 || producer.jobs[0].GetTopic() != "datasource.github.snapshot" {
 		t.Fatalf("head!=cursor must enqueue one snapshot, got %d jobs", len(producer.jobs))
+	}
+	if got := producer.jobs[0].GetAttributes()["datasource.delivery_id"]; got != requestJobID {
+		t.Fatalf("snapshot correlation = %q, want request job %q", got, requestJobID)
+	}
+
+	// A second explicit sync at the same commit must create a delivery that can
+	// be correlated to the second request rather than resolving to the first
+	// request's idempotent snapshot.
+	secondRequestJobID := "22222222-2222-2222-2222-222222222222"
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, true, secondRequestJobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !enqueued || len(producer.jobs) != 2 {
+		t.Fatalf("second forced reconcile must enqueue its own snapshot, got %d jobs", len(producer.jobs))
+	}
+	if producer.jobs[0].GetIdempotencyKey() == producer.jobs[1].GetIdempotencyKey() {
+		t.Fatalf("forced sync snapshots share idempotency key %q", producer.jobs[0].GetIdempotencyKey())
+	}
+	if got := producer.jobs[1].GetAttributes()["datasource.delivery_id"]; got != secondRequestJobID {
+		t.Fatalf("second snapshot correlation = %q, want request job %q", got, secondRequestJobID)
 	}
 }
 
@@ -690,7 +712,7 @@ func TestReconcile_RecoversDegradedSourceWhenManifestFitsAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true)
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -733,7 +755,7 @@ func TestReconcile_DegradeIsAStateTransitionEmittedOnce(t *testing.T) {
 	svc, audit := newDatasourceService(store, producer, gh)
 	source := githubSource(t, svc, "main", nil, "OLD")
 
-	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true)
+	enqueued, err := svc.ReconcileGitHubSource(context.Background(), source, true, "")
 	if err != nil {
 		t.Fatalf("oversized snapshot must be acknowledged, got error: %v", err)
 	}
@@ -750,7 +772,7 @@ func TestReconcile_DegradeIsAStateTransitionEmittedOnce(t *testing.T) {
 	if degraded.Status != business.DatasourceStatusDegraded {
 		t.Fatalf("source status = %q, want degraded after the first reconcile", degraded.Status)
 	}
-	enqueued, err = svc.ReconcileGitHubSource(context.Background(), degraded, true)
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), degraded, true, "")
 	if err != nil {
 		t.Fatalf("retry of an oversized snapshot must be acknowledged, got error: %v", err)
 	}

@@ -111,6 +111,13 @@ message ModuleHeartbeatJobResponse {
 // ModuleAckJobRequest completes a leased job successfully.
 message ModuleAckJobRequest {
   saas.jobs.v1.JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  // execution is supplied only after the external owner admitted immutable
+  // work. The Host derives owner from the authenticated module principal.
+  string execution_kind = 2 [(buf.validate.field).string = {
+    max_len: 64
+    pattern: "^$|^[a-z][a-z0-9_.-]*$"
+  }];
+  string execution_id = 3 [(buf.validate.field).string.max_len = 255];
 }
 
 // ModuleNackJobRequest fails a leased job. retryable selects a retryable

@@ -52,6 +52,9 @@ const (
 	// DatasourceServiceSyncSourceProcedure is the fully-qualified name of the DatasourceService's
 	// SyncSource RPC.
 	DatasourceServiceSyncSourceProcedure = "/saas.accounts.v1.DatasourceService/SyncSource"
+	// DatasourceServiceGetSourceSyncProcedure is the fully-qualified name of the DatasourceService's
+	// GetSourceSync RPC.
+	DatasourceServiceGetSourceSyncProcedure = "/saas.accounts.v1.DatasourceService/GetSourceSync"
 	// DatasourceServiceDeleteSourceProcedure is the fully-qualified name of the DatasourceService's
 	// DeleteSource RPC.
 	DatasourceServiceDeleteSourceProcedure = "/saas.accounts.v1.DatasourceService/DeleteSource"
@@ -88,6 +91,9 @@ type DatasourceServiceClient interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error)
 	// BeginGitHubAppSetup mints a one-time setup state, bound to this
@@ -156,6 +162,12 @@ func NewDatasourceServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(datasourceServiceMethods.ByName("SyncSource")),
 			connect.WithClientOptions(opts...),
 		),
+		getSourceSync: connect.NewClient[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse](
+			httpClient,
+			baseURL+DatasourceServiceGetSourceSyncProcedure,
+			connect.WithSchema(datasourceServiceMethods.ByName("GetSourceSync")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteSource: connect.NewClient[v1.DeleteSourceRequest, v1.DeleteSourceResponse](
 			httpClient,
 			baseURL+DatasourceServiceDeleteSourceProcedure,
@@ -191,6 +203,7 @@ type datasourceServiceClient struct {
 	listSources              *connect.Client[v1.ListSourcesRequest, v1.ListSourcesResponse]
 	getSource                *connect.Client[v1.GetSourceRequest, v1.GetSourceResponse]
 	syncSource               *connect.Client[v1.SyncSourceRequest, v1.SyncSourceResponse]
+	getSourceSync            *connect.Client[v1.GetSourceSyncRequest, v1.GetSourceSyncResponse]
 	deleteSource             *connect.Client[v1.DeleteSourceRequest, v1.DeleteSourceResponse]
 	beginGitHubAppSetup      *connect.Client[v1.BeginGitHubAppSetupRequest, v1.BeginGitHubAppSetupResponse]
 	completeGitHubAppSetup   *connect.Client[v1.CompleteGitHubAppSetupRequest, v1.CompleteGitHubAppSetupResponse]
@@ -225,6 +238,11 @@ func (c *datasourceServiceClient) GetSource(ctx context.Context, req *connect.Re
 // SyncSource calls saas.accounts.v1.DatasourceService.SyncSource.
 func (c *datasourceServiceClient) SyncSource(ctx context.Context, req *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error) {
 	return c.syncSource.CallUnary(ctx, req)
+}
+
+// GetSourceSync calls saas.accounts.v1.DatasourceService.GetSourceSync.
+func (c *datasourceServiceClient) GetSourceSync(ctx context.Context, req *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error) {
+	return c.getSourceSync.CallUnary(ctx, req)
 }
 
 // DeleteSource calls saas.accounts.v1.DatasourceService.DeleteSource.
@@ -269,6 +287,9 @@ type DatasourceServiceHandler interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error)
 	// BeginGitHubAppSetup mints a one-time setup state, bound to this
@@ -333,6 +354,12 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 		connect.WithSchema(datasourceServiceMethods.ByName("SyncSource")),
 		connect.WithHandlerOptions(opts...),
 	)
+	datasourceServiceGetSourceSyncHandler := connect.NewUnaryHandler(
+		DatasourceServiceGetSourceSyncProcedure,
+		svc.GetSourceSync,
+		connect.WithSchema(datasourceServiceMethods.ByName("GetSourceSync")),
+		connect.WithHandlerOptions(opts...),
+	)
 	datasourceServiceDeleteSourceHandler := connect.NewUnaryHandler(
 		DatasourceServiceDeleteSourceProcedure,
 		svc.DeleteSource,
@@ -371,6 +398,8 @@ func NewDatasourceServiceHandler(svc DatasourceServiceHandler, opts ...connect.H
 			datasourceServiceGetSourceHandler.ServeHTTP(w, r)
 		case DatasourceServiceSyncSourceProcedure:
 			datasourceServiceSyncSourceHandler.ServeHTTP(w, r)
+		case DatasourceServiceGetSourceSyncProcedure:
+			datasourceServiceGetSourceSyncHandler.ServeHTTP(w, r)
 		case DatasourceServiceDeleteSourceProcedure:
 			datasourceServiceDeleteSourceHandler.ServeHTTP(w, r)
 		case DatasourceServiceBeginGitHubAppSetupProcedure:
@@ -410,6 +439,10 @@ func (UnimplementedDatasourceServiceHandler) GetSource(context.Context, *connect
 
 func (UnimplementedDatasourceServiceHandler) SyncSource(context.Context, *connect.Request[v1.SyncSourceRequest]) (*connect.Response[v1.SyncSourceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.SyncSource is not implemented"))
+}
+
+func (UnimplementedDatasourceServiceHandler) GetSourceSync(context.Context, *connect.Request[v1.GetSourceSyncRequest]) (*connect.Response[v1.GetSourceSyncResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.DatasourceService.GetSourceSync is not implemented"))
 }
 
 func (UnimplementedDatasourceServiceHandler) DeleteSource(context.Context, *connect.Request[v1.DeleteSourceRequest]) (*connect.Response[v1.DeleteSourceResponse], error) {
