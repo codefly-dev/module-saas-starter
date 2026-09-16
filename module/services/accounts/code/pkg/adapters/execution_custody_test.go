@@ -40,8 +40,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -95,9 +97,9 @@ func TestExecutionCustodyReal(t *testing.T) {
 	sql(`INSERT INTO organizations(id,name,slug,owner_id) VALUES($1,'Example','example',$2)`, org, owner)
 	sql(`INSERT INTO organization_members(org_id,user_id,role) VALUES($1,$2,'owner')`, org, owner)
 	sql(`INSERT INTO principals(id,kind,display_name) VALUES($1,'human','Example owner') ON CONFLICT DO NOTHING`, owner)
-	sql(`INSERT INTO principals(id,kind,display_name,org_id,agent_identifier,allowed_audiences,allowed_scopes) VALUES($1,'agent','Example agent',$2,'example.test/agent:1',ARRAY['example.facade','example.tasks','example.model'],ARRAY['example.tasks','example.model'])`, actor, org)
+	sql(`INSERT INTO principals(id,kind,display_name,org_id,agent_identifier,allowed_audiences,allowed_scopes) VALUES($1,'agent','Example agent',$2,'example.test/agent:1',ARRAY['example.facade','example.tasks','example.model','example.receipts'],ARRAY['example.tasks','example.model','example.receipts'])`, actor, org)
 	sql(`INSERT INTO roles(id,name,org_id) VALUES($1,'example-execution',$2)`, role, org)
-	for _, scope := range []struct{ kind, action string }{{"example.tasks", "start"}, {"example.tasks", "execute"}, {"example.tasks", "read"}, {"example.model", "invoke"}, {"example.model", "read"}} {
+	for _, scope := range []struct{ kind, action string }{{"example.tasks", "start"}, {"example.tasks", "execute"}, {"example.tasks", "read"}, {"example.model", "invoke"}, {"example.model", "read"}, {"example.receipts", "append"}, {"example.receipts", "read"}} {
 		sql(`INSERT INTO role_permissions(role_id,resource,action) VALUES($1,$2,$3)`, role, scope.kind, scope.action)
 	}
 	sql(`INSERT INTO role_assignments(subject_id,subject_kind,role_id,org_id) VALUES($1,'principal',$2,$3)`, actor, role, org)
@@ -122,7 +124,7 @@ func TestExecutionCustodyReal(t *testing.T) {
 	authority := &WorkContextAuthorityServer{}
 	authority.Configure(WorkContextAuthorityConfiguration{Issuer: "example.work", KeyID: "example-key", PrivateKey: key, Authority: store})
 	ownerCtx := stampRequestIdentity(ctx, auth.RequestIdentityOf(identity), identity.Assurance())
-	start := &gen.StartTaskWorkContextRequest{OrgId: org, TaskId: taskID, SessionId: sessionID, Audience: "example.facade", ActorPrincipalId: actor, TtlSeconds: 600, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example.tasks", ResourceIds: []string{taskID}, Actions: []string{"execute", "read", "start"}}, {ResourceKind: "example.model", ResourceIds: []string{"example-profile"}, Actions: []string{"invoke", "read"}}}}
+	start := &gen.StartTaskWorkContextRequest{OrgId: org, TaskId: taskID, SessionId: sessionID, Audience: "example.facade", ActorPrincipalId: actor, TtlSeconds: 600, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example.model", ResourceIds: []string{"example-profile"}, Actions: []string{"invoke", "read"}}, {ResourceKind: "example.receipts", Actions: []string{"append", "read"}}, {ResourceKind: "example.tasks", ResourceIds: []string{taskID}, Actions: []string{"execute", "read", "start"}}}}
 	issued, err := authority.StartTask(ownerCtx, start)
 	require.NoError(t, err)
 	parentToken, err := codefly.ParseWorkContextToken(issued.Token)
@@ -130,7 +132,10 @@ func TestExecutionCustodyReal(t *testing.T) {
 	parent, err := authority.verifier.Verify(parentToken, codefly.WorkContextExpectations{Issuer: authority.issuer})
 	require.NoError(t, err)
 	input := wire.RegisterRequest{Binding: wire.Binding{OrgID: org, OwnerID: owner, AdmissionID: strings.Repeat("a", 48), IntentDigest: strings.Repeat("b", 64), TaskID: parent.TaskId, SessionID: parent.SessionId, Consumer: "example", Profile: "example-profile@1"}, ParentToken: issued.Token, TaskExpiresAt: parent.ExpiresAtUnix - 20}
-	policy := ExecutionConsumerPolicy{WorkerURI: "spiffe://example.test/worker", ParentAudience: "example.facade", TaskAudience: "example.tasks", Audience: "example.model", Profile: input.Binding.Profile, ResourceKind: "example.model", ResourceID: "example-profile", InvokeAction: "invoke", ReadAction: "read", TaskResourceKind: "example.tasks", TaskActions: []string{"execute", "read", "start"}}
+	policy := ExecutionConsumerPolicy{WorkerURI: "spiffe://example.test/worker", ParentAudience: "example.facade", TaskAudience: "example.tasks", Profile: input.Binding.Profile, TaskResourceKind: "example.tasks", TaskActions: []string{"execute", "read", "start"}, Operations: map[string]ExecutionOperationPolicy{
+		"generate": {Audience: "example.model", InvokeScopes: []wire.InstalledScope{{ResourceKind: "example.model", Actions: []string{"invoke", "read"}, ResourceIDs: []string{"example-profile"}}}, LookupScopes: []wire.InstalledScope{{ResourceKind: "example.model", Actions: []string{"read"}, ResourceIDs: []string{"example-profile"}}}},
+		"record":   {Audience: "example.receipts", InvokeScopes: []wire.InstalledScope{{ResourceKind: "example.receipts", Actions: []string{"append", "read"}}}, LookupScopes: []wire.InstalledScope{{ResourceKind: "example.receipts", Actions: []string{"read"}}}},
+	}}
 	cipher := infra.NewVaultClientDirect(os.Getenv("CUSTODY_TEST_VAULT"), os.Getenv("CUSTODY_TEST_VAULT_TOKEN"))
 	config := ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: cipher, Consumers: map[string]ExecutionConsumerPolicy{"example": policy}}
 	serverTLS, workerTLS, otherTLS, caPEM := custodyTLS(t)
@@ -154,7 +159,7 @@ func TestExecutionCustodyReal(t *testing.T) {
 	defer func() { ts.Close() }()
 	registration, err := caller.Register(ctx, pair.AccessToken, input)
 	require.NoError(t, err)
-	exchange := wire.ExchangeRequest{Reference: registration.Reference, Binding: registration.Binding, Audience: policy.Audience}
+	exchange := wire.ExchangeRequest{Reference: registration.Reference, Binding: registration.Binding, Operation: "generate"}
 	failure := func(t *testing.T, err error, code string) {
 		t.Helper()
 		var typed *wire.Error
@@ -197,6 +202,42 @@ func TestExecutionCustodyReal(t *testing.T) {
 			failure(t, err, "PermissionDenied")
 		}
 	})
+	t.Run("registration_requires_every_installed_operation_scope", func(t *testing.T) {
+		limitedTask := uuid.NewString()
+		limitedStart := &gen.StartTaskWorkContextRequest{OrgId: org, TaskId: limitedTask, SessionId: uuid.NewString(), Audience: "example.facade", ActorPrincipalId: actor, TtlSeconds: 600, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "example.model", ResourceIds: []string{"example-profile"}, Actions: []string{"invoke", "read"}}, {ResourceKind: "example.tasks", ResourceIds: []string{limitedTask}, Actions: []string{"execute", "read", "start"}}}}
+		limited, err := authority.StartTask(ownerCtx, limitedStart)
+		require.NoError(t, err)
+		token, err := codefly.ParseWorkContextToken(limited.Token)
+		require.NoError(t, err)
+		claims, err := authority.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: authority.issuer})
+		require.NoError(t, err)
+		attempt := input
+		attempt.Binding.AdmissionID = "incomplete-" + uuid.NewString()
+		attempt.Binding.TaskID = claims.TaskId
+		attempt.Binding.SessionID = claims.SessionId
+		attempt.ParentToken = limited.Token
+		attempt.TaskExpiresAt = claims.ExpiresAtUnix - 20
+		_, err = caller.Register(ctx, pair.AccessToken, attempt)
+		failure(t, err, "PermissionDenied")
+	})
+	t.Run("registration_rejects_operation_audience_outside_actor", func(t *testing.T) {
+		changed := policy
+		changed.Operations = make(map[string]ExecutionOperationPolicy, len(policy.Operations))
+		for name, operation := range policy.Operations {
+			changed.Operations[name] = operation
+		}
+		operation := changed.Operations["record"]
+		operation.Audience = "example.unknown"
+		changed.Operations["record"] = operation
+		configured, err := prepareExecutionConsumerPolicy("example", changed)
+		require.NoError(t, err)
+		broker := executionCustody{config: config}
+		broker.config.Consumers = map[string]ExecutionConsumerPolicy{"example": configured}
+		attempt := input
+		attempt.Binding.AdmissionID = "audience-" + uuid.NewString()
+		_, err = broker.register(ctx, identity, attempt)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
 	t.Run("stored_private_ciphertext_and_roles", func(t *testing.T) {
 		var envelope string
 		require.NoError(t, admin.QueryRow(ctx, `SELECT envelope FROM execution_custody WHERE reference=$1`, registration.Reference).Scan(&envelope))
@@ -238,7 +279,7 @@ func TestExecutionCustodyReal(t *testing.T) {
 	t.Run("cross_worker_and_binding_substitutions", func(t *testing.T) {
 		_, err := other.Exchange(ctx, exchange)
 		failure(t, err, "PermissionDenied")
-		changes := []func(*wire.ExchangeRequest){func(v *wire.ExchangeRequest) { v.Binding.OrgID = uuid.NewString() }, func(v *wire.ExchangeRequest) { v.Binding.OwnerID = uuid.NewString() }, func(v *wire.ExchangeRequest) { v.Binding.TaskID = "other" }, func(v *wire.ExchangeRequest) { v.Binding.SessionID = "other" }, func(v *wire.ExchangeRequest) { v.Binding.AdmissionID = "other" }, func(v *wire.ExchangeRequest) { v.Binding.IntentDigest = strings.Repeat("c", 64) }, func(v *wire.ExchangeRequest) { v.Binding.TaskClaimsDigest = "other" }, func(v *wire.ExchangeRequest) { v.Binding.Profile = "other" }, func(v *wire.ExchangeRequest) { v.Audience = "other" }, func(v *wire.ExchangeRequest) { v.Binding.Consumer = "other" }}
+		changes := []func(*wire.ExchangeRequest){func(v *wire.ExchangeRequest) { v.Binding.OrgID = uuid.NewString() }, func(v *wire.ExchangeRequest) { v.Binding.OwnerID = uuid.NewString() }, func(v *wire.ExchangeRequest) { v.Binding.TaskID = "other" }, func(v *wire.ExchangeRequest) { v.Binding.SessionID = "other" }, func(v *wire.ExchangeRequest) { v.Binding.AdmissionID = "other" }, func(v *wire.ExchangeRequest) { v.Binding.IntentDigest = strings.Repeat("c", 64) }, func(v *wire.ExchangeRequest) { v.Binding.TaskClaimsDigest = "other" }, func(v *wire.ExchangeRequest) { v.Binding.Profile = "other" }, func(v *wire.ExchangeRequest) { v.Audience = "other" }, func(v *wire.ExchangeRequest) { v.Operation = "other" }, func(v *wire.ExchangeRequest) { v.Binding.Consumer = "other" }}
 		for i, change := range changes {
 			t.Run(fmt.Sprint(i), func(t *testing.T) {
 				v := exchange
@@ -279,7 +320,7 @@ func TestExecutionCustodyReal(t *testing.T) {
 		require.NoError(t, err)
 		tok, err := codefly.ParseWorkContextToken(child.Token)
 		require.NoError(t, err)
-		claims, err := authority.verifier.Verify(tok, codefly.WorkContextExpectations{Issuer: authority.issuer, Audience: policy.Audience})
+		claims, err := authority.verifier.Verify(tok, codefly.WorkContextExpectations{Issuer: authority.issuer, Audience: policy.Operations["generate"].Audience})
 		require.NoError(t, err)
 		require.LessOrEqual(t, claims.ExpiresAtUnix, registration.ExpiresAt)
 		require.Equal(t, parent.AuthorizationRevision, claims.AuthorizationRevision)
@@ -291,10 +332,25 @@ func TestExecutionCustodyReal(t *testing.T) {
 		require.NoError(t, err)
 		tok, err = codefly.ParseWorkContextToken(read.Token)
 		require.NoError(t, err)
-		claims, err = authority.verifier.Verify(tok, codefly.WorkContextExpectations{Issuer: authority.issuer, Audience: policy.Audience})
+		claims, err = authority.verifier.Verify(tok, codefly.WorkContextExpectations{Issuer: authority.issuer, Audience: policy.Operations["generate"].Audience})
 		require.NoError(t, err)
-		require.Error(t, codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: policy.ResourceKind, ResourceID: policy.ResourceID, Action: policy.InvokeAction, RequireExplicitResource: true}))
-		require.NoError(t, codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: policy.ResourceKind, ResourceID: policy.ResourceID, Action: policy.ReadAction, RequireExplicitResource: true}))
+		require.Error(t, codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: "example.model", ResourceID: "example-profile", Action: "invoke", RequireExplicitResource: true}))
+		require.NoError(t, codefly.RequireWorkContextScope(claims, codefly.WorkContextScopeRequirement{ResourceKind: "example.model", ResourceID: "example-profile", Action: "read", RequireExplicitResource: true}))
+		for _, lookup := range []bool{false, true} {
+			record := exchange
+			record.Operation = "record"
+			record.Lookup = lookup
+			issued, err := worker.Exchange(ctx, record)
+			require.NoError(t, err)
+			token, err := codefly.ParseWorkContextToken(issued.Token)
+			require.NoError(t, err)
+			bounded, err := authority.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: authority.issuer, Audience: policy.Operations["record"].Audience})
+			require.NoError(t, err)
+			require.NoError(t, codefly.RequireWorkContextScope(bounded, codefly.WorkContextScopeRequirement{ResourceKind: "example.receipts", ResourceID: "any-receipt", Action: "read"}))
+			if lookup {
+				require.Error(t, codefly.RequireWorkContextScope(bounded, codefly.WorkContextScopeRequirement{ResourceKind: "example.receipts", ResourceID: "any-receipt", Action: "append"}))
+			}
+		}
 		taskTok, err := codefly.ParseWorkContextToken(registration.TaskToken)
 		require.NoError(t, err)
 		task, err := authority.verifier.Verify(taskTok, codefly.WorkContextExpectations{Issuer: authority.issuer, Audience: policy.TaskAudience})
@@ -323,16 +379,37 @@ func TestExecutionCustodyReal(t *testing.T) {
 		_, err = caller.Recover(ctx, "revision-only", in)
 		failure(t, err, "Unauthenticated")
 	})
-	t.Run("scope_injection_rejected", func(t *testing.T) {
-		body, _ := json.Marshal(exchange)
-		body = append(body[:len(body)-1], []byte(`,"scopes":["*"]}`)...)
-		req, err := http.NewRequest(http.MethodPost, ts.URL+wire.ExchangePath, strings.NewReader(string(body)))
+	t.Run("request_authority_injection_rejected", func(t *testing.T) {
+		for _, injected := range []string{`,"scopes":["*"]}`, `,"ttl_seconds":900}`} {
+			body, _ := json.Marshal(exchange)
+			body = append(body[:len(body)-1], []byte(injected)...)
+			req, err := http.NewRequest(http.MethodPost, ts.URL+wire.ExchangePath, strings.NewReader(string(body)))
+			require.NoError(t, err)
+			c := &http.Client{Transport: &http.Transport{TLSClientConfig: workerTLS}}
+			resp, err := c.Do(req)
+			require.NoError(t, err)
+			resp.Body.Close()
+			require.Equal(t, 400, resp.StatusCode)
+		}
+	})
+	t.Run("installed_policy_drift_fences_original_registration", func(t *testing.T) {
+		changed := policy
+		changed.Operations = make(map[string]ExecutionOperationPolicy, len(policy.Operations))
+		for name, operation := range policy.Operations {
+			changed.Operations[name] = operation
+		}
+		operation := changed.Operations["record"]
+		operation.InvokeScopes = cloneInstalledScopes(operation.InvokeScopes)
+		operation.LookupScopes = cloneInstalledScopes(operation.LookupScopes)
+		operation.InvokeScopes[0].ResourceIDs = []string{"receipt-b"}
+		operation.LookupScopes[0].ResourceIDs = []string{"receipt-b"}
+		changed.Operations["record"] = operation
+		configured, err := prepareExecutionConsumerPolicy("example", changed)
 		require.NoError(t, err)
-		c := &http.Client{Transport: &http.Transport{TLSClientConfig: workerTLS}}
-		resp, err := c.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.Equal(t, 400, resp.StatusCode)
+		broker := executionCustody{config: config}
+		broker.config.Consumers = map[string]ExecutionConsumerPolicy{"example": configured}
+		_, err = broker.exchange(ctx, policy.WorkerURI, exchange)
+		require.Equal(t, codes.PermissionDenied, status.Code(err))
 	})
 	t.Run("vault_key_rotation_preserves_original_binding", func(t *testing.T) {
 		req, err := http.NewRequest(http.MethodPost, os.Getenv("CUSTODY_TEST_VAULT")+"/v1/transit/keys/api-keys/rotate", strings.NewReader(`{}`))
@@ -483,11 +560,11 @@ path "transit/decrypt/api-keys" { capabilities = ["update"] }`)
 		recovered, err := replacement.Recover(ctx, string(ownerToken), immutable)
 		require.NoError(t, err)
 		require.True(t, recovered == registered, "subprocess recovery replaced original child")
-		child, err := replacement.Exchange(ctx, wire.ExchangeRequest{Reference: recovered.Reference, Binding: recovered.Binding, Audience: policy.Audience, Lookup: true})
+		child, err := replacement.Exchange(ctx, wire.ExchangeRequest{Reference: recovered.Reference, Binding: recovered.Binding, Operation: "generate", Lookup: true})
 		require.NoError(t, err)
 		tok, err = codefly.ParseWorkContextToken(child.Token)
 		require.NoError(t, err)
-		bounded, err := verify.Verify(tok, codefly.WorkContextExpectations{Issuer: "example.work", Audience: policy.Audience})
+		bounded, err := verify.Verify(tok, codefly.WorkContextExpectations{Issuer: "example.work", Audience: policy.Operations["generate"].Audience})
 		require.NoError(t, err)
 		require.LessOrEqual(t, bounded.ExpiresAtUnix, recovered.ExpiresAt)
 		revisionTLS := workerTLS.Clone()
@@ -537,6 +614,109 @@ path "transit/decrypt/api-keys" { capabilities = ["update"] }`)
 
 func protoEqualCustodyLineage(a, b *base.WorkContextV1) bool {
 	return custodyJSONHash(custodyLineage(a)) == custodyJSONHash(custodyLineage(b))
+}
+
+func TestExecutionCustodyOperationPolicies(t *testing.T) {
+	legacy := ExecutionConsumerPolicy{TaskResourceKind: "example.tasks", TaskActions: []string{"execute", "read", "start"}, WorkerURI: "spiffe://example.test/worker", ParentAudience: "example.facade", TaskAudience: "example.tasks", Audience: "example.model", Profile: "example-profile@1", ResourceKind: "example.model", ResourceID: "example-profile", InvokeAction: "invoke", ReadAction: "read"}
+	prepared, err := prepareExecutionConsumerPolicy("example", legacy)
+	require.NoError(t, err)
+	require.Equal(t, "80fa872b121bd01c82b8e4011f6daf29bd0bf2f58cfc0f1f5849ea183ca86c28", custodyJSONHash(prepared), "legacy policy identity changed")
+	raw, err := json.Marshal(prepared)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "Operations")
+
+	scope := func(kind string, actions, ids []string) wire.InstalledScope {
+		return wire.InstalledScope{ResourceKind: kind, Actions: actions, ResourceIDs: ids}
+	}
+	operation := ExecutionOperationPolicy{
+		Audience:     "example.generate",
+		InvokeScopes: []wire.InstalledScope{scope("example.model", []string{"invoke", "read"}, []string{"profile-a", "profile-b"})},
+		LookupScopes: []wire.InstalledScope{scope("example.model", []string{"read"}, []string{"profile-a"})},
+	}
+	policy := legacy
+	policy.Audience, policy.ResourceKind, policy.ResourceID, policy.InvokeAction, policy.ReadAction = "", "", "", "", ""
+	policy.Operations = map[string]ExecutionOperationPolicy{"generate": operation}
+	prepared, err = prepareExecutionConsumerPolicy("example", policy)
+	require.NoError(t, err)
+	operation.InvokeScopes[0].Actions[0] = "changed"
+	require.Equal(t, "invoke", prepared.Operations["generate"].InvokeScopes[0].Actions[0], "installed policy retained caller-owned memory")
+	policy.Operations["generate"] = prepared.Operations["generate"]
+	second := prepared.Operations["generate"]
+	second.Audience = "example.record"
+	policy.Operations["record"] = second
+	firstDigest := custodyJSONHash(policy)
+	reordered := policy
+	reordered.Operations = map[string]ExecutionOperationPolicy{"record": second, "generate": policy.Operations["generate"]}
+	require.Equal(t, firstDigest, custodyJSONHash(reordered), "operation map order changed policy identity")
+
+	audience, scopes, ok := operationExchange(prepared, wire.ExchangeRequest{Operation: "generate"})
+	require.True(t, ok)
+	require.Equal(t, "example.generate", audience)
+	require.Equal(t, []string{"invoke", "read"}, scopes[0].Actions)
+	audience, scopes, ok = operationExchange(prepared, wire.ExchangeRequest{Operation: "generate", Lookup: true})
+	require.True(t, ok)
+	require.Equal(t, "example.generate", audience)
+	require.Equal(t, []string{"read"}, scopes[0].Actions)
+	for _, request := range []wire.ExchangeRequest{{}, {Operation: "unknown"}, {Operation: "generate", Audience: "example.generate"}} {
+		_, _, ok = operationExchange(prepared, request)
+		require.False(t, ok)
+	}
+
+	invalid := []ExecutionConsumerPolicy{}
+	mixed := policy
+	mixed.Audience = "example.model"
+	invalid = append(invalid, mixed)
+	badName := policy
+	badName.Operations = map[string]ExecutionOperationPolicy{"bad operation": policy.Operations["generate"]}
+	invalid = append(invalid, badName)
+	badAudience := policy
+	value := policy.Operations["generate"]
+	value.Audience = policy.ParentAudience
+	badAudience.Operations = map[string]ExecutionOperationPolicy{"generate": value}
+	invalid = append(invalid, badAudience)
+	badLookupAction := policy
+	value = policy.Operations["generate"]
+	value.LookupScopes = []wire.InstalledScope{scope("example.model", []string{"invoke"}, []string{"profile-a"})}
+	badLookupAction.Operations = map[string]ExecutionOperationPolicy{"generate": value}
+	invalid = append(invalid, badLookupAction)
+	badLookupResource := policy
+	value = policy.Operations["generate"]
+	value.LookupScopes = []wire.InstalledScope{scope("example.model", []string{"read"}, []string{"profile-c"})}
+	badLookupResource.Operations = map[string]ExecutionOperationPolicy{"generate": value}
+	invalid = append(invalid, badLookupResource)
+	badLookupWildcard := policy
+	value = policy.Operations["generate"]
+	value.LookupScopes = []wire.InstalledScope{scope("example.model", []string{"read"}, nil)}
+	badLookupWildcard.Operations = map[string]ExecutionOperationPolicy{"generate": value}
+	invalid = append(invalid, badLookupWildcard)
+	badWildcard := policy
+	value = policy.Operations["generate"]
+	value.InvokeScopes = []wire.InstalledScope{scope("example.model", []string{"invoke", "read"}, []string{"*"})}
+	badWildcard.Operations = map[string]ExecutionOperationPolicy{"generate": value}
+	invalid = append(invalid, badWildcard)
+	badOrder := policy
+	value = policy.Operations["generate"]
+	value.InvokeScopes = []wire.InstalledScope{scope("z.example", []string{"read"}, []string{"one"}), scope("a.example", []string{"read"}, []string{"one"})}
+	value.LookupScopes = []wire.InstalledScope{scope("z.example", []string{"read"}, []string{"one"})}
+	badOrder.Operations = map[string]ExecutionOperationPolicy{"generate": value}
+	invalid = append(invalid, badOrder)
+	tooMany := policy
+	tooMany.Operations = make(map[string]ExecutionOperationPolicy, 65)
+	for i := range 65 {
+		tooMany.Operations[fmt.Sprintf("operation-%02d", i)] = policy.Operations["generate"]
+	}
+	invalid = append(invalid, tooMany)
+	for i, candidate := range invalid {
+		_, err := prepareExecutionConsumerPolicy("example", candidate)
+		require.Error(t, err, i)
+	}
+	kindWide := policy
+	value = policy.Operations["generate"]
+	value.InvokeScopes = []wire.InstalledScope{scope("example.sources", []string{"ingest", "read"}, nil)}
+	value.LookupScopes = []wire.InstalledScope{scope("example.sources", []string{"read"}, nil)}
+	kindWide.Operations = map[string]ExecutionOperationPolicy{"generate": value}
+	_, err = prepareExecutionConsumerPolicy("example", kindWide)
+	require.NoError(t, err)
 }
 
 // Compile-time reminder: the integration calls actual auth, Vault and PostgreSQL.

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,6 +42,13 @@ type ExecutionConsumerPolicy struct {
 	ResourceID       string
 	InvokeAction     string
 	ReadAction       string
+	Operations       map[string]ExecutionOperationPolicy `json:"Operations,omitempty"`
+}
+
+type ExecutionOperationPolicy struct {
+	Audience     string                `json:"audience"`
+	InvokeScopes []wire.InstalledScope `json:"invoke_scopes"`
+	LookupScopes []wire.InstalledScope `json:"lookup_scopes"`
 }
 
 type ExecutionCustodyConfig struct {
@@ -72,14 +80,10 @@ func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Con
 	}
 	consumers := make(map[string]ExecutionConsumerPolicy, len(config.Consumers))
 	for name, p := range config.Consumers {
-		u, err := url.Parse(p.WorkerURI)
-		if name == "" || err != nil || u.Scheme != "spiffe" || u.Host == "" || u.Path == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || p.ParentAudience == "" || p.TaskAudience == "" || p.Audience == "" || p.ParentAudience == p.TaskAudience || p.ParentAudience == p.Audience || p.TaskAudience == p.Audience || p.Profile == "" || p.ResourceKind == "" || p.ResourceID == "" || p.InvokeAction == "" || p.ReadAction == "" || p.InvokeAction == p.ReadAction {
-			return nil, errors.New("invalid execution consumer policy")
+		p, err := prepareExecutionConsumerPolicy(name, p)
+		if err != nil {
+			return nil, err
 		}
-		if p.TaskResourceKind == "" || len(p.TaskActions) == 0 {
-			return nil, errors.New("task scope policy required")
-		}
-		p.TaskActions = append([]string(nil), p.TaskActions...)
 		consumers[name] = p
 	}
 	config.Consumers = consumers
@@ -90,6 +94,40 @@ func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Con
 	tc.InsecureSkipVerify = false
 	tc.GetConfigForClient = nil
 	return &http.Server{Handler: b, TLSConfig: tc, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}, nil
+}
+
+func prepareExecutionConsumerPolicy(name string, p ExecutionConsumerPolicy) (ExecutionConsumerPolicy, error) {
+	u, err := url.Parse(p.WorkerURI)
+	if name == "" || err != nil || u.Scheme != "spiffe" || u.Host == "" || u.Path == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || p.ParentAudience == "" || p.TaskAudience == "" || p.ParentAudience == p.TaskAudience || p.Profile == "" {
+		return p, errors.New("invalid execution consumer policy")
+	}
+	if p.TaskResourceKind == "" || len(p.TaskActions) == 0 {
+		return p, errors.New("task scope policy required")
+	}
+	p.TaskActions = append([]string(nil), p.TaskActions...)
+	if len(p.Operations) == 0 {
+		if p.Audience == "" || p.ParentAudience == p.Audience || p.TaskAudience == p.Audience || p.ResourceKind == "" || p.ResourceID == "" || p.InvokeAction == "" || p.ReadAction == "" || p.InvokeAction == p.ReadAction {
+			return p, errors.New("invalid legacy execution consumer policy")
+		}
+		return p, nil
+	}
+	if p.Audience != "" || p.ResourceKind != "" || p.ResourceID != "" || p.InvokeAction != "" || p.ReadAction != "" {
+		return p, errors.New("mixed execution consumer policy")
+	}
+	if len(p.Operations) > 64 {
+		return p, errors.New("too many execution operation policies")
+	}
+	operations := make(map[string]ExecutionOperationPolicy, len(p.Operations))
+	for operation, installed := range p.Operations {
+		if !validOperationName(operation) || installed.Audience == "" || len(installed.Audience) > 128 || installed.Audience != strings.TrimSpace(installed.Audience) || installed.Audience == p.ParentAudience || installed.Audience == p.TaskAudience || !validInstalledScopes(installed.InvokeScopes, false) || !validInstalledScopes(installed.LookupScopes, true) || !installedScopeSubset(installed.LookupScopes, installed.InvokeScopes) {
+			return p, errors.New("invalid execution operation policy")
+		}
+		installed.InvokeScopes = cloneInstalledScopes(installed.InvokeScopes)
+		installed.LookupScopes = cloneInstalledScopes(installed.LookupScopes)
+		operations[operation] = installed
+	}
+	p.Operations = operations
+	return p, nil
 }
 
 func (b *executionCustody) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -234,6 +272,115 @@ func custodyScope(p ExecutionConsumerPolicy, lookup bool) []*gen.WorkContextScop
 	return []*gen.WorkContextScope{{ResourceKind: p.ResourceKind, ResourceIds: []string{p.ResourceID}, Actions: actions}}
 }
 
+func validOperationName(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, c := range value {
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_' || c == '.' || c == ':') {
+			return false
+		}
+	}
+	return true
+}
+
+func validInstalledScopes(scopes []wire.InstalledScope, lookup bool) bool {
+	if len(scopes) == 0 || len(scopes) > 64 {
+		return false
+	}
+	previousKind := ""
+	for _, scope := range scopes {
+		if scope.ResourceKind == "" || len(scope.ResourceKind) > 128 || scope.ResourceKind == "*" || scope.ResourceKind != strings.TrimSpace(scope.ResourceKind) || previousKind >= scope.ResourceKind || len(scope.Actions) == 0 || len(scope.Actions) > 256 || len(scope.ResourceIDs) > 256 {
+			return false
+		}
+		previousKind = scope.ResourceKind
+		if !sortedUniqueInstalled(scope.Actions, 128) || !sortedUniqueInstalled(scope.ResourceIDs, 512) {
+			return false
+		}
+		for _, action := range scope.Actions {
+			if action == "*" || lookup && action != "read" {
+				return false
+			}
+		}
+		for _, resourceID := range scope.ResourceIDs {
+			if resourceID == "*" {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func sortedUniqueInstalled(values []string, limit int) bool {
+	for i, value := range values {
+		if value == "" || len(value) > limit || value != strings.TrimSpace(value) || i > 0 && values[i-1] >= value {
+			return false
+		}
+	}
+	return true
+}
+
+func installedScopeSubset(subset, superset []wire.InstalledScope) bool {
+	byKind := make(map[string]wire.InstalledScope, len(superset))
+	for _, scope := range superset {
+		byKind[scope.ResourceKind] = scope
+	}
+	for _, scope := range subset {
+		parent, ok := byKind[scope.ResourceKind]
+		if !ok || !sortedStringSubset(scope.Actions, parent.Actions) || len(parent.ResourceIDs) > 0 && (len(scope.ResourceIDs) == 0 || !sortedStringSubset(scope.ResourceIDs, parent.ResourceIDs)) {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedStringSubset(subset, superset []string) bool {
+	for _, value := range subset {
+		index := sort.SearchStrings(superset, value)
+		if index == len(superset) || superset[index] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneInstalledScopes(scopes []wire.InstalledScope) []wire.InstalledScope {
+	out := make([]wire.InstalledScope, len(scopes))
+	for i, scope := range scopes {
+		out[i] = wire.InstalledScope{ResourceKind: scope.ResourceKind, Actions: append([]string(nil), scope.Actions...), ResourceIDs: append([]string(nil), scope.ResourceIDs...)}
+	}
+	return out
+}
+
+func installedScopes(scopes []wire.InstalledScope) []*gen.WorkContextScope {
+	out := make([]*gen.WorkContextScope, len(scopes))
+	for i, scope := range scopes {
+		out[i] = &gen.WorkContextScope{ResourceKind: scope.ResourceKind, Actions: append([]string(nil), scope.Actions...), ResourceIds: append([]string(nil), scope.ResourceIDs...)}
+	}
+	return out
+}
+
+func operationExchange(p ExecutionConsumerPolicy, in wire.ExchangeRequest) (string, []*gen.WorkContextScope, bool) {
+	if len(p.Operations) == 0 {
+		if in.Operation != "" || in.Audience != p.Audience {
+			return "", nil, false
+		}
+		return p.Audience, custodyScope(p, in.Lookup), true
+	}
+	if in.Operation == "" || in.Audience != "" {
+		return "", nil, false
+	}
+	installed, ok := p.Operations[in.Operation]
+	if !ok {
+		return "", nil, false
+	}
+	scopes := installed.InvokeScopes
+	if in.Lookup {
+		scopes = installed.LookupScopes
+	}
+	return installed.Audience, installedScopes(scopes), true
+}
+
 func (b *executionCustody) register(ctx context.Context, identity *auth.Identity, in wire.RegisterRequest) (wire.Registration, error) {
 	var zero wire.Registration
 	p, ok := b.config.Consumers[in.Binding.Consumer]
@@ -253,9 +400,35 @@ func (b *executionCustody) register(ctx context.Context, identity *auth.Identity
 	if parent.Audience != p.ParentAudience || parent.TaskId != in.Binding.TaskID || parent.SessionId != in.Binding.SessionID || parent.ReplayPolicy != codefly.WorkContextReplayIdempotent || in.TaskExpiresAt > parent.ExpiresAtUnix || in.TaskExpiresAt <= time.Now().Unix()+3 {
 		return zero, status.Error(codes.PermissionDenied, "")
 	}
-	for _, action := range []string{p.InvokeAction, p.ReadAction} {
-		if codefly.RequireWorkContextScope(parent, codefly.WorkContextScopeRequirement{ResourceKind: p.ResourceKind, ResourceID: p.ResourceID, Action: action, RequireExplicitResource: true}) != nil {
-			return zero, status.Error(codes.PermissionDenied, "")
+	if len(p.Operations) == 0 {
+		for _, action := range []string{p.InvokeAction, p.ReadAction} {
+			if codefly.RequireWorkContextScope(parent, codefly.WorkContextScopeRequirement{ResourceKind: p.ResourceKind, ResourceID: p.ResourceID, Action: action, RequireExplicitResource: true}) != nil {
+				return zero, status.Error(codes.PermissionDenied, "")
+			}
+		}
+	} else {
+		for _, operation := range p.Operations {
+			for _, scopes := range [][]wire.InstalledScope{operation.InvokeScopes, operation.LookupScopes} {
+				_, actorScopes, err := workContextScopes(installedScopes(scopes))
+				if err != nil {
+					return zero, status.Error(codes.PermissionDenied, "")
+				}
+				if err := enforceActorCeiling(actor, operation.Audience, actorScopes); err != nil {
+					return zero, status.Error(codes.PermissionDenied, "")
+				}
+				for _, scope := range scopes {
+					for _, action := range scope.Actions {
+						if len(scope.ResourceIDs) == 0 && codefly.RequireWorkContextScope(parent, codefly.WorkContextScopeRequirement{ResourceKind: scope.ResourceKind, Action: action}) != nil {
+							return zero, status.Error(codes.PermissionDenied, "")
+						}
+						for _, resourceID := range scope.ResourceIDs {
+							if codefly.RequireWorkContextScope(parent, codefly.WorkContextScopeRequirement{ResourceKind: scope.ResourceKind, ResourceID: resourceID, Action: action, RequireExplicitResource: true}) != nil {
+								return zero, status.Error(codes.PermissionDenied, "")
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	payload := custodyPayload{Request: in, RealActor: ri.RealActorID(), Delegation: ri.Delegation, PolicyDigest: custodyJSONHash(p)}
@@ -385,7 +558,11 @@ func (b *executionCustody) open(ctx context.Context, record business.ExecutionCu
 func (b *executionCustody) exchange(ctx context.Context, worker string, in wire.ExchangeRequest) (wire.Child, error) {
 	var zero wire.Child
 	p, ok := b.config.Consumers[in.Binding.Consumer]
-	if !ok || worker != p.WorkerURI || p.Profile != in.Binding.Profile || p.Audience != in.Audience || !validCustodyBinding(in.Binding) {
+	if !ok || worker != p.WorkerURI || p.Profile != in.Binding.Profile || !validCustodyBinding(in.Binding) {
+		return zero, status.Error(codes.PermissionDenied, "")
+	}
+	audience, scopes, ok := operationExchange(p, in)
+	if !ok {
 		return zero, status.Error(codes.PermissionDenied, "")
 	}
 	if _, err := uuid.Parse(in.Reference); err != nil {
@@ -426,7 +603,7 @@ func (b *executionCustody) exchange(ctx context.Context, worker string, in wire.
 	if ttl <= 0 {
 		return zero, status.Error(codes.FailedPrecondition, "")
 	}
-	req := &gen.ExchangeWorkContextAudienceRequest{OrgId: record.OrgID, Audience: p.Audience, AttenuatedScopes: custodyScope(p, in.Lookup), ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}
+	req := &gen.ExchangeWorkContextAudienceRequest{OrgId: record.OrgID, Audience: audience, AttenuatedScopes: scopes, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)}
 	issued, err := b.config.Authority.exchangeVerifiedParent(parentToken, parent, actor, req)
 	if err != nil {
 		return zero, err
@@ -435,9 +612,12 @@ func (b *executionCustody) exchange(ctx context.Context, worker string, in wire.
 	if err != nil {
 		return zero, status.Error(codes.Unavailable, "")
 	}
-	child, err := b.config.Authority.verifier.Verify(childToken, codefly.WorkContextExpectations{Issuer: b.config.Authority.issuer, Audience: p.Audience, TenantID: record.OrgID, OwnerPrincipalID: record.OwnerID})
+	child, err := b.config.Authority.verifier.Verify(childToken, codefly.WorkContextExpectations{Issuer: b.config.Authority.issuer, Audience: audience, TenantID: record.OrgID, OwnerPrincipalID: record.OwnerID})
 	if err != nil || child.ExpiresAtUnix > horizon || child.ExpiresAtUnix <= time.Now().Unix() {
 		return zero, status.Error(codes.FailedPrecondition, "")
+	}
+	if _, _, _, err := b.config.Authority.verifyParent(ctx, record.OrgID, record.OwnerID, payload.Request.ParentToken); err != nil {
+		return zero, err
 	}
 	return wire.Child{Token: issued.Token, ExpiresAt: child.ExpiresAtUnix}, nil
 }

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"testing"
 
-	agentv0 "github.com/codefly-dev/core/generated/go/codefly/services/agent/v0"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -147,15 +146,4 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 			require.ElementsMatch(t, target.RuntimeServices, runtimeServices, target.Suite)
 		}
 	}
-}
-
-// Nothing reads this catalog because the pinned runtime has no wire for it: an
-// agent offers effective-inputs discovery through its advertisement, and that
-// field postdates this pin. Released runtimes already carry it, so a deliberate
-// bump trips this permanently — delete it then. Completeness stays barred above
-// either way, because no released agent advertises discovery.
-func TestPinnedRuntimeCannotTransportEffectiveInputs(t *testing.T) {
-	fields := (&agentv0.AgentInformation{}).ProtoReflect().Descriptor().Fields()
-	require.Nil(t, fields.ByName("effective_inputs_versions"),
-		"transport exists at this pin: delete this assertion, released-agent discovery still bars consumption")
 }

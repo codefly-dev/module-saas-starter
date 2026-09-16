@@ -95,6 +95,7 @@ func runBusinessTests(m *testing.M) int {
 	setupDone := testdb.Measure("business-db", "dependency-setup", []string{"store", "vault"}, 5*time.Minute)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithSharedControlChannel(),
 		sdk.WithExcludedDependencies("cache", "telemetry"),
 		// Keep this package-owned integration stack distinct from the outer
 		// service runtime and the other package TestMain stacks. The SDK gives

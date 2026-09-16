@@ -62,6 +62,7 @@ func runSessionStoreTests(m *testing.M) int {
 	setupDone := testdb.Measure("auth-db", "dependency-setup", []string{"store"}, 120*time.Second)
 	deps, err := sdk.WithDependencies(ctx,
 		sdk.WithDebug(),
+		sdk.WithSharedControlChannel(),
 		sdk.WithExcludedDependencies("cache", "vault", "telemetry"),
 		sdk.WithNamingScope("pgauth-test"),
 		sdk.WithTimeout(120*time.Second),

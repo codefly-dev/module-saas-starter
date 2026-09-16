@@ -3,12 +3,12 @@ module accounts
 go 1.27.0
 
 require (
-	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.1
+	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.20.0
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/core v0.3.14
-	github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go v0.0.0-20260914153942-bc4855310859
+	github.com/codefly-dev/core v0.3.27
+	github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go v0.0.0-20260916051945-1c36fb884752
 	github.com/codefly-dev/sdk-go v0.1.65
 	github.com/codefly-dev/service-postgres v0.0.129
 	github.com/go-webauthn/webauthn v0.18.0
