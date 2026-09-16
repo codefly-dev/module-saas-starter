@@ -51,8 +51,9 @@ type Registration struct {
 	TaskToken string  `json:"task_token"`
 }
 
-// InstalledScope is immutable deployment policy. Exchange callers select an
-// installed operation and never provide scopes themselves.
+// InstalledScope is immutable deployment policy. An empty ResourceIDs is the
+// canonical kind-wide scope; brokers reject literal wildcards and widening.
+// Exchange callers select an installed operation and never provide scopes.
 type InstalledScope struct {
 	ResourceKind string   `json:"resource_kind"`
 	Actions      []string `json:"actions"`
