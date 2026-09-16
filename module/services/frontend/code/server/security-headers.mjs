@@ -145,6 +145,15 @@ export function contentSecurityPolicyFromInputs(
 		connectSrc.push(TURNSTILE_ORIGIN);
 	}
 
+	// A remote's CSS chunk is fetched by the MF runtime as a cross-origin
+	// <link>, which 'unsafe-inline' does not cover — it admits inline <style>
+	// and style attributes, never an external stylesheet URL. Without the origin
+	// here the chunk is refused and the whole remote fails to mount, since the
+	// rejected load throws rather than degrading to unstyled. script-src has no
+	// equivalent gap: 'strict-dynamic' already extends trust to whatever the
+	// nonced framework scripts pull in, whatever its origin.
+	const styleSrc = ["'self'", "'unsafe-inline'", ...solutionOrigins];
+
 	// The /docs viewer is now self-hosted (same-origin), so 'self' covers it;
 	// Turnstile renders its challenge in a Cloudflare-hosted iframe when enabled.
 	const frameSrc = ["'self'"];
@@ -165,7 +174,7 @@ export function contentSecurityPolicyFromInputs(
 		"img-src 'self' data: https:",
 		"object-src 'none'",
 		`script-src ${scriptSrc.join(" ")}`,
-		"style-src 'self' 'unsafe-inline'",
+		`style-src ${styleSrc.join(" ")}`,
 		"upgrade-insecure-requests",
 	].join("; ");
 }
