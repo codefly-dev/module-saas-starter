@@ -90,6 +90,7 @@
         "/saas.accounts.v1.DatasourceService/DeleteSource",
         "/saas.accounts.v1.DatasourceService/GetDatasourceCatalog",
         "/saas.accounts.v1.DatasourceService/GetSource",
+        "/saas.accounts.v1.DatasourceService/GetSourceSync",
         "/saas.accounts.v1.DatasourceService/ListSources",
         "/saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
         "/saas.accounts.v1.DatasourceService/SyncSource"
@@ -2355,6 +2356,54 @@
       },
       "policy_tier": "org_member",
       "description": "Read one connected datasource in the org.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.DatasourceService/GetSourceSync",
+      "service": "DatasourceService",
+      "full_service": "saas.accounts.v1.DatasourceService",
+      "method": "GetSourceSync",
+      "input_type": "saas.accounts.v1.GetSourceSyncRequest",
+      "output_type": "saas.accounts.v1.GetSourceSyncResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/datasource.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_INTERNAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "org_admin",
+      "description": "Read durable lifecycle and module-reported execution references for one source sync.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

@@ -112,7 +112,7 @@ func newModuleService(t *testing.T, backend *fakeJobBackend) *business.Service {
 		t.Fatalf("NewService: %v", err)
 	}
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"datasource", "documents"}},
+		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}},
 	})
 	return svc
 }
@@ -124,7 +124,7 @@ func newModuleServiceWithStore(t *testing.T, store business.Store, backend *fake
 		t.Fatalf("NewService: %v", err)
 	}
 	svc.SetModuleCapabilities(backend, backend, business.ModulePrincipalRegistry{
-		modulePrincSvc: {Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
+		modulePrincSvc: {Prefix: "content", Queues: []string{"datasource", "documents"}, CrossTenant: crossTenant},
 	})
 	return svc
 }
@@ -343,6 +343,31 @@ func moduleLease() *jobsv1.JobLeaseReference {
 	return &jobsv1.JobLeaseReference{
 		JobId: "00000000-0000-0000-0000-000000000009", WorkerId: "w1",
 		LeaseToken: "00000000-0000-0000-0000-0000000000aa",
+	}
+}
+
+func TestModuleAckJob_DerivesExecutionOwnerFromAuthenticatedPrincipal(t *testing.T) {
+	backend := &fakeJobBackend{}
+	svc := newModuleService(t, backend)
+	if err := svc.ModuleAckJob(context.Background(), moduleCaller(), moduleLease(), "task", "task-42"); err != nil {
+		t.Fatalf("ack: %v", err)
+	}
+	if len(backend.completed) != 1 {
+		t.Fatalf("expected one completion, got %d", len(backend.completed))
+	}
+	execution := backend.completed[0].GetExecution()
+	if execution.GetOwner() != "content" || execution.GetKind() != "task" || execution.GetId() != "task-42" {
+		t.Fatalf("execution = %+v", execution)
+	}
+}
+
+func TestModuleAckJob_RejectsPartialExecutionReference(t *testing.T) {
+	backend := &fakeJobBackend{}
+	svc := newModuleService(t, backend)
+	err := svc.ModuleAckJob(context.Background(), moduleCaller(), moduleLease(), "task", "")
+	requireCode(t, err, codes.InvalidArgument)
+	if len(backend.completed) != 0 {
+		t.Fatal("partial execution reached the store")
 	}
 }
 

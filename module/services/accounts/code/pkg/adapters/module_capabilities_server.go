@@ -203,7 +203,7 @@ func (s *ModuleCapabilitiesServer) AckJob(ctx context.Context, req *gen.ModuleAc
 	if err != nil {
 		return nil, err
 	}
-	if err := service.ModuleAckJob(ctx, caller, &jobsv1.CompleteJobRequest{Lease: req.GetLease()}); err != nil {
+	if err := service.ModuleAckJob(ctx, caller, req.GetLease(), req.GetExecutionKind(), req.GetExecutionId()); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil

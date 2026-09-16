@@ -475,6 +475,70 @@ func (x *JobFailure) GetMessage() string {
 	return ""
 }
 
+// JobExecutionReference correlates Host work with an external execution. Owner
+// is the authenticated module reporting completion; kind and id are that
+// module's assertion and require independent verification against the external
+// execution owner's public read.
+type JobExecutionReference struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Owner         string                 `protobuf:"bytes,1,opt,name=owner,proto3" json:"owner,omitempty"`
+	Kind          string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Id            string                 `protobuf:"bytes,3,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *JobExecutionReference) Reset() {
+	*x = JobExecutionReference{}
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *JobExecutionReference) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*JobExecutionReference) ProtoMessage() {}
+
+func (x *JobExecutionReference) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use JobExecutionReference.ProtoReflect.Descriptor instead.
+func (*JobExecutionReference) Descriptor() ([]byte, []int) {
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *JobExecutionReference) GetOwner() string {
+	if x != nil {
+		return x.Owner
+	}
+	return ""
+}
+
+func (x *JobExecutionReference) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *JobExecutionReference) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 // JobEnvelope is the product-neutral durable inbox/outbox record. payload is
 // retained as exact bytes; large artifacts belong in object storage and are
 // referenced from the payload. Identity, routing, scope, and payload fields are
@@ -513,7 +577,7 @@ type JobEnvelope struct {
 
 func (x *JobEnvelope) Reset() {
 	*x = JobEnvelope{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -525,7 +589,7 @@ func (x *JobEnvelope) String() string {
 func (*JobEnvelope) ProtoMessage() {}
 
 func (x *JobEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[3]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -538,7 +602,7 @@ func (x *JobEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobEnvelope.ProtoReflect.Descriptor instead.
 func (*JobEnvelope) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{3}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *JobEnvelope) GetId() string {
@@ -736,7 +800,7 @@ type JobOrderingKey struct {
 
 func (x *JobOrderingKey) Reset() {
 	*x = JobOrderingKey{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -748,7 +812,7 @@ func (x *JobOrderingKey) String() string {
 func (*JobOrderingKey) ProtoMessage() {}
 
 func (x *JobOrderingKey) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[4]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -761,7 +825,7 @@ func (x *JobOrderingKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobOrderingKey.ProtoReflect.Descriptor instead.
 func (*JobOrderingKey) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{4}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *JobOrderingKey) GetNamespace() string {
@@ -803,7 +867,7 @@ type NewJob struct {
 
 func (x *NewJob) Reset() {
 	*x = NewJob{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -815,7 +879,7 @@ func (x *NewJob) String() string {
 func (*NewJob) ProtoMessage() {}
 
 func (x *NewJob) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[5]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -828,7 +892,7 @@ func (x *NewJob) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NewJob.ProtoReflect.Descriptor instead.
 func (*NewJob) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{5}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *NewJob) GetDirection() JobDirection {
@@ -941,7 +1005,7 @@ type EnqueueJobRequest struct {
 
 func (x *EnqueueJobRequest) Reset() {
 	*x = EnqueueJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -953,7 +1017,7 @@ func (x *EnqueueJobRequest) String() string {
 func (*EnqueueJobRequest) ProtoMessage() {}
 
 func (x *EnqueueJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[6]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -966,7 +1030,7 @@ func (x *EnqueueJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueJobRequest.ProtoReflect.Descriptor instead.
 func (*EnqueueJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{6}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *EnqueueJobRequest) GetJob() *NewJob {
@@ -986,7 +1050,7 @@ type EnqueueJobResponse struct {
 
 func (x *EnqueueJobResponse) Reset() {
 	*x = EnqueueJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[7]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -998,7 +1062,7 @@ func (x *EnqueueJobResponse) String() string {
 func (*EnqueueJobResponse) ProtoMessage() {}
 
 func (x *EnqueueJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[7]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1011,7 +1075,7 @@ func (x *EnqueueJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnqueueJobResponse.ProtoReflect.Descriptor instead.
 func (*EnqueueJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{7}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *EnqueueJobResponse) GetJobId() string {
@@ -1056,13 +1120,14 @@ type JobSummary struct {
 	UpdatedAt      *timestamppb.Timestamp `protobuf:"bytes,22,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	StateVersion   uint64                 `protobuf:"varint,23,opt,name=state_version,json=stateVersion,proto3" json:"state_version,omitempty"`
 	ReplayOf       string                 `protobuf:"bytes,24,opt,name=replay_of,json=replayOf,proto3" json:"replay_of,omitempty"`
+	Execution      *JobExecutionReference `protobuf:"bytes,25,opt,name=execution,proto3" json:"execution,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
 
 func (x *JobSummary) Reset() {
 	*x = JobSummary{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[8]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1074,7 +1139,7 @@ func (x *JobSummary) String() string {
 func (*JobSummary) ProtoMessage() {}
 
 func (x *JobSummary) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[8]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1087,7 +1152,7 @@ func (x *JobSummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobSummary.ProtoReflect.Descriptor instead.
 func (*JobSummary) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{8}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *JobSummary) GetId() string {
@@ -1258,6 +1323,13 @@ func (x *JobSummary) GetReplayOf() string {
 	return ""
 }
 
+func (x *JobSummary) GetExecution() *JobExecutionReference {
+	if x != nil {
+		return x.Execution
+	}
+	return nil
+}
+
 // JobQueueSnapshot is database-derived operational state and is therefore
 // consistent across replicas. Queue is the only metric label; topic, tenant,
 // subject, source, job id, and error text remain out of the metric surface.
@@ -1280,7 +1352,7 @@ type JobQueueSnapshot struct {
 
 func (x *JobQueueSnapshot) Reset() {
 	*x = JobQueueSnapshot{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[9]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1292,7 +1364,7 @@ func (x *JobQueueSnapshot) String() string {
 func (*JobQueueSnapshot) ProtoMessage() {}
 
 func (x *JobQueueSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[9]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1305,7 +1377,7 @@ func (x *JobQueueSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobQueueSnapshot.ProtoReflect.Descriptor instead.
 func (*JobQueueSnapshot) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{9}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *JobQueueSnapshot) GetQueue() string {
@@ -1394,7 +1466,7 @@ type GetJobOperationsRequest struct {
 
 func (x *GetJobOperationsRequest) Reset() {
 	*x = GetJobOperationsRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[10]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1406,7 +1478,7 @@ func (x *GetJobOperationsRequest) String() string {
 func (*GetJobOperationsRequest) ProtoMessage() {}
 
 func (x *GetJobOperationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[10]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1419,7 +1491,7 @@ func (x *GetJobOperationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobOperationsRequest.ProtoReflect.Descriptor instead.
 func (*GetJobOperationsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{10}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetJobOperationsRequest) GetQueue() string {
@@ -1439,7 +1511,7 @@ type GetJobOperationsResponse struct {
 
 func (x *GetJobOperationsResponse) Reset() {
 	*x = GetJobOperationsResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[11]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1451,7 +1523,7 @@ func (x *GetJobOperationsResponse) String() string {
 func (*GetJobOperationsResponse) ProtoMessage() {}
 
 func (x *GetJobOperationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[11]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1464,7 +1536,7 @@ func (x *GetJobOperationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobOperationsResponse.ProtoReflect.Descriptor instead.
 func (*GetJobOperationsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{11}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetJobOperationsResponse) GetQueues() []*JobQueueSnapshot {
@@ -1498,7 +1570,7 @@ type ListJobsRequest struct {
 
 func (x *ListJobsRequest) Reset() {
 	*x = ListJobsRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[12]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1510,7 +1582,7 @@ func (x *ListJobsRequest) String() string {
 func (*ListJobsRequest) ProtoMessage() {}
 
 func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[12]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1523,7 +1595,7 @@ func (x *ListJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsRequest.ProtoReflect.Descriptor instead.
 func (*ListJobsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{12}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListJobsRequest) GetQueue() string {
@@ -1605,7 +1677,7 @@ type ListJobsResponse struct {
 
 func (x *ListJobsResponse) Reset() {
 	*x = ListJobsResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[13]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1617,7 +1689,7 @@ func (x *ListJobsResponse) String() string {
 func (*ListJobsResponse) ProtoMessage() {}
 
 func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[13]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1630,7 +1702,7 @@ func (x *ListJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListJobsResponse.ProtoReflect.Descriptor instead.
 func (*ListJobsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{13}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListJobsResponse) GetJobs() []*JobSummary {
@@ -1656,7 +1728,7 @@ type GetJobRequest struct {
 
 func (x *GetJobRequest) Reset() {
 	*x = GetJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[14]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1668,7 +1740,7 @@ func (x *GetJobRequest) String() string {
 func (*GetJobRequest) ProtoMessage() {}
 
 func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[14]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1681,7 +1753,7 @@ func (x *GetJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobRequest.ProtoReflect.Descriptor instead.
 func (*GetJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{14}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetJobRequest) GetJobId() string {
@@ -1702,7 +1774,7 @@ type GetJobResponse struct {
 
 func (x *GetJobResponse) Reset() {
 	*x = GetJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[15]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1714,7 +1786,7 @@ func (x *GetJobResponse) String() string {
 func (*GetJobResponse) ProtoMessage() {}
 
 func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[15]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1727,7 +1799,7 @@ func (x *GetJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetJobResponse.ProtoReflect.Descriptor instead.
 func (*GetJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{15}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *GetJobResponse) GetJob() *JobSummary {
@@ -1765,7 +1837,7 @@ type ReplayJobRequest struct {
 
 func (x *ReplayJobRequest) Reset() {
 	*x = ReplayJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[16]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1777,7 +1849,7 @@ func (x *ReplayJobRequest) String() string {
 func (*ReplayJobRequest) ProtoMessage() {}
 
 func (x *ReplayJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[16]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1790,7 +1862,7 @@ func (x *ReplayJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayJobRequest.ProtoReflect.Descriptor instead.
 func (*ReplayJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{16}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ReplayJobRequest) GetSourceJobId() string {
@@ -1824,7 +1896,7 @@ type ReplayJobResponse struct {
 
 func (x *ReplayJobResponse) Reset() {
 	*x = ReplayJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[17]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1836,7 +1908,7 @@ func (x *ReplayJobResponse) String() string {
 func (*ReplayJobResponse) ProtoMessage() {}
 
 func (x *ReplayJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[17]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1849,7 +1921,7 @@ func (x *ReplayJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReplayJobResponse.ProtoReflect.Descriptor instead.
 func (*ReplayJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{17}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ReplayJobResponse) GetJobId() string {
@@ -1886,7 +1958,7 @@ type JobWorkerMetrics struct {
 
 func (x *JobWorkerMetrics) Reset() {
 	*x = JobWorkerMetrics{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[18]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1898,7 +1970,7 @@ func (x *JobWorkerMetrics) String() string {
 func (*JobWorkerMetrics) ProtoMessage() {}
 
 func (x *JobWorkerMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[18]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1911,7 +1983,7 @@ func (x *JobWorkerMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobWorkerMetrics.ProtoReflect.Descriptor instead.
 func (*JobWorkerMetrics) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{18}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *JobWorkerMetrics) GetQueue() string {
@@ -2005,7 +2077,7 @@ type JobAttempt struct {
 
 func (x *JobAttempt) Reset() {
 	*x = JobAttempt{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[19]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2017,7 +2089,7 @@ func (x *JobAttempt) String() string {
 func (*JobAttempt) ProtoMessage() {}
 
 func (x *JobAttempt) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[19]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2030,7 +2102,7 @@ func (x *JobAttempt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobAttempt.ProtoReflect.Descriptor instead.
 func (*JobAttempt) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{19}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *JobAttempt) GetId() string {
@@ -2122,7 +2194,7 @@ type JobStateTransition struct {
 
 func (x *JobStateTransition) Reset() {
 	*x = JobStateTransition{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[20]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2134,7 +2206,7 @@ func (x *JobStateTransition) String() string {
 func (*JobStateTransition) ProtoMessage() {}
 
 func (x *JobStateTransition) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[20]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2147,7 +2219,7 @@ func (x *JobStateTransition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobStateTransition.ProtoReflect.Descriptor instead.
 func (*JobStateTransition) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{20}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *JobStateTransition) GetSequence() int64 {
@@ -2227,7 +2299,7 @@ type ClaimJobsRequest struct {
 
 func (x *ClaimJobsRequest) Reset() {
 	*x = ClaimJobsRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[21]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2239,7 +2311,7 @@ func (x *ClaimJobsRequest) String() string {
 func (*ClaimJobsRequest) ProtoMessage() {}
 
 func (x *ClaimJobsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[21]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2252,7 +2324,7 @@ func (x *ClaimJobsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimJobsRequest.ProtoReflect.Descriptor instead.
 func (*ClaimJobsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{21}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ClaimJobsRequest) GetQueue() string {
@@ -2294,7 +2366,7 @@ type ClaimJobsResponse struct {
 
 func (x *ClaimJobsResponse) Reset() {
 	*x = ClaimJobsResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[22]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2306,7 +2378,7 @@ func (x *ClaimJobsResponse) String() string {
 func (*ClaimJobsResponse) ProtoMessage() {}
 
 func (x *ClaimJobsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[22]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2319,7 +2391,7 @@ func (x *ClaimJobsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClaimJobsResponse.ProtoReflect.Descriptor instead.
 func (*ClaimJobsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{22}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ClaimJobsResponse) GetJobs() []*JobEnvelope {
@@ -2342,7 +2414,7 @@ type JobLeaseReference struct {
 
 func (x *JobLeaseReference) Reset() {
 	*x = JobLeaseReference{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[23]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2354,7 +2426,7 @@ func (x *JobLeaseReference) String() string {
 func (*JobLeaseReference) ProtoMessage() {}
 
 func (x *JobLeaseReference) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[23]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2367,7 +2439,7 @@ func (x *JobLeaseReference) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use JobLeaseReference.ProtoReflect.Descriptor instead.
 func (*JobLeaseReference) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{23}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *JobLeaseReference) GetJobId() string {
@@ -2403,7 +2475,7 @@ type HeartbeatJobRequest struct {
 
 func (x *HeartbeatJobRequest) Reset() {
 	*x = HeartbeatJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[24]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2415,7 +2487,7 @@ func (x *HeartbeatJobRequest) String() string {
 func (*HeartbeatJobRequest) ProtoMessage() {}
 
 func (x *HeartbeatJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[24]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2428,7 +2500,7 @@ func (x *HeartbeatJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatJobRequest.ProtoReflect.Descriptor instead.
 func (*HeartbeatJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{24}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *HeartbeatJobRequest) GetLease() *JobLeaseReference {
@@ -2454,7 +2526,7 @@ type HeartbeatJobResponse struct {
 
 func (x *HeartbeatJobResponse) Reset() {
 	*x = HeartbeatJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[25]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2466,7 +2538,7 @@ func (x *HeartbeatJobResponse) String() string {
 func (*HeartbeatJobResponse) ProtoMessage() {}
 
 func (x *HeartbeatJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[25]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2479,7 +2551,7 @@ func (x *HeartbeatJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HeartbeatJobResponse.ProtoReflect.Descriptor instead.
 func (*HeartbeatJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{25}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *HeartbeatJobResponse) GetLease() *JobLease {
@@ -2493,13 +2565,14 @@ func (x *HeartbeatJobResponse) GetLease() *JobLease {
 type CompleteJobRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Lease         *JobLeaseReference     `protobuf:"bytes,1,opt,name=lease,proto3" json:"lease,omitempty"`
+	Execution     *JobExecutionReference `protobuf:"bytes,2,opt,name=execution,proto3" json:"execution,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CompleteJobRequest) Reset() {
 	*x = CompleteJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[26]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2511,7 +2584,7 @@ func (x *CompleteJobRequest) String() string {
 func (*CompleteJobRequest) ProtoMessage() {}
 
 func (x *CompleteJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[26]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2524,12 +2597,19 @@ func (x *CompleteJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompleteJobRequest.ProtoReflect.Descriptor instead.
 func (*CompleteJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{26}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *CompleteJobRequest) GetLease() *JobLeaseReference {
 	if x != nil {
 		return x.Lease
+	}
+	return nil
+}
+
+func (x *CompleteJobRequest) GetExecution() *JobExecutionReference {
+	if x != nil {
+		return x.Execution
 	}
 	return nil
 }
@@ -2547,7 +2627,7 @@ type RetryJobRequest struct {
 
 func (x *RetryJobRequest) Reset() {
 	*x = RetryJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[27]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2559,7 +2639,7 @@ func (x *RetryJobRequest) String() string {
 func (*RetryJobRequest) ProtoMessage() {}
 
 func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[27]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2572,7 +2652,7 @@ func (x *RetryJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobRequest.ProtoReflect.Descriptor instead.
 func (*RetryJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{27}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RetryJobRequest) GetLease() *JobLeaseReference {
@@ -2605,7 +2685,7 @@ type RetryJobResponse struct {
 
 func (x *RetryJobResponse) Reset() {
 	*x = RetryJobResponse{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[28]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2617,7 +2697,7 @@ func (x *RetryJobResponse) String() string {
 func (*RetryJobResponse) ProtoMessage() {}
 
 func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[28]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2630,7 +2710,7 @@ func (x *RetryJobResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RetryJobResponse.ProtoReflect.Descriptor instead.
 func (*RetryJobResponse) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{28}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *RetryJobResponse) GetState() JobState {
@@ -2652,7 +2732,7 @@ type DeadLetterJobRequest struct {
 
 func (x *DeadLetterJobRequest) Reset() {
 	*x = DeadLetterJobRequest{}
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[29]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2664,7 +2744,7 @@ func (x *DeadLetterJobRequest) String() string {
 func (*DeadLetterJobRequest) ProtoMessage() {}
 
 func (x *DeadLetterJobRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[29]
+	mi := &file_saas_jobs_v1_jobs_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2677,7 +2757,7 @@ func (x *DeadLetterJobRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeadLetterJobRequest.ProtoReflect.Descriptor instead.
 func (*DeadLetterJobRequest) Descriptor() ([]byte, []int) {
-	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{29}
+	return file_saas_jobs_v1_jobs_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *DeadLetterJobRequest) GetLease() *JobLeaseReference {
@@ -2715,7 +2795,12 @@ const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\n" +
 	"JobFailure\x123\n" +
 	"\x04code\x18\x01 \x01(\tB\x1f\xbaH\x1cr\x1a\x10\x01\x18\x80\x012\x13^[a-z][a-z0-9_.-]*$R\x04code\x12\"\n" +
-	"\amessage\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\amessage\"\xd6\v\n" +
+	"\amessage\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80 R\amessage\"\x9b\x01\n" +
+	"\x15JobExecutionReference\x122\n" +
+	"\x05owner\x18\x01 \x01(\tB\x1c\xbaH\x19r\x17\x10\x01\x18?2\x11^[a-z][a-z0-9-]*$R\x05owner\x122\n" +
+	"\x04kind\x18\x02 \x01(\tB\x1e\xbaH\x1br\x19\x10\x01\x18@2\x13^[a-z][a-z0-9_.-]*$R\x04kind\x12\x1a\n" +
+	"\x02id\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xff\x01R\x02id\"\xd6\v\n" +
 	"\vJobEnvelope\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12@\n" +
 	"\tdirection\x18\x02 \x01(\x0e2\x1a.saas.jobs.v1.JobDirectionB\x06\xbaH\x03\xc8\x01\x01R\tdirection\x124\n" +
@@ -2785,7 +2870,7 @@ const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\x03job\x18\x01 \x01(\v2\x14.saas.jobs.v1.NewJobB\x06\xbaH\x03\xc8\x01\x01R\x03job\"\x84\x01\n" +
 	"\x12EnqueueJobResponse\x12\x1f\n" +
 	"\x06job_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05jobId\x12M\n" +
-	"\vdisposition\x18\x02 \x01(\x0e2#.saas.jobs.v1.JobEnqueueDispositionB\x06\xbaH\x03\xc8\x01\x01R\vdisposition\"\xbd\b\n" +
+	"\vdisposition\x18\x02 \x01(\x0e2#.saas.jobs.v1.JobEnqueueDispositionB\x06\xbaH\x03\xc8\x01\x01R\vdisposition\"\x80\t\n" +
 	"\n" +
 	"JobSummary\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12@\n" +
@@ -2814,7 +2899,8 @@ const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x16 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12#\n" +
 	"\rstate_version\x18\x17 \x01(\x04R\fstateVersion\x12\x1b\n" +
-	"\treplay_of\x18\x18 \x01(\tR\breplayOf\"\xf8\x02\n" +
+	"\treplay_of\x18\x18 \x01(\tR\breplayOf\x12A\n" +
+	"\texecution\x18\x19 \x01(\v2#.saas.jobs.v1.JobExecutionReferenceR\texecution\"\xf8\x02\n" +
 	"\x10JobQueueSnapshot\x12\x14\n" +
 	"\x05queue\x18\x01 \x01(\tR\x05queue\x12\x18\n" +
 	"\apending\x18\x02 \x01(\x04R\apending\x12\x1e\n" +
@@ -2926,9 +3012,10 @@ const file_saas_jobs_v1_jobs_proto_rawDesc = "" +
 	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12M\n" +
 	"\textension\x18\x02 \x01(\v2\x19.google.protobuf.DurationB\x14\xbaH\x11\xc8\x01\x01\xaa\x01\v\"\x03\b\x90\x1c2\x04\x10\xc0\x84=R\textension\"L\n" +
 	"\x14HeartbeatJobResponse\x124\n" +
-	"\x05lease\x18\x01 \x01(\v2\x16.saas.jobs.v1.JobLeaseB\x06\xbaH\x03\xc8\x01\x01R\x05lease\"S\n" +
+	"\x05lease\x18\x01 \x01(\v2\x16.saas.jobs.v1.JobLeaseB\x06\xbaH\x03\xc8\x01\x01R\x05lease\"\x96\x01\n" +
 	"\x12CompleteJobRequest\x12=\n" +
-	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\"\xcb\x01\n" +
+	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12A\n" +
+	"\texecution\x18\x02 \x01(\v2#.saas.jobs.v1.JobExecutionReferenceR\texecution\"\xcb\x01\n" +
 	"\x0fRetryJobRequest\x12=\n" +
 	"\x05lease\x18\x01 \x01(\v2\x1f.saas.jobs.v1.JobLeaseReferenceB\x06\xbaH\x03\xc8\x01\x01R\x05lease\x12:\n" +
 	"\afailure\x18\x02 \x01(\v2\x18.saas.jobs.v1.JobFailureB\x06\xbaH\x03\xc8\x01\x01R\afailure\x12=\n" +
@@ -2976,7 +3063,7 @@ func file_saas_jobs_v1_jobs_proto_rawDescGZIP() []byte {
 }
 
 var file_saas_jobs_v1_jobs_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_saas_jobs_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_saas_jobs_v1_jobs_proto_msgTypes = make([]protoimpl.MessageInfo, 33)
 var file_saas_jobs_v1_jobs_proto_goTypes = []any{
 	(JobDirection)(0),                // 0: saas.jobs.v1.JobDirection
 	(JobState)(0),                    // 1: saas.jobs.v1.JobState
@@ -2985,107 +3072,110 @@ var file_saas_jobs_v1_jobs_proto_goTypes = []any{
 	(*JobScope)(nil),                 // 4: saas.jobs.v1.JobScope
 	(*JobLease)(nil),                 // 5: saas.jobs.v1.JobLease
 	(*JobFailure)(nil),               // 6: saas.jobs.v1.JobFailure
-	(*JobEnvelope)(nil),              // 7: saas.jobs.v1.JobEnvelope
-	(*JobOrderingKey)(nil),           // 8: saas.jobs.v1.JobOrderingKey
-	(*NewJob)(nil),                   // 9: saas.jobs.v1.NewJob
-	(*EnqueueJobRequest)(nil),        // 10: saas.jobs.v1.EnqueueJobRequest
-	(*EnqueueJobResponse)(nil),       // 11: saas.jobs.v1.EnqueueJobResponse
-	(*JobSummary)(nil),               // 12: saas.jobs.v1.JobSummary
-	(*JobQueueSnapshot)(nil),         // 13: saas.jobs.v1.JobQueueSnapshot
-	(*GetJobOperationsRequest)(nil),  // 14: saas.jobs.v1.GetJobOperationsRequest
-	(*GetJobOperationsResponse)(nil), // 15: saas.jobs.v1.GetJobOperationsResponse
-	(*ListJobsRequest)(nil),          // 16: saas.jobs.v1.ListJobsRequest
-	(*ListJobsResponse)(nil),         // 17: saas.jobs.v1.ListJobsResponse
-	(*GetJobRequest)(nil),            // 18: saas.jobs.v1.GetJobRequest
-	(*GetJobResponse)(nil),           // 19: saas.jobs.v1.GetJobResponse
-	(*ReplayJobRequest)(nil),         // 20: saas.jobs.v1.ReplayJobRequest
-	(*ReplayJobResponse)(nil),        // 21: saas.jobs.v1.ReplayJobResponse
-	(*JobWorkerMetrics)(nil),         // 22: saas.jobs.v1.JobWorkerMetrics
-	(*JobAttempt)(nil),               // 23: saas.jobs.v1.JobAttempt
-	(*JobStateTransition)(nil),       // 24: saas.jobs.v1.JobStateTransition
-	(*ClaimJobsRequest)(nil),         // 25: saas.jobs.v1.ClaimJobsRequest
-	(*ClaimJobsResponse)(nil),        // 26: saas.jobs.v1.ClaimJobsResponse
-	(*JobLeaseReference)(nil),        // 27: saas.jobs.v1.JobLeaseReference
-	(*HeartbeatJobRequest)(nil),      // 28: saas.jobs.v1.HeartbeatJobRequest
-	(*HeartbeatJobResponse)(nil),     // 29: saas.jobs.v1.HeartbeatJobResponse
-	(*CompleteJobRequest)(nil),       // 30: saas.jobs.v1.CompleteJobRequest
-	(*RetryJobRequest)(nil),          // 31: saas.jobs.v1.RetryJobRequest
-	(*RetryJobResponse)(nil),         // 32: saas.jobs.v1.RetryJobResponse
-	(*DeadLetterJobRequest)(nil),     // 33: saas.jobs.v1.DeadLetterJobRequest
-	nil,                              // 34: saas.jobs.v1.JobEnvelope.AttributesEntry
-	nil,                              // 35: saas.jobs.v1.NewJob.AttributesEntry
-	(*timestamppb.Timestamp)(nil),    // 36: google.protobuf.Timestamp
-	(*durationpb.Duration)(nil),      // 37: google.protobuf.Duration
+	(*JobExecutionReference)(nil),    // 7: saas.jobs.v1.JobExecutionReference
+	(*JobEnvelope)(nil),              // 8: saas.jobs.v1.JobEnvelope
+	(*JobOrderingKey)(nil),           // 9: saas.jobs.v1.JobOrderingKey
+	(*NewJob)(nil),                   // 10: saas.jobs.v1.NewJob
+	(*EnqueueJobRequest)(nil),        // 11: saas.jobs.v1.EnqueueJobRequest
+	(*EnqueueJobResponse)(nil),       // 12: saas.jobs.v1.EnqueueJobResponse
+	(*JobSummary)(nil),               // 13: saas.jobs.v1.JobSummary
+	(*JobQueueSnapshot)(nil),         // 14: saas.jobs.v1.JobQueueSnapshot
+	(*GetJobOperationsRequest)(nil),  // 15: saas.jobs.v1.GetJobOperationsRequest
+	(*GetJobOperationsResponse)(nil), // 16: saas.jobs.v1.GetJobOperationsResponse
+	(*ListJobsRequest)(nil),          // 17: saas.jobs.v1.ListJobsRequest
+	(*ListJobsResponse)(nil),         // 18: saas.jobs.v1.ListJobsResponse
+	(*GetJobRequest)(nil),            // 19: saas.jobs.v1.GetJobRequest
+	(*GetJobResponse)(nil),           // 20: saas.jobs.v1.GetJobResponse
+	(*ReplayJobRequest)(nil),         // 21: saas.jobs.v1.ReplayJobRequest
+	(*ReplayJobResponse)(nil),        // 22: saas.jobs.v1.ReplayJobResponse
+	(*JobWorkerMetrics)(nil),         // 23: saas.jobs.v1.JobWorkerMetrics
+	(*JobAttempt)(nil),               // 24: saas.jobs.v1.JobAttempt
+	(*JobStateTransition)(nil),       // 25: saas.jobs.v1.JobStateTransition
+	(*ClaimJobsRequest)(nil),         // 26: saas.jobs.v1.ClaimJobsRequest
+	(*ClaimJobsResponse)(nil),        // 27: saas.jobs.v1.ClaimJobsResponse
+	(*JobLeaseReference)(nil),        // 28: saas.jobs.v1.JobLeaseReference
+	(*HeartbeatJobRequest)(nil),      // 29: saas.jobs.v1.HeartbeatJobRequest
+	(*HeartbeatJobResponse)(nil),     // 30: saas.jobs.v1.HeartbeatJobResponse
+	(*CompleteJobRequest)(nil),       // 31: saas.jobs.v1.CompleteJobRequest
+	(*RetryJobRequest)(nil),          // 32: saas.jobs.v1.RetryJobRequest
+	(*RetryJobResponse)(nil),         // 33: saas.jobs.v1.RetryJobResponse
+	(*DeadLetterJobRequest)(nil),     // 34: saas.jobs.v1.DeadLetterJobRequest
+	nil,                              // 35: saas.jobs.v1.JobEnvelope.AttributesEntry
+	nil,                              // 36: saas.jobs.v1.NewJob.AttributesEntry
+	(*timestamppb.Timestamp)(nil),    // 37: google.protobuf.Timestamp
+	(*durationpb.Duration)(nil),      // 38: google.protobuf.Duration
 }
 var file_saas_jobs_v1_jobs_proto_depIdxs = []int32{
-	36, // 0: saas.jobs.v1.JobLease.expires_at:type_name -> google.protobuf.Timestamp
-	36, // 1: saas.jobs.v1.JobLease.heartbeat_at:type_name -> google.protobuf.Timestamp
+	37, // 0: saas.jobs.v1.JobLease.expires_at:type_name -> google.protobuf.Timestamp
+	37, // 1: saas.jobs.v1.JobLease.heartbeat_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: saas.jobs.v1.JobEnvelope.direction:type_name -> saas.jobs.v1.JobDirection
 	4,  // 3: saas.jobs.v1.JobEnvelope.scope:type_name -> saas.jobs.v1.JobScope
-	34, // 4: saas.jobs.v1.JobEnvelope.attributes:type_name -> saas.jobs.v1.JobEnvelope.AttributesEntry
+	35, // 4: saas.jobs.v1.JobEnvelope.attributes:type_name -> saas.jobs.v1.JobEnvelope.AttributesEntry
 	1,  // 5: saas.jobs.v1.JobEnvelope.state:type_name -> saas.jobs.v1.JobState
 	5,  // 6: saas.jobs.v1.JobEnvelope.lease:type_name -> saas.jobs.v1.JobLease
 	6,  // 7: saas.jobs.v1.JobEnvelope.last_failure:type_name -> saas.jobs.v1.JobFailure
-	36, // 8: saas.jobs.v1.JobEnvelope.available_at:type_name -> google.protobuf.Timestamp
-	36, // 9: saas.jobs.v1.JobEnvelope.last_attempt_at:type_name -> google.protobuf.Timestamp
-	36, // 10: saas.jobs.v1.JobEnvelope.completed_at:type_name -> google.protobuf.Timestamp
-	36, // 11: saas.jobs.v1.JobEnvelope.dead_lettered_at:type_name -> google.protobuf.Timestamp
-	36, // 12: saas.jobs.v1.JobEnvelope.created_at:type_name -> google.protobuf.Timestamp
-	36, // 13: saas.jobs.v1.JobEnvelope.updated_at:type_name -> google.protobuf.Timestamp
+	37, // 8: saas.jobs.v1.JobEnvelope.available_at:type_name -> google.protobuf.Timestamp
+	37, // 9: saas.jobs.v1.JobEnvelope.last_attempt_at:type_name -> google.protobuf.Timestamp
+	37, // 10: saas.jobs.v1.JobEnvelope.completed_at:type_name -> google.protobuf.Timestamp
+	37, // 11: saas.jobs.v1.JobEnvelope.dead_lettered_at:type_name -> google.protobuf.Timestamp
+	37, // 12: saas.jobs.v1.JobEnvelope.created_at:type_name -> google.protobuf.Timestamp
+	37, // 13: saas.jobs.v1.JobEnvelope.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 14: saas.jobs.v1.NewJob.direction:type_name -> saas.jobs.v1.JobDirection
 	4,  // 15: saas.jobs.v1.NewJob.scope:type_name -> saas.jobs.v1.JobScope
-	8,  // 16: saas.jobs.v1.NewJob.ordering:type_name -> saas.jobs.v1.JobOrderingKey
-	35, // 17: saas.jobs.v1.NewJob.attributes:type_name -> saas.jobs.v1.NewJob.AttributesEntry
-	36, // 18: saas.jobs.v1.NewJob.available_at:type_name -> google.protobuf.Timestamp
-	9,  // 19: saas.jobs.v1.EnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
+	9,  // 16: saas.jobs.v1.NewJob.ordering:type_name -> saas.jobs.v1.JobOrderingKey
+	36, // 17: saas.jobs.v1.NewJob.attributes:type_name -> saas.jobs.v1.NewJob.AttributesEntry
+	37, // 18: saas.jobs.v1.NewJob.available_at:type_name -> google.protobuf.Timestamp
+	10, // 19: saas.jobs.v1.EnqueueJobRequest.job:type_name -> saas.jobs.v1.NewJob
 	3,  // 20: saas.jobs.v1.EnqueueJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
 	0,  // 21: saas.jobs.v1.JobSummary.direction:type_name -> saas.jobs.v1.JobDirection
 	4,  // 22: saas.jobs.v1.JobSummary.scope:type_name -> saas.jobs.v1.JobScope
 	1,  // 23: saas.jobs.v1.JobSummary.state:type_name -> saas.jobs.v1.JobState
 	5,  // 24: saas.jobs.v1.JobSummary.lease:type_name -> saas.jobs.v1.JobLease
 	6,  // 25: saas.jobs.v1.JobSummary.last_failure:type_name -> saas.jobs.v1.JobFailure
-	36, // 26: saas.jobs.v1.JobSummary.available_at:type_name -> google.protobuf.Timestamp
-	36, // 27: saas.jobs.v1.JobSummary.last_attempt_at:type_name -> google.protobuf.Timestamp
-	36, // 28: saas.jobs.v1.JobSummary.completed_at:type_name -> google.protobuf.Timestamp
-	36, // 29: saas.jobs.v1.JobSummary.dead_lettered_at:type_name -> google.protobuf.Timestamp
-	36, // 30: saas.jobs.v1.JobSummary.created_at:type_name -> google.protobuf.Timestamp
-	36, // 31: saas.jobs.v1.JobSummary.updated_at:type_name -> google.protobuf.Timestamp
-	36, // 32: saas.jobs.v1.JobQueueSnapshot.oldest_ready_at:type_name -> google.protobuf.Timestamp
-	13, // 33: saas.jobs.v1.GetJobOperationsResponse.queues:type_name -> saas.jobs.v1.JobQueueSnapshot
-	36, // 34: saas.jobs.v1.GetJobOperationsResponse.observed_at:type_name -> google.protobuf.Timestamp
-	1,  // 35: saas.jobs.v1.ListJobsRequest.states:type_name -> saas.jobs.v1.JobState
-	12, // 36: saas.jobs.v1.ListJobsResponse.jobs:type_name -> saas.jobs.v1.JobSummary
-	12, // 37: saas.jobs.v1.GetJobResponse.job:type_name -> saas.jobs.v1.JobSummary
-	23, // 38: saas.jobs.v1.GetJobResponse.attempts:type_name -> saas.jobs.v1.JobAttempt
-	24, // 39: saas.jobs.v1.GetJobResponse.transitions:type_name -> saas.jobs.v1.JobStateTransition
-	36, // 40: saas.jobs.v1.ReplayJobRequest.available_at:type_name -> google.protobuf.Timestamp
-	3,  // 41: saas.jobs.v1.ReplayJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
-	2,  // 42: saas.jobs.v1.JobAttempt.outcome:type_name -> saas.jobs.v1.JobAttemptOutcome
-	6,  // 43: saas.jobs.v1.JobAttempt.failure:type_name -> saas.jobs.v1.JobFailure
-	36, // 44: saas.jobs.v1.JobAttempt.started_at:type_name -> google.protobuf.Timestamp
-	36, // 45: saas.jobs.v1.JobAttempt.heartbeat_at:type_name -> google.protobuf.Timestamp
-	36, // 46: saas.jobs.v1.JobAttempt.finished_at:type_name -> google.protobuf.Timestamp
-	1,  // 47: saas.jobs.v1.JobStateTransition.from_state:type_name -> saas.jobs.v1.JobState
-	1,  // 48: saas.jobs.v1.JobStateTransition.to_state:type_name -> saas.jobs.v1.JobState
-	6,  // 49: saas.jobs.v1.JobStateTransition.failure:type_name -> saas.jobs.v1.JobFailure
-	36, // 50: saas.jobs.v1.JobStateTransition.occurred_at:type_name -> google.protobuf.Timestamp
-	37, // 51: saas.jobs.v1.ClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
-	7,  // 52: saas.jobs.v1.ClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
-	27, // 53: saas.jobs.v1.HeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	37, // 54: saas.jobs.v1.HeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
-	5,  // 55: saas.jobs.v1.HeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
-	27, // 56: saas.jobs.v1.CompleteJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	27, // 57: saas.jobs.v1.RetryJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	6,  // 58: saas.jobs.v1.RetryJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
-	36, // 59: saas.jobs.v1.RetryJobRequest.retry_at:type_name -> google.protobuf.Timestamp
-	1,  // 60: saas.jobs.v1.RetryJobResponse.state:type_name -> saas.jobs.v1.JobState
-	27, // 61: saas.jobs.v1.DeadLetterJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
-	6,  // 62: saas.jobs.v1.DeadLetterJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
-	63, // [63:63] is the sub-list for method output_type
-	63, // [63:63] is the sub-list for method input_type
-	63, // [63:63] is the sub-list for extension type_name
-	63, // [63:63] is the sub-list for extension extendee
-	0,  // [0:63] is the sub-list for field type_name
+	37, // 26: saas.jobs.v1.JobSummary.available_at:type_name -> google.protobuf.Timestamp
+	37, // 27: saas.jobs.v1.JobSummary.last_attempt_at:type_name -> google.protobuf.Timestamp
+	37, // 28: saas.jobs.v1.JobSummary.completed_at:type_name -> google.protobuf.Timestamp
+	37, // 29: saas.jobs.v1.JobSummary.dead_lettered_at:type_name -> google.protobuf.Timestamp
+	37, // 30: saas.jobs.v1.JobSummary.created_at:type_name -> google.protobuf.Timestamp
+	37, // 31: saas.jobs.v1.JobSummary.updated_at:type_name -> google.protobuf.Timestamp
+	7,  // 32: saas.jobs.v1.JobSummary.execution:type_name -> saas.jobs.v1.JobExecutionReference
+	37, // 33: saas.jobs.v1.JobQueueSnapshot.oldest_ready_at:type_name -> google.protobuf.Timestamp
+	14, // 34: saas.jobs.v1.GetJobOperationsResponse.queues:type_name -> saas.jobs.v1.JobQueueSnapshot
+	37, // 35: saas.jobs.v1.GetJobOperationsResponse.observed_at:type_name -> google.protobuf.Timestamp
+	1,  // 36: saas.jobs.v1.ListJobsRequest.states:type_name -> saas.jobs.v1.JobState
+	13, // 37: saas.jobs.v1.ListJobsResponse.jobs:type_name -> saas.jobs.v1.JobSummary
+	13, // 38: saas.jobs.v1.GetJobResponse.job:type_name -> saas.jobs.v1.JobSummary
+	24, // 39: saas.jobs.v1.GetJobResponse.attempts:type_name -> saas.jobs.v1.JobAttempt
+	25, // 40: saas.jobs.v1.GetJobResponse.transitions:type_name -> saas.jobs.v1.JobStateTransition
+	37, // 41: saas.jobs.v1.ReplayJobRequest.available_at:type_name -> google.protobuf.Timestamp
+	3,  // 42: saas.jobs.v1.ReplayJobResponse.disposition:type_name -> saas.jobs.v1.JobEnqueueDisposition
+	2,  // 43: saas.jobs.v1.JobAttempt.outcome:type_name -> saas.jobs.v1.JobAttemptOutcome
+	6,  // 44: saas.jobs.v1.JobAttempt.failure:type_name -> saas.jobs.v1.JobFailure
+	37, // 45: saas.jobs.v1.JobAttempt.started_at:type_name -> google.protobuf.Timestamp
+	37, // 46: saas.jobs.v1.JobAttempt.heartbeat_at:type_name -> google.protobuf.Timestamp
+	37, // 47: saas.jobs.v1.JobAttempt.finished_at:type_name -> google.protobuf.Timestamp
+	1,  // 48: saas.jobs.v1.JobStateTransition.from_state:type_name -> saas.jobs.v1.JobState
+	1,  // 49: saas.jobs.v1.JobStateTransition.to_state:type_name -> saas.jobs.v1.JobState
+	6,  // 50: saas.jobs.v1.JobStateTransition.failure:type_name -> saas.jobs.v1.JobFailure
+	37, // 51: saas.jobs.v1.JobStateTransition.occurred_at:type_name -> google.protobuf.Timestamp
+	38, // 52: saas.jobs.v1.ClaimJobsRequest.lease_duration:type_name -> google.protobuf.Duration
+	8,  // 53: saas.jobs.v1.ClaimJobsResponse.jobs:type_name -> saas.jobs.v1.JobEnvelope
+	28, // 54: saas.jobs.v1.HeartbeatJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	38, // 55: saas.jobs.v1.HeartbeatJobRequest.extension:type_name -> google.protobuf.Duration
+	5,  // 56: saas.jobs.v1.HeartbeatJobResponse.lease:type_name -> saas.jobs.v1.JobLease
+	28, // 57: saas.jobs.v1.CompleteJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	7,  // 58: saas.jobs.v1.CompleteJobRequest.execution:type_name -> saas.jobs.v1.JobExecutionReference
+	28, // 59: saas.jobs.v1.RetryJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	6,  // 60: saas.jobs.v1.RetryJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
+	37, // 61: saas.jobs.v1.RetryJobRequest.retry_at:type_name -> google.protobuf.Timestamp
+	1,  // 62: saas.jobs.v1.RetryJobResponse.state:type_name -> saas.jobs.v1.JobState
+	28, // 63: saas.jobs.v1.DeadLetterJobRequest.lease:type_name -> saas.jobs.v1.JobLeaseReference
+	6,  // 64: saas.jobs.v1.DeadLetterJobRequest.failure:type_name -> saas.jobs.v1.JobFailure
+	65, // [65:65] is the sub-list for method output_type
+	65, // [65:65] is the sub-list for method input_type
+	65, // [65:65] is the sub-list for extension type_name
+	65, // [65:65] is the sub-list for extension extendee
+	0,  // [0:65] is the sub-list for field type_name
 }
 
 func init() { file_saas_jobs_v1_jobs_proto_init() }
@@ -3098,7 +3188,7 @@ func file_saas_jobs_v1_jobs_proto_init() {
 		(*JobScope_SubjectId)(nil),
 		(*JobScope_Global)(nil),
 	}
-	file_saas_jobs_v1_jobs_proto_msgTypes[12].OneofWrappers = []any{
+	file_saas_jobs_v1_jobs_proto_msgTypes[13].OneofWrappers = []any{
 		(*ListJobsRequest_OrganizationId)(nil),
 		(*ListJobsRequest_SubjectId)(nil),
 	}
@@ -3108,7 +3198,7 @@ func file_saas_jobs_v1_jobs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_jobs_v1_jobs_proto_rawDesc), len(file_saas_jobs_v1_jobs_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   32,
+			NumMessages:   33,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

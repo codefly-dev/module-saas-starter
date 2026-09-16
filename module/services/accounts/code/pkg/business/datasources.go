@@ -104,9 +104,9 @@ const (
 // different service (documents) and the seam stays decoupled from any accounts
 // type.
 const (
-	datasourceIngestQueue         = "datasource"
+	DatasourceIngestQueue         = "datasource"
 	datasourceSyncTopic           = "datasource.github.sync"
-	datasourceSyncSource          = "github.sync"
+	DatasourceSyncSource          = "github.sync"
 	datasourceIngestSchemaVersion = 1
 	datasourceIngestMaxAttempts   = 24
 	datasourceIngestContentType   = "application/octet-stream"
@@ -172,6 +172,24 @@ const (
 // Source) matches an id. It mirrors the receiver's not-found sentinel so an
 // unknown source and an unconfigured one are indistinguishable to a caller.
 var ErrDatasourceSourceNotFound = errors.New("datasource: source not found")
+
+var ErrDatasourceSyncNotFound = errors.New("datasource: sync not found")
+
+type DatasourceSyncDelivery struct {
+	JobID     string
+	State     jobsv1.JobState
+	Execution *jobsv1.JobExecutionReference
+}
+
+type DatasourceSyncOperation struct {
+	JobID      string
+	State      jobsv1.JobState
+	Deliveries []DatasourceSyncDelivery
+}
+
+type DatasourceSyncOperationStore interface {
+	GetDatasourceSyncOperation(context.Context, string, string, string) (*DatasourceSyncOperation, error)
+}
 
 // ErrOAuth2ReauthRequired reports that an OAuth 2.0 source's refresh token was
 // permanently rejected by the token endpoint: the stored grant can never
@@ -356,6 +374,7 @@ type OAuth2RefreshFunc func(ctx context.Context, cfg apisource.OAuth2Config, ref
 func (s *Service) SetDatasourceConnector(cipher SecretCipher, producer jobs.Producer, githubBaseURL string) {
 	s.datasourceCipher = cipher
 	s.datasourceJobs = producer
+	s.datasourceSyncOperations, _ = producer.(DatasourceSyncOperationStore)
 	s.githubBaseURL = strings.TrimSpace(githubBaseURL)
 	if s.newGitHubClient == nil {
 		s.newGitHubClient = func(token string) GitHubContentClient {
@@ -978,8 +997,8 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
 			Queue:          DatasourceDeliveryQueue,
-			Topic:          datasourceReconcileTopic,
-			Source:         datasourceReconcileSource,
+			Topic:          DatasourceReconcileTopic,
+			Source:         DatasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceReconcileSchemaVersion,
@@ -1018,6 +1037,16 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 	}
 	s.emit(ctx, actorID, "user", EventDatasourceSourceSynced, "datasource", source.ID, orgID, map[string]any{"job_id": response.GetJobId(), "repo": source.Repo})
 	return response.GetJobId(), nil
+}
+
+func (s *Service) GetDatasourceSync(ctx context.Context, orgID, sourceID, jobID string) (*DatasourceSyncOperation, error) {
+	if _, err := s.GetDatasourceSource(ctx, orgID, sourceID); err != nil {
+		return nil, err
+	}
+	if s.datasourceSyncOperations == nil {
+		return nil, errors.New("datasource sync observation is not configured")
+	}
+	return s.datasourceSyncOperations.GetDatasourceSyncOperation(ctx, orgID, sourceID, jobID)
 }
 
 // datasourceRequestBody is the body every datasource *request* job carries —
@@ -1204,7 +1233,7 @@ func (s *Service) enqueueAPIIngest(ctx context.Context, source *DatasourceSource
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceAPISyncTopic,
 			Source:         datasourceAPISyncSource,
 			IdempotencyKey: "datasource-api-sync/" + source.ID + "/" + contentSHA,
@@ -1309,7 +1338,7 @@ func (s *Service) enqueueCrawlerIngest(ctx context.Context, source *DatasourceSo
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceCrawlerSyncTopic,
 			Source:         datasourceCrawlerSyncSource,
 			IdempotencyKey: crawlerIngestIdempotencyKey(source.ID, page.URL, contentSHA),
@@ -1432,7 +1461,7 @@ func (s *Service) enqueueUploadIngest(ctx context.Context, source *DatasourceSou
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceUploadSyncTopic,
 			Source:         datasourceUploadSyncSource,
 			IdempotencyKey: uploadIngestIdempotencyKey(source.ID, object.Key, fingerprint),
@@ -1491,9 +1520,9 @@ func (s *Service) NewDatasourceSyncJobHandler() jobs.Handler {
 }
 
 // ingestIdempotencyKey is deterministic in (source, commit, path) and bounded,
-// so an unbounded repo path cannot overflow the inbox idempotency column, a
-// re-sync at an unchanged commit dedupes to the stored delivery, and a revert to
-// earlier content under a new commit is delivered rather than dropped.
+// so an unbounded repo path cannot overflow the inbox idempotency column,
+// retries dedupe to the stored delivery, and a revert to earlier content under
+// a new commit is delivered rather than dropped.
 func ingestIdempotencyKey(sourceID, commit, path string) string {
 	digest := sha256.Sum256([]byte(sourceID + "\x00" + commit + "\x00" + path))
 	return "datasource-sync/" + hex.EncodeToString(digest[:])

@@ -2065,6 +2065,21 @@
       ],
       "type": "string"
     },
+    "v1JobExecutionReference": {
+      "description": "JobExecutionReference correlates Host work with an external execution. Owner\nis the authenticated module reporting completion; kind and id are that\nmodule's assertion and require independent verification against the external\nexecution owner's public read.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1JobFailure": {
       "description": "JobFailure contains bounded operator-safe diagnostics. It must never contain\ncredentials or the original payload.",
       "properties": {
@@ -2240,6 +2255,9 @@
         },
         "direction": {
           "$ref": "#/definitions/v1JobDirection"
+        },
+        "execution": {
+          "$ref": "#/definitions/v1JobExecutionReference"
         },
         "id": {
           "type": "string"

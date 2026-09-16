@@ -81,6 +81,27 @@ message JobFailure {
   string message = 2 [(buf.validate.field).string.max_len = 4096];
 }
 
+// JobExecutionReference correlates Host work with an external execution. Owner
+// is the authenticated module reporting completion; kind and id are that
+// module's assertion and require independent verification against the external
+// execution owner's public read.
+message JobExecutionReference {
+  string owner = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 63
+    pattern: "^[a-z][a-z0-9-]*$"
+  }];
+  string kind = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 64
+    pattern: "^[a-z][a-z0-9_.-]*$"
+  }];
+  string id = 3 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+  }];
+}
+
 // JobEnvelope is the product-neutral durable inbox/outbox record. payload is
 // retained as exact bytes; large artifacts belong in object storage and are
 // referenced from the payload. Identity, routing, scope, and payload fields are
@@ -256,6 +277,7 @@ message JobSummary {
   google.protobuf.Timestamp updated_at = 22;
   uint64 state_version = 23;
   string replay_of = 24;
+  JobExecutionReference execution = 25;
 }
 
 // JobQueueSnapshot is database-derived operational state and is therefore
@@ -462,6 +484,7 @@ message HeartbeatJobResponse {
 // CompleteJobRequest commits a successful attempt and terminal job transition.
 message CompleteJobRequest {
   JobLeaseReference lease = 1 [(buf.validate.field).required = true];
+  JobExecutionReference execution = 2;
 }
 
 // RetryJobRequest commits a retryable failed attempt. When the attempt budget

@@ -138,8 +138,9 @@ func (s *PostgresJobStore) Complete(
 		return err
 	}
 	return s.finalize(ctx, request.GetLease(), jobFinalization{
-		state:   jobsv1.JobState_JOB_STATE_SUCCEEDED,
-		outcome: "succeeded",
+		state:     jobsv1.JobState_JOB_STATE_SUCCEEDED,
+		outcome:   "succeeded",
+		execution: request.GetExecution(),
 	})
 }
 
@@ -175,6 +176,7 @@ type jobFinalization struct {
 	state     jobsv1.JobState
 	outcome   string
 	failure   *jobsv1.JobFailure
+	execution *jobsv1.JobExecutionReference
 	available *time.Time
 }
 
@@ -253,11 +255,17 @@ func finalizeLockedJob(
 	finalization jobFinalization,
 ) error {
 	var failureCode, failureMessage *string
+	var executionOwner, executionKind, executionID *string
 	if finalization.failure != nil {
 		failureCode = &finalization.failure.Code
 		if finalization.failure.Message != "" {
 			failureMessage = &finalization.failure.Message
 		}
+	}
+	if finalization.execution != nil {
+		executionOwner = &finalization.execution.Owner
+		executionKind = &finalization.execution.Kind
+		executionID = &finalization.execution.Id
 	}
 
 	result, err := tx.Exec(ctx, `
@@ -296,13 +304,17 @@ func finalizeLockedJob(
 		    last_error_message = $6,
 		    available_at = CASE WHEN $4 = 'retrying' THEN $7 ELSE available_at END,
 		    completed_at = CASE WHEN $4 = 'succeeded' THEN NOW() ELSE NULL END,
-		    dead_lettered_at = CASE WHEN $4 = 'dead_letter' THEN NOW() ELSE NULL END
+		    dead_lettered_at = CASE WHEN $4 = 'dead_letter' THEN NOW() ELSE NULL END,
+		    execution_owner = $8,
+		    execution_kind = $9,
+		    execution_id = $10
 		WHERE id = $1::uuid
 		  AND state = 'processing'
 		  AND lease_owner = $2
 		  AND lease_token = $3::uuid`,
 		lease.GetJobId(), lease.GetWorkerId(), lease.GetLeaseToken(),
 		state, failureCode, failureMessage, finalization.available,
+		executionOwner, executionKind, executionID,
 	)
 	if err != nil {
 		return err

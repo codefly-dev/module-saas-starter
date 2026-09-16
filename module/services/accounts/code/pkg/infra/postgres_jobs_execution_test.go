@@ -101,6 +101,45 @@ func TestPostgresJobStoreClaimsScheduledAndConcurrentWorkExactlyOnce(t *testing.
 	require.Len(t, leaseTokens, jobCount)
 }
 
+func TestPostgresJobStoreFencesAndPersistsExecutionWithCompletion(t *testing.T) {
+	pool, store := newJobExecutionHarness(t)
+	queue := executionQueue("execution-reference")
+	jobID := insertExecutionJob(t, pool, executionJob{queue: queue})
+	claimed := claimExecutionJobs(t, store, queue, "module-worker", 1).GetJobs()
+	require.Len(t, claimed, 1)
+
+	request := &jobsv1.CompleteJobRequest{
+		Lease: executionLease(claimed[0]),
+		Execution: &jobsv1.JobExecutionReference{
+			Owner: "content", Kind: "task", Id: "task-42",
+		},
+	}
+	stale := &jobsv1.CompleteJobRequest{
+		Lease:     executionLease(claimed[0]),
+		Execution: request.Execution,
+	}
+	stale.Lease.LeaseToken = uuid.NewString()
+	require.ErrorIs(t, store.Complete(testCtx, stale), jobs.ErrLeaseLost)
+
+	var state string
+	var owner, kind, id *string
+	require.NoError(t, pool.QueryRow(testCtx, `
+		SELECT state, execution_owner, execution_kind, execution_id
+		FROM job_messages WHERE id = $1`, jobID,
+	).Scan(&state, &owner, &kind, &id))
+	require.Equal(t, "processing", state)
+	require.Nil(t, owner)
+	require.Nil(t, kind)
+	require.Nil(t, id)
+
+	require.NoError(t, store.Complete(testCtx, request))
+	detail, err := store.GetJob(testCtx, &jobsv1.GetJobRequest{JobId: jobID.String()})
+	require.NoError(t, err)
+	require.Equal(t, "content", detail.GetJob().GetExecution().GetOwner())
+	require.Equal(t, "task", detail.GetJob().GetExecution().GetKind())
+	require.Equal(t, "task-42", detail.GetJob().GetExecution().GetId())
+}
+
 func TestPostgresJobStorePreservesOrderingAndRunsRetryLifecycle(t *testing.T) {
 	pool, store := newJobExecutionHarness(t)
 	queue := executionQueue("ordering")

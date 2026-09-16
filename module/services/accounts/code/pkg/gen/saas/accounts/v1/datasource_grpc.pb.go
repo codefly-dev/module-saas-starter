@@ -26,6 +26,7 @@ const (
 	DatasourceService_ListSources_FullMethodName              = "/saas.accounts.v1.DatasourceService/ListSources"
 	DatasourceService_GetSource_FullMethodName                = "/saas.accounts.v1.DatasourceService/GetSource"
 	DatasourceService_SyncSource_FullMethodName               = "/saas.accounts.v1.DatasourceService/SyncSource"
+	DatasourceService_GetSourceSync_FullMethodName            = "/saas.accounts.v1.DatasourceService/GetSourceSync"
 	DatasourceService_DeleteSource_FullMethodName             = "/saas.accounts.v1.DatasourceService/DeleteSource"
 	DatasourceService_BeginGitHubAppSetup_FullMethodName      = "/saas.accounts.v1.DatasourceService/BeginGitHubAppSetup"
 	DatasourceService_CompleteGitHubAppSetup_FullMethodName   = "/saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup"
@@ -59,6 +60,9 @@ type DatasourceServiceClient interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(ctx context.Context, in *SyncSourceRequest, opts ...grpc.CallOption) (*SyncSourceResponse, error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(ctx context.Context, in *GetSourceSyncRequest, opts ...grpc.CallOption) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error)
 	// BeginGitHubAppSetup mints a one-time setup state, bound to this
@@ -148,6 +152,16 @@ func (c *datasourceServiceClient) SyncSource(ctx context.Context, in *SyncSource
 	return out, nil
 }
 
+func (c *datasourceServiceClient) GetSourceSync(ctx context.Context, in *GetSourceSyncRequest, opts ...grpc.CallOption) (*GetSourceSyncResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSourceSyncResponse)
+	err := c.cc.Invoke(ctx, DatasourceService_GetSourceSync_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *datasourceServiceClient) DeleteSource(ctx context.Context, in *DeleteSourceRequest, opts ...grpc.CallOption) (*DeleteSourceResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteSourceResponse)
@@ -215,6 +229,9 @@ type DatasourceServiceServer interface {
 	// SyncSource pulls the repository's current contents and enqueues an ingestion
 	// delivery per file onto the durable jobs inbox the documents module consumes.
 	SyncSource(context.Context, *SyncSourceRequest) (*SyncSourceResponse, error)
+	// GetSourceSync projects durable lifecycle and module-reported execution
+	// references for one sync without exposing job payloads or attributes.
+	GetSourceSync(context.Context, *GetSourceSyncRequest) (*GetSourceSyncResponse, error)
 	// DeleteSource removes a connected datasource and its stored credentials.
 	DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error)
 	// BeginGitHubAppSetup mints a one-time setup state, bound to this
@@ -261,6 +278,9 @@ func (UnimplementedDatasourceServiceServer) GetSource(context.Context, *GetSourc
 }
 func (UnimplementedDatasourceServiceServer) SyncSource(context.Context, *SyncSourceRequest) (*SyncSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SyncSource not implemented")
+}
+func (UnimplementedDatasourceServiceServer) GetSourceSync(context.Context, *GetSourceSyncRequest) (*GetSourceSyncResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSourceSync not implemented")
 }
 func (UnimplementedDatasourceServiceServer) DeleteSource(context.Context, *DeleteSourceRequest) (*DeleteSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteSource not implemented")
@@ -403,6 +423,24 @@ func _DatasourceService_SyncSource_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatasourceService_GetSourceSync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSourceSyncRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatasourceServiceServer).GetSourceSync(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatasourceService_GetSourceSync_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatasourceServiceServer).GetSourceSync(ctx, req.(*GetSourceSyncRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _DatasourceService_DeleteSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(DeleteSourceRequest)
 	if err := dec(in); err != nil {
@@ -505,6 +543,10 @@ var DatasourceService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SyncSource",
 			Handler:    _DatasourceService_SyncSource_Handler,
+		},
+		{
+			MethodName: "GetSourceSync",
+			Handler:    _DatasourceService_GetSourceSync_Handler,
 		},
 		{
 			MethodName: "DeleteSource",

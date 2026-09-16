@@ -197,6 +197,34 @@ func (h *datasourceConnectHandler) SyncSource(
 	return connect.NewResponse(&gen.SyncSourceResponse{JobId: jobID}), nil
 }
 
+func (h *datasourceConnectHandler) GetSourceSync(
+	ctx context.Context,
+	req *connect.Request[gen.GetSourceSyncRequest],
+) (*connect.Response[gen.GetSourceSyncResponse], error) {
+	ctx = connectCtx(ctx, req.Header())
+	actorID, err := callerID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.Msg.OrgId); err != nil {
+		return nil, translateGRPCError(err)
+	}
+	operation, err := h.svc.GetDatasourceSync(ctx, req.Msg.OrgId, req.Msg.SourceId, req.Msg.JobId)
+	if err != nil {
+		if errors.Is(err, business.ErrDatasourceSourceNotFound) || errors.Is(err, business.ErrDatasourceSyncNotFound) {
+			return nil, connect.NewError(connect.CodeNotFound, err)
+		}
+		return nil, translateGRPCError(err)
+	}
+	response := &gen.GetSourceSyncResponse{JobId: operation.JobID, State: operation.State}
+	for _, delivery := range operation.Deliveries {
+		response.Deliveries = append(response.Deliveries, &gen.SourceSyncDelivery{
+			JobId: delivery.JobID, State: delivery.State, Execution: delivery.Execution,
+		})
+	}
+	return connect.NewResponse(response), nil
+}
+
 func (h *datasourceConnectHandler) DeleteSource(
 	ctx context.Context,
 	req *connect.Request[gen.DeleteSourceRequest],

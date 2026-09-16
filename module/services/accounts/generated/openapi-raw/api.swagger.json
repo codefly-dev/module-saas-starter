@@ -7633,6 +7633,21 @@
       "default": "JOB_ENQUEUE_DISPOSITION_UNSPECIFIED",
       "description": "JobEnqueueDisposition distinguishes a newly committed message from an exact\nidempotent replay that resolved to the message already stored."
     },
+    "v1JobExecutionReference": {
+      "type": "object",
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "description": "JobExecutionReference correlates Host work with an external execution. Owner\nis the authenticated module reporting completion; kind and id are that\nmodule's assertion and require independent verification against the external\nexecution owner's public read."
+    },
     "v1JobFailure": {
       "type": "object",
       "properties": {
@@ -7865,6 +7880,9 @@
         },
         "replayOf": {
           "type": "string"
+        },
+        "execution": {
+          "$ref": "#/definitions/v1JobExecutionReference"
         }
       },
       "description": "JobSummary is the payload-free operations view. Payload bytes and attributes\nnever cross the platform-administration API boundary."

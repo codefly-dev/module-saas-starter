@@ -30,12 +30,12 @@ const (
 	// datasourcePushTopic must equal the receiver's GitHubWebhookTopic; the
 	// compiler dispatches on it.
 	datasourcePushTopic       = "datasource.github.push"
-	datasourceReconcileTopic  = "datasource.github.reconcile"
-	datasourceReconcileSource = "github.reconcile"
+	DatasourceReconcileTopic  = "datasource.github.reconcile"
+	DatasourceReconcileSource = "github.reconcile"
 
-	// datasourceSnapshotTopic carries a full-tree manifest (paths + blob shas +
+	// DatasourceSnapshotTopic carries a full-tree manifest (paths + blob shas +
 	// sizes, no content) the module diffs against its own bindings.
-	datasourceSnapshotTopic = "datasource.github.snapshot"
+	DatasourceSnapshotTopic = "datasource.github.snapshot"
 
 	// datasourceDeliveryOrderingNamespace scopes the per-source FIFO ordering key
 	// so the job platform keeps exactly one in-flight delivery per source: the
@@ -261,9 +261,9 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 				return jobs.NewProcessingError("datasource.malformed_delivery", err.Error(), false)
 			}
 			return err
-		case datasourceReconcileTopic:
+		case DatasourceReconcileTopic:
 			force := envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce
-			_, err := s.ReconcileGitHubSource(ctx, source, force)
+			_, err := s.ReconcileGitHubSource(ctx, source, force, envelope.GetId())
 			return err
 		default:
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery topic", false)
@@ -332,19 +332,19 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		base = push.Before
 	}
 	if base == "" {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, false)
+		return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", false)
 	}
 
 	comparison, err := client.Compare(ctx, source.Repo, base, push.After)
 	if err != nil {
 		if errors.Is(err, github.ErrNotFound) {
 			// base commit no longer reachable (force push) — snapshot.
-			return s.snapshotAt(ctx, source, client, push.After, deliveryID, true)
+			return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", true)
 		}
 		return "", w.Wrapf(err, "compare %s...%s", base, push.After)
 	}
 	if comparison.Status == github.CompareStatusDiverged || comparison.Truncated {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, true)
+		return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", true)
 	}
 	if comparison.Status == github.CompareStatusBehind {
 		// head is an ancestor of the base: a redelivered or out-of-order older
@@ -374,7 +374,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 // force is false (periodic reconcile) it snapshots only if the head differs from
 // the cursor; when force is true ("Sync now") it always snapshots. It reports
 // whether a snapshot was enqueued.
-func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceSource, force bool) (bool, error) {
+func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceSource, force bool, requestJobID string) (bool, error) {
 	w := wool.Get(ctx).In("ReconcileGitHubSource")
 	if s.datasourceCipher == nil || s.datasourceJobs == nil || s.newGitHubClient == nil {
 		return false, w.NewError("datasource connector is not configured")
@@ -398,7 +398,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if !force && head == source.LastIngestedCommit {
 		return false, nil
 	}
-	disp, err := s.snapshotAt(ctx, source, client, head, "", false)
+	disp, err := s.snapshotAt(ctx, source, client, head, requestJobID, requestJobID, false)
 	if err != nil {
 		return false, err
 	}
@@ -414,7 +414,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 // is the reconcile path for a created branch, a force push, a truncated compare,
 // the periodic reconcile, and an explicit "Sync now". forcePush records the
 // force-push audit alongside the change-set audit.
-func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, commit, deliveryID string, forcePush bool) (DeliveryDisposition, error) {
+func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
 	w := wool.Get(ctx).In("snapshotAt")
 	files, err := client.ListFiles(ctx, source.Repo, commit, source.Paths)
 	if err != nil {
@@ -462,14 +462,20 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 		}
 		return DispositionDegraded, nil
 	}
+	idempotencyPath := "\x00snapshot"
+	if requestJobID != "" {
+		// A forced sync at an unchanged commit is new work, while a retry of the
+		// same reconcile job must resolve to its original snapshot delivery.
+		idempotencyPath += "\x00" + requestJobID
+	}
 	if _, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
-			Topic:          datasourceSnapshotTopic,
-			Source:         datasourceSyncSource,
-			IdempotencyKey: ingestIdempotencyKey(source.ID, commit, "\x00snapshot"),
+			Queue:          DatasourceIngestQueue,
+			Topic:          DatasourceSnapshotTopic,
+			Source:         DatasourceSyncSource,
+			IdempotencyKey: ingestIdempotencyKey(source.ID, commit, idempotencyPath),
 			SchemaVersion:  datasourceChangeSetSchemaVersion,
 			Payload:        payload,
 			ContentType:    "application/json",
@@ -604,9 +610,9 @@ func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSo
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
-			Queue:          datasourceIngestQueue,
+			Queue:          DatasourceIngestQueue,
 			Topic:          datasourceSyncTopic,
-			Source:         datasourceSyncSource,
+			Source:         DatasourceSyncSource,
 			IdempotencyKey: ingestIdempotencyKey(source.ID, commit, op.path),
 			SchemaVersion:  datasourceChangeSetSchemaVersion,
 			Payload:        payload,
@@ -712,8 +718,8 @@ func (s *Service) enqueueReconcile(ctx context.Context, source *DatasourceSource
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
 			Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_Global{Global: true}},
 			Queue:          DatasourceDeliveryQueue,
-			Topic:          datasourceReconcileTopic,
-			Source:         datasourceReconcileSource,
+			Topic:          DatasourceReconcileTopic,
+			Source:         DatasourceReconcileSource,
 			Ordering:       DatasourceDeliveryOrderingKey(source.ID),
 			IdempotencyKey: NewIDString(),
 			SchemaVersion:  datasourceReconcileSchemaVersion,
