@@ -60,12 +60,13 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
   }
 });
 
-// The newer CLI carries a Core whose service runtime outruns the published agent
-// fleet, so every phase that RUNS a service stays on the installer default. Jobs
-// that only read the module definition are unaffected and may opt in: contract
-// checking must, because the package manifest declares fixtures and the default
-// CLI's Core rejects that key outright.
-function assertOnlyNonServiceJobsUseNewerCodefly(candidateWorkflow) {
+const DEFAULT_CODEFLY_VERSION = '0.1.155';
+
+// The planner's selection and every phase's execution must come from one
+// CLI: the plan-only 0.1.151 override (#743) existed while the published
+// agent fleet predated that release's runtime, and a split lets the planner
+// select on rules a phase does not enforce.
+function assertEveryJobUsesTheDefaultCodefly(candidateWorkflow) {
   const installs = Object.entries(candidateWorkflow.jobs).flatMap(([jobName, job]) =>
     (job.steps ?? [])
       .filter(step => step.run === 'bash scripts/ci/install-codefly.sh')
@@ -74,35 +75,30 @@ function assertOnlyNonServiceJobsUseNewerCodefly(candidateWorkflow) {
         version: step.env?.CODEFLY_VERSION
           ?? job.env?.CODEFLY_VERSION
           ?? candidateWorkflow.env?.CODEFLY_VERSION
-          ?? '0.1.145',
+          ?? DEFAULT_CODEFLY_VERSION,
       })),
   );
   assert.ok(installs.length > 1);
-  const byJob = ({ jobName: a }, { jobName: b }) => a.localeCompare(b);
-  assert.deepEqual(
-    installs.filter(install => install.version !== '0.1.145').sort(byJob),
-    [
-      { jobName: 'codefly-plan', version: '0.1.151' },
-      { jobName: 'sdk-boundary', version: '0.1.151' },
-    ].sort(byJob),
-  );
+  assert.deepEqual(installs.filter(install => install.version !== DEFAULT_CODEFLY_VERSION), []);
 }
 
-test('only jobs that never run a service opt into the newer CLI', () => {
-  assertOnlyNonServiceJobsUseNewerCodefly(workflow);
+test('every Codefly job installs the one pinned CLI', () => {
+  assertEveryJobUsesTheDefaultCodefly(workflow);
+  const installer = readFileSync(join(root, 'scripts/ci/install-codefly.sh'), 'utf8');
+  assert.match(installer, new RegExp(`CODEFLY_VERSION:-${DEFAULT_CODEFLY_VERSION.replaceAll('.', '\\.')}`));
 });
 
 test('the CLI scope guard includes inherited workflow and job environments', () => {
   const workflowOverride = structuredClone(workflow);
   workflowOverride.env = { ...workflowOverride.env, CODEFLY_VERSION: '0.1.151' };
-  assert.throws(() => assertOnlyNonServiceJobsUseNewerCodefly(workflowOverride), assert.AssertionError);
+  assert.throws(() => assertEveryJobUsesTheDefaultCodefly(workflowOverride), assert.AssertionError);
 
   const jobOverride = structuredClone(workflow);
-  jobOverride.jobs['codefly-quality-phases'].env = {
-    ...jobOverride.jobs['codefly-quality-phases'].env,
+  jobOverride.jobs['codefly-plan'].env = {
+    ...jobOverride.jobs['codefly-plan'].env,
     CODEFLY_VERSION: '0.1.151',
   };
-  assert.throws(() => assertOnlyNonServiceJobsUseNewerCodefly(jobOverride), assert.AssertionError);
+  assert.throws(() => assertEveryJobUsesTheDefaultCodefly(jobOverride), assert.AssertionError);
 });
 
 test('the CLI installer rejects versions outside its checksum allowlist', () => {

@@ -356,13 +356,6 @@ jobs:
           GOWORK: "off"
         run: go test -run TestMergedProtocolGeneratorsUseOneInvocation .
       - name: Install Codefly
-        env:
-          # `generate contracts` reads module.package.codefly.yaml, which declares
-          # fixtures; the installer's 0.1.145 default vendors a Core that rejects
-          # that key outright. 0.1.151 reads it and this step never enters the
-          # service runtime that the published agent fleet lags behind, so the
-          # newer pin stays scoped to this job.
-          CODEFLY_VERSION: 0.1.151
         run: bash scripts/ci/install-codefly.sh
       - name: Check exported API contracts are in sync with the proto
         run: codefly generate contracts saas-starter --check
@@ -477,11 +470,6 @@ jobs:
           CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: node scripts/ci/build-images.mjs check
       - name: Install Codefly
-        env:
-          # 0.1.151 fixes affected-service planning for integrity metadata, but
-          # its Core 0.3.32 service runtime is newer than the published agent
-          # fleet. Keep service phases on the installer's 0.1.145 default.
-          CODEFLY_VERSION: 0.1.151
         run: bash scripts/ci/install-codefly.sh
       - name: Resolve affected services
         id: plan
