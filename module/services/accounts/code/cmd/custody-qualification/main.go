@@ -23,11 +23,11 @@ import (
 	"time"
 
 	"accounts/pkg/adapters"
-	"accounts/pkg/certreload"
 	"accounts/pkg/auth"
 	minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
+	"accounts/pkg/certreload"
 	"accounts/pkg/infra"
 
 	"github.com/google/uuid"
@@ -169,17 +169,9 @@ func run(ctx context.Context, file string) error {
 	if _, err = privateRead(c.TLSKeyFile); err != nil {
 		return err
 	}
-	reloader, err := certreload.New(c.TLSCertFile, c.TLSKeyFile, os.ReadFile)
+	reloader, err := certreload.New(c.TLSCertFile, c.TLSKeyFile, c.ClientCAFile, privateRead)
 	if err != nil {
 		return err
-	}
-	ca, err := os.ReadFile(c.ClientCAFile)
-	if err != nil {
-		return err
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(ca) {
-		return errors.New("client CA required")
 	}
 	internal, err := privateRead(c.InternalCredentialFile)
 	if err != nil || len(strings.TrimSpace(string(internal))) < 32 {
@@ -200,7 +192,7 @@ func run(ctx context.Context, file string) error {
 	adapters.SetInternalToken(strings.TrimSpace(string(internal)))
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: c.Issuer, KeyID: jwt.KeyID(), PrivateKey: key, Authority: store})
-	tc := &tls.Config{Certificates: []tls.Certificate{*reloader.Current()}, GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
+	tc := &tls.Config{GetCertificate: reloader.GetCertificate, GetConfigForClient: reloader.GetConfigForClient, ClientCAs: reloader.ClientCAs(), MinVersion: tls.VersionTLS13}
 	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: infra.NewVaultClientDirect(c.VaultURL, c.VaultToken), Consumers: c.Consumers}, tc)
 	if err != nil {
 		return err

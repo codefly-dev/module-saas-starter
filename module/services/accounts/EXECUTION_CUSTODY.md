@@ -322,10 +322,16 @@ both listeners disabled. The JSON shape is:
 
 These are placeholders; the composing consumer owns the exact policy. JSON and
 all referenced files must be regular private files (0400/0440), at most128KiB.
-Atomic Kubernetes projected-secret symlinks are supported. TLS trust, certificate
-and consumer policy are snapshotted at startup; roll Accounts after changing
-them. Policy changes fence old bindings; certificate replacement retaining the
-same URI can preserve worker access within the original horizon.
+Atomic Kubernetes projected-secret symlinks are supported. The server leaf and
+the client CA bundle are re-read while the process runs: a rotation is picked up
+within a second and served on the next handshake, so replacing either needs no
+Accounts roll. Detection is by file content, not modification time, and every
+reload goes through the same permission check as startup — a replacement that is
+unreadable, world-readable, malformed, or torn mid-rotation is refused and the
+last validated material keeps serving. The JSON configuration itself and consumer
+policy are still snapshotted at startup; roll Accounts after changing those.
+Policy changes fence old bindings; certificate replacement retaining the same URI
+can preserve worker access within the original horizon.
 
 The authoritative topology declares two module-facing TCP endpoints, resolved
 by exact endpoint name through the Codefly SDK. No fixed runtime port is embedded
