@@ -226,9 +226,10 @@ Changes to the image contract force the full service graph through CI. Before
 each canonical build attempt, CI snapshots Buildx history. After the build,
 `build-images.mjs evidence` reads the executor's structured materials from new
 build records, matched to each recipe by the image that build exported. A record's
-context and Dockerfile do not identify a service: agents built on Codefly Core
->= 0.3.26 stage the service tree into a temporary directory, build from there and
-delete it, so those paths are gone by the time the gate runs. BuildKit owns Dockerfile
+Dockerfile path does not identify a recipe: the CLI copies the recipe's Dockerfile
+and ignore file into a temporary directory and builds the service tree from there,
+so that path is a staged one, already deleted by the time the gate runs. The
+recorded context still names the service. BuildKit owns Dockerfile
 syntax and stage reachability: unused stages are not required, and whitespace,
 build arguments and stage aliases cannot hide effective dependencies. Both missing
 and unexpected materials fail verification. Command output is never evidence.

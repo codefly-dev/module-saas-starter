@@ -165,20 +165,20 @@ test('real BuildKit materials handle whitespace, skip unreachable stages and ign
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-// Agents built on Codefly Core >= 0.3.26 copy the service tree into a temporary
-// directory, build from there and delete it, so a record's context and
-// Dockerfile name nothing durable. Only the exported image still identifies the
-// service — that is what the evidence gate has to key on.
-test('a staged, discarded build context is still attributed to the service that exported the image',
+// The CLI copies the recipe's Dockerfile into a temporary directory and builds
+// the service tree from there, so a record's Dockerfile is a staged path that is
+// deleted before the gate runs — `builder/Dockerfile` never appears in it. The
+// context still names the service; only the exported image names the recipe.
+test('a build whose staged definition is gone is still attributed to the recipe that exported the image',
   { skip: process.env.BUILD_IMAGES_DOCKER_TEST !== 'true' }, () => {
-    const staged = mkdtempSync(join(tmpdir(), 'codefly-build-context-'));
+    const context = mkdtempSync(join(tmpdir(), 'build-image-service-'));
+    const staged = mkdtempSync(join(tmpdir(), 'codefly-build-definition-'));
     const image = 'codefly-dev/example-workspace/example/staged:0.0.0';
     try {
-      mkdirSync(join(staged, 'context'));
       writeFileSync(join(staged, 'Dockerfile'), 'FROM alpine:3.23.5\n');
-      const metadata = join(staged, 'metadata.json');
+      const metadata = join(context, 'metadata.json');
       execFileSync('docker', ['buildx', 'build', '--load', '--metadata-file', metadata,
-        '-f', join(staged, 'Dockerfile'), '-t', image, join(staged, 'context')], { stdio: 'pipe' });
+        '-f', join(staged, 'Dockerfile'), '-t', image, context], { stdio: 'pipe' });
       const ref = JSON.parse(readFileSync(metadata))['buildx.build.ref'].split('/').at(-1);
       const build = JSON.parse(execFileSync('docker', ['buildx', 'history', 'inspect', ref, '--format', 'json'], { encoding: 'utf8' }));
       rmSync(staged, { recursive: true, force: true });
@@ -186,11 +186,13 @@ test('a staged, discarded build context is still attributed to the service that 
       build.Images = buildImages(buildLog(ref));
       assert.deepEqual(build.Images, [image]);
       assert.equal(selectBuild([build], image), build);
-      // The paths that the gate used to match on are gone.
-      assert.ok(!existsSync(build.Context));
+      // The recipe path the gate used to match on never appears and is gone.
+      assert.doesNotMatch(build.Dockerfile, /builder\/Dockerfile$/);
+      assert.ok(!existsSync(build.Dockerfile));
       assert.deepEqual(verifyImages(['alpine:3.23.5'], materialImages(build.Materials)), []);
     } finally {
       rmSync(staged, { recursive: true, force: true });
+      rmSync(context, { recursive: true, force: true });
       spawnSync('docker', ['image', 'rm', image], { stdio: 'ignore' });
     }
   });

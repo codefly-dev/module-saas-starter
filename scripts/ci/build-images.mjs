@@ -71,11 +71,11 @@ export function buildLog(ref) {
   return `${stdout ?? ''}${stderr ?? ''}`;
 }
 
-// The images a recorded build exported. Agents built on Codefly Core >= 0.3.26
-// stage the service tree into a temporary directory and build from there, so a
-// record's context and Dockerfile are throwaway paths — deleted before this
-// runs — that no longer name the service. What the build exported does, and
-// BuildKit reports it for an in-tree and a staged context alike.
+// The images a recorded build exported. The CLI copies the recipe's Dockerfile
+// and ignore file into a temporary directory and builds the service tree from
+// there, so a record's Dockerfile is a throwaway path — deleted before this
+// runs — that names no recipe. What the build exported still names the service,
+// and BuildKit reports it for a staged and an in-tree definition alike.
 export function buildImages(log) {
   const named = [...log.matchAll(/^#\d+ naming to (.+?)(?: done)?\s*$/gm)]
     .flatMap(match => match[1].split(',').map(ref => normalize(ref.trim())));
