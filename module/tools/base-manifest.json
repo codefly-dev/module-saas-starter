@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2527,
+  "fileCount": 2528,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
@@ -511,7 +511,7 @@
     "services/accounts/code/pkg/business/installations.go": "19b1105bea29f69830a97e63e95188577649edcfc1eb385e97337e64cc66b916",
     "services/accounts/code/pkg/business/installations_integration_test.go": "492606c309d03ec9b374f7352630bd381eb23dae842bb2873092afacfe5ac745",
     "services/accounts/code/pkg/business/introspection.go": "28330d5f8e8aaef369cace28f72b2a5ff0084ff80061d41558d7719a0b8f06f8",
-    "services/accounts/code/pkg/business/introspection_test.go": "1b7436a476d85936531fa91d92719feb4ce504f4ffe81e8a53bf750047b81bda",
+    "services/accounts/code/pkg/business/introspection_test.go": "ff7c188e1d5e1bb1e4f26eb31d2ccd2352962b306efe861a6025e211040d3a14",
     "services/accounts/code/pkg/business/invitation_email_verified_test.go": "17341eded8c644d1131f933e87060f29552d565430a72e2d8f4097817c275e58",
     "services/accounts/code/pkg/business/invitation_lifecycle_test.go": "36501decb89e952f48d1313de5603cc5f110ad56fa3210154cd43817aa625cba",
     "services/accounts/code/pkg/business/invitations.go": "f111cada5930ddea73fae82b2cd1591eb00cb95b56f279ca45c0171d025fdd76",
@@ -582,6 +582,7 @@
     "services/accounts/code/pkg/business/rpc_policy.go": "4a4c998752de23f4c6cb2bcda37022cff750bca819768d7203e086c271c87e2f",
     "services/accounts/code/pkg/business/rpc_policy_coverage.go": "e136a574556549497aceb8e59e18f732266ed3eceaa4526180291bf06aac3d8a",
     "services/accounts/code/pkg/business/rpc_policy_coverage_test.go": "7c7171d94ca72e13de10f5ca360969062b9f8a97dd91fbfb7d1c8690d2583cac",
+    "services/accounts/code/pkg/business/rpc_policy_inventory_test.go": "03a1701fcb3eb8a44a59ccaa2171ddb4a08f1be8d90577fde74eeb3b9535791a",
     "services/accounts/code/pkg/business/rpc_policy_matrix.go": "22fa98916318fc1f04bc9b51ae9bfbc00dccd970ab61dd552c190c3d45ed8851",
     "services/accounts/code/pkg/business/service.go": "253a651c19af1f2c141e10aa89b945a5c1f60f2a08c29ad8b68721c2a2e7d2b7",
     "services/accounts/code/pkg/business/service_catalog.go": "40d80216aa9d956dafb962c10c00897e4da2afedd0a445756f63345a91399222",
