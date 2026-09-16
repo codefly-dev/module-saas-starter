@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"accounts/pkg/business"
 	"accounts/pkg/cataloggen"
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
 	policyv1 "accounts/pkg/gen/saas/policy/v1"
@@ -130,4 +131,35 @@ func TestAuthorizationCatalogValidationRejectsUnsafeDrift(t *testing.T) {
 		Events:   []string{"nope.not_real"},
 	}
 	require.ErrorContains(t, cataloggen.ValidateAuthorizationCatalog(unregisteredEvent), "not registered")
+}
+
+// The interceptor decides from protobuf descriptors; the generated catalog is
+// what every other consumer — the gateway metadata, the authorization gates,
+// a downstream reader — sees. A procedure the interceptor can deny must be one
+// the catalog names with the same requirement, or the two notions of "forbidden
+// while impersonating" drift apart exactly as the hand-maintained policy file
+// they replace did.
+func TestImpersonationRestrictionsMatchTheDescriptorsTheInterceptorReads(t *testing.T) {
+	catalog, err := cataloggen.BuildAuthorizationCatalog(readFixture(t, "../../../generated/service-catalog.json"))
+	require.NoError(t, err)
+
+	catalogued := make(map[string]bool)
+	for _, method := range catalog.GetMethods() {
+		if method.GetPolicy().GetImpersonation() ==
+			policyv1.ImpersonationRequirement_IMPERSONATION_REQUIREMENT_FORBIDDEN {
+			catalogued[method.GetProcedure()] = true
+		}
+	}
+
+	enforced := make(map[string]bool)
+	for _, policy := range business.RPCPolicies() {
+		if business.ImpersonationForbidden(policy) {
+			enforced[policy.FullMethod] = true
+			require.NotNil(t, methodByProcedure(catalog, policy.FullMethod),
+				"the interceptor can deny a procedure the catalog does not know")
+		}
+	}
+
+	require.Equal(t, catalogued, enforced)
+	require.Len(t, enforced, 16)
 }
