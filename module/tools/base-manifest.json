@@ -662,7 +662,7 @@
     "services/accounts/code/pkg/cataloggen/generate.go": "a9ecdc610d049db1d8a23b69feb3231188e56dd8e5d30d8fb2125ed3ef161828",
     "services/accounts/code/pkg/cataloggen/rest_surface.go": "63c99285baa9074fe10f91f8a0c06509841f90031de3b2b1d690f0b611ef2b05",
     "services/accounts/code/pkg/cataloggen/rest_surface_test.go": "7ce1b7cc4295e56ab172a854890b76fcffea88b9112cefeb8908339fb67b1ae9",
-    "services/accounts/code/pkg/cataloggen/test_targets_test.go": "2240810c2b7fc03f52c39dbeb86ca97db65521b7888b3b2b4dfca48c4479f40b",
+    "services/accounts/code/pkg/cataloggen/test_targets_test.go": "b69630332d3b6008d51ab731e5a395037c6c0755bb4f629b302d33d10034528d",
     "services/accounts/code/pkg/cataloggen/testdata/mesh-policy.golden.yaml": "23105361d6f46d8f3d4897ca16bc7d49651554d1508f508acb787c7e7bfe3c18",
     "services/accounts/code/pkg/cataloggen/testdata/network-policy.golden.yaml": "2064a973ccacd726c3beeb6f29cdac9c5bee5f8910cd9b5af507b5d75e690ba7",
     "services/accounts/code/pkg/cataloggen/testmain_lifecycle_test.go": "ecd390985d00fcb118d00fc6345ced88de7cab18a0c0095008da6ebf5bbc0906",
