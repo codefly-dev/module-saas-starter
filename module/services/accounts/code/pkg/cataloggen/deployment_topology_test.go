@@ -2,6 +2,7 @@ package cataloggen_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -756,6 +757,50 @@ func TestDeploymentTopologyPreservesCompleteModuleAgentIdentity(t *testing.T) {
 	incomplete := strings.Replace(withAgent, "    publisher: codefly.dev\n", "", 1)
 	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(incomplete))
 	require.ErrorContains(t, err, "module agent identity is incomplete")
+}
+
+// The generated service manifest's agent block is built by hand from the
+// binding's, so a field added to deploymentAgentBinding reaches the bindings
+// file and is then silently dropped from every generated manifest — sync-drift
+// cannot see it, because the module agent drops it too. Compare the two
+// authorities directly, and pin the rendered key order, so a reordering that
+// would drift the checked-in manifests fails here first.
+func TestServiceManifestAgentCarriesEveryBindingField(t *testing.T) {
+	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
+	bindings := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
+
+	var declared struct {
+		Services []struct {
+			Name  string            `yaml:"name"`
+			Agent map[string]string `yaml:"agent"`
+		} `yaml:"services"`
+	}
+	require.NoError(t, yaml.Unmarshal(bindings, &declared))
+	require.NotEmpty(t, declared.Services)
+
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, bindings)
+	require.NoError(t, err)
+
+	for _, service := range declared.Services {
+		manifest, ok := artifacts.ServiceManifests[service.Name]
+		require.True(t, ok, "no generated manifest for %s", service.Name)
+		require.NotEmpty(t, service.Agent, "%s declares no agent", service.Name)
+
+		var generated struct {
+			Agent map[string]string `yaml:"agent"`
+		}
+		require.NoError(t, yaml.Unmarshal(manifest, &generated))
+		require.Equal(t, service.Agent, generated.Agent,
+			"generated %s agent must carry every declared agent field", service.Name)
+
+		require.Contains(t, string(manifest), fmt.Sprintf(`agent:
+    kind: %s
+    name: %s
+    version: %s
+    publisher: %s
+`, service.Agent["kind"], service.Agent["name"], service.Agent["version"], service.Agent["publisher"]),
+			"%s agent must render in deploymentAgentBinding's field order", service.Name)
+	}
 }
 
 func TestDeploymentCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {

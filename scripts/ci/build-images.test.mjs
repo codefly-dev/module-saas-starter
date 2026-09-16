@@ -82,6 +82,44 @@ test('the registry monitor reports changed digests and skips only classified ven
   assert.match(monitor(config, () => `sha256:${'b'.repeat(64)}`).join('\n'), /digest changed/);
 });
 
+// `alpine@sha256:…` split on '@' yields the bare repository, and
+// `imagetools inspect alpine` resolves alpine:latest — so a digest-pinned ref
+// reads as permanently changed, against an image the pin never named.
+test('the registry monitor never polls a bare repository for a pin that names no tag', () => {
+  const polled = [];
+  const probe = ref => { polled.push(ref); return digest; };
+  const tagless = { example: { source: 'https://example.com/agent', images: [`alpine@${digest}`], watch: ['alpine:3.21'] } };
+  assert.match(monitor(tagless, probe).join('\n'), /names no tag to poll upstream/);
+  assert.deepEqual(polled, [], 'a pin with no tag is reported, never resolved as :latest');
+
+  // The same base pinned as tag@digest polls that exact tag and stays quiet.
+  const pinned = { example: { source: 'https://example.com/agent', images: [`alpine:3.21@${digest}`], watch: ['alpine:3.21'] } };
+  assert.deepEqual(monitor(pinned, probe), []);
+  assert.deepEqual(polled, ['alpine:3.21', 'alpine:3.21']);
+  // A registry port is not a tag, so it is reported rather than polled.
+  const port = { example: { source: 'https://example.com/agent', images: [`registry:5000/img@${digest}`], watch: [] } };
+  assert.match(monitor(port, probe).join('\n'), /names no tag to poll upstream/);
+});
+
+// Nothing tied SUPPLY_CHAIN_SECURITY.md's pin claims to the bindings, so a pin
+// bump left the auditor-facing document naming versions the repo no longer
+// carried while every check stayed green. Each claim is now checkable prose.
+test('every agent pin SUPPLY_CHAIN_SECURITY.md claims matches the topology bindings', () => {
+  const doc = readFileSync(new URL('../../SUPPLY_CHAIN_SECURITY.md', import.meta.url), 'utf8');
+  const pins = new Map(parseWorkflowYaml(readFileSync(
+    new URL('../../module/deployment/topology.bindings.codefly.yaml', import.meta.url), 'utf8'),
+  ).services.map(service => [service.name, service.agent.version]));
+  // Markdown wraps these sentences, so match on collapsed whitespace.
+  const claims = [...doc.replace(/\s+/g, ' ')
+    .matchAll(/the `([a-z-]+)` pin is `(\d+\.\d+\.\d+)` in this repo/g)];
+  assert.ok(claims.length >= 3, `expected a checkable pin claim per remediated service; found ${claims.length}`);
+  for (const [, service, claimed] of claims) {
+    assert.ok(pins.has(service), `SUPPLY_CHAIN_SECURITY.md claims a pin for unknown service ${service}`);
+    assert.equal(claimed, pins.get(service),
+      `SUPPLY_CHAIN_SECURITY.md says ${service} pins ${claimed}; topology bindings pin ${pins.get(service)}`);
+  }
+});
+
 test('Git proposal checks allow deleting obsolete recipes and removing services but reject generated edits', () => {
   const dir = mkdtempSync(join(tmpdir(), 'build-image-proposal-'));
   const put = (path, content) => {

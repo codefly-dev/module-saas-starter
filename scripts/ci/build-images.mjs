@@ -188,6 +188,15 @@ export function monitor(inventory, digest = registryDigest) {
     lines.push(`## ${agent}`, '', config.source, '');
     for (const ref of config.images) {
       const [tag, pinned] = ref.split('@');
+      // Splitting on '@' yields the bare repository for a pin that carries no
+      // tag, and `imagetools inspect alpine` then resolves alpine:latest — a
+      // different image — so the report would name latest's digest as this
+      // pin's "current tag digest" and call a digest-pinned ref changed on
+      // every run, forever. There is no tag to poll, so say so instead.
+      if (repository(tag) === tag) {
+        errors.push(`${agent}: ${ref} names no tag to poll upstream; pin the base as repository:tag@sha256:…`);
+        continue;
+      }
       const current = digest(tag);
       lines.push(`- Effective recipe: \`${ref}\`; current tag digest: \`${current}\``);
       if (pinned && current !== pinned) errors.push(`${agent}: ${tag} digest changed`);
