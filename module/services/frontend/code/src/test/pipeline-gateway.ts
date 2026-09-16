@@ -1,8 +1,17 @@
 import { NextRequest } from "next/server";
-import { resolveCodeflyGatewayContext } from "@/lib/codefly-gateway-context";
+import {
+	type CodeflyRuntimeReader,
+	resolveCodeflyGatewayContext,
+} from "@/lib/codefly-gateway-context";
 import { INTERNAL_TOKEN_HEADER } from "@/lib/internal-token";
 import { trustedGatewayRequestHeaders } from "@/proxy";
 import { productOrigin } from "@/test/codefly-endpoints";
+import {
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+	getWorkspaceSecret,
+} from "codefly";
 
 // Endpoint resolution lives in one place, shared with the Playwright config and
 // the e2e global setup: see ./codefly-endpoints.
@@ -16,6 +25,50 @@ export {
 export { INTERNAL_TOKEN_HEADER };
 export const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
 
+const gatewayRuntimeSDK: CodeflyRuntimeReader = {
+	currentModule: getCurrentModule,
+	currentService: getCurrentService,
+	endpoints: getEndpoints,
+	workspaceSecret: getWorkspaceSecret,
+};
+
+export function runtimeWithResolvedOrigin(
+	origin: string,
+	runtime: CodeflyRuntimeReader = gatewayRuntimeSDK,
+): CodeflyRuntimeReader {
+	const currentModule = runtime.currentModule();
+	const currentService = runtime.currentService();
+	if (!currentModule || !currentService) return runtime;
+
+	const endpoints = runtime.endpoints();
+	if (
+		endpoints.some(
+			(endpoint) =>
+				endpoint.module === currentModule &&
+				endpoint.service === currentService &&
+				endpoint.name === "http" &&
+				endpoint.protocol === "HTTP",
+		)
+	) {
+		return runtime;
+	}
+
+	return {
+		...runtime,
+		endpoints: () => [
+			...endpoints,
+			{
+				module: currentModule,
+				service: currentService,
+				name: "http",
+				protocol: "HTTP",
+				address: origin,
+				routes: [],
+			},
+		],
+	};
+}
+
 /**
  * Reproduce, through the real proxy and gateway-context libraries, the headers
  * a same-origin product API request carries once Next has stamped it. Nothing
@@ -24,7 +77,8 @@ export const PUBLIC_ORIGIN_HEADER = "X-Codefly-Public-Origin";
  */
 export function stampedGatewayHeaders(): Record<string, string> {
 	const origin = productOrigin();
-	const context = resolveCodeflyGatewayContext(origin);
+	const runtime = runtimeWithResolvedOrigin(origin);
+	const context = resolveCodeflyGatewayContext(origin, runtime);
 	if (!context) {
 		throw new Error(
 			"Codefly did not provide the frontend gateway context (internal-auth secret and frontend/http endpoint).",
