@@ -10295,6 +10295,9 @@
       "name": "MFAService"
     },
     {
+      "name": "WorkContextService"
+    },
+    {
       "name": "ModuleCapabilitiesService"
     },
     {
@@ -10335,9 +10338,6 @@
     },
     {
       "name": "WebhookService"
-    },
-    {
-      "name": "WorkContextService"
     }
   ],
   "x-codefly-owner": {
