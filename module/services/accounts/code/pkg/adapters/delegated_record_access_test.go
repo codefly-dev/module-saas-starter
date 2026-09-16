@@ -90,6 +90,35 @@ func TestExactRecordOracleIntersectsEveryAuthenticatedSubject(t *testing.T) {
 	require.True(t, allowed.GetAllowed())
 }
 
+// A composed module's installed identity capability is signed by the same key,
+// for the same tenant, as the viewer contexts this oracle answers for — so what
+// keeps the two apart is that the module mint seals no authority scopes, not the
+// audience, which may legally be either the module-capability one or the
+// module's own prefix. Neither form may stand in for a viewer's delegation.
+func TestExactRecordOracleRefusesInstallationCapability(t *testing.T) {
+	_, facts, client, _ := sourceReadFixture(t)
+	store := &exactRecordStore{}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
+	service = svc
+	module := business.ModulePrincipalID("rows")
+	identity, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: module, Tenant: readOrg})
+	require.NoError(t, err)
+	// The same installed identity re-minted at the module's own prefix, so the
+	// declared-vocabulary check passes and only the empty scope set can refuse it.
+	prefixed, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: module,
+		TaskID: "install-task", SessionID: "install-session", AuthorizationRevision: facts.facts.EffectiveRevision(),
+		ActorChain: []*basev0.WorkActorV1{{PrincipalId: module, PrincipalKind: "service", DelegationId: "install-hop"}}})
+	require.NoError(t, err)
+	for _, capability := range []string{identity.Encoded(), prefixed.Encoded()} {
+		out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(capability, "record-a"))
+		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+		require.Nil(t, out)
+	}
+	require.Empty(t, store.subjects)
+}
+
 type exactChainAuthority struct {
 	business.WorkContextAuthorityStore
 	facts *business.WorkContextAuthorityFacts
