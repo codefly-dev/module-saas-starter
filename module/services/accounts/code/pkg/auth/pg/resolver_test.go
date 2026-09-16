@@ -182,6 +182,33 @@ func TestResolver_Signup_NewUser_Provisioning(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+// Magic-link verification resolves synthesized claims through this same
+// pipeline, so its provider id must carry a seeded identity_providers row.
+// Without one the insert fails the foreign key and, because identity lookup is
+// per-provider, no magic-link identity can ever be provisioned.
+func TestResolver_Signup_MagicLinkProvider_Provisioning(t *testing.T) {
+	resetAuthTables(t)
+	ctx := context.Background()
+	r := pgauth.NewResolver(testStore)
+
+	c := claims("linked@test.local", "linked@test.local")
+	c.Provider = business.MagicLinkIdentityProvider
+
+	id, err := r.Resolve(ctx, c, auth.SignupIntent{})
+	require.NoError(t, err, "magic-link signup must provision an identity")
+	require.NotEqual(t, uuid.Nil, id.UserID)
+
+	var provider string
+	scanControlPlane(t, &provider,
+		`SELECT provider FROM user_identities WHERE user_uuid = $1`, id.UserID)
+	require.Equal(t, business.MagicLinkIdentityProvider, provider)
+
+	// A second click resolves the same identity instead of re-provisioning.
+	again, err := r.Resolve(ctx, c, auth.SignupIntent{})
+	require.NoError(t, err)
+	require.Equal(t, id.UserID, again.UserID)
+}
+
 func TestResolver_CarriesPresentationalIdentity(t *testing.T) {
 	resetAuthTables(t)
 	ctx := context.Background()
