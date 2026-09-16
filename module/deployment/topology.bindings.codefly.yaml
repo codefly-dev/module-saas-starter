@@ -159,7 +159,14 @@ services:
       # port).
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.0.88
+      # 0.0.89 reports serving addresses for the read and write TCP aliases
+      # (service-redis#52, fixed by #53). That is what the graph needs to reach
+      # ready: on 0.0.88 it stayed "still starting" past 200s, and on 0.0.89 it
+      # is ready in ~40s. It also serializes Docker acquisition and destroys
+      # only the generation it acquired (#54, #57). runtime-image.json is
+      # byte-identical to 0.0.88 (same tag, same digest), so the public image
+      # and the OpenSSL 3.5.8-r0 rebuild both survive the bump.
+      version: 0.0.89
       publisher: codefly.dev
     endpoints:
       - name: read

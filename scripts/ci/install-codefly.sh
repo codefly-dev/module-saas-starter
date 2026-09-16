@@ -14,7 +14,8 @@ case "${version}" in
     ;;
   0.1.155)
     # Carries cli#706 (the nil-Runner fix) and cli#704 (`publish clients`);
-    # its Core 0.3.32 runtime requires the agent fleet pinned at Core >= 0.3.28.
+    # its Core 0.3.35 runtime requires the agent fleet pinned at Core >= 0.3.28.
+    # (0.3.35 is what the released archive vendors — `go version -m codefly`.)
     checksum=1cd0ce2abad4b4b0f19ea3ac16ca7ac92b5112082518590a3f4e9a76f5bcd3fa
     ;;
   *)
