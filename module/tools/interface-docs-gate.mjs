@@ -98,6 +98,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/GetApproval": "approvals",
   "ModuleCapabilitiesService/HeartbeatJob": "jobs",
   "ModuleCapabilitiesService/ListReadableSourceCollections": "authorization",
+  "ModuleCapabilitiesService/ExchangeDelegatedReadAudience": "authorization",
   "ModuleCapabilitiesService/ListSubscriptions": "events",
   "ModuleCapabilitiesService/MintModuleRegistration": "authorization",
   "ModuleCapabilitiesService/MintModuleWorkContext": "authorization",

@@ -50,12 +50,13 @@ import (
 // org a single-tenant module is bound to, which its minted Work Context carries;
 // a cross-tenant module names the tenant per mint instead.
 type ModulePrincipalGrant struct {
-	Prefix      string
-	Queues      []string
-	Namespaces  []string
-	Resources   []string
-	CrossTenant bool
-	Tenant      string
+	ReadAudiences map[string]ModuleReadAudience `json:"read_audiences"`
+	Prefix        string
+	Queues        []string
+	Namespaces    []string
+	Resources     []string
+	CrossTenant   bool
+	Tenant        string
 }
 
 func (g ModulePrincipalGrant) allowsQueue(queue string) bool {
@@ -142,11 +143,12 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		return ModulePrincipalRegistry{}, nil
 	}
 	var wire map[string]struct {
-		Queues      []string `json:"queues"`
-		Namespaces  []string `json:"namespaces"`
-		Resources   []string `json:"resources"`
-		CrossTenant bool     `json:"cross_tenant"`
-		Tenant      string   `json:"tenant"`
+		ReadAudiences map[string]ModuleReadAudience `json:"read_audiences"`
+		Queues        []string                      `json:"queues"`
+		Namespaces    []string                      `json:"namespaces"`
+		Resources     []string                      `json:"resources"`
+		CrossTenant   bool                          `json:"cross_tenant"`
+		Tenant        string                        `json:"tenant"`
 	}
 	if err := json.Unmarshal([]byte(raw), &wire); err != nil {
 		return nil, err
@@ -171,13 +173,17 @@ func ParseModulePrincipalRegistry(raw string) (ModulePrincipalRegistry, error) {
 		if err := uuid.Validate(grant.Tenant); err != nil {
 			return nil, fmt.Errorf("module principal %q must declare its tenant as an organization id: %w", prefix, err)
 		}
+		if err := validateReadAudiences(prefix, grant.ReadAudiences); err != nil {
+			return nil, err
+		}
 		registry[ModulePrincipalID(prefix)] = ModulePrincipalGrant{
-			Prefix:      prefix,
-			Queues:      grant.Queues,
-			Namespaces:  grant.Namespaces,
-			Resources:   grant.Resources,
-			CrossTenant: grant.CrossTenant,
-			Tenant:      grant.Tenant,
+			ReadAudiences: grant.ReadAudiences,
+			Prefix:        prefix,
+			Queues:        grant.Queues,
+			Namespaces:    grant.Namespaces,
+			Resources:     grant.Resources,
+			CrossTenant:   grant.CrossTenant,
+			Tenant:        grant.Tenant,
 		}
 	}
 	return registry, nil

@@ -36,6 +36,9 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure is the fully-qualified name of
+	// the ModuleCapabilitiesService's ExchangeDelegatedReadAudience RPC.
+	ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
 	// ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's CheckWorkContextRecordAccess RPC.
 	ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
@@ -107,6 +110,9 @@ const (
 // ModuleCapabilitiesServiceClient is a client for the saas.accounts.v1.ModuleCapabilitiesService
 // service.
 type ModuleCapabilitiesServiceClient interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
@@ -182,6 +188,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 	baseURL = strings.TrimRight(baseURL, "/")
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
 	return &moduleCapabilitiesServiceClient{
+		exchangeDelegatedReadAudience: connect.NewClient[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedReadAudience")),
+			connect.WithClientOptions(opts...),
+		),
 		checkWorkContextRecordAccess: connect.NewClient[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
@@ -319,6 +331,7 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 
 // moduleCapabilitiesServiceClient implements ModuleCapabilitiesServiceClient.
 type moduleCapabilitiesServiceClient struct {
+	exchangeDelegatedReadAudience *connect.Client[v1.ModuleExchangeDelegatedReadAudienceRequest, v1.IssuedWorkContext]
 	checkWorkContextRecordAccess  *connect.Client[v1.CheckWorkContextRecordAccessRequest, v1.CheckWorkContextRecordAccessResponse]
 	listReadableSourceCollections *connect.Client[v1.ListReadableSourceCollectionsRequest, v1.ListReadableSourceCollectionsResponse]
 	placeRecord                   *connect.Client[v1.ModulePlaceRecordRequest, v1.ModulePlaceRecordResponse]
@@ -341,6 +354,12 @@ type moduleCapabilitiesServiceClient struct {
 	unsubscribe                   *connect.Client[v1.ModuleUnsubscribeRequest, emptypb.Empty]
 	listSubscriptions             *connect.Client[v1.ModuleListSubscriptionsRequest, v1.ModuleListSubscriptionsResponse]
 	replayEvents                  *connect.Client[v1.ModuleReplayEventsRequest, v1.ModuleReplayEventsResponse]
+}
+
+// ExchangeDelegatedReadAudience calls
+// saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience.
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, req *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return c.exchangeDelegatedReadAudience.CallUnary(ctx, req)
 }
 
 // CheckWorkContextRecordAccess calls
@@ -459,6 +478,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, req 
 // ModuleCapabilitiesServiceHandler is an implementation of the
 // saas.accounts.v1.ModuleCapabilitiesService service.
 type ModuleCapabilitiesServiceHandler interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error)
@@ -530,6 +552,12 @@ type ModuleCapabilitiesServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	moduleCapabilitiesServiceMethods := v1.File_saas_accounts_v1_module_capabilities_proto.Services().ByName("ModuleCapabilitiesService").Methods()
+	moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure,
+		svc.ExchangeDelegatedReadAudience,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ExchangeDelegatedReadAudience")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler := connect.NewUnaryHandler(
 		ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure,
 		svc.CheckWorkContextRecordAccess,
@@ -664,6 +692,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 	)
 	return "/saas.accounts.v1.ModuleCapabilitiesService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ModuleCapabilitiesServiceExchangeDelegatedReadAudienceProcedure:
+			moduleCapabilitiesServiceExchangeDelegatedReadAudienceHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceCheckWorkContextRecordAccessProcedure:
 			moduleCapabilitiesServiceCheckWorkContextRecordAccessHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceListReadableSourceCollectionsProcedure:
@@ -716,6 +746,10 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 
 // UnimplementedModuleCapabilitiesServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedModuleCapabilitiesServiceHandler struct{}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ExchangeDelegatedReadAudience(context.Context, *connect.Request[v1.ModuleExchangeDelegatedReadAudienceRequest]) (*connect.Response[v1.IssuedWorkContext], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ExchangeDelegatedReadAudience is not implemented"))
+}
 
 func (UnimplementedModuleCapabilitiesServiceHandler) CheckWorkContextRecordAccess(context.Context, *connect.Request[v1.CheckWorkContextRecordAccessRequest]) (*connect.Response[v1.CheckWorkContextRecordAccessResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.CheckWorkContextRecordAccess is not implemented"))

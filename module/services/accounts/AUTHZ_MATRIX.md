@@ -83,6 +83,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Lease a bounded batch of ready jobs from an allowed queue. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Emit a registered audit event on the tenant's spine. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Enqueue durable work for a tenant- or subject-scoped queue. |
+| `/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → SECRET | Exchange a current signed parent through an installed read-only module binding. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob` | server stream | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Stream a datasource file blob referenced by a change set. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/GetApproval` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Read one approval request on the caller's tenant. |
 | `/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | CONFIDENTIAL → CONFIDENTIAL | Renew a live job lease by its fencing token. |
@@ -219,7 +220,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 ## Tier totals
 
 - `auth`: 40
-- `internal`: 40
+- `internal`: 41
 - `mfa`: 3
 - `org_admin`: 45
 - `org_member`: 39
