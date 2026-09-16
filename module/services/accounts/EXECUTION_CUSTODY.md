@@ -99,7 +99,10 @@ survive a lost reply and process replacement. After receiving any registration
 result, persist its non-secret reference and full returned binding before dispatch.
 
 `POST /private/v1/execution-custody/exchange` takes the opaque `reference`, the
-**entire returned binding**, exact configured `audience`, and boolean `lookup`.
+**entire returned binding**, and boolean `lookup`. A legacy policy also requires
+its exact configured `audience`. An operation policy instead requires the exact
+installed `operation` key and an empty `audience`; mixed forms and unknown keys
+are denied.
 A verified client certificate must have exactly one URI SAN equal to that
 consumer policy's `spiffe://...` worker identity. A replacement instance may have
 a new certificate for that same workload identity. Certificate roots and issuance
@@ -107,14 +110,27 @@ are deployment-owned inputs. Caller headers never establish this identity.
 Workers get no Accounts owner token, gateway trust token, database login or Vault
 credential. The opaque reference alone is insufficient.
 
+Each installed operation fixes one audience plus canonical invoke and lookup
+scope lists. Scope kinds, actions and resource IDs are sorted and unique. An
+empty `resource_ids` list is the canonical installed kind-wide scope; a literal
+`*` is invalid. Lookup scopes contain only `read` and are a subset of that
+operation's invoke scopes, so an explicit invoke set cannot become a kind-wide
+lookup. Registration proves that the original
+parent contains every installed operation scope and that every operation
+audience remains inside the delegated actor ceiling. A request cannot provide a
+scope or TTL. Legacy audience/resource/action fields and operation policies are
+mutually exclusive; an absent operation map preserves the original v1 policy
+fingerprint and issuance behavior.
+
 The broker compares all binding fields, the immutable policy fingerprint and the
 signed Task claims digest, then re-verifies the original parent and all current
 Accounts authority/revocation facts. The only database scope it establishes comes
 from the authenticated encrypted binding. It does not fabricate an owner session
 or invoke the tenant exchange using impersonation headers. It returns `{token,
-expires_at}` with configured model/resource actions. `lookup=true` gets only the
-configured read action; execute gets exactly invoke and read. No request scope or
-TTL override is accepted. Children are capped at the original parent's expiry
+expires_at}` with the installed operation's audience and scopes. `lookup=true`
+gets only the installed read subset. Legacy execute gets exactly invoke and
+read. The broker rechecks the retained parent after signing and returns no child
+if current authorization changed during issuance. Children are capped at the original parent's expiry
 and the retained original Task child's signed expiry, reserving three seconds.
 
 The consumer must independently verify child signature/current revision, exact
