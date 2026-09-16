@@ -228,6 +228,8 @@ jobs:
         run: node --test scripts/ci/release-gates.test.mjs scripts/ci/ci-performance.test.mjs
       - name: Test the release announcement
         run: node --test scripts/ci/announce-release.test.mjs
+      - name: Test the release record
+        run: node --test scripts/ci/release-record.test.mjs
       - name: Test the dependabot coverage gate
         run: node --test scripts/ci/dependabot-coverage.test.mjs scripts/ci/build-images.test.mjs
       - name: Require every artifact-writing job to depend on the release gates
@@ -893,6 +895,11 @@ jobs:
         with:
           go-version: "1.27.0"
           cache-dependency-path: module/tools/go.sum
+      # The release record runs on the same Node every gate is tested against,
+      # rather than whichever version the runner image happens to ship.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
       - name: Reject a mutable or repeated release
         shell: bash
         working-directory: module/tools
@@ -990,6 +997,8 @@ jobs:
             echo
             echo "Then reference the module with \`source: codefly-dev/module-saas-starter\`" \
               "and \`version: \"${version}\"\`."
+            echo
+            node scripts/ci/release-record.mjs
           } > "${RUNNER_TEMP}/release-notes.md"
           draft_created=false
           cleanup_draft() {
