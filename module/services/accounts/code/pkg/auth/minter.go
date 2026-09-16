@@ -2,22 +2,29 @@ package auth
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 // TokenPair is the output of a successful login/signup/refresh.
 //
-// AccessToken is a short-lived (3 min) signed JWT carrying the Identity as
-// claims. Clients send it on every request and the sidecar validates it.
+// AccessToken is a short-lived (3 min by default) signed JWT carrying the
+// Identity as claims. Clients send it on every request and the sidecar
+// validates it.
 //
 // RefreshToken is a long-lived (7 days) opaque token whose hash is stored in
 // sessions.refresh_token_hash. Clients send it only to /auth/refresh. Each
 // refresh rotates the token — the previous refresh becomes invalid, and
 // reuse triggers family revocation.
+//
+// AccessTokenTTL is the lifetime this particular access token was signed with.
+// It is configurable and additionally capped for impersonation, so it is the
+// only honest source for the expires_in a response reports.
 type TokenPair struct {
-	AccessToken  string
-	RefreshToken string
+	AccessToken    string
+	RefreshToken   string
+	AccessTokenTTL time.Duration
 }
 
 // JWTMinter owns the creation and verification of our own access + refresh
@@ -59,8 +66,9 @@ type JWTMinter interface {
 	// SwitchOrganization issues a fresh access token for a current membership
 	// while preserving the refresh token, session row, device family, and both
 	// lifetime boundaries. userID and sessionID must come from verified request
-	// identity, never directly from the request body.
-	SwitchOrganization(ctx context.Context, userID, sessionID, organizationID uuid.UUID) (string, error)
+	// identity, never directly from the request body. The returned duration is
+	// the lifetime that token was signed with.
+	SwitchOrganization(ctx context.Context, userID, sessionID, organizationID uuid.UUID) (string, time.Duration, error)
 
 	// Revoke marks all sessions in a family as revoked. Called by /auth/logout.
 	Revoke(ctx context.Context, refreshToken string) error

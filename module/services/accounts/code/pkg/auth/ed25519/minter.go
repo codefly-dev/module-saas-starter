@@ -358,7 +358,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 	}
 
 	// Access token
-	access, err := m.signAccess(identity, sessionID, now)
+	access, accessTTL, err := m.signAccess(identity, sessionID, now)
 	if err != nil {
 		return nil, nil, fmt.Errorf("ed25519minter: sign access: %w", err)
 	}
@@ -398,7 +398,11 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		IdleExpiresAt:         idleExpiresAt,
 		ExpiresAt:             absoluteExpiresAt,
 	}
-	return &auth.TokenPair{AccessToken: access, RefreshToken: plain}, rec, nil
+	return &auth.TokenPair{
+		AccessToken:    access,
+		RefreshToken:   plain,
+		AccessTokenTTL: accessTTL,
+	}, rec, nil
 }
 
 // VerifyRefresh implements auth.JWTMinter.VerifyRefresh with OWASP rotation.
@@ -478,15 +482,16 @@ func (m *Minter) SwitchOrganization(
 	userID uuid.UUID,
 	sessionID uuid.UUID,
 	organizationID uuid.UUID,
-) (string, error) {
+) (string, time.Duration, error) {
 	if m.configErr != nil {
-		return "", fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+		return "", 0, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
 	}
 	if userID == uuid.Nil || sessionID == uuid.Nil || organizationID == uuid.Nil {
-		return "", auth.ErrSessionUnavailable
+		return "", 0, auth.ErrSessionUnavailable
 	}
 
 	var accessToken string
+	var accessTTL time.Duration
 	err := m.store.ExchangeOrganization(ctx, userID, sessionID, organizationID, func(
 		current *auth.SessionRecord,
 		authorization auth.RefreshAuthorization,
@@ -496,19 +501,19 @@ func (m *Minter) SwitchOrganization(
 		if err != nil {
 			return err
 		}
-		accessToken, err = m.signAccess(identity, current.ID, now)
+		accessToken, accessTTL, err = m.signAccess(identity, current.ID, now)
 		return err
 	})
 	if err != nil {
 		if errors.Is(err, auth.ErrSessionUnavailable) || errors.Is(err, auth.ErrOrganizationAccessDenied) {
-			return "", err
+			return "", 0, err
 		}
-		return "", fmt.Errorf("ed25519minter: switch organization: %w", err)
+		return "", 0, fmt.Errorf("ed25519minter: switch organization: %w", err)
 	}
 	if accessToken == "" {
-		return "", errors.New("ed25519minter: organization exchange returned no access token")
+		return "", 0, errors.New("ed25519minter: organization exchange returned no access token")
 	}
-	return accessToken, nil
+	return accessToken, accessTTL, nil
 }
 
 func identityFromCurrentAuthorization(
@@ -770,10 +775,14 @@ func (m *Minter) RevokeSessionAccess(ctx context.Context, sessionID string) erro
 	return m.revoker.RevokeSession(ctx, sessionID, m.cfg.AccessTokenTTL+m.cfg.ClockSkew)
 }
 
-func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now time.Time) (string, error) {
+func (m *Minter) signAccess(
+	identity *auth.Identity,
+	sessionID uuid.UUID,
+	now time.Time,
+) (string, time.Duration, error) {
 	jti, err := randHex(16)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	// Impersonation sessions are capped at min(ImpersonationTokenTTL,
 	// AccessTokenTTL) so an admin walking away from a "viewing as customer"
@@ -813,7 +822,7 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 		claims.ActingAsUserID = identity.ActingAsUserID.String()
 	}
 	if err := auth.ValidateActorChain(identity.Actor); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	claims.Act = identity.Actor
 	claims.MFASatisfied = identity.MFASatisfied
@@ -828,7 +837,11 @@ func (m *Minter) signAccess(identity *auth.Identity, sessionID uuid.UUID, now ti
 
 	token := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	token.Header["kid"] = m.keyID
-	return token.SignedString(m.privateKey)
+	signed, err := token.SignedString(m.privateKey)
+	if err != nil {
+		return "", 0, err
+	}
+	return signed, ttl, nil
 }
 
 func numericDateTime(value *jwt.NumericDate) time.Time {

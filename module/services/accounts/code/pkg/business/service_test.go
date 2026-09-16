@@ -3,6 +3,8 @@
 package business_test
 
 import (
+	"crypto/ed25519"
+
 	authcore "accounts/pkg/auth"
 	ed25519minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
@@ -72,10 +74,21 @@ func authenticateFixture(ctx context.Context, req *gen.AuthenticateRequest) (*ge
 
 // Shared test fixtures — initialized once in TestMain.
 var (
-	testStore   *infra.PostgresStore
-	testService *business.Service
-	testCtx     context.Context
+	testStore        *infra.PostgresStore
+	testService      *business.Service
+	testCtx          context.Context
+	testMinterKey    ed25519.PrivateKey
+	testSessionStore authcore.SessionStore
 )
+
+// newTestMinter builds a minter over the shared signing key and session store,
+// so a test can re-mint the service's tokens under a different TTL policy and
+// restore the default one afterwards.
+func newTestMinter(cfg ed25519minter.Config) *ed25519minter.Minter {
+	cfg.Issuer = "saas-starter-test"
+	cfg.Audience = "saas-starter-test"
+	return ed25519minter.New(cfg, testMinterKey, testSessionStore)
+}
 
 func TestMain(m *testing.M) {
 	exitCode, err := testdb.RunWithPackageLock(func() int {
@@ -152,10 +165,9 @@ func runBusinessTests(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "GenerateKey failed: %v\n", err)
 		return 1
 	}
-	minter := ed25519minter.New(ed25519minter.Config{
-		Issuer:   "saas-starter-test",
-		Audience: "saas-starter-test",
-	}, priv, sessionStore)
+	testMinterKey = priv
+	testSessionStore = sessionStore
+	minter := newTestMinter(ed25519minter.Config{})
 	service.SetIdentityResolver(resolver)
 	service.SetJWTMinter(minter)
 	webAuthnEngine, err := infra.NewWebAuthnEngine("localhost", "SaaS Starter Test", []string{"http://localhost:21931"})
@@ -466,7 +478,7 @@ func TestAuthenticate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.AccessToken)
 	require.NotEmpty(t, resp.RefreshToken)
-	require.Equal(t, int64(business.AccessTokenLifetime.Seconds()), resp.ExpiresIn)
+	require.Equal(t, int64(signedAccessLifetime(t, resp.AccessToken).Seconds()), resp.ExpiresIn)
 	require.NotEmpty(t, resp.User.Uuid)
 }
 

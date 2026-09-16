@@ -426,7 +426,7 @@ func TestRefreshAndOrgSwitchPreservePresentationalIdentity(t *testing.T) {
 
 	// Org-switch re-signs in place from the persisted session and must carry the
 	// email/name claims forward.
-	switched, err := m.SwitchOrganization(ctx, want.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	switched, _, err := m.SwitchOrganization(ctx, want.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
 	require.NoError(t, err)
 	payload := decodeJWTPayload(t, switched)
 	require.Contains(t, payload, `"email":"alice@acme.com"`)
@@ -599,7 +599,7 @@ func TestSwitchOrganizationPreservesDeviceSessionAndRefreshCredential(t *testing
 		PlatformRole: "support",
 		MFAEnrolled:  false,
 	}
-	accessToken, err := m.SwitchOrganization(ctx, identity.UserID, before.ID, targetOrgID)
+	accessToken, _, err := m.SwitchOrganization(ctx, identity.UserID, before.ID, targetOrgID)
 	require.NoError(t, err)
 
 	switched, err := m.VerifyAccess(accessToken)
@@ -657,7 +657,7 @@ func TestSwitchOrganizationPreservesDevelopmentFixtureAssurance(t *testing.T) {
 		PlatformRole: "super_admin",
 		MFAEnrolled:  false,
 	}
-	accessToken, err := m.SwitchOrganization(
+	accessToken, _, err := m.SwitchOrganization(
 		ctx,
 		identity.UserID,
 		sessionID,
@@ -1312,4 +1312,103 @@ func TestMintModuleRegistrationRequiresPrefix(t *testing.T) {
 
 	_, _, err = m.MintModuleRegistration("")
 	require.Error(t, err)
+}
+
+// signedAccessLifetime returns exp-iat from the token itself, which is the only
+// thing a client can observe about the lifetime it was granted.
+func signedAccessLifetime(t *testing.T, token string) time.Duration {
+	t.Helper()
+	var claims struct {
+		IssuedAt  int64 `json:"iat"`
+		ExpiresAt int64 `json:"exp"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(decodeJWTPayload(t, token)), &claims))
+	require.NotZero(t, claims.IssuedAt)
+	require.NotZero(t, claims.ExpiresAt)
+	return time.Duration(claims.ExpiresAt-claims.IssuedAt) * time.Second
+}
+
+func TestMintReportsTheLifetimeItSigned(t *testing.T) {
+	ctx := context.Background()
+	impersonated := newIdentity()
+	impersonated.ActingAsUserID = uuid.Must(uuid.NewV7())
+
+	for _, tc := range []struct {
+		name     string
+		cfg      ed25519minter.Config
+		identity *auth.Identity
+		want     time.Duration
+	}{
+		{
+			name:     "defaults",
+			identity: newIdentity(),
+			want:     3 * time.Minute,
+		},
+		{
+			name:     "configured access ttl",
+			cfg:      ed25519minter.Config{AccessTokenTTL: 11 * time.Minute},
+			identity: newIdentity(),
+			want:     11 * time.Minute,
+		},
+		{
+			name:     "impersonation capped below a raised access ttl",
+			cfg:      ed25519minter.Config{AccessTokenTTL: 10 * time.Minute, ImpersonationTokenTTL: 5 * time.Minute},
+			identity: impersonated,
+			want:     5 * time.Minute,
+		},
+		{
+			// The dangerous direction: a short impersonation cap must not be
+			// reported as the longer ordinary lifetime.
+			name:     "impersonation cap lowered below the access ttl",
+			cfg:      ed25519minter.Config{AccessTokenTTL: 3 * time.Minute, ImpersonationTokenTTL: time.Minute},
+			identity: impersonated,
+			want:     time.Minute,
+		},
+		{
+			name:     "impersonation uncapped when the cap exceeds the access ttl",
+			cfg:      ed25519minter.Config{AccessTokenTTL: 2 * time.Minute, ImpersonationTokenTTL: 30 * time.Minute},
+			identity: impersonated,
+			want:     2 * time.Minute,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, priv, err := ed25519minter.GenerateKey()
+			require.NoError(t, err)
+			m := ed25519minter.New(tc.cfg, priv, &memoryStore{})
+
+			pair, err := m.Mint(ctx, tc.identity)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, pair.AccessTokenTTL)
+			require.Equal(t, tc.want, signedAccessLifetime(t, pair.AccessToken))
+
+			// Rotation rebuilds the identity from the session row, which holds no
+			// acting claim, so a rotated token is never an impersonation token and
+			// the cap does not apply to it.
+			if tc.identity.ActingAsUserID != uuid.Nil {
+				return
+			}
+			rotated, err := m.VerifyRefresh(ctx, pair.RefreshToken)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, rotated.AccessTokenTTL)
+			require.Equal(t, tc.want, signedAccessLifetime(t, rotated.AccessToken))
+		})
+	}
+}
+
+func TestSwitchOrganizationReportsTheLifetimeItSigned(t *testing.T) {
+	ctx := context.Background()
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{AccessTokenTTL: 7 * time.Minute}, priv, &memoryStore{})
+
+	identity := newIdentity()
+	pair, err := m.Mint(ctx, identity)
+	require.NoError(t, err)
+	minted, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+
+	switched, ttl, err := m.SwitchOrganization(ctx, identity.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	require.NoError(t, err)
+	require.Equal(t, 7*time.Minute, ttl)
+	require.Equal(t, 7*time.Minute, signedAccessLifetime(t, switched))
 }

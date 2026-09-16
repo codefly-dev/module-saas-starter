@@ -14,11 +14,6 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// AccessTokenLifetime is the TTL baked into minted access tokens.
-// Kept in sync with ed25519minter.Config.AccessTokenTTL so the
-// ExpiresIn field on Authenticate responses matches reality.
-const AccessTokenLifetime = 3 * time.Minute
-
 // Authenticate runs a login or signup through the identity resolver and
 // mints a fresh token pair.
 //
@@ -227,7 +222,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 	return &gen.AuthenticateResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:    int64(pair.AccessTokenTTL.Seconds()),
 		User:         user,
 	}, nil
 }
@@ -376,7 +371,7 @@ func (s *Service) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequest
 	return &gen.RefreshTokenResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:    int64(pair.AccessTokenTTL.Seconds()),
 	}, nil
 }
 
@@ -404,7 +399,7 @@ func (s *Service) SwitchOrganization(
 		return nil, w.Wrapf(auth.ErrOrganizationAccessDenied, "invalid target organization")
 	}
 
-	accessToken, err := s.minter.SwitchOrganization(ctx, parsedUserID, sessionID, targetOrgID)
+	accessToken, accessTTL, err := s.minter.SwitchOrganization(ctx, parsedUserID, sessionID, targetOrgID)
 	if err != nil {
 		return nil, w.Wrapf(err, "organization token exchange")
 	}
@@ -412,7 +407,7 @@ func (s *Service) SwitchOrganization(
 	s.emit(ctx, userID, "user", EventAuthOrgSwitched, "organization", req.OrganizationId, req.OrganizationId)
 	return &gen.SwitchOrganizationResponse{
 		AccessToken: accessToken,
-		ExpiresIn:   int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:   int64(accessTTL.Seconds()),
 	}, nil
 }
 
