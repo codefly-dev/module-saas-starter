@@ -58,7 +58,10 @@ describe("useImpersonateUser", () => {
 		const { result } = renderHook(() => useImpersonateUser(), {
 			wrapper: createWrapper(),
 		});
-		const response = await result.current.mutateAsync("user-1");
+		const response = await result.current.mutateAsync({
+			userId: "user-1",
+			reason: "ticket SUP-4417: export failing for this account",
+		});
 		expect(response).toBeDefined();
 	});
 });

@@ -11,6 +11,33 @@ const { enterImpersonation } = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ enterImpersonation }) }));
 
 const IMPERSONATION_TOKEN = "header.payload.signature";
+const JUSTIFICATION = "ticket SUP-4417: export failing for this account";
+
+// Records every ImpersonateUser body the page sends, so a test can assert both
+// what reached the wire and that nothing did.
+function impersonateReturnsToken() {
+	const bodies: unknown[] = [];
+	server.use(
+		http.post(
+			rpc("PlatformAdminService", "ImpersonateUser"),
+			async ({ request }) => {
+				bodies.push(await request.json());
+				return HttpResponse.json({ accessToken: IMPERSONATION_TOKEN });
+			},
+		),
+	);
+	return bodies;
+}
+
+async function startImpersonation(reason: string) {
+	openRowActions();
+	fireEvent.click(await screen.findByText("Impersonate"));
+	await screen.findByRole("dialog");
+	fireEvent.change(screen.getByLabelText("Justification"), {
+		target: { value: reason },
+	});
+	fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+}
 
 function searchReturnsOneUser() {
 	server.use(
@@ -59,20 +86,40 @@ describe("UsersPage admin container", () => {
 	// so it must reach the auth provider and never the document.
 	it("installs the minted token as the session instead of displaying it", async () => {
 		searchReturnsOneUser();
-		server.use(
-			http.post(rpc("PlatformAdminService", "ImpersonateUser"), () =>
-				HttpResponse.json({ accessToken: IMPERSONATION_TOKEN }),
-			),
-		);
+		const bodies = impersonateReturnsToken();
 		renderInApp(<UsersPage />);
 		await screen.findAllByText("admin@acme.test");
 
-		openRowActions();
-		fireEvent.click(await screen.findByText("Impersonate"));
+		await startImpersonation(JUSTIFICATION);
 
 		await waitFor(() =>
 			expect(enterImpersonation).toHaveBeenCalledWith(IMPERSONATION_TOKEN),
 		);
 		expect(screen.queryByText(IMPERSONATION_TOKEN)).toBeNull();
+		expect(bodies).toEqual([{ userId: "user-1", reason: JUSTIFICATION }]);
+	});
+
+	// The justification is collected before the session is entered, not after:
+	// choosing "Impersonate" opens the dialog, and nothing is minted until it is
+	// submitted with a reason the request contract would accept.
+	it("does not call the RPC until the justification dialog is completed", async () => {
+		searchReturnsOneUser();
+		const bodies = impersonateReturnsToken();
+		renderInApp(<UsersPage />);
+		await screen.findAllByText("admin@acme.test");
+
+		openRowActions();
+		fireEvent.click(await screen.findByText("Impersonate"));
+		await screen.findByRole("dialog");
+		expect(bodies).toEqual([]);
+
+		fireEvent.change(screen.getByLabelText("Justification"), {
+			target: { value: "too short" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Start session" }));
+		await screen.findByText("Describe why, in at least 10 characters");
+
+		expect(bodies).toEqual([]);
+		expect(enterImpersonation).not.toHaveBeenCalled();
 	});
 });

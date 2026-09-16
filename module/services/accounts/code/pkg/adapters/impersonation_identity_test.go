@@ -206,7 +206,7 @@ func TestNestedImpersonationIsDenied(t *testing.T) {
 	installLayeredAuthzService(t, store)
 
 	ctx := impersonatedContext(t, supportActorID, targetMemberID, targetOrgID)
-	_, err := (&PlatformAdminServer{}).ImpersonateUser(ctx, &gen.ImpersonateUserRequest{UserId: targetAdminID})
+	_, err := (&PlatformAdminServer{}).ImpersonateUser(ctx, &gen.ImpersonateUserRequest{UserId: targetAdminID, Reason: "ticket SUP-1002"})
 
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
 	require.Empty(t, store.platformRoleLookups)
@@ -419,4 +419,24 @@ func TestForwardedActingAsWithoutUsableActorIsRefused(t *testing.T) {
 	_, err = (&grpcPolicyAuthorizer{getMinter: nil, exposure: rpcExposureTenant}).authorize(
 		metadata.NewIncomingContext(context.Background(), grpcMD), "/saas.accounts.v1.UserService/GetSelf")
 	require.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+// The justification is a transport-level requirement, so a request without a
+// usable one is refused before the handler reads the caller's identity at all —
+// the token path is never entered. The store is left unset deliberately: a
+// request that got past Validate would panic on it.
+func TestImpersonateUserRejectsAnUnusableJustification(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reason string
+	}{
+		{"absent", ""},
+		{"below the length floor", "too short"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := (&PlatformAdminServer{}).ImpersonateUser(context.Background(),
+				&gen.ImpersonateUserRequest{UserId: targetMemberID, Reason: tc.reason})
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
 }

@@ -165,6 +165,15 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
+	// The transport validator enforces a length floor, but on the raw string, and
+	// this is the entry point a direct business caller uses. The justification
+	// stays out of the error: it is free text about a named customer, and wool
+	// masks field keys, never their values.
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		return nil, w.NewError("impersonation requires a justification")
+	}
+
 	// Cross-tenant lookups: a platform admin impersonating any user needs to see
 	// the target's account state, orgs and role regardless of the caller's own
 	// tenant. WithControlPlane elevates for the reads; the impersonation session
@@ -251,7 +260,8 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	// atomic with — but the token must not reach the caller unless the record is
 	// committed, so the write is what gates the response.
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.emitTx(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "")
+		return s.emitTx(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "",
+			map[string]any{"reason": reason})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot record impersonation")
 	}

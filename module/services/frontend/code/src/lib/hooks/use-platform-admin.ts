@@ -39,7 +39,8 @@ export function useRevokePlatformRole() {
 export function useImpersonateUser() {
 	const svc = usePlatformAdminService();
 	return useMutation({
-		mutationFn: (userId: string) => svc.impersonateUser({ userId }),
+		mutationFn: ({ userId, reason }: { userId: string; reason: string }) =>
+			svc.impersonateUser({ userId, reason }),
 	});
 }
 

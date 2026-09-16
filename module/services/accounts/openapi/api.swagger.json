@@ -94,6 +94,12 @@
       "type": "object"
     },
     "PlatformAdminServiceImpersonateUserBody": {
+      "properties": {
+        "reason": {
+          "description": "Why the operator is stepping into this account. Recorded on\nsaas.platform.user_impersonated, which otherwise names only who and whom.\nThe floor is a length rather than mere presence because a justification\nthat accepts \".\" records nothing a reader can act on.",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "PlatformAdminServiceOverrideEntitlementBody": {

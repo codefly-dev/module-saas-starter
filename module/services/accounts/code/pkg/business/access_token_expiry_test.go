@@ -190,7 +190,10 @@ func TestImpersonationExpiresInReportsTheCap(t *testing.T) {
 			fixture := seedImpersonationFixture(t, "expires-in")
 
 			resp, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-				&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+				&gen.ImpersonateUserRequest{
+					UserId: fixture.memberID,
+					Reason: impersonationReason,
+				})
 			require.NoError(t, err)
 			requireExpiresInMatchesToken(t, resp.AccessToken, resp.ExpiresIn, tc.wantSigns)
 		})

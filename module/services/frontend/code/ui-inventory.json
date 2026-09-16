@@ -3595,6 +3595,21 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/features/users/ui/impersonate-form.tsx",
+			"imports": [
+				"@hookform/resolvers/zod",
+				"react-hook-form",
+				"@/shared/ui",
+				"../model/schemas"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Defines users validation and submission for the owning workflow; shared controls own fields and dialogs.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/features/users/ui/suspend-form.tsx",
 			"imports": [
 				"@hookform/resolvers/zod",

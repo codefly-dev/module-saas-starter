@@ -465,3 +465,31 @@ func TestPublishedEventCarriesTheRegisteredSchemaVersion(t *testing.T) {
 		t.Fatalf("envelope schema_version = %d, want the registered %d", got, def.Version)
 	}
 }
+
+// The impersonation justification survives the export serialization hop. It is
+// free text an operator wrote about a named customer, so the tempting reflex is
+// to mark it PII — but PII here means "stripped from every export", and the
+// compliance store is precisely where the justification has to be readable. The
+// field is declared on the registry schema and not marked PII, and this pins
+// both halves: an undeclared field would be dropped whole by fail-closed
+// redaction, and a PII one would be stripped by name.
+func TestExportPreservesTheImpersonationJustification(t *testing.T) {
+	const reason = "ticket SUP-4417: export failing for this account"
+	store := &teeStore{}
+	entry := orgAuditEntry()
+	entry.EventType = EventPlatformImpersonated
+	entry.Payload = map[string]any{"reason": reason}
+	if err := enqueueAuditExport(t.Context(), store, entry); err != nil {
+		t.Fatalf("enqueueAuditExport: %v", err)
+	}
+	decoded, err := decodeAuditExportEnvelope(envelopeFromRequest(t, store.jobs[0]))
+	if err != nil {
+		t.Fatalf("decode export envelope: %v", err)
+	}
+	if got := decoded.Payload["reason"]; got != reason {
+		t.Fatalf("teed reason = %v, want %q", got, reason)
+	}
+	if got := RedactPayload(entry.EventType, decoded.Payload)["reason"]; got != reason {
+		t.Fatalf("egress reason = %v, want %q", got, reason)
+	}
+}

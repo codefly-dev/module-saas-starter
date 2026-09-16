@@ -16,6 +16,10 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
+// Every case here needs a justification that clears the request's length floor;
+// only the cases that assert on the record care what it says.
+const impersonationReason = "ticket SUP-4417: export failing for this account"
+
 // impersonationFixture is the shape every case here needs: a support admin who
 // belongs to no organization of the target's, and a target organization with an
 // owner and an ordinary member.
@@ -83,7 +87,7 @@ func TestImpersonationTokenSplitsActorFromEffectiveSubject(t *testing.T) {
 	fixture := seedImpersonationFixture(t, "split")
 
 	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 	require.NoError(t, err)
 
 	identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
@@ -123,7 +127,7 @@ func TestImpersonatedActionRecordsBothIdentitiesInAudit(t *testing.T) {
 	fixture := seedImpersonationFixture(t, "audit")
 
 	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.ownerID})
+		&gen.ImpersonateUserRequest{UserId: fixture.ownerID, Reason: impersonationReason})
 	require.NoError(t, err)
 	identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
 	require.NoError(t, err)
@@ -180,14 +184,14 @@ func TestImpersonatedSessionCannotImpersonateAgain(t *testing.T) {
 	grantPlatformRole(t, fixture.ownerID, "super_admin", fixture.supportID)
 
 	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.ownerID})
+		&gen.ImpersonateUserRequest{UserId: fixture.ownerID, Reason: impersonationReason})
 	require.NoError(t, err)
 	identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
 	require.NoError(t, err)
 
 	impersonated := auth.WithVerifiedRequestIdentity(testCtx, auth.RequestIdentityOf(identity))
 	_, err = testService.ImpersonateUser(impersonated, fixture.ownerID,
-		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "permission denied")
 }
@@ -206,7 +210,7 @@ func TestImpersonationRefusesInactiveTarget(t *testing.T) {
 	}))
 
 	_, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not active")
 }
@@ -227,7 +231,7 @@ func TestImpersonationTargetOrgSelectionIsDeterministic(t *testing.T) {
 
 	for range 3 {
 		issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-			&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+			&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 		require.NoError(t, err)
 		identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
 		require.NoError(t, err)
@@ -352,7 +356,7 @@ func TestImpersonationPersistsAMarkedCredentiallessSession(t *testing.T) {
 
 	before := time.Now()
 	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 	require.NoError(t, err)
 
 	windows := sessionsActingAs(adminSessions(t, fixture.supportID), fixture.memberID)
@@ -398,7 +402,7 @@ func TestListActiveSessionsNeverPresentsImpersonationAsALogin(t *testing.T) {
 	mintAdminLogin(t, fixture.supportID)
 
 	_, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 	require.NoError(t, err)
 
 	listed, err := testService.ListActiveSessions(testCtx, fixture.supportID,
@@ -433,7 +437,7 @@ func TestImpersonationLeavesTheAdminsOwnSessionUntouched(t *testing.T) {
 
 	for range 3 {
 		_, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-			&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+			&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 		require.NoError(t, err)
 	}
 
@@ -461,7 +465,7 @@ func TestImpersonationSessionCannotBeExchangedForALongerLivedToken(t *testing.T)
 	fixture := seedImpersonationFixture(t, "exchange")
 
 	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
 	require.NoError(t, err)
 	identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
 	require.NoError(t, err)
@@ -481,4 +485,69 @@ func TestImpersonationSessionCannotBeExchangedForALongerLivedToken(t *testing.T)
 			`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, windows[0].ID).Scan(&stillCredentialless)
 	}))
 	require.True(t, stillCredentialless)
+}
+
+// The record answers "why", not just who and whom. #533 made an impersonated
+// action attributable to both parties; without a justification the pair is still
+// all the log holds, and the customer reading their own log sees their own id
+// performing actions they did not perform with nothing to explain it.
+func TestImpersonationRecordsTheJustification(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "justify")
+
+	_, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
+	require.NoError(t, err)
+
+	entries, _, _, err := testService.QueryAuditLog(testCtx, business.AuditQuery{
+		ActorID:   fixture.supportID,
+		EventType: string(business.EventPlatformImpersonated),
+		PageSize:  10,
+	})
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, impersonationReason, entries[0].Payload["reason"],
+		"the submitted justification must be readable from the audit query path")
+}
+
+// A justification that is only whitespace clears the transport's length floor,
+// so the business entry point is what has to refuse it — and it must refuse
+// before the token is minted, not after.
+func TestImpersonationRefusesABlankJustification(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "blank")
+
+	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: "          "})
+	require.Error(t, err)
+	require.Nil(t, issued)
+
+	entries, _, _, err := testService.QueryAuditLog(testCtx, business.AuditQuery{
+		ActorID:   fixture.supportID,
+		EventType: string(business.EventPlatformImpersonated),
+		PageSize:  10,
+	})
+	require.NoError(t, err)
+	require.Empty(t, entries, "a refused impersonation must leave no record behind")
+}
+
+// The justification is free text an operator wrote about a named customer, and
+// the method is already CONFIDENTIAL. A failure path must not widen that by
+// carrying it out in an error a caller — or a log sink — reads: wool masks field
+// keys, never values, so an error that interpolated the request would leak it.
+func TestImpersonationFailureDoesNotEchoTheJustification(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "echo")
+
+	superID, _ := mustUserAndOrg(t, testCtx, "super-echo@example.com", "super-echo", "Super Org echo")
+	grantPlatformRole(t, superID, "super_admin", superID)
+	require.NoError(t, testService.SuspendUser(testCtx, superID, &gen.SuspendUserRequest{
+		UserId: fixture.memberID,
+		Reason: "test",
+	}))
+
+	_, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: impersonationReason})
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), impersonationReason)
 }
