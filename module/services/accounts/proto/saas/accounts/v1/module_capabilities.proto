@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package saas.accounts.v1;
 
+import "saas/accounts/v1/work_contexts.proto";
+
 import "buf/validate/validate.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/duration.proto";
@@ -568,7 +570,31 @@ message CheckWorkContextRecordAccessResponse {
   string scope_node_id = 2;
 }
 
+// ModuleExchangeDelegatedReadAudienceRequest selects only an installed binding.
+// User identity and authority come exclusively from the signed parent context.
+message ModuleExchangeDelegatedReadAudienceRequest {
+ string binding_id = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ string parent_work_context_token = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+}
+
 service ModuleCapabilitiesService {
+ // ExchangeDelegatedReadAudience authenticates the module independently of a
+ // current parent context and exchanges only its installed read-only binding.
+ rpc ExchangeDelegatedReadAudience(ModuleExchangeDelegatedReadAudienceRequest) returns (IssuedWorkContext) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: {emission: AUDIT_EMISSION_NONE}
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_SECRET
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
+
   // Checks current owner and every delegated actor against true record placement,
   // intersected with the verified capability's attenuated resource/action scope.
   rpc CheckWorkContextRecordAccess(CheckWorkContextRecordAccessRequest) returns (CheckWorkContextRecordAccessResponse) {

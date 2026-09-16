@@ -57,6 +57,9 @@
       "name": "MFAService"
     },
     {
+      "name": "WorkContextService"
+    },
+    {
       "name": "ModuleCapabilitiesService"
     },
     {
@@ -97,9 +100,6 @@
     },
     {
       "name": "WebhookService"
-    },
-    {
-      "name": "WorkContextService"
     }
   ],
   "consumes": [

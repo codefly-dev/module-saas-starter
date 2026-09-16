@@ -21,6 +21,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
+	ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
 	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName  = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
 	ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
 	ModuleCapabilitiesService_PlaceRecord_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
@@ -49,6 +50,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ModuleCapabilitiesServiceClient interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error)
@@ -119,6 +123,16 @@ type moduleCapabilitiesServiceClient struct {
 
 func NewModuleCapabilitiesServiceClient(cc grpc.ClientConnInterface) ModuleCapabilitiesServiceClient {
 	return &moduleCapabilitiesServiceClient{cc}
+}
+
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssuedWorkContext)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (c *moduleCapabilitiesServiceClient) CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error) {
@@ -354,6 +368,9 @@ func (c *moduleCapabilitiesServiceClient) ReplayEvents(ctx context.Context, in *
 // All implementations must embed UnimplementedModuleCapabilitiesServiceServer
 // for forward compatibility.
 type ModuleCapabilitiesServiceServer interface {
+	// ExchangeDelegatedReadAudience authenticates the module independently of a
+	// current parent context and exchanges only its installed read-only binding.
+	ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error)
@@ -426,6 +443,9 @@ type ModuleCapabilitiesServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedModuleCapabilitiesServiceServer struct{}
 
+func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedReadAudience not implemented")
+}
 func (UnimplementedModuleCapabilitiesServiceServer) CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckWorkContextRecordAccess not implemented")
 }
@@ -512,6 +532,24 @@ func RegisterModuleCapabilitiesServiceServer(s grpc.ServiceRegistrar, srv Module
 		t.testEmbeddedByValue()
 	}
 	s.RegisterService(&ModuleCapabilitiesService_ServiceDesc, srv)
+}
+
+func _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExchangeDelegatedReadAudienceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedReadAudience(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedReadAudience(ctx, req.(*ModuleExchangeDelegatedReadAudienceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 func _ModuleCapabilitiesService_CheckWorkContextRecordAccess_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -910,6 +948,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "saas.accounts.v1.ModuleCapabilitiesService",
 	HandlerType: (*ModuleCapabilitiesServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ExchangeDelegatedReadAudience",
+			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler,
+		},
 		{
 			MethodName: "CheckWorkContextRecordAccess",
 			Handler:    _ModuleCapabilitiesService_CheckWorkContextRecordAccess_Handler,
