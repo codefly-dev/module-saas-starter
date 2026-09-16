@@ -69,16 +69,9 @@ type deploymentModuleBinding struct {
 }
 
 type deploymentInterfaceBinding struct {
-	Service    string                       `yaml:"service"`
-	Endpoint   string                       `yaml:"endpoint"`
-	Visibility string                       `yaml:"visibility"`
-	Clients    *deploymentClientPublication `yaml:"clients,omitempty"`
-}
-
-type deploymentClientPublication struct {
-	Publish   *bool    `yaml:"publish,omitempty"`
-	Languages []string `yaml:"languages,omitempty"`
-	Services  []string `yaml:"services,omitempty"`
+	Service    string `yaml:"service"`
+	Endpoint   string `yaml:"endpoint"`
+	Visibility string `yaml:"visibility"`
 }
 
 type deploymentServiceBinding struct {
@@ -708,10 +701,9 @@ type moduleManifestInterface struct {
 }
 
 type manifestInterfaceEndpoint struct {
-	Service    string                       `yaml:"service"`
-	Endpoint   string                       `yaml:"endpoint"`
-	Visibility string                       `yaml:"visibility"`
-	Clients    *deploymentClientPublication `yaml:"clients,omitempty"`
+	Service    string `yaml:"service"`
+	Endpoint   string `yaml:"endpoint"`
+	Visibility string `yaml:"visibility"`
 }
 
 type manifestServiceRef struct {

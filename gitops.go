@@ -237,16 +237,9 @@ type topologyModule struct {
 }
 
 type topologyInterface struct {
-	Service    string                     `yaml:"service"`
-	Endpoint   string                     `yaml:"endpoint"`
-	Visibility string                     `yaml:"visibility"`
-	Clients    *topologyClientPublication `yaml:"clients,omitempty"`
-}
-
-type topologyClientPublication struct {
-	Publish   *bool    `yaml:"publish,omitempty"`
-	Languages []string `yaml:"languages,omitempty"`
-	Services  []string `yaml:"services,omitempty"`
+	Service    string `yaml:"service"`
+	Endpoint   string `yaml:"endpoint"`
+	Visibility string `yaml:"visibility"`
 }
 
 type topologyService struct {

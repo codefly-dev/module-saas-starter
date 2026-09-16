@@ -158,9 +158,15 @@ file in `.github/workflows` and rejects any artifact-writing job whose transitiv
 when it holds `packages`, `id-token`, or `attestations` write permission (or the
 scalar `permissions: write-all`, which grants all three), when a step mutates a
 GitHub release, publishes an npm package, pushes an image, sends a
-`repository_dispatch`, or attests provenance, or when it `uses:` a publishing,
+`repository_dispatch`, attests provenance, or runs `codefly publish` (which
+pushes client-library tags to public `codefly-dev` repositories and packages to
+GitHub Packages, authenticating with `GH_TOKEN`/`NODE_AUTH_TOKEN` from `env:` —
+so it holds none of the permissions above), or when it `uses:` a publishing,
 release, or repository-dispatch action — those authenticate with a secret in
 `with:` rather than through `permissions`, so nothing else would see them.
+`codefly publish … --check` and `--dry-run` are excluded: they publish nothing
+and are themselves gates, which could not depend on the aggregate that depends
+on them.
 (`contents: write` alone does not count: `dep-audit.yml` holds it only to push a
 remediation branch.)
 

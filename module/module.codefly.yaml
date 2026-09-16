@@ -8,16 +8,6 @@ interface:
         - service: accounts
           endpoint: connect
           visibility: module
-          clients:
-            languages:
-                - go
-                - typescript
-                - python
-            services:
-                - AccessibleScopeService
-                - AuditService
-                - DatasourceService
-                - WebhookService
         - service: accounts
           endpoint: custody
           visibility: module
@@ -30,8 +20,6 @@ interface:
         - service: auth-gateway
           endpoint: grpc
           visibility: module
-          clients:
-            publish: false
         - service: frontend
           endpoint: http
           visibility: public
