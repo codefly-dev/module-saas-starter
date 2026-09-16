@@ -460,27 +460,52 @@ Two tag tracks live here on separate version axes (see
   `module/module.package.codefly.yaml` and a `module-package/vX.Y.Z` tag. Only
   this track triggers the immutable module-package publication job (strict
   manifest validation, SBOM, provenance signing).
-- The **client libraries** of that package — one
-  `saas-starter-<service>-<endpoint>-client` per interface endpoint that exports
-  a contract (the endpoint is part of the name: `accounts`/`connect` publishes
-  `saas-starter-accounts-connect-client`), in every language
-  `module/clients.codefly.yaml` allows. That file, not the generated
-  `module/module.codefly.yaml`, is the one the CLI reads; an exported endpoint
-  it does **not** list publishes a client in every default language with its
-  full service surface, so every exported endpoint must appear there — the
-  `clients-config` gate in `module/tools/composition` enforces it. Requires
-  `codefly` **≥ 0.1.152** (`scripts/ci/install-codefly.sh` pins 0.1.155); the
-  subcommand does not exist in earlier releases. Before tagging the package, run
-  `codefly publish clients
-  saas-starter` (Docker; publishes through the stores under `libraries.publish`
-  in `workspace.codefly.yaml`, which create each missing repository as a
-  **public** one) and commit `module/contracts/clients.codefly.json`; `codefly
-  publish clients saas-starter --check` is the offline gate that the manifest is
-  complete for the version being tagged. A contract that moved since the last
-  publish is refused until `version:` is bumped — the package version is the
-  client version. Consumers install the published handle (`codefly install
-  library saas-starter-accounts-connect-client@^0.1 --language
-  go|typescript|python`); nothing generated is vendored into a consumer.
+- The **client libraries** of that package. Cutting a tag here does **not**
+  publish a client to a library store, and no release job gates on a clients
+  manifest. The per-language SDK repositories are the distribution mechanism:
+  `saas-sdk-go` and `saas-sdk-python` are each to carry a generated stub tree —
+  produced by the Codefly companion the CLI pin resolves — committed and
+  released under that repository's own tag. On GitHub that tag *is* the publish:
+  a Go module path is its repository URL (`go get
+  github.com/codefly-dev/saas-sdk-go@vX.Y.Z`), and Python installs from the same
+  ref (`pip install "saas-sdk @ git+https://github.com/codefly-dev/saas-sdk-python@vX.Y.Z"`).
+  Nothing in this repository verifies that either tree exists or is current —
+  check the SDK repository itself before relying on one.
+
+  **The TypeScript client is published from here**, and is not a separate SDK
+  repository. `@codefly-dev/saas-sdk`
+  (`module/services/frontend/code/packages/saas-sdk`) builds the generated
+  bindings into its `dist`, and the `publish-frontend-kit` job pushes it to
+  GitHub Packages on every **`v0.0.N` deploy-counter tag** — not on the
+  module-package track. A contract change that reaches that tree therefore has
+  to carry a `version:` bump in the package's `package.json`:
+  `scripts/publish-frontend-kit.mjs` refuses to republish a version whose
+  contents moved, and that refusal fails the release.
+
+  No new repository is created for a client, and nothing generated is vendored
+  into a *consumer* — a consumer imports the SDK, never a stub package, so the
+  SDK's public API must alias its generated types rather than expose their
+  import path. For the kit that rule is enforced rather than asked for: the
+  package's `exports` map may not name a subpath into the generated tree
+  (`publish-frontend-kit.test.mjs`).
+
+  `module/clients.codefly.yaml` remains the policy that decides, per exported
+  contract endpoint, which languages get a client and which services its facade
+  reaches. It is **generation** policy now, not publication policy. Every
+  exported endpoint must still appear there — an endpoint the file omits would
+  otherwise generate every service in its package, in every default language —
+  and the `clients-config` gate in `module/tools/composition` enforces that.
+
+  `codefly publish clients saas-starter` (requires `codefly` ≥ 0.1.152) still
+  exists, but it is **not part of cutting a release**, and this workspace is
+  configured so that running it cannot disclose anything by accident:
+  `libraries.publish` in `workspace.codefly.yaml` declares **no `go` or `python`
+  store**, so the command fails closed instead of creating a repository. It
+  would create one **public** (codefly-dev/cli#715, still open), and a client's
+  bindings carry the whole contract, not just the `services:` facade. Restoring
+  a store is a deliberate, separately-agreed disclosure decision; where a client
+  may be published is an infrastructure fact that belongs in the cell contract
+  rather than in `libraries.publish`.
 
 ## Doc index
 
