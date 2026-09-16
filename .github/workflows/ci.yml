@@ -733,8 +733,16 @@ jobs:
       # Only main's runs seed the store. A pull request's cache is scoped to
       # that pull request and unreadable from anywhere else, so saving one buys
       # nothing and evicts entries other runs are reading.
+      #
+      # `!cancelled()` rather than dropping the step on failure: a phase that
+      # fails for one service has already published records for every service
+      # that passed, and a record only exists for a task that passed, so a
+      # partial save can never certify a failure. Skipping it would make every
+      # run after a red main re-execute work that was verified — the runs that
+      # can least afford it. Not `always()`, which would also save from a
+      # cancelled run whose store is arbitrarily incomplete.
       - name: Save verified CI results
-        if: ${{ github.ref == 'refs/heads/main' && steps.reuse.outputs.enabled == 'true' }}
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.reuse.outputs.enabled == 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/codefly-ci-results

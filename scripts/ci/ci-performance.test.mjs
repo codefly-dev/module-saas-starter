@@ -286,6 +286,12 @@ test('results are reused only under a signing key, and only main is trusted to c
   const save = workflow.jobs['codefly-quality-phases'].steps.find(step => step.name === 'Save verified CI results');
   assert.match(save.if, /github\.ref == 'refs\/heads\/main'/);
   assert.match(save.if, /steps\.reuse\.outputs\.enabled == 'true'/);
+  // A failing phase has already published records for the services that passed.
+  // Dropping the save on failure would discard them and make every run after a
+  // red main re-execute verified work; `always()` would instead save from a
+  // cancelled run, whose store is incomplete at an arbitrary point.
+  assert.match(save.if, /!cancelled\(\)/);
+  assert.ok(!/always\(\)/.test(save.if), save.if);
   // actions/cache rejects a key containing a comma, which "verify,sync-drift" has.
   const restore = workflow.jobs['codefly-quality-phases'].steps.find(step => step.name === 'Restore verified CI results');
   for (const step of [save, restore]) {
