@@ -69,7 +69,10 @@ func TestDelegatedRecordAccessIsolatesCollidingPlacementsAcrossTenants(t *testin
 		node, err := svc.ModulePlaceRecord(testCtx,
 			business.ModuleCaller{PrincipalID: business.ModulePrincipalID("rows"), BoundOrg: org},
 			org, path, "record", path, resource, id)
-		require.NoError(t, err)
+		// Placement resolves the record with no tenant predicate too, so this is
+		// the first thing a broken scope_nodes RLS policy breaks: it reports the
+		// other tenant's node as an existing placement of this one.
+		require.NoErrorf(t, err, "placing %q in tenant %s saw another tenant's placement: scope_nodes tenant isolation is broken", id, org)
 		return node
 	}
 	current := func(context.Context) error { return nil }

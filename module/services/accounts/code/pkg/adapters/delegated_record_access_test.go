@@ -11,6 +11,7 @@ import (
 	basev0 "github.com/codefly-dev/core/generated/go/codefly/base/v0"
 	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 type exactRecordStore struct {
@@ -90,12 +91,14 @@ func TestExactRecordOracleIntersectsEveryAuthenticatedSubject(t *testing.T) {
 	require.True(t, allowed.GetAllowed())
 }
 
-// A composed module's installed identity capability is signed by the same key,
-// for the same tenant, as the viewer contexts this oracle answers for — so what
-// keeps the two apart is that the module mint seals no authority scopes, not the
-// audience, which may legally be either the module-capability one or the
-// module's own prefix. Neither form may stand in for a viewer's delegation.
-func TestExactRecordOracleRefusesInstallationCapability(t *testing.T) {
+// A composed module's own identity capability is signed by the same key, for the
+// same tenant, as the viewer contexts this oracle answers for — so what keeps the
+// two apart is that the module mint seals no authority scopes, not the audience,
+// which may legally be either the module-capability one or the module's own
+// prefix. Each form is refused by a different gate, so each is asserted on the
+// refusal it must come from: a denial arriving from the other gate would mean the
+// one under test had stopped holding.
+func TestExactRecordOracleRefusesModuleIdentityCapability(t *testing.T) {
 	_, facts, client, _ := sourceReadFixture(t)
 	store := &exactRecordStore{}
 	svc, err := business.NewService(store)
@@ -105,18 +108,67 @@ func TestExactRecordOracleRefusesInstallationCapability(t *testing.T) {
 	module := business.ModulePrincipalID("rows")
 	identity, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: module, Tenant: readOrg})
 	require.NoError(t, err)
-	// The same installed identity re-minted at the module's own prefix, so the
-	// declared-vocabulary check passes and only the empty scope set can refuse it.
+	// The same identity re-minted at the module's own prefix, so the declared
+	// vocabulary gate passes and only the empty scope set can refuse it.
 	prefixed, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "rows", TenantID: readOrg, OwnerPrincipalID: module,
-		TaskID: "install-task", SessionID: "install-session", AuthorizationRevision: facts.facts.EffectiveRevision(),
+		TaskID: "019f6bf7-3333-7333-8333-333333333333", SessionID: "019f6bf7-4444-7444-8444-444444444444", AuthorizationRevision: facts.facts.EffectiveRevision(),
 		ActorChain: []*basev0.WorkActorV1{{PrincipalId: module, PrincipalKind: "service", DelegationId: "install-hop"}}})
 	require.NoError(t, err)
-	for _, capability := range []string{identity.Encoded(), prefixed.Encoded()} {
-		out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(capability, "record-a"))
-		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
-		require.Nil(t, out)
+	for _, capability := range []struct{ name, token, refusal string }{
+		{"module-capability audience", identity.Encoded(), "declared resource scope required"},
+		{"module's own prefix", prefixed.Encoded(), "record scope required"},
+	} {
+		out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(capability.token, "record-a"))
+		require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err), capability.name)
+		require.ErrorContains(t, err, capability.refusal, capability.name)
+		require.Nil(t, out, capability.name)
 	}
 	require.Empty(t, store.subjects)
+}
+
+// An installation capability is the headless mint: an agent principal actor under
+// the installation's owner of record, carrying REAL authority scopes rather than
+// the empty set a module identity seals. It therefore clears every gate that stops
+// a module identity, and the only thing standing between it and the record is the
+// intersection — so the agent hop must be checked against live grants exactly like
+// a human delegate's, never inherited from the owner it acts for.
+func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
+	_, facts, client, _ := sourceReadFixture(t)
+	store := &exactRecordStore{}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}}})
+	service = svc
+	// The sealed revision must equal what the oracle re-resolves, or the mint would
+	// be refused as stale before the intersection this test is about is reached.
+	facts.installationFcts = &business.InstallationAuthorityFacts{
+		OwnerPrincipalID:       readOwner,
+		OrganizationRevision:   facts.facts.OrganizationRevision,
+		OwnerPrincipalRevision: facts.facts.PrincipalRevision,
+		Actor: &business.Principal{ID: installAgentID, Kind: business.PrincipalKindAgent,
+			AgentIdentifier: "example.test/solution:1.0.0", AllowedAudiences: []string{"rows"}, AllowedScopes: []string{"rows"}},
+	}
+	issued, err := workContextSingleton.StartInstallationTask(
+		metadata.NewIncomingContext(context.Background(), metadata.Pairs("x-codefly-internal-token", "source-read-test-perimeter")),
+		&gen.StartInstallationTaskRequest{OrgId: readOrg, InstallationId: installID, TaskId: installTaskID, SessionId: installSession,
+			Audience:        "rows",
+			AuthorityScopes: []*gen.WorkContextScope{{ResourceKind: "rows", Actions: []string{"read"}, ResourceIds: []string{"record-a"}}}})
+	require.NoError(t, err)
+	require.Equal(t, installAgentID, issued.GetCurrentActorPrincipalId())
+	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
+	workContextSingleton.journal = &exactChainJournal{}
+
+	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(issued.GetToken(), "record-a"))
+	require.NoError(t, err)
+	require.True(t, out.Msg.Allowed)
+	require.Equal(t, []string{readOwner, installAgentID}, store.subjects, "the agent hop is intersected, not inherited from its owner")
+
+	// The owner still holds the grant; revoking it from the agent alone must deny.
+	store.subjects, store.deny = nil, installAgentID
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(issued.GetToken(), "record-a"))
+	require.NoError(t, err)
+	require.False(t, out.Msg.Allowed)
+	require.Empty(t, out.Msg.ScopeNodeId)
 }
 
 type exactChainAuthority struct {
