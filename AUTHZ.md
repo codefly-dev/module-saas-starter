@@ -97,6 +97,14 @@ authority.
   revocation store wired, nothing can invalidate an outstanding access token
   before its own expiry, and a close that claimed otherwise would overstate what
   it achieved.
+- **No method the descriptor withholds.** A method policy may declare
+  `impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN`, which the RPC policy
+  interceptor refuses on the same predicate before the handler runs. The set is
+  what outlives the session or changes who may act later — durable credentials,
+  role and membership grants, account destruction; read it off the
+  `impersonation=FORBIDDEN` guard in `AUTHZ_MATRIX.md`, which is generated from
+  the descriptors the interceptor reads. An undeclared requirement allows, so
+  the restriction is always visible beside the RPC it governs.
 - **No inactive target.** The target must be an active account, so a support
   session cannot outlive the account's own lifecycle.
 - **A short, separately capped lifetime.** `Config.ImpersonationTokenTTL` caps
