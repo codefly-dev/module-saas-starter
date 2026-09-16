@@ -171,6 +171,70 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 	require.Empty(t, out.Msg.ScopeNodeId)
 }
 
+// An exchanged read audience is the fourth capability shape reaching this oracle:
+// authority re-audienced from a verified parent viewer context rather than minted
+// fresh. The exchange reseals the parent under the installed binding's scopes and
+// carries the parent's delegation hops across untouched, so two things must hold
+// once the result is presented here — the oracle reads the resealed scopes and not
+// the wider parent's, and it still intersects every hop rather than collapsing the
+// chain into the owner the exchange acted for.
+func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T) {
+	_, facts, client, _ := sourceReadFixture(t)
+	store := &exactRecordStore{}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, Resources: []string{"rows"},
+			ReadAudiences: map[string]business.ModuleReadAudience{
+				"proof": {Audience: "rows", Scopes: []business.ModuleReadScope{{ResourceKind: "rows", ResourceIDs: []string{"record-a"}}}}}},
+		business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}},
+	})
+	service = svc
+	journal := &exactChainJournal{}
+	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
+	workContextSingleton.journal = journal
+	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}}}
+	parent, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
+		TaskID: "exchange-task", SessionID: "exchange-session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes,
+		ActorChain: []*basev0.WorkActorV1{
+			{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes},
+			{PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}})
+	require.NoError(t, err)
+	exchanged, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent.Encoded()))
+	require.NoError(t, err)
+
+	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(exchanged.Msg.Token, "record-a"))
+	require.NoError(t, err)
+	require.True(t, out.Msg.Allowed)
+	require.Equal(t, []string{readOwner, "actor-1", "actor-2"}, store.subjects, "the parent's hops are intersected, not inherited from the owner the exchange acted for")
+	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
+
+	// The binding seals record-a while the parent is kind-wide, so the exchanged
+	// context must be refused for record-b before any grant is read. Presenting the
+	// parent for the same record reaches the grant check instead, which is what
+	// makes the refusal above attenuation rather than the record being unreachable.
+	before := len(store.subjects)
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(exchanged.Msg.Token, "record-b"))
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	require.ErrorContains(t, err, "record scope required")
+	require.Nil(t, out)
+	require.Len(t, store.subjects, before)
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(parent.Encoded(), "record-b"))
+	require.NoError(t, err)
+	require.False(t, out.Msg.Allowed)
+	require.Greater(t, len(store.subjects), before)
+
+	// Every hop is checked against live grants: revoking any one of them denies the
+	// record while the rest still hold it.
+	for _, hop := range []string{readOwner, "actor-1", "actor-2"} {
+		store.subjects, store.deny = nil, hop
+		out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(exchanged.Msg.Token, "record-a"))
+		require.NoError(t, err, hop)
+		require.False(t, out.Msg.Allowed, hop)
+		require.Empty(t, out.Msg.ScopeNodeId, hop)
+	}
+}
+
 type exactChainAuthority struct {
 	business.WorkContextAuthorityStore
 	facts *business.WorkContextAuthorityFacts
