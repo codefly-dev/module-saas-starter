@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:e9b4298fb9154003ce81605efcaf24803d99acc3b43d4a5524c92f73bb1aa057",
+      "digest": "sha256:f04c56e250141f08064a7ef69675f6abf2a54b462333c744410b0c824bf9c555",
       "services": [
         {
           "name": "ModuleCapabilitiesService",
@@ -18,9 +18,11 @@
           "procedures": [
             "/saas.accounts.v1.ModuleCapabilitiesService/AckJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval",
+            "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess",
             "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
             "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
+            "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
             "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
             "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
             "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob",
@@ -31,6 +33,7 @@
             "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
             "/saas.accounts.v1.ModuleCapabilitiesService/NackJob",
             "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser",
+            "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord",
             "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent",
             "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents",
             "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval",

@@ -40,8 +40,32 @@ type ModuleCapabilitiesClient struct {
 	inner accountsv1connect.ModuleCapabilitiesServiceClient
 }
 
+func (a *ModuleCapabilitiesClient) ExchangeDelegatedReadAudience(ctx context.Context, req *v1.ModuleExchangeDelegatedReadAudienceRequest) (*v1.IssuedWorkContext, error) {
+	resp, err := a.inner.ExchangeDelegatedReadAudience(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func (a *ModuleCapabilitiesClient) CheckWorkContextRecordAccess(ctx context.Context, req *v1.CheckWorkContextRecordAccessRequest) (*v1.CheckWorkContextRecordAccessResponse, error) {
+	resp, err := a.inner.CheckWorkContextRecordAccess(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
 func (a *ModuleCapabilitiesClient) ListReadableSourceCollections(ctx context.Context, req *v1.ListReadableSourceCollectionsRequest) (*v1.ListReadableSourceCollectionsResponse, error) {
 	resp, err := a.inner.ListReadableSourceCollections(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	return resp.Msg, nil
+}
+
+func (a *ModuleCapabilitiesClient) PlaceRecord(ctx context.Context, req *v1.ModulePlaceRecordRequest) (*v1.ModulePlaceRecordResponse, error) {
+	resp, err := a.inner.PlaceRecord(ctx, connect.NewRequest(req))
 	if err != nil {
 		return nil, err
 	}
