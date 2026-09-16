@@ -460,6 +460,27 @@ Two tag tracks live here on separate version axes (see
   `module/module.package.codefly.yaml` and a `module-package/vX.Y.Z` tag. Only
   this track triggers the immutable module-package publication job (strict
   manifest validation, SBOM, provenance signing).
+- The **client libraries** of that package — one
+  `saas-starter-<service>-<endpoint>-client` per interface endpoint that exports
+  a contract (the endpoint is part of the name: `accounts`/`connect` publishes
+  `saas-starter-accounts-connect-client`), in every language
+  `module/clients.codefly.yaml` allows. That file, not the generated
+  `module/module.codefly.yaml`, is the one the CLI reads; an exported endpoint
+  it does **not** list publishes a client in every default language with its
+  full service surface, so every exported endpoint must appear there — the
+  `clients-config` gate in `module/tools/composition` enforces it. Requires
+  `codefly` **≥ 0.1.152** (`scripts/ci/install-codefly.sh` pins 0.1.155); the
+  subcommand does not exist in earlier releases. Before tagging the package, run
+  `codefly publish clients
+  saas-starter` (Docker; publishes through the stores under `libraries.publish`
+  in `workspace.codefly.yaml`, which create each missing repository as a
+  **public** one) and commit `module/contracts/clients.codefly.json`; `codefly
+  publish clients saas-starter --check` is the offline gate that the manifest is
+  complete for the version being tagged. A contract that moved since the last
+  publish is refused until `version:` is bumped — the package version is the
+  client version. Consumers install the published handle (`codefly install
+  library saas-starter-accounts-connect-client@^0.1 --language
+  go|typescript|python`); nothing generated is vendored into a consumer.
 
 ## Doc index
 

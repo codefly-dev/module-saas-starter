@@ -182,6 +182,24 @@ const PUBLICATION_STEP_PATTERNS = [
   { on: "run", pattern: /\bnpm\s+publish\b/, why: "publishes an npm package" },
   { on: "run", pattern: /\bpublish-[\w-]+\.mjs\b/, why: "runs a package publish script" },
   { on: "run", pattern: /\bdocker\s+push\b/, why: "pushes a container image" },
+  // `codefly publish` writes outside this repository — `publish clients` and
+  // `publish library` push tags to github.com/codefly-dev/<library>-go|-python
+  // (creating the repository public when absent) and a package to GitHub
+  // Packages, and bare `codefly publish` tags and pushes this repo. All of it
+  // authenticates with GH_TOKEN / NODE_AUTH_TOKEN supplied as secrets in
+  // `env:`, so the job needs none of PUBLICATION_PERMISSIONS and only this
+  // pattern can see it.
+  //
+  // `--check` and `--dry-run` publish nothing: they are gates, and classifying
+  // them as publishers would require them to list `release-gates` in `needs`,
+  // which is the cycle a gate cannot satisfy. The lookahead is bounded to the
+  // occurrence's own logical line (backslash continuations included), so a
+  // script that checks on one line and publishes on another still trips.
+  {
+    on: "run",
+    pattern: /\bcodefly\s+publish\b(?!(?:[^\n]|\\\n)*--(?:check|dry-run)\b)/,
+    why: "publishes a codefly library or tag",
+  },
   { on: "run", pattern: /\bgh\s+api\b[\s\S]*?\/dispatches\b/, why: "dispatches a release event downstream" },
   { on: "run", pattern: /\bannounce-[\w-]+\.mjs\b/, why: "runs a release announcement script" },
   { on: "uses", pattern: /^actions\/attest-build-provenance/, why: "attests artifact provenance" },

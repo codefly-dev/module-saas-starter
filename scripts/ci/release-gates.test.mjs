@@ -437,10 +437,32 @@ test("each artifact-writing signal marks a job as a publisher", () => {
     { steps: [{ uses: "example-org/action-gh-release@v2" }] },
     { steps: [{ uses: "example-org/create-release@v1" }] },
     { steps: [{ uses: "example-org/upload-release-asset@v1" }] },
+    // `codefly publish` authenticates with GH_TOKEN / NODE_AUTH_TOKEN from
+    // `env:`, so it holds no publication permission and no publishing `uses:`.
+    // Client libraries go to public repositories and GitHub Packages.
+    { steps: [{ run: "codefly publish clients saas-starter" }] },
+    { steps: [{ run: "codefly publish library saas-starter-accounts-connect-client" }] },
+    { steps: [{ run: "codefly publish minor" }] },
+    // Checking first and then publishing still publishes.
+    { steps: [{ run: "codefly publish clients saas-starter --check\ncodefly publish clients saas-starter" }] },
   ];
   for (const job of signals) {
     assert.ok(publicationReasons(job, { contents: "read" }).length > 0, JSON.stringify(job));
   }
+});
+
+// `publish clients --check` is the release gate for the clients manifest. A
+// gate cannot be a publisher: it would have to list `release-gates` in its own
+// `needs`, and nothing can depend on the aggregate that depends on it.
+test("a codefly publish gate that writes nothing is not a publisher", () => {
+  const jobs = [
+    { steps: [{ run: "codefly publish clients saas-starter --check" }] },
+    { steps: [{ run: "codefly publish clients saas-starter --dry-run" }] },
+    { steps: [{ run: "codefly publish clients saas-starter \\\n  --check" }] },
+    { steps: [{ run: "codefly generate contracts saas-starter --check" }] },
+    { steps: [{ run: "codefly ci run --all" }] },
+  ];
+  for (const job of jobs) assert.deepEqual(publicationReasons(job, { contents: "read" }), []);
 });
 
 test("ordinary checks and a branch-pushing job are not publishers", () => {

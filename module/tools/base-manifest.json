@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2538,
+  "fileCount": 2540,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
@@ -30,6 +30,7 @@
     "USAGE_METERING.md": "21d51eef3a8b124b1f42ac3510669f17d49456770f5fd02565e237881230ccd4",
     "WEBHOOKS.md": "2aa695409b452d9081d88c0e03bc436621ee5d72d5f1cf4376ec9cdf23d154be",
     "WORK_CONTEXTS.md": "3d6c19560bea4816b8b8041bdc40bd4f38d80686e236a5b781ee50e06fff4662",
+    "clients.codefly.yaml": "ac76b866f5130a59598379df110080c4356d094d1ee1ca270ff7b22580b97cb5",
     "configurations/local/abuse-protection.env": "51200794899aa04d6970429a1e2e1a855884315fe7b5cc150c44e4e222b79e2f",
     "configurations/local/application.env": "5048c9fc623e34763261277be787e09400c7e70e00853d810cbb31bc9e1da9d8",
     "configurations/local/billing.env": "801b9cbeffeb295fba5f9a5f61b4037a77b16090f2647385fa6ca3e9bd7c6a4a",
@@ -2504,6 +2505,7 @@
     "tools/composition/composition_events_test.go": "0f48c325f96ea978b5906d8deef3343dff87db9b767a6574afd397dd0884862f",
     "tools/composition/composition_test.go": "0179cb5c6e833cab00c67b6ac0db7e6e809ccc7477bd8ffa589ffa708a45ee50",
     "tools/composition/fixtures_test.go": "8d82cd492725f5928879aacc59f2950c4a5fb6cdcf4da2fc3c48eadbd215e952",
+    "tools/composition/module_clients_config_test.go": "d729f5f9225470a3bc7e8359dbd283dbb9502da37eee50c0c4e08e0f90de5fb9",
     "tools/database_authority_inventory_parse_test.go": "d5b25bdf8e7a22dd383746deafc31aa9773ac327abae753a318459aa93d06719",
     "tools/database_authority_inventory_test.go": "ce2ab00a7e67427bd5fb602b1e2fa1ae2ea37b4abfb10088e85374251e8061dd",
     "tools/generate-public-config.mjs": "30728d543f12933939bb59277aef1e8d812ec0b1b1b7d19172600c7625fa47a7",
