@@ -284,14 +284,15 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 		infos = append(infos, &gen.SessionInfo{
 			// family_id is the stable per-device session identifier. Row ids
 			// rotate with refresh tokens and must not leak into management UX.
-			Id:            sess.FamilyID,
-			UserId:        sess.UserID,
-			IpAddress:     sess.IPAddress,
-			DeviceInfo:    sess.DeviceInfo,
-			CreatedAt:     timestamppb.New(sess.CreatedAt),
-			LastActiveAt:  timestamppb.New(sess.LastActiveAt),
-			IdleExpiresAt: timestamppb.New(sess.IdleExpiresAt),
-			ExpiresAt:     timestamppb.New(sess.ExpiresAt),
+			Id:             sess.FamilyID,
+			UserId:         sess.UserID,
+			ActingAsUserId: sess.ActingAsUserID,
+			IpAddress:      sess.IPAddress,
+			DeviceInfo:     sess.DeviceInfo,
+			CreatedAt:      timestamppb.New(sess.CreatedAt),
+			LastActiveAt:   timestamppb.New(sess.LastActiveAt),
+			IdleExpiresAt:  timestamppb.New(sess.IdleExpiresAt),
+			ExpiresAt:      timestamppb.New(sess.ExpiresAt),
 		})
 	}
 

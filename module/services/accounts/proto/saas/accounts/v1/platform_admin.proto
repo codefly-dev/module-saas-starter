@@ -68,6 +68,10 @@ message SessionInfo {
   google.protobuf.Timestamp last_active_at = 6;
   google.protobuf.Timestamp expires_at = 7;
   google.protobuf.Timestamp idle_expires_at = 8;
+  // Set only on an impersonation window, naming the user being viewed. An
+  // ordinary login leaves it empty, so a client can tell the two apart rather
+  // than presenting an admin's support session as a device they signed in on.
+  string acting_as_user_id = 9;
 }
 
 message ListActiveSessionsResponse {

@@ -3902,6 +3902,10 @@
     },
     "v1SessionInfo": {
       "properties": {
+        "actingAsUserId": {
+          "description": "Set only on an impersonation window, naming the user being viewed. An\nordinary login leaves it empty, so a client can tell the two apart rather\nthan presenting an admin's support session as a device they signed in on.",
+          "type": "string"
+        },
         "createdAt": {
           "format": "date-time",
           "type": "string"

@@ -28,13 +28,18 @@ type SessionRecord struct {
 	DeviceInfo            map[string]string
 	IPAddress             string
 	FamilyID              uuid.UUID
-	RefreshHash           []byte    // SHA-256 of the opaque refresh token
-	IssuedAt              time.Time // fixed family start, persisted as created_at
-	LastActiveAt          time.Time
-	IdleExpiresAt         time.Time
-	ExpiresAt             time.Time
-	RevokedAt             *time.Time
-	RevokedReason         string
+	// ActingAsUserID is non-zero only on an impersonation window, where UserID
+	// is the admin and this is the user being viewed. Such a row carries no
+	// RefreshHash: an impersonation session is never rotatable, and its
+	// lifetime is the access token's rather than the session policy's.
+	ActingAsUserID uuid.UUID
+	RefreshHash    []byte    // SHA-256 of the opaque refresh token
+	IssuedAt       time.Time // fixed family start, persisted as created_at
+	LastActiveAt   time.Time
+	IdleExpiresAt  time.Time
+	ExpiresAt      time.Time
+	RevokedAt      *time.Time
+	RevokedReason  string
 }
 
 // RefreshAuthorization is the current authorization state resolved while the
