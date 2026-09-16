@@ -3,6 +3,7 @@ package main
 import (
 	"accounts/pkg/adapters"
 	"accounts/pkg/auth"
+	"accounts/pkg/certreload"
 	"accounts/pkg/infra"
 	"context"
 	"crypto/ed25519"
@@ -77,19 +78,16 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	if dec.Decode(&config) != nil || dec.Decode(new(any)) != io.EOF {
 		return nil, errors.New("invalid custody configuration")
 	}
-	cert, err := projectedCustodyFile(config.TLSCertFile)
-	if err != nil {
-		return nil, err
-	}
-	keyPEM, err := projectedCustodyFile(config.TLSKeyFile)
-	if err != nil {
-		return nil, err
-	}
 	ca, err := projectedCustodyFile(config.ClientCAFile)
 	if err != nil {
 		return nil, err
 	}
-	pair, err := tls.X509KeyPair(cert, keyPEM)
+	// The custody and revision listeners share this identity. The Reloader
+	// re-reads the mounted leaf (through the same permission-checking projected
+	// reader) when cert-manager rotates it and serves the new one on the next
+	// handshake, so a 24h leaf needs no pod restart; a malformed replacement is
+	// rejected and the last good leaf keeps serving.
+	reloader, err := certreload.New(config.TLSCertFile, config.TLSKeyFile, projectedCustodyFile)
 	if err != nil {
 		return nil, errors.New("invalid custody TLS identity")
 	}
@@ -101,7 +99,7 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	// issuer/key/store. Generated server setup may configure its singleton later.
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "saas-starter", KeyID: keyID, PrivateKey: key, Authority: store})
-	tc := &tls.Config{Certificates: []tls.Certificate{pair}, ClientCAs: roots, MinVersion: tls.VersionTLS13}
+	tc := &tls.Config{Certificates: []tls.Certificate{*reloader.Current()}, GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
 	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: minter, Store: store, Cipher: cipher, Consumers: config.Consumers}, tc)
 	if err != nil {
 		return nil, err

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"accounts/pkg/adapters"
+	"accounts/pkg/certreload"
 	"accounts/pkg/auth"
 	minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
@@ -168,7 +169,7 @@ func run(ctx context.Context, file string) error {
 	if _, err = privateRead(c.TLSKeyFile); err != nil {
 		return err
 	}
-	cert, err := tls.LoadX509KeyPair(c.TLSCertFile, c.TLSKeyFile)
+	reloader, err := certreload.New(c.TLSCertFile, c.TLSKeyFile, os.ReadFile)
 	if err != nil {
 		return err
 	}
@@ -199,7 +200,7 @@ func run(ctx context.Context, file string) error {
 	adapters.SetInternalToken(strings.TrimSpace(string(internal)))
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: c.Issuer, KeyID: jwt.KeyID(), PrivateKey: key, Authority: store})
-	tc := &tls.Config{Certificates: []tls.Certificate{cert}, ClientCAs: roots, MinVersion: tls.VersionTLS13}
+	tc := &tls.Config{Certificates: []tls.Certificate{*reloader.Current()}, GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
 	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: infra.NewVaultClientDirect(c.VaultURL, c.VaultToken), Consumers: c.Consumers}, tc)
 	if err != nil {
 		return err
