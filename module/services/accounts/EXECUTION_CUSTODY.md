@@ -383,7 +383,7 @@ policy is not the full normal Accounts ACL.
 
 From `code/`, `go build -trimpath -o /absolute/output/accounts .` builds the normal
 Accounts executable. The module's existing pinned `go-grpc`0.1.39 service agent
-owns its container build; `.github/workflows/ci.yml` runs the pinned Codefly0.1.151
+owns its container build; `.github/workflows/ci.yml` runs the pinned Codefly0.1.155
 `codefly ci run --head <source> --phase build --output <evidence> --jobs2` contract
 (with the selection arguments shown in that workflow). Run the canonical full
 `codefly ci run` gates for release. Do not replace these with the local custody
