@@ -3,11 +3,11 @@ package main
 import (
 	"accounts/pkg/adapters"
 	"accounts/pkg/auth"
+	"accounts/pkg/certreload"
 	"accounts/pkg/infra"
 	"context"
 	"crypto/ed25519"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/codefly-dev/core/wool"
 	codefly "github.com/codefly-dev/sdk-go"
 	"google.golang.org/grpc"
 )
@@ -28,6 +29,7 @@ import (
 type executionCustodyHost struct {
 	broker   *http.Server
 	revision *grpc.Server
+	identity *certreload.Reloader
 }
 
 type executionCustodyProjection struct {
@@ -77,31 +79,23 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	if dec.Decode(&config) != nil || dec.Decode(new(any)) != io.EOF {
 		return nil, errors.New("invalid custody configuration")
 	}
-	cert, err := projectedCustodyFile(config.TLSCertFile)
-	if err != nil {
-		return nil, err
-	}
-	keyPEM, err := projectedCustodyFile(config.TLSKeyFile)
-	if err != nil {
-		return nil, err
-	}
-	ca, err := projectedCustodyFile(config.ClientCAFile)
-	if err != nil {
-		return nil, err
-	}
-	pair, err := tls.X509KeyPair(cert, keyPEM)
+	// The custody and revision listeners share this identity. The Reloader
+	// re-reads the mounted leaf and client CA bundle (through the same
+	// permission-checking projected reader) whenever their contents change and
+	// serves the new material on the next handshake, so neither a rotated 24h
+	// leaf nor a re-issued CA needs a pod restart; a malformed replacement is
+	// rejected and the last good material keeps serving. Certificates is left
+	// empty on purpose: crypto/tls skips GetCertificate when it is populated and
+	// the client sends no SNI, which would pin the startup leaf forever.
+	reloader, err := certreload.New(config.TLSCertFile, config.TLSKeyFile, config.ClientCAFile, projectedCustodyFile)
 	if err != nil {
 		return nil, errors.New("invalid custody TLS identity")
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(ca) {
-		return nil, errors.New("invalid custody client CA")
 	}
 	// A stable instance of the canonical implementation shares the existing
 	// issuer/key/store. Generated server setup may configure its singleton later.
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "saas-starter", KeyID: keyID, PrivateKey: key, Authority: store})
-	tc := &tls.Config{Certificates: []tls.Certificate{pair}, ClientCAs: roots, MinVersion: tls.VersionTLS13}
+	tc := &tls.Config{GetCertificate: reloader.GetCertificate, GetConfigForClient: reloader.GetConfigForClient, ClientCAs: reloader.ClientCAs(), MinVersion: tls.VersionTLS13}
 	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: minter, Store: store, Cipher: cipher, Consumers: config.Consumers}, tc)
 	if err != nil {
 		return nil, err
@@ -110,7 +104,7 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	if err != nil {
 		return nil, err
 	}
-	return &executionCustodyHost{broker: broker, revision: revision}, nil
+	return &executionCustodyHost{broker: broker, revision: revision, identity: reloader}, nil
 }
 
 func startExecutionCustody(ctx context.Context, host *executionCustodyHost) (func(), error) {
@@ -120,6 +114,18 @@ func startExecutionCustody(ctx context.Context, host *executionCustodyHost) (fun
 	if len(strings.TrimSpace(workspaceEnv("internal-auth", "CODEFLY_INTERNAL_TOKEN"))) < 32 {
 		return nil, errors.New("private revision listener requires configured internal credential")
 	}
+	// A refused rotation otherwise looks exactly like no rotation at all, and only
+	// surfaces hours later as expired-leaf handshake failures. Report both
+	// outcomes; the reloader suppresses repeats of a standing failure. Neither the
+	// message nor the paths carry key material.
+	host.identity.Observe(func(err error) {
+		w := wool.Get(ctx).In("executionCustody.identity")
+		if err != nil {
+			w.Warn("custody TLS material was not reloaded; continuing to serve the last validated leaf and client CA", wool.Field("reason", err.Error()))
+			return
+		}
+		w.Info("custody TLS material reloaded without restart")
+	})
 	listeners := make([]net.Listener, 0, 2)
 	for _, name := range []string{"custody", "revision"} {
 		endpoint, err := codefly.For(ctx).WithDefaultNetwork().Endpoint(name).API("tcp").ResolveNetworkInstance()

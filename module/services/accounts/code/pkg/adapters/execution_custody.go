@@ -66,7 +66,11 @@ type custodyPayload struct {
 // the handler in a body logger or mount it on the public gateway. Client roots
 // authenticate workers; owner admission instead uses the real Accounts JWT.
 func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Config) (*http.Server, error) {
-	if config.Authority == nil || config.Authority.configureErr != nil || config.Authority.verifier == nil || config.Minter == nil || config.Store == nil || config.Cipher == nil || len(config.Consumers) == 0 || tlsConfig == nil || tlsConfig.ClientCAs == nil || len(tlsConfig.Certificates) == 0 {
+	// A server identity may be supplied as a static certificate or as a
+	// GetCertificate callback. Requiring Certificates forces a host that rotates
+	// its leaf to leave a startup snapshot there, and crypto/tls then ignores
+	// GetCertificate for every client that sends no SNI.
+	if config.Authority == nil || config.Authority.configureErr != nil || config.Authority.verifier == nil || config.Minter == nil || config.Store == nil || config.Cipher == nil || len(config.Consumers) == 0 || tlsConfig == nil || tlsConfig.ClientCAs == nil || (len(tlsConfig.Certificates) == 0 && tlsConfig.GetCertificate == nil) {
 		return nil, errors.New("execution custody dependencies and TLS identities required")
 	}
 	consumers := make(map[string]ExecutionConsumerPolicy, len(config.Consumers))
@@ -87,8 +91,41 @@ func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Con
 	tc.MinVersion = tls.VersionTLS13
 	tc.ClientAuth = tls.VerifyClientCertIfGiven
 	tc.InsecureSkipVerify = false
-	tc.GetConfigForClient = nil
+	// ServeTLS derives the listener's ALPN list into a clone of this config, which
+	// the trust-rotation hook below never sees. Declaring the protocols here keeps
+	// the hook's config byte-identical to the serving one; without it every
+	// handshake that rotates trust would offer no ALPN and silently drop HTTP/2.
+	tc.NextProtos = []string{"h2", "http/1.1"}
+	custodyTrustRotation(tc, tlsConfig.GetConfigForClient)
 	return &http.Server{Handler: b, TLSConfig: tc, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}, nil
+}
+
+// custodyTrustRotation lets the owning host carry a re-issued client CA bundle
+// onto a live listener, so a CA rotation does not require a pod restart any more
+// than a leaf rotation does. The host hook is consulted per handshake but only
+// its ClientCAs is taken: every other field is re-applied from this adapter's
+// already-hardened config, so a host hook can never weaken client auth, minimum
+// version or verification. A nil hook keeps the previous behaviour of refusing
+// per-connection configuration outright.
+func custodyTrustRotation(hardened *tls.Config, host func(*tls.ClientHelloInfo) (*tls.Config, error)) {
+	if host == nil {
+		hardened.GetConfigForClient = nil
+		return
+	}
+	hardened.GetConfigForClient = func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+		fresh, err := host(hello)
+		if err != nil {
+			return nil, err
+		}
+		if fresh == nil || fresh.ClientCAs == nil {
+			// Nothing to rotate: crypto/tls keeps the hardened config as built.
+			return nil, nil
+		}
+		next := hardened.Clone()
+		next.GetConfigForClient = nil // never recurse into the host hook
+		next.ClientCAs = fresh.ClientCAs
+		return next, nil
+	}
 }
 
 func (b *executionCustody) ServeHTTP(w http.ResponseWriter, r *http.Request) {
