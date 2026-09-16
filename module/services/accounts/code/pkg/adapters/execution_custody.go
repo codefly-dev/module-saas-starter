@@ -114,9 +114,12 @@ func prepareExecutionConsumerPolicy(name string, p ExecutionConsumerPolicy) (Exe
 	if p.Audience != "" || p.ResourceKind != "" || p.ResourceID != "" || p.InvokeAction != "" || p.ReadAction != "" {
 		return p, errors.New("mixed execution consumer policy")
 	}
+	if len(p.Operations) > 64 {
+		return p, errors.New("too many execution operation policies")
+	}
 	operations := make(map[string]ExecutionOperationPolicy, len(p.Operations))
 	for operation, installed := range p.Operations {
-		if !validOperationName(operation) || installed.Audience == "" || installed.Audience == p.ParentAudience || installed.Audience == p.TaskAudience || !validInstalledScopes(installed.InvokeScopes, false) || !validInstalledScopes(installed.LookupScopes, true) || !installedScopeSubset(installed.LookupScopes, installed.InvokeScopes) {
+		if !validOperationName(operation) || installed.Audience == "" || len(installed.Audience) > 128 || installed.Audience != strings.TrimSpace(installed.Audience) || installed.Audience == p.ParentAudience || installed.Audience == p.TaskAudience || !validInstalledScopes(installed.InvokeScopes, false) || !validInstalledScopes(installed.LookupScopes, true) || !installedScopeSubset(installed.LookupScopes, installed.InvokeScopes) {
 			return p, errors.New("invalid execution operation policy")
 		}
 		installed.InvokeScopes = cloneInstalledScopes(installed.InvokeScopes)

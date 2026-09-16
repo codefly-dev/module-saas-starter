@@ -700,6 +700,12 @@ func TestExecutionCustodyOperationPolicies(t *testing.T) {
 	value.LookupScopes = []wire.InstalledScope{scope("z.example", []string{"read"}, []string{"one"})}
 	badOrder.Operations = map[string]ExecutionOperationPolicy{"generate": value}
 	invalid = append(invalid, badOrder)
+	tooMany := policy
+	tooMany.Operations = make(map[string]ExecutionOperationPolicy, 65)
+	for i := range 65 {
+		tooMany.Operations[fmt.Sprintf("operation-%02d", i)] = policy.Operations["generate"]
+	}
+	invalid = append(invalid, tooMany)
 	for i, candidate := range invalid {
 		_, err := prepareExecutionConsumerPolicy("example", candidate)
 		require.Error(t, err, i)
