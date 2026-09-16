@@ -23,9 +23,9 @@
     ]
   },
   "postgres": {
-    "source": "https://github.com/codefly-dev/service-postgres/blob/main/templates/builder/Dockerfile.tmpl",
+    "source": "https://github.com/codefly-dev/service-postgres/blob/main/bootstrap-image.json",
     "images": [
-      "alpine:3.21"
+      "alpine:3.21.7@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d"
     ],
     "watch": [
       "alpine:3.21",

@@ -225,7 +225,10 @@ image audit; an unknown agent is an error.
 Changes to the image contract force the full service graph through CI. Before
 each canonical build attempt, CI snapshots Buildx history. After the build,
 `build-images.mjs evidence` reads the executor's structured materials from new
-build records, matched to each service context and recipe. BuildKit owns Dockerfile
+build records, matched to each recipe by the image that build exported. A record's
+context and Dockerfile do not identify a service: agents built on Codefly Core
+>= 0.3.26 stage the service tree into a temporary directory, build from there and
+delete it, so those paths are gone by the time the gate runs. BuildKit owns Dockerfile
 syntax and stage reachability: unused stages are not required, and whitespace,
 build arguments and stage aliases cannot hide effective dependencies. Both missing
 and unexpected materials fail verification. Command output is never evidence.
@@ -233,10 +236,13 @@ Missing, failed or ambiguous build records fail closed, and previous attempts or
 other workspaces cannot supply a service's materials.
 
 The `effective-build-images` artifact retains Codefly reports, build logs, recipe
-text, agent pins and per-build material digests. Floating tags (currently the
-migration builder's Alpine 3.21) retain the digest BuildKit actually used, never a
-later registry lookup. CI pins Buildx v0.33.0 with the Docker driver to obtain this
-executor evidence without changing Codefly's build path.
+text, agent pins and per-build material digests. A floating tag retains the digest
+BuildKit actually used, never a later registry lookup. Every expected image is
+currently digest-pinned; the migration builder pins without a tag, and BuildKit
+reports such a material without one, so it is matched on repository and digest
+while a tagged material must still agree exactly. CI pins Buildx v0.33.0 with the
+Docker driver to obtain this executor evidence without changing Codefly's build
+path.
 
 The same check fails if `authz-coverage` — or any other gate in `REQUIRED_GATES`
 — is dropped from the aggregate's `needs` or removed from the workflow, if the

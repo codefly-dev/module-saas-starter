@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { materialImages, verifyImages, coverageErrors, monitor, selectBuild } from './build-images.mjs';
+import { materialImages, verifyImages, coverageErrors, monitor, selectBuild, buildImages, buildLog } from './build-images.mjs';
 import { parseWorkflowYaml } from './workflow-yaml.mjs';
 
 const digest = `sha256:${'a'.repeat(64)}`;
@@ -18,6 +18,20 @@ test('executor materials preserve all effective dependencies and platform digest
   assert.match(verifyImages([image], materialImages([material('node', '24-alpine'), material('alpine', '3.21')])).join('\n'), /Unexpected build material/);
 });
 
+test('a recipe pinned by digest alone is still attributed to the release line it locks', () => {
+  // BuildKit's own shape for `FROM alpine@sha256:…`: no version in the path, the
+  // pin in a `digest` parameter. The Postgres migration builder pins this way.
+  const pin = `sha256:${'c'.repeat(64)}`;
+  const untagged = [{ URI: `pkg:docker/alpine?digest=${pin}&platform=linux%2Famd64`, Digests: [pin] }];
+  assert.deepEqual(materialImages(untagged), [`alpine@${pin}`]);
+  assert.deepEqual(verifyImages([`alpine:3.21.7@${pin}`], materialImages(untagged)), []);
+  // The digest is the identity: a different one is not the locked base image.
+  assert.match(verifyImages([`alpine:3.21.7@${digest}`], materialImages(untagged)).join('\n'), /Missing expected/);
+  // Another repository cannot satisfy it, and an unpinned reference fails closed.
+  assert.match(verifyImages([`busybox:1@${pin}`], materialImages(untagged)).join('\n'), /Missing expected/);
+  assert.throws(() => materialImages([{ URI: 'pkg:docker/alpine?platform=linux%2Famd64', Digests: [pin] }]));
+});
+
 test('missing, malformed and overwritten material evidence fails closed', () => {
   for (const materials of [undefined, [], [{ URI: 'pkg:docker/node@24', Digests: [] }]]) assert.throws(() => materialImages(materials));
   assert.match(verifyImages([image], []).join('\n'), /Missing expected/);
@@ -26,11 +40,20 @@ test('missing, malformed and overwritten material evidence fails closed', () => 
 });
 
 test('build identity cannot borrow another service or recipe, or accept ambiguous or failed attempts', () => {
-  const build = { Context: '/example/frontend', Dockerfile: 'builder/Dockerfile', Status: 'completed' };
-  assert.equal(selectBuild([build], build.Context, build.Dockerfile), build);
-  for (const builds of [[], [build, build], [{ ...build, Status: 'error' }], [{ ...build, Context: '/example/marketing' }], [{ ...build, Dockerfile: 'other' }]]) {
-    assert.throws(() => selectBuild(builds, build.Context, build.Dockerfile));
+  const produced = 'example/frontend:0.0.0';
+  const build = { Images: [produced], Status: 'completed' };
+  assert.equal(selectBuild([build], produced), build);
+  for (const builds of [[], [build, build], [{ ...build, Status: 'error' }], [{ ...build, Images: ['example/marketing:0.0.0'] }], [{ ...build, Images: [] }]]) {
+    assert.throws(() => selectBuild(builds, produced));
   }
+});
+
+test('exported images are read from the record, and a build that exported nothing cannot pass as one', () => {
+  assert.deepEqual(buildImages('#9 exporting to image\n#9 naming to docker.io/example/frontend:0.0.0 done\n'), ['example/frontend:0.0.0']);
+  assert.deepEqual(buildImages('#9 naming to docker.io/library/alpine:3.21, ghcr.io/example/app:1 done\r\n'),
+    ['alpine:3.21', 'ghcr.io/example/app:1']);
+  // A printed build step must not be mistaken for BuildKit's own export line.
+  assert.deepEqual(buildImages('#4 1.23 #9 naming to docker.io/example/forged:0.0.0 done\n#9 exporting layers\n'), []);
 });
 
 test('every topology agent needs coverage even before it emits a Dockerfile', () => {
@@ -97,7 +120,9 @@ test('evidence refuses missing coverage and excludes records from before this bu
     put('module/deployment/topology.bindings.codefly.yaml', 'services:\n  - name: example\n    agent:\n      name: example\n      version: 1.0.0\n');
     put('scripts/ci/build-images.json', '{}');
     put('.codefly/ci/build-history-before.json', '["builder/node/old"]');
-    put('module/services/example/build-recipes/1.0.0/recipe.codefly.json', JSON.stringify({ schema: 'codefly.dev/build-recipe/v2', name: 'example', version: '1.0.0', recipes: [{ dockerfile: 'Dockerfile', context: '.' }] }));
+    const manifest = recipes => put('module/services/example/build-recipes/1.0.0/recipe.codefly.json',
+      JSON.stringify({ schema: 'codefly.dev/build-recipe/v2', name: 'example', version: '1.0.0', recipes }));
+    manifest([{ dockerfile: 'Dockerfile', context: '.', image: 'example/app:0.0.0' }]);
     put('module/services/example/build-recipes/1.0.0/Dockerfile', `FROM ${image}\n`);
     put('docker', `#!/usr/bin/env node
 if (process.argv[4] === 'ls') console.log(JSON.stringify({ref:'builder/node/old'}));
@@ -115,6 +140,10 @@ else throw new Error('A stale record must never be inspected');
     const report = JSON.parse(readFileSync(join(dir, '.codefly/ci/build-images.json'), 'utf8'));
     assert.equal(report.records.length, 1);
     assert.match(report.records[0].errors[0], /found 0/);
+    // A recipe that names no image leaves nothing to attribute a build record
+    // to, so it must fail rather than silently verify against no evidence.
+    manifest([{ dockerfile: 'Dockerfile', context: '.' }]);
+    assert.match(evidence().stderr, /does not name the image it produces/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -135,3 +164,33 @@ test('real BuildKit materials handle whitespace, skip unreachable stages and ign
     assert.deepEqual(verifyImages(['alpine:3.23.5'], materialImages(unused.Materials)), []);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// Agents built on Codefly Core >= 0.3.26 copy the service tree into a temporary
+// directory, build from there and delete it, so a record's context and
+// Dockerfile name nothing durable. Only the exported image still identifies the
+// service — that is what the evidence gate has to key on.
+test('a staged, discarded build context is still attributed to the service that exported the image',
+  { skip: process.env.BUILD_IMAGES_DOCKER_TEST !== 'true' }, () => {
+    const staged = mkdtempSync(join(tmpdir(), 'codefly-build-context-'));
+    const image = 'codefly-dev/example-workspace/example/staged:0.0.0';
+    try {
+      mkdirSync(join(staged, 'context'));
+      writeFileSync(join(staged, 'Dockerfile'), 'FROM alpine:3.23.5\n');
+      const metadata = join(staged, 'metadata.json');
+      execFileSync('docker', ['buildx', 'build', '--load', '--metadata-file', metadata,
+        '-f', join(staged, 'Dockerfile'), '-t', image, join(staged, 'context')], { stdio: 'pipe' });
+      const ref = JSON.parse(readFileSync(metadata))['buildx.build.ref'].split('/').at(-1);
+      const build = JSON.parse(execFileSync('docker', ['buildx', 'history', 'inspect', ref, '--format', 'json'], { encoding: 'utf8' }));
+      rmSync(staged, { recursive: true, force: true });
+
+      build.Images = buildImages(buildLog(ref));
+      assert.deepEqual(build.Images, [image]);
+      assert.equal(selectBuild([build], image), build);
+      // The paths that the gate used to match on are gone.
+      assert.ok(!existsSync(build.Context));
+      assert.deepEqual(verifyImages(['alpine:3.23.5'], materialImages(build.Materials)), []);
+    } finally {
+      rmSync(staged, { recursive: true, force: true });
+      spawnSync('docker', ['image', 'rm', image], { stdio: 'ignore' });
+    }
+  });
