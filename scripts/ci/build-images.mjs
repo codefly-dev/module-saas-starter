@@ -81,7 +81,7 @@ export function buildImages(log) {
   // 10ms — `naming to <ref> 0.0s done` — so whether the export line carries
   // that field turns on runner load, not on anything in the tree being built.
   // The shape is the pinned Buildx version's, and no structured field carries
-  // the exported name: re-read the printer when that pin moves.
+  // the exported name; the docker-gated test pins that format to a real record.
   const named = [...log.matchAll(/^#\d+ naming to (.+?)(?: \d+\.\d+s)?(?: done)?\s*$/gm)]
     .flatMap(match => match[1].split(',').map(ref => normalize(ref.trim())));
   return [...new Set(named)].sort();
