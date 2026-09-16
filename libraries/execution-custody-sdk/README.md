@@ -26,7 +26,10 @@ skip-verification, proxy, redirect, or retry compatibility mode.
 - `Recover(ctx, currentOwnerAccessToken, RecoverRequest)` only reads the exact
   existing registration. It carries no parent token; absence never triggers a
   registration fallback. Lost acknowledgement recovery returns the original child.
-- `Exchange(ctx, ExchangeRequest)` carries no owner bearer. The configured mTLS
+- `Exchange(ctx, ExchangeRequest)` carries no owner bearer. A deployment may
+  install fixed operation policies; in that mode the request supplies only the
+  operation name and lookup mode, while the broker selects the immutable
+  audience and canonical `InstalledScope` values. The configured mTLS
   worker identity and exact sealed binding are checked by the broker. `Lookup`
   selects the existing read-only attenuation; it cannot renew the original horizon.
 

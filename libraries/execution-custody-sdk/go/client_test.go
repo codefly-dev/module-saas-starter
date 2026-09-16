@@ -182,6 +182,28 @@ func TestLostAcknowledgementRequiresExplicitOriginalRecovery(t *testing.T) {
 	}
 }
 
+func TestExchangeRequestPreservesLegacyWireAndAddsOnlyOperation(t *testing.T) {
+	legacy := ExchangeRequest{Reference: "reference", Binding: Binding{Consumer: "example"}, Audience: "example.api", Lookup: true}
+	raw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"reference":"reference","binding":{"org_id":"","owner_id":"","admission_id":"","intent_digest":"","task_id":"","session_id":"","consumer":"example","profile":""},"audience":"example.api","lookup":true}`
+	if string(raw) != want {
+		t.Fatalf("legacy v1 wire changed:\n got %s\nwant %s", raw, want)
+	}
+
+	legacy.Operation = "complete"
+	raw, err = json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want = `{"reference":"reference","binding":{"org_id":"","owner_id":"","admission_id":"","intent_digest":"","task_id":"","session_id":"","consumer":"example","profile":""},"audience":"example.api","operation":"complete","lookup":true}`
+	if string(raw) != want {
+		t.Fatalf("operation wire mismatch:\n got %s\nwant %s", raw, want)
+	}
+}
+
 func TestCallerDeadlineBoundsCompleteResponse(t *testing.T) {
 	client := testClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)

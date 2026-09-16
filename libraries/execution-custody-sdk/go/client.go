@@ -51,10 +51,19 @@ type Registration struct {
 	TaskToken string  `json:"task_token"`
 }
 
+// InstalledScope is immutable deployment policy. Exchange callers select an
+// installed operation and never provide scopes themselves.
+type InstalledScope struct {
+	ResourceKind string   `json:"resource_kind"`
+	Actions      []string `json:"actions"`
+	ResourceIDs  []string `json:"resource_ids"`
+}
+
 type ExchangeRequest struct {
 	Reference string  `json:"reference"`
 	Binding   Binding `json:"binding"`
 	Audience  string  `json:"audience"`
+	Operation string  `json:"operation,omitempty"`
 	Lookup    bool    `json:"lookup"`
 }
 
