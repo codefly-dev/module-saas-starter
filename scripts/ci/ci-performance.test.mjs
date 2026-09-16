@@ -88,6 +88,53 @@ test('every Codefly job installs the one pinned CLI', () => {
   assert.match(installer, new RegExp(`CODEFLY_VERSION:-${DEFAULT_CODEFLY_VERSION.replaceAll('.', '\\.')}`));
 });
 
+// `--all` widens the service selection; it establishes no integrity inputs. A
+// run given neither `--base` nor `--changed-file` plans with an integrity error
+// and every phase behind a verify refuses, so forcing the full graph — which an
+// image-contract change does — must still carry its change bounds.
+test('every Codefly selection passes its change bounds, however wide the selection', () => {
+  // Run the selection block itself rather than reading it: the bug this guards
+  // put `--base` in the `else` of the `--all` branch, which any assertion over
+  // the whole script's text still matches.
+  const block = run => {
+    const start = run.indexOf('selection_args=(--head');
+    assert.notEqual(start, -1);
+    const end = run.indexOf('\n\n', start);
+    return run.slice(start, end === -1 ? undefined : end);
+  };
+  const args = (script, env) => {
+    const shell = spawnSync('bash', ['-euo', 'pipefail', '-c', `${script}\nprintf '%s\\n' "\${selection_args[@]}"`],
+      { encoding: 'utf8', env: { ...process.env, ...env } });
+    assert.equal(shell.status, 0, shell.stderr);
+    return shell.stdout.trim().split('\n');
+  };
+  const selections = Object.entries(workflow.jobs).flatMap(([jobName, job]) =>
+    (job.steps ?? []).filter(step => (step.run ?? '').includes('selection_args=(--head'))
+      .map(step => ({ jobName, run: step.run })));
+  assert.deepEqual(selections.map(selection => selection.jobName).sort(),
+    ['codefly-build', 'codefly-plan', 'codefly-quality-phases', 'codefly-supply-chain']);
+
+  const head = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4';
+  const base = 'da39a3ee5e6b4b0d3255bfef95601890afd80709';
+  for (const { jobName, run } of selections.filter(selection => selection.jobName !== 'codefly-plan')) {
+    for (const all of ['true', 'false']) {
+      const resolved = args(block(run), { GITHUB_SHA: head, SELECTION_ALL: all, CODEFLY_BASE: base });
+      assert.ok(resolved.includes('--base') && resolved.includes(base), `${jobName} (all=${all}) must pass its change bounds`);
+      assert.equal(resolved.includes('--all'), all === 'true', `${jobName} (all=${all}) selection width`);
+    }
+    // A release tag reaches these jobs with whatever base the planner resolved;
+    // an empty one must not become a `--base ''` the CLI cannot parse.
+    const tagged = args(block(run), { GITHUB_SHA: head, SELECTION_ALL: 'true', CODEFLY_BASE: '' });
+    assert.deepEqual(tagged, ['--head', head, '--all'], `${jobName} on a tag`);
+  }
+
+  // The fan-out jobs consume the planner's base verbatim rather than deciding
+  // for themselves, so the fallback for a tag lives in the planner alone.
+  const plan = workflow.jobs['codefly-plan'].steps.find(step => (step.run ?? '').includes('codefly ci plan'));
+  assert.match(plan.run, /base="\$\(git rev-parse --verify --quiet "\$\{GITHUB_SHA\}\^"/);
+  assert.match(plan.run, /integrity_error/);
+});
+
 test('the CLI scope guard includes inherited workflow and job environments', () => {
   const workflowOverride = structuredClone(workflow);
   workflowOverride.env = { ...workflowOverride.env, CODEFLY_VERSION: '0.1.151' };
