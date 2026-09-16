@@ -30,8 +30,12 @@ endpoints:
       languages: [go, typescript, python]
       services: [AccessibleScopeService, AuditService, DatasourceService, WebhookService]
     # Reached only through the mesh by this module's own services; no
-    # out-of-module consumer exists, and any publish would create a PUBLIC repo,
-    # so no client is published for it.
+    # out-of-module consumer exists, so this endpoint declares no client.
+    # `publish: false` is a declaration, NOT a confidentiality control: it
+    # states that nothing is wanted here, and no gate may infer from it that a
+    # binding cannot reach anyone. Anything generated lands in an SDK
+    # repository that ships, so an entry that ever gains a `services:`
+    # allowlist is held to the same proto-file isolation rule as `accounts`.
     - service: auth-gateway
       endpoint: grpc
       publish: false

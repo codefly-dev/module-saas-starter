@@ -1410,6 +1410,117 @@ test("the prose counts of repository-specific gates match the enforced set", () 
   }
 });
 
+// ---------------------------------------------------------------------------
+// the documented distribution policy vs. the enforced one
+//
+// AGENTS.md § Cutting a release says client libraries are not published by
+// cutting a tag here: the per-language SDK repositories distribute them. The
+// release job disagreed — it ran `codefly publish clients saas-starter
+// --check`, gating `module/contracts/clients.codefly.json`, a file no document
+// tells anyone to produce and that this repository has never carried. No
+// `module-package/v*` tag has ever been pushed, so the step had never run: the
+// contradiction was invisible and would have surfaced as a failed first
+// release. Prose and workflow are now held to each other in both directions.
+
+/** Every `run:` body in the workflow, with the job id that owns it. */
+function eachRunStep(workflow) {
+  const steps = [];
+  for (const [id, job] of Object.entries(workflow.jobs ?? {})) {
+    for (const step of job.steps ?? []) {
+      if (typeof step.run === "string") steps.push({ id, run: step.run });
+    }
+  }
+  return steps;
+}
+
+test("no workflow job runs codefly publish clients, in any form", () => {
+  const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
+  for (const { id, run } of eachRunStep(ci)) {
+    assert.doesNotMatch(
+      run,
+      /\bcodefly\s+publish\s+clients\b/,
+      `${id}: publishing clients — or gating on a clients manifest — is not part ` +
+        `of cutting a release (AGENTS.md § Cutting a release). Change the document ` +
+        `first if the policy changed.`,
+    );
+  }
+});
+
+// The TypeScript client is the exception the prose must carry: it IS published
+// from this repository, by publish-frontend-kit on every `v*` tag. A reader who
+// takes "not published from this repository" at face value never bumps the
+// package version — and publish-frontend-kit.mjs refuses a republish whose
+// contents moved, so that reading fails the release it was meant to simplify.
+const KIT_PUBLISH_SCRIPT = join(
+  REPOSITORY_ROOT,
+  "module/services/frontend/code/scripts/publish-frontend-kit.mjs",
+);
+
+/** The PACKAGES array publish-frontend-kit.mjs publishes, read as text. */
+function publishedKitPackages() {
+  const source = readFileSync(KIT_PUBLISH_SCRIPT, "utf8");
+  const block = /export const PACKAGES = \[([^\]]*)\]/.exec(source);
+  assert.ok(block, "publish-frontend-kit.mjs no longer exports a PACKAGES array");
+  return [...block[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
+test("the client package this repository publishes is named where releases are cut", () => {
+  const section = readFileSync(AGENTS_DOC, "utf8").split("\n## Cutting a release\n")[1];
+  assert.ok(section, "AGENTS.md has no § Cutting a release");
+  const prose = section.split("\n## ")[0];
+  const clientPackages = publishedKitPackages().filter((name) => name.endsWith("/saas-sdk"));
+  assert.ok(clientPackages.length > 0, "the kit publishes no SDK package to document");
+  for (const name of clientPackages) {
+    assert.ok(
+      prose.includes(name),
+      `AGENTS.md § Cutting a release never names ${name}, which publish-frontend-kit ` +
+        `publishes from this repository on every v* tag`,
+    );
+  }
+});
+
+// A library store is a loaded gun, not a setting. The `go` and `python` stores
+// create a missing repository on first publish and create it PUBLIC, and a
+// generated client carries the whole contract — `services:` trims the facade,
+// not the message graph. While one is declared, a single exploratory `codefly
+// publish clients saas-starter` discloses an endpoint under a new org
+// repository. Prose telling a maintainer not to run it casually is not a
+// control; an undeclared store is, because the command then fails closed.
+const WORKSPACE_CONFIG = join(REPOSITORY_ROOT, "workspace.codefly.yaml");
+
+/** The store kinds declared under `libraries: publish:`. */
+function declaredLibraryStores(yaml) {
+  const libraries = yaml.split(/^libraries:$/m)[1];
+  if (libraries === undefined) return [];
+  const publish = libraries.split(/^\s+publish:$/m)[1];
+  if (publish === undefined) return [];
+  const stores = [];
+  for (const line of publish.split("\n")) {
+    if (line.trim() === "" || line.startsWith("#")) continue;
+    // A line at column 0 ends the block; anything shallower than the entries does too.
+    const entry = /^\s{8}([a-z0-9-]+):/.exec(line);
+    if (entry) {
+      stores.push(entry[1]);
+      continue;
+    }
+    if (/^\S/.test(line)) break;
+  }
+  return stores;
+}
+
+test("no library store that creates a public repository is declared", () => {
+  const stores = declaredLibraryStores(readFileSync(WORKSPACE_CONFIG, "utf8"));
+  for (const kind of ["go", "python"]) {
+    assert.ok(
+      !stores.includes(kind),
+      `workspace.codefly.yaml declares a '${kind}' library store; that store creates ` +
+        `each missing repository PUBLIC on first publish (codefly-dev/cli#715), and a ` +
+        `client carries the whole contract. Publishing is a disclosure decision — see ` +
+        `AGENTS.md § Cutting a release before declaring one.`,
+    );
+  }
+});
+
 test("authorization gate always runs isolated audit SQL regressions", () => {
   const ci = parseWorkflowYaml(readFileSync(CI_WORKFLOW, "utf8"));
   const job = ci.jobs["authz-coverage"];

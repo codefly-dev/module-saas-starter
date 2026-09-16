@@ -1003,17 +1003,19 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: Install Codefly
-        run: bash scripts/ci/install-codefly.sh
-      # Consumers reach this module's API through its published client
-      # libraries, so a tag that exports a contract no client was published for
-      # ships a version nobody can call. Publishing is a maintainer step before
-      # tagging (AGENTS.md, "Cutting a release") because it writes to registries
-      # this workflow holds no credentials for; the tag only has to prove the
-      # committed manifest records every client of the version being released.
-      # Offline and read-only: it refuses a stale manifest, it never publishes.
-      - name: Require a published client library for every exported contract
-        run: codefly publish clients saas-starter --check
+      # No client-library step runs here, and so no Codefly install either: the
+      # package is built by `module/tools/cmd/module-package`, and nothing in
+      # this job invokes the CLI. Consumers reach this module's API through the
+      # per-language SDK repositories, which carry their own generated tree and
+      # release it under their own tag (AGENTS.md, "Cutting a release"), so
+      # there is no clients manifest for a tag to prove.
+      # `codefly publish clients saas-starter --check` used to run here, gating
+      # `module/contracts/clients.codefly.json` — a file this repository has
+      # never carried, on a track no tag has ever exercised, so the step could
+      # only ever fail the first real module-package release. It took an
+      # install-from-network with it: one less way a tag that cannot be retried
+      # dies on a transient. Nothing may reintroduce the step —
+      # `release-gates.test.mjs` holds the workflow to that.
       - name: Reject a mutable or repeated release
         shell: bash
         working-directory: module/tools

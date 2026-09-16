@@ -170,3 +170,40 @@ describe("planPublications resolves every package before publishing any", () => 
 		).toThrow(/no workspace package named 'missing'/);
 	});
 });
+
+// The alias rule. `@codefly-dev/saas-sdk` is a published client library: its
+// `dist` carries the bindings generated from the accounts contract. A consumer
+// must import the SDK's own surface, never a stub path, or swapping the
+// vendored tree for a registry dependency later becomes a breaking change for
+// every consumer instead of a dependency bump in one repo. AGENTS.md states
+// that rule under "Cutting a release"; the package's `exports` map is what
+// actually decides it, so an `exports` entry reaching into the generated tree
+// is how the rule would be lost — silently, since nothing else looks.
+describe("the published SDK aliases its generated types", () => {
+	const SDK = "@codefly-dev/saas-sdk";
+	const generated = /(^|\/)(gen|generated)(\/|$)/;
+
+	it("is one of the packages actually published", () => {
+		expect(PACKAGES).toContain(SDK);
+	});
+
+	it("exposes no subpath into the generated tree", () => {
+		const manifest = workspacesByName().get(SDK);
+		expect(manifest, `no workspace package named ${SDK}`).toBeDefined();
+		const exports = manifest.exports ?? {};
+		expect(Object.keys(exports).length).toBeGreaterThan(0);
+		for (const [subpath, target] of Object.entries(exports)) {
+			expect(
+				generated.test(subpath),
+				`${SDK} declares the export subpath ${subpath}; a consumer must import the SDK, never a stub package`,
+			).toBe(false);
+			const targets = typeof target === "string" ? [target] : Object.values(target ?? {});
+			for (const value of targets) {
+				expect(
+					generated.test(String(value)),
+					`${SDK} exports ${subpath} -> ${value}, a path into the generated tree; re-export the types from the SDK surface instead`,
+				).toBe(false);
+			}
+		}
+	});
+});

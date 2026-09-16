@@ -16,7 +16,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Client publication policy lives in module/clients.codefly.yaml, which the CLI
+// Client GENERATION policy lives in module/clients.codefly.yaml, which the CLI
 // reads directly (cli/pkg/generators/module_clients.go,
 // LoadModuleClientsConfig). It is deliberately NOT part of
 // module.codefly.yaml's generated `interface:` block: that file is rendered
@@ -28,15 +28,21 @@ import (
 // field checking. That duplication is the point: the gate reads exactly the
 // bytes the CLI will read, so a schema or filename move surfaces in `go test`
 // here instead of at a release tag, and the repository does not need the CLI
-// installed to know its own publication policy is well formed.
+// installed to know its own client policy is well formed.
 const (
 	moduleClientsConfigFileName = "clients.codefly.yaml"
 	moduleClientsConfigSchema   = "codefly/module-clients-config/v1"
 )
 
 type endpointClientsConfig struct {
-	Service   string   `yaml:"service"`
-	Endpoint  string   `yaml:"endpoint"`
+	Service  string `yaml:"service"`
+	Endpoint string `yaml:"endpoint"`
+	// Publish mirrors the CLI's field so the strict loader below accepts an
+	// entry that sets it; clients.codefly.yaml uses it on auth-gateway. It is
+	// deliberately read by nothing here: no gate may treat it as a
+	// confidentiality control, because generation — not publication — is what
+	// now puts a binding in front of a consumer. See
+	// TestAllowlistedClientServicesAreAloneInTheirProtoFile.
 	Publish   *bool    `yaml:"publish,omitempty"`
 	Languages []string `yaml:"languages,omitempty"`
 	Services  []string `yaml:"services,omitempty"`
@@ -96,11 +102,11 @@ func loadModuleClientsConfig(t *testing.T, moduleRoot string) map[string]endpoin
 }
 
 // TestEveryExportedAPIContractDeclaresAClientPublicationDecision is the
-// load-bearing invariant. `codefly publish clients` iterates the contract
-// catalog, not this file: an exported endpoint that the config does not mention
-// publishes a client in EVERY default language with its FULL service surface,
-// to a repository the store creates public. Silence is therefore the widest
-// possible disclosure, not a no-op, so every exported endpoint must state its
+// load-bearing invariant. Client generation iterates the contract catalog, not
+// this file: an exported endpoint that the config does not mention gets a
+// client in EVERY default language with its FULL service surface. That tree is
+// what the per-language SDK repositories carry and ship, so silence is the
+// widest surface, not a no-op, and every exported endpoint must state its
 // decision explicitly — an allowlist, or `publish: false`.
 func TestEveryExportedAPIContractDeclaresAClientPublicationDecision(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
@@ -129,7 +135,7 @@ func TestEveryExportedAPIContractDeclaresAClientPublicationDecision(t *testing.T
 // TestModuleClientsConfigMatchesTheExportedContracts holds the config to what
 // the package actually exports. Each of these mirrors a refusal in
 // generators.PlanModuleClients; checking them offline means a rename in a
-// .proto fails a pull request instead of the release tag that publishes from
+// .proto fails a pull request instead of the next generation run that reads
 // it.
 func TestModuleClientsConfigMatchesTheExportedContracts(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
@@ -193,6 +199,15 @@ func TestModuleClientsConfigMatchesTheExportedContracts(t *testing.T) {
 //
 // #577 split accessible_scopes.proto out of the shared file for exactly this
 // reason. Nothing but this test keeps that split honest.
+//
+// `publish: false` does NOT exempt an endpoint. It used to: while the only way
+// a binding left this repository was `codefly publish clients`, an endpoint
+// that published nothing disclosed nothing, so the check was skipped. Clients
+// are now distributed by generating into the per-language SDK repositories
+// (AGENTS.md, "Cutting a release"), which ship whatever was generated — so the
+// field no longer decides whether a binding reaches anyone, and skipping on it
+// would drop this guard on a tree that is published. The allowlist must hold
+// for every protobuf endpoint that declares one, published or not.
 func TestAllowlistedClientServicesAreAloneInTheirProtoFile(t *testing.T) {
 	moduleRoot := findModuleRoot(t)
 	catalog, err := corecomposition.LoadAPIContractCatalog(moduleRoot)
@@ -204,9 +219,6 @@ func TestAllowlistedClientServicesAreAloneInTheirProtoFile(t *testing.T) {
 	for _, endpoint := range catalog.Endpoints {
 		config, declared := configured[endpoint.Service+"/"+endpoint.Endpoint]
 		if !declared || len(config.Services) == 0 || endpoint.Kind != corecomposition.APIContractKindProtobuf {
-			continue
-		}
-		if config.Publish != nil && !*config.Publish {
 			continue
 		}
 

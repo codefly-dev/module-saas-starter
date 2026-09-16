@@ -4,19 +4,26 @@ modules:
     - name: saas-starter
 
 # Durable stores `codefly publish clients` / `codefly publish library` publish
-# generated client libraries to, and `codefly install library` resolves from:
-# a GitHub repository tagged per version for go/python
-# (github.com/codefly-dev/<library>-go|-python), the org's GitHub Packages
-# registry for typescript. The go/python stores CREATE a missing repository on
-# first publish, and create it PUBLIC — a consumer must be able to `go get` it
-# without codefly or credentials — so which endpoints publish is a disclosure
-# decision, made in module/clients.codefly.yaml. Credentials (GH_TOKEN /
+# generated client libraries to, and `codefly install library` resolves from.
+#
+# There is deliberately NO `go` or `python` store here. Those stores CREATE a
+# missing repository on first publish and create it PUBLIC — a consumer must be
+# able to `go get` it without codefly or credentials — and a client's bindings
+# always carry the WHOLE contract (`services:` in module/clients.codefly.yaml
+# trims only the facade). So a single `codefly publish clients saas-starter`,
+# run to see what it does, would disclose an endpoint's full message graph
+# under an org repository nobody agreed to create. Clients are distributed
+# through the per-language SDK repositories instead (AGENTS.md, "Cutting a
+# release"); with no store declared, that command fails closed rather than
+# publishing. Declaring one is a disclosure decision, not a config tidy-up, and
+# belongs in the cell contract once codefly-dev/cli#715 lands.
+#
+# The typescript entry stays: it names the org's GitHub Packages registry, which
+# publishes a scoped package and creates no repository. Credentials (GH_TOKEN /
 # NODE_AUTH_TOKEN) belong to release CI, never to a runtime.
 libraries:
     publish:
-        go: {owner: codefly-dev}
         typescript: {registry: https://npm.pkg.github.com, scope: "@codefly-dev"}
-        python: {owner: codefly-dev}
 
 # Repository publication (repo-url, branch, revision, checkout, Argo/Flux
 # Application assembly) is owned by the CLI/server promotion driver, not the
