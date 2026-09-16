@@ -64,9 +64,41 @@ approximately 408 MB Go cache keyed only to the root module's checksum file.
    digest instead of compiling the same pinned CLI independently in every job.
    The archive digest was checked against the downloaded v0.1.145 release.
 
+5. Replay the planner's own plan in every quality phase and in the build,
+   instead of rebuilding a selection from `--changed-file
+   module/services/<svc>/service.codefly.yaml`. That reconstruction flattened
+   the plan to a service list, discarding the direct/dependent classification
+   and the reason each path was selected. The plan is saved as a job artifact;
+   each consuming phase gets its own, because a plan binds the exact invocation
+   it was built for. A replay cannot widen a run: the CLI rebuilds the plan from
+   bounds the consumer supplies independently and refuses one that differs.
+
 Standalone phases start cold and cannot reuse installs or compiler output from
 earlier phases in the same run. No tests, audits, SBOMs, image builds, or
 release requirements were removed.
+
+## Reusing verified results across runs
+
+The quality phases ask the CLI to stand a task on a previously verified
+execution rather than repeat identical work (`--reuse-results`). A record binds
+the phase, the service, the working tree, the CLI and agent digests, and the
+execution environment — here the runner image — so a hit means the same work on
+the same inputs already passed. Anything else (absent, stale, untrusted,
+unreadable) executes the task normally; a miss is never an answer.
+
+Only `main` is trusted to certify a result, and the CLI refuses to write one
+from any other reference, so a pull request consumes this evidence and can never
+seed it. The store is an `actions/cache` entry per phase and runner image, saved
+only from `main`: a pull request's cache is scoped to that pull request and
+unreadable from anywhere else. The build phase is excluded — it publishes
+container images the report does not enumerate, so a hit would release
+downstream work against artifacts that are not on the runner.
+
+**This is inert until an operator adds a `CODEFLY_CI_RESULT_KEY` repository
+secret.** Records are authenticated, not merely stored: the CLI refuses to reuse
+without the key, so the workflow requests reuse only when the secret is present
+and otherwise runs everything. That is also what keeps fork pull requests, which
+GitHub gives no secrets, passing.
 
 ## Hosted result
 

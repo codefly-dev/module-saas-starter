@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile, spawnSync } from 'node:child_process';
@@ -171,22 +171,133 @@ test('the required Codefly quality check accepts only a successful phase matrix'
   }
 });
 
-test('every quality phase runs independently with the original service selection', () => {
+const qualityPhaseScript = () =>
+  workflow.jobs['codefly-quality-phases'].steps.find(step => step.name === 'Run quality phase').run;
+
+// Runs a phase's command with `codefly` stubbed to echo its arguments, so the
+// assertions below are about the invocation the runner would really make.
+function runQualityPhase(phase, environment = {}) {
+  const result = spawnSync('bash', ['-e', '-c', `codefly() { printf '%s\\n' "$*"; };\n${qualityPhaseScript()}`], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      CI_PHASE: phase,
+      SELECTION_ALL: 'false',
+      CODEFLY_BASE: 'base',
+      GITHUB_SHA: 'head',
+      RUNNER_TEMP: '/runner-temp',
+      CODEFLY_CI_RESULT_KEY: '',
+      ...environment,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+// Reconstructing the selection from `--changed-file module/services/<svc>/…`
+// flattened the plan to a service list, discarding the direct/dependent
+// classification and the reason each path was selected. Every phase now replays
+// the plan the planner published, under bounds it supplies independently.
+test('every quality phase replays the plan published for its own invocation', () => {
   const job = workflow.jobs['codefly-quality-phases'];
   assert.deepEqual(job.strategy.matrix.phase, ['verify,sync-drift', 'lint', 'compile', 'test']);
   assert.equal(job.strategy['fail-fast'], 'false');
-  const script = job.steps.find(step => step.name === 'Run quality phase').run;
   for (const phase of job.strategy.matrix.phase) {
-    const result = spawnSync('bash', ['-e', '-c', `codefly() { printf '%s\\n' "$*"; };\n${script}`], {
+    const id = phase.replaceAll(',', '-');
+    assert.deepEqual(runQualityPhase(phase).split('\n'), [
+      `ci run --head head --base base --plan /runner-temp/ci-plan/${id}.json --phase ${phase} --output .codefly/ci/${id}`,
+    ]);
+  }
+});
+
+// A plan binds the exact invocation it was built for, so a phase whose plan the
+// planner never published fails on a missing file, in a job that reads as if the
+// phase itself broke.
+test('the planner publishes a replay plan for every phase that replays one', () => {
+  const planStep = workflow.jobs['codefly-plan'].steps.find(step => (step.run ?? '').includes('codefly ci plan'));
+  const emission = planStep.run.slice(planStep.run.indexOf('plan_phases=('));
+  assert.notEqual(planStep.run.indexOf('plan_phases=('), -1);
+  const temporary = mkdtempSync(join(tmpdir(), 'ci-plan-'));
+  try {
+    const result = spawnSync('bash', ['-euo', 'pipefail', '-c',
+      `codefly() { printf '%s\\n' "$*"; }\nselection_args=(--head head --base base)\n${emission}`], {
       encoding: 'utf8',
-      env: { ...process.env, CI_PHASE: phase, SELECTION_ALL: 'false', CODEFLY_BASE: 'base', GITHUB_SHA: 'head', AFFECTED_SERVICES: 'accounts frontend' },
+      env: { ...process.env, RUNNER_TEMP: temporary },
     });
     assert.equal(result.status, 0, result.stderr);
-    const selection = phase === 'verify,sync-drift'
-      ? '--head head --base base'
-      : '--changed-file module/services/accounts/service.codefly.yaml --changed-file module/services/frontend/service.codefly.yaml';
-    assert.ok(result.stdout.startsWith(`ci run ${selection} --phase ${phase} --output `), result.stdout);
-    assert.equal(result.stdout.trim().split('\n').length, 1);
+
+    // Read what each consumer actually asks for rather than restating it here:
+    // a guard that only checks the planner's side passes while a renamed plan
+    // fails at runtime on a missing file.
+    const requested = Object.values(workflow.jobs).flatMap(job => (job.steps ?? []).flatMap(step =>
+      [...(step.run ?? '').matchAll(/--plan "\$\{RUNNER_TEMP\}\/ci-plan\/([^"]+)"/g)]
+        .map(match => match[1])));
+    const phaseIds = workflow.jobs['codefly-quality-phases'].strategy.matrix.phase
+      .map(phase => phase.replaceAll(',', '-'));
+    // The quality matrix asks for its plan through ${CI_PHASE//,/-}; the build
+    // names its own. Both must resolve to a file the planner published.
+    assert.deepEqual(requested.sort(), ['${CI_PHASE//,/-}.json', 'build.json']);
+
+    const published = readdirSync(join(temporary, 'ci-plan')).sort();
+    const replayed = [...phaseIds, 'build'].map(id => `${id}.json`).sort();
+    assert.deepEqual(published, replayed);
+
+    // Each plan is built for the phase it is named after, and bound to the same
+    // selection the planner resolved — a plan built for another phase, or under
+    // other bounds, is refused at replay rather than silently narrowing the run.
+    for (const id of replayed) {
+      const emitted = readFileSync(join(temporary, 'ci-plan', id), 'utf8').trim();
+      assert.equal(emitted, `ci plan --head head --base base --format json --replay --phase ${id.replace('.json', '').replace('verify-sync-drift', 'verify,sync-drift')}`);
+    }
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+// A record certifies a past success to a later run, so reuse is authenticated:
+// without the signing key the CLI refuses outright, which would fail every fork
+// pull request — GitHub gives those no secrets — rather than just execute.
+test('results are reused only under a signing key, and only main is trusted to certify them', () => {
+  const withoutKey = runQualityPhase('lint');
+  assert.ok(!withoutKey.includes('--reuse'), withoutKey);
+
+  // An unidentifiable execution environment disables reuse rather than matching
+  // records against a placeholder identity two different machines would share.
+  const withoutEnvironment = runQualityPhase('lint', { CODEFLY_CI_RESULT_KEY: 'key', CODEFLY_CI_REUSE_ENVIRONMENT: '' });
+  assert.ok(!withoutEnvironment.includes('--reuse'), withoutEnvironment);
+
+  const reused = runQualityPhase('lint', {
+    CODEFLY_CI_RESULT_KEY: 'key',
+    CODEFLY_CI_REUSE_ENVIRONMENT: 'image',
+    GITHUB_REF_NAME: '748/merge',
+    GITHUB_RUN_ID: '42',
+    GITHUB_RUN_ATTEMPT: '1',
+  });
+  assert.ok(reused.includes('--reuse-results'), reused);
+  assert.ok(reused.includes('--reuse-trusted-reference main'), reused);
+  assert.ok(reused.includes('--reuse-environment image'), reused);
+  // Published under this run's own reference, which is not the trusted one, so
+  // the CLI consumes main's evidence here and refuses to write any.
+  assert.ok(reused.includes('--reuse-reference 748/merge'), reused);
+  assert.ok(reused.includes('--reuse-run 42/1'), reused);
+  // Unchanged by reuse: the bounds and the plan still decide what runs.
+  assert.ok(reused.startsWith('ci run --head head --base base --plan /runner-temp/ci-plan/lint.json'), reused);
+
+  const save = workflow.jobs['codefly-quality-phases'].steps.find(step => step.name === 'Save verified CI results');
+  assert.match(save.if, /github\.ref == 'refs\/heads\/main'/);
+  assert.match(save.if, /steps\.reuse\.outputs\.enabled == 'true'/);
+  // A failing phase has already published records for the services that passed.
+  // Dropping the save on failure would discard them and make every run after a
+  // red main re-execute verified work; `always()` would instead save from a
+  // cancelled run, whose store is incomplete at an arbitrary point.
+  assert.match(save.if, /!cancelled\(\)/);
+  assert.ok(!/always\(\)/.test(save.if), save.if);
+  // actions/cache rejects a key containing a comma, which "verify,sync-drift" has.
+  const restore = workflow.jobs['codefly-quality-phases'].steps.find(step => step.name === 'Restore verified CI results');
+  for (const step of [save, restore]) {
+    assert.ok(!step.with.key.includes(','), step.with.key);
+    assert.ok(step.with.key.includes('env.CI_PHASE_ID'), step.with.key);
+    assert.ok(step.with.key.includes('env.CODEFLY_CI_REUSE_ENVIRONMENT'), step.with.key);
   }
 });
 

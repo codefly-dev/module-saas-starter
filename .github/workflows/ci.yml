@@ -555,6 +555,31 @@ jobs:
             echo "has_work=${has_work}"
           } >> "${GITHUB_OUTPUT}"
 
+          # Every phase below replays this plan rather than rebuilding a
+          # selection out of `--changed-file module/services/<svc>/…`, which
+          # reduced the plan to a flat service list and discarded both the
+          # direct/dependent classification and the reason each path was
+          # selected. A plan binds the exact invocation it was built for, so
+          # each consuming phase gets its own; the CLI recomputes the plan from
+          # the bounds the consumer supplies independently and refuses a replay
+          # that differs, so this artifact can never widen what runs.
+          #
+          # It is written outside the repository: the plan pins a digest of the
+          # working tree, and the CLI exempts only `.codefly/ci` from it.
+          plan_phases=("verify,sync-drift" lint compile test build)
+          mkdir -p "${RUNNER_TEMP}/ci-plan"
+          for phase in "${plan_phases[@]}"; do
+            codefly ci plan "${selection_args[@]}" --format json --replay \
+              --phase "${phase}" \
+              > "${RUNNER_TEMP}/ci-plan/${phase//,/-}.json"
+          done
+      - name: Retain the replay plan for every consuming phase
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: codefly-ci-plan
+          path: ${{ runner.temp }}/ci-plan/
+          if-no-files-found: error
+
   codefly-quality-phases:
     name: Codefly quality (${{ matrix.phase }})
     needs: codefly-plan
@@ -588,6 +613,54 @@ jobs:
             npm-quality-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
+      - name: Download the replay plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: codefly-ci-plan
+          path: ${{ runner.temp }}/ci-plan
+      # A reusable result is only as good as the claim that this runner is the
+      # machine the result was produced on, so the runner image identifies the
+      # execution environment. A record recorded on another image simply never
+      # matches, which costs a re-execution and nothing else.
+      - name: Identify the execution environment and its result cache
+        id: reuse
+        shell: bash
+        env:
+          CI_PHASE: ${{ matrix.phase }}
+          CODEFLY_CI_RESULT_KEY: ${{ secrets.CODEFLY_CI_RESULT_KEY }}
+        run: |
+          # Both halves of the runner image or nothing: a placeholder here would
+          # give two genuinely different machines one identity, which is the one
+          # thing this value exists to prevent. Unidentifiable means no reuse,
+          # not reuse against an invented environment.
+          environment=""
+          if [[ -n "${ImageOS:-}" && -n "${ImageVersion:-}" ]]; then
+            environment="${ImageOS}-${ImageVersion}-${RUNNER_ARCH}"
+          fi
+          {
+            echo "CODEFLY_CI_REUSE_ENVIRONMENT=${environment}"
+            # A cache key may not contain a comma, which the composite phase does.
+            echo "CI_PHASE_ID=${CI_PHASE//,/-}"
+          } >> "${GITHUB_ENV}"
+          # The `secrets` context cannot be read from a step condition, so the
+          # one decision that depends on it is made here and carried as output.
+          enabled=false
+          if [[ -n "${CODEFLY_CI_RESULT_KEY:-}" && -n "${environment}" ]]; then
+            enabled=true
+          fi
+          echo "enabled=${enabled}" >> "${GITHUB_OUTPUT}"
+      - name: Restore verified CI results
+        if: ${{ steps.reuse.outputs.enabled == 'true' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/codefly-ci-results
+          # Restore the newest store this phase and environment published; the
+          # exact key only ever hits on a re-run of the same commit. Records are
+          # content-addressed, so an older store is a smaller hit rate and never
+          # a wrong answer.
+          key: codefly-ci-results-${{ env.CI_PHASE_ID }}-${{ env.CODEFLY_CI_REUSE_ENVIRONMENT }}-${{ github.sha }}
+          restore-keys: |
+            codefly-ci-results-${{ env.CI_PHASE_ID }}-${{ env.CODEFLY_CI_REUSE_ENVIRONMENT }}-
       - name: Ensure runner disk space
         if: matrix.phase == 'test'
         run: bash scripts/ci/ensure-disk-space.sh
@@ -611,13 +684,16 @@ jobs:
           CI_PHASE: ${{ matrix.phase }}
           SELECTION_ALL: ${{ needs.codefly-plan.outputs.all }}
           CODEFLY_BASE: ${{ needs.codefly-plan.outputs.base }}
-          # Affected services resolved once by codefly-plan; empty on full runs
-          # only if the topology has no services.
-          AFFECTED_SERVICES: ${{ needs.codefly-plan.outputs.services }}
           # Select the Codefly fixture used by dependency-backed frontend tests.
           # Accounts reads this through the Codefly SDK; application code never
           # reaches into Codefly's runtime carrier directly.
           CODEFLY__FIXTURE: dev-admin
+          # Records certify a successful execution to a later run, so they are
+          # authenticated rather than merely stored. Without the key the CLI
+          # refuses to reuse at all, which is why reuse is requested only when
+          # the key is present: a fork pull request, which GitHub gives no
+          # secrets, executes everything instead of failing the gate.
+          CODEFLY_CI_RESULT_KEY: ${{ secrets.CODEFLY_CI_RESULT_KEY }}
         run: |
           selection_args=(--head "${GITHUB_SHA}")
           if [[ "${SELECTION_ALL}" == "true" ]]; then
@@ -631,25 +707,46 @@ jobs:
             selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
-          if [[ "${CI_PHASE}" == "verify,sync-drift" ]]; then
-            codefly ci run "${selection_args[@]}" \
-              --phase "${CI_PHASE}" \
-              --output .codefly/ci/pre-audit
-            exit 0
-          fi
-
-          validation_selection_args=()
-          for service in ${AFFECTED_SERVICES}; do
-            validation_selection_args+=(
-              --changed-file "module/services/${service}/service.codefly.yaml"
+          # Only `main` is trusted to certify a result, and only a run ON main
+          # publishes one: the CLI refuses to write from any other reference, so
+          # a pull request can consume this evidence but never seed it. A record
+          # binds the phase, the service, the tree, the CLI and agent digests and
+          # the environment below, so anything a miss could mean — absent, stale,
+          # untrusted, unreadable — leaves the task executing normally.
+          run_args=(
+            --plan "${RUNNER_TEMP}/ci-plan/${CI_PHASE//,/-}.json"
+            --phase "${CI_PHASE}"
+            --output ".codefly/ci/${CI_PHASE//,/-}"
+          )
+          if [[ -n "${CODEFLY_CI_RESULT_KEY:-}" && -n "${CODEFLY_CI_REUSE_ENVIRONMENT:-}" ]]; then
+            run_args+=(
+              --reuse-results
+              --reuse-store "${RUNNER_TEMP}/codefly-ci-results"
+              --reuse-environment "${CODEFLY_CI_REUSE_ENVIRONMENT}"
+              --reuse-reference "${GITHUB_REF_NAME}"
+              --reuse-trusted-reference main
+              --reuse-run "${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
             )
-          done
-
-          if (( ${#validation_selection_args[@]} )); then
-            codefly ci run "${validation_selection_args[@]}" \
-              --phase "${CI_PHASE}" \
-              --output .codefly/ci/validation
           fi
+
+          codefly ci run "${selection_args[@]}" "${run_args[@]}"
+      # Only main's runs seed the store. A pull request's cache is scoped to
+      # that pull request and unreadable from anywhere else, so saving one buys
+      # nothing and evicts entries other runs are reading.
+      #
+      # `!cancelled()` rather than dropping the step on failure: a phase that
+      # fails for one service has already published records for every service
+      # that passed, and a record only exists for a task that passed, so a
+      # partial save can never certify a failure. Skipping it would make every
+      # run after a red main re-execute work that was verified — the runs that
+      # can least afford it. Not `always()`, which would also save from a
+      # cancelled run whose store is arbitrarily incomplete.
+      - name: Save verified CI results
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' && steps.reuse.outputs.enabled == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/codefly-ci-results
+          key: codefly-ci-results-${{ env.CI_PHASE_ID }}-${{ env.CODEFLY_CI_REUSE_ENVIRONMENT }}-${{ github.sha }}
 
   # Preserve the required check name configured in the repository ruleset.
   codefly-quality:
@@ -764,6 +861,11 @@ jobs:
           driver: docker
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
+      - name: Download the replay plan
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: codefly-ci-plan
+          path: ${{ runner.temp }}/ci-plan
       - name: Ensure runner disk space
         run: bash scripts/ci/ensure-disk-space.sh
       - name: Test executor image evidence against real Docker builds
@@ -808,6 +910,7 @@ jobs:
           for attempt in 1 2 3 4 5; do
             node scripts/ci/build-images.mjs snapshot
             if codefly ci run "${selection_args[@]}" \
+              --plan "${RUNNER_TEMP}/ci-plan/build.json" \
               --phase build \
               --output ".codefly/ci/build-${attempt}" \
               --jobs "${jobs}" 2>&1 | tee "${build_log}"; then
@@ -900,6 +1003,17 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
+      - name: Install Codefly
+        run: bash scripts/ci/install-codefly.sh
+      # Consumers reach this module's API through its published client
+      # libraries, so a tag that exports a contract no client was published for
+      # ships a version nobody can call. Publishing is a maintainer step before
+      # tagging (AGENTS.md, "Cutting a release") because it writes to registries
+      # this workflow holds no credentials for; the tag only has to prove the
+      # committed manifest records every client of the version being released.
+      # Offline and read-only: it refuses a stale manifest, it never publishes.
+      - name: Require a published client library for every exported contract
+        run: codefly publish clients saas-starter --check
       - name: Reject a mutable or repeated release
         shell: bash
         working-directory: module/tools
