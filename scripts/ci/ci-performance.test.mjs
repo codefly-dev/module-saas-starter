@@ -226,11 +226,20 @@ test('the planner publishes a replay plan for every phase that replays one', () 
     });
     assert.equal(result.status, 0, result.stderr);
 
+    // Read what each consumer actually asks for rather than restating it here:
+    // a guard that only checks the planner's side passes while a renamed plan
+    // fails at runtime on a missing file.
+    const requested = Object.values(workflow.jobs).flatMap(job => (job.steps ?? []).flatMap(step =>
+      [...(step.run ?? '').matchAll(/--plan "\$\{RUNNER_TEMP\}\/ci-plan\/([^"]+)"/g)]
+        .map(match => match[1])));
+    const phaseIds = workflow.jobs['codefly-quality-phases'].strategy.matrix.phase
+      .map(phase => phase.replaceAll(',', '-'));
+    // The quality matrix asks for its plan through ${CI_PHASE//,/-}; the build
+    // names its own. Both must resolve to a file the planner published.
+    assert.deepEqual(requested.sort(), ['${CI_PHASE//,/-}.json', 'build.json']);
+
     const published = readdirSync(join(temporary, 'ci-plan')).sort();
-    const replayed = [
-      ...workflow.jobs['codefly-quality-phases'].strategy.matrix.phase.map(phase => phase.replaceAll(',', '-')),
-      'build',
-    ].map(id => `${id}.json`).sort();
+    const replayed = [...phaseIds, 'build'].map(id => `${id}.json`).sort();
     assert.deepEqual(published, replayed);
 
     // Each plan is built for the phase it is named after, and bound to the same
@@ -251,6 +260,11 @@ test('the planner publishes a replay plan for every phase that replays one', () 
 test('results are reused only under a signing key, and only main is trusted to certify them', () => {
   const withoutKey = runQualityPhase('lint');
   assert.ok(!withoutKey.includes('--reuse'), withoutKey);
+
+  // An unidentifiable execution environment disables reuse rather than matching
+  // records against a placeholder identity two different machines would share.
+  const withoutEnvironment = runQualityPhase('lint', { CODEFLY_CI_RESULT_KEY: 'key', CODEFLY_CI_REUSE_ENVIRONMENT: '' });
+  assert.ok(!withoutEnvironment.includes('--reuse'), withoutEnvironment);
 
   const reused = runQualityPhase('lint', {
     CODEFLY_CI_RESULT_KEY: 'key',
