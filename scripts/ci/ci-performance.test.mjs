@@ -60,17 +60,40 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
   }
 });
 
-test('only affected-service planning opts into the newer CLI', () => {
-  const installs = Object.entries(workflow.jobs).flatMap(([jobName, job]) =>
+function assertOnlyPlanningUsesNewerCodefly(candidateWorkflow) {
+  const installs = Object.entries(candidateWorkflow.jobs).flatMap(([jobName, job]) =>
     (job.steps ?? [])
       .filter(step => step.run === 'bash scripts/ci/install-codefly.sh')
-      .map(step => ({ jobName, version: step.env?.CODEFLY_VERSION })),
+      .map(step => ({
+        jobName,
+        version: step.env?.CODEFLY_VERSION
+          ?? job.env?.CODEFLY_VERSION
+          ?? candidateWorkflow.env?.CODEFLY_VERSION
+          ?? '0.1.145',
+      })),
   );
   assert.ok(installs.length > 1);
   assert.deepEqual(
-    installs.filter(install => install.version !== undefined),
+    installs.filter(install => install.version !== '0.1.145'),
     [{ jobName: 'codefly-plan', version: '0.1.151' }],
   );
+}
+
+test('only affected-service planning opts into the newer CLI', () => {
+  assertOnlyPlanningUsesNewerCodefly(workflow);
+});
+
+test('the CLI scope guard includes inherited workflow and job environments', () => {
+  const workflowOverride = structuredClone(workflow);
+  workflowOverride.env = { ...workflowOverride.env, CODEFLY_VERSION: '0.1.151' };
+  assert.throws(() => assertOnlyPlanningUsesNewerCodefly(workflowOverride), assert.AssertionError);
+
+  const jobOverride = structuredClone(workflow);
+  jobOverride.jobs['codefly-quality-phases'].env = {
+    ...jobOverride.jobs['codefly-quality-phases'].env,
+    CODEFLY_VERSION: '0.1.151',
+  };
+  assert.throws(() => assertOnlyPlanningUsesNewerCodefly(jobOverride), assert.AssertionError);
 });
 
 test('the CLI installer rejects versions outside its checksum allowlist', () => {
