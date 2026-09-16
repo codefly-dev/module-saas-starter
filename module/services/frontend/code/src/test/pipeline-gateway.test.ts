@@ -6,6 +6,7 @@ import {
 	type PipelineRuntimeReader,
 	productGatewayURL,
 	productOrigin,
+	runtimeWithResolvedOrigin,
 } from "@/test/pipeline-gateway";
 
 const ORIGIN = "http://localhost:21931";
@@ -71,6 +72,31 @@ describe("codeflyInjectedRuntime", () => {
 				runtime({ currentModule: () => "", currentService: () => "" }),
 			),
 		).toBe(false);
+	});
+});
+
+describe("runtimeWithResolvedOrigin", () => {
+	it("supplies the SDK-resolved own origin when Codefly runs only dependencies", () => {
+		const adapted = runtimeWithResolvedOrigin(ORIGIN, {
+			currentModule: () => "saas-starter",
+			currentService: () => "frontend",
+			endpoints: () => [authGatewayREST()],
+			workspaceSecret: () => "internal-test-token",
+		});
+
+		expect(adapted.endpoints()).toContainEqual(frontendHTTP());
+	});
+
+	it("does not replace an injected own endpoint", () => {
+		const injected = frontendHTTP({ address: "https://app.cell.example" });
+		const adapted = runtimeWithResolvedOrigin(ORIGIN, {
+			currentModule: () => "saas-starter",
+			currentService: () => "frontend",
+			endpoints: () => [injected],
+			workspaceSecret: () => "internal-test-token",
+		});
+
+		expect(adapted.endpoints()).toEqual([injected]);
 	});
 });
 
