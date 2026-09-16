@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, appendFileSync, realpathSync, mkdirSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { parseWorkflowYaml } from './workflow-yaml.mjs';
 import { discoverManifests, isGeneratedRecipe } from './dependabot-coverage.mjs';
@@ -18,16 +18,38 @@ export function materialImages(materials) {
     const uri = new URL(material.URI);
     const image = decodeURIComponent(uri.pathname.slice('docker/'.length));
     const separator = image.lastIndexOf('@');
-    if (separator < 1 || !material.Digests?.length || material.Digests.some(digest => !/^sha256:[a-f0-9]{64}$/.test(digest))) {
+    // A recipe that pins with `FROM image@sha256:…` and no tag — as the Postgres
+    // migration builder does — carries no version in the path; BuildKit reports
+    // that pin as a `digest` parameter instead. Anything else naming neither is
+    // an unpinned reference and fails closed.
+    const untagged = separator < 1 && uri.searchParams.get('digest');
+    if ((separator < 1 && !untagged) || !material.Digests?.length || material.Digests.some(digest => !/^sha256:[a-f0-9]{64}$/.test(digest))) {
       throw new Error(`Invalid Docker material: ${material.URI}`);
     }
-    const ref = normalize(`${image.slice(0, separator)}:${image.slice(separator + 1)}`);
+    const ref = normalize(untagged ? image : `${image.slice(0, separator)}:${image.slice(separator + 1)}`);
     return material.Digests.map(digest => `${ref}@${digest}`);
   }))].sort();
 }
 
+// `repository` drops any tag but keeps a registry port, which shares its colon.
+const repository = ref => {
+  const name = ref.split('@')[0];
+  const colon = name.lastIndexOf(':');
+  return colon > name.lastIndexOf('/') ? name.slice(0, colon) : name;
+};
+
 export function verifyImages(expected, resolved) {
-  const matches = (ref, value) => ref.includes('@') ? ref === value : value.startsWith(`${ref}@sha256:`);
+  const matches = (ref, value) => {
+    if (!ref.includes('@')) return value.startsWith(`${ref}@sha256:`);
+    const [name, digest] = value.split('@');
+    // BuildKit reports an untagged `FROM image@sha256:…` pin without a tag, so
+    // only such a material falls back to repository and digest — which lets the
+    // contract keep naming the release line the agent locks. A material that
+    // does carry a tag must still agree exactly, so a recipe that moved to
+    // another release line fails even on a digest the contract already expects.
+    if (name !== repository(value)) return ref === value;
+    return repository(ref) === name && ref.split('@')[1] === digest;
+  };
   const errors = expected.filter(ref => !resolved.some(value => matches(ref, value)))
     .map(ref => `Missing expected build material: ${ref}`);
   errors.push(...resolved.filter(value => !expected.some(ref => matches(ref, value)))
@@ -38,10 +60,32 @@ export function verifyImages(expected, resolved) {
 const docker = (...args) => execFileSync('docker', ['buildx', ...args], { encoding: 'utf8' });
 const history = () => docker('history', 'ls', '--format', '{{json .}}').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
 
-export function selectBuild(builds, context, dockerfile) {
-  const matches = builds.filter(build => build.Context === context && build.Dockerfile === dockerfile);
+// BuildKit renders a replayed build record on stderr, and a full service build
+// is far larger than the default pipe budget.
+export function buildLog(ref) {
+  const { error, status, stdout, stderr } = spawnSync('docker',
+    ['buildx', 'history', 'logs', ref, '--progress', 'plain'],
+    { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (error) throw error;
+  if (status !== 0) throw new Error(`Cannot replay build record ${ref}: ${(stderr ?? '').trim()}`);
+  return `${stdout ?? ''}${stderr ?? ''}`;
+}
+
+// The images a recorded build exported. The CLI copies the recipe's Dockerfile
+// and ignore file into a temporary directory and builds the service tree from
+// there, so a record's Dockerfile is a throwaway path — deleted before this
+// runs — that names no recipe. What the build exported still names the service,
+// and BuildKit reports it for a staged and an in-tree definition alike.
+export function buildImages(log) {
+  const named = [...log.matchAll(/^#\d+ naming to (.+?)(?: done)?\s*$/gm)]
+    .flatMap(match => match[1].split(',').map(ref => normalize(ref.trim())));
+  return [...new Set(named)].sort();
+}
+
+export function selectBuild(builds, image) {
+  const matches = builds.filter(build => build.Images.includes(image));
   if (matches.length !== 1 || matches[0].Status !== 'completed') {
-    throw new Error(`Expected one completed build for ${context}/${dockerfile}; found ${matches.length}`);
+    throw new Error(`Expected one completed build for ${image}; found ${matches.length}`);
   }
   return matches[0];
 }
@@ -84,8 +128,10 @@ function check(inventory, services) {
 function evidence(inventory, services) {
   const before = new Set(JSON.parse(read('.codefly/ci/build-history-before.json')));
   const builds = history().filter(record => !before.has(record.ref)).map(record => {
-    const build = JSON.parse(docker('history', 'inspect', record.ref.split('/').at(-1), '--format', 'json'));
+    const ref = record.ref.split('/').at(-1);
+    const build = JSON.parse(docker('history', 'inspect', ref, '--format', 'json'));
     if (existsSync(build.Context)) build.Context = realpathSync(build.Context);
+    build.Images = buildImages(buildLog(ref));
     return build;
   });
   const selected = process.env.SELECTION_ALL === 'true'
@@ -108,10 +154,11 @@ function evidence(inventory, services) {
       }
       const recipes = manifest.recipes.map(recipe => ({ ...recipe, content: read(`${directory}/${recipe.dockerfile}`) }));
       const evidence = recipes.map(recipe => {
-        const context = realpathSync(resolve(root, `module/services/${service.name}`, recipe.context ?? '.'));
-        const build = selectBuild(builds, context, `builder/${recipe.dockerfile}`);
+        if (!recipe.image) throw new Error(`Build recipe ${recipe.name ?? recipe.dockerfile} does not name the image it produces`);
+        const image = normalize(recipe.image);
+        const build = selectBuild(builds, image);
         const { Ref, Context, Dockerfile, Status, Platform, StartedAt, CompletedAt, Materials } = build;
-        return { Ref, Context, Dockerfile, Status, Platform, StartedAt, CompletedAt, Materials };
+        return { Ref, Image: image, Context, Dockerfile, Status, Platform, StartedAt, CompletedAt, Materials };
       });
       const resolved = [...new Set(evidence.flatMap(build => materialImages(build.Materials)))].sort();
       const failures = verifyImages(config.images, resolved);
@@ -122,7 +169,7 @@ function evidence(inventory, services) {
       records.push({ service: service.name, agent: service.agent, errors: [error.message] });
     }
   }
-  writeFileSync(resolve(root, '.codefly/ci/build-images.json'), `${JSON.stringify({ schemaVersion: 2, records }, null, 2)}\n`);
+  writeFileSync(resolve(root, '.codefly/ci/build-images.json'), `${JSON.stringify({ schemaVersion: 3, records }, null, 2)}\n`);
   console.log(JSON.stringify(records, null, 2));
   return errors;
 }

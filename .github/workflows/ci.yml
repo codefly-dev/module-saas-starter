@@ -356,13 +356,6 @@ jobs:
           GOWORK: "off"
         run: go test -run TestMergedProtocolGeneratorsUseOneInvocation .
       - name: Install Codefly
-        env:
-          # `generate contracts` reads module.package.codefly.yaml, which declares
-          # fixtures; the installer's 0.1.145 default vendors a Core that rejects
-          # that key outright. 0.1.151 reads it and this step never enters the
-          # service runtime that the published agent fleet lags behind, so the
-          # newer pin stays scoped to this job.
-          CODEFLY_VERSION: 0.1.151
         run: bash scripts/ci/install-codefly.sh
       - name: Check exported API contracts are in sync with the proto
         run: codefly generate contracts saas-starter --check
@@ -477,11 +470,6 @@ jobs:
           CODEFLY_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         run: node scripts/ci/build-images.mjs check
       - name: Install Codefly
-        env:
-          # 0.1.151 fixes affected-service planning for integrity metadata, but
-          # its Core 0.3.32 service runtime is newer than the published agent
-          # fleet. Keep service phases on the installer's 0.1.145 default.
-          CODEFLY_VERSION: 0.1.151
         run: bash scripts/ci/install-codefly.sh
       - name: Resolve affected services
         id: plan
@@ -519,14 +507,35 @@ jobs:
             if git diff --name-only "${base}" "${GITHUB_SHA}" -- scripts/ci/build-images.json | grep -q .; then
               all=true
               selection_args+=(--all)
-            else
-              selection_args+=(--base "${base}")
             fi
           else
+            # A release tag or a first push has no delta to scope to, but the
+            # verify phase still needs change bounds to establish its integrity
+            # inputs, and `--all` supplies none — it only widens the selection.
+            # The commit's own parent is that bound.
+            base="$(git rev-parse --verify --quiet "${GITHUB_SHA}^" || true)"
             selection_args+=(--all)
           fi
 
+          # Independent of how wide the selection is: without a base (or
+          # --changed-file) the CLI records an integrity error and every phase
+          # behind a verify refuses. A root commit has no parent and none.
+          if [[ -n "${base}" ]]; then
+            selection_args+=(--base "${base}")
+          fi
+
           plan_json="$(codefly ci plan "${selection_args[@]}" --format json)"
+
+          # The CLI reports an unestablished integrity baseline in the plan
+          # rather than failing, and only the later verify phase refuses. Catch
+          # it here: this is where the bounds are chosen, and a fan-out job that
+          # dies on it reads as a build failure rather than a planning one.
+          integrity_error="$(jq -r '.integrity_error // ""' <<<"${plan_json}")"
+          if [[ -n "${integrity_error}" ]]; then
+            echo "codefly-plan: ${integrity_error}" >&2
+            exit 1
+          fi
+
           services="$(jq -r '.services[].service' <<<"${plan_json}" \
             | sed 's#^[^/]*/##' | paste -sd' ' -)"
           count="$(jq -r '.services | length' <<<"${plan_json}")"
@@ -611,7 +620,12 @@ jobs:
           selection_args=(--head "${GITHUB_SHA}")
           if [[ "${SELECTION_ALL}" == "true" ]]; then
             selection_args+=(--all)
-          else
+          fi
+          # `--all` only widens the selection; `--base` is what establishes the
+          # integrity inputs, and every phase runs behind a verify that refuses
+          # without them. The two are independent, so a run that forces the full
+          # graph still supplies its change bounds. A release tag has no base.
+          if [[ -n "${CODEFLY_BASE}" ]]; then
             selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
@@ -687,7 +701,12 @@ jobs:
           selection_args=(--head "${GITHUB_SHA}")
           if [[ "${SELECTION_ALL}" == "true" ]]; then
             selection_args+=(--all)
-          else
+          fi
+          # `--all` only widens the selection; `--base` is what establishes the
+          # integrity inputs, and every phase runs behind a verify that refuses
+          # without them. The two are independent, so a run that forces the full
+          # graph still supplies its change bounds. A release tag has no base.
+          if [[ -n "${CODEFLY_BASE}" ]]; then
             selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
@@ -759,7 +778,12 @@ jobs:
           selection_args=(--head "${GITHUB_SHA}")
           if [[ "${SELECTION_ALL}" == "true" ]]; then
             selection_args+=(--all)
-          else
+          fi
+          # `--all` only widens the selection; `--base` is what establishes the
+          # integrity inputs, and every phase runs behind a verify that refuses
+          # without them. The two are independent, so a run that forces the full
+          # graph still supplies its change bounds. A release tag has no base.
+          if [[ -n "${CODEFLY_BASE}" ]]; then
             selection_args+=(--base "${CODEFLY_BASE}")
           fi
 
