@@ -18,13 +18,15 @@ import (
 // refresh rotates the token — the previous refresh becomes invalid, and
 // reuse triggers family revocation.
 //
-// AccessTokenTTL is the lifetime this particular access token was signed with.
-// It is configurable and additionally capped for impersonation, so it is the
-// only honest source for the expires_in a response reports.
+// AccessTokenExpiresAt is the `exp` this particular access token was signed
+// with. The lifetime is configurable and additionally capped for impersonation,
+// and a response is built some time after the token is signed, so the instant —
+// rather than the lifetime — is what lets a caller report the time actually
+// remaining instead of the time originally granted.
 type TokenPair struct {
-	AccessToken    string
-	RefreshToken   string
-	AccessTokenTTL time.Duration
+	AccessToken          string
+	RefreshToken         string
+	AccessTokenExpiresAt time.Time
 }
 
 // JWTMinter owns the creation and verification of our own access + refresh
@@ -66,9 +68,9 @@ type JWTMinter interface {
 	// SwitchOrganization issues a fresh access token for a current membership
 	// while preserving the refresh token, session row, device family, and both
 	// lifetime boundaries. userID and sessionID must come from verified request
-	// identity, never directly from the request body. The returned duration is
-	// the lifetime that token was signed with.
-	SwitchOrganization(ctx context.Context, userID, sessionID, organizationID uuid.UUID) (string, time.Duration, error)
+	// identity, never directly from the request body. The returned instant is
+	// the `exp` that token was signed with.
+	SwitchOrganization(ctx context.Context, userID, sessionID, organizationID uuid.UUID) (string, time.Time, error)
 
 	// Revoke marks all sessions in a family as revoked. Called by /auth/logout.
 	Revoke(ctx context.Context, refreshToken string) error

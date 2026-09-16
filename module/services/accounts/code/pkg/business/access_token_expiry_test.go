@@ -3,19 +3,23 @@
 package business_test
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	ed25519minter "accounts/pkg/auth/ed25519"
+	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// signedAccessLifetime returns exp-iat from the token itself: the lifetime the
-// minter actually signed, which is what expires_in must report.
-func signedAccessLifetime(t *testing.T, token string) time.Duration {
+// signedAccessClaims returns the iat and exp the token itself carries.
+func signedAccessClaims(t *testing.T, token string) (issuedAt, expiresAt time.Time) {
 	t.Helper()
 	var claims struct {
 		IssuedAt  int64 `json:"iat"`
@@ -24,21 +28,60 @@ func signedAccessLifetime(t *testing.T, token string) time.Duration {
 	require.NoError(t, json.Unmarshal([]byte(decodeAccessPayload(t, token)), &claims))
 	require.NotZero(t, claims.IssuedAt)
 	require.NotZero(t, claims.ExpiresAt)
-	return time.Duration(claims.ExpiresAt-claims.IssuedAt) * time.Second
+	return time.Unix(claims.IssuedAt, 0), time.Unix(claims.ExpiresAt, 0)
 }
 
+// requireExpiresInMatchesToken asserts both halves of the contract: the minter
+// signed the configured lifetime, and expires_in reports what is left of it
+// without ever claiming more time than the token actually has.
 func requireExpiresInMatchesToken(t *testing.T, token string, expiresIn int64, want time.Duration) {
 	t.Helper()
-	require.Equal(t, want, signedAccessLifetime(t, token))
-	require.Equal(t, int64(want.Seconds()), expiresIn)
+	issuedAt, expiresAt := signedAccessClaims(t, token)
+	require.Equal(t, want, expiresAt.Sub(issuedAt), "the minter must sign the configured lifetime")
+	require.LessOrEqual(t, expiresIn, int64(want.Seconds()),
+		"expires_in must never exceed the lifetime the token was granted")
+	require.Greater(t, expiresIn, int64(want.Seconds())-30,
+		"expires_in must report the token's remaining lifetime")
 }
 
+// minterSwapped guards the window in which the shared service is running on a
+// non-default minter. testService is process-wide, so two tests holding
+// different TTL policies at once would assert against each other's tokens.
+var minterSwapped atomic.Bool
+
 // useMinterConfig repoints the service at a minter with a non-default TTL
-// policy for the duration of one test.
+// policy for the duration of one test, and restores the default afterwards.
+//
+// It fails rather than swapping if another test already holds the minter: these
+// tests mutate shared state, so calling t.Parallel() in one of them would
+// otherwise turn a hard invariant into an intermittent wrong-TTL assertion.
 func useMinterConfig(t *testing.T, cfg ed25519minter.Config) {
 	t.Helper()
+	if !minterSwapped.CompareAndSwap(false, true) {
+		t.Fatal("another test already holds the shared minter: these tests mutate testService and must not run in parallel")
+	}
 	testService.SetJWTMinter(newTestMinter(cfg))
-	t.Cleanup(func() { testService.SetJWTMinter(newTestMinter(ed25519minter.Config{})) })
+	t.Cleanup(func() {
+		testService.SetJWTMinter(newTestMinter(ed25519minter.Config{}))
+		minterSwapped.Store(false)
+	})
+}
+
+// seedMagicLink stores a magic link for emailAddr and returns its plaintext
+// token, standing in for the delivered email.
+func seedMagicLink(t *testing.T, emailAddr string) string {
+	t.Helper()
+	plaintext := "magic-link-expiry-" + business.NewIDString()
+	sum := sha256.Sum256([]byte(plaintext))
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		return testStore.CreateMagicLink(ctx, &business.MagicLink{
+			ID:        business.NewIDString(),
+			Email:     emailAddr,
+			TokenHash: hex.EncodeToString(sum[:]),
+			ExpiresAt: time.Now().Add(time.Hour),
+		})
+	}))
+	return plaintext
 }
 
 // TestExpiresInMatchesSignedTTLAcrossIssuingEndpoints pins every token-issuing
@@ -86,6 +129,10 @@ func TestExpiresInMatchesSignedTTLAcrossIssuingEndpoints(t *testing.T) {
 		&gen.SwitchOrganizationRequest{OrganizationId: target.Organization.Id})
 	require.NoError(t, err)
 	requireExpiresInMatchesToken(t, switched.AccessToken, switched.ExpiresIn, accessTTL)
+
+	magic, err := testService.VerifyMagicLink(testCtx, seedMagicLink(t, "magic-expires-in@test.com"))
+	require.NoError(t, err)
+	requireExpiresInMatchesToken(t, magic.AccessToken, magic.ExpiresIn, accessTTL)
 
 	_, secret := registerMFAUser(t, "mfa-expires-in", "mfa-expires-in@test.com")
 	challenge, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{

@@ -1314,9 +1314,9 @@ func TestMintModuleRegistrationRequiresPrefix(t *testing.T) {
 	require.Error(t, err)
 }
 
-// signedAccessLifetime returns exp-iat from the token itself, which is the only
-// thing a client can observe about the lifetime it was granted.
-func signedAccessLifetime(t *testing.T, token string) time.Duration {
+// signedAccessClaims returns the iat and exp the token itself carries, which is
+// all a client can observe about the lifetime it was granted.
+func signedAccessClaims(t *testing.T, token string) (issuedAt, expiresAt time.Time) {
 	t.Helper()
 	var claims struct {
 		IssuedAt  int64 `json:"iat"`
@@ -1325,77 +1325,88 @@ func signedAccessLifetime(t *testing.T, token string) time.Duration {
 	require.NoError(t, json.Unmarshal([]byte(decodeJWTPayload(t, token)), &claims))
 	require.NotZero(t, claims.IssuedAt)
 	require.NotZero(t, claims.ExpiresAt)
-	return time.Duration(claims.ExpiresAt-claims.IssuedAt) * time.Second
+	return time.Unix(claims.IssuedAt, 0), time.Unix(claims.ExpiresAt, 0)
 }
 
-func TestMintReportsTheLifetimeItSigned(t *testing.T) {
+// requireSignedFor asserts that the expiry the minter reports is exactly the exp
+// it signed, and that the gap between them is the configured lifetime. Reporting
+// the instant rather than the duration is what lets a caller subtract the time
+// spent between signing and responding.
+func requireSignedFor(t *testing.T, token string, reported time.Time, want time.Duration) {
+	t.Helper()
+	issuedAt, expiresAt := signedAccessClaims(t, token)
+	require.Equal(t, want, expiresAt.Sub(issuedAt))
+	require.Equal(t, expiresAt.Unix(), reported.Unix())
+}
+
+func TestMintReportsTheExpiryItSigned(t *testing.T) {
 	ctx := context.Background()
-	impersonated := newIdentity()
-	impersonated.ActingAsUserID = uuid.Must(uuid.NewV7())
 
 	for _, tc := range []struct {
-		name     string
-		cfg      ed25519minter.Config
-		identity *auth.Identity
-		want     time.Duration
+		name        string
+		cfg         ed25519minter.Config
+		impersonate bool
+		want        time.Duration
 	}{
 		{
-			name:     "defaults",
-			identity: newIdentity(),
-			want:     3 * time.Minute,
+			name: "defaults",
+			want: 3 * time.Minute,
 		},
 		{
-			name:     "configured access ttl",
-			cfg:      ed25519minter.Config{AccessTokenTTL: 11 * time.Minute},
-			identity: newIdentity(),
-			want:     11 * time.Minute,
+			name: "configured access ttl",
+			cfg:  ed25519minter.Config{AccessTokenTTL: 11 * time.Minute},
+			want: 11 * time.Minute,
 		},
 		{
-			name:     "impersonation capped below a raised access ttl",
-			cfg:      ed25519minter.Config{AccessTokenTTL: 10 * time.Minute, ImpersonationTokenTTL: 5 * time.Minute},
-			identity: impersonated,
-			want:     5 * time.Minute,
+			name:        "impersonation capped below a raised access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 10 * time.Minute, ImpersonationTokenTTL: 5 * time.Minute},
+			impersonate: true,
+			want:        5 * time.Minute,
 		},
 		{
 			// The dangerous direction: a short impersonation cap must not be
 			// reported as the longer ordinary lifetime.
-			name:     "impersonation cap lowered below the access ttl",
-			cfg:      ed25519minter.Config{AccessTokenTTL: 3 * time.Minute, ImpersonationTokenTTL: time.Minute},
-			identity: impersonated,
-			want:     time.Minute,
+			name:        "impersonation cap lowered below the access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 3 * time.Minute, ImpersonationTokenTTL: time.Minute},
+			impersonate: true,
+			want:        time.Minute,
 		},
 		{
-			name:     "impersonation uncapped when the cap exceeds the access ttl",
-			cfg:      ed25519minter.Config{AccessTokenTTL: 2 * time.Minute, ImpersonationTokenTTL: 30 * time.Minute},
-			identity: impersonated,
-			want:     2 * time.Minute,
+			name:        "impersonation uncapped when the cap exceeds the access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 2 * time.Minute, ImpersonationTokenTTL: 30 * time.Minute},
+			impersonate: true,
+			want:        2 * time.Minute,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			// Built per subtest: Mint writes back through the pointer (it defaults
+			// AssuranceLevel), so a shared identity would leak between cases.
+			identity := newIdentity()
+			if tc.impersonate {
+				identity.ActingAsUserID = uuid.Must(uuid.NewV7())
+			}
 			_, priv, err := ed25519minter.GenerateKey()
 			require.NoError(t, err)
 			m := ed25519minter.New(tc.cfg, priv, &memoryStore{})
 
-			pair, err := m.Mint(ctx, tc.identity)
+			pair, err := m.Mint(ctx, identity)
 			require.NoError(t, err)
-			require.Equal(t, tc.want, pair.AccessTokenTTL)
-			require.Equal(t, tc.want, signedAccessLifetime(t, pair.AccessToken))
+			requireSignedFor(t, pair.AccessToken, pair.AccessTokenExpiresAt, tc.want)
 
 			// Rotation rebuilds the identity from the session row, which holds no
 			// acting claim, so a rotated token is never an impersonation token and
 			// the cap does not apply to it.
-			if tc.identity.ActingAsUserID != uuid.Nil {
+			if tc.impersonate {
 				return
 			}
 			rotated, err := m.VerifyRefresh(ctx, pair.RefreshToken)
 			require.NoError(t, err)
-			require.Equal(t, tc.want, rotated.AccessTokenTTL)
-			require.Equal(t, tc.want, signedAccessLifetime(t, rotated.AccessToken))
+			requireSignedFor(t, rotated.AccessToken, rotated.AccessTokenExpiresAt, tc.want)
 		})
 	}
 }
 
-func TestSwitchOrganizationReportsTheLifetimeItSigned(t *testing.T) {
+func TestSwitchOrganizationReportsTheExpiryItSigned(t *testing.T) {
 	ctx := context.Background()
 	_, priv, err := ed25519minter.GenerateKey()
 	require.NoError(t, err)
@@ -1407,8 +1418,7 @@ func TestSwitchOrganizationReportsTheLifetimeItSigned(t *testing.T) {
 	minted, err := m.VerifyAccess(pair.AccessToken)
 	require.NoError(t, err)
 
-	switched, ttl, err := m.SwitchOrganization(ctx, identity.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	switched, expiresAt, err := m.SwitchOrganization(ctx, identity.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
 	require.NoError(t, err)
-	require.Equal(t, 7*time.Minute, ttl)
-	require.Equal(t, 7*time.Minute, signedAccessLifetime(t, switched))
+	requireSignedFor(t, switched, expiresAt, 7*time.Minute)
 }

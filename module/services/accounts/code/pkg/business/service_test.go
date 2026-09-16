@@ -478,7 +478,7 @@ func TestAuthenticate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, resp.AccessToken)
 	require.NotEmpty(t, resp.RefreshToken)
-	require.Equal(t, int64(signedAccessLifetime(t, resp.AccessToken).Seconds()), resp.ExpiresIn)
+	requireExpiresInMatchesToken(t, resp.AccessToken, resp.ExpiresIn, 3*time.Minute)
 	require.NotEmpty(t, resp.User.Uuid)
 }
 

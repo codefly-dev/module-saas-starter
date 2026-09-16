@@ -248,7 +248,7 @@ func completeMFAResponse(pair *auth.TokenPair, user *gen.User) *gen.CompleteMFAC
 	return &gen.CompleteMFAChallengeResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    int64(pair.AccessTokenTTL.Seconds()),
+		ExpiresIn:    expiresInSeconds(pair.AccessTokenExpiresAt),
 		User:         user,
 	}
 }

@@ -192,7 +192,7 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 	return &gen.AuthenticateResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    int64(pair.AccessTokenTTL.Seconds()),
+		ExpiresIn:    expiresInSeconds(pair.AccessTokenExpiresAt),
 		User:         user,
 	}, nil
 }

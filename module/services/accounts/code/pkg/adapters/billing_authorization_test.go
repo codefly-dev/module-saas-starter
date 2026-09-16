@@ -123,8 +123,8 @@ func (*fixedAccessMinter) VerifyRefresh(context.Context, string) (*auth.TokenPai
 
 func (*fixedAccessMinter) SwitchOrganization(
 	context.Context, uuid.UUID, uuid.UUID, uuid.UUID,
-) (string, time.Duration, error) {
-	return "", 0, nil
+) (string, time.Time, error) {
+	return "", time.Time{}, nil
 }
 
 func (*fixedAccessMinter) Revoke(context.Context, string) error              { return nil }
