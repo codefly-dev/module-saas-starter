@@ -5,6 +5,6 @@
 -- could never succeed. The lookup that precedes it matches on
 -- (provider, provider_id), so the flow could not recover on a later attempt
 -- either: the row it searched for was the one provisioning had failed to write.
-INSERT INTO identity_providers (provider_id, name) VALUES
+INSERT INTO public.identity_providers (provider_id, name) VALUES
     ('magic_link', 'Magic Link')
 ON CONFLICT (provider_id) DO NOTHING;
