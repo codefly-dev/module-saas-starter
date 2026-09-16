@@ -59,8 +59,19 @@ func (c *Collector) LogsService() *LogsService { return &LogsService{collector: 
 
 func New(config Config) (*Collector, error) {
 	exporter := strings.ToLower(strings.TrimSpace(config.Exporter))
+	// Fail closed on an empty exporter instead of defaulting to "debug".
+	// An empty value never meant "the operator chose debug" — every committed
+	// observability.env sets this key explicitly, and scripts/setup/otel.sh
+	// always writes it — it meant the configuration never reached the process.
+	// Defaulting it to debug turned that into SILENT trace loss: the collector
+	// logged "received OTLP signal" and dropped every span while its own
+	// ConfigMap said otlphttp. Refusing to start surfaces the same fault in one
+	// line of pod logs.
 	if exporter == "" {
-		exporter = "debug"
+		return nil, errors.New(
+			"telemetry: OBSERVABILITY_EXPORTER is required and must be debug or otlphttp; " +
+				"the observability workspace configuration did not reach this process " +
+				"(on the local-dogfood profile, run scripts/setup/otel.sh --debug)")
 	}
 	switch exporter {
 	case "debug":
@@ -72,6 +83,20 @@ func New(config Config) (*Collector, error) {
 		if err != nil || endpoint.Scheme == "" || endpoint.Host == "" {
 			return nil, errors.New("telemetry: OTLP/HTTP endpoint must be absolute")
 		}
+		// Plaintext is allowed only to loopback, which never leaves the pod and so
+		// is governed by no network policy. Everything else must be HTTPS, because
+		// that is the only egress this module actually grants telemetry:
+		// deployment/topology.bindings.codefly.yaml declares public_egress_ports
+		// [443], which renders allow-telemetry-public-egress — TCP 443 to public IP
+		// space with 10/8, 172.16/12, 192.168/16 and fc00::/7 excepted — on top of a
+		// namespace-wide default-deny that has no allow-intra-namespace rule.
+		//
+		// A cluster-internal plaintext address (a *.svc name on 4318) is therefore
+		// denied at the network layer no matter what this check says; accepting it
+		// here would only move the failure from a startup error to a 10s export
+		// timeout per batch. Reaching an in-cluster collector is a topology change —
+		// a declared dependency edge with its regenerated NetworkPolicy — not a
+		// transport exemption in application code.
 		local := endpoint.Hostname() == "localhost" || endpoint.Hostname() == "127.0.0.1"
 		if endpoint.Scheme != "https" && (endpoint.Scheme != "http" || !local) {
 			return nil, errors.New("telemetry: OTLP/HTTP endpoint must use HTTPS")
