@@ -1,7 +1,11 @@
 // Response security headers for the product frontend, mirroring the marketing
 // site's baseline (frame-ancestors 'none' / X-Frame-Options DENY, nosniff,
 // Referrer-Policy, COOP, Permissions-Policy) and extending the CSP with the
-// cross-origin subresources this app actually loads.
+// cross-origin subresources this app actually loads. Only that hardening
+// baseline mirrors; the CSPs deliberately differ and are NOT kept in sync by
+// any gate — marketing keeps an independent hand-rolled copy in its own
+// next.config.mjs (no nonce, no strict-dynamic, no solution origins), so a
+// directive changed here does not change it there.
 //
 // Next bakes `headers()` into the routes manifest at BUILD time, so this reads
 // build-time env only. Every widening below is keyed off the same build-time
@@ -145,6 +149,38 @@ export function contentSecurityPolicyFromInputs(
 		connectSrc.push(TURNSTILE_ORIGIN);
 	}
 
+	// A remote's CSS chunk is fetched by the MF runtime as a cross-origin
+	// <link>, which 'unsafe-inline' does not cover — it admits inline <style>
+	// and style attributes, never an external stylesheet URL. Without the origin
+	// here the chunk is refused and the whole remote fails to mount, since the
+	// rejected load throws rather than degrading to unstyled. script-src has no
+	// equivalent gap: 'strict-dynamic' already extends trust to whatever the
+	// nonced framework scripts pull in, whatever its origin.
+	//
+	// That asymmetry cuts the other way too, and is the thing to remember when
+	// this is next debugged: only the origin of the remote's MANIFEST is
+	// admitted (src/proxy.ts derives it from frontend.manifestUrl and nothing
+	// else). A remote whose publicPath serves chunks from a different origin —
+	// a CDN — still has its stylesheet refused, while its SCRIPT loads anyway
+	// because 'strict-dynamic' ignores origin entirely. So that topology looks
+	// healthy right up to the stylesheet. Admitting an asset origin would mean
+	// widening the registration contract, which is deliberately not done here.
+	//
+	// On the size of the grant, stated accurately because it is what the next
+	// widening will be argued from: this is NOT merely a restatement of trust
+	// script-src already gives. Under CSP3 a browser that honours
+	// 'strict-dynamic' IGNORES host-source expressions in script-src, and the
+	// proxy always mints a nonce, so in production those origins are inert
+	// there — the remote's JS loads by strict-dynamic propagation, not because
+	// the origin is listed. style-src has no strict-dynamic, so naming an origin
+	// here is a net-new ENFORCED grant. It is still not an escalation: a remote
+	// that already executes script in this origin can do strictly more than one
+	// that ships CSS, and it could always inject an inline <style> under
+	// 'unsafe-inline' regardless. The CSP is therefore not, and never was, the
+	// enforcement point for ADR-0002's "no arbitrary CSS from remotes" — see
+	// CLAIM_INVENTORY.md.
+	const styleSrc = ["'self'", "'unsafe-inline'", ...solutionOrigins];
+
 	// The /docs viewer is now self-hosted (same-origin), so 'self' covers it;
 	// Turnstile renders its challenge in a Cloudflare-hosted iframe when enabled.
 	const frameSrc = ["'self'"];
@@ -165,7 +201,7 @@ export function contentSecurityPolicyFromInputs(
 		"img-src 'self' data: https:",
 		"object-src 'none'",
 		`script-src ${scriptSrc.join(" ")}`,
-		"style-src 'self' 'unsafe-inline'",
+		`style-src ${styleSrc.join(" ")}`,
 		"upgrade-insecure-requests",
 	].join("; ");
 }

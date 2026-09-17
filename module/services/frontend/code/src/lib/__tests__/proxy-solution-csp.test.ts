@@ -178,6 +178,14 @@ describe("proxy solution CSP", () => {
 		expect(directive(csp, "connect-src")).toBe(
 			"connect-src 'self' http://localhost:8091",
 		);
+		// The remote's CSS chunk loads as a cross-origin <link>, which
+		// 'unsafe-inline' never admits and 'strict-dynamic' has no equivalent of
+		// (it is script-only). Without the origin here the chunk is refused and
+		// the whole remote fails to mount, so the served header — not just the
+		// pure assembly function — has to carry it (#778).
+		expect(directive(csp, "style-src")).toBe(
+			"style-src 'self' 'unsafe-inline' http://localhost:8091",
+		);
 	});
 
 	it("targets loopback at the server PORT regardless of the request Host", async () => {
@@ -683,6 +691,37 @@ describe("proxy solution CSP", () => {
 		);
 		expect(console.error).toHaveBeenCalledWith(
 			expect.stringMatching(/policy is \d+ bytes/),
+		);
+	});
+
+	it("warns below 8k, at the LOWEST reverse-proxy buffer default", async () => {
+		// The case above uses 250 origins, so it fires at any threshold under
+		// ~32k and says nothing about where the threshold actually sits. This one
+		// pins it: nginx's proxy_buffer_size defaults to 4k OR 8k depending on
+		// platform, so a policy in the 4k–8k band already 502s every document on
+		// a 4k-configured proxy. A threshold of 8k would stay silent through
+		// exactly that outage — the warning could only fire after the failure it
+		// exists to pre-empt. This fails if the threshold is raised back to 8k.
+		stubListing(
+			Array.from({ length: 40 }, (_, index) => ({
+				...AUDIT,
+				id: `solution-${index}`,
+				frontend: {
+					...AUDIT.frontend,
+					manifestUrl: `https://solution-${index}.solutions.example.com/assets/mf-manifest.json`,
+				},
+			})),
+		);
+
+		const response = await proxy(authedDocument("https://app.example/"));
+
+		// Non-vacuity guard: the policy must genuinely land in the 4k–8k band,
+		// or this test proves nothing about the threshold.
+		const bytes = cspOf(response).length;
+		expect(bytes).toBeGreaterThan(4 * 1024);
+		expect(bytes).toBeLessThan(8 * 1024);
+		expect(console.error).toHaveBeenCalledWith(
+			expect.stringMatching(/policy is \d+ bytes, over the 4096-byte threshold/),
 		);
 	});
 });

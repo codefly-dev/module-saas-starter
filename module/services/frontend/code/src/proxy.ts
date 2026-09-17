@@ -127,7 +127,16 @@ const SOLUTION_LISTING_TTL_MS = 5_000;
 // response outright. The policy cannot be truncated — dropping origins would
 // silently break the solutions they belong to — so this warns while the site is
 // still serving, rather than letting the failure surface as an opaque 502.
-const SOLUTION_CSP_WARN_BYTES = 8 * 1024;
+//
+// Calibrated to the LOWEST documented failure point (4k), not the highest. At 8k
+// a deployment whose proxy buffer is the 4k default already 502s on every
+// document while this stays silent, so the warning could only ever fire after
+// the outage it exists to pre-empt. Warning early on a proxy configured for 8k
+// costs one deduped log line; warning late costs the site. Each registered
+// origin now occupies THREE directives (script-src, connect-src and — since
+// #778 — style-src), ~129 bytes for a typical origin, so 4k is reached around
+// 30 registered solutions.
+const SOLUTION_CSP_WARN_BYTES = 4 * 1024;
 
 // Build-time snapshot of the env-derived CSP inputs, inlined by next.config's
 // `env` block. Reading this constant — not re-resolving process.env per request
@@ -213,7 +222,7 @@ function reportOversizedCsp(bytes: number): void {
 	}
 	lastOversizedCspBytes = bytes;
 	console.error(
-		`solution CSP: policy is ${bytes} bytes; a reverse proxy may reject the response header (nginx proxy_buffer_size defaults to 4k/8k). Serve solutions from fewer origins, or same-origin through the host.`,
+		`solution CSP: policy is ${bytes} bytes, over the ${SOLUTION_CSP_WARN_BYTES}-byte threshold; a reverse proxy may reject the response header outright (nginx proxy_buffer_size defaults to 4k/8k), surfacing as a 502 on every document. Serve solutions from fewer origins, or same-origin through the host.`,
 	);
 }
 
