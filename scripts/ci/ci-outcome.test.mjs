@@ -62,6 +62,48 @@ test('a passing task that published nothing is called out with its reason', () =
   assert.match(stdout, /saas-starter\/store.*the resolved agent binary is unbound/);
 });
 
+// Codefly marks the task `ineligible` but records no sentence for it, so the
+// renderer mirrors its eligibility rule and names the specific unbound input.
+// This is the real shape from a main run: every service ineligible, agent
+// digest empty, nothing publishable, and nothing saying why.
+test('an ineligible task names the input that was unbound', () => {
+  const ineligible = {
+    resource: 'saas-starter/accounts', status: 'passed',
+    cache: {
+      status: 'ineligible', stored: false,
+      inputs: {
+        environment: 'ubuntu24-X64',
+        cli_digest: 'sha256:aa',
+        repository_rest_digest: 'sha256:bb',
+        agent: { kind: '', publisher: '', name: '', version: '' },
+      },
+    },
+  };
+  const { stdout } = render({ phase: 'test', tasks: [ineligible] });
+  assert.match(stdout, /Results were not published/);
+  assert.match(stdout, /saas-starter\/accounts.*the resolved agent binary is unbound/);
+});
+
+test('an unbound environment is named ahead of the agent', () => {
+  const noEnvironment = {
+    resource: 'saas-starter/store', status: 'passed',
+    cache: { status: 'ineligible', stored: false, inputs: { agent: { digest: '' } } },
+  };
+  const { stdout } = render({ phase: 'test', tasks: [noEnvironment] });
+  assert.match(stdout, /no execution environment identity was declared/);
+});
+
+// `identity_only` means reuse was never active for the task — not a refusal,
+// so it must not be reported as one.
+test('identity_only is not reported as a withheld result', () => {
+  const identityOnly = {
+    resource: 'saas-starter-dev', status: 'passed',
+    cache: { status: 'identity_only', stored: false, inputs: { agent: { digest: '' } } },
+  };
+  const { stdout } = render({ phase: 'verify', tasks: [identityOnly] });
+  assert.doesNotMatch(stdout, /Results were not published/);
+});
+
 test('a stored task is not mistaken for a withheld one', () => {
   const { stdout } = render({ phase: 'test', tasks: [executedTask] });
   assert.doesNotMatch(stdout, /Results were not published/);
