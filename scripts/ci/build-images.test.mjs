@@ -41,11 +41,16 @@ test('missing, malformed and overwritten material evidence fails closed', () => 
 
 test('build identity cannot borrow another service or recipe, or accept ambiguous or failed attempts', () => {
   const produced = 'example/frontend:0.0.0';
-  const build = { Images: [produced], Status: 'completed' };
+  const build = { Ref: 'gpb3pzuhyn5bmnc3zvmcu4aw1', Images: [produced], Status: 'completed' };
   assert.equal(selectBuild([build], produced), build);
-  for (const builds of [[], [build, build], [{ ...build, Status: 'error' }], [{ ...build, Images: ['example/marketing:0.0.0'] }], [{ ...build, Images: [] }]]) {
+  for (const builds of [[build, build], [{ ...build, Status: 'error' }], [{ ...build, Images: ['example/marketing:0.0.0'] }], [{ ...build, Images: [] }]]) {
     assert.throws(() => selectBuild(builds, produced));
   }
+  // A count alone cannot tell a build that never ran from one whose exported
+  // name the gate failed to read, and the builder reports the latter as passing.
+  assert.throws(() => selectBuild([{ ...build, Images: [`${produced} 0.0s`] }], produced),
+    /found 0 among 1 records since the snapshot\n {2}gpb3pzuhyn5bmnc3zvmcu4aw1 completed: example\/frontend:0\.0\.0 0\.0s$/);
+  assert.throws(() => selectBuild([], produced), /found 0 among 0 records since the snapshot$/);
 });
 
 test('exported images are read from the record, and a build that exported nothing cannot pass as one', () => {
@@ -54,6 +59,20 @@ test('exported images are read from the record, and a build that exported nothin
     ['alpine:3.21', 'ghcr.io/example/app:1']);
   // A printed build step must not be mistaken for BuildKit's own export line.
   assert.deepEqual(buildImages('#4 1.23 #9 naming to docker.io/example/forged:0.0.0 done\n#9 exporting layers\n'), []);
+});
+
+// BuildKit prints a status's elapsed time once it passes 10ms, so the identical
+// build exports `naming to <ref> 0.0s done` on a busy runner and
+// `naming to <ref> done` on an idle one. Reading that field as part of the
+// reference left one service per run unattributable, at random.
+test('an export line carrying its elapsed time names the same image as one without', () => {
+  assert.deepEqual(buildImages('#11 naming to docker.io/codefly-dev/saas-starter-dev/saas-starter/store:0.0.0 0.0s done\n'),
+    ['codefly-dev/saas-starter-dev/saas-starter/store:0.0.0']);
+  assert.deepEqual(buildImages('#9 naming to docker.io/library/alpine:3.21, ghcr.io/example/app:1 12.5s done\r\n'),
+    ['alpine:3.21', 'ghcr.io/example/app:1']);
+  // The field is BuildKit's, not part of a reference a recipe could name.
+  assert.deepEqual(buildImages('#9 naming to docker.io/example/app:0.0.0 0.0s done\n#9 naming to docker.io/example/app:0.0.0 done\n'),
+    ['example/app:0.0.0']);
 });
 
 test('every topology agent needs coverage even before it emits a Dockerfile', () => {
@@ -184,6 +203,40 @@ else throw new Error('A stale record must never be inspected');
     assert.match(evidence().stderr, /does not name the image it produces/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// The `naming to` status crosses BuildKit's 10ms threshold only under load, so
+// the elapsed field that breaks attribution in CI cannot be produced on demand.
+// Its siblings in the same record do carry it and the printer formats every
+// status alike, so one real record supplies both the grammar and a real token to
+// attach to its own export line. A Buildx pin bump that moves that format fails
+// here, rather than intermittently reporting `found 0` months later.
+test('a real build record pins the elapsed field the export parser strips',
+  { skip: process.env.BUILD_IMAGES_DOCKER_TEST !== 'true' }, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'build-image-elapsed-'));
+    const image = 'codefly-dev/example-workspace/example/elapsed:0.0.0';
+    try {
+      // A layer this size always takes longer than 10ms to export; the marker
+      // keeps a rerun from resolving the step from cache and exporting nothing.
+      writeFileSync(join(dir, 'Dockerfile'),
+        `FROM alpine:3.23.5\nRUN echo ${Date.now()} >/dev/null && dd if=/dev/urandom of=/blob bs=1M count=64 2>/dev/null\n`);
+      const metadata = join(dir, 'metadata.json');
+      execFileSync('docker', ['buildx', 'build', '--load', '--metadata-file', metadata, '-t', image, dir], { stdio: 'pipe' });
+      const log = buildLog(JSON.parse(readFileSync(metadata))['buildx.build.ref'].split('/').at(-1));
+
+      // Anchored on a status whose id is fixed, so whatever trails it is the
+      // field itself and not something this test assumed about the format.
+      const timed = [...log.matchAll(/^#\d+ exporting layers(.*) done$/gm)].map(match => match[1]).filter(Boolean);
+      assert.ok(timed.length, 'BuildKit should time the export of a 64MB layer');
+      for (const field of timed) assert.match(field, /^ \d+\.\d+s$/);
+
+      const naming = log.match(/^#\d+ naming to .+$/m)[0];
+      assert.deepEqual(buildImages(`${naming}\n`), [image]);
+      assert.deepEqual(buildImages(`${naming.replace(/( done)?$/, `${timed[0]}$1`)}\n`), [image]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      spawnSync('docker', ['image', 'rm', image], { stdio: 'ignore' });
+    }
+  });
 
 test('real BuildKit materials handle whitespace, skip unreachable stages and ignore printed FROM lines', { skip: process.env.BUILD_IMAGES_DOCKER_TEST !== 'true' }, () => {
   const dir = mkdtempSync(join(tmpdir(), 'build-image-materials-'));

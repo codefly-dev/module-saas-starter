@@ -77,7 +77,12 @@ export function buildLog(ref) {
 // runs — that names no recipe. What the build exported still names the service,
 // and BuildKit reports it for a staged and an in-tree definition alike.
 export function buildImages(log) {
-  const named = [...log.matchAll(/^#\d+ naming to (.+?)(?: done)?\s*$/gm)]
+  // BuildKit's plain printer appends a status's elapsed time once it exceeds
+  // 10ms — `naming to <ref> 0.0s done` — so whether the export line carries
+  // that field turns on runner load, not on anything in the tree being built.
+  // The shape is the pinned Buildx version's, and no structured field carries
+  // the exported name; the docker-gated test pins that format to a real record.
+  const named = [...log.matchAll(/^#\d+ naming to (.+?)(?: \d+\.\d+s)?(?: done)?\s*$/gm)]
     .flatMap(match => match[1].split(',').map(ref => normalize(ref.trim())));
   return [...new Set(named)].sort();
 }
@@ -85,7 +90,11 @@ export function buildImages(log) {
 export function selectBuild(builds, image) {
   const matches = builds.filter(build => build.Images.includes(image));
   if (matches.length !== 1 || matches[0].Status !== 'completed') {
-    throw new Error(`Expected one completed build for ${image}; found ${matches.length}`);
+    // A bare count reads as "the build never ran" and sends the reader to the
+    // builder's own accounting, which reports that it did. What separates a
+    // missing build from an unrecognised export line is the records the gate saw.
+    throw new Error([`Expected one completed build for ${image}; found ${matches.length} among ${builds.length} records since the snapshot`,
+      ...builds.map(build => `  ${build.Ref} ${build.Status}: ${build.Images.join(', ') || 'no exported image'}`)].join('\n'));
   }
   return matches[0];
 }
