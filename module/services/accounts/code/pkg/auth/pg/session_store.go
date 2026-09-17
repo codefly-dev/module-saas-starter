@@ -148,7 +148,28 @@ func (s *SessionStore) admitSession(ctx context.Context, tx pgx.Tx, rec *auth.Se
 	}
 
 	if rec.ActingAsUserID != uuid.Nil {
-		return nil
+		// A window takes no device slot, but it must not be unbounded either:
+		// the edge budget for this call is the ordinary per-minute allowance, so
+		// an admin can hold far more open windows than they have devices, and a
+		// page of their sessions would show nothing but windows. Retire the
+		// oldest beyond the same ceiling, scoped to windows so a login is never
+		// the row evicted — each window is its own family, so this is per row.
+		_, err := tx.Exec(ctx, `
+			WITH open_windows AS (
+				SELECT id,
+				       ROW_NUMBER() OVER (
+				           ORDER BY created_at DESC, id DESC
+				       ) AS recency
+				FROM sessions
+				WHERE user_id = $1 AND revoked_at IS NULL AND acting_as_user_id IS NOT NULL
+			)
+			UPDATE sessions
+			   SET revoked_at = CURRENT_TIMESTAMP,
+			       revoked_reason = 'impersonation_limit_exceeded'
+			 WHERE id IN (SELECT id FROM open_windows WHERE recency >= $2)`,
+			userID, s.policy.MaxActiveDevices,
+		)
+		return err
 	}
 
 	_, err := tx.Exec(ctx, `

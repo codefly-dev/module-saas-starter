@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
@@ -358,13 +359,25 @@ func TestImpersonationPersistsAMarkedCredentiallessSession(t *testing.T) {
 	require.Len(t, windows, 1)
 	window := windows[0]
 
-	require.Empty(t, window.RefreshTokenHash,
+	// Read NULL-ness from the column itself: ListActiveSessions projects the
+	// hash through COALESCE(..., ''), so an empty string here would be
+	// indistinguishable from the absence the whole change is about.
+	var hashIsNull bool
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx,
+			`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, window.ID).Scan(&hashIsNull)
+	}))
+	require.True(t, hashIsNull,
 		"no rotatable credential may exist for an impersonation session")
 
-	// The ordinary policy would put this a week out; the impersonation cap puts
-	// it minutes out, and the row must follow the token it was minted for.
+	// Bounded on both sides rather than pinned to a point: the ordinary policy
+	// would put this a week out, while a row retired at the token's nominal exp
+	// would go missing from this very query while its token still authenticates.
+	// The exact leeway arithmetic belongs to the minter's own tests.
 	require.Equal(t, window.ExpiresAt, window.IdleExpiresAt)
-	require.WithinDuration(t, before.Add(business.AccessTokenLifetime), window.ExpiresAt, time.Minute)
+	require.True(t, window.ExpiresAt.After(before.Add(business.AccessTokenLifetime)),
+		"an impersonation row must outlive the token's exp by the verifier leeway")
 	require.True(t, window.ExpiresAt.Before(before.Add(time.Hour)),
 		"an impersonation row must not inherit the ordinary session lifetime")
 
@@ -458,5 +471,11 @@ func TestImpersonationSessionCannotBeExchangedForALongerLivedToken(t *testing.T)
 
 	windows := sessionsActingAs(adminSessions(t, fixture.supportID), fixture.memberID)
 	require.Len(t, windows, 1, "the refused exchange must leave the window as it was")
-	require.Empty(t, windows[0].RefreshTokenHash)
+	var stillCredentialless bool
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx,
+			`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, windows[0].ID).Scan(&stillCredentialless)
+	}))
+	require.True(t, stillCredentialless)
 }

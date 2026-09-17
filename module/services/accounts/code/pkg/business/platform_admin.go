@@ -270,6 +270,13 @@ func (s *Service) ListActiveSessions(ctx context.Context, actorID string, req *g
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
+	// sessions.user_id is a uuid column, so an unparseable id reaches Postgres
+	// as a failed cast rather than an empty result — an internal error where the
+	// caller supplied bad input.
+	if _, err := ParseID(req.UserId); err != nil {
+		return nil, w.Wrapf(err, "invalid user id")
+	}
+
 	var sessions []*Session
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		var err error

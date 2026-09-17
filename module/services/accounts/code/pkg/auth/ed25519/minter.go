@@ -377,9 +377,12 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		absoluteExpiresAt time.Time
 	)
 	if identity.ActingAsUserID != uuid.Nil {
-		// The row's lifetime is the token's, so it leaves the admin's device
-		// list when the window it represents actually closes.
-		absoluteExpiresAt = now.Add(m.accessTTL(identity))
+		// The row's lifetime is the token's acceptance window, extended past exp
+		// by the verifier leeway for the same reason RevokeAccess extends a
+		// revocation marker: the token is admitted until exp+ClockSkew, so a row
+		// retired at exp would drop out of the open-window queries while its
+		// token still authenticates — the window would be live and undiscoverable.
+		absoluteExpiresAt = accessExpiresAt.Add(m.cfg.ClockSkew)
 		idleExpiresAt = absoluteExpiresAt
 	} else {
 		plain, hash, err = newRefreshToken()

@@ -1251,6 +1251,46 @@ func TestSessionStore_ExchangeOrganizationRefusesImpersonationWindow(t *testing.
 	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
 }
 
+// Windows are bounded on their own terms. The edge budget for ImpersonateUser
+// is the ordinary per-minute allowance, so without this an admin could hold
+// thousands of open windows and see nothing but windows in their own session
+// list — the oldest are retired, and only windows are ever the row retired.
+func TestSessionStore_ImpersonationWindowsAreBoundedWithoutTouchingLogins(t *testing.T) {
+	ctx := context.Background()
+	policy := auth.DefaultSessionPolicy()
+	policy.MaxActiveDevices = 3
+	store := pgauth.NewSessionStore(testStore, policy)
+	adminID := seedUser(t)
+	targetID := seedUser(t)
+
+	login := newRecord(adminID)
+	require.NoError(t, store.Insert(ctx, login))
+
+	windows := make([]*auth.SessionRecord, 0, 6)
+	for range 6 {
+		rec := newImpersonationRecord(adminID, targetID)
+		require.NoError(t, store.Insert(ctx, rec))
+		windows = append(windows, rec)
+	}
+
+	var openWindows int
+	scanControlPlane(t, &openWindows, `
+		SELECT count(*) FROM sessions
+		WHERE user_id = $1 AND revoked_at IS NULL AND acting_as_user_id IS NOT NULL`, adminID)
+	require.LessOrEqual(t, openWindows, policy.MaxActiveDevices,
+		"open impersonation windows must stay within the ceiling")
+
+	// The newest window survives; the login is untouched by any of it.
+	var newestRevoked *time.Time
+	scanControlPlane(t, &newestRevoked,
+		`SELECT revoked_at FROM sessions WHERE id = $1`, windows[len(windows)-1].ID)
+	require.Nil(t, newestRevoked, "the window just opened must not be the one retired")
+
+	active, err := store.FindByRefreshHash(ctx, login.RefreshHash)
+	require.NoError(t, err)
+	require.Nil(t, active.RevokedAt, "a real login is never retired to make room for a window")
+}
+
 // An impersonation window is not a device. It neither occupies a device slot
 // nor evicts one, so an admin at their device limit keeps every login they
 // have however many people they step into.
