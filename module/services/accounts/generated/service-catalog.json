@@ -2980,7 +2980,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "mfa",
       "description": "Request account deletion when a complete privacy workflow is configured. Requires MFA.",
@@ -3414,7 +3414,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Accept an invite by token.",
@@ -3819,7 +3819,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Begin passkey registration with server-side ceremony state.",
@@ -3872,7 +3872,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Verify and persist a passkey credential.",
@@ -3925,7 +3925,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Mint backup codes (one-time view).",
@@ -4029,7 +4029,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Remove an MFA device.",
@@ -4082,7 +4082,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Begin TOTP enrollment for the caller and return the shared secret.",
@@ -4135,7 +4135,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Confirm TOTP code; activate device.",
@@ -5662,7 +5662,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Add a user to an org.",
@@ -6053,7 +6053,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Remove a member; last-admin guard.",
@@ -6363,7 +6363,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Create a role (org-scoped or platform).",
@@ -6518,7 +6518,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Grant a role at a scope node (inherits to subtree).",
@@ -6836,7 +6836,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Register a scope node or place a record at one.",
@@ -6948,7 +6948,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a hierarchical scope grant.",
@@ -7007,7 +7007,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a per-record share.",
@@ -7066,7 +7066,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Share a record with a principal/team.",
@@ -8170,7 +8170,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Create an agent principal in an organization.",
@@ -8462,7 +8462,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Revoke an organization or platform principal.",
@@ -8623,7 +8623,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Pause SSO; preserves WorkOS state for re-enable.",
@@ -8739,7 +8739,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Mint WorkOS portal link.",
@@ -8931,7 +8931,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Add a user to a team.",
@@ -9049,7 +9049,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Delete a team and its memberships.",
@@ -9222,7 +9222,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Remove a user from a team.",
@@ -9560,7 +9560,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Link an additional auth provider.",
@@ -10516,7 +10516,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Create a public-HTTPS endpoint and reveal its encrypted-at-rest signing secret once.",
@@ -10579,7 +10579,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Delete a webhook subscription in the organization.",
@@ -10888,7 +10888,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "mfa",
       "description": "Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA.",
@@ -11137,7 +11137,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Reissue one Task and Session lineage for another audience with attenuated authority.",
@@ -11196,7 +11196,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving.",
@@ -11255,7 +11255,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for an attenuated child-agent Session.",
@@ -11357,7 +11357,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for another root Session under the same Task.",
@@ -11416,7 +11416,7 @@
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
         "conditions": [],
-        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Issue a signed Work Context for a new Task and root Session.",

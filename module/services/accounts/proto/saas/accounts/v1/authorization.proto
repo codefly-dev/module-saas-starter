@@ -417,6 +417,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/roles"
@@ -603,6 +604,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/scope-nodes"
@@ -651,6 +653,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/scope-grants"
@@ -678,6 +681,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/scope-grants"};
   }
@@ -703,6 +707,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/record-shares"
@@ -730,6 +735,7 @@ service PermissionService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/record-shares"};
   }
@@ -810,6 +816,7 @@ service PrincipalService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/principals:agent"
@@ -835,6 +842,7 @@ service PrincipalService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/principals/{id}:revoke"

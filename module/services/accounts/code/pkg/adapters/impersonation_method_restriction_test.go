@@ -99,7 +99,7 @@ func TestRestrictedProceduresAreDeniedOnlyWhileImpersonating(t *testing.T) {
 	withoutCentralEnforcement(t)
 
 	restricted := restrictedProcedures(t)
-	require.Len(t, restricted, 16, "the declared restriction set changed; confirm it against AUTHZ_MATRIX.md")
+	require.Len(t, restricted, 48, "the declared restriction set changed; confirm it against AUTHZ_MATRIX.md")
 
 	for _, procedure := range restricted {
 		t.Run(procedure, func(t *testing.T) {
@@ -167,39 +167,48 @@ func TestImpersonatedCallWithoutAResolvablePolicyIsDenied(t *testing.T) {
 }
 
 // Connect and gRPC must answer the impersonation question identically, or the
-// restriction becomes a matter of which transport the caller picked.
+// restriction becomes a matter of which transport the caller picked. This arm
+// runs the REAL handler over the real Connect stack so the denial is proven
+// where it matters: the store is never reached, so no row can have changed.
 func TestConnectTransportDeniesRestrictedProcedureWhileImpersonating(t *testing.T) {
 	withoutCentralEnforcement(t)
 
-	var executed bool
+	store := &impersonationWriteRecorder{}
+	installLayeredAuthzService(t, store)
+
 	mux := http.NewServeMux()
 	mux.Handle(accountsv1connect.NewAPIKeyServiceHandler(
-		&recordingAPIKeyService{executed: &executed},
+		&apiKeyConnectHandler{inner: &APIKeyServer{}},
 		connect.WithInterceptors(connectAuthInterceptor(impersonatingMinter())),
 	))
 	server := httptest.NewServer(mux)
 	t.Cleanup(server.Close)
 
 	client := accountsv1connect.NewAPIKeyServiceClient(server.Client(), server.URL)
-	request := connect.NewRequest(&gen.CreateAPIKeyRequest{Name: "escapes-the-impersonation-window"})
+	request := connect.NewRequest(&gen.CreateAPIKeyRequest{
+		Name:           "escapes-the-impersonation-window",
+		OrganizationId: restrictionOrgID.String(),
+	})
 	request.Header().Set("Authorization", "Bearer any")
 
 	_, err := client.CreateAPIKey(context.Background(), request)
 	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
 	require.Contains(t, err.Error(), "unavailable to an impersonated session")
-	require.False(t, executed, "no durable credential may be minted from an impersonated session")
+	require.Zero(t, store.reads, "admission must refuse before the handler reads any row")
 }
 
-// recordingAPIKeyService stands in for the real handler so the test can tell
-// "refused at admission" from "refused inside the domain". Only CreateAPIKey is
-// reachable here; the embedded nil handler panics on anything else rather than
-// answering with a zero value.
-type recordingAPIKeyService struct {
-	accountsv1connect.UnimplementedAPIKeyServiceHandler
-	executed *bool
+// impersonationWriteRecorder counts the first store read the CreateAPIKey
+// handler performs — the membership lookup behind requireOrgAdmin. Every other
+// method is the embedded nil interface, so a handler that got further than the
+// gate allows panics instead of quietly returning a zero value. A zero count is
+// therefore evidence the request never reached the domain, not merely that it
+// returned an error.
+type impersonationWriteRecorder struct {
+	business.Store
+	reads int
 }
 
-func (s *recordingAPIKeyService) CreateAPIKey(context.Context, *connect.Request[gen.CreateAPIKeyRequest]) (*connect.Response[gen.CreateAPIKeyResponse], error) {
-	*s.executed = true
-	return connect.NewResponse(&gen.CreateAPIKeyResponse{}), nil
+func (s *impersonationWriteRecorder) GetOrgMembership(context.Context, string, string) (*gen.OrgMembership, error) {
+	s.reads++
+	return &gen.OrgMembership{UserId: restrictionTargetID.String(), Role: gen.OrgRole_ORG_ROLE_ADMIN}, nil
 }

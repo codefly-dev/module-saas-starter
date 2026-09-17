@@ -158,6 +158,7 @@ service WebhookService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/webhooks"
@@ -185,6 +186,7 @@ service WebhookService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/webhooks/{id}"};
   }
@@ -323,6 +325,7 @@ service WebhookService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/webhooks/{id}:rotateSecret"

@@ -984,14 +984,14 @@ const file_saas_accounts_v1_webhooks_proto_rawDesc = "" +
 	"#WEBHOOK_DELIVERY_STATUS_UNSPECIFIED\x10\x00\x12#\n" +
 	"\x1fWEBHOOK_DELIVERY_STATUS_PENDING\x10\x01\x12#\n" +
 	"\x1fWEBHOOK_DELIVERY_STATUS_SUCCESS\x10\x02\x12\"\n" +
-	"\x1eWEBHOOK_DELIVERY_STATUS_FAILED\x10\x03\"\x04\b\x04\x10\x062\x85\x0e\n" +
-	"\x0eWebhookService\x12\xe4\x01\n" +
-	"\x12CreateSubscription\x122.saas.accounts.v1.CreateWebhookSubscriptionRequest\x1a%.saas.accounts.v1.WebhookSubscription\"s\xc2\xf3\x18X\b\x02\x10\x04\x1a\x0ewebhooks:write\"\x0ewebhooks:write*\f\n" +
+	"\x1eWEBHOOK_DELIVERY_STATUS_FAILED\x10\x03\"\x04\b\x04\x10\x062\x8b\x0e\n" +
+	"\x0eWebhookService\x12\xe6\x01\n" +
+	"\x12CreateSubscription\x122.saas.accounts.v1.CreateWebhookSubscriptionRequest\x1a%.saas.accounts.v1.WebhookSubscription\"u\xc2\xf3\x18Z\b\x02\x10\x04\x1a\x0ewebhooks:write\"\x0ewebhooks:write*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x18\n" +
-	"\x14saas.webhook.created\x10\x02@\x01H\x04P\x03X\x04`\x01\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/webhooks\x12\xd3\x01\n" +
-	"\x12DeleteSubscription\x122.saas.accounts.v1.DeleteWebhookSubscriptionRequest\x1a\x16.google.protobuf.Empty\"q\xc2\xf3\x18T\b\x02\x10\x04\x1a\x0ewebhooks:write\"\x0ewebhooks:write*\b\n" +
+	"\x14saas.webhook.created\x10\x02@\x01H\x04P\x03X\x04`\x01x\x02\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/webhooks\x12\xd5\x01\n" +
+	"\x12DeleteSubscription\x122.saas.accounts.v1.DeleteWebhookSubscriptionRequest\x1a\x16.google.protobuf.Empty\"s\xc2\xf3\x18V\b\x02\x10\x04\x1a\x0ewebhooks:write\"\x0ewebhooks:write*\b\n" +
 	"\x02id\x10\x04\x18\x030\x01:\x18\n" +
-	"\x14saas.webhook.deleted\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x13*\x11/v1/webhooks/{id}\x12\xd4\x01\n" +
+	"\x14saas.webhook.deleted\x10\x02@\x01H\x04P\x03X\x03`\x01x\x02\x82\xd3\xe4\x93\x02\x13*\x11/v1/webhooks/{id}\x12\xd4\x01\n" +
 	"\x11ListSubscriptions\x121.saas.accounts.v1.ListWebhookSubscriptionsRequest\x1a2.saas.accounts.v1.ListWebhookSubscriptionsResponse\"X\xc2\xf3\x18@\b\x02\x10\x03\x1a\rwebhooks:read\"\rwebhooks:read*\f\n" +
 	"\x06org_id\x10\x02\x18\x010\x01:\x02\x10\x01@\x01H\x03P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/webhooks\x12\xf1\x01\n" +
 	"\x0eListDeliveries\x12..saas.accounts.v1.ListWebhookDeliveriesRequest\x1a/.saas.accounts.v1.ListWebhookDeliveriesResponse\"~\xc2\xf3\x18I\b\x02\x10\x03\x1a\rwebhooks:read\"\rwebhooks:read*\x15\n" +
@@ -1002,10 +1002,10 @@ const file_saas_accounts_v1_webhooks_proto_rawDesc = "" +
 	"\x02id\x10\x04\x18\x030\x01:\x19\n" +
 	"\x15saas.webhook.replayed\x10\x02@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/webhooks/deliveries/{id}:replay\x12\xbb\x01\n" +
 	"\vTestWebhook\x12$.saas.accounts.v1.TestWebhookRequest\x1a!.saas.accounts.v1.WebhookDelivery\"c\xc2\xf3\x18>\b\x02\x10\x04\x1a\x0ewebhooks:write\"\x0ewebhooks:write*\b\n" +
-	"\x02id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/webhooks/{id}:test\x12\xf6\x01\n" +
-	"\fRotateSecret\x12,.saas.accounts.v1.RotateWebhookSecretRequest\x1a-.saas.accounts.v1.RotateWebhookSecretResponse\"\x88\x01\xc2\xf3\x18[\b\x02\x10\x04\x1a\x0ewebhooks:write\"\x0ewebhooks:write*\b\n" +
+	"\x02id\x10\x04\x18\x030\x01:\x02\x10\x01@\x01H\x04P\x03X\x03`\x01\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/webhooks/{id}:test\x12\xf8\x01\n" +
+	"\fRotateSecret\x12,.saas.accounts.v1.RotateWebhookSecretRequest\x1a-.saas.accounts.v1.RotateWebhookSecretResponse\"\x8a\x01\xc2\xf3\x18]\b\x02\x10\x04\x1a\x0ewebhooks:write\"\x0ewebhooks:write*\b\n" +
 	"\x02id\x10\x04\x18\x030\x03:\x1f\n" +
-	"\x1bsaas.webhook.secret_rotated\x10\x02@\x01H\x05P\x03X\x04`\x01\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/webhooks/{id}:rotateSecretB\xb5\x01\n" +
+	"\x1bsaas.webhook.secret_rotated\x10\x02@\x01H\x05P\x03X\x04`\x01x\x02\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/webhooks/{id}:rotateSecretB\xb5\x01\n" +
 	"\x14com.saas.accounts.v1B\rWebhooksProtoP\x01Z,accounts/pkg/gen/saas/accounts/v1;accountsv1\xa2\x02\x03SAX\xaa\x02\x10Saas.Accounts.V1\xca\x02\x10Saas\\Accounts\\V1\xe2\x02\x1cSaas\\Accounts\\V1\\GPBMetadata\xea\x02\x12Saas::Accounts::V1b\x06proto3"
 
 var (

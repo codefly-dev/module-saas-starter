@@ -107,6 +107,7 @@ service MFAService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/mfa/webauthn/register/begin"
@@ -127,6 +128,7 @@ service MFAService {
       request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/mfa/webauthn/register/finish"
@@ -147,6 +149,7 @@ service MFAService {
       request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/mfa/totp/setup"
@@ -167,6 +170,7 @@ service MFAService {
       request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/mfa/totp/verify"
@@ -201,6 +205,7 @@ service MFAService {
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {delete: "/v1/mfa/devices/{id}"};
   }
@@ -218,6 +223,7 @@ service MFAService {
       request_sensitivity: SENSITIVITY_SECRET
       response_sensitivity: SENSITIVITY_SECRET
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
     };
     option (google.api.http) = {
       post: "/v1/mfa/backup-codes"
