@@ -1,8 +1,10 @@
 # AGENTS.md
 
-Orientation for anyone — human or agent — working in this repository. It links
-to the authoritative docs rather than restating them; when this file and a
-linked doc disagree, the linked doc wins.
+Orientation for anyone — human or agent — working in this repository. It links to
+the authoritative docs rather than restating them; when this file and a linked doc
+disagree, the linked doc wins. Area depth lives in nested `AGENTS.md` files
+(closest file to the one you are editing wins, like `.gitignore`); procedures live
+in `.claude/skills/`. See [Where the depth lives](#where-the-depth-lives).
 
 ## What this repo is
 
@@ -16,6 +18,43 @@ immutable module package that downstream workspaces **compose** (never fork).
 - Feature inventory: [module/FEATURES.md](./module/FEATURES.md)
 - First-run walkthrough: [module/GETTING_STARTED.md](./module/GETTING_STARTED.md)
 
+`codefly run service --fixture dev-admin` boots the whole graph locally (Docker
+must be running; `codefly doctor` checks prerequisites, `codefly clear` reaps
+strays). The provider stack, driving a solution against this host, and diagnosing
+a run that will not come up are in the `run-the-starter-locally` skill.
+
+## How to work here
+
+**A gap in the tooling is a bug in the tooling** — never a reason to reach around
+it. Not as a "workaround", not "just this once", not "until the verb lands". If
+`codefly` cannot express what you need, the deliverable is a fix or a precise
+issue against the CLI, not a local substitute for it.
+
+**Never hack. Always provide the best fix, even when it spans repos.** The right
+fix living in someone else's repo is not a reason to work around it in yours —
+open the pull request there. If it genuinely cannot be fixed now, the deliverable
+is a precise issue against the owner *plus* an explicitly labelled stopgap, never
+an unlabelled one.
+
+**Classify every change that makes something work**, in the PR body: a *fix* at
+the place that owns the behaviour, or a *hack*. A hack does not become a fix by
+working, by being small, by being local, or by the real fix belonging elsewhere.
+
+**Never hardcode what the system resolves** — injected environment, derived ports,
+service addresses, credentials copied out of another component's config. If you
+are typing one, you are encoding something true only on your machine for the next
+ten minutes, and a service started that way can boot, serve, and still never
+register, silently.
+
+**Diagnose, do not pattern-match.** "It started working when I set X" is not a
+diagnosis: set X back and confirm it breaks. Do not trust an error message before
+checking it — a runtime here has reported a secret that "does not match its
+digest" when the cause was a missing internal token and the digest was correct.
+
+**Say what you did not verify.** Unverified is not working. If you could not
+exercise something — a suite needing Docker, a graph you could not boot, a release
+path you could not run — the PR body says so.
+
 ## Naming and confidentiality
 
 Everything in this repository — issues, PRs, docs, specs, code, comments, tests,
@@ -26,514 +65,134 @@ a real customer, partner, employer, or downstream consumer of this module, and
 never describe the module as a dependency of any specific named product.
 
 This is a hard boundary, not a style preference. This module sits **below** its
-consumers in the dependency graph: consumers depend on it, never the reverse, so
-it must carry no build-time or documentation-level knowledge of who consumes it.
-Describe any consumer generically — "a consuming solution", "the downstream
-product", "the agent runtime". Capabilities belong here in their **generic**
-form (RBAC, delegation, Work Contexts, permission enforcement, audit) so every
-consumer reuses them; consumer-specific wiring stays in the consumer's own repo.
-The rule holds for public **and** private files alike, and for records as much
-as for files: a pull request's title, its body and its commit messages are
-checked before it can merge (see [Building, testing, and
-CI](#building-testing-and-ci)). Be precise about which half does what — only the
-local hook prevents publication. By the time CI runs, the commit is already
-pushed to a public repository, so CI blocks the **merge**. A published record
-cannot be retracted afterwards: GitHub keeps prior revisions of an edited body,
-and a commit message cannot be changed without rewriting history.
+consumers: they depend on it, never the reverse, so it carries no build-time or
+documentation-level knowledge of who consumes it. Describe a consumer generically —
+"a consuming solution", "the downstream product". Capabilities belong here in their
+**generic** form (RBAC, delegation, Work Contexts, audit) so every consumer reuses
+them; consumer-specific wiring stays in the consumer's own repo.
+
+The rule holds for public **and** private files alike, and for records as much as
+for files: a pull request's title, body and commit messages are checked before it
+can merge. Only the local hook prevents publication — by the time CI runs the
+commit is already pushed to a public repository, so CI blocks the **merge**, and a
+published record cannot be retracted afterwards. Run `node
+module/tools/naming-gate.mjs check` over the tree; the record half, the local
+hook, and how to recover from a failure are in the `land-a-pull-request` skill.
 
 ## Boundaries — non-negotiable
 
 This repo is a **module** — the **host**, the root every other module composes
 into. Its whole responsibility is one sentence: the first paragraph of its
 handbook page, `modules/saas-starter.md` in the handbook of the workspace that
-composes this host. Read that page before changing anything here. If the
-change would make that sentence need another clause, the change does not
-belong in this repo.
+composes this host. Read that page before changing anything here. If the change
+would make that sentence need another clause, the change does not belong in this
+repo.
 
 - **Owns:** identity, tenancy, permissions, jobs, audit, approvals,
   notifications, data sources, and the product surfaces.
 - **Never contains:** domain content of any kind — documents, rows, models,
   agents and deals are the other modules'; a flag never grants an entitlement,
   raises a quota, or replaces authorisation.
-- **Depends on:** nothing from other modules. It is the root of the
-  composition.
+- **Depends on:** nothing from other modules. It is the root of the composition.
 
 The rules, governed by the handbook's `concepts/boundaries.md`:
 
-1. **Dependencies go one way**: solution → module → service, with the host
-   beneath every module. Never import, read the tables of, or hard-code the
-   internals of another module. Cross a module boundary only through the four
-   seam contracts (Ref, journal, host ports, provenance).
-2. **Nothing here names what sits above it.** A service never names a module,
-   a tenant or a permission. A module never names a solution, a customer or a
-   business line. If the task needs that word, stop: the thing belongs above,
+1. **Dependencies go one way**: solution → module → service, with the host beneath
+   every module. Never import, read the tables of, or hard-code the internals of
+   another module. Cross a module boundary only through the four seam contracts
+   (Ref, journal, host ports, provenance).
+2. **Nothing here names what sits above it.** A service never names a module, a
+   tenant or a permission; a module never names a solution, a customer or a
+   business line. If the task needs that word, stop — the thing belongs above,
    through an extension point.
-3. **One consumer's need is not a feature of this repo.** Ship it in the
-   consumer through the extension point; if no extension point exists, open a
-   handbook track. Do not add a special case here, however small, however
-   temporary.
-4. **The boundary test in CI is part of the definition of done.** Never
-   weaken, skip, or allowlist past it to land a change.
+3. **One consumer's need is not a feature of this repo.** Ship it in the consumer
+   through the extension point; if no extension point exists, open a handbook
+   track. No special case here, however small, however temporary.
+4. **The boundary test in CI is part of the definition of done.** Never weaken,
+   skip, or allowlist past it to land a change.
 5. **If you cannot finish without breaking one of these, stop and say so.**
    Half-done inside the boundary beats done across it.
 
-The test is `scripts/check-boundaries.sh` (denylist in
-`scripts/boundaries.denylist`, baseline in `scripts/boundaries.baseline`),
-run by `.github/workflows/boundaries.yml`. It is additive to the naming gate,
-the SDK-boundary job and the boundary tests this repo already runs. The
-baseline shrinks and never grows: clean a file, delete its line.
+The test is `scripts/check-boundaries.sh` (denylist and baseline beside it), and it
+is additive to the naming gate, the SDK-boundary job and the boundary tests already
+here. Its baseline shrinks and never grows: clean a file, delete its line.
 
 ## Repository layout
 
 - `module/` — the canonical module source that ships to consumers. **This is
-  the tree the base-integrity tooling and CI run against.**
+  the tree the base-integrity tooling and CI run against.** See
+  [module/AGENTS.md](./module/AGENTS.md) before editing anything under it.
 - `modules/saas-starter` — a symlink to `module/` (the workspace-composed view
   Codefly expects under `modules/<name>/`).
-- `module/deployment/topology.bindings.codefly.yaml` — **the source of truth**
-  for the service graph and the agent version each service pins.
-- `module/services/<svc>/service.codefly.yaml` — **generated** from the
-  bindings file. The header says `DO NOT EDIT`; edit the bindings source and
-  regenerate instead (see below).
-- `main.go` / `gitops.go` — this repo is itself the `saas-starter` **module
-  agent** binary; composing the module runs this code to regenerate the
-  per-service manifests.
-- `agent.codefly.yaml` — the module's own name, publisher, and **release
-  version**.
+- `main.go` / `gitops.go` — this repo is itself the `saas-starter` **module agent**
+  binary; composing the module runs this code to regenerate the per-service
+  manifests. `agent.codefly.yaml` carries its name, publisher and version.
 
-## Running the starter locally
+## Where the depth lives
 
-Boots the whole dependency graph (vault → store → cache → telemetry → accounts
-→ auth-gateway → frontend, plus marketing) with a fake-auth fixture:
+A **solution** or composed module is independently deployed and **self-registers
+with this host at runtime** — a Module-Federation remote in the frontend, an upstream
+in the gateway — so the host renders and proxies it with no rebuild. Nothing here
+names a specific one. The depth sits with the code that owns each half:
 
-```bash
-codefly run service --fixture dev-admin
-```
+| File | Covers |
+| --- | --- |
+| [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the six Go modules and how to test each, configuration groups |
+| [module/services/auth-gateway/AGENTS.md](./module/services/auth-gateway/AGENTS.md) | upstream registration, the composed-module REST prefix, the credentials both take |
+| [module/services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md) | the durable registry record, module principals, minting a module Work Context, mesh reachability |
+| [module/services/frontend/AGENTS.md](./module/services/frontend/AGENTS.md) | the registration route, public vs internal projections, remote loading and CSP, the published kit |
 
-- Agents resolve from their published GitHub releases by default; add
-  `--local-agents` to resolve only from `~/.codefly/agents/` (offline / local
-  agent builds).
-- No TTY (CI, pipes, MCP) auto-enables `--headless`.
-- Docker must be running; `codefly doctor` checks prerequisites and
-  `codefly clear` reaps stray processes/containers between runs.
-
-For a real external identity provider (WorkOS) and the production-grade
-provider stack (Stripe, Resend, PostHog, Sentry, OTEL, Turnstile), use the
-`local-dogfood` environment and the setup scripts:
-
-- Runnable local product: [LOCAL_DOGFOODING.md](./LOCAL_DOGFOODING.md)
-- Feature-by-feature dogfood checklist: [DOGFOODING.md](./DOGFOODING.md)
-- Provider bootstrap scripts: [scripts/setup/README.md](./scripts/setup/README.md)
-
-## Solutions composed on top (runtime registry)
-
-A **solution** is an independently deployed module the host has no build-time
-knowledge of. Solutions self-register with this host at runtime — as a
-Module-Federation remote in the frontend and as an upstream in the gateway — so
-the host learns to render and proxy them with no rebuild. Nothing in the module
-names a specific solution; the seam is generic.
-
-Both halves are **one durable record**, not two process-local maps.
-`solution_registrations` in the store (accounts owns it, migration
-`126_solution_registrations`) holds the solution identity, its publisher, the
-frontend and backend halves, a registry-wide `revision`, and a per-half lease.
-A registration therefore survives a restart, reaches every replica, and is only
-served when it is *whole*: a solution that registered its page but not its
-backend is a durable `pending` record and is deliberately absent from the
-navigation. Writes are compare-and-swap on the revision, so a stale publisher
-cannot overwrite newer state, and a deregistration leaves a **tombstone** that a
-retiring deployment's delayed heartbeat cannot resurrect. accounts serves this
-as `SolutionRegistryService` on the internal listener; the auth-gateway is its
-only client and brokers the frontend's half, exactly as it brokers module
-registration. Both surfaces hold a short-lived cache rebuilt from that snapshot,
-so convergence after any write is bounded (gateway ~10s reconcile plus an
-on-demand refresh on a cache miss; frontend a 5s snapshot TTL).
-
-- **Frontend registration** — `POST /api/solutions/register` (and `DELETE
-  ?id=…`) at
-  `module/services/frontend/code/src/app/api/solutions/register/route.ts`. The
-  POST body is the solution manifest (`id`, `nav`, `frontend.manifestUrl` +
-  `exposedModule`, optional `backend.serviceAlias`, optional compatibility
-  requirements), validated in `src/solutions/registry.ts`, which then writes the
-  frontend half through the gateway (`POST /solutions/_frontend`). The route
-  relays the registry's own answer: `409` for a revision conflict, `403` when
-  the id belongs to another publisher, `503` when the registry cannot be
-  reached — a registrant is never told it is serving when it is not.
-  Re-registering a deregistered solution requires an explicit
-  `reactivate: true`. `GET` on that route is unauthenticated and returns exactly
-  the public navigation projection — `{id, nav}` per solution and nothing
-  else — which is what the sidebar polls, answering `503` (never an empty list)
-  when this replica cannot read the registry. Everything else a manifest carries
-  (`frontend`, `backend`) is deployment topology and is served instead by `GET
-  /api/internal/solutions`
-  (`src/app/api/internal/solutions/route.ts`), gated on the cluster-internal
-  token. The dashboard graph is on neither: the solution page reads it
-  in-process through `findSolution`.
-- **Gateway upstream registration** — `POST /solutions/_register` on the
-  auth-gateway (`module/services/auth-gateway/code/gateway_solutions.go`), with
-  a `{id, upstream}` JSON payload (the gateway supplies the compare-and-swap
-  revision it last saw). `GET /solutions/_registry` returns this replica's
-  snapshot — id, publisher, revision, and status (`active` / `pending` /
-  `expired` / `incompatible` / `tombstoned`), never an upstream — which is both
-  what the frontend rebuilds from and what an operator reads to tell those
-  states apart. The gateway then proxies `/solutions/{id}/…`
-  to the registered upstream, running the same ext_authz Check and
-  identity-header discipline as catalog routes; only the public `/assets` and
-  `/.well-known` sub-paths are served unauthenticated (GET/HEAD).
-- **Both halves take the same owner-bound credential.** Neither is gated on the
-  shared cluster-internal token: the caller presents a signed, solution-bound
-  registration token in `X-Codefly-Solution-Registration`, obtained from `POST
-  /solutions/_registration-token` against the solution's own secret
-  (`SOLUTION_REGISTRATION_SECRETS` in the `federation` group, declared
-  separately from the module secrets). The credential names one solution id and
-  one publisher, so a holder can neither claim nor re-point another solution.
-  The frontend additionally enforces the declared runtime compatibility
-  requirements before activating a remote. A solution remote executes in the
-  host origin with the viewer's credentials — the trust model, the full
-  authority contract, and the registration/installation/entitlement boundary are
-  in [module/SOLUTION_REGISTRATION.md](./module/SOLUTION_REGISTRATION.md).
-- **Composed-module REST federation** — a composed module that serves its own
-  `/v1/<module>/*` surface registers it with `POST /modules/_register`
-  (`gateway_modules.go`), and the gateway proxies that prefix once the generated
-  catalog has no match. Unlike solution registration this is **not** gated on
-  the shared internal token: the caller must present a signed, prefix-bound
-  registration token in `X-Codefly-Module-Registration`, so a module holding the
-  credential for `documents` cannot claim `billing`. The handshake is three
-  calls:
-  1. `POST /modules/_registration-token` on the auth-gateway, with the
-     cluster-internal token in `X-Codefly-Internal-Token` **and** the module's
-     own registration secret in `X-Codefly-Module-Secret`, body `{prefix}`.
-  2. The gateway brokers to accounts over the internal listener
-     (`ModuleCapabilitiesService/MintModuleRegistration`, EXPOSURE_INTERNAL, so
-     the generated mesh policy admits the gateway's service account and denies
-     everyone else). accounts compares the secret against the digest declared for
-     that prefix in the `federation` configuration group's
-     `MODULE_REGISTRATION_SECRETS` and, on a match, mints a 5-minute Ed25519
-     token (`aud=module-registration`, `sub=module:<prefix>`) with the key the
-     gateway already trusts through JWKS, emitting a
-     `module.registration_minted` audit event. Unset means no module may
-     federate.
-  3. `POST /modules/_register` with that token and `{prefix, upstream}`.
-
-  Composition provisions the pair: the SHA-256 digest into this host's
-  `federation` group, the plaintext into the module. The token is short-lived and
-  fetched per registration attempt, not cached across a gateway restart. Registration only adds a proxy target —
-  every proxied `/v1/<module>/*` request still runs the full ext_authz check.
-- **Composed-module service principal** — a module consuming the module-facing
-  capability surface (`ModuleCapabilitiesService`: job enqueue/claim, notify,
-  approvals, audit, events) calls it as its own **service principal**, whose id is
-  derived from the same registration prefix (`business.ModulePrincipalID`), so
-  nothing is hand-authored as an opaque id. Its authority is declared in the
-  `module-capabilities` group's `MODULE_PRINCIPALS`, a JSON map keyed by that
-  prefix: `queues` (enqueue and claim), `namespaces` (event publish),
-  `resources` (the permission resource types its own content is governed by,
-  which bound both the content reads this host authorizes for it and the records
-  it may place at a scope node), `tenant` (the org it is bound to),
-  `cross_tenant` (an inbox worker serving every tenant). Unset means no module
-  may call the surface.
-
-  The identity itself is a **Work Context**, obtained with a second exchange that
-  mirrors the registration one: `POST /modules/_work-context` on the auth-gateway
-  with the cluster-internal token and the module's identity secret, body
-  `{prefix}`. The gateway brokers to accounts
-  (`ModuleCapabilitiesService/MintModuleWorkContext`, EXPOSURE_INTERNAL), which
-  authorizes the secret against the independent `MODULE_IDENTITY_SECRETS` digest,
-  refuses a prefix that is not a declared module principal, and mints a
-  capability owned and actored by the module principal
-  (`aud=module-capabilities`), emitting a `module.work_context_minted` audit
-  event once the capability exists. The response carries
-  `{token, expiresAt, principalId, tenant}`.
-
-  An empty or absent `MODULE_IDENTITY_SECRETS` denies every module identity
-  exchange. Compositions must provision identity digests and distribute their
-  matching secrets before modules can obtain Work Contexts; registration
-  credentials never substitute for missing identity digests.
-
-  The tenant is **not requestable** — it is the one `MODULE_PRINCIPALS` declares
-  for that principal, so a module cannot name a tenant by asking. The capability
-  seals identity and tenant only: what the principal may do is re-read from the
-  declared grant on every call, so narrowing a grant takes effect immediately
-  rather than when the outstanding token expires.
-
-  The module presents that token in `x-codefly-work-context` on every capability
-  call; accounts takes the calling principal and its bound tenant from the
-  verified token, never from request metadata. Work Contexts cap at 15 minutes, so
-  a long-running worker re-runs the exchange rather than holding one open.
-
-  **Mesh reachability is the composition's to grant.** The generated
-  `AuthorizationPolicy` allowlists accounts' internal surface to the service
-  accounts of services that *declare a dependency on accounts* in the workspace
-  topology. This module's own topology names no composed module (it must carry no
-  build-time knowledge of its consumers), so a composed module reaches the
-  capability surface in a mesh-enforced deployment only when its own workspace
-  declares that dependency and regenerates the policy. A valid Work Context does
-  not substitute for it: mTLS refuses the call before any token is read.
-- **Host page** — `/s/[solutionId]`
-  (`src/app/(dashboard)/s/[solutionId]/page.tsx`) loads the remote via
-  `SolutionOutlet` from the registered `manifestUrl` + `exposedModule`, read
-  in-process from the registry. `src/proxy.ts` cannot read that registry (Next
-  runs the proxy in a context that shares no module singletons with route
-  handlers), so it asks the internal detail lookup over loopback with the
-  cluster-internal token, and adds every registered manifest origin to the CSP
-  of every signed-in document — so a freshly registered cross-origin remote
-  loads with no rebuild, including after a client-side navigation. Without that
-  token the policy stays self-only and says so in the log.
-
-To run a solution against this host locally, drive it from the **solution's own**
-codefly workspace, which composes this repo as a module by path (`codefly add
-module --source <this-repo>/module`). Composition provisions this host's
-`configurations/local/*` groups — `legal`, `identity`, `internal-auth` (token
-included), and the rest — into the solution workspace automatically, so the
-solution need not hand-author them; it overrides any group only by declaring one
-of the same name. Then `codefly run service --fixture dev-admin` from the
-solution root boots this whole host underneath; a well-behaved solution runtime
-self-registers with both the host and the gateway autonomously via the codefly
-SDK. See the solution repo for its own instructions.
+Skills in `.claude/skills/`, loaded when the task calls for them:
+`run-the-starter-locally`, `land-a-pull-request`, `refresh-base-manifest`,
+`pin-a-service-agent`, `cut-a-release`.
 
 ## Building, testing, and CI
 
-- Canonical **service** gate: `codefly ci run`. It owns lint,
-  compile/typecheck, tests, dependency/vuln audit, SBOM, and container build for
-  every service in the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
-- Beside it, CI runs nine repository-specific gates that no service owns —
-  base-file integrity (below), authorization coverage, the release-gate
-  contract, interface docs and story tests, the published frontend kit's
-  version, provider shims, marketing isolation, the SDK boundary, and the
-  immutable module package. They are listed with what each runs in
-  [RELEASE_GATES.md § Repository-specific
-  gates](./RELEASE_GATES.md#repository-specific-gates), which
-  `release-gates.test.mjs` holds to the enforced set.
-- Inside the `base-integrity` job, these checks run as steps rather than as
-  gates of their own: tenant RLS coverage, migration up/down pairing, pinned
-  plugin versions on generated Go, generic placeholder names across the tree,
-  the same names in the pull request's title, body and commit messages, and
-  commit identity. The list is deliberately not preceded by a count: nothing
-  enforces one, so two changes that each add a step and each bump the same
-  number merge cleanly into a total that is silently wrong. The last three
-  enforce §"Naming and confidentiality" above — the first over every file's
-  contents and path, the second over the records around them, and the third
-  over the author and committer email of every commit a pull request adds,
-  which the tree scan cannot see and no scrub can reach:
-
-  ```bash
-  node module/tools/naming-gate.mjs check     # the tree
-  git config core.hooksPath scripts/hooks     # opt in: reject a bad commit message locally
-  git config user.email <id>+<login>@users.noreply.github.com   # once, before your first commit
-  ```
-
-  Setting `core.hooksPath` replaces the hooks directory wholesale, so any hook
-  already in `.git/hooks` stops running until you unset it. The hook is the only
-  half that runs before publication — CI blocks the merge, by which point the
-  commit is already public.
-
-  The record check in CI names the matching mode and nothing else — not the
-  term, not the line — because its log is public and so is the record it points
-  into. To see the line, run `node module/tools/naming-gate.mjs message <file>`
-  locally. A pushed message can no longer be edited, so fix a failure by
-  amending or rebasing rather than by adding a commit on top.
-
-  A commit email outside GitHub's no-reply domains fails the pull request. See
-  [RELEASE_GATES.md § Commit identity](./RELEASE_GATES.md#commit-identity) for
-  the address to use and how to rewrite a branch that predates the gate.
-- Go checks: this repository holds **six independent Go modules** — the root
-  module, `module/tools`, and one per Go service (`accounts`, `auth-gateway`,
-  `store`, `telemetry`) — and there is no `go.work`, so `go test ./...` covers
-  only the module you run it in. From the root that is the module agent, the
-  host, and the generated reference composition; every service's own module is
-  outside it, because each has its own `go.mod`. To exercise a service, run its
-  suite from its own directory (its DB-backed suites need Codefly and Docker),
-  or let `codefly ci run` do it.
-- Vulnerability policy: the complete audit runs non-blocking
-  (`--fail-on-vuln=false`) so vendor-image findings stay in the evidence report,
-  and a separate fail-closed step enforces first-party services and production
-  frontend dependencies. Details and the exact commands are in
-  [RELEASE_GATES.md § Vulnerability policy](./RELEASE_GATES.md#vulnerability-policy-and-its-one-exemption).
-- Publication of any artifact additionally requires the aggregate
-  `release-gates` job to have seen every mandatory gate actually succeed, plus
-  three release-only secrets. See [RELEASE_GATES.md §
-  Publication gating](./RELEASE_GATES.md#publication-gating).
-
-## Agent version pins
-
-Each service pins the version of its Codefly service agent (`go-grpc`,
-`nextjs`, `redis`, `postgres`, `vault`). To see what is pinned and whether a
-newer release exists:
-
-```bash
-codefly agent list        # PINNED vs LATEST-RESOLVABLE, resolvability, how far behind
-codefly agent versions <agent>
-```
-
-To change a pin, **edit the version in
-`module/deployment/topology.bindings.codefly.yaml`** (the source), then
-regenerate the per-service manifests and refresh the base manifest. Do not
-hand-edit `service.codefly.yaml` — it is generated. `codefly update workspace`
-does **not** rewrite the bindings for this repo (it skips the generated
-manifests by design), so the bindings edit is manual.
-
-Latest is not always safe: verify the newer agent actually boots the graph
-(`codefly run service`) before pinning it. Agent releases can carry breaking
-changes to service manifests.
-
-## Base-file integrity manifest — the easy gate to trip
-
-`module/tools/base-manifest.json` hashes every base file. Editing a tracked
-base file (including `topology.bindings.codefly.yaml`) without refreshing the
-manifest fails two CI checks ("Base manifest integrity" and "Codefly CI").
-Regenerate it **from a clean checkout**, because `gen`'s tree walk otherwise
-hashes gitignored harness artifacts CI never sees:
-
-```bash
-git worktree add --detach /tmp/bm-clean HEAD
-cd /tmp/bm-clean/module && node tools/base-integrity.mjs gen && node tools/base-integrity.mjs verify
-# copy module/tools/base-manifest.json back, confirm the diff is only your files, commit
-git worktree remove /tmp/bm-clean --force
-```
-
-## How pull requests land
-
-`main` merges through a **GitHub merge queue**, not by pressing Merge. The queue
-builds each entry as `main + the pull request` and runs the required checks
-against that merged ref, so a pull request never has to be rebased merely because
-`main` moved — "require branches to be up to date" is deliberately off, since
-with a queue it re-imposes the rebase race it was meant to replace.
-
-Two consequences worth knowing before you lose time to them:
-
-- **Verify queue membership after requesting a merge.** `gh 2.100.0` documents
-  that `gh pr merge` enqueues when required checks have passed and enables
-  auto-merge otherwise. A successful exit alone does not establish that the PR
-  is queued or merged. Set `PR_NUMBER` to the pull request number and inspect
-  its state:
-
-  ```bash
-  PR_NUMBER=626 # replace with the pull request number
-  gh api graphql -f query='query($number:Int!){repository(owner:"codefly-dev",name:"module-saas-starter")
-    {pullRequest(number:$number){id state autoMergeRequest{enabledAt} mergeQueueEntry{position state}}}}' \
-    -F number="$PR_NUMBER" --jq '.data.repository.pullRequest'
-  ```
-
-  `state: MERGED` confirms completion; a non-null `mergeQueueEntry` confirms
-  queue membership. An `autoMergeRequest` alone confirms neither. If the PR
-  is open, eligible, and has no queue entry, explicitly request enqueue using
-  its id (this can fail if requirements are unmet), then repeat the lookup:
-
-  ```bash
-  PRID=$(gh api graphql -f query='query($number:Int!){repository(owner:"codefly-dev",name:"module-saas-starter")
-    {pullRequest(number:$number){id}}}' -F number="$PR_NUMBER" \
-    --jq '.data.repository.pullRequest.id') &&
-  gh api graphql -f query='mutation($id:ID!){enqueuePullRequest(input:{pullRequestId:$id})
-    {mergeQueueEntry{position state}}}' -f id="$PRID"
-  ```
-
-- **Every required check must run on `merge_group`.** A required context that
-  never reports leaves its entry queued until the queue evicts it, and entries
-  merge in order, so one missing context stalls every merge in the repository —
-  and no pull request run shows it, because the same job is green there. The
-  `release-contract` gate checks publication dependencies and action pins; it
-  does **not** enforce merge-queue trigger coverage or compare required check
-  names with the live ruleset. Whenever workflows or required checks change,
-  read the effective required contexts:
-
-  ```bash
-  gh api repos/codefly-dev/module-saas-starter/rules/branches/main \
-    --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context'
-  ```
-
-  Compare each context with the reporting job's `name` (or job id when unnamed)
-  in `.github/workflows/`, including any matrix-expanded name. Check that its
-  workflow subscribes to `merge_group` and that job conditions and dependencies
-  permit it to report on that event. Confirm those contexts actually report on
-  the queue entry's merged commit; a green PR run or `release-contract` alone
-  cannot establish this. See [RELEASE_GATES.md § The contract
-  test](./RELEASE_GATES.md#the-contract-test) for the existing guard's scope.
+- Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
+  tests, dependency/vuln audit, SBOM, and container build for every service in
+  the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
+- Beside it, CI runs nine repository-specific gates that no service owns — base-file
+  integrity, authorization coverage, the release-gate contract, interface docs and
+  story tests, the kit's version, provider shims, marketing isolation, the SDK
+  boundary, the immutable module package. [RELEASE_GATES.md § Repository-specific
+  gates](./RELEASE_GATES.md#repository-specific-gates) says what each runs, and
+  `release-gates.test.mjs` holds this prose to the enforced set.
+- More checks run as *steps* inside the `base-integrity` job than as gates of their
+  own — tenant RLS coverage, migration pairing, pinned plugin versions on generated
+  Go, the naming gate over both tree and records, commit identity. Never precede
+  such a list with a count: nothing enforces one, so two changes that each add a
+  step and each bump the same number merge cleanly into a total that is silently
+  wrong.
+- Editing any base file means refreshing `module/tools/base-manifest.json` — the
+  easiest gate here to trip (`refresh-base-manifest` skill). Go suites live in six
+  independent Go modules with no `go.work`
+  ([module/AGENTS.md](./module/AGENTS.md#go-suites)).
+- Vulnerability policy: the complete audit runs non-blocking so vendor-image
+  findings stay in the evidence report, while a separate fail-closed step enforces
+  first-party services and production frontend dependencies ([RELEASE_GATES.md §
+  Vulnerability
+  policy](./RELEASE_GATES.md#vulnerability-policy-and-its-one-exemption)).
+- `main` merges through a **GitHub merge queue**, not by pressing Merge. A
+  successful `gh pr merge` proves neither queue membership nor merge, and every
+  required check must report on `merge_group` or it stalls the whole queue
+  (`land-a-pull-request` skill).
 
 ## Cutting a release
 
-Two tag tracks live here on separate version axes (see
-[RELEASE_GATES.md](./RELEASE_GATES.md) for the recipes):
-
-- The **deploy counter** — the `v0.0.N` tag series consumers adopt via
-  `codefly sync module`. The counter advances per release; it is not derived
-  from `agent.codefly.yaml`'s `version:` (that field carries the module agent's
-  own version and can lag the tags).
-- The **immutable module package** — a `version:` bump on
-  `module/module.package.codefly.yaml` and a `module-package/vX.Y.Z` tag. Only
-  this track triggers the immutable module-package publication job (strict
-  manifest validation, SBOM, provenance signing).
-- The **client libraries** of that package. Cutting a tag here does **not**
-  publish a client to a library store, and no release job gates on a clients
-  manifest. The per-language SDK repositories are the distribution mechanism:
-  `saas-sdk-go` and `saas-sdk-python` are each to carry a generated stub tree —
-  produced by the Codefly companion the CLI pin resolves — committed and
-  released under that repository's own tag. On GitHub that tag *is* the publish:
-  a Go module path is its repository URL (`go get
-  github.com/codefly-dev/saas-sdk-go@vX.Y.Z`), and Python installs from the same
-  ref (`pip install "saas-sdk @ git+https://github.com/codefly-dev/saas-sdk-python@vX.Y.Z"`).
-  Nothing in this repository verifies that either tree exists or is current —
-  check the SDK repository itself before relying on one.
-
-  **The TypeScript client is published from here**, and is not a separate SDK
-  repository. `@codefly-dev/saas-sdk`
-  (`module/services/frontend/code/packages/saas-sdk`) builds the generated
-  bindings into its `dist`, and the `publish-frontend-kit` job pushes it to
-  GitHub Packages on every **`v0.0.N` deploy-counter tag** — not on the
-  module-package track. A contract change that reaches that tree therefore has
-  to carry a `version:` bump in the package's `package.json`:
-  `scripts/publish-frontend-kit.mjs` refuses to republish a version whose
-  contents moved, and that refusal fails the release.
-
-  No new repository is created for a client, and nothing generated is vendored
-  into a *consumer* — a consumer imports the SDK, never a stub package, so the
-  SDK's public API must alias its generated types rather than expose their
-  import path. For the kit that rule is enforced rather than asked for: the
-  package's `exports` map may not name a subpath into the generated tree
-  (`publish-frontend-kit.test.mjs`).
-
-  `module/clients.codefly.yaml` remains the policy that decides, per exported
-  contract endpoint, which languages get a client and which services its facade
-  reaches. It is **generation** policy now, not publication policy. Every
-  exported endpoint must still appear there — an endpoint the file omits would
-  otherwise generate every service in its package, in every default language —
-  and the `clients-config` gate in `module/tools/composition` enforces that.
-
-  `codefly publish clients saas-starter` (requires `codefly` ≥ 0.1.152) still
-  exists, but it is **not part of cutting a release**, and this workspace is
-  configured so that running it cannot disclose anything by accident:
-  `libraries.publish` in `workspace.codefly.yaml` declares **no `go` or `python`
-  store**, so the command fails closed instead of creating a repository. It
-  would create one **public** (codefly-dev/cli#715, still open), and a client's
-  bindings carry the whole contract, not just the `services:` facade. Restoring
-  a store is a deliberate, separately-agreed disclosure decision; where a client
-  may be published is an infrastructure fact that belongs in the cell contract
-  rather than in `libraries.publish`.
+Two tag tracks share this repository on separate version axes: the **`v0.0.N`
+deploy counter** consumers adopt via `codefly sync module`, and the **immutable
+module package** (`module-package/vX.Y.Z`, from
+`module/module.package.codefly.yaml`) — only the second triggers the
+module-package publication job. Cutting a tag here does **not** publish a Go or
+Python client; the `saas-sdk-go` and `saas-sdk-python` repositories distribute
+those under their own tags. It *does* publish the TypeScript client:
+`@codefly-dev/saas-sdk` goes to GitHub Packages on every deploy-counter tag, so a
+contract change reaching that tree needs a `version:` bump in its `package.json`
+or the release fails. Recipes and traps: the `cut-a-release` skill.
 
 ## Doc index
 
-Deep references live under `module/` — authorization
-([module/AUTHORIZATION_CATALOG.md](./module/AUTHORIZATION_CATALOG.md),
-[AUTHZ.md](./AUTHZ.md), the authority-checking epic scoping record
-[AUTHORITY_CHECKING_PLAN.md](./AUTHORITY_CHECKING_PLAN.md)), database/RLS
-([module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)), the approval
-primitive design ([APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)), the per-org
-non-human Principal registration decision for delegated Work Context flows
-([DELEGATION_PRINCIPAL_DESIGN.md](./DELEGATION_PRINCIPAL_DESIGN.md)), the dashboard
-authoring API design decisions
-([DASHBOARD_AUTHORING_DESIGN.md](./DASHBOARD_AUTHORING_DESIGN.md)), deployment
-topology ([module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md)),
-signing-key rotation ([module/KEY_ROTATION.md](./module/KEY_ROTATION.md)),
-frontend ([FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md),
-[module/FRONTEND_PLUGINS.md](./module/FRONTEND_PLUGINS.md)), dynamic dashboards
-([DYNAMIC_DASHBOARDS.md](./DYNAMIC_DASHBOARDS.md),
-[DASHBOARD_AUTHORING_DESIGN.md](./DASHBOARD_AUTHORING_DESIGN.md)), REST/gateway
-([module/REST_SURFACE.md](./module/REST_SURFACE.md),
-[module/GATEWAY_ROUTES.md](./module/GATEWAY_ROUTES.md)), email
-([EMAIL_PROVIDER_ADAPTERS.md](./EMAIL_PROVIDER_ADAPTERS.md)), supply chain
-([SUPPLY_CHAIN_SECURITY.md](./SUPPLY_CHAIN_SECURITY.md)), security review and
-hardening ([SECURITY_REVIEW.md](./SECURITY_REVIEW.md)), and production
-readiness ([PRODUCTION_READY.md](./PRODUCTION_READY.md)), and a cross-domain
-platform-functionality reference mapping an external multi-tenant-platform audit
-to what this starter ships, partially ships, or lacks
-([PLATFORM_REFERENCE.md](./PLATFORM_REFERENCE.md)). Which claim in those
+Start from [MODULE.md](./MODULE.md), whose "Quick links" indexes the full set, and
+[RELEASE_GATES.md](./RELEASE_GATES.md) for the gates. Which claim in those
 documents is backed by what, and which are kept only as history, is registered in
-[CLAIM_INVENTORY.md](./CLAIM_INVENTORY.md). Start from
-[MODULE.md](./MODULE.md), whose "Quick links" section indexes the full set.
+[CLAIM_INVENTORY.md](./CLAIM_INVENTORY.md).
