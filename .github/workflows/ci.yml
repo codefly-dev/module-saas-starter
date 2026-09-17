@@ -730,6 +730,44 @@ jobs:
           fi
 
           codefly ci run "${selection_args[@]}" "${run_args[@]}"
+      # What a green check actually verified, and on whose evidence. `reused`
+      # means this run stood on a record another run signed rather than doing
+      # the work, so a reader who cannot see the split cannot tell a verified
+      # phase from a skipped one. The per-task reasons also carry the only
+      # explanation of why a passing task published nothing, which is invisible
+      # everywhere else — the report is not otherwise retained.
+      - name: Report what this phase verified, reused, or withheld
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          CI_PHASE: ${{ matrix.phase }}
+        run: node scripts/ci/ci-outcome.mjs ".codefly/ci/${CI_PHASE//,/-}/report.json"
+      - name: Retain the CI report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: codefly-ci-report-${{ env.CI_PHASE_ID }}
+          path: .codefly/ci/
+          include-hidden-files: true
+          if-no-files-found: warn
+      # A run on main that executed work and published nothing has silently lost
+      # the reuse it was configured for: every later run re-does that work while
+      # every signal stays green. Reuse was wired for weeks in exactly that
+      # state. The store only has to exist — a fully-reused phase legitimately
+      # writes no new record, and the reporter above names the reason when a
+      # task was withheld.
+      - name: Require published results from a seeding run
+        if: ${{ success() && github.ref == 'refs/heads/main' && steps.reuse.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          store="${RUNNER_TEMP}/codefly-ci-results"
+          if [[ -d "${store}" ]] && find "${store}" -type f -name '*.json' -print -quit | grep -q .; then
+            echo "published $(find "${store}" -type f -name '*.json' | wc -l) result record(s)"
+            exit 0
+          fi
+          echo "::error::Reuse is enabled on main but this phase published no result record." >&2
+          echo "Every later run will re-execute this work. See the outcome report above for the per-task reason." >&2
+          exit 1
       # Only main's runs seed the store. A pull request's cache is scoped to
       # that pull request and unreadable from anywhere else, so saving one buys
       # nothing and evicts entries other runs are reading.
