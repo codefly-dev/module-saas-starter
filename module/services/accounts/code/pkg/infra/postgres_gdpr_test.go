@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
@@ -146,6 +147,25 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 		return testStore.CreateGDPRRequest(ctx, live)
 	}))
 
+	// The sweep lists every expired export in the database, so both rows go
+	// however this test ends: one left behind — including the live one, once its
+	// hour is up — is an expired export every later run would see. Delete rather
+	// than drop the artifact, so a row cannot come back into scope if the sweep's
+	// predicate ever widens.
+	t.Cleanup(func() {
+		require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+			tag, err := tx.Exec(ctx,
+				`DELETE FROM public.gdpr_requests WHERE id = ANY($1::uuid[])`,
+				[]string{lapsed.ID, live.ID})
+			require.NoError(t, err)
+			// gdpr_requests forces RLS, where a DELETE the policy does not match
+			// reports success against zero rows.
+			require.EqualValues(t, 2, tag.RowsAffected(), "both requests are gone")
+			return nil
+		}))
+	})
+
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
 		past := time.Now().Add(-time.Hour)
 		future := time.Now().Add(time.Hour)
@@ -165,20 +185,28 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 			}))
 		}
 
-		expired, err := testStore.ListExpiredGDPRExports(ctx, time.Now(), 10)
+		// The sweep pages oldest first, and a database shared with earlier runs
+		// carries their expired exports, which are older: page deep enough that
+		// they cannot push this run's row out of the result.
+		const page = 1000
+		expired, err := testStore.ListExpiredGDPRExports(ctx, time.Now(), page)
 		require.NoError(t, err)
-		require.Len(t, expired, 1)
-		require.Equal(t, lapsed.ID, expired[0].ID)
+		require.Contains(t, gdprRequestIDs(expired), lapsed.ID)
+		require.NotContains(t, gdprRequestIDs(expired), live.ID, "an artifact that has not expired is not swept")
 
 		require.NoError(t, testStore.ClearGDPRExportArtifacts(ctx, []string{lapsed.ID}))
-		expired, err = testStore.ListExpiredGDPRExports(ctx, time.Now(), 10)
+		expired, err = testStore.ListExpiredGDPRExports(ctx, time.Now(), page)
 		require.NoError(t, err)
-		require.Empty(t, expired, "a cleared artifact is not swept again")
+		require.NotContains(t, gdprRequestIDs(expired), lapsed.ID, "a cleared artifact is not swept again")
 
 		got, err := testStore.GetGDPRRequest(ctx, lapsed.ID)
 		require.NoError(t, err)
 		require.Empty(t, got.DownloadURL)
 		require.Equal(t, business.GDPRCompleted, got.Status)
+
+		untouched, err := testStore.GetGDPRRequest(ctx, live.ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, untouched.DownloadURL, "clearing a batch leaves artifacts outside it alone")
 		return nil
 	}))
 }
@@ -267,4 +295,12 @@ func TestReplayedPrivacyJobClaimsOnlyAReleasedRequest(t *testing.T) {
 			"the replayed job restarts attempts without the claim refusing it")
 		return nil
 	}))
+}
+
+func gdprRequestIDs(requests []*business.GDPRRequest) []string {
+	ids := make([]string, 0, len(requests))
+	for _, req := range requests {
+		ids = append(ids, req.ID)
+	}
+	return ids
 }

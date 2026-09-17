@@ -914,7 +914,7 @@
     "services/accounts/code/pkg/infra/postgres_feature_flags.go": "f9afcf867e5a275aa51a2a0b2a37fb2bba2f247d45cd171719f0fe6474be6ead",
     "services/accounts/code/pkg/infra/postgres_follow_fanout_test.go": "420b9efb1be42c707f90b59bbb5f1a63ec1bb7384e3419b24f83f2b34f921707",
     "services/accounts/code/pkg/infra/postgres_gdpr.go": "d52d05b93b94f57a2b5459396b6fc39ea72e6109ddbcddc9998cb36016b0ede4",
-    "services/accounts/code/pkg/infra/postgres_gdpr_test.go": "8ff1726b871a3d17ea0c68b863d3ec31a429c68bec522eefc48eda7307a1726c",
+    "services/accounts/code/pkg/infra/postgres_gdpr_test.go": "2aaa0f23c247d214d450fc17ca3c72311c38d48562ec5cd4718439ebabc9239f",
     "services/accounts/code/pkg/infra/postgres_github_app_setups.go": "636d82e0efc0a0be8b3caf6079071b9e104125f19d6d13dc5cf0aab6ab1981ce",
     "services/accounts/code/pkg/infra/postgres_github_app_setups_test.go": "2209e977729e68c23095914af2b810aa80f8845fdd44fe259f41bba87cf7e855",
     "services/accounts/code/pkg/infra/postgres_identity_providers_test.go": "b7aa58cbc34ea7c406ae76f0f2f7f2dc054812f6246c1467c5e423006caa41b5",
