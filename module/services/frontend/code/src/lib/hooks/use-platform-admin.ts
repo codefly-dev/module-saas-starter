@@ -36,13 +36,6 @@ export function useRevokePlatformRole() {
 	});
 }
 
-export function useImpersonateUser() {
-	const svc = usePlatformAdminService();
-	return useMutation({
-		mutationFn: (userId: string) => svc.impersonateUser({ userId }),
-	});
-}
-
 export function useOverrideEntitlement() {
 	const svc = usePlatformAdminService();
 	const queryClient = useQueryClient();

@@ -403,7 +403,11 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventMFADeviceRevoked, CategorySecurity, "An MFA device was revoked."),
 	mutation(EventPlatformRoleGranted, CategorySecurity, "A platform role was granted."),
 	mutation(EventPlatformRoleRevoked, CategorySecurity, "A platform role was revoked."),
-	mutation(EventPlatformImpersonated, CategorySecurity, "A platform admin impersonated a user."),
+	// The operator's justification is part of the record, not an optional
+	// enrichment: who and whom are already implied by the actor/resource pair,
+	// and why is the only thing this event can carry that the pair cannot.
+	revised(mutation(EventPlatformImpersonated, CategorySecurity, "A platform admin impersonated a user.",
+		PayloadField{Name: "reason", Kind: FieldString, Required: true}), 2),
 
 	observation(EventBillingCheckoutStarted, CategoryBilling, "A billing checkout session was started."),
 	observation(EventBillingPortalOpened, CategoryBilling, "The billing portal was opened."),

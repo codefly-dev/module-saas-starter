@@ -143,6 +143,13 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 	return nil
 }
 
+// ImpersonationReasonMinRunes is the floor the justification must clear once
+// surrounding whitespace is removed. The request contract carries the same
+// number, but buf.validate measures the string as sent: padding a single
+// character out to the contract's length satisfies it while recording nothing,
+// so the floor that actually counts is applied here, to the trimmed value.
+const ImpersonationReasonMinRunes = 10
+
 // ImpersonateUser issues a token whose real actor is the calling platform admin
 // and whose effective subject is the target (support+ only). The minted Identity
 // keeps the actor as UserID and names the target through ActingAsUserID; every
@@ -163,6 +170,15 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	}
 	if err := s.requirePlatformRole(ctx, actorID, "support"); err != nil {
 		return nil, w.Wrapf(err, "permission denied")
+	}
+
+	// Measured in runes on the trimmed value: the transport floor counts the
+	// string as sent, so it passes "         ." while what gets recorded is ".".
+	// The justification stays out of the error — it is free text about a named
+	// customer, and wool masks field keys, never their values.
+	reason := strings.TrimSpace(req.Reason)
+	if len([]rune(reason)) < ImpersonationReasonMinRunes {
+		return nil, w.NewError("impersonation requires a justification")
 	}
 
 	// Cross-tenant lookups: a platform admin impersonating any user needs to see
@@ -251,7 +267,8 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	// atomic with — but the token must not reach the caller unless the record is
 	// committed, so the write is what gates the response.
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-		return s.emitTx(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "")
+		return s.emitTx(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "",
+			map[string]any{"reason": reason})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot record impersonation")
 	}

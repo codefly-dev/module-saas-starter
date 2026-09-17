@@ -41,6 +41,16 @@ message UnsuspendUserRequest {
 
 message ImpersonateUserRequest {
   string user_id = 1 [(buf.validate.field).string.uuid = true];
+  // Why the operator is stepping into this account. Recorded on
+  // saas.platform.user_impersonated, which otherwise names only who and whom.
+  // The floor is a length rather than mere presence because a justification
+  // that accepts "." records nothing a reader can act on. The rule below
+  // measures the string as sent; the service applies the same floor to the
+  // value with surrounding whitespace removed, so padding does not satisfy it.
+  string reason = 2 [(buf.validate.field).string = {
+    min_len: 10
+    max_len: 500
+  }];
 }
 
 message ImpersonateUserResponse {

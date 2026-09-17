@@ -22,7 +22,8 @@ export const userMutations = {
 
 	unsuspend: (userId: string) => client.unsuspendUser({ userId }),
 
-	impersonate: (userId: string) => client.impersonateUser({ userId }),
+	impersonate: (userId: string, reason: string) =>
+		client.impersonateUser({ userId, reason }),
 
 	// UpdateUser honors the target uuid with a self-or-admin gate; we send the merged
 	// profile and the (current or edited) email as the User patch.

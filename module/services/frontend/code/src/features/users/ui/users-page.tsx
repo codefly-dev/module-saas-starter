@@ -12,6 +12,7 @@ import { type UserEdit, userMutations } from "../service/mutations";
 import { userQueries } from "../service/queries";
 import { DeleteUserDialog } from "./delete-user-dialog";
 import { EditUserForm } from "./edit-user-form";
+import { ImpersonateForm } from "./impersonate-form";
 import { SuspendForm } from "./suspend-form";
 import { UsersTable } from "./users-table";
 
@@ -20,6 +21,7 @@ export function UsersPage() {
 	const { enterImpersonation } = useAuth();
 	const [search, setSearch] = useState("");
 	const [suspendTarget, setSuspendTarget] = useState<User | null>(null);
+	const [impersonateTarget, setImpersonateTarget] = useState<User | null>(null);
 	const [editTarget, setEditTarget] = useState<User | null>(null);
 	const [deleteTarget, setDeleteTarget] = useState<User | null>(null);
 
@@ -71,7 +73,8 @@ export function UsersPage() {
 	// Entering the session is the whole operation: the token never needs to be
 	// shown, and the banner then owns the way back out.
 	const impersonateMutation = useMutation({
-		mutationFn: (userId: string) => userMutations.impersonate(userId),
+		mutationFn: ({ userId, reason }: { userId: string; reason: string }) =>
+			userMutations.impersonate(userId, reason),
 		onSuccess: (data) => {
 			const token = (data as Record<string, unknown>).accessToken as
 				| string
@@ -80,6 +83,7 @@ export function UsersPage() {
 				toast.error("Impersonation returned no session");
 				return;
 			}
+			setImpersonateTarget(null);
 			enterImpersonation(token);
 			toast.success("Impersonation session started");
 		},
@@ -114,8 +118,8 @@ export function UsersPage() {
 		[unsuspendMutation],
 	);
 	const handleImpersonate = useCallback(
-		(user: User) => impersonateMutation.mutate(user.uuid),
-		[impersonateMutation],
+		(user: User) => setImpersonateTarget(user),
+		[],
 	);
 
 	return (
@@ -179,6 +183,17 @@ export function UsersPage() {
 					onConfirm={() => deleteMutation.mutate(deleteTarget.uuid)}
 					onCancel={() => setDeleteTarget(null)}
 					isPending={deleteMutation.isPending}
+				/>
+			)}
+
+			{impersonateTarget && (
+				<ImpersonateForm
+					open
+					userId={impersonateTarget.uuid}
+					userEmail={impersonateTarget.primaryEmail}
+					onSubmit={(vals) => impersonateMutation.mutate(vals)}
+					onCancel={() => setImpersonateTarget(null)}
+					isPending={impersonateMutation.isPending}
 				/>
 			)}
 
