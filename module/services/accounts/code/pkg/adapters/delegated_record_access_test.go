@@ -171,6 +171,81 @@ func TestExactRecordOracleIntersectsInstallationCapability(t *testing.T) {
 	require.Empty(t, out.Msg.ScopeNodeId)
 }
 
+// An exchanged read audience is the fourth capability shape reaching this oracle:
+// authority re-audienced from a verified parent viewer context rather than minted
+// fresh. Where the attenuation lands is not where it looks: once a delegation
+// chain is present the sealed scope enforced here is the OUTERMOST hop's granted
+// scopes, which REPLACE rather than intersect the top-level authority scopes, so
+// the exchange narrows that hop and leaves the top level at the parent's width.
+// The assertions below turn on that, and it is pinned rather than assumed — read
+// only the top-level scopes and this capability looks kind-wide. What must hold
+// is that the oracle enforces the narrowed hop, and that it still checks every hop
+// against live grants rather than collapsing the chain into the owner.
+func TestExactRecordOracleIntersectsExchangedReadAudienceCapability(t *testing.T) {
+	_, facts, client, _ := sourceReadFixture(t)
+	store := &exactRecordStore{}
+	svc, err := business.NewService(store)
+	require.NoError(t, err)
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, Resources: []string{"rows"},
+			ReadAudiences: map[string]business.ModuleReadAudience{
+				"proof": {Audience: "rows", Scopes: []business.ModuleReadScope{{ResourceKind: "rows", ResourceIDs: []string{"record-a"}}}}}},
+		business.ModulePrincipalID("rows"): {Prefix: "rows", Resources: []string{"rows"}},
+	})
+	service = svc
+	journal := &exactChainJournal{}
+	workContextSingleton.authority = exactChainAuthority{facts: facts.facts}
+	workContextSingleton.journal = journal
+	scopes := []*basev0.WorkScopeV1{{ResourceKind: "rows", Actions: []string{"read"}}}
+	parent, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
+		TaskID: "exchange-task", SessionID: "exchange-session", AuthorizationRevision: facts.facts.EffectiveRevision(), AuthorityScopes: scopes,
+		ActorChain: []*basev0.WorkActorV1{
+			{PrincipalId: "actor-1", PrincipalKind: "service", DelegationId: "hop-1", GrantedScopes: scopes},
+			{PrincipalId: "actor-2", PrincipalKind: "service", DelegationId: "hop-2", GrantedScopes: scopes}}})
+	require.NoError(t, err)
+	exchanged, err := client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent.Encoded()))
+	require.NoError(t, err)
+	issued, err := codefly.ParseWorkContextToken(exchanged.Msg.Token)
+	require.NoError(t, err)
+	child, err := workContextSingleton.verifier.Verify(issued, codefly.WorkContextExpectations{Audience: "rows"})
+	require.NoError(t, err)
+	require.Empty(t, child.AuthorityScopes[0].ResourceIds, "the top-level scope stays at the parent's width")
+	require.Equal(t, []string{"record-a"}, child.ActorChain[len(child.ActorChain)-1].GrantedScopes[0].ResourceIds,
+		"the binding narrows the outermost hop, which is the scope the oracle actually enforces")
+
+	journal.ids = nil
+	out, err := client.CheckWorkContextRecordAccess(context.Background(), exactRequest(exchanged.Msg.Token, "record-a"))
+	require.NoError(t, err)
+	require.True(t, out.Msg.Allowed)
+	require.Equal(t, []string{readOwner, "actor-1", "actor-2"}, store.subjects, "the parent's hops are intersected, not inherited from the owner the exchange acted for")
+	require.Equal(t, []string{"hop-1", "hop-2"}, journal.ids)
+
+	// The binding seals record-a while the parent is kind-wide, so the exchanged
+	// context must be refused for record-b before any grant is read. Presenting the
+	// parent for the same record reaches the grant check instead, which is what
+	// makes the refusal above attenuation rather than the record being unreachable.
+	before := len(store.subjects)
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(exchanged.Msg.Token, "record-b"))
+	require.Equal(t, connect.CodePermissionDenied, connect.CodeOf(err))
+	require.ErrorContains(t, err, "record scope required")
+	require.Nil(t, out)
+	require.Len(t, store.subjects, before)
+	out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(parent.Encoded(), "record-b"))
+	require.NoError(t, err)
+	require.False(t, out.Msg.Allowed)
+	require.Greater(t, len(store.subjects), before)
+
+	// Every hop is checked against live grants: revoking any one of them denies the
+	// record while the rest still hold it.
+	for _, hop := range []string{readOwner, "actor-1", "actor-2"} {
+		store.subjects, store.deny = nil, hop
+		out, err = client.CheckWorkContextRecordAccess(context.Background(), exactRequest(exchanged.Msg.Token, "record-a"))
+		require.NoError(t, err, hop)
+		require.False(t, out.Msg.Allowed, hop)
+		require.Empty(t, out.Msg.ScopeNodeId, hop)
+	}
+}
+
 type exactChainAuthority struct {
 	business.WorkContextAuthorityStore
 	facts *business.WorkContextAuthorityFacts
