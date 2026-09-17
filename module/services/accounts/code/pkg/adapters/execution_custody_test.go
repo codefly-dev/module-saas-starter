@@ -710,6 +710,40 @@ func TestExecutionCustodyOperationPolicies(t *testing.T) {
 		_, err := prepareExecutionConsumerPolicy("example", candidate)
 		require.Error(t, err, i)
 	}
+	// A startup failure names its source: the consumer, and for an operation its
+	// key and the failed check. The original sentence stays the prefix, and no
+	// installed value (worker URI, audience, kind, action, resource id) appears.
+	noProfile := legacy
+	noProfile.Profile = ""
+	noTaskScope := legacy
+	noTaskScope.TaskActions = nil
+	invalidLegacy := legacy
+	invalidLegacy.ReadAction = invalidLegacy.InvokeAction
+	hostileName := policy
+	hostileName.Operations = map[string]ExecutionOperationPolicy{"bad\n" + strings.Repeat("x", 300): policy.Operations["generate"]}
+	for _, named := range []struct {
+		policy ExecutionConsumerPolicy
+		want   string
+	}{
+		{noProfile, `invalid execution consumer policy: consumer "example"`},
+		{noTaskScope, `task scope policy required: consumer "example"`},
+		{invalidLegacy, `invalid legacy execution consumer policy: consumer "example"`},
+		{mixed, `mixed execution consumer policy: consumer "example"`},
+		{tooMany, `too many execution operation policies: consumer "example"`},
+		{badName, `invalid execution operation policy: consumer "example" operation "bad operation": operation name`},
+		{hostileName, `invalid execution operation policy: consumer "example" operation "bad\n` + strings.Repeat("x", 124) + `": operation name`},
+		{badAudience, `invalid execution operation policy: consumer "example" operation "generate": audience`},
+		{badWildcard, `invalid execution operation policy: consumer "example" operation "generate": invoke scopes`},
+		{badOrder, `invalid execution operation policy: consumer "example" operation "generate": invoke scopes`},
+		{badLookupAction, `invalid execution operation policy: consumer "example" operation "generate": lookup scopes`},
+		{badLookupResource, `invalid execution operation policy: consumer "example" operation "generate": lookup scopes not a subset of invoke scopes`},
+		{badLookupWildcard, `invalid execution operation policy: consumer "example" operation "generate": lookup scopes not a subset of invoke scopes`},
+	} {
+		_, err := prepareExecutionConsumerPolicy("example", named.policy)
+		require.EqualError(t, err, named.want)
+	}
+	_, err = prepareExecutionConsumerPolicy("", legacy)
+	require.EqualError(t, err, `invalid execution consumer policy: consumer ""`)
 	kindWide := policy
 	value = policy.Operations["generate"]
 	value.InvokeScopes = []wire.InstalledScope{scope("example.sources", []string{"ingest", "read"}, nil)}

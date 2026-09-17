@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -97,30 +98,49 @@ func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Con
 }
 
 func prepareExecutionConsumerPolicy(name string, p ExecutionConsumerPolicy) (ExecutionConsumerPolicy, error) {
+	// Startup-only errors name the consumer and operation: both are bounded keys
+	// of the deployment's own policy file, never request data or installed values.
+	invalid := func(sentence string) (ExecutionConsumerPolicy, error) {
+		return p, fmt.Errorf("%s: consumer %.128q", sentence, name)
+	}
 	u, err := url.Parse(p.WorkerURI)
 	if name == "" || err != nil || u.Scheme != "spiffe" || u.Host == "" || u.Path == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || p.ParentAudience == "" || p.TaskAudience == "" || p.ParentAudience == p.TaskAudience || p.Profile == "" {
-		return p, errors.New("invalid execution consumer policy")
+		return invalid("invalid execution consumer policy")
 	}
 	if p.TaskResourceKind == "" || len(p.TaskActions) == 0 {
-		return p, errors.New("task scope policy required")
+		return invalid("task scope policy required")
 	}
 	p.TaskActions = append([]string(nil), p.TaskActions...)
 	if len(p.Operations) == 0 {
 		if p.Audience == "" || p.ParentAudience == p.Audience || p.TaskAudience == p.Audience || p.ResourceKind == "" || p.ResourceID == "" || p.InvokeAction == "" || p.ReadAction == "" || p.InvokeAction == p.ReadAction {
-			return p, errors.New("invalid legacy execution consumer policy")
+			return invalid("invalid legacy execution consumer policy")
 		}
 		return p, nil
 	}
 	if p.Audience != "" || p.ResourceKind != "" || p.ResourceID != "" || p.InvokeAction != "" || p.ReadAction != "" {
-		return p, errors.New("mixed execution consumer policy")
+		return invalid("mixed execution consumer policy")
 	}
 	if len(p.Operations) > 64 {
-		return p, errors.New("too many execution operation policies")
+		return invalid("too many execution operation policies")
 	}
 	operations := make(map[string]ExecutionOperationPolicy, len(p.Operations))
 	for operation, installed := range p.Operations {
-		if !validOperationName(operation) || installed.Audience == "" || len(installed.Audience) > 128 || installed.Audience != strings.TrimSpace(installed.Audience) || installed.Audience == p.ParentAudience || installed.Audience == p.TaskAudience || !validInstalledScopes(installed.InvokeScopes, false) || !validInstalledScopes(installed.LookupScopes, true) || !installedScopeSubset(installed.LookupScopes, installed.InvokeScopes) {
-			return p, errors.New("invalid execution operation policy")
+		// Same checks in the same order as before; the first failure is named.
+		failed := ""
+		switch {
+		case !validOperationName(operation):
+			failed = "operation name"
+		case installed.Audience == "" || len(installed.Audience) > 128 || installed.Audience != strings.TrimSpace(installed.Audience) || installed.Audience == p.ParentAudience || installed.Audience == p.TaskAudience:
+			failed = "audience"
+		case !validInstalledScopes(installed.InvokeScopes, false):
+			failed = "invoke scopes"
+		case !validInstalledScopes(installed.LookupScopes, true):
+			failed = "lookup scopes"
+		case !installedScopeSubset(installed.LookupScopes, installed.InvokeScopes):
+			failed = "lookup scopes not a subset of invoke scopes"
+		}
+		if failed != "" {
+			return p, fmt.Errorf("invalid execution operation policy: consumer %.128q operation %.128q: %s", name, operation, failed)
 		}
 		installed.InvokeScopes = cloneInstalledScopes(installed.InvokeScopes)
 		installed.LookupScopes = cloneInstalledScopes(installed.LookupScopes)
