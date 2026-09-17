@@ -147,6 +147,29 @@ func TestUndeclaredImpersonationRequirementRemainsAllowed(t *testing.T) {
 	}
 }
 
+// StopImpersonation is the one procedure that must never join the restricted
+// set: it ends the caller's own session, so refusing it while impersonating
+// would leave the session no way out but to wait for the token to expire. It
+// carries PLATFORM_ROLE_REQUIREMENT_NONE for the same reason — being
+// impersonated is its authorization. This pins both halves against a future
+// change that marks PlatformAdminService wholesale.
+func TestStopImpersonationStaysReachableWhileImpersonating(t *testing.T) {
+	withoutCentralEnforcement(t)
+
+	const procedure = "/saas.accounts.v1.PlatformAdminService/StopImpersonation"
+	policy, ok := business.LookupRPCPolicy(procedure)
+	require.True(t, ok)
+	require.False(t, business.ImpersonationForbidden(policy),
+		"restricting the exit would strand an impersonated session until its token expires")
+	require.Equal(t,
+		policyv1.PlatformRoleRequirement_PLATFORM_ROLE_REQUIREMENT_NONE,
+		policy.MethodPolicy.GetPlatformRole())
+
+	executed, err := callThroughInterceptor(t, impersonatingMinter(), procedure)
+	require.NoError(t, err)
+	require.True(t, executed)
+}
+
 // The option defaults open; the lookup does not. An impersonated call whose
 // policy will not resolve is refused rather than admitted as unrestricted.
 func TestImpersonatedCallWithoutAResolvablePolicyIsDenied(t *testing.T) {

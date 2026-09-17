@@ -117,7 +117,9 @@ authority.
   Reading tenant *content* is what impersonation is for, so ordinary content
   mutation stays available — a support engineer can still fix a dashboard, a
   datasource or an onboarding step while acting as the user. The dividing line
-  is authority and credentials, not write-versus-read.
+  is authority and credentials, not write-versus-read. `StopImpersonation` is
+  deliberately outside the set for the reason given above: a restriction on the
+  exit would strand the session until its token expired.
 - **No inactive target.** The target must be an active account, so a support
   session cannot outlive the account's own lifecycle.
 - **A short, separately capped lifetime.** `Config.ImpersonationTokenTTL` caps

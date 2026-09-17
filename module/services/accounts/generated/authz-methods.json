@@ -5891,7 +5891,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "owner": {
