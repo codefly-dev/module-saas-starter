@@ -376,7 +376,10 @@ func TestImpersonationPersistsAMarkedCredentiallessSession(t *testing.T) {
 	// would go missing from this very query while its token still authenticates.
 	// The exact leeway arithmetic belongs to the minter's own tests.
 	require.Equal(t, window.ExpiresAt, window.IdleExpiresAt)
-	require.True(t, window.ExpiresAt.After(before.Add(business.AccessTokenLifetime)),
+	// expires_in is the remaining life of the token just issued (#777), so
+	// before+expires_in is at or before its exp — the row has to outlive that.
+	reportedExp := before.Add(time.Duration(issued.ExpiresIn) * time.Second)
+	require.True(t, window.ExpiresAt.After(reportedExp),
 		"an impersonation row must outlive the token's exp by the verifier leeway")
 	require.True(t, window.ExpiresAt.Before(before.Add(time.Hour)),
 		"an impersonation row must not inherit the ordinary session lifetime")

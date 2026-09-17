@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2547,
+  "fileCount": 2549,
   "files": {
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
     "AUTHORIZATION_CATALOG.md": "28d0b238a637c8c27e1e5d1e88fef868f57a92f0f566c4e17c2d6f8b119025d5",
@@ -513,7 +513,7 @@
     "services/accounts/code/pkg/business/identity_providers.go": "6606cba49650681cd89e10a8a12d47454ebe9345224d4c1daee25045a5e91864",
     "services/accounts/code/pkg/business/ids.go": "364807ea9ae9e48a950c8dd9c7193c502f678de7f69f8b87f528dbb094da385c",
     "services/accounts/code/pkg/business/ids_test.go": "33a1656d7bb42d508521644800c677d9918e7d0aaab2e83eca484339ef3d65de",
-    "services/accounts/code/pkg/business/impersonation_journey_test.go": "f94443b62d728eef1bf5d2da04875463cba924532c213e85bf27c0d0affc8e81",
+    "services/accounts/code/pkg/business/impersonation_journey_test.go": "ae9531ce7f1ca3cd254d99766a69a21ea99bf53f0f260e990ca867c1384c6377",
     "services/accounts/code/pkg/business/installations.go": "19b1105bea29f69830a97e63e95188577649edcfc1eb385e97337e64cc66b916",
     "services/accounts/code/pkg/business/installations_integration_test.go": "492606c309d03ec9b374f7352630bd381eb23dae842bb2873092afacfe5ac745",
     "services/accounts/code/pkg/business/introspection.go": "a58376661104cd2ffdba678df02650080ec82c9b2ab7bf5770d1889ebf0afc85",
