@@ -146,8 +146,19 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 		return testStore.CreateGDPRRequest(ctx, live)
 	}))
 
+	// The sweep lists every expired export in the database, so both artifacts go
+	// back however this test ends: a row left behind — including the live one,
+	// once its hour is up — is another expired export every later run would see.
+	t.Cleanup(func() {
+		require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
+			return testStore.ClearGDPRExportArtifacts(ctx, []string{lapsed.ID, live.ID})
+		}))
+	})
+
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		past := time.Now().Add(-time.Hour)
+		// The sweep pages oldest first, so an expiry far enough back keeps this
+		// row on the first page whatever else the table already holds.
+		past := time.Now().AddDate(-1, 0, 0)
 		future := time.Now().Add(time.Hour)
 		for _, seed := range []struct {
 			request   *business.GDPRRequest
@@ -167,13 +178,13 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 
 		expired, err := testStore.ListExpiredGDPRExports(ctx, time.Now(), 10)
 		require.NoError(t, err)
-		require.Len(t, expired, 1)
-		require.Equal(t, lapsed.ID, expired[0].ID)
+		require.Contains(t, gdprRequestIDs(expired), lapsed.ID)
+		require.NotContains(t, gdprRequestIDs(expired), live.ID, "an artifact that has not expired is not swept")
 
 		require.NoError(t, testStore.ClearGDPRExportArtifacts(ctx, []string{lapsed.ID}))
 		expired, err = testStore.ListExpiredGDPRExports(ctx, time.Now(), 10)
 		require.NoError(t, err)
-		require.Empty(t, expired, "a cleared artifact is not swept again")
+		require.NotContains(t, gdprRequestIDs(expired), lapsed.ID, "a cleared artifact is not swept again")
 
 		got, err := testStore.GetGDPRRequest(ctx, lapsed.ID)
 		require.NoError(t, err)
@@ -267,4 +278,12 @@ func TestReplayedPrivacyJobClaimsOnlyAReleasedRequest(t *testing.T) {
 			"the replayed job restarts attempts without the claim refusing it")
 		return nil
 	}))
+}
+
+func gdprRequestIDs(requests []*business.GDPRRequest) []string {
+	ids := make([]string, 0, len(requests))
+	for _, req := range requests {
+		ids = append(ids, req.ID)
+	}
+	return ids
 }
