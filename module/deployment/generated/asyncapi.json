@@ -1032,6 +1032,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.platform.user_impersonation_ended": {
+      "address": "saas.platform.user_impersonation_ended",
+      "title": "saas.platform.user_impersonation_ended",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.platform.user_impersonation_ended"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.principal.created": {
       "address": "saas.principal.created",
       "title": "saas.principal.created",
@@ -2267,6 +2278,13 @@
       },
       "title": "saas publishes saas.platform.user_impersonated"
     },
+    "send:saas.platform.user_impersonation_ended": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.platform.user_impersonation_ended"
+      },
+      "title": "saas publishes saas.platform.user_impersonation_ended"
+    },
     "send:saas.principal.created": {
       "action": "send",
       "channel": {
@@ -3281,6 +3299,13 @@
       "saas.platform.user_impersonated": {
         "name": "saas.platform.user_impersonated",
         "title": "saas.platform.user_impersonated",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.platform.user_impersonation_ended": {
+        "name": "saas.platform.user_impersonation_ended",
+        "title": "saas.platform.user_impersonation_ended",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

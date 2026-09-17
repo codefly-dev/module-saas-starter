@@ -118,6 +118,7 @@ var published = [...]PublishedEvent{
 	{Type: "saas.platform.role_granted", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.platform.role_revoked", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.platform.user_impersonated", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
+	{Type: "saas.platform.user_impersonation_ended", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.principal.created", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.principal.disabled", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},
 	{Type: "saas.principal.enabled", Namespace: "saas", Schema: "saas/events/v1/events.proto#EventEnvelope", Major: 1, Visibility: "external", Partition: "", Retention: "30d"},

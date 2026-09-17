@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **208 RPCs** across **32 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **209 RPCs** across **32 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -152,6 +152,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PlatformAdminService/RevokePlatformRole` | unary | `DELETE /v1/platform/admins/{user_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN; mfa=IF_ENROLLED_RECENT_STEP_UP | — | — | SUCCESS: saas.platform.role_revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Revoke a platform role. |
 | `/saas.accounts.v1.PlatformAdminService/RevokeSession` | unary | `DELETE /v1/platform/sessions/{session_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | SUCCESS: saas.session.revoked | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Revoke a single session. |
 | `/saas.accounts.v1.PlatformAdminService/SearchUsers` | unary | `GET /v1/platform/users` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPPORT | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Search across all users. |
+| `/saas.accounts.v1.PlatformAdminService/StopImpersonation` | unary | `POST /v1/platform/impersonation:stop` | `auth` | exposure=AUTHENTICATED; tenant=NONE | — | — | SUCCESS: saas.platform.user_impersonation_ended | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | End the caller's own impersonation session. |
 | `/saas.accounts.v1.PlatformAdminService/SuspendUser` | unary | `POST /v1/platform/users/{user_id}:suspend` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: saas.user.suspended | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Suspend a user account. |
 | `/saas.accounts.v1.PlatformAdminService/UnsuspendUser` | unary | `POST /v1/platform/users/{user_id}:unsuspend` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: saas.user.unsuspended | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Restore a suspended user. |
 | `/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag` | unary | `PUT /v1/platform/feature-flags/{name}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | SUCCESS: saas.feature_flag.updated | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory. |
@@ -219,7 +220,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 40
+- `auth`: 41
 - `internal`: 41
 - `mfa`: 3
 - `org_admin`: 45

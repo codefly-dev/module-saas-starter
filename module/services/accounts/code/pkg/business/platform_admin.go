@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/codefly-dev/core/wool"
 	"github.com/google/uuid"
@@ -265,10 +266,13 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 
 	// Impersonation changes no row, so there is no mutation for the record to be
 	// atomic with — but the token must not reach the caller unless the record is
-	// committed, so the write is what gates the response.
+	// committed, so the write is what gates the response. The session id ties
+	// this record to the one StopImpersonation writes, so the two sides of a
+	// support-access window reconcile to each other rather than by timestamp
+	// proximity.
 	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
 		return s.emitTx(ctx, actorID, "user", EventPlatformImpersonated, "user", req.UserId, "",
-			map[string]any{"reason": reason})
+			map[string]any{"reason": reason, "session_id": identity.SessionID.String()})
 	}); err != nil {
 		return nil, w.Wrapf(err, "cannot record impersonation")
 	}
@@ -276,6 +280,93 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 	return &gen.ImpersonateUserResponse{
 		AccessToken: pair.AccessToken,
 		ExpiresIn:   expiresInSeconds(pair.AccessTokenExpiresAt),
+	}, nil
+}
+
+// StopImpersonation ends the caller's own impersonation session: it kills the
+// session's access tokens and closes the audit window ImpersonateUser opened.
+//
+// Being impersonated is itself the authorization, and the session to end is
+// derived from the verified identity. There is deliberately no target in the
+// request, so no operator can end another's window — accepting a caller-supplied
+// session id here would repeat the defect #676 closed in StartTask.
+//
+// requirePlatformRole cannot gate this one. It withholds platform authority from
+// every impersonated request by design, which is what forbids nesting; routing
+// the way out through it would leave an impersonated session no way out at all.
+func (s *Service) StopImpersonation(ctx context.Context) (*gen.StopImpersonationResponse, error) {
+	w := wool.Get(ctx).In("StopImpersonation")
+
+	if s.minter == nil {
+		return nil, w.NewError("auth path not wired: minter missing")
+	}
+	identity, ok := auth.VerifiedRequestIdentity(ctx)
+	if !ok || !identity.Impersonated() {
+		return nil, w.NewError("not an impersonated session")
+	}
+	// A verified JWT always carries a sid; a gateway-forwarded identity may not.
+	// Without one there is no window to name, and reporting a stop that closed
+	// nothing is the exact failure this RPC exists to end.
+	if identity.SessionID == uuid.Nil {
+		return nil, w.NewError("impersonated session carries no session id")
+	}
+	sessionID := identity.SessionID.String()
+
+	// The access-token marker is written first because it is the only thing that
+	// can take effect before the token's natural expiry, and it is deliberately
+	// not allowed to fail the stop: the durable close below is what the audit
+	// trail and every "is this window open" reader consult. Its outcome travels
+	// into the record instead, because a marker that was never written — or a
+	// deployment with no revocation store at all, where every revoke succeeds and
+	// revokes nothing — must not be recorded as a token that died.
+	tokenRevoked := s.minter.AccessRevocationEnabled()
+	if tokenRevoked {
+		if err := s.minter.RevokeSessionAccess(ctx, sessionID); err != nil {
+			w.Warn("impersonation access-token revocation failed; the window is still closed durably",
+				wool.ErrField(err))
+			tokenRevoked = false
+		}
+	}
+
+	subjectID := identity.EffectiveSubjectID()
+	var durationSeconds int64
+	var closed bool
+	if err := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
+		// The window's row belongs to the admin while this request runs as the
+		// target, so it is unreachable under the caller's own row scope. Closing
+		// it and reading when it opened is one statement, so the duration
+		// recorded is the one that was actually committed.
+		startedAt, didClose, err := s.store.CloseImpersonationSession(ctx, sessionID, "stopped_by_operator")
+		if err != nil {
+			return err
+		}
+		closed = didClose
+		if !didClose {
+			// Already closed, or never persisted. Either way the window is not
+			// open, and a second close record would make the trail show more
+			// ends than starts.
+			return nil
+		}
+		// created_at is the database clock and this is the service clock, so a
+		// skewed pair can run backwards. A window cannot last a negative time,
+		// and a compliance record must not say it did.
+		if elapsed := time.Since(startedAt); elapsed > 0 {
+			durationSeconds = int64(elapsed.Seconds())
+		}
+		return s.emitTx(ctx, subjectID, "user", EventPlatformImpersonationEnded, "user", subjectID, "",
+			map[string]any{
+				"session_id":           sessionID,
+				"duration_seconds":     durationSeconds,
+				"access_token_revoked": tokenRevoked,
+			})
+	}); err != nil {
+		return nil, w.Wrapf(err, "cannot close impersonation session")
+	}
+
+	return &gen.StopImpersonationResponse{
+		DurationSeconds:    durationSeconds,
+		AccessTokenRevoked: tokenRevoked,
+		AlreadyClosed:      !closed,
 	}, nil
 }
 

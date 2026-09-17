@@ -89,6 +89,14 @@ type JWTMinter interface {
 	// bearer. Pairs with the DB refresh-family revocation to close both halves.
 	RevokeSessionAccess(ctx context.Context, sessionID string) error
 
+	// AccessRevocationEnabled reports whether a revocation list is actually
+	// wired. Without one the revoke calls above succeed and revoke nothing —
+	// the no-op fallback accepts every write and reports nothing as revoked —
+	// so an outstanding access token necessarily lives to its natural expiry.
+	// A caller that tells an operator, or an audit record, that a token was
+	// killed must be able to tell the difference.
+	AccessRevocationEnabled() bool
+
 	// JWKS returns the public portion of the signing key as a JSON Web Key
 	// Set for external tooling. The sidecar loads its key from Vault
 	// directly; this endpoint is non-authoritative.

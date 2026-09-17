@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contract.binpb",
-      "digest": "sha256:babb43077275fdd1f8061145d1f329dc3ecacdbe7d4055ca719caaa8b9cfcca8",
+      "digest": "sha256:73a67f501f12a2922cffc289e89c3bbe04540bc529dc1fc8ee959136750f0bdc",
       "services": [
         {
           "name": "APIKeyService",
@@ -280,6 +280,7 @@
             "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
             "/saas.accounts.v1.PlatformAdminService/RevokeSession",
             "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+            "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
             "/saas.accounts.v1.PlatformAdminService/SuspendUser",
             "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
             "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"

@@ -1844,6 +1844,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/customers.PlatformAdminService/StopImpersonation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_COMPATIBILITY_ALIAS",
+      "rewrite_path": "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
+      "remove_after": "2026-10-11"
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/customers.PlatformAdminService/SuspendUser",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
@@ -4516,6 +4532,22 @@
     {
       "protocol": "GATEWAY_PROTOCOL_CONNECT",
       "method": "POST",
+      "path": "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "connect",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_CONNECT",
+      "method": "POST",
       "path": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/SuspendUser",
@@ -7159,6 +7191,22 @@
       "path": "/v1/platform/admins",
       "match": "GATEWAY_MATCH_EXACT",
       "procedure": "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      },
+      "upstream_endpoint": "rest",
+      "exposure": "EXPOSURE_AUTHENTICATED",
+      "source": "GATEWAY_ROUTE_SOURCE_DESCRIPTOR",
+      "rewrite_path": "",
+      "remove_after": ""
+    },
+    {
+      "protocol": "GATEWAY_PROTOCOL_REST",
+      "method": "POST",
+      "path": "/v1/platform/impersonation:stop",
+      "match": "GATEWAY_MATCH_EXACT",
+      "procedure": "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

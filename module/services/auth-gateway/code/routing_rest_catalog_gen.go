@@ -118,6 +118,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "POST", Path: "/v1/organizations/{organization_id}/onboarding/{step_id}:complete", Procedure: "/saas.accounts.v1.OnboardingService/CompleteStep"},
 		{Service: "accounts", Method: "POST", Path: "/v1/organizations/{organization_id}/onboarding/{step_id}:skip", Procedure: "/saas.accounts.v1.OnboardingService/SkipStep"},
 		{Service: "accounts", Method: "POST", Path: "/v1/platform/admins", Procedure: "/saas.accounts.v1.PlatformAdminService/GrantPlatformRole"},
+		{Service: "accounts", Method: "POST", Path: "/v1/platform/impersonation:stop", Procedure: "/saas.accounts.v1.PlatformAdminService/StopImpersonation"},
 		{Service: "accounts", Method: "POST", Path: "/v1/platform/jobs/{source_job_id}:replay", Procedure: "/saas.accounts.v1.PlatformAdminService/ReplayJob"},
 		{Service: "accounts", Method: "POST", Path: "/v1/platform/organizations/{org_id}/entitlements", Procedure: "/saas.accounts.v1.PlatformAdminService/OverrideEntitlement"},
 		{Service: "accounts", Method: "POST", Path: "/v1/platform/users/{user_id}:impersonate", Procedure: "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"},

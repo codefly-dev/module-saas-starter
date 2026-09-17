@@ -27,6 +27,7 @@ const (
 	PlatformAdminService_SuspendUser_FullMethodName            = "/saas.accounts.v1.PlatformAdminService/SuspendUser"
 	PlatformAdminService_UnsuspendUser_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/UnsuspendUser"
 	PlatformAdminService_ImpersonateUser_FullMethodName        = "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"
+	PlatformAdminService_StopImpersonation_FullMethodName      = "/saas.accounts.v1.PlatformAdminService/StopImpersonation"
 	PlatformAdminService_ListActiveSessions_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"
 	PlatformAdminService_RevokeSession_FullMethodName          = "/saas.accounts.v1.PlatformAdminService/RevokeSession"
 	PlatformAdminService_GetOrgEntitlements_FullMethodName     = "/saas.accounts.v1.PlatformAdminService/GetOrgEntitlements"
@@ -56,6 +57,15 @@ type PlatformAdminServiceClient interface {
 	SuspendUser(ctx context.Context, in *SuspendUserRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	UnsuspendUser(ctx context.Context, in *UnsuspendUserRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ImpersonateUser(ctx context.Context, in *ImpersonateUserRequest, opts ...grpc.CallOption) (*ImpersonateUserResponse, error)
+	// StopImpersonation closes the caller's own impersonation window: it revokes
+	// the session's access tokens and records the end of the window.
+	//
+	// platform_role is deliberately NONE. Platform authority is withheld from an
+	// impersonated request by design, so a support-role gate would make this the
+	// one operation an impersonated session can never reach — and ending the
+	// session is precisely what it must be able to do. Being impersonated is
+	// itself the authorization, checked in the handler.
+	StopImpersonation(ctx context.Context, in *StopImpersonationRequest, opts ...grpc.CallOption) (*StopImpersonationResponse, error)
 	// Session visibility
 	ListActiveSessions(ctx context.Context, in *ListActiveSessionsRequest, opts ...grpc.CallOption) (*ListActiveSessionsResponse, error)
 	RevokeSession(ctx context.Context, in *RevokeSessionRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -127,6 +137,16 @@ func (c *platformAdminServiceClient) ImpersonateUser(ctx context.Context, in *Im
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ImpersonateUserResponse)
 	err := c.cc.Invoke(ctx, PlatformAdminService_ImpersonateUser_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformAdminServiceClient) StopImpersonation(ctx context.Context, in *StopImpersonationRequest, opts ...grpc.CallOption) (*StopImpersonationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StopImpersonationResponse)
+	err := c.cc.Invoke(ctx, PlatformAdminService_StopImpersonation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -296,6 +316,15 @@ type PlatformAdminServiceServer interface {
 	SuspendUser(context.Context, *SuspendUserRequest) (*emptypb.Empty, error)
 	UnsuspendUser(context.Context, *UnsuspendUserRequest) (*emptypb.Empty, error)
 	ImpersonateUser(context.Context, *ImpersonateUserRequest) (*ImpersonateUserResponse, error)
+	// StopImpersonation closes the caller's own impersonation window: it revokes
+	// the session's access tokens and records the end of the window.
+	//
+	// platform_role is deliberately NONE. Platform authority is withheld from an
+	// impersonated request by design, so a support-role gate would make this the
+	// one operation an impersonated session can never reach — and ending the
+	// session is precisely what it must be able to do. Being impersonated is
+	// itself the authorization, checked in the handler.
+	StopImpersonation(context.Context, *StopImpersonationRequest) (*StopImpersonationResponse, error)
 	// Session visibility
 	ListActiveSessions(context.Context, *ListActiveSessionsRequest) (*ListActiveSessionsResponse, error)
 	RevokeSession(context.Context, *RevokeSessionRequest) (*emptypb.Empty, error)
@@ -344,6 +373,9 @@ func (UnimplementedPlatformAdminServiceServer) UnsuspendUser(context.Context, *U
 }
 func (UnimplementedPlatformAdminServiceServer) ImpersonateUser(context.Context, *ImpersonateUserRequest) (*ImpersonateUserResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ImpersonateUser not implemented")
+}
+func (UnimplementedPlatformAdminServiceServer) StopImpersonation(context.Context, *StopImpersonationRequest) (*StopImpersonationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StopImpersonation not implemented")
 }
 func (UnimplementedPlatformAdminServiceServer) ListActiveSessions(context.Context, *ListActiveSessionsRequest) (*ListActiveSessionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListActiveSessions not implemented")
@@ -479,6 +511,24 @@ func _PlatformAdminService_ImpersonateUser_Handler(srv interface{}, ctx context.
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PlatformAdminServiceServer).ImpersonateUser(ctx, req.(*ImpersonateUserRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformAdminService_StopImpersonation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StopImpersonationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformAdminServiceServer).StopImpersonation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformAdminService_StopImpersonation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformAdminServiceServer).StopImpersonation(ctx, req.(*StopImpersonationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -775,6 +825,10 @@ var PlatformAdminService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ImpersonateUser",
 			Handler:    _PlatformAdminService_ImpersonateUser_Handler,
+		},
+		{
+			MethodName: "StopImpersonation",
+			Handler:    _PlatformAdminService_StopImpersonation_Handler,
 		},
 		{
 			MethodName: "ListActiveSessions",

@@ -202,6 +202,15 @@ func (m *Minter) SetRevoker(r auth.TokenRevoker) {
 	}
 }
 
+// AccessRevocationEnabled implements auth.JWTMinter. The no-op revoker is the
+// default, and it accepts every Revoke while reporting nothing as revoked, so
+// "the revoke returned nil" is not evidence a token died. Callers that report a
+// kill to an operator or an audit record ask this first.
+func (m *Minter) AccessRevocationEnabled() bool {
+	_, noop := m.revoker.(auth.NoopTokenRevoker)
+	return m.revoker != nil && !noop
+}
+
 // KeyID returns the deterministic kid header. Sidecar caches verifiers by this
 // value to support key rotation.
 func (m *Minter) KeyID() string { return m.keyID }

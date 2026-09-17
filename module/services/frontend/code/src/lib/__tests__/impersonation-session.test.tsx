@@ -60,10 +60,14 @@ function Probe() {
 
 let refreshQueue: Array<() => Response>;
 let logoutCalls: number;
+let stopCalls: Array<string | null>;
+let stopResponse: () => Response;
 
 async function renderAsAdmin() {
 	refreshQueue = [];
 	logoutCalls = 0;
+	stopCalls = [];
+	stopResponse = () => HttpResponse.json({ durationSeconds: "42" });
 	server.use(
 		http.post("/v1/auth/refresh", () => {
 			const next = refreshQueue.shift();
@@ -73,6 +77,16 @@ async function renderAsAdmin() {
 			logoutCalls += 1;
 			return HttpResponse.json({});
 		}),
+		// The bearer is recorded, not just the call: the stop has to be made by
+		// the impersonation session itself for the server to derive which window
+		// to close.
+		http.post(
+			"http://localhost:3000/saas.accounts.v1.PlatformAdminService/StopImpersonation",
+			({ request }) => {
+				stopCalls.push(request.headers.get("Authorization"));
+				return stopResponse();
+			},
+		),
 	);
 	refreshQueue.push(() =>
 		HttpResponse.json({ accessToken: adminToken, refreshToken: "refresh-1" }),
@@ -123,6 +137,51 @@ describe("Impersonation session journey", () => {
 		);
 		await act(async () => {
 			await exit();
+		});
+
+		expect(screen.getByTestId("state").textContent).toBe("authed/self");
+		expect(getToken()).toBe(adminToken);
+		expect(logoutCalls).toBe(0);
+	});
+
+	// Swapping which token the browser holds tells the server nothing. The stop
+	// must reach the server, bearing the impersonation session's own token, and
+	// it must happen before the exchange installs the admin's token — after it,
+	// the call would arrive as the admin and name no window to close.
+	it("ends the session server-side before restoring the admin token", async () => {
+		await renderAsAdmin();
+		act(() => enter(impersonationToken));
+		await waitFor(() =>
+			expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`),
+		);
+
+		refreshQueue.push(() =>
+			HttpResponse.json({ accessToken: adminToken, refreshToken: "refresh-2" }),
+		);
+		await act(async () => {
+			await exit();
+		});
+
+		expect(stopCalls).toEqual([`Bearer ${impersonationToken}`]);
+		expect(getToken()).toBe(adminToken);
+	});
+
+	// A server-side stop that failed must not strand the operator in the
+	// target's session — but it must not pass silently either, since a
+	// client-only exit is exactly the behaviour this replaces.
+	it("still restores the admin session when the stop RPC fails, and reports it", async () => {
+		await renderAsAdmin();
+		act(() => enter(impersonationToken));
+		await waitFor(() =>
+			expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`),
+		);
+
+		stopResponse = () => new HttpResponse(null, { status: 500 });
+		refreshQueue.push(() =>
+			HttpResponse.json({ accessToken: adminToken, refreshToken: "refresh-2" }),
+		);
+		await act(async () => {
+			await expect(exit()).rejects.toThrow(/could not be ended on the server/i);
 		});
 
 		expect(screen.getByTestId("state").textContent).toBe("authed/self");
@@ -197,15 +256,17 @@ describe("Impersonation session journey", () => {
 		expect(replayToken).toBe(adminToken);
 	});
 
-	// A transient restore failure must not destroy the admin's session: the
-	// refresh cookie is untouched and the operator can retry.
-	it("keeps the impersonated session when the restore is transiently unavailable", async () => {
+	// A transient restore failure must not destroy the admin's session — but only
+	// while there is still a session to keep. Nothing was revoked server-side
+	// here, so the impersonated token still works and the operator can retry.
+	it("keeps the impersonated session when nothing was stopped and the restore is unavailable", async () => {
 		await renderAsAdmin();
 		act(() => enter(impersonationToken));
 		await waitFor(() =>
 			expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`),
 		);
 
+		stopResponse = () => new HttpResponse(null, { status: 500 });
 		refreshQueue.push(() => new HttpResponse(null, { status: 503 }));
 		await act(async () => {
 			await expect(exit()).rejects.toThrow(/could not restore/i);
@@ -214,5 +275,53 @@ describe("Impersonation session journey", () => {
 		expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`);
 		expect(getToken()).toBe(impersonationToken);
 		expect(logoutCalls).toBe(0);
+	});
+
+	// Once the window is closed server-side the browser is holding a token the
+	// server has revoked. Keeping it would leave the operator behind a banner
+	// reading "Impersonation Active" while every call 401s, so the credentials
+	// come down and they sign in again.
+	it("tears down the session when the stop succeeded but the restore did not", async () => {
+		await renderAsAdmin();
+		act(() => enter(impersonationToken));
+		await waitFor(() =>
+			expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`),
+		);
+
+		refreshQueue.push(() => new HttpResponse(null, { status: 503 }));
+		await act(async () => {
+			await expect(exit()).rejects.toThrow(/sign in again/i);
+		});
+
+		expect(stopCalls).toHaveLength(1);
+		expect(screen.getByTestId("state").textContent).toBe("anon/self");
+		expect(getToken()).toBeNull();
+		expect(logoutCalls).toBe(1);
+	});
+
+	// An expired or already-revoked window is refused by the server, and there
+	// was nothing left to close. Reporting a failed stop there would cry wolf on
+	// the one message that has to be trusted.
+	it("does not report a failure when the window was already gone", async () => {
+		await renderAsAdmin();
+		act(() => enter(impersonationToken));
+		await waitFor(() =>
+			expect(screen.getByTestId("state").textContent).toBe(`authed/${TARGET}`),
+		);
+
+		stopResponse = () =>
+			HttpResponse.json(
+				{ code: "permission_denied", message: "not an impersonated session" },
+				{ status: 403 },
+			);
+		refreshQueue.push(() =>
+			HttpResponse.json({ accessToken: adminToken, refreshToken: "refresh-2" }),
+		);
+		await act(async () => {
+			await exit();
+		});
+
+		expect(screen.getByTestId("state").textContent).toBe("authed/self");
+		expect(getToken()).toBe(adminToken);
 	});
 });
