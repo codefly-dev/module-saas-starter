@@ -156,9 +156,7 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 	})
 
 	require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-		// The sweep pages oldest first, so an expiry far enough back keeps this
-		// row on the first page whatever else the table already holds.
-		past := time.Now().AddDate(-1, 0, 0)
+		past := time.Now().Add(-time.Hour)
 		future := time.Now().Add(time.Hour)
 		for _, seed := range []struct {
 			request   *business.GDPRRequest
@@ -176,13 +174,17 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 			}))
 		}
 
-		expired, err := testStore.ListExpiredGDPRExports(ctx, time.Now(), 10)
+		// The sweep pages oldest first, and a database shared with earlier runs
+		// carries their expired exports, which are older: page deep enough that
+		// they cannot push this run's row out of the result.
+		const page = 1000
+		expired, err := testStore.ListExpiredGDPRExports(ctx, time.Now(), page)
 		require.NoError(t, err)
 		require.Contains(t, gdprRequestIDs(expired), lapsed.ID)
 		require.NotContains(t, gdprRequestIDs(expired), live.ID, "an artifact that has not expired is not swept")
 
 		require.NoError(t, testStore.ClearGDPRExportArtifacts(ctx, []string{lapsed.ID}))
-		expired, err = testStore.ListExpiredGDPRExports(ctx, time.Now(), 10)
+		expired, err = testStore.ListExpiredGDPRExports(ctx, time.Now(), page)
 		require.NoError(t, err)
 		require.NotContains(t, gdprRequestIDs(expired), lapsed.ID, "a cleared artifact is not swept again")
 
@@ -190,6 +192,10 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 		require.NoError(t, err)
 		require.Empty(t, got.DownloadURL)
 		require.Equal(t, business.GDPRCompleted, got.Status)
+
+		untouched, err := testStore.GetGDPRRequest(ctx, live.ID)
+		require.NoError(t, err)
+		require.NotEmpty(t, untouched.DownloadURL, "clearing a batch leaves artifacts outside it alone")
 		return nil
 	}))
 }
