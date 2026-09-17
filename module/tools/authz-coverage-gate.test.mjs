@@ -160,6 +160,26 @@ test("lowering the mfa requirement is a broadening despite the enum order", () =
   assert.match(broadeningViolations(base, head).join("\n"), /mfa weakened/);
 });
 
+test("dropping an impersonation restriction is a broadening", () => {
+  const base = [method({ policy: { impersonation: "IMPERSONATION_REQUIREMENT_FORBIDDEN" } })];
+  for (const weakened of ["IMPERSONATION_REQUIREMENT_ALLOWED", "IMPERSONATION_REQUIREMENT_UNSPECIFIED"]) {
+    const head = [method({ policy: { impersonation: weakened } })];
+    assert.match(broadeningViolations(base, head).join("\n"), /impersonation weakened/);
+  }
+  // Deleting the line entirely reads as unspecified, which admits — the shape a
+  // regeneration produces when the option is dropped from the proto.
+  assert.match(
+    broadeningViolations(base, [method({ policy: {} })]).join("\n"),
+    /impersonation weakened/,
+  );
+});
+
+test("adding an impersonation restriction narrows and is allowed", () => {
+  const base = [method({ policy: {} })];
+  const head = [method({ policy: { impersonation: "IMPERSONATION_REQUIREMENT_FORBIDDEN" } })];
+  assert.deepEqual(broadeningViolations(base, head), []);
+});
+
 // --- CLI exit codes and approval-label semantics ---------------------------
 
 const GATE = join(dirname(fileURLToPath(import.meta.url)), "authz-coverage-gate.mjs");
