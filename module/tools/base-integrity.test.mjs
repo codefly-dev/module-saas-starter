@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   mkdirSync,
@@ -28,6 +29,35 @@ import {
 
 function writeJSON(path, value) {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+// The base-file set is defined by git's index, so every fixture that a manifest
+// is computed over is a repository, and the tests that need one skip where git
+// is absent rather than pass against a set nothing defined.
+const NO_GIT =
+  spawnSync("git", ["--version"]).status === 0
+    ? false
+    : "git is unavailable; the base-file set is defined by git's index";
+
+function git(root, ...args) {
+  const { status, stderr } = spawnSync("git", args, { cwd: root, encoding: "utf8" });
+  assert.equal(status, 0, `git ${args.join(" ")} failed: ${stderr}`);
+}
+
+function scratchModule(prefix) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  mkdirSync(join(root, "tools"), { recursive: true });
+  git(root, "init", "-q");
+  return root;
+}
+
+// Stage everything, ignore rules included — a fixture decides what it tracks.
+const track = (root) => git(root, "add", "-A", "-f");
+
+function writeManifest(root) {
+  const manifest = computeBaseManifest(root);
+  writeJSON(join(root, "tools", "base-manifest.json"), manifest);
+  return manifest;
 }
 
 function fixture() {
@@ -95,8 +125,8 @@ test("committed frontend package-lock.json is in sync with its workspaces", () =
 // gate is blind to and the exact failure #359 shipped. The frontend is nested at
 // services/frontend/code because verifyErrors takes a module root, not a
 // frontend root.
-test("verifyErrors enforces the excluded frontend lock", (t) => {
-  const moduleRoot = mkdtempSync(join(tmpdir(), "saas-module-integrity-"));
+test("verifyErrors enforces the excluded frontend lock", { skip: NO_GIT }, (t) => {
+  const moduleRoot = scratchModule("saas-module-integrity-");
   t.after(() => rmSync(moduleRoot, { recursive: true, force: true }));
   const frontendCodeRoot = join(moduleRoot, "services", "frontend", "code");
   const packageRoot = join(frontendCodeRoot, "packages", "product-plugin");
@@ -123,6 +153,7 @@ test("verifyErrors enforces the excluded frontend lock", (t) => {
   writeJSON(join(frontendCodeRoot, "package.json"), rootManifest);
   writeJSON(join(packageRoot, "package.json"), productManifest);
   writeJSON(join(frontendCodeRoot, "package-lock.json"), lock);
+  track(moduleRoot);
   const errors = verifyErrors(moduleRoot).flatMap((group) => group.errors);
   assert.ok(errors.some((error) => error.includes("workspace link")));
 });
@@ -428,13 +459,13 @@ test("the committed canonical manifest matches the tree it ships with", () => {
   assert.deepEqual(baseManifestFreshnessErrors(), []);
 });
 
-test("flags changed, unrecorded, and removed base files against a fresh regeneration", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "saas-manifest-freshness-"));
+test("flags changed, unrecorded, and removed base files against a fresh regeneration", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-freshness-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, "nested"), { recursive: true });
-  mkdirSync(join(root, "tools"), { recursive: true });
   writeFileSync(join(root, "a.txt"), "alpha\n");
   writeFileSync(join(root, "nested/b.txt"), "bravo\n");
+  track(root);
 
   const manifestPath = join(root, "tools/base-manifest.json");
   writeJSON(manifestPath, computeBaseManifest(root));
@@ -453,11 +484,11 @@ test("flags changed, unrecorded, and removed base files against a fresh regenera
   ]);
 });
 
-test("flags a fileCount or note that drifts even when every hash is current", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "saas-manifest-metadata-"));
+test("flags a fileCount or note that drifts even when every hash is current", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-metadata-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, "tools"), { recursive: true });
   writeFileSync(join(root, "a.txt"), "alpha\n");
+  track(root);
   const manifestPath = join(root, "tools/base-manifest.json");
 
   // Correct hashes, but the recorded fileCount and note no longer match what
@@ -482,6 +513,60 @@ test("does not require the frontend capability manifest when frontend is omitted
   );
 
   assert.deepEqual(productionTruthErrors(root), []);
+});
+
+// The base-file set is git's index, not the working tree: a build product the
+// release engineer's .gitignore hides must never enter the manifest, because it
+// becomes a base file every consumer is missing and none can restore.
+test("an ignored build product never enters the manifest", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-tracked-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".gitignore"), "artifact\n");
+  writeFileSync(join(root, "src.txt"), "source\n");
+  git(root, "add", ".gitignore", "src.txt");
+  writeFileSync(join(root, "artifact"), "\x7fELF\0\0");
+
+  assert.deepEqual(Object.keys(computeBaseManifest(root).files), [".gitignore", "src.txt"]);
+});
+
+test("an unreadable index fails the release rather than hashing the build", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-index-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "src.txt"), "source\n");
+  track(root);
+  writeManifest(root);
+  assert.deepEqual(baseManifestFreshnessErrors(root), []);
+
+  writeFileSync(join(root, ".git", "index"), "not an index");
+  assert.throws(() => computeBaseManifest(root), /cannot read git's index/);
+  assert.throws(() => baseManifestFreshnessErrors(root), /cannot read git's index/);
+  assert.throws(() => verifyErrors(root), /cannot read git's index/);
+});
+
+// git records a precomposed path where macOS hands readdir the decomposed bytes
+// that created the file. Compared byte-for-byte the two never meet, so the file is
+// silently dropped from the manifest while verify reports a clean tree; the
+// manifest has to carry the spelling git tracks.
+test("a decomposed filename is recorded under the path git tracks", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-nfc-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const decomposed = "cafe\u0301.md"; // NFD: e + combining acute
+  writeFileSync(join(root, decomposed), "doc\n");
+  writeFileSync(join(root, "src.txt"), "source\n");
+  track(root);
+
+  const { stdout } = spawnSync("git", ["ls-files", "-z"], { cwd: root, encoding: "utf8" });
+  const recorded = stdout.split("\0").filter((rel) => rel.includes("caf"));
+  assert.equal(recorded.length, 1);
+
+  const manifest = computeBaseManifest(root);
+  assert.equal(manifest.fileCount, 2);
+  assert.ok(
+    recorded[0] in manifest.files,
+    `manifest keys ${JSON.stringify(Object.keys(manifest.files))} omit ${JSON.stringify(recorded[0])}`,
+  );
+  writeManifest(root);
+  assert.deepEqual(baseManifestFreshnessErrors(root), []);
 });
 
 // The range evaluation is hand-rolled (bare node, no `semver`), and it sits on a

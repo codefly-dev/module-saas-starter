@@ -339,7 +339,7 @@ test("rlsGateErrors reads a real migration tree in version order", () => {
 });
 
 
-test("private control-plane custody may deny every tenant row", () => {
+test("a private control-plane relation may deny every tenant row", () => {
   assert.deepEqual(analyzeSql(tenantSetup + `CREATE POLICY t_private ON t FOR ALL USING (false) WITH CHECK (false);`), []);
 });
 

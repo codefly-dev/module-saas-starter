@@ -62,16 +62,21 @@ Where each capability is in the pipeline. Update this row when a stage completes
 
 | Capability | Product | Spec | Proposal | Impl | Notes |
 |---|---|---|---|---|---|
-| Hierarchical / layered scope | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0001 in review → ADR-0002 draft | ◻︎ spike (design proposed) | ltree ancestor-match; scope resolved from id |
-| Per-record sharing | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0002 in review → ADR-0003 draft | ◻︎ spike | intra-org v1; `share` is a capability |
-| Acting on behalf of (agents) | 🟡 proposed (#177) | 🟡 firm | 🟡 RFC-0003 in review → ADR-0004 draft | ✅ chain exists; durability pending | chain home = Accounts; single owner |
+| Hierarchical / layered scope | ✅ (#177) | ✅ | ✅ RFC-0001 accepted → ADR-0002 | ✅ store migration 98; `RegisterScopeNode`, `GrantScope`, `CheckAccess` | ltree ancestor-match; scope resolved from id |
+| Per-record sharing | ✅ (#177) | ✅ | ✅ RFC-0002 accepted → ADR-0003 | ✅ store migration 98; `ShareRecord`, `ListShares`, `RevokeShare` | intra-org v1; `share` is a capability |
+| Acting on behalf of (agents) | ✅ (#177) | ✅ | ✅ RFC-0003 accepted → ADR-0004 | ✅ store migration 99 (`actor_chain_journal`, revocations) | chain home = Accounts; single owner |
 | Field-level visibility | ✅ decided (#179) | — | ✅ ADR-0005 | ⛔ out of scope | cut v1; split RPCs by tier; B15 latent |
-| Typed scope registry | 🟡 proposed (#177) | 🟡 firm | 🟡 folded into RFC-0001 | ◻︎ | closes the untyped-scope gap |
+| Typed scope registry | ✅ (#177) | ✅ | ✅ folded into RFC-0001 | ✅ with hierarchical scope | closes the untyped-scope gap |
 | ABAC / conditional | ◻︎ | ◻︎ | ◻︎ | ◻︎ | bounded predicates in Go (COND questions still open) |
 
-Legend: ✅ done/decided · 🟡 drafted / **proposed — to review** · ◻︎ not started · ⛔ out of scope · — n/a.
-All #177 calls are **proposals awaiting sign-off**; none are accepted yet — except
-field-level visibility, decided (cut) in [ADR-0005](9-reference/decisions/0005-field-level-visibility-out-of-scope.md).
+Legend: ✅ done/decided · ◻︎ not started · ⛔ out of scope · — n/a.
+
+The three RFCs were **accepted on 2026-09-17**: each had shipped in the tree
+(store migrations 98 and 99, and the Permission operations above, all in the
+generated catalog) while the board still read "to review". A board that names a
+review nobody is holding is not a plan, so it now records what is true. What the
+shipped behaviour still owes its stories (`HOST-ID-006`, `HOST-AUTHZ-*`) is
+tracked in the repository's one plan, [docs/PLAN.md](../PLAN.md).
 
 ## Conventions
 
@@ -84,21 +89,12 @@ field-level visibility, decided (cut) in [ADR-0005](9-reference/decisions/0005-f
 - Everything traces back to a **persona** (`0-product/personas.md`) and respects
   the **invariants** (`1-spec/invariants.md`).
 
-## Right now (second iteration — #177 proposals, to review)
+## Right now
 
-The **highest-leverage product questions have proposed answers** (#177), drafted into
-the spec, the three RFCs (now in **Review**, with draft ADR-0002/0003/0004), and this
-status board. **These are recommendations awaiting sign-off — nothing is accepted
-yet.** Proposed: hierarchical scope shape + edit authority, per-record sharing reach
-(intra-org v1) and who-may-share (a `share` capability), field-level (**propose to
-cut v1**), agent ownership (single human owner) + chain depth, the canonical action
-set (delete & list are their own actions), nested-team inheritance (literal, no
-cascade), and the load-bearing `CheckAccess` design (scope resolved from the record's
-id, never a caller field). See the **[user-story backlog](0-product/stories/README.md)**
-for the inline `🟡 Proposed (to review)` markers.
-
-**To do — review these proposals** and, per call, accept (promote the RFC to Accepted
-and finalize its ADR) or send back. **Still open:** the peripheral per-aspect questions
-(authentication, orgs, API keys, service-to-service, operators, audit,
-conditional/time-bound, lifecycle governance) remain `❓` for their own product review —
-they don't reshape the spec and aren't blocked.
+The #177 decisions are accepted and shipped (see the status board). What remains
+open in this tree is the `❓`-marked peripheral questions in the
+[user-story backlog](0-product/stories/README.md) — authentication, orgs, API keys,
+service-to-service, operators, audit, conditional/time-bound, lifecycle governance.
+They do not reshape the spec, and none of them is a plan item: the host's plan is
+[docs/PLAN.md](../PLAN.md), which tracks the handbook's `HOST-*` stories and nothing
+else.

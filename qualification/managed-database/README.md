@@ -17,7 +17,7 @@ pinned golang-migrate CLI for Linux amd64. `run.py --migrate /absolute/migrate
 --output /tmp/result.json` accepts an already qualified binary. Both fresh and
 canonical paths run migrations through the real ledger. The suite compares
 schema, ACLs, function ownership and seed semantics; exercises all runtime role
-boundaries, request-scope guards, revocation and custody immutability; and checks
+boundaries, request-scope guards and revocation; and checks
 fresh-install refusal, legacy rollback, managed rollback refusal, failed and
 interrupted migration cleanup. Disposable superuser sessions only provision the
 fixture and perform independent observations. Fresh migrations run as a
@@ -39,15 +39,6 @@ and migrate binaries, immutable `bootstrap/plan.json`/sources, and `binding.json
 The suite runs bootstrap as OS UID 65532, checks access-committed receipts and
 replay, and verifies that runtime logins cannot assume the migration owner.
 
-For application-level custody and authenticated tenant TLS regression:
-
-```sh
-python3 qualification/execution-custody/run.py --managed-baseline
-python3 qualification/execution-custody/run.py --managed-baseline --tenant-mount
-```
-
-These use real local Accounts/PostgreSQL/Vault (and Redis for tenant TLS), require
-the images named by that runner, and keep transient credentials in the fixture.
 They do not claim managed-provider, IAM, proxy or hosted execution qualification.
 `--allow-dirty` is development-only; final evidence must pin a clean commit.
 

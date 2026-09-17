@@ -1,3 +1,5 @@
+> **Historical.** Retired on 2026-09-17; kept for the record and not maintained. The one plan is [docs/PLAN.md](../PLAN.md).
+
 # Frontend plugin platform TODO
 
 Date: 2026-07-15

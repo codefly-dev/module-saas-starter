@@ -114,7 +114,7 @@ func (g *Gateway) handleSolutionRequest(w http.ResponseWriter, r *http.Request) 
 	// script/manifest fetches 401s them and makes the remote impossible to load
 	// same-origin through the host. Serve the public GET surface unauthenticated,
 	// with caller identity still stripped; every other path (the solution's data
-	// endpoints, e.g. /lastlogin) stays auth-required below. The upstream is sent
+	// endpoints, e.g. /example) stays auth-required below. The upstream is sent
 	// the same cleaned path the exemption was decided on, so the two can't diverge.
 	//
 	// Rate-limit budget: this public GET surface carries an IP-keyed, fail-open
@@ -205,7 +205,7 @@ var solutionPublicPrefixes = []string{"assets", ".well-known"}
 // public, unauthenticated read surface, and returns the canonical upstream path
 // to forward. Both the decision and the returned path are derived from the
 // cleaned path: deciding on the clean prevents a traversal suffix like
-// `assets/../lastlogin` from borrowing the /assets exemption to reach an
+// `assets/../example` from borrowing the /assets exemption to reach an
 // authenticated endpoint, and forwarding that same clean prevents an upstream
 // that resolves the raw path differently from being handed a path the gateway
 // never classified as public.

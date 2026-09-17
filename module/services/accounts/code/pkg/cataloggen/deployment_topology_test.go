@@ -83,7 +83,7 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 			accountsConnectExposed = true
 		}
 		require.False(t,
-			(endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect" && endpoint.GetEndpoint() != "custody" && endpoint.GetEndpoint() != "revision" && endpoint.GetEndpoint() != "tenant") ||
+			(endpoint.GetService() == "accounts" && endpoint.GetEndpoint() != "connect") ||
 				(endpoint.GetService() == "auth-gateway" && endpoint.GetEndpoint() == "rest"),
 		)
 	}

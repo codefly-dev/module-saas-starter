@@ -35,15 +35,11 @@ file is limited to 1 MiB, including whitespace. All replicas must
 receive the approved projection. Mount the containing directory, so atomic
 projection replacement is visible; a pinned subPath mount will not refresh.
 
-When the private execution-custody TLS listener is configured, it also serves
-the four exact installer paths (`token`, `inspect`, `apply`, and `verify` under
-`/v1/module-installations/`). These use the same policy-backed handler as REST,
-including the dedicated module identity exchange and per-request delegation
-checks. The listener keeps its existing certificate and custody/JWKS handlers;
-it does not expose the REST mux or other Accounts routes. The composition must
-use the listener's verified HTTPS origin and grant narrowly scoped network
-reachability. Without the private listener, the existing REST exposure is
-unchanged; without the installer policy, no installer routes are added.
+The four installer paths (`token`, `inspect`, `apply`, and `verify` under
+`/v1/module-installations/`) are served on the private REST endpoint by one
+policy-backed handler, including the dedicated module identity exchange and
+per-request delegation checks. Without the installer policy, no installer routes
+are added.
 
 Example policy (replace the placeholder UUIDs with API-issued references):
 

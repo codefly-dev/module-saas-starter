@@ -4,7 +4,7 @@
 > recommendation pending review; RFC-0001 is in **Review**. This becomes the
 > immutable Accepted record only when the RFC is signed off.
 
-- **Status:** Draft (proposed #177)
+- **Status:** Accepted 2026-09-17 (proposed #177)
 - **Date:** 2026-08-19
 - **From:** RFC-[0001](../../2-proposals/0001-hierarchical-scope-ltree.md) (#177)
 - **Context:** `role_assignments.scope` is a flat string matched by equality — no

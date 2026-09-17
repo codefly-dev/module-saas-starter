@@ -1,3 +1,5 @@
+> **Historical.** Retired on 2026-09-17; kept for the record and not maintained. The one plan is [docs/PLAN.md](../PLAN.md).
+
 # Login vs Invite vs Signup — review and plan
 
 Status: proposal. Nothing here is implemented yet.

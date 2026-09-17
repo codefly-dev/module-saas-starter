@@ -24,6 +24,5 @@ always exactly `read`. The incoming parent must already admit all installed
 scopes; installation never confers new viewer authority. A child lives at most
 60 seconds and less than the remaining parent lifetime. Owner, tenant, Task,
 Session and actor/delegation chain remain unchanged. The response is secret and
-must not be logged. No persisted model invocation credential or broad signing
-port is created. Interactive calls can continue using the existing owner-bearer
+must not be logged. No persisted credential or broad signing port is created. Interactive calls can continue using the existing owner-bearer
 `WorkContextService.ExchangeAudience` API.

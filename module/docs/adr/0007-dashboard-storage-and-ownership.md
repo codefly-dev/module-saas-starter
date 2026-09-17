@@ -40,7 +40,7 @@ The pieces this decision must fit already exist and constrain it:
   (org-scoped, RLS, with ownership and cross-user org-shared reads)." That
   shape *is* storage option (A); this ADR ratifies it rather than inventing it.
 - **The template/baseline scope already ships** as the solution-manifest
-  `dashboard` slot (a `DataGraph` in `saas-plugin-manifest`) — e.g. lastlogin's
+  `dashboard` slot (a `DataGraph` in `saas-plugin-manifest`) — e.g. a composed solution's
   "Activity". It is read-only at runtime by construction: it is delivered in a
   manifest, not a table.
 - **The typed settings system is built and green** (SETTINGS.md): per-user

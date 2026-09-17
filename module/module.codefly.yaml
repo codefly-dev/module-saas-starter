@@ -8,15 +8,6 @@ interface:
         - service: accounts
           endpoint: connect
           visibility: module
-        - service: accounts
-          endpoint: custody
-          visibility: module
-        - service: accounts
-          endpoint: revision
-          visibility: module
-        - service: accounts
-          endpoint: tenant
-          visibility: module
         - service: auth-gateway
           endpoint: grpc
           visibility: module

@@ -1,10 +1,9 @@
 # Durable inbox/outbox contract
 
 Status: generic foundation, producer path, worker runtime, operations surface,
-and the Stripe, outbound-webhook, and email workload migrations ready.
-`P2-JOB-001` through `P2-JOB-007` are complete; remaining workload migrations
-are tracked as `P2-JOB-008` and `P2-JOB-009` in the root
-[TODO](../TODO.md).
+and the Stripe, outbound-webhook, and email workload migrations ready. What the
+queue still owes its handbook stories (`HOST-JOB-*`) is tracked in the
+repository's one plan, `docs/PLAN.md` at the repository root.
 
 This contract is product-neutral. Consuming solutions, Codefly, and application
 plugins use the same envelope and lifecycle; they identify their own queue,

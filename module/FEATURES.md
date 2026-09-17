@@ -616,32 +616,11 @@ _All previously-open gaps closed 2026-04-25._
 
 ---
 
-## Roadmap (proposed)
+## Roadmap
 
-In priority order, based on "where we'd lose deals or land in a CVE":
-
-**Quarter 1 — production hardening**
-1. ~~Enforce MFA on sensitive ops~~ — done 2026-04-25.
-2. ~~Enforce API key scopes~~ — done 2026-04-25.
-3. ~~Access-token revocation list~~ — done 2026-04-25 (Redis-backed).
-4. ~~Impersonation TTL cap~~ — done 2026-04-25 (5 min default).
-5. ~~OAuth state server-side / PKCE~~ — done 2026-04-25 (`BeginOAuth` RPC + signer + FE refactor).
-6. ~~Rate limiting per org + per API key~~ — done 2026-04-25 (Redis fixed-window; Connect + gRPC interceptors).
-7. ~~Cmd-K command palette~~ — done 2026-04-25 (role-gated nav + super_admin user search).
-8. ~~Webhooks v2 — replay UI, signing-secret rotation, generic retry visibility~~ — done 2026-07-20.
-
-**Quarter 2 — growth features**
-6. Org-scoped subdomains + cookie scoping (~1 week).
-7. Self-serve SSO admin UI (WorkOS Connections passthrough) (~3 days).
-8. Sample-data onboarding extension (~2 days).
-9. Usage dashboards (~1 week).
-10. Status page + internal probes (~3 days).
-
-**Quarter 3 — enterprise**
-11. Audit log streaming to customer S3 / SIEM (~1 week).
-12. Jurisdiction-specific legal content and consent review (deployment work).
-13. ABAC / row-level rules where useful (selective; ~ 2 weeks scoped).
-14. i18n (~2 weeks for full pass).
+There is no roadmap in this file. What the host still owes its functional
+contract — the `HOST-*` stories on its handbook page — is tracked story by story
+in the repository's one plan, `docs/PLAN.md` at the repository root.
 
 ---
 

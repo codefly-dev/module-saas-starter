@@ -1,8 +1,0 @@
-kind: library
-name: execution-custody-sdk
-version: 0.1.0
-languages:
-  - name: go
-    path: go/
-    exports:
-      - github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go

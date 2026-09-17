@@ -4,7 +4,7 @@
 > recommendation pending review; RFC-0003 is in **Review**. This becomes the
 > immutable Accepted record only when the RFC is signed off.
 
-- **Status:** Draft (proposed #177)
+- **Status:** Accepted 2026-09-17 (proposed #177)
 - **Date:** 2026-08-19
 - **From:** RFC-[0003](../../2-proposals/0003-durable-actor-chain.md) (#177)
 - **Context:** The capability chain already enforces attenuation correctly at sign

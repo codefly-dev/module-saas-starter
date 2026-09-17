@@ -36,17 +36,8 @@ workspace-configuration-dependencies:
 endpoints:
     - name: connect
       visibility: module
-    - name: custody
-      visibility: module
-      api: tcp
     - name: grpc
     - name: rest
-    - name: revision
-      visibility: module
-      api: tcp
-    - name: tenant
-      visibility: module
-      api: tcp
 spec:
     connect-endpoint: true
     hot-reload: true

@@ -118,8 +118,8 @@ describe("Codefly identity provider configuration", () => {
 describe("expired-session login redirect", () => {
 	it("preserves the current location in `next` so sign-in returns here", () => {
 		expect(
-			expiredSessionLoginTarget({ pathname: "/s/lastlogin", search: "" }),
-		).toBe("/auth/login?next=%2Fs%2Flastlogin");
+			expiredSessionLoginTarget({ pathname: "/s/example", search: "" }),
+		).toBe("/auth/login?next=%2Fs%2Fexample");
 		expect(
 			expiredSessionLoginTarget({ pathname: "/settings", search: "?tab=api" }),
 		).toBe("/auth/login?next=%2Fsettings%3Ftab%3Dapi");

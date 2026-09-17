@@ -35,7 +35,7 @@ func seedBlobSource(t *testing.T, svc *business.Service, orgID string, blobSHA s
 	source, err := svc.AddGitHubSource(context.Background(), "actor-1", business.AddGitHubSourceInput{
 		OrgID:           orgID,
 		Repo:            "acme/docs",
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		AccessToken:     "ghp_token",
 	})
 	if err != nil {

@@ -160,8 +160,6 @@ INSERT INTO organizations(id,name,slug,owner_id) VALUES
 ('20000000-0000-0000-0000-000000000001','Example One','example-one','10000000-0000-0000-0000-000000000001'),
 ('20000000-0000-0000-0000-000000000002','Example Two','example-two','10000000-0000-0000-0000-000000000002');
 INSERT INTO organization_members(org_id,user_id,role) SELECT id,owner_id,'owner' FROM organizations;
-INSERT INTO execution_custody(reference,org_id,owner_id,admission_id,fingerprint,envelope,expires_at)
-SELECT '30000000-0000-0000-0000-000000000001',id,owner_id,'example-admission',repeat('a',64),'cfs1:vault-transit:synthetic',now()+interval '5 minutes' FROM organizations WHERE slug='example-one';
 INSERT INTO webhook_subscriptions(id,org_id,url,secret_encrypted) SELECT id,id,'https://example.com/hook','synthetic' FROM organizations;
 INSERT INTO webhook_deliveries(id,subscription_id,event_id,event_type,payload) SELECT id,id,id,'saas.auth.login','{}' FROM organizations;
 """)
@@ -174,23 +172,20 @@ INSERT INTO webhook_deliveries(id,subscription_id,event_id,event_type,payload) S
     check('request_cannot_assume_control','SET ROLE app_control_plane;',error='42501',user='example_request')
     for role in ROLES[1:]:
         check('tenant_cannot_assume_'+role,'SET ROLE '+role+';',error='42501',user='example_request')
-    for table in ['execution_custody','job_messages']:
-        check('tenant_no_'+table,tenant+'SELECT count(*) FROM '+table+';',error='42501')
-    for role,table,n in [('app_control_plane','users','2'),('app_control_plane','execution_custody','1'),('app_billing_worker','organizations','2'),('app_webhook_worker','webhook_deliveries','2')]:
+    check('tenant_no_job_messages',tenant+'SELECT count(*) FROM job_messages;',error='42501')
+    for role,table,n in [('app_control_plane','users','2'),('app_billing_worker','organizations','2'),('app_webhook_worker','webhook_deliveries','2')]:
         check(role+'_cross_scope_'+table,'BEGIN; SET LOCAL ROLE '+role+'; SELECT count(*) FROM '+table+'; ROLLBACK;',n)
-    for role,table in [('app_billing_worker','execution_custody'),('app_webhook_worker','users'),('app_job_worker','users'),('app_control_plane','job_messages')]:
+    for role,table in [('app_billing_worker','users'),('app_webhook_worker','users'),('app_job_worker','users'),('app_control_plane','job_messages')]:
         check(role+'_no_'+table,'BEGIN; SET LOCAL ROLE '+role+'; SELECT count(*) FROM '+table+';',error='42501')
     check('preauth_lookup_without_tenant',"BEGIN; SET LOCAL ROLE app_control_plane; SELECT count(*) FROM users WHERE primary_email='two@example.com'; ROLLBACK;",'1')
-    check('custody_erase',"BEGIN; SET LOCAL ROLE app_control_plane; WITH x AS (UPDATE execution_custody SET envelope='' RETURNING reference) SELECT count(*) FROM x; ROLLBACK;",'1')
-    check('custody_identity_immutable',"BEGIN; SET LOCAL ROLE app_control_plane; UPDATE execution_custody SET admission_id='changed';",error='42501')
     check('webhook_result_update',"BEGIN; SET LOCAL ROLE app_webhook_worker; WITH x AS (UPDATE webhook_deliveries SET http_status=204 RETURNING id) SELECT count(*) FROM x; ROLLBACK;",'2')
     check('webhook_payload_immutable',"BEGIN; SET LOCAL ROLE app_webhook_worker; UPDATE webhook_deliveries SET payload='changed';",error='42501')
     check('tenant_cross_org_write_denied',tenant+"UPDATE organizations SET slug='changed' WHERE slug='example-two'; SELECT count(*) FROM organizations WHERE slug='changed'; ROLLBACK;",'0')
     # Even a credential with inherited membership cannot activate role policies
     # while its current role is app_tenant. Only exact SET ROLE may do so.
     check('no_runtime_ddl',tenant+'CREATE TABLE public.denied(id int);',error='42501')
-    check('custody_accidental_tenant_select_still_denied',"BEGIN; GRANT SELECT ON execution_custody TO app_tenant; SET LOCAL ROLE app_tenant; SELECT count(*) FROM execution_custody; ROLLBACK;",'0')
-    check('inherited_control_role_cannot_activate_policy',"BEGIN; GRANT app_control_plane TO app_tenant WITH INHERIT TRUE; SET LOCAL ROLE app_tenant; SELECT count(*) FROM execution_custody; ROLLBACK;",'0')
+    check('accidental_tenant_grant_still_denied',"BEGIN; GRANT SELECT ON job_messages TO app_tenant; SET LOCAL ROLE app_tenant; SELECT count(*) FROM job_messages; ROLLBACK;",'0')
+    check('inherited_control_role_cannot_activate_policy',"BEGIN; GRANT app_control_plane TO app_tenant WITH INHERIT TRUE; SET LOCAL ROLE app_tenant; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001'; SET LOCAL app.current_user_id='10000000-0000-0000-0000-000000000001'; SELECT count(*) FROM users WHERE primary_email='two@example.com'; ROLLBACK;",'0')
     for role in ROLES[1:]:
         login='example_'+role
         check('dedicated_'+role, 'CREATE ROLE '+login+' LOGIN NOINHERIT; GRANT '+role+' TO '+login+';')
@@ -343,7 +338,6 @@ def main():
                     scope="BEGIN; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001'; SET LOCAL app.current_user_id='10000000-0000-0000-0000-000000000001'; "
                     assert sql(c,scope+'SELECT count(*) FROM organization_authorization_revisions; ROLLBACK;',user='example_reader').stdout.strip()=='1'
                     assert sql(c,scope+"SELECT count(*) FROM organization_authorization_revisions WHERE org_id='20000000-0000-0000-0000-000000000002'; ROLLBACK;",user='example_reader').stdout.strip()=='0'
-                    assert sql(c,scope+'SELECT count(*) FROM execution_custody; ROLLBACK;',user='example_reader').stdout.strip()=='0'
                     assert '42501' in sql(c,scope+'UPDATE organization_authorization_revisions SET revision=revision+1;',user='example_reader',check=False).stderr
                     assert '42501' in sql(c,'SELECT count(*) FROM organization_authorization_revisions;',user='example_writer',check=False).stderr
                     memberships=json.loads(sql(c,"""SELECT json_agg(x ORDER BY member,granted) FROM (
