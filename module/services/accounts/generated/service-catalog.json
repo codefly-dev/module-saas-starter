@@ -463,7 +463,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Mint an API key for an administered organization.",
@@ -523,7 +524,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List org's API keys.",
@@ -585,7 +587,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke an API key in an administered organization.",
@@ -627,7 +630,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal: plaintext key → key + org id.",
@@ -683,7 +687,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List the scope nodes the authenticated caller may act on (bearer-derived subject).",
@@ -743,7 +748,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Aggregate audit events (counts, time buckets, group-by) for analytics.",
@@ -803,7 +809,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Download audit log as CSV/JSON.",
@@ -857,7 +864,8 @@
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List the registered audit event-type catalog for search facets.",
@@ -917,7 +925,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read audit events (org member sees own org; platform admin sees all).",
@@ -970,7 +979,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Exchange typed OAuth-code or explicit fixture credentials for tokens.",
@@ -1020,7 +1030,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Mint signed OAuth state for an allowlisted redirect.",
@@ -1070,7 +1081,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Begin a WebAuthn assertion bound to an MFA login transaction.",
@@ -1124,7 +1136,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": true,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Consume a one-use MFA login transaction and issue the session.",
@@ -1178,7 +1191,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": true,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Verify WebAuthn and atomically consume the MFA login transaction.",
@@ -1228,7 +1242,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Public JWKS for JWT signature verification.",
@@ -1278,7 +1293,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Revoke the caller's session and its refresh-token family.",
@@ -1328,7 +1344,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Exchange a refresh token for a new access token, rotating the refresh token.",
@@ -1380,7 +1397,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Exchange the active device session for an access token scoped to another current membership.",
@@ -1440,7 +1458,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "List the organization's past billing invoices.",
@@ -1490,7 +1509,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Sanitized public pricing and entitlement catalog.",
@@ -1552,7 +1572,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "mfa",
       "description": "Stripe billing-portal session; requires billing:write and recent MFA.",
@@ -1604,7 +1625,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Record acceptance of the exact Terms version presented.",
@@ -1654,7 +1676,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Read TOS acceptance state.",
@@ -1706,7 +1729,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Persist purpose-based optional tracking choices and withdrawals.",
@@ -1758,7 +1782,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Create a named, user-owned dashboard from a validated spec.",
@@ -1810,7 +1835,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Delete a dashboard the caller owns or administers.",
@@ -1860,7 +1886,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Open one dashboard the caller owns or that is shared to the org.",
@@ -1910,7 +1937,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List the caller's own and org-shared dashboards.",
@@ -1962,7 +1990,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Change a dashboard's visibility between private and org-shared.",
@@ -2014,7 +2043,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Rename or replace the spec of a dashboard the caller owns or administers.",
@@ -2064,7 +2094,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Connect a GitHub repository as a datasource, storing its access token and optional webhook secret encrypted.",
@@ -2114,7 +2145,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Connect a datasource for any provider, storing its config and encrypted credential.",
@@ -2164,7 +2196,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Start GitHub App onboarding: mint a one-time, tenant-bound setup state and return the App's install URL.",
@@ -2214,7 +2247,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Redeem a setup state once, verify the returned GitHub App installation server-side, and list the repositories it grants.",
@@ -2264,7 +2298,8 @@
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Remove a connected datasource and its stored credentials.",
@@ -2306,7 +2341,8 @@
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List the available datasource provider types and their connect metadata.",
@@ -2354,7 +2390,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read one connected datasource in the org.",
@@ -2402,7 +2439,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Read durable lifecycle and module-reported execution references for one source sync.",
@@ -2450,7 +2488,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List the org's connected datasources.",
@@ -2500,7 +2539,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Re-point a token-backed GitHub source at the deployment's GitHub App in place, keeping its identity and history.",
@@ -2550,7 +2590,8 @@
         "response_sensitivity": "SENSITIVITY_INTERNAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Pull the source's current contents and enqueue ingestion deliveries.",
@@ -2609,7 +2650,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Approve or deny a delegation request.",
@@ -2665,7 +2707,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List pending organization delegations.",
@@ -2724,7 +2767,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Request a scoped authority delegation.",
@@ -2780,7 +2824,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Stream the terminal delegation decision.",
@@ -2830,7 +2875,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Status of a GDPR deletion request.",
@@ -2880,7 +2926,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Status of a GDPR export request.",
@@ -2932,7 +2979,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "mfa",
       "description": "Request account deletion when a complete privacy workflow is configured. Requires MFA.",
@@ -2984,7 +3032,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Request data export when a complete privacy workflow is configured.",
@@ -3026,7 +3075,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal: provider id → user/org/roles.",
@@ -3082,7 +3132,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Get one installation and its live health.",
@@ -3140,7 +3191,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Install a solution: compose its agent principal, scope node, standing grant, and installation row.",
@@ -3198,7 +3250,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Reassign an installation's accountable owner of record.",
@@ -3256,7 +3309,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Uninstall a solution and reverse its composition.",
@@ -3306,7 +3360,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Self-describing service catalog (this RPC).",
@@ -3358,7 +3413,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Accept an invite by token.",
@@ -3420,7 +3476,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Invite a user to an org.",
@@ -3470,7 +3527,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Resolve a privacy-limited invitation summary from a secret credential.",
@@ -3520,7 +3578,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Resolve an authenticated invitee's invitation summary.",
@@ -3580,7 +3639,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "List pending invites for an org.",
@@ -3642,7 +3702,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Rotate and requeue a pending invitation after its cooldown.",
@@ -3704,7 +3765,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a pending invite.",
@@ -3756,7 +3818,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Begin passkey registration with server-side ceremony state.",
@@ -3808,7 +3871,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Verify and persist a passkey credential.",
@@ -3860,7 +3924,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Mint backup codes (one-time view).",
@@ -3910,7 +3975,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List user's MFA devices.",
@@ -3962,7 +4028,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Remove an MFA device.",
@@ -4014,7 +4081,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Begin TOTP enrollment for the caller and return the shared secret.",
@@ -4066,7 +4134,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Confirm TOTP code; activate device.",
@@ -4108,7 +4177,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Complete a leased job successfully.",
@@ -4150,7 +4220,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Withdraw a still-open approval request.",
@@ -4192,7 +4263,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Check exact placed-record access under current delegated viewer authority.",
@@ -4234,7 +4306,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Lease a bounded batch of ready jobs from an allowed queue.",
@@ -4276,7 +4349,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Emit a registered audit event on the tenant's spine.",
@@ -4318,7 +4392,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Enqueue durable work for a tenant- or subject-scoped queue.",
@@ -4360,7 +4435,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Exchange a current signed parent through an installed read-only module binding.",
@@ -4402,7 +4478,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Stream a datasource file blob referenced by a change set.",
@@ -4444,7 +4521,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Read one approval request on the caller's tenant.",
@@ -4486,7 +4564,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Renew a live job lease by its fencing token.",
@@ -4528,7 +4607,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "List source collections the verified viewer may currently read.",
@@ -4570,7 +4650,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "List the calling principal's live event subscriptions.",
@@ -4614,7 +4695,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Issue a composed module the signed credential it registers its gateway REST prefix with.",
@@ -4658,7 +4740,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Issue a composed module the Work Context its service principal calls this surface with.",
@@ -4702,7 +4785,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Issue a solution the signed credential it registers its gateway upstream and frontend remote with.",
@@ -4744,7 +4828,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Fail a leased job as retryable or permanent.",
@@ -4786,7 +4871,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Notify a user subject to category policy.",
@@ -4828,7 +4914,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Place one of the caller's own records at a scope node.",
@@ -4870,7 +4957,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Publish one domain event to the outbox for the caller's tenant.",
@@ -4912,7 +5000,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Re-deliver durable events to the caller's own subscriptions.",
@@ -4954,7 +5043,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Open a pending approval whose resume job the module claims.",
@@ -4996,7 +5086,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Create or re-affirm a durable event subscription for the caller.",
@@ -5038,7 +5129,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Revoke one of the caller's own event subscriptions.",
@@ -5088,7 +5180,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Delete one of the caller's notifications.",
@@ -5138,7 +5231,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Count the caller's unread notifications.",
@@ -5188,7 +5282,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List the caller's notifications.",
@@ -5238,7 +5333,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Mark every one of the caller's notifications as read.",
@@ -5288,7 +5384,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Mark one of the caller's notifications as read.",
@@ -5330,7 +5427,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Re-authorize one of the caller's notification deep links and return its destination.",
@@ -5388,7 +5486,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Confirm a step only after its represented product state exists.",
@@ -5444,7 +5543,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Versioned organization activation checklist for the caller.",
@@ -5502,7 +5602,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Record an explicit skip for an optional step.",
@@ -5560,7 +5661,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Add a user to an org.",
@@ -5612,7 +5714,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Create a new org; caller becomes owner.",
@@ -5668,7 +5771,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read the organization's branding settings.",
@@ -5724,7 +5828,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read one organization the caller belongs to.",
@@ -5780,7 +5885,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read generic typed org settings (composed JSONB blob).",
@@ -5836,7 +5942,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List members of an org.",
@@ -5886,7 +5993,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Orgs the caller belongs to.",
@@ -5944,7 +6052,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Remove a member; last-admin guard.",
@@ -6002,7 +6111,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Update branding (logo, color, custom domain).",
@@ -6060,7 +6170,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Patch generic typed org settings; clear_mask resets fields.",
@@ -6112,7 +6223,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Grant a role to a principal/team.",
@@ -6154,7 +6266,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal hierarchical + per-record authz decision.",
@@ -6196,7 +6309,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal authz decision (auth-gateway caller).",
@@ -6248,7 +6362,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Create a role (org-scoped or platform).",
@@ -6290,7 +6405,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal principal-aware authz decision (successor to CheckPermission).",
@@ -6342,7 +6458,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Delete a custom role.",
@@ -6400,7 +6517,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Grant a role at a scope node (inherits to subtree).",
@@ -6442,7 +6560,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal list of scope nodes a subject may act on (list-objects companion to CheckAccess).",
@@ -6498,7 +6617,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Inspect collection boundaries and active inherited documents/read grants.",
@@ -6548,7 +6668,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List assignments in an org.",
@@ -6598,7 +6719,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List built-in + org-scoped roles.",
@@ -6654,7 +6776,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "List the shares on a specific record.",
@@ -6712,7 +6835,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Register a scope node or place a record at one.",
@@ -6764,7 +6888,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Revoke a role assignment.",
@@ -6822,7 +6947,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a hierarchical scope grant.",
@@ -6880,7 +7006,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Revoke a per-record share.",
@@ -6938,7 +7065,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Share a record with a principal/team.",
@@ -6988,7 +7116,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Domain-event type counters, outbox relay lag, and dead-letter snapshots.",
@@ -7038,7 +7167,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Payload-free job metadata, attempts, and state history.",
@@ -7088,7 +7218,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Durable queue depth, readiness, and lease-health snapshots.",
@@ -7144,7 +7275,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Plan + overrides + usage.",
@@ -7196,7 +7328,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Grant a platform role.",
@@ -7248,7 +7381,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Mint an impersonation session.",
@@ -7298,7 +7432,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Active sessions for a user.",
@@ -7348,7 +7483,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Live domain-event subscriptions across all principals.",
@@ -7398,7 +7534,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "List the legacy feature-flag migration inventory.",
@@ -7448,7 +7585,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Seek-paginated payload-free job operations view.",
@@ -7498,7 +7636,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "List the platform administrators and their granted roles.",
@@ -7550,7 +7689,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Override one entitlement limit for a single organization.",
@@ -7602,7 +7742,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Idempotently copy dead-lettered work for another attempt.",
@@ -7654,7 +7795,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Revoke a platform role.",
@@ -7706,7 +7848,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Revoke a single session.",
@@ -7756,7 +7899,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPPORT",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Search across all users.",
@@ -7808,7 +7952,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "End the caller's own impersonation session.",
@@ -7860,7 +8005,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Suspend a user account.",
@@ -7912,7 +8058,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Restore a suspended user.",
@@ -7964,7 +8111,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "platform_admin",
       "description": "Deprecated compatibility method; always rejects writes to the legacy feature-flag inventory.",
@@ -8022,7 +8170,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Create an agent principal in an organization.",
@@ -8066,7 +8215,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Reversibly suspend an agent principal.",
@@ -8110,7 +8260,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Lift a reversible suspension on an agent principal.",
@@ -8152,7 +8303,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal agent-principal lookup.",
@@ -8194,7 +8346,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Internal principal lookup.",
@@ -8250,7 +8403,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List principals in an organization.",
@@ -8308,7 +8462,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Revoke an organization or platform principal.",
@@ -8358,7 +8513,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Follow one resource instance the caller can see, to be told when it changes.",
@@ -8408,7 +8564,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Stop following one resource instance the caller follows.",
@@ -8466,7 +8623,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Pause SSO; preserves WorkOS state for re-enable.",
@@ -8522,7 +8680,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Read org SSO state.",
@@ -8580,7 +8739,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Mint WorkOS portal link.",
@@ -8624,7 +8784,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Deregister a solution and leave a tombstone that blocks resurrection.",
@@ -8666,7 +8827,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Read the solution registry snapshot a replica rebuilds its cache from.",
@@ -8710,7 +8872,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Write or renew one half of a solution's durable runtime registration.",
@@ -8768,7 +8931,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Add a user to a team.",
@@ -8826,7 +8990,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Create a team within an org.",
@@ -8884,7 +9049,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Delete a team and its memberships.",
@@ -8940,7 +9106,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List the members of one team.",
@@ -8996,7 +9163,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List teams in an org.",
@@ -9054,7 +9222,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Remove a user from a team.",
@@ -9112,7 +9281,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Update a team's name or description.",
@@ -9154,7 +9324,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Atomically consume a monthly meter with an idempotent receipt.",
@@ -9214,7 +9385,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Current monthly meter total and effective limit.",
@@ -9274,7 +9446,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "UTC hourly, daily, or monthly usage buckets for a bounded range.",
@@ -9334,7 +9507,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Customer-visible meter catalog with current totals and limits.",
@@ -9386,7 +9560,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Link an additional auth provider.",
@@ -9440,7 +9615,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Soft-delete a user (self or platform admin).",
@@ -9490,7 +9666,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Look up a user by external identity, for platform administrators.",
@@ -9540,7 +9717,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Authenticated user + their orgs.",
@@ -9596,7 +9774,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Look up a user (self or platform admin).",
@@ -9646,7 +9825,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "List a user's auth methods.",
@@ -9700,7 +9880,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Paginated user list (platform admin).",
@@ -9752,7 +9933,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Bootstrap a new user + personal org.",
@@ -9806,7 +9988,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "auth",
       "description": "Update profile (self or platform admin).",
@@ -9856,7 +10039,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Service version (smoke test).",
@@ -9906,7 +10090,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Read the caller's stored user preferences.",
@@ -9958,7 +10143,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "auth",
       "description": "Patch the caller's stored user preferences.",
@@ -10008,7 +10194,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Read the configured signup and waitlist mode.",
@@ -10060,7 +10247,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Queue the approved signup handoff for one waitlist entry.",
@@ -10110,7 +10298,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Submit an enumeration-safe public waitlist request.",
@@ -10160,7 +10349,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Search and filter the waitlist as a platform administrator.",
@@ -10212,7 +10402,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_ANY",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "platform_admin",
       "description": "Approve or reject a waitlist entry with audit context.",
@@ -10262,7 +10453,8 @@
         "response_sensitivity": "SENSITIVITY_PUBLIC",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "public",
       "description": "Verify a waitlist email using an expiring hashed credential.",
@@ -10324,7 +10516,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Create a public-HTTPS endpoint and reveal its encrypted-at-rest signing secret once.",
@@ -10386,7 +10579,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_admin",
       "description": "Delete a webhook subscription in the organization.",
@@ -10446,7 +10640,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "Read one webhook delivery attempt and its response.",
@@ -10506,7 +10701,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List past delivery attempts for a webhook subscription.",
@@ -10566,7 +10762,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_member",
       "description": "List the organization's webhook subscriptions.",
@@ -10628,7 +10825,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Create and audit a new attempt for a past delivery using its stable event ID.",
@@ -10690,7 +10888,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "mfa",
       "description": "Rotate the reveal-once signing secret with bounded dual-signature overlap. Requires recent MFA.",
@@ -10750,7 +10949,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "org_admin",
       "description": "Send a test ping.",
@@ -10792,7 +10992,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Authorize a filtered Evidence read from current tenant membership and RBAC facts.",
@@ -10834,7 +11035,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Revalidate every subject and scope in a signed Work Context against current authority.",
@@ -10876,7 +11078,8 @@
         "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Claim a single-use Work Context exactly once; replays of the same context id fail closed.",
@@ -10934,7 +11137,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Reissue one Task and Session lineage for another audience with attenuated authority.",
@@ -10992,7 +11196,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Let the current delegated actor extend its own Work Context past the TTL cap, attenuation-preserving.",
@@ -11050,7 +11255,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for an attenuated child-agent Session.",
@@ -11092,7 +11298,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
       },
       "policy_tier": "internal",
       "description": "Headlessly mint a Work Context for an installation's agent principal under its owner of record.",
@@ -11150,7 +11357,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Exchange a current Work Context for another root Session under the same Task.",
@@ -11208,7 +11416,8 @@
         "response_sensitivity": "SENSITIVITY_SECRET",
         "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
         "authentication_factor_attempt": false,
-        "conditions": []
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
       },
       "policy_tier": "org_member",
       "description": "Issue a signed Work Context for a new Task and root Session.",

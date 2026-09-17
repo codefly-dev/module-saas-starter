@@ -67,6 +67,9 @@ func grpcAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExposure) 
 		if err != nil {
 			return nil, err
 		}
+		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
+			return nil, err
+		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
 			return nil, err
 		}
@@ -80,6 +83,9 @@ func grpcStreamAuthInterceptor(getMinter func() auth.JWTMinter, exposure rpcExpo
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx, err := authorizer.authorize(stream.Context(), info.FullMethod)
 		if err != nil {
+			return err
+		}
+		if err := enforceImpersonationPolicy(ctx, info.FullMethod); err != nil {
 			return err
 		}
 		if err := enforceCentralPolicy(ctx, info.FullMethod); err != nil {
@@ -203,6 +209,30 @@ func enforceCentralPolicy(ctx context.Context, fullMethod string) error {
 		return requireOrgAdmin(ctx, actorID, orgID)
 	}
 	return requireOrgMember(ctx, actorID, orgID)
+}
+
+// enforceImpersonationPolicy denies a method the descriptor withholds from a
+// session acting as another user. It reads auth.ImpersonatedRequest — the one
+// predicate the audit stamp and both platform-authority gates already share —
+// so "this request is impersonated" has a single answer across the service.
+//
+// Unlike the central tenant floor this is never shadowed: it only ever narrows
+// admission, and it runs at the interceptor so a restricted method is refused
+// before its handler can mutate anything. The option defaults open, but the
+// lookup does not — an impersonated call whose policy will not resolve is
+// denied here rather than left to the caller's ordering against authorize.
+func enforceImpersonationPolicy(ctx context.Context, fullMethod string) error {
+	if !auth.ImpersonatedRequest(ctx) {
+		return nil
+	}
+	policy, ok := business.LookupRPCPolicy(fullMethod)
+	if !ok {
+		return status.Error(codes.PermissionDenied, "RPC is not classified by the authorization policy")
+	}
+	if business.ImpersonationForbidden(policy) {
+		return status.Error(codes.PermissionDenied, "this operation is unavailable to an impersonated session")
+	}
+	return nil
 }
 
 type contextServerStream struct {

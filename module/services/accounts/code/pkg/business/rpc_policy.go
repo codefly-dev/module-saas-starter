@@ -307,6 +307,12 @@ func validateDescriptorPolicy(method protoreflect.MethodDescriptor, policy *poli
 			errors = append(errors, "public policy declares authenticated authorization requirements")
 		}
 	}
+	if policy.GetImpersonation() == policyv1.ImpersonationRequirement_IMPERSONATION_REQUIREMENT_FORBIDDEN &&
+		policy.GetExposure() != policyv1.Exposure_EXPOSURE_AUTHENTICATED {
+		// Only an authenticated call carries the verified identity the
+		// impersonation predicate reads, so the restriction would never fire.
+		errors = append(errors, "impersonation is forbidden on a policy that carries no user identity")
+	}
 	if policy.GetExposure() == policyv1.Exposure_EXPOSURE_INTERNAL &&
 		(policy.GetTenant() != policyv1.TenantRequirement_TENANT_REQUIREMENT_NONE ||
 			policy.GetMfa() != policyv1.MFARequirement_MFA_REQUIREMENT_NONE ||
@@ -345,6 +351,14 @@ func requestFieldPathExists(message protoreflect.MessageDescriptor, fieldPath st
 
 func cloneStrings(values []string) []string {
 	return append([]string(nil), values...)
+}
+
+// ImpersonationForbidden reports whether the declared policy withholds the
+// method from a session acting as another user. An undeclared requirement
+// allows: the restriction is opted into per method, never inferred.
+func ImpersonationForbidden(policy RPCPolicy) bool {
+	return policy.MethodPolicy.GetImpersonation() ==
+		policyv1.ImpersonationRequirement_IMPERSONATION_REQUIREMENT_FORBIDDEN
 }
 
 // LookupRPCPolicy returns the reviewed policy for a canonical gRPC or Connect

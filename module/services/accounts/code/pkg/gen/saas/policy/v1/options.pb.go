@@ -369,6 +369,61 @@ func (PlatformRoleRequirement) EnumDescriptor() ([]byte, []int) {
 	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{5}
 }
 
+// ImpersonationRequirement defines whether a procedure may be invoked while a
+// platform operator is acting as another user. Impersonation is deliberately
+// short-lived, so the restriction targets what outlives it or changes who may
+// act later: durable credentials, role and membership grants, and account
+// destruction. An unspecified requirement is ALLOWED — the restriction is the
+// exception a method opts into, declared beside the RPC it governs.
+type ImpersonationRequirement int32
+
+const (
+	ImpersonationRequirement_IMPERSONATION_REQUIREMENT_UNSPECIFIED ImpersonationRequirement = 0
+	ImpersonationRequirement_IMPERSONATION_REQUIREMENT_ALLOWED     ImpersonationRequirement = 1
+	ImpersonationRequirement_IMPERSONATION_REQUIREMENT_FORBIDDEN   ImpersonationRequirement = 2
+)
+
+// Enum value maps for ImpersonationRequirement.
+var (
+	ImpersonationRequirement_name = map[int32]string{
+		0: "IMPERSONATION_REQUIREMENT_UNSPECIFIED",
+		1: "IMPERSONATION_REQUIREMENT_ALLOWED",
+		2: "IMPERSONATION_REQUIREMENT_FORBIDDEN",
+	}
+	ImpersonationRequirement_value = map[string]int32{
+		"IMPERSONATION_REQUIREMENT_UNSPECIFIED": 0,
+		"IMPERSONATION_REQUIREMENT_ALLOWED":     1,
+		"IMPERSONATION_REQUIREMENT_FORBIDDEN":   2,
+	}
+)
+
+func (x ImpersonationRequirement) Enum() *ImpersonationRequirement {
+	p := new(ImpersonationRequirement)
+	*p = x
+	return p
+}
+
+func (x ImpersonationRequirement) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ImpersonationRequirement) Descriptor() protoreflect.EnumDescriptor {
+	return file_saas_policy_v1_options_proto_enumTypes[6].Descriptor()
+}
+
+func (ImpersonationRequirement) Type() protoreflect.EnumType {
+	return &file_saas_policy_v1_options_proto_enumTypes[6]
+}
+
+func (x ImpersonationRequirement) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ImpersonationRequirement.Descriptor instead.
+func (ImpersonationRequirement) EnumDescriptor() ([]byte, []int) {
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{6}
+}
+
 // AuditEmission defines which outcomes produce durable audit events.
 type AuditEmission int32
 
@@ -409,11 +464,11 @@ func (x AuditEmission) String() string {
 }
 
 func (AuditEmission) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_policy_v1_options_proto_enumTypes[6].Descriptor()
+	return file_saas_policy_v1_options_proto_enumTypes[7].Descriptor()
 }
 
 func (AuditEmission) Type() protoreflect.EnumType {
-	return &file_saas_policy_v1_options_proto_enumTypes[6]
+	return &file_saas_policy_v1_options_proto_enumTypes[7]
 }
 
 func (x AuditEmission) Number() protoreflect.EnumNumber {
@@ -422,7 +477,7 @@ func (x AuditEmission) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AuditEmission.Descriptor instead.
 func (AuditEmission) EnumDescriptor() ([]byte, []int) {
-	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{6}
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{7}
 }
 
 // IdempotencyRequirement defines whether an idempotency key is accepted.
@@ -462,11 +517,11 @@ func (x IdempotencyRequirement) String() string {
 }
 
 func (IdempotencyRequirement) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_policy_v1_options_proto_enumTypes[7].Descriptor()
+	return file_saas_policy_v1_options_proto_enumTypes[8].Descriptor()
 }
 
 func (IdempotencyRequirement) Type() protoreflect.EnumType {
-	return &file_saas_policy_v1_options_proto_enumTypes[7]
+	return &file_saas_policy_v1_options_proto_enumTypes[8]
 }
 
 func (x IdempotencyRequirement) Number() protoreflect.EnumNumber {
@@ -475,7 +530,7 @@ func (x IdempotencyRequirement) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use IdempotencyRequirement.Descriptor instead.
 func (IdempotencyRequirement) EnumDescriptor() ([]byte, []int) {
-	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{7}
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{8}
 }
 
 // RateLimitClass selects a generated, centrally configured limiter budget.
@@ -530,11 +585,11 @@ func (x RateLimitClass) String() string {
 }
 
 func (RateLimitClass) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_policy_v1_options_proto_enumTypes[8].Descriptor()
+	return file_saas_policy_v1_options_proto_enumTypes[9].Descriptor()
 }
 
 func (RateLimitClass) Type() protoreflect.EnumType {
-	return &file_saas_policy_v1_options_proto_enumTypes[8]
+	return &file_saas_policy_v1_options_proto_enumTypes[9]
 }
 
 func (x RateLimitClass) Number() protoreflect.EnumNumber {
@@ -543,7 +598,7 @@ func (x RateLimitClass) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RateLimitClass.Descriptor instead.
 func (RateLimitClass) EnumDescriptor() ([]byte, []int) {
-	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{8}
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{9}
 }
 
 // Sensitivity controls logging, tracing, body capture, and documentation.
@@ -586,11 +641,11 @@ func (x Sensitivity) String() string {
 }
 
 func (Sensitivity) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_policy_v1_options_proto_enumTypes[9].Descriptor()
+	return file_saas_policy_v1_options_proto_enumTypes[10].Descriptor()
 }
 
 func (Sensitivity) Type() protoreflect.EnumType {
-	return &file_saas_policy_v1_options_proto_enumTypes[9]
+	return &file_saas_policy_v1_options_proto_enumTypes[10]
 }
 
 func (x Sensitivity) Number() protoreflect.EnumNumber {
@@ -599,7 +654,7 @@ func (x Sensitivity) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Sensitivity.Descriptor instead.
 func (Sensitivity) EnumDescriptor() ([]byte, []int) {
-	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{9}
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{10}
 }
 
 // ConditionAttribute names the closed set of record and caller facts a bounded
@@ -649,11 +704,11 @@ func (x ConditionAttribute) String() string {
 }
 
 func (ConditionAttribute) Descriptor() protoreflect.EnumDescriptor {
-	return file_saas_policy_v1_options_proto_enumTypes[10].Descriptor()
+	return file_saas_policy_v1_options_proto_enumTypes[11].Descriptor()
 }
 
 func (ConditionAttribute) Type() protoreflect.EnumType {
-	return &file_saas_policy_v1_options_proto_enumTypes[10]
+	return &file_saas_policy_v1_options_proto_enumTypes[11]
 }
 
 func (x ConditionAttribute) Number() protoreflect.EnumNumber {
@@ -662,7 +717,7 @@ func (x ConditionAttribute) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ConditionAttribute.Descriptor instead.
 func (ConditionAttribute) EnumDescriptor() ([]byte, []int) {
-	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{10}
+	return file_saas_policy_v1_options_proto_rawDescGZIP(), []int{11}
 }
 
 // ResourceBinding binds a protobuf request field to an authorization target.
@@ -936,7 +991,12 @@ type MethodPolicy struct {
 	// conditions is the closed set of bounded attribute predicates that must all
 	// hold, evaluated in domain code above the forced RLS floor — never replacing
 	// it. An empty list imposes no attribute condition.
-	Conditions    []*Condition `protobuf:"bytes,14,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	Conditions []*Condition `protobuf:"bytes,14,rep,name=conditions,proto3" json:"conditions,omitempty"`
+	// impersonation governs admission while a support session acts as another
+	// user. It is enforced centrally on the same verified identity every other
+	// impersonation gate reads, so a method cannot be restricted here and remain
+	// reachable through a handler that forgot to ask.
+	Impersonation ImpersonationRequirement `protobuf:"varint,15,opt,name=impersonation,proto3,enum=saas.policy.v1.ImpersonationRequirement" json:"impersonation,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1069,6 +1129,13 @@ func (x *MethodPolicy) GetConditions() []*Condition {
 	return nil
 }
 
+func (x *MethodPolicy) GetImpersonation() ImpersonationRequirement {
+	if x != nil {
+		return x.Impersonation
+	}
+	return ImpersonationRequirement_IMPERSONATION_REQUIREMENT_UNSPECIFIED
+}
+
 var file_saas_policy_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 	{
 		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
@@ -1110,7 +1177,7 @@ const file_saas_policy_v1_options_proto_rawDesc = "" +
 	"\tattribute\x18\x01 \x01(\x0e2\".saas.policy.v1.ConditionAttributeR\tattribute\x12)\n" +
 	"\x10allowed_statuses\x18\x02 \x03(\tR\x0fallowedStatuses\x12;\n" +
 	"\vtime_window\x18\x03 \x01(\v2\x1a.saas.policy.v1.TimeWindowR\n" +
-	"timeWindow\"\xe0\x06\n" +
+	"timeWindow\"\xb0\a\n" +
 	"\fMethodPolicy\x124\n" +
 	"\bexposure\x18\x01 \x01(\x0e2\x18.saas.policy.v1.ExposureR\bexposure\x129\n" +
 	"\x06tenant\x18\x02 \x01(\x0e2!.saas.policy.v1.TenantRequirementR\x06tenant\x12 \n" +
@@ -1129,7 +1196,8 @@ const file_saas_policy_v1_options_proto_rawDesc = "" +
 	"\x1dauthentication_factor_attempt\x18\r \x01(\bR\x1bauthenticationFactorAttempt\x129\n" +
 	"\n" +
 	"conditions\x18\x0e \x03(\v2\x19.saas.policy.v1.ConditionR\n" +
-	"conditions*l\n" +
+	"conditions\x12N\n" +
+	"\rimpersonation\x18\x0f \x01(\x0e2(.saas.policy.v1.ImpersonationRequirementR\rimpersonation*l\n" +
 	"\bExposure\x12\x18\n" +
 	"\x14EXPOSURE_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fEXPOSURE_PUBLIC\x10\x01\x12\x1a\n" +
@@ -1167,7 +1235,11 @@ const file_saas_policy_v1_options_proto_rawDesc = "" +
 	"\x1dPLATFORM_ROLE_REQUIREMENT_ANY\x10\x02\x12%\n" +
 	"!PLATFORM_ROLE_REQUIREMENT_SUPPORT\x10\x03\x12%\n" +
 	"!PLATFORM_ROLE_REQUIREMENT_BILLING\x10\x04\x12)\n" +
-	"%PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN\x10\x05*\xa8\x01\n" +
+	"%PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN\x10\x05*\x95\x01\n" +
+	"\x18ImpersonationRequirement\x12)\n" +
+	"%IMPERSONATION_REQUIREMENT_UNSPECIFIED\x10\x00\x12%\n" +
+	"!IMPERSONATION_REQUIREMENT_ALLOWED\x10\x01\x12'\n" +
+	"#IMPERSONATION_REQUIREMENT_FORBIDDEN\x10\x02*\xa8\x01\n" +
 	"\rAuditEmission\x12\x1e\n" +
 	"\x1aAUDIT_EMISSION_UNSPECIFIED\x10\x00\x12\x17\n" +
 	"\x13AUDIT_EMISSION_NONE\x10\x01\x12\x1a\n" +
@@ -1216,7 +1288,7 @@ func file_saas_policy_v1_options_proto_rawDescGZIP() []byte {
 	return file_saas_policy_v1_options_proto_rawDescData
 }
 
-var file_saas_policy_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
+var file_saas_policy_v1_options_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
 var file_saas_policy_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_saas_policy_v1_options_proto_goTypes = []any{
 	(Exposure)(0),                      // 0: saas.policy.v1.Exposure
@@ -1225,42 +1297,44 @@ var file_saas_policy_v1_options_proto_goTypes = []any{
 	(ResourceLookup)(0),                // 3: saas.policy.v1.ResourceLookup
 	(MFARequirement)(0),                // 4: saas.policy.v1.MFARequirement
 	(PlatformRoleRequirement)(0),       // 5: saas.policy.v1.PlatformRoleRequirement
-	(AuditEmission)(0),                 // 6: saas.policy.v1.AuditEmission
-	(IdempotencyRequirement)(0),        // 7: saas.policy.v1.IdempotencyRequirement
-	(RateLimitClass)(0),                // 8: saas.policy.v1.RateLimitClass
-	(Sensitivity)(0),                   // 9: saas.policy.v1.Sensitivity
-	(ConditionAttribute)(0),            // 10: saas.policy.v1.ConditionAttribute
-	(*ResourceBinding)(nil),            // 11: saas.policy.v1.ResourceBinding
-	(*AuditPolicy)(nil),                // 12: saas.policy.v1.AuditPolicy
-	(*TimeWindow)(nil),                 // 13: saas.policy.v1.TimeWindow
-	(*Condition)(nil),                  // 14: saas.policy.v1.Condition
-	(*MethodPolicy)(nil),               // 15: saas.policy.v1.MethodPolicy
-	(*descriptorpb.MethodOptions)(nil), // 16: google.protobuf.MethodOptions
+	(ImpersonationRequirement)(0),      // 6: saas.policy.v1.ImpersonationRequirement
+	(AuditEmission)(0),                 // 7: saas.policy.v1.AuditEmission
+	(IdempotencyRequirement)(0),        // 8: saas.policy.v1.IdempotencyRequirement
+	(RateLimitClass)(0),                // 9: saas.policy.v1.RateLimitClass
+	(Sensitivity)(0),                   // 10: saas.policy.v1.Sensitivity
+	(ConditionAttribute)(0),            // 11: saas.policy.v1.ConditionAttribute
+	(*ResourceBinding)(nil),            // 12: saas.policy.v1.ResourceBinding
+	(*AuditPolicy)(nil),                // 13: saas.policy.v1.AuditPolicy
+	(*TimeWindow)(nil),                 // 14: saas.policy.v1.TimeWindow
+	(*Condition)(nil),                  // 15: saas.policy.v1.Condition
+	(*MethodPolicy)(nil),               // 16: saas.policy.v1.MethodPolicy
+	(*descriptorpb.MethodOptions)(nil), // 17: google.protobuf.MethodOptions
 }
 var file_saas_policy_v1_options_proto_depIdxs = []int32{
 	2,  // 0: saas.policy.v1.ResourceBinding.target:type_name -> saas.policy.v1.ResourceTarget
 	3,  // 1: saas.policy.v1.ResourceBinding.lookup:type_name -> saas.policy.v1.ResourceLookup
-	6,  // 2: saas.policy.v1.AuditPolicy.emission:type_name -> saas.policy.v1.AuditEmission
-	10, // 3: saas.policy.v1.Condition.attribute:type_name -> saas.policy.v1.ConditionAttribute
-	13, // 4: saas.policy.v1.Condition.time_window:type_name -> saas.policy.v1.TimeWindow
+	7,  // 2: saas.policy.v1.AuditPolicy.emission:type_name -> saas.policy.v1.AuditEmission
+	11, // 3: saas.policy.v1.Condition.attribute:type_name -> saas.policy.v1.ConditionAttribute
+	14, // 4: saas.policy.v1.Condition.time_window:type_name -> saas.policy.v1.TimeWindow
 	0,  // 5: saas.policy.v1.MethodPolicy.exposure:type_name -> saas.policy.v1.Exposure
 	1,  // 6: saas.policy.v1.MethodPolicy.tenant:type_name -> saas.policy.v1.TenantRequirement
-	11, // 7: saas.policy.v1.MethodPolicy.resource_bindings:type_name -> saas.policy.v1.ResourceBinding
+	12, // 7: saas.policy.v1.MethodPolicy.resource_bindings:type_name -> saas.policy.v1.ResourceBinding
 	4,  // 8: saas.policy.v1.MethodPolicy.mfa:type_name -> saas.policy.v1.MFARequirement
-	12, // 9: saas.policy.v1.MethodPolicy.audit:type_name -> saas.policy.v1.AuditPolicy
-	7,  // 10: saas.policy.v1.MethodPolicy.idempotency:type_name -> saas.policy.v1.IdempotencyRequirement
-	8,  // 11: saas.policy.v1.MethodPolicy.rate_limit:type_name -> saas.policy.v1.RateLimitClass
-	9,  // 12: saas.policy.v1.MethodPolicy.request_sensitivity:type_name -> saas.policy.v1.Sensitivity
-	9,  // 13: saas.policy.v1.MethodPolicy.response_sensitivity:type_name -> saas.policy.v1.Sensitivity
+	13, // 9: saas.policy.v1.MethodPolicy.audit:type_name -> saas.policy.v1.AuditPolicy
+	8,  // 10: saas.policy.v1.MethodPolicy.idempotency:type_name -> saas.policy.v1.IdempotencyRequirement
+	9,  // 11: saas.policy.v1.MethodPolicy.rate_limit:type_name -> saas.policy.v1.RateLimitClass
+	10, // 12: saas.policy.v1.MethodPolicy.request_sensitivity:type_name -> saas.policy.v1.Sensitivity
+	10, // 13: saas.policy.v1.MethodPolicy.response_sensitivity:type_name -> saas.policy.v1.Sensitivity
 	5,  // 14: saas.policy.v1.MethodPolicy.platform_role:type_name -> saas.policy.v1.PlatformRoleRequirement
-	14, // 15: saas.policy.v1.MethodPolicy.conditions:type_name -> saas.policy.v1.Condition
-	16, // 16: saas.policy.v1.method_policy:extendee -> google.protobuf.MethodOptions
-	15, // 17: saas.policy.v1.method_policy:type_name -> saas.policy.v1.MethodPolicy
-	18, // [18:18] is the sub-list for method output_type
-	18, // [18:18] is the sub-list for method input_type
-	17, // [17:18] is the sub-list for extension type_name
-	16, // [16:17] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	15, // 15: saas.policy.v1.MethodPolicy.conditions:type_name -> saas.policy.v1.Condition
+	6,  // 16: saas.policy.v1.MethodPolicy.impersonation:type_name -> saas.policy.v1.ImpersonationRequirement
+	17, // 17: saas.policy.v1.method_policy:extendee -> google.protobuf.MethodOptions
+	16, // 18: saas.policy.v1.method_policy:type_name -> saas.policy.v1.MethodPolicy
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	18, // [18:19] is the sub-list for extension type_name
+	17, // [17:18] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_saas_policy_v1_options_proto_init() }
@@ -1273,7 +1347,7 @@ func file_saas_policy_v1_options_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_policy_v1_options_proto_rawDesc), len(file_saas_policy_v1_options_proto_rawDesc)),
-			NumEnums:      11,
+			NumEnums:      12,
 			NumMessages:   5,
 			NumExtensions: 1,
 			NumServices:   0,

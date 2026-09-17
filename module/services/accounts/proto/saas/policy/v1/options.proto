@@ -73,6 +73,18 @@ enum PlatformRoleRequirement {
   PLATFORM_ROLE_REQUIREMENT_SUPER_ADMIN = 5;
 }
 
+// ImpersonationRequirement defines whether a procedure may be invoked while a
+// platform operator is acting as another user. Impersonation is deliberately
+// short-lived, so the restriction targets what outlives it or changes who may
+// act later: durable credentials, role and membership grants, and account
+// destruction. An unspecified requirement is ALLOWED — the restriction is the
+// exception a method opts into, declared beside the RPC it governs.
+enum ImpersonationRequirement {
+  IMPERSONATION_REQUIREMENT_UNSPECIFIED = 0;
+  IMPERSONATION_REQUIREMENT_ALLOWED = 1;
+  IMPERSONATION_REQUIREMENT_FORBIDDEN = 2;
+}
+
 // AuditEmission defines which outcomes produce durable audit events.
 enum AuditEmission {
   AUDIT_EMISSION_UNSPECIFIED = 0;
@@ -183,6 +195,12 @@ message MethodPolicy {
   // hold, evaluated in domain code above the forced RLS floor — never replacing
   // it. An empty list imposes no attribute condition.
   repeated Condition conditions = 14;
+
+  // impersonation governs admission while a support session acts as another
+  // user. It is enforced centrally on the same verified identity every other
+  // impersonation gate reads, so a method cannot be restricted here and remain
+  // reachable through a handler that forgot to ask.
+  ImpersonationRequirement impersonation = 15;
 }
 
 extend google.protobuf.MethodOptions {

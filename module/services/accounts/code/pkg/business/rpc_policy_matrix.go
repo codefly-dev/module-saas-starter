@@ -74,6 +74,9 @@ func renderGuards(policy *policyv1.MethodPolicy) string {
 	if policy.GetMfa() != policyv1.MFARequirement_MFA_REQUIREMENT_NONE {
 		guards = append(guards, "mfa="+enumTail(policy.GetMfa().String(), "MFA_REQUIREMENT_"))
 	}
+	if policy.GetImpersonation() == policyv1.ImpersonationRequirement_IMPERSONATION_REQUIREMENT_FORBIDDEN {
+		guards = append(guards, "impersonation=FORBIDDEN")
+	}
 	if policy.GetAuthenticationFactorAttempt() {
 		guards = append(guards, "authentication_factor_attempt=true")
 	}
