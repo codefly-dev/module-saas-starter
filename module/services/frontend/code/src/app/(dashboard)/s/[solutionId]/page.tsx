@@ -40,8 +40,11 @@ export default async function SolutionPage({
 				}}
 				pageProps={{
 					solutionId: solution.id,
-					// Same-origin gateway BFF base — the remote makes ALL backend
-					// calls through here, which forwards through the API gateway.
+					// Same-origin base for every backend call the remote makes. The
+					// proxy routes on the path: a `saas.<pkg>.v1.<Service>/<Method>`
+					// procedure reaches the API gateway's root (the host's own
+					// services, e.g. the DatasourceService `<DatasourcesPanel>`
+					// calls), anything else reaches this solution's upstream.
 					apiBase: `/api/solutions/${solution.id}/proxy`,
 				}}
 			/>

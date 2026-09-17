@@ -298,7 +298,21 @@ export interface SolutionRemote {
 /** Props the host injects into every solution page. */
 export interface SolutionPageProps {
 	solutionId: string;
-	/** Same-origin base the remote must use for all backend calls (the gateway BFF). */
+	/**
+	 * Same-origin base for ALL of a remote's backend calls — its own service and
+	 * the host's platform services alike. ONE base covers both because the host
+	 * proxy routes on the path, not on the base: a Connect procedure shaped
+	 * `saas.<pkg>.v1.<Service>/<Method>` goes to the API gateway's root, exactly
+	 * where a host page's own call lands, and everything else goes to this
+	 * solution's registered upstream (`api/solutions/[id]/proxy/[...path]`).
+	 *
+	 * So a kit component the host hands a remote — `<DatasourcesPanel gateway>`
+	 * calls the host's `saas.accounts.v1.DatasourceService` — works over this
+	 * base unchanged. Do NOT add a second "host" base: it would be the same
+	 * destination reached a second way, and a remote built against a base an
+	 * older host does not inject receives `undefined` and throws inside
+	 * `SolutionErrorBoundary`, blanking the page instead of failing one panel.
+	 */
 	apiBase: string;
 	/** Host-owned access-token getter — the remote never touches the token store. */
 	getAccessToken: () => string | null;
