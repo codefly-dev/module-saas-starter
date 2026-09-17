@@ -727,8 +727,11 @@ type RetentionPolicy struct {
 
 // Session represents a refresh token session.
 type Session struct {
-	ID               string
-	UserID           string
+	ID     string
+	UserID string
+	// ActingAsUserID names the impersonated user on an impersonation window,
+	// and is empty on an ordinary login. Such a row has no RefreshTokenHash.
+	ActingAsUserID   string
 	RefreshTokenHash string
 	FamilyID         string
 	DeviceInfo       map[string]string

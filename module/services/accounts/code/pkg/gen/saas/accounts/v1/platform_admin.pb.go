@@ -413,8 +413,12 @@ type SessionInfo struct {
 	LastActiveAt  *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=last_active_at,json=lastActiveAt,proto3" json:"last_active_at,omitempty"`
 	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	IdleExpiresAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=idle_expires_at,json=idleExpiresAt,proto3" json:"idle_expires_at,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Set only on an impersonation window, naming the user being viewed. An
+	// ordinary login leaves it empty, so a client can tell the two apart rather
+	// than presenting an admin's support session as a device they signed in on.
+	ActingAsUserId string `protobuf:"bytes,9,opt,name=acting_as_user_id,json=actingAsUserId,proto3" json:"acting_as_user_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SessionInfo) Reset() {
@@ -501,6 +505,13 @@ func (x *SessionInfo) GetIdleExpiresAt() *timestamppb.Timestamp {
 		return x.IdleExpiresAt
 	}
 	return nil
+}
+
+func (x *SessionInfo) GetActingAsUserId() string {
+	if x != nil {
+		return x.ActingAsUserId
+	}
+	return ""
 }
 
 type ListActiveSessionsResponse struct {
@@ -1441,7 +1452,7 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12&\n" +
 	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d \x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x03 \x01(\tR\tpageToken\"\xe0\x03\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x8b\x04\n" +
 	"\vSessionInfo\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x1d\n" +
@@ -1454,7 +1465,8 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x0elast_active_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\flastActiveAt\x129\n" +
 	"\n" +
 	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12B\n" +
-	"\x0fidle_expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\ridleExpiresAt\x1a=\n" +
+	"\x0fidle_expires_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\ridleExpiresAt\x12)\n" +
+	"\x11acting_as_user_id\x18\t \x01(\tR\x0eactingAsUserId\x1a=\n" +
 	"\x0fDeviceInfoEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x7f\n" +

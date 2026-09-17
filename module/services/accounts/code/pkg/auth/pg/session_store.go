@@ -92,7 +92,7 @@ func (s *SessionStore) Insert(ctx context.Context, rec *auth.SessionRecord) erro
 	}
 
 	insert := func(ctx context.Context, tx pgx.Tx) error {
-		if err := s.admitDeviceSession(ctx, tx, rec.UserID); err != nil {
+		if err := s.admitSession(ctx, tx, rec); err != nil {
 			return err
 		}
 		return insertSession(ctx, tx, rec)
@@ -109,10 +109,15 @@ func (s *SessionStore) Insert(ctx context.Context, rec *auth.SessionRecord) erro
 	})
 }
 
-// admitDeviceSession serializes initial device-session creation on the user
-// row, retires sessions that are already beyond absolute/idle policy, and
-// evicts the oldest active device families to make room for the new one.
-func (s *SessionStore) admitDeviceSession(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
+// admitSession serializes initial session creation on the user row, retires
+// sessions that are already beyond absolute/idle policy, and evicts the oldest
+// active device families to make room for the new one.
+//
+// An impersonation window is not a device login: it takes no device slot and
+// evicts none, so an admin's own logins survive any number of impersonations
+// and an open window never costs the admin a device of their own.
+func (s *SessionStore) admitSession(ctx context.Context, tx pgx.Tx, rec *auth.SessionRecord) error {
+	userID := rec.UserID
 	var status string
 	if err := tx.QueryRow(ctx, `
 		SELECT status::text FROM users WHERE uuid = $1 FOR UPDATE`, userID).Scan(&status); err != nil {
@@ -142,6 +147,31 @@ func (s *SessionStore) admitDeviceSession(ctx context.Context, tx pgx.Tx, userID
 		return err
 	}
 
+	if rec.ActingAsUserID != uuid.Nil {
+		// A window takes no device slot, but it must not be unbounded either:
+		// the edge budget for this call is the ordinary per-minute allowance, so
+		// an admin can hold far more open windows than they have devices, and a
+		// page of their sessions would show nothing but windows. Retire the
+		// oldest beyond the same ceiling, scoped to windows so a login is never
+		// the row evicted — each window is its own family, so this is per row.
+		_, err := tx.Exec(ctx, `
+			WITH open_windows AS (
+				SELECT id,
+				       ROW_NUMBER() OVER (
+				           ORDER BY created_at DESC, id DESC
+				       ) AS recency
+				FROM sessions
+				WHERE user_id = $1 AND revoked_at IS NULL AND acting_as_user_id IS NOT NULL
+			)
+			UPDATE sessions
+			   SET revoked_at = CURRENT_TIMESTAMP,
+			       revoked_reason = 'impersonation_limit_exceeded'
+			 WHERE id IN (SELECT id FROM open_windows WHERE recency >= $2)`,
+			userID, s.policy.MaxActiveDevices,
+		)
+		return err
+	}
+
 	_, err := tx.Exec(ctx, `
 		WITH active_devices AS (
 			SELECT family_id,
@@ -149,7 +179,7 @@ func (s *SessionStore) admitDeviceSession(ctx context.Context, tx pgx.Tx, userID
 			           ORDER BY MAX(last_active_at) DESC, family_id DESC
 			       ) AS recency
 			FROM sessions
-			WHERE user_id = $1 AND revoked_at IS NULL
+			WHERE user_id = $1 AND revoked_at IS NULL AND acting_as_user_id IS NULL
 			GROUP BY family_id
 		), evicted AS (
 			SELECT family_id
@@ -192,8 +222,13 @@ func prepareSessionRecord(rec *auth.SessionRecord) error {
 	if rec.AssuranceLevel == "" {
 		rec.AssuranceLevel = auth.AssuranceLevelAAL1
 	}
-	if len(rec.RefreshHash) == 0 {
+	// An impersonation window holds no rotatable credential; every other
+	// session must, or it would be unreachable by its own refresh.
+	if len(rec.RefreshHash) == 0 && rec.ActingAsUserID == uuid.Nil {
 		return errors.New("pgauth: session record missing refresh hash")
+	}
+	if len(rec.RefreshHash) > 0 && rec.ActingAsUserID != uuid.Nil {
+		return errors.New("pgauth: impersonation session record carries a refresh hash")
 	}
 	if rec.ExpiresAt.IsZero() {
 		return errors.New("pgauth: session record missing expiry")
@@ -202,7 +237,10 @@ func prepareSessionRecord(rec *auth.SessionRecord) error {
 }
 
 func insertSession(ctx context.Context, tx pgx.Tx, rec *auth.SessionRecord) error {
-	hashHex := hex.EncodeToString(rec.RefreshHash)
+	var hashArg any
+	if len(rec.RefreshHash) > 0 {
+		hashArg = hex.EncodeToString(rec.RefreshHash)
+	}
 	deviceInfo, err := json.Marshal(rec.DeviceInfo)
 	if err != nil {
 		return fmt.Errorf("pgauth: encode session device info: %w", err)
@@ -214,6 +252,10 @@ func insertSession(ctx context.Context, tx pgx.Tx, rec *auth.SessionRecord) erro
 	var orgIDArg any
 	if rec.OrgID != uuid.Nil {
 		orgIDArg = rec.OrgID
+	}
+	var actingAsArg any
+	if rec.ActingAsUserID != uuid.Nil {
+		actingAsArg = rec.ActingAsUserID
 	}
 	var authenticatedAtArg any
 	if !rec.AuthenticatedAt.IsZero() {
@@ -234,16 +276,16 @@ func insertSession(ctx context.Context, tx pgx.Tx, rec *auth.SessionRecord) erro
 				created_at, last_active_at, idle_expires_at, expires_at,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name
+				email, display_name, acting_as_user_id
 			) VALUES (
 				$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-				$14, $15, $16, $17, $18, $19, $20
+				$14, $15, $16, $17, $18, $19, $20, $21
 			)`,
-		rec.ID, rec.UserID, hashHex, rec.FamilyID, deviceInfo, nilIfEmpty(rec.IPAddress),
+		rec.ID, rec.UserID, hashArg, rec.FamilyID, deviceInfo, nilIfEmpty(rec.IPAddress),
 		rec.IssuedAt, rec.LastActiveAt, rec.IdleExpiresAt, rec.ExpiresAt,
 		orgIDArg, rec.OrgRole, rec.PlatformRole, rec.MFASatisfied,
 		authenticationMethods, authenticatedAtArg, rec.AssuranceLevel, mfaVerifiedAtArg,
-		nilIfEmpty(rec.Email), nilIfEmpty(rec.DisplayName),
+		nilIfEmpty(rec.Email), nilIfEmpty(rec.DisplayName), actingAsArg,
 	)
 	return err
 }
@@ -272,7 +314,7 @@ func (s *SessionStore) FindByRefreshHash(ctx context.Context, hash []byte) (*aut
 				device_info, ip_address,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name
+				email, display_name, acting_as_user_id
 			FROM sessions
 			WHERE refresh_token_hash = $1
 			LIMIT 1`, hashHex), hash)
@@ -303,15 +345,19 @@ func scanSession(row rowScanner, hash []byte) (*auth.SessionRecord, error) {
 	var ipAddress *string
 	var email *string
 	var displayName *string
+	var actingAsUserID *uuid.UUID
 	if err := row.Scan(
 		&rec.ID, &rec.UserID, &rec.FamilyID,
 		&rec.IssuedAt, &rec.LastActiveAt, &rec.IdleExpiresAt, &rec.ExpiresAt, &revokedAt, &revokedReason,
 		&deviceInfo, &ipAddress,
 		&orgID, &rec.OrgRole, &rec.PlatformRole, &rec.MFASatisfied,
 		&rec.AuthenticationMethods, &authenticatedAt, &rec.AssuranceLevel, &mfaVerifiedAt,
-		&email, &displayName,
+		&email, &displayName, &actingAsUserID,
 	); err != nil {
 		return nil, err
+	}
+	if actingAsUserID != nil {
+		rec.ActingAsUserID = *actingAsUserID
 	}
 	rec.RefreshHash = append([]byte(nil), hash...)
 	rec.RevokedAt = revokedAt
@@ -373,7 +419,7 @@ func (s *SessionStore) RotateRefresh(
 				device_info, ip_address,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name
+				email, display_name, acting_as_user_id
 			FROM sessions
 			WHERE refresh_token_hash = $1
 			LIMIT 1
@@ -486,7 +532,7 @@ func (s *SessionStore) ExchangeOrganization(
 				device_info, ip_address,
 				org_id, org_role, platform_role, mfa_satisfied,
 				authentication_methods, auth_time, assurance_level, mfa_verified_at,
-				email, display_name
+				email, display_name, acting_as_user_id
 			FROM sessions
 			WHERE id = $1 AND user_id = $2
 			LIMIT 1
@@ -498,6 +544,12 @@ func (s *SessionStore) ExchangeOrganization(
 			return err
 		}
 		if current.RevokedAt != nil {
+			return auth.ErrSessionUnavailable
+		}
+		// An impersonation window is not a device session to exchange. Reissuing
+		// from it would drop the acting claim and re-arm the ordinary access-token
+		// lifetime, turning a capped support window into the admin's own session.
+		if current.ActingAsUserID != uuid.Nil {
 			return auth.ErrSessionUnavailable
 		}
 

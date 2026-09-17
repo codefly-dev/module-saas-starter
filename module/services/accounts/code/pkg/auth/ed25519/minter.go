@@ -312,7 +312,8 @@ func (m *Minter) MintModuleRegistration(prefix string) (string, time.Time, error
 }
 
 // Mint implements auth.JWTMinter.Mint. It issues a fresh access token and
-// refresh token, persisting the session row with a new family_id.
+// refresh token, persisting the session row with a new family_id. An identity
+// naming an impersonated user gets the access half only — see prepareMint.
 //
 // For refresh rotation (issuing a new refresh within an existing family),
 // callers go through VerifyRefresh first, which mints a rotated token.
@@ -363,16 +364,36 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		return nil, nil, fmt.Errorf("ed25519minter: sign access: %w", err)
 	}
 
-	// Refresh token
-	plain, hash, err := newRefreshToken()
-	if err != nil {
-		return nil, nil, fmt.Errorf("ed25519minter: generate refresh: %w", err)
-	}
-
-	idleExpiresAt := now.Add(m.cfg.SessionPolicy.IdleTimeout)
-	absoluteExpiresAt := now.Add(m.cfg.SessionPolicy.AbsoluteLifetime)
-	if idleExpiresAt.After(absoluteExpiresAt) {
+	// An impersonation window is access-only. Generating a refresh token for it
+	// would persist a live rotatable credential nobody holds the plaintext of,
+	// sized to a session policy that does not apply — and would defeat the point
+	// of capping the impersonation token separately. Branching here rather than
+	// at the ImpersonateUser call site makes it an invariant of minting: no
+	// caller can produce a refreshable impersonation session.
+	var (
+		plain             string
+		hash              []byte
+		idleExpiresAt     time.Time
+		absoluteExpiresAt time.Time
+	)
+	if identity.ActingAsUserID != uuid.Nil {
+		// The row's lifetime is the token's acceptance window, extended past exp
+		// by the verifier leeway for the same reason RevokeAccess extends a
+		// revocation marker: the token is admitted until exp+ClockSkew, so a row
+		// retired at exp would drop out of the open-window queries while its
+		// token still authenticates — the window would be live and undiscoverable.
+		absoluteExpiresAt = accessExpiresAt.Add(m.cfg.ClockSkew)
 		idleExpiresAt = absoluteExpiresAt
+	} else {
+		plain, hash, err = newRefreshToken()
+		if err != nil {
+			return nil, nil, fmt.Errorf("ed25519minter: generate refresh: %w", err)
+		}
+		idleExpiresAt = now.Add(m.cfg.SessionPolicy.IdleTimeout)
+		absoluteExpiresAt = now.Add(m.cfg.SessionPolicy.AbsoluteLifetime)
+		if idleExpiresAt.After(absoluteExpiresAt) {
+			idleExpiresAt = absoluteExpiresAt
+		}
 	}
 	rec := &auth.SessionRecord{
 		// The sid claim and persisted session primary key must identify the
@@ -392,6 +413,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		DeviceInfo:            maps.Clone(identity.DeviceInfo),
 		IPAddress:             identity.IPAddress,
 		FamilyID:              familyID,
+		ActingAsUserID:        identity.ActingAsUserID,
 		RefreshHash:           hash,
 		IssuedAt:              now,
 		LastActiveAt:          now,
@@ -775,6 +797,23 @@ func (m *Minter) RevokeSessionAccess(ctx context.Context, sessionID string) erro
 	return m.revoker.RevokeSession(ctx, sessionID, m.cfg.AccessTokenTTL+m.cfg.ClockSkew)
 }
 
+// accessTTL is the lifetime of an access token minted for identity.
+//
+// Impersonation sessions are capped at min(ImpersonationTokenTTL,
+// AccessTokenTTL) so an admin walking away from a "viewing as customer"
+// session can't leave a long-lived token behind even if normal-session TTL is
+// raised. The impersonation banner makes the state visible; this is
+// belt-and-suspenders.
+func (m *Minter) accessTTL(identity *auth.Identity) time.Duration {
+	ttl := m.cfg.AccessTokenTTL
+	if identity.ActingAsUserID != uuid.Nil {
+		if impTTL := m.cfg.ImpersonationTokenTTL; impTTL > 0 && impTTL < ttl {
+			ttl = impTTL
+		}
+	}
+	return ttl
+}
+
 func (m *Minter) signAccess(
 	identity *auth.Identity,
 	sessionID uuid.UUID,
@@ -784,18 +823,7 @@ func (m *Minter) signAccess(
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	// Impersonation sessions are capped at min(ImpersonationTokenTTL,
-	// AccessTokenTTL) so an admin walking away from a "viewing as customer"
-	// session can't leave a long-lived token behind even if normal-session
-	// TTL is raised. The impersonation banner makes the state visible; this
-	// is belt-and-suspenders.
-	ttl := m.cfg.AccessTokenTTL
-	if identity.ActingAsUserID != uuid.Nil {
-		if impTTL := m.cfg.ImpersonationTokenTTL; impTTL > 0 && impTTL < ttl {
-			ttl = impTTL
-		}
-	}
-	expiresAt := now.Add(ttl)
+	expiresAt := now.Add(m.accessTTL(identity))
 	claims := accessClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.cfg.Issuer,

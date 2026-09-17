@@ -5,7 +5,10 @@ package business_test
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/auth"
@@ -18,9 +21,13 @@ import (
 // owner and an ordinary member.
 type impersonationFixture struct {
 	supportID string
-	ownerID   string
-	memberID  string
-	orgID     string
+	// supportOrgID is an organization the admin is genuinely a member of, so a
+	// refused exchange out of an impersonation window is refused for being one
+	// and not for a missing membership.
+	supportOrgID string
+	ownerID      string
+	memberID     string
+	orgID        string
 }
 
 // grantPlatformRole grants and, on cleanup, revokes. platform_admins.granted_by
@@ -36,7 +43,7 @@ func seedImpersonationFixture(t *testing.T, name string) impersonationFixture {
 	t.Helper()
 	ctx := testCtx
 
-	supportID, _ := mustUserAndOrg(t,
+	supportID, supportOrgID := mustUserAndOrg(t,
 		ctx, "support-"+name+"@example.com", "support-"+name, "Support Org "+name)
 	grantPlatformRole(t, supportID, "support", supportID)
 
@@ -60,10 +67,11 @@ func seedImpersonationFixture(t *testing.T, name string) impersonationFixture {
 	}))
 
 	return impersonationFixture{
-		supportID: supportID,
-		ownerID:   ownerID,
-		memberID:  memberResp.User.Uuid,
-		orgID:     orgID,
+		supportID:    supportID,
+		supportOrgID: supportOrgID,
+		ownerID:      ownerID,
+		memberID:     memberResp.User.Uuid,
+		orgID:        orgID,
 	}
 }
 
@@ -296,4 +304,181 @@ func TestAuditStoreRejectsIncompleteImpersonationIdentity(t *testing.T) {
 			require.Contains(t, err.Error(), "audit_events_impersonation_identity_complete")
 		})
 	}
+}
+
+// adminSessions reads the admin's policy-valid session rows straight from the
+// store, so the assertions below are about persisted state rather than about
+// what a response chose to reveal.
+func adminSessions(t *testing.T, userID string) []*business.Session {
+	t.Helper()
+	var sessions []*business.Session
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		var err error
+		sessions, err = testStore.ListActiveSessions(ctx, userID, 50)
+		return err
+	}))
+	return sessions
+}
+
+func sessionsActingAs(sessions []*business.Session, targetID string) []*business.Session {
+	var matched []*business.Session
+	for _, s := range sessions {
+		if s.ActingAsUserID == targetID {
+			matched = append(matched, s)
+		}
+	}
+	return matched
+}
+
+// mintAdminLogin gives the admin an ordinary device session of their own, so
+// the impersonation cases can show what impersonation does and does not do to
+// it.
+func mintAdminLogin(t *testing.T, userID string) *auth.TokenPair {
+	t.Helper()
+	pair, err := testService.JWTMinter().Mint(testCtx, &auth.Identity{
+		UserID:    uuid.MustParse(userID),
+		SessionID: business.NewID(),
+	})
+	require.NoError(t, err)
+	return pair
+}
+
+// Starting impersonation persists a session row that is marked as one, expires
+// with the token rather than on the ordinary session policy, and carries no
+// refresh credential for anyone to rotate.
+func TestImpersonationPersistsAMarkedCredentiallessSession(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "marked")
+
+	before := time.Now()
+	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+	require.NoError(t, err)
+
+	windows := sessionsActingAs(adminSessions(t, fixture.supportID), fixture.memberID)
+	require.Len(t, windows, 1)
+	window := windows[0]
+
+	// Read NULL-ness from the column itself: ListActiveSessions projects the
+	// hash through COALESCE(..., ''), so an empty string here would be
+	// indistinguishable from the absence the whole change is about.
+	var hashIsNull bool
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx,
+			`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, window.ID).Scan(&hashIsNull)
+	}))
+	require.True(t, hashIsNull,
+		"no rotatable credential may exist for an impersonation session")
+
+	// Bounded on both sides rather than pinned to a point: the ordinary policy
+	// would put this a week out, while a row retired at the token's nominal exp
+	// would go missing from this very query while its token still authenticates.
+	// The exact leeway arithmetic belongs to the minter's own tests.
+	require.Equal(t, window.ExpiresAt, window.IdleExpiresAt)
+	// expires_in is the remaining life of the token just issued (#777), so
+	// before+expires_in is at or before its exp — the row has to outlive that.
+	reportedExp := before.Add(time.Duration(issued.ExpiresIn) * time.Second)
+	require.True(t, window.ExpiresAt.After(reportedExp),
+		"an impersonation row must outlive the token's exp by the verifier leeway")
+	require.True(t, window.ExpiresAt.Before(before.Add(time.Hour)),
+		"an impersonation row must not inherit the ordinary session lifetime")
+
+	identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
+	require.NoError(t, err)
+	require.Equal(t, window.ID, identity.SessionID.String(),
+		"the persisted row and the token's sid must be the same session")
+}
+
+// The admin's device list distinguishes the two. An impersonation is support
+// work the admin performed, not a device they signed in on.
+func TestListActiveSessionsNeverPresentsImpersonationAsALogin(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "listed")
+	mintAdminLogin(t, fixture.supportID)
+
+	_, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+	require.NoError(t, err)
+
+	listed, err := testService.ListActiveSessions(testCtx, fixture.supportID,
+		&gen.ListActiveSessionsRequest{UserId: fixture.supportID})
+	require.NoError(t, err)
+	require.Len(t, listed.Sessions, 2)
+
+	var logins, windows int
+	for _, s := range listed.Sessions {
+		require.Equal(t, fixture.supportID, s.UserId)
+		if s.ActingAsUserId == "" {
+			logins++
+			continue
+		}
+		require.Equal(t, fixture.memberID, s.ActingAsUserId)
+		windows++
+	}
+	require.Equal(t, 1, logins)
+	require.Equal(t, 1, windows)
+}
+
+// Impersonation is not something the admin's own session pays for: it is not
+// rotated, not revoked, and still refreshes afterwards.
+func TestImpersonationLeavesTheAdminsOwnSessionUntouched(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "untouched")
+	login := mintAdminLogin(t, fixture.supportID)
+
+	own := adminSessions(t, fixture.supportID)
+	require.Len(t, own, 1)
+	familyBefore := own[0].FamilyID
+
+	for range 3 {
+		_, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+			&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+		require.NoError(t, err)
+	}
+
+	after := adminSessions(t, fixture.supportID)
+	require.Len(t, sessionsActingAs(after, fixture.memberID), 3)
+	var ownAfter []*business.Session
+	for _, s := range after {
+		if s.ActingAsUserID == "" {
+			ownAfter = append(ownAfter, s)
+		}
+	}
+	require.Len(t, ownAfter, 1, "the admin's own login must neither be revoked nor duplicated")
+	require.Equal(t, familyBefore, ownAfter[0].FamilyID, "no family rotation")
+	require.Equal(t, own[0].ID, ownAfter[0].ID, "no successor row")
+
+	rotated, err := testService.JWTMinter().VerifyRefresh(testCtx, login.RefreshToken)
+	require.NoError(t, err, "the admin's own refresh credential must still be live")
+	require.NotEmpty(t, rotated.RefreshToken)
+}
+
+// The one reissue path an impersonation token could reach refuses it, so a
+// capped window cannot be traded for a session at the ordinary lifetime.
+func TestImpersonationSessionCannotBeExchangedForALongerLivedToken(t *testing.T) {
+	clearData(t)
+	fixture := seedImpersonationFixture(t, "exchange")
+
+	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+		&gen.ImpersonateUserRequest{UserId: fixture.memberID})
+	require.NoError(t, err)
+	identity, err := testService.JWTMinter().VerifyAccess(issued.AccessToken)
+	require.NoError(t, err)
+
+	// The admin owns supportOrgID, so the only thing standing between this call
+	// and a fresh, uncapped access token is the window itself.
+	_, err = testService.SwitchOrganization(testCtx, fixture.supportID, identity.SessionID,
+		&gen.SwitchOrganizationRequest{OrganizationId: fixture.supportOrgID})
+	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
+
+	windows := sessionsActingAs(adminSessions(t, fixture.supportID), fixture.memberID)
+	require.Len(t, windows, 1, "the refused exchange must leave the window as it was")
+	var stillCredentialless bool
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx,
+			`SELECT refresh_token_hash IS NULL FROM sessions WHERE id = $1`, windows[0].ID).Scan(&stillCredentialless)
+	}))
+	require.True(t, stillCredentialless)
 }

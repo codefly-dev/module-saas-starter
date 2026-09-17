@@ -22,6 +22,12 @@ import (
 
 // memoryStore — duplicated from pkg/auth/memory_store_test.go because _test
 // files don't export across packages. Keep in sync if that one changes.
+// hasRefreshCredential mirrors what `WHERE refresh_token_hash = $1` does in the
+// real store: a row holding no hash is NULL there and matches nothing, however
+// the presented hash was constructed. Without this the fake would match an
+// impersonation row on a nil hash and report a rotation the database refuses.
+func hasRefreshCredential(rec *auth.SessionRecord) bool { return len(rec.RefreshHash) > 0 }
+
 type memoryStore struct {
 	mu                   sync.Mutex
 	records              []auth.SessionRecord
@@ -40,7 +46,7 @@ func (s *memoryStore) FindByRefreshHash(_ context.Context, hash []byte) (*auth.S
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.records {
-		if bytes.Equal(s.records[i].RefreshHash, hash) {
+		if hasRefreshCredential(&s.records[i]) && bytes.Equal(s.records[i].RefreshHash, hash) {
 			r := s.records[i]
 			return &r, nil
 		}
@@ -56,7 +62,7 @@ func (s *memoryStore) RotateRefresh(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.records {
-		if !bytes.Equal(s.records[i].RefreshHash, hash) {
+		if !hasRefreshCredential(&s.records[i]) || !bytes.Equal(s.records[i].RefreshHash, hash) {
 			continue
 		}
 		if s.records[i].RevokedAt != nil {
@@ -1421,4 +1427,136 @@ func TestSwitchOrganizationReportsTheExpiryItSigned(t *testing.T) {
 	switched, expiresAt, err := m.SwitchOrganization(ctx, identity.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
 	require.NoError(t, err)
 	requireSignedFor(t, switched, expiresAt, 7*time.Minute)
+}
+
+// An impersonation window is access-only. Nothing rotatable is generated, so
+// nothing rotatable is returned or persisted — the property AUTHZ.md claims.
+func TestMintImpersonationIssuesNoRefreshCredential(t *testing.T) {
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	store := &memoryStore{}
+	skew := 60 * time.Second
+	m := ed25519minter.New(ed25519minter.Config{
+		Issuer:                "test-issuer",
+		Audience:              "test-audience",
+		AccessTokenTTL:        10 * time.Minute,
+		ImpersonationTokenTTL: 90 * time.Second,
+		ClockSkew:             skew,
+	}, priv, store)
+
+	identity := newIdentity()
+	target := uuid.Must(uuid.NewV7())
+	identity.ActingAsUserID = target
+	identity.PlatformRole = ""
+
+	before := time.Now()
+	pair, err := m.Mint(context.Background(), identity)
+	require.NoError(t, err)
+	require.Empty(t, pair.RefreshToken, "impersonation must not hand back a refresh half")
+	require.NotEmpty(t, pair.AccessToken)
+
+	require.Len(t, store.records, 1)
+	rec := store.records[0]
+	require.Empty(t, rec.RefreshHash, "no refresh hash may be persisted for an impersonation window")
+	require.Equal(t, target, rec.ActingAsUserID)
+	require.Equal(t, identity.UserID, rec.UserID, "the row stays attributed to the admin")
+
+	// The row tracks the token, not the session policy's days, so it leaves the
+	// admin's device list when the window closes.
+	require.Equal(t, rec.ExpiresAt, rec.IdleExpiresAt)
+	require.WithinDuration(t, before.Add(90*time.Second+skew), rec.ExpiresAt, 5*time.Second)
+}
+
+// The open-window queries filter on expires_at, and a token is admitted until
+// exp+ClockSkew. A row retired at exp would leave the last leeway window of
+// every impersonation live and undiscoverable — no ListActiveSessions row to
+// show a support engineer, and no family_id for an operator to revoke.
+func TestImpersonationRowOutlivesTheTokenAcceptanceWindow(t *testing.T) {
+	skew := 60 * time.Second
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	store := &memoryStore{}
+	m := ed25519minter.New(ed25519minter.Config{
+		Issuer:                "test-issuer",
+		Audience:              "test-audience",
+		AccessTokenTTL:        3 * time.Minute,
+		ImpersonationTokenTTL: 90 * time.Second,
+		ClockSkew:             skew,
+	}, priv, store)
+
+	identity := newIdentity()
+	identity.ActingAsUserID = uuid.Must(uuid.NewV7())
+	pair, err := m.Mint(context.Background(), identity)
+	require.NoError(t, err)
+
+	var claims struct {
+		Exp int64 `json:"exp"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(decodeJWTPayload(t, pair.AccessToken)), &claims))
+	acceptedUntil := time.Unix(claims.Exp, 0).Add(skew)
+
+	require.Len(t, store.records, 1)
+	rec := store.records[0]
+	require.False(t, rec.ExpiresAt.Before(acceptedUntil),
+		"row expires_at %s must not precede the token's acceptance window ending %s",
+		rec.ExpiresAt, acceptedUntil)
+	require.False(t, rec.IdleExpiresAt.Before(acceptedUntil),
+		"row idle_expires_at %s must not precede the token's acceptance window ending %s",
+		rec.IdleExpiresAt, acceptedUntil)
+}
+
+// An ordinary login is unaffected by the impersonation branch.
+func TestMintOrdinarySessionKeepsRefreshCredentialAndPolicyLifetime(t *testing.T) {
+	m, store := newMinter(t)
+
+	before := time.Now()
+	pair, err := m.Mint(context.Background(), newIdentity())
+	require.NoError(t, err)
+	require.NotEmpty(t, pair.RefreshToken)
+
+	require.Len(t, store.records, 1)
+	rec := store.records[0]
+	require.NotEmpty(t, rec.RefreshHash)
+	require.Equal(t, uuid.Nil, rec.ActingAsUserID)
+	require.WithinDuration(t, before.Add(auth.DefaultSessionAbsoluteLifetime), rec.ExpiresAt, time.Minute)
+}
+
+// The impersonation row's family carries nothing that can be rotated, so a
+// forged refresh aimed at it is indistinguishable from an unknown token.
+func TestImpersonationFamilyCannotBeRotated(t *testing.T) {
+	m, store := newMinter(t)
+
+	identity := newIdentity()
+	identity.ActingAsUserID = uuid.Must(uuid.NewV7())
+	_, err := m.Mint(context.Background(), identity)
+	require.NoError(t, err)
+
+	_, err = m.VerifyRefresh(context.Background(), "")
+	require.ErrorIs(t, err, auth.ErrRefreshRevoked)
+
+	_, err = m.VerifyRefresh(context.Background(), uuid.Must(uuid.NewV7()).String())
+	require.ErrorIs(t, err, auth.ErrRefreshRevoked)
+
+	require.Len(t, store.records, 1, "no successor row may be minted")
+	require.Nil(t, store.records[0].RevokedAt,
+		"a failed forgery must not revoke the window it aimed at")
+}
+
+// Refresh rotation re-mints from current authorization, which never names an
+// impersonated user — so a rotated row keeps its refresh credential and an
+// ordinary session can never drift into the impersonation shape.
+func TestRotatedSessionIsNeverImpersonation(t *testing.T) {
+	m, store := newMinter(t)
+
+	pair, err := m.Mint(context.Background(), newIdentity())
+	require.NoError(t, err)
+
+	rotated, err := m.VerifyRefresh(context.Background(), pair.RefreshToken)
+	require.NoError(t, err)
+	require.NotEmpty(t, rotated.RefreshToken)
+
+	require.Len(t, store.records, 2)
+	successor := store.records[1]
+	require.Equal(t, uuid.Nil, successor.ActingAsUserID)
+	require.NotEmpty(t, successor.RefreshHash)
 }

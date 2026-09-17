@@ -20,6 +20,8 @@ export interface FeatureFlag {
 export interface SessionInfo {
 	id: string;
 	userId: string;
+	/** Set only on an impersonation window, naming the user being viewed. */
+	actingAsUserId?: string;
 	ipAddress: string;
 	deviceInfo: Record<string, string>;
 	createdAt?: string;

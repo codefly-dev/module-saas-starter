@@ -88,9 +88,19 @@ authority.
 - **No inactive target.** The target must be an active account, so a support
   session cannot outlive the account's own lifecycle.
 - **A short, separately capped lifetime.** `Config.ImpersonationTokenTTL` caps
-  the access token independently of the ordinary TTL, and the token carries no
-  refresh half — exiting impersonation means falling back to the admin's own
-  session, which impersonation never touched.
+  the access token independently of the ordinary TTL — exiting impersonation
+  means falling back to the admin's own session, which impersonation never
+  touched.
+- **No refresh half, and no way to acquire one.** `prepareMint` generates no
+  refresh token when the identity names an impersonated user, so none is
+  returned and none is stored: `sessions.refresh_token_hash` is NULL on that
+  row, and `refresh_token_hash = $1` never matches NULL, so no forged or
+  replayed hash reaches it. `acting_as_user_id` carries the same fact in the
+  schema — a CHECK ties the two, and `ExchangeOrganization` refuses such a row
+  rather than reissuing from it at the ordinary lifetime. The row's
+  `expires_at` and `idle_expires_at` are the token's, not the session policy's,
+  so it leaves `ListActiveSessions` when the window closes and is labelled as
+  impersonation while it is open rather than shown as a login.
 
 ## Layer 1 — Policy gates (handler-level)
 

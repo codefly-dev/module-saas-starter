@@ -20,6 +20,7 @@ import {
 	AlertDialogFooter,
 	AlertDialogHeader,
 	AlertDialogTitle,
+	Badge,
 	Button,
 	DropdownMenu,
 	DropdownMenuContent,
@@ -50,6 +51,20 @@ export function SessionsPage() {
 						{truncateUUID(info.getValue())}
 					</span>
 				),
+			}),
+			col.accessor("actingAsUserId", {
+				header: "Type",
+				cell: (info) => {
+					const target = info.getValue();
+					if (!target) {
+						return <span className="text-muted-foreground">Login</span>;
+					}
+					return (
+						<Badge variant="outline" className="text-xs">
+							Impersonating {truncateUUID(target)}
+						</Badge>
+					);
+				},
 			}),
 			col.accessor("ipAddress", {
 				header: "IP Address",
