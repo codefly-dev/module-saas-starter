@@ -55,6 +55,12 @@ digest" when the cause was a missing internal token and the digest was correct.
 exercise something — a suite needing Docker, a graph you could not boot, a release
 path you could not run — the PR body says so.
 
+**Do not open issues.** The tracker is one epic and its sub-issues, one per
+area of the handbook page's stories (see the doc index). A finding — a review
+split-out, a bug met while implementing, a CI defect — is a comment on, or a
+checkbox appended to, the sub-issue that owns the area. A new issue needs the
+owner to ask for it.
+
 ## Naming and confidentiality
 
 Everything in this repository — issues, PRs, docs, specs, code, comments, tests,
@@ -193,6 +199,8 @@ contract change reaching that tree needs a `version:` bump in its `package.json`
 or the release fails. Recipes and traps: the `cut-a-release` skill.
 
 ## Doc index
+
+The tracker: epic #804, the host as its 31 handbook stories, with #805–#808 as its only issues.
 
 Start from [MODULE.md](./MODULE.md), whose "Quick links" indexes the full set, and
 [RELEASE_GATES.md](./RELEASE_GATES.md) for the gates. Which claim in those
