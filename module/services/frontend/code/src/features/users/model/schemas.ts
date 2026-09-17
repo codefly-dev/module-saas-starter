@@ -7,17 +7,24 @@ export const suspendUserSchema = z.object({
 
 export type SuspendUserValues = z.infer<typeof suspendUserSchema>;
 
-/** The justification recorded on the impersonation audit event. The floor
- * mirrors the request contract's own `min_len`, and trimming first is what makes
- * the two agree — the server counts characters, so whitespace would clear the
- * length here and be refused there. */
+/** The justification recorded on the impersonation audit event. Both bounds
+ * mirror the request contract, and both are measured the way the server measures
+ * them: in code points, on the trimmed value. `String.length` counts UTF-16
+ * units, so it disagrees with the server on anything outside the basic plane —
+ * five emoji read as ten there and five here, which would let the dialog accept
+ * a reason the RPC then rejects with no field to attach the error to. */
+const codePoints = (value: string) => [...value].length;
+
 export const impersonateUserSchema = z.object({
 	userId: z.string().min(1, "User ID is required"),
 	reason: z
 		.string()
 		.trim()
-		.min(10, "Describe why, in at least 10 characters")
-		.max(500, "Reason too long"),
+		.refine(
+			(value) => codePoints(value) >= 10,
+			"Describe why, in at least 10 characters",
+		)
+		.refine((value) => codePoints(value) <= 500, "Reason too long"),
 });
 
 export type ImpersonateUserValues = z.infer<typeof impersonateUserSchema>;

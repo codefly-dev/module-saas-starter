@@ -508,27 +508,54 @@ func TestImpersonationRecordsTheJustification(t *testing.T) {
 	require.Len(t, entries, 1)
 	require.Equal(t, impersonationReason, entries[0].Payload["reason"],
 		"the submitted justification must be readable from the audit query path")
+
+	// Load-bearing for confidentiality, and the reason this assertion is here
+	// rather than in a scope test: saas.platform.user_impersonated is declared
+	// externally publishable, and "reason" is deliberately NOT marked PII, so
+	// RedactPayload passes it through. What keeps an operator's free text about
+	// a named customer out of that customer's webhook endpoint is solely that
+	// the record is platform-scoped — publishDomainEvent and the export tee both
+	// return early on an empty organization. Give this event an org and the text
+	// ships.
+	require.Empty(t, entries[0].OrgID,
+		"the impersonation record must stay platform-scoped: an organization on it "+
+			"would publish the justification to that tenant's subscribers")
 }
 
-// A justification that is only whitespace clears the transport's length floor,
-// so the business entry point is what has to refuse it — and it must refuse
-// before the token is minted, not after.
-func TestImpersonationRefusesABlankJustification(t *testing.T) {
-	clearData(t)
-	fixture := seedImpersonationFixture(t, "blank")
+// Every one of these clears the transport's length floor, which counts the
+// string as sent — so the business entry point is the only thing standing
+// between them and a recorded justification, and it must refuse before the
+// token is minted. The padded cases are the ones that matter: a floor applied
+// to the raw string is satisfied by whitespace around a single character, which
+// is exactly the "accepts a period" outcome the field exists to prevent.
+func TestImpersonationRefusesAnInsubstantialJustification(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		reason string
+	}{
+		{"only whitespace", "          "},
+		{"a period padded to the transport floor", "         ."},
+		{"two characters padded to the transport floor", "        ok"},
+		{"one character padded on both sides", "   x      "},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearData(t)
+			fixture := seedImpersonationFixture(t, "blank")
 
-	issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
-		&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: "          "})
-	require.Error(t, err)
-	require.Nil(t, issued)
+			issued, err := testService.ImpersonateUser(testCtx, fixture.supportID,
+				&gen.ImpersonateUserRequest{UserId: fixture.memberID, Reason: tc.reason})
+			require.Error(t, err)
+			require.Nil(t, issued)
 
-	entries, _, _, err := testService.QueryAuditLog(testCtx, business.AuditQuery{
-		ActorID:   fixture.supportID,
-		EventType: string(business.EventPlatformImpersonated),
-		PageSize:  10,
-	})
-	require.NoError(t, err)
-	require.Empty(t, entries, "a refused impersonation must leave no record behind")
+			entries, _, _, err := testService.QueryAuditLog(testCtx, business.AuditQuery{
+				ActorID:   fixture.supportID,
+				EventType: string(business.EventPlatformImpersonated),
+				PageSize:  10,
+			})
+			require.NoError(t, err)
+			require.Empty(t, entries, "a refused impersonation must leave no record behind")
+		})
+	}
 }
 
 // The justification is free text an operator wrote about a named customer, and

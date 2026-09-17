@@ -251,7 +251,9 @@ type ImpersonateUserRequest struct {
 	// Why the operator is stepping into this account. Recorded on
 	// saas.platform.user_impersonated, which otherwise names only who and whom.
 	// The floor is a length rather than mere presence because a justification
-	// that accepts "." records nothing a reader can act on.
+	// that accepts "." records nothing a reader can act on. The rule below
+	// measures the string as sent; the service applies the same floor to the
+	// value with surrounding whitespace removed, so padding does not satisfy it.
 	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

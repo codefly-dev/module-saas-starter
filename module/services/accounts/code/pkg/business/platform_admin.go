@@ -143,6 +143,13 @@ func (s *Service) UnsuspendUser(ctx context.Context, actorID string, req *gen.Un
 	return nil
 }
 
+// ImpersonationReasonMinRunes is the floor the justification must clear once
+// surrounding whitespace is removed. The request contract carries the same
+// number, but buf.validate measures the string as sent: padding a single
+// character out to the contract's length satisfies it while recording nothing,
+// so the floor that actually counts is applied here, to the trimmed value.
+const ImpersonationReasonMinRunes = 10
+
 // ImpersonateUser issues a token whose real actor is the calling platform admin
 // and whose effective subject is the target (support+ only). The minted Identity
 // keeps the actor as UserID and names the target through ActingAsUserID; every
@@ -165,12 +172,12 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 		return nil, w.Wrapf(err, "permission denied")
 	}
 
-	// The transport validator enforces a length floor, but on the raw string, and
-	// this is the entry point a direct business caller uses. The justification
-	// stays out of the error: it is free text about a named customer, and wool
-	// masks field keys, never their values.
+	// Measured in runes on the trimmed value: the transport floor counts the
+	// string as sent, so it passes "         ." while what gets recorded is ".".
+	// The justification stays out of the error — it is free text about a named
+	// customer, and wool masks field keys, never their values.
 	reason := strings.TrimSpace(req.Reason)
-	if reason == "" {
+	if len([]rune(reason)) < ImpersonationReasonMinRunes {
 		return nil, w.NewError("impersonation requires a justification")
 	}
 

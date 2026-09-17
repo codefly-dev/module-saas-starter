@@ -51,14 +51,6 @@ export function useOverrideEntitlement() {
 	});
 }
 
-export function useImpersonateUser() {
-	const svc = usePlatformAdminService();
-	return useMutation({
-		mutationFn: ({ userId, reason }: { userId: string; reason: string }) =>
-			svc.impersonateUser({ userId, reason }),
-	});
-}
-
 export function useRevokeSession() {
 	const svc = usePlatformAdminService();
 	const qc = useQueryClient();
