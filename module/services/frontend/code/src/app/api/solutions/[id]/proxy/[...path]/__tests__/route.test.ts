@@ -36,11 +36,15 @@ vi.mock("@/solutions/registry", () => ({ findSolution }));
 import { GET, POST } from "@/app/api/solutions/[id]/proxy/[...path]/route";
 
 const GATEWAY = "http://gateway.internal:8080";
+// The composed endpoint carries a base path, which the route must preserve:
+// src/proxy.ts forwards a host page's own product API call to `${rest}${path}`,
+// so a solution's call has to land on the same URL, not on the bare origin.
+const GATEWAY_BASE = `${GATEWAY}/rest`;
 const INTERNAL_TOKEN = "trusted-internal-token";
 
 function withGateway() {
 	getEndpoints.mockReturnValue([
-		{ service: "auth-gateway", name: "rest", address: `${GATEWAY}/rest` },
+		{ service: "auth-gateway", name: "rest", address: GATEWAY_BASE },
 	]);
 }
 
@@ -139,7 +143,7 @@ describe("solution proxy passthrough", () => {
 		expect(res.status).toBe(200);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const [target, init] = fetchMock.mock.calls[0];
-		expect(target).toBe(`${GATEWAY}/solutions/audit-backend/records`);
+		expect(target).toBe(`${GATEWAY_BASE}/solutions/audit-backend/records`);
 		expect((init.headers as Headers).get("authorization")).toBe(
 			"Bearer caller-token",
 		);
@@ -176,7 +180,7 @@ describe("solution proxy passthrough", () => {
 			expect(await res.text()).toBe("upstream-body");
 			expect(fetchMock).toHaveBeenCalledTimes(1);
 			const [target, init] = fetchMock.mock.calls[0];
-			expect(target).toBe(`${GATEWAY}/${procedure}?key=value`);
+			expect(target).toBe(`${GATEWAY_BASE}/${procedure}?key=value`);
 			expect(init.method).toBe("POST");
 			expect(new TextDecoder().decode(init.body as ArrayBuffer)).toBe(body);
 			const headers = init.headers as Headers;
@@ -184,6 +188,79 @@ describe("solution proxy passthrough", () => {
 			expect(headers.get("content-type")).toBe("application/json");
 			expect(headers.get("x-codefly-internal-token")).toBe(INTERNAL_TOKEN);
 			expect(headers.get("x-codefly-public-origin")).toBe("http://frontend");
+		},
+	);
+
+	// `gatewayBase` resolved the endpoint to `new URL(address).origin`, dropping
+	// any base path the composition put on it, while `src/proxy.ts` keeps it
+	// (server/accounts-bindings.mjs normalises with toString()). The identical
+	// procedure therefore reached two different URLs depending on whether a host
+	// page or a solution remote issued it. Pin both ends of the normalisation.
+	it.each([
+		["http://gateway.internal:8080/rest", "http://gateway.internal:8080/rest"],
+		[
+			"http://gateway.internal:8080/api/v2/",
+			"http://gateway.internal:8080/api/v2",
+		],
+		["http://gateway.internal:8080", "http://gateway.internal:8080"],
+		["http://gateway.internal:8080/", "http://gateway.internal:8080"],
+	])("preserves the gateway base path in %s", async (address, base) => {
+		getEndpoints.mockReturnValue([
+			{ service: "auth-gateway", name: "rest", address },
+		]);
+		withTrustContext();
+		registerAudit();
+		const procedure = "saas.accounts.v1.DatasourceService/ListSources";
+
+		await POST(
+			proxyRequest(`http://frontend/api/solutions/audit/proxy/${procedure}`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: "{}",
+			}),
+			context("audit", procedure.split("/")),
+		);
+
+		expect(fetchMock.mock.calls[0][0]).toBe(`${base}/${procedure}`);
+	});
+
+	// The behavioural contract behind `SolutionPageProps.apiBase`: a remote gets
+	// ONE base, and the kit components the host hands it reach the HOST's
+	// services over that same base. Every procedure below is one the kit's
+	// datasource client issues (packages/saas-ui/src/datasources/gateway.ts). If
+	// the platform branch ever stops matching one, `<DatasourcesPanel>` mounted
+	// by a solution 404s against that solution's upstream — which is exactly the
+	// symptom that gets misread as "the host never gave the remote a usable
+	// base" and answered by inventing a second one.
+	it.each([
+		"saas.accounts.v1.DatasourceService/ListSources",
+		"saas.accounts.v1.DatasourceService/AddGitHubSource",
+		"saas.accounts.v1.DatasourceService/BeginGitHubAppSetup",
+		"saas.accounts.v1.DatasourceService/CompleteGitHubAppSetup",
+		"saas.accounts.v1.DatasourceService/MigrateGitHubSourceToApp",
+		"saas.accounts.v1.DatasourceService/SyncSource",
+		"saas.accounts.v1.DatasourceService/DeleteSource",
+		"saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes",
+		"saas.accounts.v1.AuditService/QueryAuditLog",
+	])(
+		"reaches the host over the solution's own apiBase for %s",
+		async (procedure) => {
+			withGateway();
+			withTrustContext();
+			registerAudit();
+
+			await POST(
+				proxyRequest(`http://frontend/api/solutions/audit/proxy/${procedure}`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: "{}",
+				}),
+				context("audit", procedure.split("/")),
+			);
+
+			const target = fetchMock.mock.calls[0][0] as string;
+			expect(target).toBe(`${GATEWAY_BASE}/${procedure}`);
+			expect(target).not.toContain("/solutions/audit-backend/");
 		},
 	);
 
@@ -208,7 +285,7 @@ describe("solution proxy passthrough", () => {
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(fetchMock.mock.calls[0][0]).toBe(
-			`${GATEWAY}/solutions/audit-backend/${path}`,
+			`${GATEWAY_BASE}/solutions/audit-backend/${path}`,
 		);
 	});
 
@@ -385,7 +462,9 @@ describe("solution proxy passthrough", () => {
 		);
 
 		const [target] = fetchMock.mock.calls[0];
-		expect(target).toBe(`${GATEWAY}/solutions/audit-backend/a%20b/c%3Fd%3De`);
+		expect(target).toBe(
+			`${GATEWAY_BASE}/solutions/audit-backend/a%20b/c%3Fd%3De`,
+		);
 	});
 
 	it("appends the original request query string verbatim", async () => {
@@ -402,7 +481,7 @@ describe("solution proxy passthrough", () => {
 
 		const [target] = fetchMock.mock.calls[0];
 		expect(target).toBe(
-			`${GATEWAY}/solutions/audit-backend/records?limit=10&cursor=abc`,
+			`${GATEWAY_BASE}/solutions/audit-backend/records?limit=10&cursor=abc`,
 		);
 	});
 

@@ -50,7 +50,16 @@ function sameOrigin(request: Request): boolean {
 	return !fetchSite || fetchSite === "same-origin" || fetchSite === "none";
 }
 
-/** Resolve the auth-gateway API gateway base from the Codefly SDK. */
+/**
+ * Resolve the auth-gateway API gateway base from the Codefly SDK.
+ *
+ * Normalised the same way `server/accounts-bindings.mjs` normalises it for
+ * `src/proxy.ts` — the whole address minus a trailing slash, NOT its origin.
+ * A base path on the endpoint is load-bearing: `proxy.ts` forwards a host
+ * page's own product API call to `${rest}${pathname}`, so discarding the path
+ * here would send a solution's platform procedure to a different URL than the
+ * byte-identical call issued from a host page, against the same composition.
+ */
 function gatewayBase(): string | null {
 	const endpoint = getEndpoints().find(
 		(candidate) =>
@@ -60,7 +69,7 @@ function gatewayBase(): string | null {
 		return null;
 	}
 	try {
-		return new URL(endpoint.address).origin;
+		return new URL(endpoint.address).toString().replace(/\/$/, "");
 	} catch {
 		return null;
 	}
