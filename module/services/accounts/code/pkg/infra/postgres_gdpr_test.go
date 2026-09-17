@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
 	"accounts/pkg/business"
@@ -146,12 +147,22 @@ func TestExpiredGDPRExportArtifactsAreListedAndCleared(t *testing.T) {
 		return testStore.CreateGDPRRequest(ctx, live)
 	}))
 
-	// The sweep lists every expired export in the database, so both artifacts go
-	// back however this test ends: a row left behind — including the live one,
-	// once its hour is up — is another expired export every later run would see.
+	// The sweep lists every expired export in the database, so both rows go
+	// however this test ends: one left behind — including the live one, once its
+	// hour is up — is an expired export every later run would see. Delete rather
+	// than drop the artifact, so a row cannot come back into scope if the sweep's
+	// predicate ever widens.
 	t.Cleanup(func() {
 		require.NoError(t, testStore.As(business.System()).Within(testCtx, func(ctx context.Context) error {
-			return testStore.ClearGDPRExportArtifacts(ctx, []string{lapsed.ID, live.ID})
+			tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+			tag, err := tx.Exec(ctx,
+				`DELETE FROM public.gdpr_requests WHERE id = ANY($1::uuid[])`,
+				[]string{lapsed.ID, live.ID})
+			require.NoError(t, err)
+			// gdpr_requests forces RLS, where a DELETE the policy does not match
+			// reports success against zero rows.
+			require.EqualValues(t, 2, tag.RowsAffected(), "both requests are gone")
+			return nil
 		}))
 	})
 
