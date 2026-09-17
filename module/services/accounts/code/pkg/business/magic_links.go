@@ -21,6 +21,11 @@ const magicLinkTTL = 15 * time.Minute
 
 const magicLinkEmailSource = "saas.accounts.authentication"
 
+// MagicLinkIdentityProvider is the provider id magic-link logins resolve
+// against. user_identities.provider is a foreign key into identity_providers,
+// so this value must have a seeded catalog row or provisioning fails closed.
+const MagicLinkIdentityProvider = "magic_link"
+
 // MagicLink is the domain representation of a passwordless magic link.
 type MagicLink struct {
 	ID        string
@@ -143,7 +148,7 @@ func (s *Service) VerifyMagicLink(ctx context.Context, token string) (*gen.Authe
 	// via the standard Resolve pipeline; a verified magic link is itself proof
 	// of address ownership, so it resolves as a signup.
 	claims := &auth.Claims{
-		Provider:  "magic_link",
+		Provider:  MagicLinkIdentityProvider,
 		Subject:   ml.Email,
 		Email:     ml.Email,
 		ExpiresAt: time.Now().Add(1 * time.Hour),
