@@ -1,8 +1,7 @@
 # AGENTS.md — frontend
 
 The authenticated product, behind auth-gateway. Architecture is in
-[../../../FRONTEND_ARCHITECTURE.md](../../../FRONTEND_ARCHITECTURE.md), the page
-and plugin inventory in [../../FRONTEND_CATALOG.md](../../FRONTEND_CATALOG.md)
+`FRONTEND_ARCHITECTURE.md` at the repository root; the page and plugin inventory in [../../FRONTEND_CATALOG.md](../../FRONTEND_CATALOG.md)
 and [../../FRONTEND_PLUGINS.md](../../FRONTEND_PLUGINS.md). This file covers the
 runtime-registration surfaces and the published client kit.
 

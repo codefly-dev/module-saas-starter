@@ -57,8 +57,9 @@ Resolved upstream and now remediated here by a pin bump:
   dependency bumps must not regress below it, and the `vault` pin is `0.0.29` in
   this repo.
 
-When an upstream release ships, bump the pin (see AGENTS.md "Agent version
-pins"), verify the graph still boots (`codefly run service`), refresh the base
+When an upstream release ships, bump the pin (see
+[module/deployment/AGENTS.md](./module/deployment/AGENTS.md#agent-version-pins)),
+verify the graph still boots (`codefly run service`), refresh the base
 manifest, and re-run `codefly audit workspace` to confirm the finding clears.
 
 ## Immutable module releases

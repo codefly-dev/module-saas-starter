@@ -5,32 +5,16 @@ description: Inspect or change the Codefly service-agent version a service pins 
 
 # Agent version pins
 
-Each service pins the version of its Codefly service agent. To see what is pinned
-and whether a newer release exists:
+**The procedure is [module/deployment/AGENTS.md § Agent version
+pins](../../../module/deployment/AGENTS.md#agent-version-pins). Read it there and
+follow it.** It sits beside `topology.bindings.codefly.yaml`, the file you are
+about to edit, and `module/deployment/README.md` links to it — so this skill must
+not become a second copy that drifts from it.
 
-```bash
-codefly agent list        # PINNED vs LATEST-RESOLVABLE, resolvability, how far behind
-codefly agent versions <agent>
-```
+What it covers: `codefly agent list` / `codefly agent versions` for reading the
+current state, that the bindings file is the source of truth and
+`service.codefly.yaml` is generated, that `codefly update workspace` will not do
+this edit for you, and the base-manifest refresh that has to follow.
 
-## Changing a pin
-
-The **source of truth is
-`module/deployment/topology.bindings.codefly.yaml`** — it carries the service
-graph and the agent version each service pins. Edit the version there, then
-regenerate the per-service manifests and refresh the base manifest.
-
-- `module/services/<svc>/service.codefly.yaml` is **generated**. Its header says
-  `DO NOT EDIT`; a hand-edit is lost on the next composition and drifts the two
-  files apart.
-- `codefly update workspace` does **not** rewrite the bindings for this repo (it
-  skips the generated manifests by design), so the bindings edit is manual.
-- The bindings file is a tracked base file, so finish with the
-  `refresh-base-manifest` skill or CI reds on integrity.
-
-## Latest is not always safe
-
-Agent releases can carry breaking changes to service manifests. Verify the newer
-agent actually boots the graph (`codefly run service`, see the
-`run-the-starter-locally` skill) before pinning it. "It resolves" is not "it
-runs"; if you did not boot the graph, say so in the PR body.
+The one thing to hold onto before you open it: latest is not always safe, so boot
+the graph before pinning — and if you did not, say so in the PR body.

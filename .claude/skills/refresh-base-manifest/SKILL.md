@@ -5,27 +5,15 @@ description: Refresh `module/tools/base-manifest.json`, the base-file integrity 
 
 # Refreshing the base-file integrity manifest
 
-`module/tools/base-manifest.json` records the sha256 of every base file the
-module ships. Consumers compose the module as a copy, and the manifest is what
-makes "consumers ADD files, never MODIFY base ones" mechanical. Editing a tracked
-base file without refreshing the manifest fails two CI checks: **Base manifest
-integrity** and **Codefly CI**.
+**The procedure is [module/AGENTS.md § Base-file integrity
+manifest](../../../module/AGENTS.md#base-file-integrity-manifest). Read it there
+and follow it.** It lives in the module tree on purpose: consumers get that file
+and the docs inside the tree reference it, so this skill must not become a second
+copy that drifts from it.
 
-Regenerate it **from a clean checkout**. `gen` walks the tree, so a dirty
-worktree makes it hash gitignored harness artifacts CI never sees:
+What it covers: the `check` (consumer) versus `gen` (canonical) split, the
+clean-worktree regeneration recipe, and the two traps — regenerate **last**, and a
+branch behind `main` reds the check via the merge ref.
 
-```bash
-git worktree add --detach /tmp/bm-clean HEAD
-cd /tmp/bm-clean/module && node tools/base-integrity.mjs gen && node tools/base-integrity.mjs verify
-# copy module/tools/base-manifest.json back, confirm the diff is only your files, commit
-git worktree remove /tmp/bm-clean --force
-```
-
-Two things that cost time:
-
-- **Regenerate last.** Any later edit to a base file — an amend, a review fixup,
-  a rebase that brings one in — re-stales the manifest you just refreshed.
-- **A branch behind `main` reds this check too**, because it runs against the
-  merge ref. If the diff looks clean and the check is still red, rebase before
-  suspecting the manifest — and read the log, since the same job also runs the
-  commit-identity gate.
+The one thing to hold onto before you open it: this is the easiest gate in the
+repository to trip, and the failure is not in the file you edited.

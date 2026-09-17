@@ -130,14 +130,15 @@ here. Its baseline shrinks and never grows: clean a file, delete its line.
 
 ## Where the depth lives
 
-A **solution** or composed module is independently deployed and **self-registers
-with this host at runtime** — a Module-Federation remote in the frontend, an upstream
-in the gateway — so the host renders and proxies it with no rebuild. Nothing here
-names a specific one. The depth sits with the code that owns each half:
+A **solution** or composed module is independently deployed and **self-registers with
+this host at runtime** — a remote in the frontend, an upstream in the gateway — so the
+host renders and proxies it with no rebuild, and nothing here names a specific one.
+Depth sits with the code that owns it:
 
 | File | Covers |
 | --- | --- |
 | [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the six Go modules and how to test each, configuration groups |
+| [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the bindings file as source of truth, and changing an agent version pin |
 | [module/services/auth-gateway/AGENTS.md](./module/services/auth-gateway/AGENTS.md) | upstream registration, the composed-module REST prefix, the credentials both take |
 | [module/services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md) | the durable registry record, module principals, minting a module Work Context, mesh reachability |
 | [module/services/frontend/AGENTS.md](./module/services/frontend/AGENTS.md) | the registration route, public vs internal projections, remote loading and CSP, the published kit |
@@ -164,7 +165,8 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   step and each bump the same number merge cleanly into a total that is silently
   wrong.
 - Editing any base file means refreshing `module/tools/base-manifest.json` — the
-  easiest gate here to trip (`refresh-base-manifest` skill). Go suites live in six
+  easiest gate here to trip ([module/AGENTS.md § Base-file integrity
+  manifest](./module/AGENTS.md#base-file-integrity-manifest)). Go suites live in six
   independent Go modules with no `go.work`
   ([module/AGENTS.md](./module/AGENTS.md#go-suites)).
 - Vulnerability policy: the complete audit runs non-blocking so vendor-image

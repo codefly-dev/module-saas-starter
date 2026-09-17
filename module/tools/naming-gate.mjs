@@ -31,8 +31,8 @@
 //
 // The forbidden terms are stored as SHA-256 digests, never literals. A guard that spelled the
 // names would itself be the worst violation in the tree: one public file enumerating every
-// private product and the consumer org. AGENTS.md line 35 ("holds for public and private files
-// alike") binds this gate too.
+// private product and the consumer org. AGENTS.md §"Naming and confidentiality" ("holds for
+// public and private files alike") binds this gate too.
 //
 // Be honest about what that buys: digests of short, guessable words are dictionary-attackable.
 // This is not secrecy. It raises the bar from "read one file" to "mount an offline attack",

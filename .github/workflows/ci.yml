@@ -71,6 +71,8 @@ jobs:
         run: node --test module/tools/naming-gate.test.mjs
       - name: Test the commit-identity gate
         run: node --test module/tools/commit-identity-gate.test.mjs
+      - name: Check every reference into an AGENTS.md resolves
+        run: node --test module/tools/agent-docs-links.test.mjs
       - name: Verify the shipped manifest matches the canonical tree
         run: node module/tools/base-integrity.mjs verify
       - name: Enforce tenant RLS coverage in store migrations
