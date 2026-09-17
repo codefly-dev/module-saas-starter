@@ -243,7 +243,7 @@ Runtime environment variables reach a service through a **configuration group**:
 a named `.env` file that one or more services opt into. This is the committed,
 portable path — use it for any value that should travel with the repo. For a
 one-off, uncommitted override on a single `codefly run`, use the `--set` flag
-instead (see [AGENTS.md](../../AGENTS.md#passing-an-environment-variable-to-a-service)).
+instead.
 
 ### Layout
 
@@ -320,15 +320,15 @@ a mounted skin descriptor) as a committed value for local runs:
 
 3. **Regenerate** the per-service manifests from the bindings so
    `service.codefly.yaml` picks up the new dependency (the same module render
-   described in [AGENTS.md](../../AGENTS.md#agent-version-pins)).
+   described in [AGENTS.md](./AGENTS.md#agent-version-pins)).
 
 4. **Refresh the base-integrity manifest.** `topology.bindings.codefly.yaml`,
    this README, and the generated `service.codefly.yaml` are base-tracked;
    editing them without regenerating `module/tools/base-manifest.json` fails CI.
-   See [AGENTS.md](../../AGENTS.md#base-file-integrity-manifest--the-easy-gate-to-trip).
+   See [AGENTS.md](../AGENTS.md#base-file-integrity-manifest).
 
 Steps 2–4 are only for the committed path. For a throwaway local value, skip them
-and use `--set` (AGENTS.md) or — frontend only — a gitignored `.env*.local` under
+and use `--set` or — frontend only — a gitignored `.env*.local` under
 `module/services/frontend/code/`.
 
 The skin resolver spans all three tiers: `FRONTEND_SKIN_JSON` (an inline JSON

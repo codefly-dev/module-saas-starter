@@ -41,8 +41,9 @@ to the single solution id it may act on. The gateway and the frontend accept the
 **same** credential and verify it independently; neither holds a secret every
 registrant shares, and neither trusts the other's decision.
 
-The handshake mirrors the composed-module one (`AGENTS.md`, "Composed-module
-REST federation") and reuses its issuer rather than adding a second one:
+The handshake mirrors the composed-module one
+(`services/auth-gateway/AGENTS.md`, "Composed-module REST federation") and
+reuses its issuer rather than adding a second one:
 
 1. `POST /solutions/_registration-token` on the auth-gateway, carrying the
    cluster-internal token in `X-Codefly-Internal-Token` (a perimeter check, not
