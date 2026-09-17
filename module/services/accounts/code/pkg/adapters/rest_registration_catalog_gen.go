@@ -173,6 +173,7 @@ var catalogRESTExactRoutes = map[string]struct{}{
 	"POST /v1/notifications:read-all":          {},
 	"POST /v1/organizations":                   {},
 	"POST /v1/platform/admins":                 {},
+	"POST /v1/platform/impersonation:stop":     {},
 	"POST /v1/principals:agent":                {},
 	"POST /v1/record-shares":                   {},
 	"POST /v1/resource-follows":                {},

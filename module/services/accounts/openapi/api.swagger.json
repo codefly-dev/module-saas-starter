@@ -4126,6 +4126,28 @@
       },
       "type": "object"
     },
+    "v1StopImpersonationRequest": {
+      "description": "StopImpersonation ends the caller's own impersonation session. It carries no\ntarget: the session to end is derived from the verified identity, so there is\nno input by which one operator could end another's window.",
+      "type": "object"
+    },
+    "v1StopImpersonationResponse": {
+      "properties": {
+        "accessTokenRevoked": {
+          "description": "Whether the window's outstanding access token was actually invalidated.\nFalse means the window is closed durably but its token keeps working until\nit expires on its own, which happens when no revocation store is wired or\nthe marker could not be written — a caller that reports \"stopped\" without\nsaying so would overstate what the stop achieved.",
+          "type": "boolean"
+        },
+        "alreadyClosed": {
+          "description": "Whether the window had already been closed before this call, so a retry or\na second tab reports the outcome without recording a second end of the same\nwindow.",
+          "type": "boolean"
+        },
+        "durationSeconds": {
+          "description": "Seconds the impersonation window was open. 0 when it was already closed.",
+          "format": "int64",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "v1SubjectKind": {
       "default": "SUBJECT_KIND_UNSPECIFIED",
       "description": " - SUBJECT_KIND_PRINCIPAL: A direct role assignment always targets a Principal. Human users remain\nPrincipals of kind HUMAN; agents and services can receive the same\nexplicitly assigned authority without masquerading as users.\n - SUBJECT_KIND_USER: Backward-compatible wire/JSON input alias. New clients must use\nSUBJECT_KIND_PRINCIPAL.",
@@ -7697,6 +7719,41 @@
           }
         },
         "summary": "Deprecated: retained for v1 wire compatibility. The legacy inventory is\nread-only; this method always returns FAILED_PRECONDITION.",
+        "tags": [
+          "PlatformAdminService"
+        ]
+      }
+    },
+    "/v1/platform/impersonation:stop": {
+      "post": {
+        "description": "platform_role is deliberately NONE. Platform authority is withheld from an\nimpersonated request by design, so a support-role gate would make this the\none operation an impersonated session can never reach — and ending the\nsession is precisely what it must be able to do. Being impersonated is\nitself the authorization, checked in the handler.",
+        "operationId": "PlatformAdminService_StopImpersonation",
+        "parameters": [
+          {
+            "description": "StopImpersonation ends the caller's own impersonation session. It carries no\ntarget: the session to end is derived from the verified identity, so there is\nno input by which one operator could end another's window.",
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1StopImpersonationRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StopImpersonationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "summary": "StopImpersonation closes the caller's own impersonation window: it revokes\nthe session's access tokens and records the end of the window.",
         "tags": [
           "PlatformAdminService"
         ]

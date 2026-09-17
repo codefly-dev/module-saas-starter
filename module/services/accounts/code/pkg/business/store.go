@@ -507,6 +507,11 @@ type Store interface {
 	// Sessions
 	CreateSession(ctx context.Context, session *Session) error
 	GetSessionByRefreshTokenHash(ctx context.Context, hash string) (*Session, error)
+	// CloseImpersonationSession revokes the impersonation window whose row id is
+	// sessionID and reports when it opened. It matches only a row that is still
+	// open and actually is a window, so a second call closes nothing and reports
+	// closed=false rather than reopening or double-counting one.
+	CloseImpersonationSession(ctx context.Context, sessionID, reason string) (startedAt time.Time, closed bool, err error)
 	// RevokeSession revokes every live row in the device family and returns the
 	// ids of the rows it revoked. Those ids are the `sid` claim carried by the
 	// family's outstanding access tokens, so the caller can write a

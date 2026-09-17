@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@connectrpc/connect";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { startAuthentication } from "@simplewebauthn/browser";
 import {
 	createContext,
@@ -13,6 +13,7 @@ import {
 	useState,
 } from "react";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
+import { PlatformAdminService } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { authErrorFromResponse } from "@/lib/auth-errors";
 import { safePostLoginDestination } from "@/lib/public-handoff";
 import type { OrgRole, PlatformRole } from "./auth-session";
@@ -34,6 +35,7 @@ import {
 import { apiTransport } from "./connect/transport";
 
 const authClient = createClient(AuthService, apiTransport);
+const platformAdminClient = createClient(PlatformAdminService, apiTransport);
 
 // Browser REST is always same-origin. Next/gateway resolves the accounts
 // service server-side from Codefly bindings (CONV-004).
@@ -844,21 +846,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	);
 
 	const exitImpersonation = useCallback(async () => {
+		// Ending the window server-side is what makes the impersonation bearer
+		// stop working. The exchange below only changes which token this browser
+		// holds, so it cannot be the whole of "stop": anything that captured the
+		// bearer would keep acting as the target for the rest of its TTL.
+		//
+		// The call is bounded and never blocks the way out. A hung backend must
+		// not hold the operator inside the target's session, which is the state
+		// this whole flow exists to leave.
+		let stopped = false;
+		let stopFailed = false;
+		try {
+			await platformAdminClient.stopImpersonation({}, { timeoutMs: 5000 });
+			stopped = true;
+		} catch (error) {
+			// Unauthenticated or PermissionDenied means the server no longer
+			// accepts this session — an expired or already-revoked window. There
+			// was nothing left to close, so reporting a failed stop would be
+			// crying wolf on the one message that has to be trusted.
+			const code = ConnectError.from(error).code;
+			stopFailed =
+				code !== Code.Unauthenticated && code !== Code.PermissionDenied;
+		}
+
 		const outcome = await exchangeRefreshCookie();
 		if (outcome.status === "ok") {
 			setTokens(outcome.accessToken, outcome.refreshToken);
+			if (stopFailed) {
+				throw new Error(
+					"Returned to your admin session, but the impersonation session could not be ended on the server — it stays valid until it expires.",
+				);
+			}
 			return;
 		}
-		// A transient failure (gateway 5xx, network) says nothing about the
-		// admin's session: the httpOnly refresh cookie is untouched and almost
-		// certainly still valid. Logging out here would turn a hiccup into a
-		// re-authentication, so surface it and leave the impersonated session
-		// intact for the operator to retry. Only an actively rejected session
-		// ("expired") justifies tearing down credentials.
-		if (outcome.status === "unavailable") {
+		// Leaving the impersonated session installed is only safe while it still
+		// works. Once the stop succeeded the browser is holding a token the
+		// server has revoked, so keeping it would strand the operator behind a
+		// banner that says "Impersonation Active" while every call 401s. Tear the
+		// credentials down instead and let them sign in again.
+		//
+		// A transient failure with no server-side stop is the opposite case: the
+		// httpOnly refresh cookie is untouched and almost certainly still valid,
+		// so turning a hiccup into a re-authentication would be the worse
+		// outcome. Surface it and leave the session intact to retry.
+		if (outcome.status === "unavailable" && !stopped) {
 			throw new Error("Could not restore your session — please try again.");
 		}
 		await logout();
+		if (outcome.status === "unavailable") {
+			throw new Error(
+				"Your impersonation session was ended, but your admin session could not be restored — please sign in again.",
+			);
+		}
 	}, [logout, setTokens]);
 
 	// The 401 handler below must know whether the session it is repairing is an

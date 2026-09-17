@@ -275,6 +275,7 @@
         "/saas.accounts.v1.PlatformAdminService/RevokePlatformRole",
         "/saas.accounts.v1.PlatformAdminService/RevokeSession",
         "/saas.accounts.v1.PlatformAdminService/SearchUsers",
+        "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
         "/saas.accounts.v1.PlatformAdminService/SuspendUser",
         "/saas.accounts.v1.PlatformAdminService/UnsuspendUser",
         "/saas.accounts.v1.PlatformAdminService/UpsertFeatureFlag"
@@ -7759,6 +7760,58 @@
       },
       "policy_tier": "platform_admin",
       "description": "Search across all users.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PlatformAdminService/StopImpersonation",
+      "service": "PlatformAdminService",
+      "full_service": "saas.accounts.v1.PlatformAdminService",
+      "method": "StopImpersonation",
+      "input_type": "saas.accounts.v1.StopImpersonationRequest",
+      "output_type": "saas.accounts.v1.StopImpersonationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/platform_admin.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/platform/impersonation:stop",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.platform.user_impersonation_ended"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": []
+      },
+      "policy_tier": "auth",
+      "description": "End the caller's own impersonation session.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

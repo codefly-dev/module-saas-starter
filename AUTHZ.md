@@ -85,6 +85,18 @@ authority.
   `requireBillingAdmin` and `requireTeamAdmin`.
 - **No nesting.** `Impersonate` sits behind that same platform gate, so an
   impersonated session cannot mint a further impersonation token.
+- **One exception, and only one.** `StopImpersonation` ends the caller's own
+  session, so it cannot sit behind a gate that resolves nothing while
+  impersonating — that would leave the session no way out. Being impersonated is
+  its authorization, and it takes no target: the session it ends comes from the
+  verified identity. It revokes the window's row, which is what every "is this
+  window open" reader consults, and records
+  `saas.platform.user_impersonation_ended` on the same transaction. The
+  access-token marker is written alongside but cannot fail the stop, and whether
+  it took effect is carried on both the response and the record — without a
+  revocation store wired, nothing can invalidate an outstanding access token
+  before its own expiry, and a close that claimed otherwise would overstate what
+  it achieved.
 - **No inactive target.** The target must be an active account, so a support
   session cannot outlive the account's own lifecycle.
 - **A short, separately capped lifetime.** `Config.ImpersonationTokenTTL` caps

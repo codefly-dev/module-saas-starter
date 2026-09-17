@@ -1514,6 +1514,24 @@ func (s *PlatformAdminServer) ImpersonateUser(ctx context.Context, req *gen.Impe
 	return service.ImpersonateUser(ctx, actorID, req)
 }
 
+// StopImpersonation is the one PlatformAdminService RPC an impersonated session
+// may reach. requirePlatformRole resolves nothing while impersonating — that is
+// what contains a support session — so gating the way out on it would wall the
+// operator in. The impersonated state is the authorization, and the session it
+// ends comes from the verified identity, never from the request.
+func (s *PlatformAdminServer) StopImpersonation(ctx context.Context, req *gen.StopImpersonationRequest) (*gen.StopImpersonationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	if _, err := requireAuth(ctx); err != nil {
+		return nil, err
+	}
+	if !auth.ImpersonatedRequest(ctx) {
+		return nil, status.Error(codes.PermissionDenied, "not an impersonated session")
+	}
+	return service.StopImpersonation(ctx)
+}
+
 func (s *PlatformAdminServer) ListActiveSessions(ctx context.Context, req *gen.ListActiveSessionsRequest) (*gen.ListActiveSessionsResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

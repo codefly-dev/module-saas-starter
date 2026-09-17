@@ -373,7 +373,7 @@ State-of-the-art, not "good enough". Every item below lands as part of the phase
   escapes HTML insertions, and persists immutable bodies. Automatic provider
   retries use the durable job UUID as their idempotency key; an intentional
   replay gets a new key while retaining the exact payload.
-- **Audit log** (append-only, `audit_events` table): role grants, impersonation start/stop, session revocation, failed logins beyond threshold, bootstrap_admin activation, refresh reuse detection, JWT signature failures in excess.
+- **Audit log** (append-only, `audit_events` table): role grants, impersonation start and explicit stop (a window closed by token expiry or by an administrative session revocation records no end event yet — see #786), session revocation, failed logins beyond threshold, bootstrap_admin activation, refresh reuse detection, JWT signature failures in excess.
 - **Zero tokens in logs**: structured logger scrubs any field matching token shapes. Enforced via interceptor.
 - **Constant-time** comparisons for all secret-equality checks.
 - **HTTP security headers** at gateway: `Content-Security-Policy`, `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`.

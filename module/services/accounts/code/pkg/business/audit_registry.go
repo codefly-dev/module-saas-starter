@@ -216,23 +216,24 @@ const (
 	EventWorkContextAudienceExch EventType = "saas.work_context.audience_exchanged"
 	EventWorkContextRenewed      EventType = "saas.work_context.renewed"
 
-	EventAuthLogin             EventType = "saas.auth.login"
-	EventAuthMagicLinkLogin    EventType = "saas.auth.magic_link_login"
-	EventAuthSSOJitProvisioned EventType = "saas.auth.sso_jit_provisioned"
-	EventAuthOrgSwitched       EventType = "saas.auth.organization_switched"
-	EventAuthMFAChallengeStart EventType = "saas.auth.mfa_challenge_started"
-	EventAuthMFAChallengeDone  EventType = "saas.auth.mfa_challenge_completed"
-	EventMFATOTPSetupStarted   EventType = "saas.mfa.totp_setup_started"
-	EventMFATOTPVerified       EventType = "saas.mfa.totp_verified"
-	EventMFAWebAuthnRegStarted EventType = "saas.mfa.webauthn_registration_started"
-	EventMFAWebAuthnRegistered EventType = "saas.mfa.webauthn_registered"
-	EventMFAWebAuthnUsed       EventType = "saas.mfa.webauthn_used"
-	EventMFABackupGenerated    EventType = "saas.mfa.backup_codes_generated"
-	EventMFABackupUsed         EventType = "saas.mfa.backup_code_used"
-	EventMFADeviceRevoked      EventType = "saas.mfa.device_revoked"
-	EventPlatformRoleGranted   EventType = "saas.platform.role_granted"
-	EventPlatformRoleRevoked   EventType = "saas.platform.role_revoked"
-	EventPlatformImpersonated  EventType = "saas.platform.user_impersonated"
+	EventAuthLogin                  EventType = "saas.auth.login"
+	EventAuthMagicLinkLogin         EventType = "saas.auth.magic_link_login"
+	EventAuthSSOJitProvisioned      EventType = "saas.auth.sso_jit_provisioned"
+	EventAuthOrgSwitched            EventType = "saas.auth.organization_switched"
+	EventAuthMFAChallengeStart      EventType = "saas.auth.mfa_challenge_started"
+	EventAuthMFAChallengeDone       EventType = "saas.auth.mfa_challenge_completed"
+	EventMFATOTPSetupStarted        EventType = "saas.mfa.totp_setup_started"
+	EventMFATOTPVerified            EventType = "saas.mfa.totp_verified"
+	EventMFAWebAuthnRegStarted      EventType = "saas.mfa.webauthn_registration_started"
+	EventMFAWebAuthnRegistered      EventType = "saas.mfa.webauthn_registered"
+	EventMFAWebAuthnUsed            EventType = "saas.mfa.webauthn_used"
+	EventMFABackupGenerated         EventType = "saas.mfa.backup_codes_generated"
+	EventMFABackupUsed              EventType = "saas.mfa.backup_code_used"
+	EventMFADeviceRevoked           EventType = "saas.mfa.device_revoked"
+	EventPlatformRoleGranted        EventType = "saas.platform.role_granted"
+	EventPlatformRoleRevoked        EventType = "saas.platform.role_revoked"
+	EventPlatformImpersonated       EventType = "saas.platform.user_impersonated"
+	EventPlatformImpersonationEnded EventType = "saas.platform.user_impersonation_ended"
 
 	EventBillingCheckoutStarted EventType = "saas.billing.checkout_started"
 	EventBillingPortalOpened    EventType = "saas.billing.portal_opened"
@@ -406,8 +407,18 @@ var auditEventCatalog = []AuditEventDefinition{
 	// The operator's justification is part of the record, not an optional
 	// enrichment: who and whom are already implied by the actor/resource pair,
 	// and why is the only thing this event can carry that the pair cannot.
+	// session_id pairs this record with the user_impersonation_ended that closes
+	// the same window, so the two reconcile to each other rather than by
+	// timestamp proximity.
 	revised(mutation(EventPlatformImpersonated, CategorySecurity, "A platform admin impersonated a user.",
-		PayloadField{Name: "reason", Kind: FieldString, Required: true}), 2),
+		PayloadField{Name: "reason", Kind: FieldString, Required: true}, uid("session_id")), 3),
+	// access_token_revoked records whether the window's access token was actually
+	// killed. Without a revocation store wired there is no mechanism to kill one
+	// early, and a close record that did not say so would overstate what the stop
+	// achieved.
+	mutation(EventPlatformImpersonationEnded, CategorySecurity, "A platform admin's impersonation session ended.",
+		uid("session_id"), PayloadField{Name: "duration_seconds", Kind: FieldInt},
+		PayloadField{Name: "access_token_revoked", Kind: FieldBool, Required: true}),
 
 	observation(EventBillingCheckoutStarted, CategoryBilling, "A billing checkout session was started."),
 	observation(EventBillingPortalOpened, CategoryBilling, "The billing portal was opened."),

@@ -218,6 +218,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PlatformAdminService/RevokeSession":                      "Revoke a single session.",
 	"PlatformAdminService/ReplayJob":                          "Idempotently copy dead-lettered work for another attempt.",
 	"PlatformAdminService/SearchUsers":                        "Search across all users.",
+	"PlatformAdminService/StopImpersonation":                  "End the caller's own impersonation session.",
 	"PlatformAdminService/SuspendUser":                        "Suspend a user account.",
 	"PlatformAdminService/UnsuspendUser":                      "Restore a suspended user.",
 	"PrincipalService/CreateAgentPrincipal":                   "Create an agent principal in an organization.",

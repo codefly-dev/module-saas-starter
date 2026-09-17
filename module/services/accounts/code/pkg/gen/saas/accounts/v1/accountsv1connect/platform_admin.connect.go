@@ -49,6 +49,9 @@ const (
 	// PlatformAdminServiceImpersonateUserProcedure is the fully-qualified name of the
 	// PlatformAdminService's ImpersonateUser RPC.
 	PlatformAdminServiceImpersonateUserProcedure = "/saas.accounts.v1.PlatformAdminService/ImpersonateUser"
+	// PlatformAdminServiceStopImpersonationProcedure is the fully-qualified name of the
+	// PlatformAdminService's StopImpersonation RPC.
+	PlatformAdminServiceStopImpersonationProcedure = "/saas.accounts.v1.PlatformAdminService/StopImpersonation"
 	// PlatformAdminServiceListActiveSessionsProcedure is the fully-qualified name of the
 	// PlatformAdminService's ListActiveSessions RPC.
 	PlatformAdminServiceListActiveSessionsProcedure = "/saas.accounts.v1.PlatformAdminService/ListActiveSessions"
@@ -103,6 +106,15 @@ type PlatformAdminServiceClient interface {
 	SuspendUser(context.Context, *connect.Request[v1.SuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	UnsuspendUser(context.Context, *connect.Request[v1.UnsuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ImpersonateUser(context.Context, *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error)
+	// StopImpersonation closes the caller's own impersonation window: it revokes
+	// the session's access tokens and records the end of the window.
+	//
+	// platform_role is deliberately NONE. Platform authority is withheld from an
+	// impersonated request by design, so a support-role gate would make this the
+	// one operation an impersonated session can never reach — and ending the
+	// session is precisely what it must be able to do. Being impersonated is
+	// itself the authorization, checked in the handler.
+	StopImpersonation(context.Context, *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error)
 	// Session visibility
 	ListActiveSessions(context.Context, *connect.Request[v1.ListActiveSessionsRequest]) (*connect.Response[v1.ListActiveSessionsResponse], error)
 	RevokeSession(context.Context, *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error)
@@ -166,6 +178,12 @@ func NewPlatformAdminServiceClient(httpClient connect.HTTPClient, baseURL string
 			httpClient,
 			baseURL+PlatformAdminServiceImpersonateUserProcedure,
 			connect.WithSchema(platformAdminServiceMethods.ByName("ImpersonateUser")),
+			connect.WithClientOptions(opts...),
+		),
+		stopImpersonation: connect.NewClient[v1.StopImpersonationRequest, v1.StopImpersonationResponse](
+			httpClient,
+			baseURL+PlatformAdminServiceStopImpersonationProcedure,
+			connect.WithSchema(platformAdminServiceMethods.ByName("StopImpersonation")),
 			connect.WithClientOptions(opts...),
 		),
 		listActiveSessions: connect.NewClient[v1.ListActiveSessionsRequest, v1.ListActiveSessionsResponse](
@@ -267,6 +285,7 @@ type platformAdminServiceClient struct {
 	suspendUser            *connect.Client[v1.SuspendUserRequest, emptypb.Empty]
 	unsuspendUser          *connect.Client[v1.UnsuspendUserRequest, emptypb.Empty]
 	impersonateUser        *connect.Client[v1.ImpersonateUserRequest, v1.ImpersonateUserResponse]
+	stopImpersonation      *connect.Client[v1.StopImpersonationRequest, v1.StopImpersonationResponse]
 	listActiveSessions     *connect.Client[v1.ListActiveSessionsRequest, v1.ListActiveSessionsResponse]
 	revokeSession          *connect.Client[v1.RevokeSessionRequest, emptypb.Empty]
 	getOrgEntitlements     *connect.Client[v1.GetOrgEntitlementsRequest, v1.GetOrgEntitlementsResponse]
@@ -302,6 +321,11 @@ func (c *platformAdminServiceClient) UnsuspendUser(ctx context.Context, req *con
 // ImpersonateUser calls saas.accounts.v1.PlatformAdminService.ImpersonateUser.
 func (c *platformAdminServiceClient) ImpersonateUser(ctx context.Context, req *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error) {
 	return c.impersonateUser.CallUnary(ctx, req)
+}
+
+// StopImpersonation calls saas.accounts.v1.PlatformAdminService.StopImpersonation.
+func (c *platformAdminServiceClient) StopImpersonation(ctx context.Context, req *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error) {
+	return c.stopImpersonation.CallUnary(ctx, req)
 }
 
 // ListActiveSessions calls saas.accounts.v1.PlatformAdminService.ListActiveSessions.
@@ -389,6 +413,15 @@ type PlatformAdminServiceHandler interface {
 	SuspendUser(context.Context, *connect.Request[v1.SuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	UnsuspendUser(context.Context, *connect.Request[v1.UnsuspendUserRequest]) (*connect.Response[emptypb.Empty], error)
 	ImpersonateUser(context.Context, *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error)
+	// StopImpersonation closes the caller's own impersonation window: it revokes
+	// the session's access tokens and records the end of the window.
+	//
+	// platform_role is deliberately NONE. Platform authority is withheld from an
+	// impersonated request by design, so a support-role gate would make this the
+	// one operation an impersonated session can never reach — and ending the
+	// session is precisely what it must be able to do. Being impersonated is
+	// itself the authorization, checked in the handler.
+	StopImpersonation(context.Context, *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error)
 	// Session visibility
 	ListActiveSessions(context.Context, *connect.Request[v1.ListActiveSessionsRequest]) (*connect.Response[v1.ListActiveSessionsResponse], error)
 	RevokeSession(context.Context, *connect.Request[v1.RevokeSessionRequest]) (*connect.Response[emptypb.Empty], error)
@@ -448,6 +481,12 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 		PlatformAdminServiceImpersonateUserProcedure,
 		svc.ImpersonateUser,
 		connect.WithSchema(platformAdminServiceMethods.ByName("ImpersonateUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	platformAdminServiceStopImpersonationHandler := connect.NewUnaryHandler(
+		PlatformAdminServiceStopImpersonationProcedure,
+		svc.StopImpersonation,
+		connect.WithSchema(platformAdminServiceMethods.ByName("StopImpersonation")),
 		connect.WithHandlerOptions(opts...),
 	)
 	platformAdminServiceListActiveSessionsHandler := connect.NewUnaryHandler(
@@ -550,6 +589,8 @@ func NewPlatformAdminServiceHandler(svc PlatformAdminServiceHandler, opts ...con
 			platformAdminServiceUnsuspendUserHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceImpersonateUserProcedure:
 			platformAdminServiceImpersonateUserHandler.ServeHTTP(w, r)
+		case PlatformAdminServiceStopImpersonationProcedure:
+			platformAdminServiceStopImpersonationHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceListActiveSessionsProcedure:
 			platformAdminServiceListActiveSessionsHandler.ServeHTTP(w, r)
 		case PlatformAdminServiceRevokeSessionProcedure:
@@ -603,6 +644,10 @@ func (UnimplementedPlatformAdminServiceHandler) UnsuspendUser(context.Context, *
 
 func (UnimplementedPlatformAdminServiceHandler) ImpersonateUser(context.Context, *connect.Request[v1.ImpersonateUserRequest]) (*connect.Response[v1.ImpersonateUserResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.ImpersonateUser is not implemented"))
+}
+
+func (UnimplementedPlatformAdminServiceHandler) StopImpersonation(context.Context, *connect.Request[v1.StopImpersonationRequest]) (*connect.Response[v1.StopImpersonationResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PlatformAdminService.StopImpersonation is not implemented"))
 }
 
 func (UnimplementedPlatformAdminServiceHandler) ListActiveSessions(context.Context, *connect.Request[v1.ListActiveSessionsRequest]) (*connect.Response[v1.ListActiveSessionsResponse], error) {

@@ -3,6 +3,7 @@ package infra
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -75,6 +76,35 @@ func (s *PostgresStore) GetSessionByRefreshTokenHash(ctx context.Context, hash s
 	}
 
 	return &session, nil
+}
+
+// CloseImpersonationSession revokes an impersonation window and reports when it
+// opened, in one statement so the revocation and the elapsed time a caller
+// records with it cannot disagree.
+//
+// The predicate is what makes it safe to call more than once and safe to call
+// with any session id: `acting_as_user_id IS NOT NULL` refuses to revoke an
+// ordinary login even if one were named, and `revoked_at IS NULL` means a
+// second call matches nothing instead of moving the close time or emitting a
+// duplicate record. No row matching is a normal outcome, not an error.
+func (s *PostgresStore) CloseImpersonationSession(ctx context.Context, sessionID, reason string) (time.Time, bool, error) {
+	q := s.getQueryExecutor(ctx)
+
+	var createdAt time.Time
+	err := q.QueryRow(ctx, `
+		UPDATE sessions
+		   SET revoked_at = NOW(), revoked_reason = $2
+		 WHERE id = $1
+		   AND acting_as_user_id IS NOT NULL
+		   AND revoked_at IS NULL
+		RETURNING created_at`, sessionID, reason).Scan(&createdAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return time.Time{}, false, nil
+		}
+		return time.Time{}, false, err
+	}
+	return createdAt, true, nil
 }
 
 func (s *PostgresStore) RevokeSession(ctx context.Context, deviceSessionID string, reason string) ([]string, error) {

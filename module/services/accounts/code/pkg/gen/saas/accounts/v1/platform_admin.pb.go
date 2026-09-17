@@ -355,6 +355,114 @@ func (x *ImpersonateUserResponse) GetExpiresIn() int64 {
 	return 0
 }
 
+// StopImpersonation ends the caller's own impersonation session. It carries no
+// target: the session to end is derived from the verified identity, so there is
+// no input by which one operator could end another's window.
+type StopImpersonationRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopImpersonationRequest) Reset() {
+	*x = StopImpersonationRequest{}
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopImpersonationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopImpersonationRequest) ProtoMessage() {}
+
+func (x *StopImpersonationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopImpersonationRequest.ProtoReflect.Descriptor instead.
+func (*StopImpersonationRequest) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{6}
+}
+
+type StopImpersonationResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Seconds the impersonation window was open. 0 when it was already closed.
+	DurationSeconds int64 `protobuf:"varint,1,opt,name=duration_seconds,json=durationSeconds,proto3" json:"duration_seconds,omitempty"`
+	// Whether the window's outstanding access token was actually invalidated.
+	// False means the window is closed durably but its token keeps working until
+	// it expires on its own, which happens when no revocation store is wired or
+	// the marker could not be written — a caller that reports "stopped" without
+	// saying so would overstate what the stop achieved.
+	AccessTokenRevoked bool `protobuf:"varint,2,opt,name=access_token_revoked,json=accessTokenRevoked,proto3" json:"access_token_revoked,omitempty"`
+	// Whether the window had already been closed before this call, so a retry or
+	// a second tab reports the outcome without recording a second end of the same
+	// window.
+	AlreadyClosed bool `protobuf:"varint,3,opt,name=already_closed,json=alreadyClosed,proto3" json:"already_closed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StopImpersonationResponse) Reset() {
+	*x = StopImpersonationResponse{}
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StopImpersonationResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StopImpersonationResponse) ProtoMessage() {}
+
+func (x *StopImpersonationResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StopImpersonationResponse.ProtoReflect.Descriptor instead.
+func (*StopImpersonationResponse) Descriptor() ([]byte, []int) {
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *StopImpersonationResponse) GetDurationSeconds() int64 {
+	if x != nil {
+		return x.DurationSeconds
+	}
+	return 0
+}
+
+func (x *StopImpersonationResponse) GetAccessTokenRevoked() bool {
+	if x != nil {
+		return x.AccessTokenRevoked
+	}
+	return false
+}
+
+func (x *StopImpersonationResponse) GetAlreadyClosed() bool {
+	if x != nil {
+		return x.AlreadyClosed
+	}
+	return false
+}
+
 type ListActiveSessionsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
@@ -366,7 +474,7 @@ type ListActiveSessionsRequest struct {
 
 func (x *ListActiveSessionsRequest) Reset() {
 	*x = ListActiveSessionsRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -378,7 +486,7 @@ func (x *ListActiveSessionsRequest) String() string {
 func (*ListActiveSessionsRequest) ProtoMessage() {}
 
 func (x *ListActiveSessionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[6]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -391,7 +499,7 @@ func (x *ListActiveSessionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActiveSessionsRequest.ProtoReflect.Descriptor instead.
 func (*ListActiveSessionsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{6}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListActiveSessionsRequest) GetUserId() string {
@@ -437,7 +545,7 @@ type SessionInfo struct {
 
 func (x *SessionInfo) Reset() {
 	*x = SessionInfo{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -449,7 +557,7 @@ func (x *SessionInfo) String() string {
 func (*SessionInfo) ProtoMessage() {}
 
 func (x *SessionInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[7]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -462,7 +570,7 @@ func (x *SessionInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionInfo.ProtoReflect.Descriptor instead.
 func (*SessionInfo) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{7}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *SessionInfo) GetId() string {
@@ -538,7 +646,7 @@ type ListActiveSessionsResponse struct {
 
 func (x *ListActiveSessionsResponse) Reset() {
 	*x = ListActiveSessionsResponse{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -550,7 +658,7 @@ func (x *ListActiveSessionsResponse) String() string {
 func (*ListActiveSessionsResponse) ProtoMessage() {}
 
 func (x *ListActiveSessionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[8]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -563,7 +671,7 @@ func (x *ListActiveSessionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListActiveSessionsResponse.ProtoReflect.Descriptor instead.
 func (*ListActiveSessionsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{8}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ListActiveSessionsResponse) GetSessions() []*SessionInfo {
@@ -591,7 +699,7 @@ type RevokeSessionRequest struct {
 
 func (x *RevokeSessionRequest) Reset() {
 	*x = RevokeSessionRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -603,7 +711,7 @@ func (x *RevokeSessionRequest) String() string {
 func (*RevokeSessionRequest) ProtoMessage() {}
 
 func (x *RevokeSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[9]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -616,7 +724,7 @@ func (x *RevokeSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeSessionRequest.ProtoReflect.Descriptor instead.
 func (*RevokeSessionRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{9}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RevokeSessionRequest) GetSessionId() string {
@@ -642,7 +750,7 @@ type GetOrgEntitlementsRequest struct {
 
 func (x *GetOrgEntitlementsRequest) Reset() {
 	*x = GetOrgEntitlementsRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -654,7 +762,7 @@ func (x *GetOrgEntitlementsRequest) String() string {
 func (*GetOrgEntitlementsRequest) ProtoMessage() {}
 
 func (x *GetOrgEntitlementsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[10]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -667,7 +775,7 @@ func (x *GetOrgEntitlementsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrgEntitlementsRequest.ProtoReflect.Descriptor instead.
 func (*GetOrgEntitlementsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{10}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetOrgEntitlementsRequest) GetOrgId() string {
@@ -687,7 +795,7 @@ type GetOrgEntitlementsResponse struct {
 
 func (x *GetOrgEntitlementsResponse) Reset() {
 	*x = GetOrgEntitlementsResponse{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -699,7 +807,7 @@ func (x *GetOrgEntitlementsResponse) String() string {
 func (*GetOrgEntitlementsResponse) ProtoMessage() {}
 
 func (x *GetOrgEntitlementsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[11]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -712,7 +820,7 @@ func (x *GetOrgEntitlementsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOrgEntitlementsResponse.ProtoReflect.Descriptor instead.
 func (*GetOrgEntitlementsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{11}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetOrgEntitlementsResponse) GetPlanName() string {
@@ -741,7 +849,7 @@ type EntitlementInfo struct {
 
 func (x *EntitlementInfo) Reset() {
 	*x = EntitlementInfo{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[12]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -753,7 +861,7 @@ func (x *EntitlementInfo) String() string {
 func (*EntitlementInfo) ProtoMessage() {}
 
 func (x *EntitlementInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[12]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -766,7 +874,7 @@ func (x *EntitlementInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EntitlementInfo.ProtoReflect.Descriptor instead.
 func (*EntitlementInfo) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{12}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *EntitlementInfo) GetFeature() string {
@@ -809,7 +917,7 @@ type OverrideEntitlementRequest struct {
 
 func (x *OverrideEntitlementRequest) Reset() {
 	*x = OverrideEntitlementRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -821,7 +929,7 @@ func (x *OverrideEntitlementRequest) String() string {
 func (*OverrideEntitlementRequest) ProtoMessage() {}
 
 func (x *OverrideEntitlementRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[13]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -834,7 +942,7 @@ func (x *OverrideEntitlementRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OverrideEntitlementRequest.ProtoReflect.Descriptor instead.
 func (*OverrideEntitlementRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{13}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *OverrideEntitlementRequest) GetOrgId() string {
@@ -874,7 +982,7 @@ type OverrideEntitlementResponse struct {
 
 func (x *OverrideEntitlementResponse) Reset() {
 	*x = OverrideEntitlementResponse{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -886,7 +994,7 @@ func (x *OverrideEntitlementResponse) String() string {
 func (*OverrideEntitlementResponse) ProtoMessage() {}
 
 func (x *OverrideEntitlementResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[14]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -899,7 +1007,7 @@ func (x *OverrideEntitlementResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OverrideEntitlementResponse.ProtoReflect.Descriptor instead.
 func (*OverrideEntitlementResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{14}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *OverrideEntitlementResponse) GetId() string {
@@ -919,7 +1027,7 @@ type GrantPlatformRoleRequest struct {
 
 func (x *GrantPlatformRoleRequest) Reset() {
 	*x = GrantPlatformRoleRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -931,7 +1039,7 @@ func (x *GrantPlatformRoleRequest) String() string {
 func (*GrantPlatformRoleRequest) ProtoMessage() {}
 
 func (x *GrantPlatformRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[15]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -944,7 +1052,7 @@ func (x *GrantPlatformRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantPlatformRoleRequest.ProtoReflect.Descriptor instead.
 func (*GrantPlatformRoleRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{15}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GrantPlatformRoleRequest) GetUserId() string {
@@ -970,7 +1078,7 @@ type RevokePlatformRoleRequest struct {
 
 func (x *RevokePlatformRoleRequest) Reset() {
 	*x = RevokePlatformRoleRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -982,7 +1090,7 @@ func (x *RevokePlatformRoleRequest) String() string {
 func (*RevokePlatformRoleRequest) ProtoMessage() {}
 
 func (x *RevokePlatformRoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[16]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -995,7 +1103,7 @@ func (x *RevokePlatformRoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokePlatformRoleRequest.ProtoReflect.Descriptor instead.
 func (*RevokePlatformRoleRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{16}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *RevokePlatformRoleRequest) GetUserId() string {
@@ -1013,7 +1121,7 @@ type ListPlatformAdminsRequest struct {
 
 func (x *ListPlatformAdminsRequest) Reset() {
 	*x = ListPlatformAdminsRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1025,7 +1133,7 @@ func (x *ListPlatformAdminsRequest) String() string {
 func (*ListPlatformAdminsRequest) ProtoMessage() {}
 
 func (x *ListPlatformAdminsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[17]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1038,7 +1146,7 @@ func (x *ListPlatformAdminsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlatformAdminsRequest.ProtoReflect.Descriptor instead.
 func (*ListPlatformAdminsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{17}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{19}
 }
 
 type PlatformAdminEntry struct {
@@ -1053,7 +1161,7 @@ type PlatformAdminEntry struct {
 
 func (x *PlatformAdminEntry) Reset() {
 	*x = PlatformAdminEntry{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1065,7 +1173,7 @@ func (x *PlatformAdminEntry) String() string {
 func (*PlatformAdminEntry) ProtoMessage() {}
 
 func (x *PlatformAdminEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[18]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1078,7 +1186,7 @@ func (x *PlatformAdminEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlatformAdminEntry.ProtoReflect.Descriptor instead.
 func (*PlatformAdminEntry) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{18}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *PlatformAdminEntry) GetUserId() string {
@@ -1118,7 +1226,7 @@ type ListPlatformAdminsResponse struct {
 
 func (x *ListPlatformAdminsResponse) Reset() {
 	*x = ListPlatformAdminsResponse{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1130,7 +1238,7 @@ func (x *ListPlatformAdminsResponse) String() string {
 func (*ListPlatformAdminsResponse) ProtoMessage() {}
 
 func (x *ListPlatformAdminsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[19]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1143,7 +1251,7 @@ func (x *ListPlatformAdminsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPlatformAdminsResponse.ProtoReflect.Descriptor instead.
 func (*ListPlatformAdminsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{19}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ListPlatformAdminsResponse) GetAdmins() []*PlatformAdminEntry {
@@ -1161,7 +1269,7 @@ type ListFeatureFlagsRequest struct {
 
 func (x *ListFeatureFlagsRequest) Reset() {
 	*x = ListFeatureFlagsRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1173,7 +1281,7 @@ func (x *ListFeatureFlagsRequest) String() string {
 func (*ListFeatureFlagsRequest) ProtoMessage() {}
 
 func (x *ListFeatureFlagsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[20]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1186,7 +1294,7 @@ func (x *ListFeatureFlagsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFeatureFlagsRequest.ProtoReflect.Descriptor instead.
 func (*ListFeatureFlagsRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{20}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{22}
 }
 
 type FeatureFlagEntry struct {
@@ -1202,7 +1310,7 @@ type FeatureFlagEntry struct {
 
 func (x *FeatureFlagEntry) Reset() {
 	*x = FeatureFlagEntry{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1214,7 +1322,7 @@ func (x *FeatureFlagEntry) String() string {
 func (*FeatureFlagEntry) ProtoMessage() {}
 
 func (x *FeatureFlagEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[21]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1227,7 +1335,7 @@ func (x *FeatureFlagEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FeatureFlagEntry.ProtoReflect.Descriptor instead.
 func (*FeatureFlagEntry) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{21}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *FeatureFlagEntry) GetName() string {
@@ -1274,7 +1382,7 @@ type ListFeatureFlagsResponse struct {
 
 func (x *ListFeatureFlagsResponse) Reset() {
 	*x = ListFeatureFlagsResponse{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1286,7 +1394,7 @@ func (x *ListFeatureFlagsResponse) String() string {
 func (*ListFeatureFlagsResponse) ProtoMessage() {}
 
 func (x *ListFeatureFlagsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[22]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1299,7 +1407,7 @@ func (x *ListFeatureFlagsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFeatureFlagsResponse.ProtoReflect.Descriptor instead.
 func (*ListFeatureFlagsResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{22}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ListFeatureFlagsResponse) GetFlags() []*FeatureFlagEntry {
@@ -1326,7 +1434,7 @@ type UpsertFeatureFlagRequest struct {
 
 func (x *UpsertFeatureFlagRequest) Reset() {
 	*x = UpsertFeatureFlagRequest{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1338,7 +1446,7 @@ func (x *UpsertFeatureFlagRequest) String() string {
 func (*UpsertFeatureFlagRequest) ProtoMessage() {}
 
 func (x *UpsertFeatureFlagRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[23]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1351,7 +1459,7 @@ func (x *UpsertFeatureFlagRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertFeatureFlagRequest.ProtoReflect.Descriptor instead.
 func (*UpsertFeatureFlagRequest) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{23}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *UpsertFeatureFlagRequest) GetName() string {
@@ -1401,7 +1509,7 @@ type UpsertFeatureFlagResponse struct {
 
 func (x *UpsertFeatureFlagResponse) Reset() {
 	*x = UpsertFeatureFlagResponse{}
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1413,7 +1521,7 @@ func (x *UpsertFeatureFlagResponse) String() string {
 func (*UpsertFeatureFlagResponse) ProtoMessage() {}
 
 func (x *UpsertFeatureFlagResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[24]
+	mi := &file_saas_accounts_v1_platform_admin_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1426,7 +1534,7 @@ func (x *UpsertFeatureFlagResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpsertFeatureFlagResponse.ProtoReflect.Descriptor instead.
 func (*UpsertFeatureFlagResponse) Descriptor() ([]byte, []int) {
-	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{24}
+	return file_saas_accounts_v1_platform_admin_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *UpsertFeatureFlagResponse) GetName() string {
@@ -1464,7 +1572,12 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x17ImpersonateUserResponse\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x03R\texpiresIn\"{\n" +
+	"expires_in\x18\x02 \x01(\x03R\texpiresIn\"\x1a\n" +
+	"\x18StopImpersonationRequest\"\x9f\x01\n" +
+	"\x19StopImpersonationResponse\x12)\n" +
+	"\x10duration_seconds\x18\x01 \x01(\x03R\x0fdurationSeconds\x120\n" +
+	"\x14access_token_revoked\x18\x02 \x01(\bR\x12accessTokenRevoked\x12%\n" +
+	"\x0ealready_closed\x18\x03 \x01(\bR\ralreadyClosed\"{\n" +
 	"\x19ListActiveSessionsRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12&\n" +
 	"\tpage_size\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d \x00R\bpageSize\x12\x1d\n" +
@@ -1543,7 +1656,7 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\x0frollout_percent\x18\x04 \x01(\x05R\x0erolloutPercent\x12$\n" +
 	"\x0etarget_org_ids\x18\x05 \x03(\tR\ftargetOrgIds:\x02\x18\x01\"3\n" +
 	"\x19UpsertFeatureFlagResponse\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name:\x02\x18\x012\xac\x1a\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name:\x02\x18\x012\x87\x1c\n" +
 	"\x14PlatformAdminService\x12\x8e\x01\n" +
 	"\vSearchUsers\x12$.saas.accounts.v1.SearchUsersRequest\x1a%.saas.accounts.v1.SearchUsersResponse\"2\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x03\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/platform/users\x12\xa9\x01\n" +
 	"\vSuspendUser\x12$.saas.accounts.v1.SuspendUserRequest\x1a\x16.google.protobuf.Empty\"\\\xc2\xf3\x18)\b\x02\x10\x010\x01:\x17\n" +
@@ -1551,7 +1664,9 @@ const file_saas_accounts_v1_platform_admin_proto_rawDesc = "" +
 	"\rUnsuspendUser\x12&.saas.accounts.v1.UnsuspendUserRequest\x1a\x16.google.protobuf.Empty\"`\xc2\xf3\x18+\b\x02\x10\x010\x01:\x19\n" +
 	"\x15saas.user.unsuspended\x10\x02@\x01H\x05P\x03X\x03`\x05\x82\xd3\xe4\x93\x02+:\x01*\"&/v1/platform/users/{user_id}:unsuspend\x12\xd4\x01\n" +
 	"\x0fImpersonateUser\x12(.saas.accounts.v1.ImpersonateUserRequest\x1a).saas.accounts.v1.ImpersonateUserResponse\"l\xc2\xf3\x185\b\x02\x10\x010\x04:#\n" +
-	"\x1fsaas.platform.user_impersonated\x10\x02@\x01H\x05P\x03X\x04`\x03\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/platform/users/{user_id}:impersonate\x12\xa6\x01\n" +
+	"\x1fsaas.platform.user_impersonated\x10\x02@\x01H\x05P\x03X\x04`\x03\x82\xd3\xe4\x93\x02-:\x01*\"(/v1/platform/users/{user_id}:impersonate\x12\xd8\x01\n" +
+	"\x11StopImpersonation\x12*.saas.accounts.v1.StopImpersonationRequest\x1a+.saas.accounts.v1.StopImpersonationResponse\"j\xc2\xf3\x18<\b\x02\x10\x010\x01:*\n" +
+	"&saas.platform.user_impersonation_ended\x10\x02@\x01H\x05P\x03X\x03`\x01\x82\xd3\xe4\x93\x02$:\x01*\"\x1f/v1/platform/impersonation:stop\x12\xa6\x01\n" +
 	"\x12ListActiveSessions\x12+.saas.accounts.v1.ListActiveSessionsRequest\x1a,.saas.accounts.v1.ListActiveSessionsResponse\"5\xc2\xf3\x18\x14\b\x02\x10\x010\x01:\x02\x10\x01@\x01H\x05P\x03X\x03`\x03\x82\xd3\xe4\x93\x02\x17\x12\x15/v1/platform/sessions\x12\xa9\x01\n" +
 	"\rRevokeSession\x12&.saas.accounts.v1.RevokeSessionRequest\x1a\x16.google.protobuf.Empty\"X\xc2\xf3\x18*\b\x02\x10\x010\x01:\x18\n" +
 	"\x14saas.session.revoked\x10\x02@\x01H\x05P\x03X\x03`\x03\x82\xd3\xe4\x93\x02$*\"/v1/platform/sessions/{session_id}\x12\xcf\x01\n" +
@@ -1588,7 +1703,7 @@ func file_saas_accounts_v1_platform_admin_proto_rawDescGZIP() []byte {
 	return file_saas_accounts_v1_platform_admin_proto_rawDescData
 }
 
-var file_saas_accounts_v1_platform_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_saas_accounts_v1_platform_admin_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
 	(*SearchUsersRequest)(nil),                 // 0: saas.accounts.v1.SearchUsersRequest
 	(*SearchUsersResponse)(nil),                // 1: saas.accounts.v1.SearchUsersResponse
@@ -1596,94 +1711,98 @@ var file_saas_accounts_v1_platform_admin_proto_goTypes = []any{
 	(*UnsuspendUserRequest)(nil),               // 3: saas.accounts.v1.UnsuspendUserRequest
 	(*ImpersonateUserRequest)(nil),             // 4: saas.accounts.v1.ImpersonateUserRequest
 	(*ImpersonateUserResponse)(nil),            // 5: saas.accounts.v1.ImpersonateUserResponse
-	(*ListActiveSessionsRequest)(nil),          // 6: saas.accounts.v1.ListActiveSessionsRequest
-	(*SessionInfo)(nil),                        // 7: saas.accounts.v1.SessionInfo
-	(*ListActiveSessionsResponse)(nil),         // 8: saas.accounts.v1.ListActiveSessionsResponse
-	(*RevokeSessionRequest)(nil),               // 9: saas.accounts.v1.RevokeSessionRequest
-	(*GetOrgEntitlementsRequest)(nil),          // 10: saas.accounts.v1.GetOrgEntitlementsRequest
-	(*GetOrgEntitlementsResponse)(nil),         // 11: saas.accounts.v1.GetOrgEntitlementsResponse
-	(*EntitlementInfo)(nil),                    // 12: saas.accounts.v1.EntitlementInfo
-	(*OverrideEntitlementRequest)(nil),         // 13: saas.accounts.v1.OverrideEntitlementRequest
-	(*OverrideEntitlementResponse)(nil),        // 14: saas.accounts.v1.OverrideEntitlementResponse
-	(*GrantPlatformRoleRequest)(nil),           // 15: saas.accounts.v1.GrantPlatformRoleRequest
-	(*RevokePlatformRoleRequest)(nil),          // 16: saas.accounts.v1.RevokePlatformRoleRequest
-	(*ListPlatformAdminsRequest)(nil),          // 17: saas.accounts.v1.ListPlatformAdminsRequest
-	(*PlatformAdminEntry)(nil),                 // 18: saas.accounts.v1.PlatformAdminEntry
-	(*ListPlatformAdminsResponse)(nil),         // 19: saas.accounts.v1.ListPlatformAdminsResponse
-	(*ListFeatureFlagsRequest)(nil),            // 20: saas.accounts.v1.ListFeatureFlagsRequest
-	(*FeatureFlagEntry)(nil),                   // 21: saas.accounts.v1.FeatureFlagEntry
-	(*ListFeatureFlagsResponse)(nil),           // 22: saas.accounts.v1.ListFeatureFlagsResponse
-	(*UpsertFeatureFlagRequest)(nil),           // 23: saas.accounts.v1.UpsertFeatureFlagRequest
-	(*UpsertFeatureFlagResponse)(nil),          // 24: saas.accounts.v1.UpsertFeatureFlagResponse
-	nil,                                        // 25: saas.accounts.v1.SessionInfo.DeviceInfoEntry
-	(*User)(nil),                               // 26: saas.accounts.v1.User
-	(*timestamppb.Timestamp)(nil),              // 27: google.protobuf.Timestamp
-	(*v1.GetJobOperationsRequest)(nil),         // 28: saas.jobs.v1.GetJobOperationsRequest
-	(*v1.ListJobsRequest)(nil),                 // 29: saas.jobs.v1.ListJobsRequest
-	(*v1.GetJobRequest)(nil),                   // 30: saas.jobs.v1.GetJobRequest
-	(*v1.ReplayJobRequest)(nil),                // 31: saas.jobs.v1.ReplayJobRequest
-	(*v11.GetEventOperationsRequest)(nil),      // 32: saas.events.v1.GetEventOperationsRequest
-	(*v11.ListEventSubscriptionsRequest)(nil),  // 33: saas.events.v1.ListEventSubscriptionsRequest
-	(*emptypb.Empty)(nil),                      // 34: google.protobuf.Empty
-	(*v1.GetJobOperationsResponse)(nil),        // 35: saas.jobs.v1.GetJobOperationsResponse
-	(*v1.ListJobsResponse)(nil),                // 36: saas.jobs.v1.ListJobsResponse
-	(*v1.GetJobResponse)(nil),                  // 37: saas.jobs.v1.GetJobResponse
-	(*v1.ReplayJobResponse)(nil),               // 38: saas.jobs.v1.ReplayJobResponse
-	(*v11.GetEventOperationsResponse)(nil),     // 39: saas.events.v1.GetEventOperationsResponse
-	(*v11.ListEventSubscriptionsResponse)(nil), // 40: saas.events.v1.ListEventSubscriptionsResponse
+	(*StopImpersonationRequest)(nil),           // 6: saas.accounts.v1.StopImpersonationRequest
+	(*StopImpersonationResponse)(nil),          // 7: saas.accounts.v1.StopImpersonationResponse
+	(*ListActiveSessionsRequest)(nil),          // 8: saas.accounts.v1.ListActiveSessionsRequest
+	(*SessionInfo)(nil),                        // 9: saas.accounts.v1.SessionInfo
+	(*ListActiveSessionsResponse)(nil),         // 10: saas.accounts.v1.ListActiveSessionsResponse
+	(*RevokeSessionRequest)(nil),               // 11: saas.accounts.v1.RevokeSessionRequest
+	(*GetOrgEntitlementsRequest)(nil),          // 12: saas.accounts.v1.GetOrgEntitlementsRequest
+	(*GetOrgEntitlementsResponse)(nil),         // 13: saas.accounts.v1.GetOrgEntitlementsResponse
+	(*EntitlementInfo)(nil),                    // 14: saas.accounts.v1.EntitlementInfo
+	(*OverrideEntitlementRequest)(nil),         // 15: saas.accounts.v1.OverrideEntitlementRequest
+	(*OverrideEntitlementResponse)(nil),        // 16: saas.accounts.v1.OverrideEntitlementResponse
+	(*GrantPlatformRoleRequest)(nil),           // 17: saas.accounts.v1.GrantPlatformRoleRequest
+	(*RevokePlatformRoleRequest)(nil),          // 18: saas.accounts.v1.RevokePlatformRoleRequest
+	(*ListPlatformAdminsRequest)(nil),          // 19: saas.accounts.v1.ListPlatformAdminsRequest
+	(*PlatformAdminEntry)(nil),                 // 20: saas.accounts.v1.PlatformAdminEntry
+	(*ListPlatformAdminsResponse)(nil),         // 21: saas.accounts.v1.ListPlatformAdminsResponse
+	(*ListFeatureFlagsRequest)(nil),            // 22: saas.accounts.v1.ListFeatureFlagsRequest
+	(*FeatureFlagEntry)(nil),                   // 23: saas.accounts.v1.FeatureFlagEntry
+	(*ListFeatureFlagsResponse)(nil),           // 24: saas.accounts.v1.ListFeatureFlagsResponse
+	(*UpsertFeatureFlagRequest)(nil),           // 25: saas.accounts.v1.UpsertFeatureFlagRequest
+	(*UpsertFeatureFlagResponse)(nil),          // 26: saas.accounts.v1.UpsertFeatureFlagResponse
+	nil,                                        // 27: saas.accounts.v1.SessionInfo.DeviceInfoEntry
+	(*User)(nil),                               // 28: saas.accounts.v1.User
+	(*timestamppb.Timestamp)(nil),              // 29: google.protobuf.Timestamp
+	(*v1.GetJobOperationsRequest)(nil),         // 30: saas.jobs.v1.GetJobOperationsRequest
+	(*v1.ListJobsRequest)(nil),                 // 31: saas.jobs.v1.ListJobsRequest
+	(*v1.GetJobRequest)(nil),                   // 32: saas.jobs.v1.GetJobRequest
+	(*v1.ReplayJobRequest)(nil),                // 33: saas.jobs.v1.ReplayJobRequest
+	(*v11.GetEventOperationsRequest)(nil),      // 34: saas.events.v1.GetEventOperationsRequest
+	(*v11.ListEventSubscriptionsRequest)(nil),  // 35: saas.events.v1.ListEventSubscriptionsRequest
+	(*emptypb.Empty)(nil),                      // 36: google.protobuf.Empty
+	(*v1.GetJobOperationsResponse)(nil),        // 37: saas.jobs.v1.GetJobOperationsResponse
+	(*v1.ListJobsResponse)(nil),                // 38: saas.jobs.v1.ListJobsResponse
+	(*v1.GetJobResponse)(nil),                  // 39: saas.jobs.v1.GetJobResponse
+	(*v1.ReplayJobResponse)(nil),               // 40: saas.jobs.v1.ReplayJobResponse
+	(*v11.GetEventOperationsResponse)(nil),     // 41: saas.events.v1.GetEventOperationsResponse
+	(*v11.ListEventSubscriptionsResponse)(nil), // 42: saas.events.v1.ListEventSubscriptionsResponse
 }
 var file_saas_accounts_v1_platform_admin_proto_depIdxs = []int32{
-	26, // 0: saas.accounts.v1.SearchUsersResponse.users:type_name -> saas.accounts.v1.User
-	25, // 1: saas.accounts.v1.SessionInfo.device_info:type_name -> saas.accounts.v1.SessionInfo.DeviceInfoEntry
-	27, // 2: saas.accounts.v1.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
-	27, // 3: saas.accounts.v1.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
-	27, // 4: saas.accounts.v1.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
-	27, // 5: saas.accounts.v1.SessionInfo.idle_expires_at:type_name -> google.protobuf.Timestamp
-	7,  // 6: saas.accounts.v1.ListActiveSessionsResponse.sessions:type_name -> saas.accounts.v1.SessionInfo
-	12, // 7: saas.accounts.v1.GetOrgEntitlementsResponse.entitlements:type_name -> saas.accounts.v1.EntitlementInfo
-	27, // 8: saas.accounts.v1.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
-	18, // 9: saas.accounts.v1.ListPlatformAdminsResponse.admins:type_name -> saas.accounts.v1.PlatformAdminEntry
-	21, // 10: saas.accounts.v1.ListFeatureFlagsResponse.flags:type_name -> saas.accounts.v1.FeatureFlagEntry
+	28, // 0: saas.accounts.v1.SearchUsersResponse.users:type_name -> saas.accounts.v1.User
+	27, // 1: saas.accounts.v1.SessionInfo.device_info:type_name -> saas.accounts.v1.SessionInfo.DeviceInfoEntry
+	29, // 2: saas.accounts.v1.SessionInfo.created_at:type_name -> google.protobuf.Timestamp
+	29, // 3: saas.accounts.v1.SessionInfo.last_active_at:type_name -> google.protobuf.Timestamp
+	29, // 4: saas.accounts.v1.SessionInfo.expires_at:type_name -> google.protobuf.Timestamp
+	29, // 5: saas.accounts.v1.SessionInfo.idle_expires_at:type_name -> google.protobuf.Timestamp
+	9,  // 6: saas.accounts.v1.ListActiveSessionsResponse.sessions:type_name -> saas.accounts.v1.SessionInfo
+	14, // 7: saas.accounts.v1.GetOrgEntitlementsResponse.entitlements:type_name -> saas.accounts.v1.EntitlementInfo
+	29, // 8: saas.accounts.v1.PlatformAdminEntry.granted_at:type_name -> google.protobuf.Timestamp
+	20, // 9: saas.accounts.v1.ListPlatformAdminsResponse.admins:type_name -> saas.accounts.v1.PlatformAdminEntry
+	23, // 10: saas.accounts.v1.ListFeatureFlagsResponse.flags:type_name -> saas.accounts.v1.FeatureFlagEntry
 	0,  // 11: saas.accounts.v1.PlatformAdminService.SearchUsers:input_type -> saas.accounts.v1.SearchUsersRequest
 	2,  // 12: saas.accounts.v1.PlatformAdminService.SuspendUser:input_type -> saas.accounts.v1.SuspendUserRequest
 	3,  // 13: saas.accounts.v1.PlatformAdminService.UnsuspendUser:input_type -> saas.accounts.v1.UnsuspendUserRequest
 	4,  // 14: saas.accounts.v1.PlatformAdminService.ImpersonateUser:input_type -> saas.accounts.v1.ImpersonateUserRequest
-	6,  // 15: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
-	9,  // 16: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
-	10, // 17: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
-	13, // 18: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
-	15, // 19: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
-	16, // 20: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
-	17, // 21: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
-	20, // 22: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
-	23, // 23: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
-	28, // 24: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
-	29, // 25: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
-	30, // 26: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
-	31, // 27: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
-	32, // 28: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
-	33, // 29: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
-	1,  // 30: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
-	34, // 31: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
-	34, // 32: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
-	5,  // 33: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
-	8,  // 34: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
-	34, // 35: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
-	11, // 36: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
-	14, // 37: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
-	34, // 38: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
-	34, // 39: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
-	19, // 40: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
-	22, // 41: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
-	24, // 42: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
-	35, // 43: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
-	36, // 44: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
-	37, // 45: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
-	38, // 46: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
-	39, // 47: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
-	40, // 48: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
-	30, // [30:49] is the sub-list for method output_type
-	11, // [11:30] is the sub-list for method input_type
+	6,  // 15: saas.accounts.v1.PlatformAdminService.StopImpersonation:input_type -> saas.accounts.v1.StopImpersonationRequest
+	8,  // 16: saas.accounts.v1.PlatformAdminService.ListActiveSessions:input_type -> saas.accounts.v1.ListActiveSessionsRequest
+	11, // 17: saas.accounts.v1.PlatformAdminService.RevokeSession:input_type -> saas.accounts.v1.RevokeSessionRequest
+	12, // 18: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:input_type -> saas.accounts.v1.GetOrgEntitlementsRequest
+	15, // 19: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:input_type -> saas.accounts.v1.OverrideEntitlementRequest
+	17, // 20: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:input_type -> saas.accounts.v1.GrantPlatformRoleRequest
+	18, // 21: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:input_type -> saas.accounts.v1.RevokePlatformRoleRequest
+	19, // 22: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:input_type -> saas.accounts.v1.ListPlatformAdminsRequest
+	22, // 23: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:input_type -> saas.accounts.v1.ListFeatureFlagsRequest
+	25, // 24: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:input_type -> saas.accounts.v1.UpsertFeatureFlagRequest
+	30, // 25: saas.accounts.v1.PlatformAdminService.GetJobOperations:input_type -> saas.jobs.v1.GetJobOperationsRequest
+	31, // 26: saas.accounts.v1.PlatformAdminService.ListJobs:input_type -> saas.jobs.v1.ListJobsRequest
+	32, // 27: saas.accounts.v1.PlatformAdminService.GetJob:input_type -> saas.jobs.v1.GetJobRequest
+	33, // 28: saas.accounts.v1.PlatformAdminService.ReplayJob:input_type -> saas.jobs.v1.ReplayJobRequest
+	34, // 29: saas.accounts.v1.PlatformAdminService.GetEventOperations:input_type -> saas.events.v1.GetEventOperationsRequest
+	35, // 30: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:input_type -> saas.events.v1.ListEventSubscriptionsRequest
+	1,  // 31: saas.accounts.v1.PlatformAdminService.SearchUsers:output_type -> saas.accounts.v1.SearchUsersResponse
+	36, // 32: saas.accounts.v1.PlatformAdminService.SuspendUser:output_type -> google.protobuf.Empty
+	36, // 33: saas.accounts.v1.PlatformAdminService.UnsuspendUser:output_type -> google.protobuf.Empty
+	5,  // 34: saas.accounts.v1.PlatformAdminService.ImpersonateUser:output_type -> saas.accounts.v1.ImpersonateUserResponse
+	7,  // 35: saas.accounts.v1.PlatformAdminService.StopImpersonation:output_type -> saas.accounts.v1.StopImpersonationResponse
+	10, // 36: saas.accounts.v1.PlatformAdminService.ListActiveSessions:output_type -> saas.accounts.v1.ListActiveSessionsResponse
+	36, // 37: saas.accounts.v1.PlatformAdminService.RevokeSession:output_type -> google.protobuf.Empty
+	13, // 38: saas.accounts.v1.PlatformAdminService.GetOrgEntitlements:output_type -> saas.accounts.v1.GetOrgEntitlementsResponse
+	16, // 39: saas.accounts.v1.PlatformAdminService.OverrideEntitlement:output_type -> saas.accounts.v1.OverrideEntitlementResponse
+	36, // 40: saas.accounts.v1.PlatformAdminService.GrantPlatformRole:output_type -> google.protobuf.Empty
+	36, // 41: saas.accounts.v1.PlatformAdminService.RevokePlatformRole:output_type -> google.protobuf.Empty
+	21, // 42: saas.accounts.v1.PlatformAdminService.ListPlatformAdmins:output_type -> saas.accounts.v1.ListPlatformAdminsResponse
+	24, // 43: saas.accounts.v1.PlatformAdminService.ListFeatureFlags:output_type -> saas.accounts.v1.ListFeatureFlagsResponse
+	26, // 44: saas.accounts.v1.PlatformAdminService.UpsertFeatureFlag:output_type -> saas.accounts.v1.UpsertFeatureFlagResponse
+	37, // 45: saas.accounts.v1.PlatformAdminService.GetJobOperations:output_type -> saas.jobs.v1.GetJobOperationsResponse
+	38, // 46: saas.accounts.v1.PlatformAdminService.ListJobs:output_type -> saas.jobs.v1.ListJobsResponse
+	39, // 47: saas.accounts.v1.PlatformAdminService.GetJob:output_type -> saas.jobs.v1.GetJobResponse
+	40, // 48: saas.accounts.v1.PlatformAdminService.ReplayJob:output_type -> saas.jobs.v1.ReplayJobResponse
+	41, // 49: saas.accounts.v1.PlatformAdminService.GetEventOperations:output_type -> saas.events.v1.GetEventOperationsResponse
+	42, // 50: saas.accounts.v1.PlatformAdminService.ListEventSubscriptions:output_type -> saas.events.v1.ListEventSubscriptionsResponse
+	31, // [31:51] is the sub-list for method output_type
+	11, // [11:31] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -1701,7 +1820,7 @@ func file_saas_accounts_v1_platform_admin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_saas_accounts_v1_platform_admin_proto_rawDesc), len(file_saas_accounts_v1_platform_admin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

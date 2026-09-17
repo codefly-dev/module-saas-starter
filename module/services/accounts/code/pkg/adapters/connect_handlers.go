@@ -566,6 +566,9 @@ func (h *platformAdminConnectHandler) UnsuspendUser(ctx context.Context, req *co
 func (h *platformAdminConnectHandler) ImpersonateUser(ctx context.Context, req *connect.Request[gen.ImpersonateUserRequest]) (*connect.Response[gen.ImpersonateUserResponse], error) {
 	return unary(ctx, req, h.inner.ImpersonateUser)
 }
+func (h *platformAdminConnectHandler) StopImpersonation(ctx context.Context, req *connect.Request[gen.StopImpersonationRequest]) (*connect.Response[gen.StopImpersonationResponse], error) {
+	return unary(ctx, req, h.inner.StopImpersonation)
+}
 func (h *platformAdminConnectHandler) ListActiveSessions(ctx context.Context, req *connect.Request[gen.ListActiveSessionsRequest]) (*connect.Response[gen.ListActiveSessionsResponse], error) {
 	return unary(ctx, req, h.inner.ListActiveSessions)
 }

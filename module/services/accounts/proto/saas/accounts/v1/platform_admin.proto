@@ -58,6 +58,26 @@ message ImpersonateUserResponse {
   int64 expires_in = 2;
 }
 
+// StopImpersonation ends the caller's own impersonation session. It carries no
+// target: the session to end is derived from the verified identity, so there is
+// no input by which one operator could end another's window.
+message StopImpersonationRequest {}
+
+message StopImpersonationResponse {
+  // Seconds the impersonation window was open. 0 when it was already closed.
+  int64 duration_seconds = 1;
+  // Whether the window's outstanding access token was actually invalidated.
+  // False means the window is closed durably but its token keeps working until
+  // it expires on its own, which happens when no revocation store is wired or
+  // the marker could not be written — a caller that reports "stopped" without
+  // saying so would overstate what the stop achieved.
+  bool access_token_revoked = 2;
+  // Whether the window had already been closed before this call, so a retry or
+  // a second tab reports the outcome without recording a second end of the same
+  // window.
+  bool already_closed = 3;
+}
+
 message ListActiveSessionsRequest {
   string user_id = 1;
   int32 page_size = 2 [(buf.validate.field).int32 = {
@@ -262,6 +282,34 @@ service PlatformAdminService {
     };
     option (google.api.http) = {
       post: "/v1/platform/users/{user_id}:impersonate"
+      body: "*"
+    };
+  }
+  // StopImpersonation closes the caller's own impersonation window: it revokes
+  // the session's access tokens and records the end of the window.
+  //
+  // platform_role is deliberately NONE. Platform authority is withheld from an
+  // impersonated request by design, so a support-role gate would make this the
+  // one operation an impersonated session can never reach — and ending the
+  // session is precisely what it must be able to do. Being impersonated is
+  // itself the authorization, checked in the handler.
+  rpc StopImpersonation(StopImpersonationRequest) returns (StopImpersonationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.platform.user_impersonation_ended"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/platform/impersonation:stop"
       body: "*"
     };
   }
