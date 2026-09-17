@@ -16,12 +16,10 @@ import (
 // SetInternalToken credential; tenant calls require the real owner JWTMinter.
 // The owning host installs WithService before serving, exactly as Accounts does.
 func NewCustodyWorkContextGRPC(authority *WorkContextAuthorityServer, minter auth.JWTMinter, internal bool, tc *tls.Config) (*grpc.Server, error) {
-	if authority == nil || authority.configureErr != nil || authority.verifier == nil || minter == nil || tc == nil || len(tc.Certificates) == 0 {
+	if authority == nil || authority.configureErr != nil || authority.verifier == nil || minter == nil || !hasCustodyIdentity(tc) {
 		return nil, errors.New("configured Accounts authority and TLS required")
 	}
-	config := tc.Clone()
-	config.MinVersion = tls.VersionTLS13
-	config.GetConfigForClient = nil
+	config := custodyListenerTLS(tc)
 	exposure := rpcExposureTenant
 	if internal {
 		exposure = rpcExposureInternal

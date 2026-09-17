@@ -3,7 +3,6 @@ package main
 import (
 	"accounts/pkg/adapters"
 	"accounts/pkg/auth"
-	"accounts/pkg/certreload"
 	"accounts/pkg/infra"
 	"context"
 	"crypto/ed25519"
@@ -63,6 +62,32 @@ func projectedCustodyFile(path string) ([]byte, error) {
 	return data, nil
 }
 
+// custodyServerTLS is the identity the custody, revision and tenant listeners
+// share. The SDK's CertificateReloader re-reads the mounted leaf when
+// cert-manager rotates it and serves the new one on the next handshake, so a
+// 24h leaf needs no pod restart. It reads both files through the same
+// permission-checking projected reader at startup and on every reload, so a
+// rotation that lands world-readable, oversized or behind a non-regular file is
+// refused exactly as it would be at boot and the last good leaf keeps serving;
+// a malformed or half-written replacement is treated the same way.
+//
+// Only GetCertificate is set, deliberately. Go consults it only when
+// Certificates is empty or the client sent an SNI name, so a config that also
+// carried the boot-time leaf in Certificates would serve that static copy to
+// every peer dialing by IP (kubelet probes, in-cluster IP dials) and defeat the
+// reload for exactly those peers.
+func custodyServerTLS(certFile, keyFile string, clientCA []byte) (*tls.Config, error) {
+	reloader, err := codefly.NewCertificateReloader(certFile, keyFile, codefly.WithFileReader(projectedCustodyFile))
+	if err != nil {
+		return nil, errors.New("invalid custody TLS identity")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(clientCA) {
+		return nil, errors.New("invalid custody client CA")
+	}
+	return &tls.Config{GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}, nil
+}
+
 func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultClient, minter auth.JWTMinter, keyID string, key ed25519.PrivateKey, revokerWired, failOpen bool, installer http.Handler) (*executionCustodyHost, error) {
 	path := strings.TrimSpace(workspaceEnv("security", "EXECUTION_CUSTODY_CONFIG_FILE"))
 	if path == "" {
@@ -89,24 +114,14 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	if err != nil {
 		return nil, err
 	}
-	// The custody and revision listeners share this identity. The Reloader
-	// re-reads the mounted leaf (through the same permission-checking projected
-	// reader) when cert-manager rotates it and serves the new one on the next
-	// handshake, so a 24h leaf needs no pod restart; a malformed replacement is
-	// rejected and the last good leaf keeps serving.
-	reloader, err := certreload.New(config.TLSCertFile, config.TLSKeyFile, projectedCustodyFile)
+	tc, err := custodyServerTLS(config.TLSCertFile, config.TLSKeyFile, ca)
 	if err != nil {
-		return nil, errors.New("invalid custody TLS identity")
-	}
-	roots := x509.NewCertPool()
-	if !roots.AppendCertsFromPEM(ca) {
-		return nil, errors.New("invalid custody client CA")
+		return nil, err
 	}
 	// A stable instance of the canonical implementation shares the existing
 	// issuer/key/store. Generated server setup may configure its singleton later.
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "saas-starter", KeyID: keyID, PrivateKey: key, Authority: store})
-	tc := &tls.Config{Certificates: []tls.Certificate{*reloader.Current()}, GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
 	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: minter, Store: store, Cipher: cipher, Consumers: config.Consumers}, tc)
 	if err != nil {
 		return nil, err
