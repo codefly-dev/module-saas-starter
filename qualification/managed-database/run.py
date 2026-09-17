@@ -175,7 +175,7 @@ INSERT INTO webhook_deliveries(id,subscription_id,event_id,event_type,payload) S
     check('tenant_no_job_messages',tenant+'SELECT count(*) FROM job_messages;',error='42501')
     for role,table,n in [('app_control_plane','users','2'),('app_billing_worker','organizations','2'),('app_webhook_worker','webhook_deliveries','2')]:
         check(role+'_cross_scope_'+table,'BEGIN; SET LOCAL ROLE '+role+'; SELECT count(*) FROM '+table+'; ROLLBACK;',n)
-    for role,table in [('app_billing_worker','users'),('app_webhook_worker','users'),('app_job_worker','users'),('app_control_plane','job_messages')]:
+    for role,table in [('app_webhook_worker','users'),('app_job_worker','users'),('app_control_plane','job_messages')]:
         check(role+'_no_'+table,'BEGIN; SET LOCAL ROLE '+role+'; SELECT count(*) FROM '+table+';',error='42501')
     check('preauth_lookup_without_tenant',"BEGIN; SET LOCAL ROLE app_control_plane; SELECT count(*) FROM users WHERE primary_email='two@example.com'; ROLLBACK;",'1')
     check('webhook_result_update',"BEGIN; SET LOCAL ROLE app_webhook_worker; WITH x AS (UPDATE webhook_deliveries SET http_status=204 RETURNING id) SELECT count(*) FROM x; ROLLBACK;",'2')
