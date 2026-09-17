@@ -14,10 +14,20 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// AccessTokenLifetime is the TTL baked into minted access tokens.
-// Kept in sync with ed25519minter.Config.AccessTokenTTL so the
-// ExpiresIn field on Authenticate responses matches reality.
-const AccessTokenLifetime = 3 * time.Minute
+// expiresInSeconds reports how long an access token is still valid for, as the
+// OAuth2 expires_in field: seconds from *now*, not from when it was signed.
+// Token issuance and response construction are separated by database work, so
+// reporting the granted lifetime would overstate what the client actually has.
+//
+// It truncates rather than rounds, and clamps a token that already expired to
+// zero, so the value is never larger than the life genuinely left.
+func expiresInSeconds(expiresAt time.Time) int64 {
+	remaining := time.Until(expiresAt)
+	if remaining < 0 {
+		return 0
+	}
+	return int64(remaining.Seconds())
+}
 
 // Authenticate runs a login or signup through the identity resolver and
 // mints a fresh token pair.
@@ -227,7 +237,7 @@ func (s *Service) Authenticate(ctx context.Context, req *gen.AuthenticateRequest
 	return &gen.AuthenticateResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:    expiresInSeconds(pair.AccessTokenExpiresAt),
 		User:         user,
 	}, nil
 }
@@ -376,7 +386,7 @@ func (s *Service) RefreshToken(ctx context.Context, req *gen.RefreshTokenRequest
 	return &gen.RefreshTokenResponse{
 		AccessToken:  pair.AccessToken,
 		RefreshToken: pair.RefreshToken,
-		ExpiresIn:    int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:    expiresInSeconds(pair.AccessTokenExpiresAt),
 	}, nil
 }
 
@@ -404,7 +414,7 @@ func (s *Service) SwitchOrganization(
 		return nil, w.Wrapf(auth.ErrOrganizationAccessDenied, "invalid target organization")
 	}
 
-	accessToken, err := s.minter.SwitchOrganization(ctx, parsedUserID, sessionID, targetOrgID)
+	accessToken, accessExpiresAt, err := s.minter.SwitchOrganization(ctx, parsedUserID, sessionID, targetOrgID)
 	if err != nil {
 		return nil, w.Wrapf(err, "organization token exchange")
 	}
@@ -412,7 +422,7 @@ func (s *Service) SwitchOrganization(
 	s.emit(ctx, userID, "user", EventAuthOrgSwitched, "organization", req.OrganizationId, req.OrganizationId)
 	return &gen.SwitchOrganizationResponse{
 		AccessToken: accessToken,
-		ExpiresIn:   int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:   expiresInSeconds(accessExpiresAt),
 	}, nil
 }
 

@@ -103,7 +103,7 @@ func TestScopedRoles_OrgSwitchReresolvesTargetOrg(t *testing.T) {
 	mintIdentitySession(t, minter, userID, orgA)
 
 	sessionID := onlyActiveSessionID(t, userID)
-	accessToken, err := minter.SwitchOrganization(ctx, userID, sessionID, orgB)
+	accessToken, _, err := minter.SwitchOrganization(ctx, userID, sessionID, orgB)
 	require.NoError(t, err)
 
 	identity, err := minter.VerifyAccess(accessToken)

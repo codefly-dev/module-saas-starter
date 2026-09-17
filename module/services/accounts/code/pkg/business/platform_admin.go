@@ -258,7 +258,7 @@ func (s *Service) ImpersonateUser(ctx context.Context, actorID string, req *gen.
 
 	return &gen.ImpersonateUserResponse{
 		AccessToken: pair.AccessToken,
-		ExpiresIn:   int64(AccessTokenLifetime.Seconds()),
+		ExpiresIn:   expiresInSeconds(pair.AccessTokenExpiresAt),
 	}, nil
 }
 

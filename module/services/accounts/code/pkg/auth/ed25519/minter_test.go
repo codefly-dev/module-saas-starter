@@ -426,7 +426,7 @@ func TestRefreshAndOrgSwitchPreservePresentationalIdentity(t *testing.T) {
 
 	// Org-switch re-signs in place from the persisted session and must carry the
 	// email/name claims forward.
-	switched, err := m.SwitchOrganization(ctx, want.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	switched, _, err := m.SwitchOrganization(ctx, want.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
 	require.NoError(t, err)
 	payload := decodeJWTPayload(t, switched)
 	require.Contains(t, payload, `"email":"alice@acme.com"`)
@@ -599,7 +599,7 @@ func TestSwitchOrganizationPreservesDeviceSessionAndRefreshCredential(t *testing
 		PlatformRole: "support",
 		MFAEnrolled:  false,
 	}
-	accessToken, err := m.SwitchOrganization(ctx, identity.UserID, before.ID, targetOrgID)
+	accessToken, _, err := m.SwitchOrganization(ctx, identity.UserID, before.ID, targetOrgID)
 	require.NoError(t, err)
 
 	switched, err := m.VerifyAccess(accessToken)
@@ -657,7 +657,7 @@ func TestSwitchOrganizationPreservesDevelopmentFixtureAssurance(t *testing.T) {
 		PlatformRole: "super_admin",
 		MFAEnrolled:  false,
 	}
-	accessToken, err := m.SwitchOrganization(
+	accessToken, _, err := m.SwitchOrganization(
 		ctx,
 		identity.UserID,
 		sessionID,
@@ -1312,4 +1312,113 @@ func TestMintModuleRegistrationRequiresPrefix(t *testing.T) {
 
 	_, _, err = m.MintModuleRegistration("")
 	require.Error(t, err)
+}
+
+// signedAccessClaims returns the iat and exp the token itself carries, which is
+// all a client can observe about the lifetime it was granted.
+func signedAccessClaims(t *testing.T, token string) (issuedAt, expiresAt time.Time) {
+	t.Helper()
+	var claims struct {
+		IssuedAt  int64 `json:"iat"`
+		ExpiresAt int64 `json:"exp"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(decodeJWTPayload(t, token)), &claims))
+	require.NotZero(t, claims.IssuedAt)
+	require.NotZero(t, claims.ExpiresAt)
+	return time.Unix(claims.IssuedAt, 0), time.Unix(claims.ExpiresAt, 0)
+}
+
+// requireSignedFor asserts that the expiry the minter reports is exactly the exp
+// it signed, and that the gap between them is the configured lifetime. Reporting
+// the instant rather than the duration is what lets a caller subtract the time
+// spent between signing and responding.
+func requireSignedFor(t *testing.T, token string, reported time.Time, want time.Duration) {
+	t.Helper()
+	issuedAt, expiresAt := signedAccessClaims(t, token)
+	require.Equal(t, want, expiresAt.Sub(issuedAt))
+	require.Equal(t, expiresAt.Unix(), reported.Unix())
+}
+
+func TestMintReportsTheExpiryItSigned(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name        string
+		cfg         ed25519minter.Config
+		impersonate bool
+		want        time.Duration
+	}{
+		{
+			name: "defaults",
+			want: 3 * time.Minute,
+		},
+		{
+			name: "configured access ttl",
+			cfg:  ed25519minter.Config{AccessTokenTTL: 11 * time.Minute},
+			want: 11 * time.Minute,
+		},
+		{
+			name:        "impersonation capped below a raised access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 10 * time.Minute, ImpersonationTokenTTL: 5 * time.Minute},
+			impersonate: true,
+			want:        5 * time.Minute,
+		},
+		{
+			// The dangerous direction: a short impersonation cap must not be
+			// reported as the longer ordinary lifetime.
+			name:        "impersonation cap lowered below the access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 3 * time.Minute, ImpersonationTokenTTL: time.Minute},
+			impersonate: true,
+			want:        time.Minute,
+		},
+		{
+			name:        "impersonation uncapped when the cap exceeds the access ttl",
+			cfg:         ed25519minter.Config{AccessTokenTTL: 2 * time.Minute, ImpersonationTokenTTL: 30 * time.Minute},
+			impersonate: true,
+			want:        2 * time.Minute,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Built per subtest: Mint writes back through the pointer (it defaults
+			// AssuranceLevel), so a shared identity would leak between cases.
+			identity := newIdentity()
+			if tc.impersonate {
+				identity.ActingAsUserID = uuid.Must(uuid.NewV7())
+			}
+			_, priv, err := ed25519minter.GenerateKey()
+			require.NoError(t, err)
+			m := ed25519minter.New(tc.cfg, priv, &memoryStore{})
+
+			pair, err := m.Mint(ctx, identity)
+			require.NoError(t, err)
+			requireSignedFor(t, pair.AccessToken, pair.AccessTokenExpiresAt, tc.want)
+
+			// Rotation rebuilds the identity from the session row, which holds no
+			// acting claim, so a rotated token is never an impersonation token and
+			// the cap does not apply to it.
+			if tc.impersonate {
+				return
+			}
+			rotated, err := m.VerifyRefresh(ctx, pair.RefreshToken)
+			require.NoError(t, err)
+			requireSignedFor(t, rotated.AccessToken, rotated.AccessTokenExpiresAt, tc.want)
+		})
+	}
+}
+
+func TestSwitchOrganizationReportsTheExpiryItSigned(t *testing.T) {
+	ctx := context.Background()
+	_, priv, err := ed25519minter.GenerateKey()
+	require.NoError(t, err)
+	m := ed25519minter.New(ed25519minter.Config{AccessTokenTTL: 7 * time.Minute}, priv, &memoryStore{})
+
+	identity := newIdentity()
+	pair, err := m.Mint(ctx, identity)
+	require.NoError(t, err)
+	minted, err := m.VerifyAccess(pair.AccessToken)
+	require.NoError(t, err)
+
+	switched, expiresAt, err := m.SwitchOrganization(ctx, identity.UserID, minted.SessionID, uuid.Must(uuid.NewV7()))
+	require.NoError(t, err)
+	requireSignedFor(t, switched, expiresAt, 7*time.Minute)
 }
