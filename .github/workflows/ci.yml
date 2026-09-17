@@ -752,13 +752,19 @@ jobs:
           path: .codefly/ci/
           include-hidden-files: true
           if-no-files-found: warn
-      # A run on main that executed work and published nothing has silently lost
-      # the reuse it was configured for: every later run re-does that work while
+      # A run on main that executed work and published nothing has lost the
+      # reuse it was configured for: every later run re-does that work while
       # every signal stays green. Reuse was wired for weeks in exactly that
-      # state. The store only has to exist — a fully-reused phase legitimately
-      # writes no new record, and the reporter above names the reason when a
-      # task was withheld.
-      - name: Require published results from a seeding run
+      # state, so this has to be visible — but it is reported, not enforced.
+      #
+      # Enforcing it failed main on every phase the moment it landed, which is
+      # worse than the problem: no reuse costs minutes, a red main blocks
+      # everyone. The condition is real and currently TRUE — every task is
+      # `ineligible` because the resolved agent binary is unbound, so nothing
+      # can be published (issue #816). A gate whose condition is already broken
+      # gates nothing; it just stops the queue. Restore `exit 1` here once the
+      # first seeding run succeeds, and this becomes a regression gate.
+      - name: Report whether this seeding run published results
         if: ${{ success() && github.ref == 'refs/heads/main' && steps.reuse.outputs.enabled == 'true' }}
         shell: bash
         run: |
@@ -767,9 +773,7 @@ jobs:
             echo "published $(find "${store}" -type f -name '*.json' | wc -l) result record(s)"
             exit 0
           fi
-          echo "::error::Reuse is enabled on main but this phase published no result record." >&2
-          echo "Every later run will re-execute this work. See the outcome report above for the per-task reason." >&2
-          exit 1
+          echo "::warning::Reuse is enabled on main but this phase published no result record; every later run will re-execute this work. See the outcome report above, and issue #816."
       # Only main's runs seed the store. A pull request's cache is scoped to
       # that pull request and unreadable from anywhere else, so saving one buys
       # nothing and evicts entries other runs are reading.

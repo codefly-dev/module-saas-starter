@@ -54,11 +54,29 @@ function age(recordedAt) {
 const reused = tasks.filter(task => task.cache?.status === 'hit');
 const executed = tasks.filter(task => task.cache?.status !== 'hit');
 
+// Why a task could not publish. Codefly records the *status* on the task but
+// not the sentence behind it, so mirror the eligibility rule it applies: every
+// input a rerun would consume has to be bound by the key, and an unbound one
+// keeps the task executing forever. Naming the specific missing input is the
+// difference between "reuse is off" and something actionable.
+function ineligibleBecause(cache) {
+  const inputs = cache.inputs ?? {};
+  if (!inputs.environment) return 'no execution environment identity was declared';
+  if (!inputs.cli_digest) return 'the running CLI binary is unbound';
+  if (!inputs.agent?.digest) return 'the resolved agent binary is unbound';
+  if (!inputs.repository_rest_digest) return 'unattributed repository inputs are unbound';
+  return 'an input a rerun would consume is unbound';
+}
+
 // A task that ran and passed but stored nothing is the silent failure mode:
 // green here, and every later run repeats the work. `stored` is only ever true
 // on a run allowed to publish, so a pull request never reports these.
+//
+// `identity_only` means reuse was not active at all for the task; `ineligible`
+// means it was, and the task's own identity forbade standing on a record.
 const withheld = executed.filter(task =>
-  task.status === 'passed' && task.cache && task.cache.stored === false && task.cache.reason);
+  task.status === 'passed' && task.cache && task.cache.stored === false &&
+  (task.cache.reason || task.cache.status === 'ineligible'));
 
 const lines = [];
 const out = line => lines.push(line);
@@ -105,7 +123,9 @@ if (skipped.length) {
 if (withheld.length) {
   out('> **Results were not published.** Later runs will repeat this work.');
   out('');
-  for (const task of withheld) out(`> - \`${service(task)}\`: ${task.cache.reason}`);
+  for (const task of withheld) {
+    out(`> - \`${service(task)}\`: ${task.cache.reason ?? ineligibleBecause(task.cache)}`);
+  }
   out('');
 }
 
