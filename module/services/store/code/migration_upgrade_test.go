@@ -82,7 +82,11 @@ func TestMigrationUpgrade(t *testing.T) {
 	dump := func(id string) string {
 		raw := command("exec", id, "pg_dump", "-U", "postgres", "--schema-only", "postgres")
 		// pg_dump adds a random psql restriction token unrelated to the schema.
-		return regexp.MustCompile(`(?m)^\\(?:un)?restrict .*\n?`).ReplaceAllString(raw, "")
+		raw = regexp.MustCompile(`(?m)^\\(?:un)?restrict .*\n?`).ReplaceAllString(raw, "")
+		// The baseline's identity stamp on the schema is the one addition a fold
+		// makes on purpose; it is compared by the runner, not here.
+		raw = regexp.MustCompile(`(?m)^--\n-- Name: SCHEMA public; Type: COMMENT; .*\n--\n\n`).ReplaceAllString(raw, "")
+		return regexp.MustCompile(`(?m)^COMMENT ON SCHEMA public IS 'codefly store baseline [0-9a-f-]+';\n{1,3}`).ReplaceAllString(raw, "")
 	}
 	proposed, err := filepath.Abs("../migrations")
 	if err != nil {
@@ -162,6 +166,13 @@ func TestMigrationUpgrade(t *testing.T) {
 		if a, b := seedCatalog(t, referenceDB), seedCatalog(t, baselineDB); a != b {
 			t.Fatalf("folded baseline carries different seed rows than the ledger it replaced:\n%s", firstDifference(a, b))
 		}
+		// pg_dump orders a table's foreign keys by name; PostgreSQL fires their
+		// referential triggers in creation order, and a NO ACTION check that runs
+		// before a sibling CASCADE fails a delete the original ledger allowed. The
+		// dump comparison above cannot see that; the catalog can.
+		if a, b := foreignKeyOrder(t, referenceDB), foreignKeyOrder(t, baselineDB); a != b {
+			t.Fatalf("folded baseline creates foreign keys in a different order than the ledger it replaced:\n%s", firstDifference(a, b))
+		}
 		// Role attributes are the one deliberate difference from a legacy ledger:
 		// the baseline creates every runtime role without BYPASSRLS, the shape the
 		// explicit background policies were written for, and a fold must not bring
@@ -188,6 +199,7 @@ func TestMigrationUpgrade(t *testing.T) {
 		}
 		t.Logf("verified versions above %d through %d on top of the baseline", lowest, maximum+1)
 		refuseForeign(t, baselineURL)
+		refuseOtherBaseline(t, baselineDB, probeTree, baselineURL)
 		return
 	}
 
@@ -284,6 +296,42 @@ func refuseForeign(t *testing.T, url string) {
 		t.Fatalf("a database installed by another ledger must be refused, got %v", err)
 	}
 	t.Log("verified: a database installed by another ledger is refused, not left behind")
+}
+
+// A database stamped by another baseline of the same version is refused: the
+// version matches, golang-migrate would do nothing, and the schema would be the
+// previous baseline's.
+func refuseOtherBaseline(t *testing.T, db *sql.DB, tree, url string) {
+	t.Helper()
+	if _, err := db.Exec("COMMENT ON SCHEMA public IS 'codefly store baseline 00000000-0000-0000-0000-000000000000'"); err != nil {
+		t.Fatal(err)
+	}
+	err := migrateStoreFrom("file://"+tree, url)
+	if err == nil || !strings.Contains(err.Error(), "recreate the database") {
+		t.Fatalf("a database stamped by another baseline must be refused, got %v", err)
+	}
+	t.Log("verified: a database stamped by another baseline is refused")
+}
+
+// foreignKeyOrder is every foreign key in the order the catalog created it.
+func foreignKeyOrder(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	// Constraints a partition inherits are cloned in the parent's order when the
+	// partition is attached, so only the parents carry an order of their own.
+	rows, err := db.Query("SELECT conrelid::regclass::text || ' ' || conname FROM pg_constraint WHERE contype = 'f' AND conparentid = 0 AND connamespace = 'public'::regnamespace ORDER BY oid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 func listSQL(t *testing.T, dir string) []string {

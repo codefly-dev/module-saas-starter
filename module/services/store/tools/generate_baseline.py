@@ -112,14 +112,33 @@ WHERE n.nspname='public' AND r.rolname<>'postgres') x;"""))
         owner_policy = re.compile(r'^CREATE POLICY webhook_subscriptions_migration_owner_read ON public\.webhook_subscriptions .*\n', re.M)
         assert owner_policy.search(dump)
         dump = owner_policy.sub('', dump)
+        # pg_dump emits a table's foreign keys alphabetically, but PostgreSQL fires
+        # their referential triggers in creation order — and that order is semantic:
+        # a NO ACTION check that fires before a sibling CASCADE removes the row fails
+        # the delete the original ledger allowed. Re-emit every FK block in the
+        # order the catalog created them.
+        creation_order = json.loads(sql(name, "SELECT coalesce(json_agg(conrelid::regclass::text || ' ' || conname ORDER BY oid),'[]') FROM pg_constraint WHERE contype='f' AND connamespace='public'::regnamespace"))
+        # A partitioned parent is altered without ONLY; every other table with it.
+        fk_block = re.compile(r'^--\n-- Name: (\S+) (\S+); Type: FK CONSTRAINT; Schema: public; Owner: -\n--\n\nALTER TABLE (?:ONLY )?public\.\1\n    ADD CONSTRAINT \2 FOREIGN KEY .*?;\n\n\n', re.M | re.S)
+        blocks = {f'{m.group(1)} {m.group(2)}': m.group(0) for m in fk_block.finditer(dump)}
+        assert set(blocks) == set(creation_order), {'unmatched in dump': sorted(set(creation_order) - set(blocks)), 'unexpected': sorted(set(blocks) - set(creation_order))}
+        first = fk_block.search(dump)
+        dump = fk_block.sub('', dump)
+        dump = dump[:first.start()] + ''.join(blocks[key] for key in creation_order) + dump[first.start():]
         # The migration engine's own ledger is not part of the schema.
         dump = re.sub(r'^--\n-- Name: schema_migrations;.*?\n\n\n', '', dump, flags=re.S | re.M)
         dump = re.sub(r'^--\n-- Data for Name: schema_migrations;.*?\n\n\n', '', dump, flags=re.S | re.M)
         dump = re.sub(r'^--\n-- Name: schema_migrations schema_migrations_pkey;.*?\n\n\n', '', dump, flags=re.S | re.M)
+        # A regenerated baseline keeps version 1, and golang-migrate would leave a
+        # database installed by the previous one untouched. The baseline stamps its
+        # identity on the schema; the runner refuses a database stamped by another.
+        dump = re.sub(r'^COMMENT ON SCHEMA public IS .*;\n', '', dump, flags=re.M)
+        baseline_id = str(uuid.uuid4())
         prefix = f'''-- The store's one migration: the schema of an empty database, exported by
 -- module/services/store/tools/generate_baseline.py. Regenerate it; never edit it.
 -- Folded {len(ups)} migrations (through {frontier}) at {source[:12]}; provenance:
 -- module/services/store/baseline.provenance.json.
+-- baseline-id: {baseline_id}
 DO $guard$ BEGIN
  IF current_setting('server_version_num')::int < 160000 THEN
   RAISE EXCEPTION 'the store baseline requires PostgreSQL 16 or later';
@@ -179,6 +198,7 @@ DO $owner_policy$ DECLARE owner_role name; BEGIN
 END $owner_policy$;
 '''
         suffix += 'GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.job_state_transitions_sequence_seq TO CURRENT_USER;\n'
+        suffix += f"COMMENT ON SCHEMA public IS 'codefly store baseline {baseline_id}';\n"
         suffix += 'SET row_security = on;\nSET check_function_bodies = on;\n'
         text = prefix + dump + suffix
         for old in MIGRATIONS.glob('*.sql'):
@@ -190,6 +210,7 @@ END $owner_policy$;
             "DO $$ BEGIN RAISE EXCEPTION 'the store baseline is forward-only; recreate the database'; END $$;\n")
         PROVENANCE.write_text(json.dumps({
             'baseline': f'module/services/store/migrations/{BASELINE}.up.sql',
+            'baseline_id': baseline_id,
             'baseline_sha256': hashlib.sha256(text.encode()).hexdigest(),
             'replaced_source': source,
             'replaced_frontier': frontier,

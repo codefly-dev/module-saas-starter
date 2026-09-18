@@ -1,6 +1,7 @@
 {
   "baseline": "module/services/store/migrations/1_baseline.up.sql",
-  "baseline_sha256": "60fcf09895308991252366b198906cb6c912035eb1f68aa6e96fcc28931919e5",
+  "baseline_id": "a4f01260-32f2-4aa8-bae5-dec9c3fff4a1",
+  "baseline_sha256": "b180732ca242fa8841f7efd137f94b58d8c9812a01d9c4964a79d7ffdef13e30",
   "postgres_image": "postgres@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54",
   "postgres_version": "16.14 (Debian 16.14-1.pgdg13+1)",
   "replaced_frontier": 147,

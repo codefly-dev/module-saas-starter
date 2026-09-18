@@ -2,6 +2,7 @@
 -- module/services/store/tools/generate_baseline.py. Regenerate it; never edit it.
 -- Folded 141 migrations (through 147) at 1b55da43d3ac; provenance:
 -- module/services/store/baseline.provenance.json.
+-- baseline-id: a4f01260-32f2-4aa8-bae5-dec9c3fff4a1
 DO $guard$ BEGIN
  IF current_setting('server_version_num')::int < 160000 THEN
   RAISE EXCEPTION 'the store baseline requires PostgreSQL 16 or later';
@@ -6348,451 +6349,27 @@ CREATE TRIGGER users_sync_human_principal AFTER INSERT OR UPDATE OF primary_emai
 
 
 --
--- Name: actor_chain_journal actor_chain_journal_delegation_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: user_identities user_identities_user_uuid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.actor_chain_journal
-    ADD CONSTRAINT actor_chain_journal_delegation_grant_id_fkey FOREIGN KEY (delegation_grant_id) REFERENCES public.delegation_grants(id);
+ALTER TABLE ONLY public.user_identities
+    ADD CONSTRAINT user_identities_user_uuid_fkey FOREIGN KEY (user_uuid) REFERENCES public.users(uuid) ON DELETE CASCADE;
 
 
 --
--- Name: actor_chain_journal actor_chain_journal_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: user_identities user_identities_provider_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.actor_chain_journal
-    ADD CONSTRAINT actor_chain_journal_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.user_identities
+    ADD CONSTRAINT user_identities_provider_fkey FOREIGN KEY (provider) REFERENCES public.identity_providers(provider_id);
 
 
 --
--- Name: actor_chain_revocations actor_chain_revocations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: organizations organizations_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.actor_chain_revocations
-    ADD CONSTRAINT actor_chain_revocations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: analytics_deliveries analytics_deliveries_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.analytics_deliveries
-    ADD CONSTRAINT analytics_deliveries_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.job_messages(id) ON DELETE RESTRICT;
-
-
---
--- Name: api_keys api_keys_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.api_keys
-    ADD CONSTRAINT api_keys_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(uuid);
-
-
---
--- Name: api_keys api_keys_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.api_keys
-    ADD CONSTRAINT api_keys_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: api_keys api_keys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.api_keys
-    ADD CONSTRAINT api_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: approval_decisions approval_decisions_delegation_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.approval_decisions
-    ADD CONSTRAINT approval_decisions_delegation_grant_id_fkey FOREIGN KEY (delegation_grant_id) REFERENCES public.delegation_grants(id);
-
-
---
--- Name: approval_decisions approval_decisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.approval_decisions
-    ADD CONSTRAINT approval_decisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: approval_decisions approval_decisions_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.approval_decisions
-    ADD CONSTRAINT approval_decisions_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.approval_requests(id) ON DELETE CASCADE;
-
-
---
--- Name: approval_requests approval_requests_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.approval_requests
-    ADD CONSTRAINT approval_requests_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: audit_events audit_events_event_type_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE public.audit_events
-    ADD CONSTRAINT audit_events_event_type_fkey FOREIGN KEY (event_type) REFERENCES public.audit_event_types(name);
-
-
---
--- Name: connector_credentials connector_credentials_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.connector_credentials
-    ADD CONSTRAINT connector_credentials_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: dashboards dashboards_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.dashboards
-    ADD CONSTRAINT dashboards_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: dashboards dashboards_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.dashboards
-    ADD CONSTRAINT dashboards_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(uuid) ON DELETE SET NULL;
-
-
---
--- Name: datasource_sources datasource_sources_boundary_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.datasource_sources
-    ADD CONSTRAINT datasource_sources_boundary_node_id_fkey FOREIGN KEY (boundary_node_id) REFERENCES public.scope_nodes(id);
-
-
---
--- Name: datasource_sources datasource_sources_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.datasource_sources
-    ADD CONSTRAINT datasource_sources_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: delegation_grants delegation_grants_actor_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.delegation_grants
-    ADD CONSTRAINT delegation_grants_actor_principal_id_fkey FOREIGN KEY (actor_principal_id) REFERENCES public.principals(id);
-
-
---
--- Name: delegation_grants delegation_grants_grantor_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.delegation_grants
-    ADD CONSTRAINT delegation_grants_grantor_principal_id_fkey FOREIGN KEY (grantor_principal_id) REFERENCES public.principals(id);
-
-
---
--- Name: delegation_grants delegation_grants_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.delegation_grants
-    ADD CONSTRAINT delegation_grants_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: email_delivery_events email_delivery_events_invitation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.email_delivery_events
-    ADD CONSTRAINT email_delivery_events_invitation_id_fkey FOREIGN KEY (invitation_id) REFERENCES public.invitations(id) ON DELETE SET NULL;
-
-
---
--- Name: entitlement_overrides entitlement_overrides_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlement_overrides
-    ADD CONSTRAINT entitlement_overrides_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(uuid);
-
-
---
--- Name: entitlement_overrides entitlement_overrides_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.entitlement_overrides
-    ADD CONSTRAINT entitlement_overrides_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: event_subscriptions event_subscriptions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.event_subscriptions
-    ADD CONSTRAINT event_subscriptions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: event_subscriptions event_subscriptions_webhook_subscription_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.event_subscriptions
-    ADD CONSTRAINT event_subscriptions_webhook_subscription_id_fkey FOREIGN KEY (webhook_subscription_id) REFERENCES public.webhook_subscriptions(id) ON DELETE CASCADE;
-
-
---
--- Name: execution_custody execution_custody_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.execution_custody
-    ADD CONSTRAINT execution_custody_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: execution_custody execution_custody_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.execution_custody
-    ADD CONSTRAINT execution_custody_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: github_app_installations github_app_installations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.github_app_installations
-    ADD CONSTRAINT github_app_installations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: github_app_installations github_app_installations_verified_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.github_app_installations
-    ADD CONSTRAINT github_app_installations_verified_by_fkey FOREIGN KEY (verified_by) REFERENCES public.users(uuid) ON DELETE SET NULL;
-
-
---
--- Name: github_app_setups github_app_setups_initiated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.github_app_setups
-    ADD CONSTRAINT github_app_setups_initiated_by_fkey FOREIGN KEY (initiated_by) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: github_app_setups github_app_setups_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.github_app_setups
-    ADD CONSTRAINT github_app_setups_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: installations installations_agent_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.installations
-    ADD CONSTRAINT installations_agent_principal_id_fkey FOREIGN KEY (agent_principal_id) REFERENCES public.principals(id);
-
-
---
--- Name: installations installations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.installations
-    ADD CONSTRAINT installations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: installations installations_owner_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.installations
-    ADD CONSTRAINT installations_owner_principal_id_fkey FOREIGN KEY (owner_principal_id) REFERENCES public.principals(id);
-
-
---
--- Name: installations installations_root_scope_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.installations
-    ADD CONSTRAINT installations_root_scope_node_id_fkey FOREIGN KEY (root_scope_node_id) REFERENCES public.scope_nodes(id);
-
-
---
--- Name: invitations invitations_accepted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_accepted_by_fkey FOREIGN KEY (accepted_by) REFERENCES public.users(uuid);
-
-
---
--- Name: invitations invitations_inviter_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_inviter_id_fkey FOREIGN KEY (inviter_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: invitations invitations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.invitations
-    ADD CONSTRAINT invitations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: job_attempts job_attempts_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.job_attempts
-    ADD CONSTRAINT job_attempts_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.job_messages(id) ON DELETE CASCADE;
-
-
---
--- Name: job_messages job_messages_replay_of_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.job_messages
-    ADD CONSTRAINT job_messages_replay_of_fkey FOREIGN KEY (replay_of) REFERENCES public.job_messages(id) ON DELETE RESTRICT;
-
-
---
--- Name: job_state_transitions job_state_transitions_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.job_state_transitions
-    ADD CONSTRAINT job_state_transitions_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.job_messages(id) ON DELETE CASCADE;
-
-
---
--- Name: membership_integrity_findings membership_integrity_findings_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.membership_integrity_findings
-    ADD CONSTRAINT membership_integrity_findings_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: mfa_backup_codes mfa_backup_codes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mfa_backup_codes
-    ADD CONSTRAINT mfa_backup_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: mfa_devices mfa_devices_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mfa_devices
-    ADD CONSTRAINT mfa_devices_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: mfa_login_transactions mfa_login_transactions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mfa_login_transactions
-    ADD CONSTRAINT mfa_login_transactions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
-
-
---
--- Name: mfa_login_transactions mfa_login_transactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.mfa_login_transactions
-    ADD CONSTRAINT mfa_login_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: notifications notifications_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.notifications
-    ADD CONSTRAINT notifications_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: notifications notifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.notifications
-    ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: onboarding_progress onboarding_progress_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.onboarding_progress
-    ADD CONSTRAINT onboarding_progress_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: onboarding_progress onboarding_progress_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.onboarding_progress
-    ADD CONSTRAINT onboarding_progress_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: org_generic_settings org_generic_settings_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.org_generic_settings
-    ADD CONSTRAINT org_generic_settings_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: org_identity_providers org_identity_providers_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.org_identity_providers
-    ADD CONSTRAINT org_identity_providers_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: org_settings org_settings_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.org_settings
-    ADD CONSTRAINT org_settings_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: organization_activations organization_activations_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.organization_activations
-    ADD CONSTRAINT organization_activations_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(uuid) ON DELETE SET NULL;
-
-
---
--- Name: organization_activations organization_activations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.organization_activations
-    ADD CONSTRAINT organization_activations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: organization_authorization_revisions organization_authorization_revisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.organization_authorization_revisions
-    ADD CONSTRAINT organization_authorization_revisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.organizations
+    ADD CONSTRAINT organizations_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(uuid) ON DELETE RESTRICT;
 
 
 --
@@ -6812,123 +6389,19 @@ ALTER TABLE ONLY public.organization_members
 
 
 --
--- Name: organizations organizations_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: teams teams_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.organizations
-    ADD CONSTRAINT organizations_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(uuid) ON DELETE RESTRICT;
-
-
---
--- Name: plan_entitlements plan_entitlements_plan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.plan_entitlements
-    ADD CONSTRAINT plan_entitlements_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.teams
+    ADD CONSTRAINT teams_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
--- Name: platform_admins platform_admins_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: team_members team_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.platform_admins
-    ADD CONSTRAINT platform_admins_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.users(uuid);
-
-
---
--- Name: platform_admins platform_admins_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.platform_admins
-    ADD CONSTRAINT platform_admins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: principal_authorization_revisions principal_authorization_revisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.principal_authorization_revisions
-    ADD CONSTRAINT principal_authorization_revisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: principals principals_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.principals
-    ADD CONSTRAINT principals_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE SET NULL;
-
-
---
--- Name: principals principals_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.principals
-    ADD CONSTRAINT principals_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: record_shares record_shares_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.record_shares
-    ADD CONSTRAINT record_shares_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.principals(id);
-
-
---
--- Name: record_shares record_shares_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.record_shares
-    ADD CONSTRAINT record_shares_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: record_shares record_shares_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.record_shares
-    ADD CONSTRAINT record_shares_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
-
-
---
--- Name: resource_follows resource_follows_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.resource_follows
-    ADD CONSTRAINT resource_follows_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: resource_follows resource_follows_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.resource_follows
-    ADD CONSTRAINT resource_follows_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: role_assignments role_assignments_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role_assignments
-    ADD CONSTRAINT role_assignments_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: role_assignments role_assignments_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role_assignments
-    ADD CONSTRAINT role_assignments_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
-
-
---
--- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.role_permissions
-    ADD CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.team_members
+    ADD CONSTRAINT team_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
 
 
 --
@@ -6940,43 +6413,51 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- Name: scope_grants scope_grants_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: role_permissions role_permissions_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.scope_grants
-    ADD CONSTRAINT scope_grants_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.principals(id);
-
-
---
--- Name: scope_grants scope_grants_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.scope_grants
-    ADD CONSTRAINT scope_grants_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.role_permissions
+    ADD CONSTRAINT role_permissions_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
 
 
 --
--- Name: scope_grants scope_grants_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: role_assignments role_assignments_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.scope_grants
-    ADD CONSTRAINT scope_grants_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
-
-
---
--- Name: scope_nodes scope_nodes_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.scope_nodes
-    ADD CONSTRAINT scope_nodes_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.role_assignments
+    ADD CONSTRAINT role_assignments_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
 
 
 --
--- Name: sessions sessions_acting_as_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: role_assignments role_assignments_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.sessions
-    ADD CONSTRAINT sessions_acting_as_user_id_fkey FOREIGN KEY (acting_as_user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+ALTER TABLE ONLY public.role_assignments
+    ADD CONSTRAINT role_assignments_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_keys api_keys_organization_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_keys
+    ADD CONSTRAINT api_keys_organization_id_fkey FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: api_keys api_keys_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_keys
+    ADD CONSTRAINT api_keys_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: api_keys api_keys_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.api_keys
+    ADD CONSTRAINT api_keys_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(uuid);
 
 
 --
@@ -6988,11 +6469,35 @@ ALTER TABLE ONLY public.sessions
 
 
 --
--- Name: source_read_revisions source_read_revisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: invitations invitations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.source_read_revisions
-    ADD CONSTRAINT source_read_revisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.invitations
+    ADD CONSTRAINT invitations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: invitations invitations_inviter_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invitations
+    ADD CONSTRAINT invitations_inviter_id_fkey FOREIGN KEY (inviter_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: invitations invitations_accepted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invitations
+    ADD CONSTRAINT invitations_accepted_by_fkey FOREIGN KEY (accepted_by) REFERENCES public.users(uuid);
+
+
+--
+-- Name: plan_entitlements plan_entitlements_plan_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.plan_entitlements
+    ADD CONSTRAINT plan_entitlements_plan_id_fkey FOREIGN KEY (plan_id) REFERENCES public.plans(id) ON DELETE CASCADE;
 
 
 --
@@ -7012,35 +6517,131 @@ ALTER TABLE ONLY public.subscriptions
 
 
 --
--- Name: team_members team_members_parent_org_membership_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: entitlement_overrides entitlement_overrides_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.team_members
-    ADD CONSTRAINT team_members_parent_org_membership_fkey FOREIGN KEY (org_id, user_id) REFERENCES public.organization_members(org_id, user_id) ON DELETE CASCADE;
-
-
---
--- Name: team_members team_members_team_org_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.team_members
-    ADD CONSTRAINT team_members_team_org_fkey FOREIGN KEY (team_id, org_id) REFERENCES public.teams(id, org_id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.entitlement_overrides
+    ADD CONSTRAINT entitlement_overrides_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
--- Name: team_members team_members_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: entitlement_overrides entitlement_overrides_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.team_members
-    ADD CONSTRAINT team_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+ALTER TABLE ONLY public.entitlement_overrides
+    ADD CONSTRAINT entitlement_overrides_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.users(uuid);
 
 
 --
--- Name: teams teams_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: platform_admins platform_admins_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.teams
-    ADD CONSTRAINT teams_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.platform_admins
+    ADD CONSTRAINT platform_admins_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: platform_admins platform_admins_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.platform_admins
+    ADD CONSTRAINT platform_admins_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.users(uuid);
+
+
+--
+-- Name: webhook_subscriptions webhook_subscriptions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_subscriptions
+    ADD CONSTRAINT webhook_subscriptions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: webhook_deliveries webhook_deliveries_subscription_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webhook_deliveries
+    ADD CONSTRAINT webhook_deliveries_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.webhook_subscriptions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notifications notifications_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: notifications notifications_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notifications
+    ADD CONSTRAINT notifications_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: onboarding_progress onboarding_progress_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.onboarding_progress
+    ADD CONSTRAINT onboarding_progress_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: mfa_devices mfa_devices_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfa_devices
+    ADD CONSTRAINT mfa_devices_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: mfa_backup_codes mfa_backup_codes_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mfa_backup_codes
+    ADD CONSTRAINT mfa_backup_codes_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: org_settings org_settings_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_settings
+    ADD CONSTRAINT org_settings_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: principals principals_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.principals
+    ADD CONSTRAINT principals_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delegation_grants delegation_grants_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delegation_grants
+    ADD CONSTRAINT delegation_grants_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: delegation_grants delegation_grants_actor_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delegation_grants
+    ADD CONSTRAINT delegation_grants_actor_principal_id_fkey FOREIGN KEY (actor_principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: delegation_grants delegation_grants_grantor_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.delegation_grants
+    ADD CONSTRAINT delegation_grants_grantor_principal_id_fkey FOREIGN KEY (grantor_principal_id) REFERENCES public.principals(id);
 
 
 --
@@ -7052,99 +6653,27 @@ ALTER TABLE ONLY public.teams
 
 
 --
--- Name: usage_events usage_events_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: principals principals_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.usage_events
-    ADD CONSTRAINT usage_events_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
-
-
---
--- Name: usage_totals usage_totals_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.usage_totals
-    ADD CONSTRAINT usage_totals_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.principals
+    ADD CONSTRAINT principals_created_by_fkey FOREIGN KEY (created_by) REFERENCES public.principals(id) ON DELETE SET NULL;
 
 
 --
--- Name: user_consent_events user_consent_events_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: mfa_login_transactions mfa_login_transactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.user_consent_events
-    ADD CONSTRAINT user_consent_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: user_consent_preferences user_consent_preferences_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.user_consent_preferences
-    ADD CONSTRAINT user_consent_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+ALTER TABLE ONLY public.mfa_login_transactions
+    ADD CONSTRAINT mfa_login_transactions_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
 
 
 --
--- Name: user_identities user_identities_provider_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: mfa_login_transactions mfa_login_transactions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.user_identities
-    ADD CONSTRAINT user_identities_provider_fkey FOREIGN KEY (provider) REFERENCES public.identity_providers(provider_id);
-
-
---
--- Name: user_identities user_identities_user_uuid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.user_identities
-    ADD CONSTRAINT user_identities_user_uuid_fkey FOREIGN KEY (user_uuid) REFERENCES public.users(uuid) ON DELETE CASCADE;
-
-
---
--- Name: users users_default_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.users
-    ADD CONSTRAINT users_default_org_id_fkey FOREIGN KEY (default_org_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
-
-
---
--- Name: waitlist_entries waitlist_entries_converted_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.waitlist_entries
-    ADD CONSTRAINT waitlist_entries_converted_org_id_fkey FOREIGN KEY (converted_org_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
-
-
---
--- Name: waitlist_entries waitlist_entries_converted_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.waitlist_entries
-    ADD CONSTRAINT waitlist_entries_converted_user_id_fkey FOREIGN KEY (converted_user_id) REFERENCES public.users(uuid) ON DELETE SET NULL;
-
-
---
--- Name: waitlist_entries waitlist_entries_referred_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.waitlist_entries
-    ADD CONSTRAINT waitlist_entries_referred_by_fkey FOREIGN KEY (referred_by) REFERENCES public.waitlist_entries(id) ON DELETE SET NULL;
-
-
---
--- Name: webauthn_ceremonies webauthn_ceremonies_mfa_login_transaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.webauthn_ceremonies
-    ADD CONSTRAINT webauthn_ceremonies_mfa_login_transaction_id_fkey FOREIGN KEY (mfa_login_transaction_id) REFERENCES public.mfa_login_transactions(id) ON DELETE CASCADE;
-
-
---
--- Name: webauthn_ceremonies webauthn_ceremonies_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.webauthn_ceremonies
-    ADD CONSTRAINT webauthn_ceremonies_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+ALTER TABLE ONLY public.mfa_login_transactions
+    ADD CONSTRAINT mfa_login_transactions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
 
 
 --
@@ -7164,19 +6693,307 @@ ALTER TABLE ONLY public.webauthn_credentials
 
 
 --
--- Name: webhook_deliveries webhook_deliveries_subscription_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: webauthn_ceremonies webauthn_ceremonies_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.webhook_deliveries
-    ADD CONSTRAINT webhook_deliveries_subscription_id_fkey FOREIGN KEY (subscription_id) REFERENCES public.webhook_subscriptions(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.webauthn_ceremonies
+    ADD CONSTRAINT webauthn_ceremonies_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
 
 
 --
--- Name: webhook_subscriptions webhook_subscriptions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: webauthn_ceremonies webauthn_ceremonies_mfa_login_transaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public.webhook_subscriptions
-    ADD CONSTRAINT webhook_subscriptions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+ALTER TABLE ONLY public.webauthn_ceremonies
+    ADD CONSTRAINT webauthn_ceremonies_mfa_login_transaction_id_fkey FOREIGN KEY (mfa_login_transaction_id) REFERENCES public.mfa_login_transactions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: usage_totals usage_totals_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_totals
+    ADD CONSTRAINT usage_totals_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: usage_events usage_events_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_events
+    ADD CONSTRAINT usage_events_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: job_messages job_messages_replay_of_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_messages
+    ADD CONSTRAINT job_messages_replay_of_fkey FOREIGN KEY (replay_of) REFERENCES public.job_messages(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: job_attempts job_attempts_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_attempts
+    ADD CONSTRAINT job_attempts_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.job_messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: job_state_transitions job_state_transitions_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_state_transitions
+    ADD CONSTRAINT job_state_transitions_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.job_messages(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organization_authorization_revisions organization_authorization_revisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_authorization_revisions
+    ADD CONSTRAINT organization_authorization_revisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: principal_authorization_revisions principal_authorization_revisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.principal_authorization_revisions
+    ADD CONSTRAINT principal_authorization_revisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: analytics_deliveries analytics_deliveries_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.analytics_deliveries
+    ADD CONSTRAINT analytics_deliveries_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.job_messages(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: onboarding_progress onboarding_progress_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.onboarding_progress
+    ADD CONSTRAINT onboarding_progress_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organization_activations organization_activations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_activations
+    ADD CONSTRAINT organization_activations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: organization_activations organization_activations_actor_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.organization_activations
+    ADD CONSTRAINT organization_activations_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES public.users(uuid) ON DELETE SET NULL;
+
+
+--
+-- Name: waitlist_entries waitlist_entries_referred_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.waitlist_entries
+    ADD CONSTRAINT waitlist_entries_referred_by_fkey FOREIGN KEY (referred_by) REFERENCES public.waitlist_entries(id) ON DELETE SET NULL;
+
+
+--
+-- Name: waitlist_entries waitlist_entries_converted_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.waitlist_entries
+    ADD CONSTRAINT waitlist_entries_converted_user_id_fkey FOREIGN KEY (converted_user_id) REFERENCES public.users(uuid) ON DELETE SET NULL;
+
+
+--
+-- Name: waitlist_entries waitlist_entries_converted_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.waitlist_entries
+    ADD CONSTRAINT waitlist_entries_converted_org_id_fkey FOREIGN KEY (converted_org_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: user_consent_preferences user_consent_preferences_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_consent_preferences
+    ADD CONSTRAINT user_consent_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: user_consent_events user_consent_events_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_consent_events
+    ADD CONSTRAINT user_consent_events_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: email_delivery_events email_delivery_events_invitation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_delivery_events
+    ADD CONSTRAINT email_delivery_events_invitation_id_fkey FOREIGN KEY (invitation_id) REFERENCES public.invitations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: users users_default_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.users
+    ADD CONSTRAINT users_default_org_id_fkey FOREIGN KEY (default_org_id) REFERENCES public.organizations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: org_identity_providers org_identity_providers_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_identity_providers
+    ADD CONSTRAINT org_identity_providers_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: scope_nodes scope_nodes_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scope_nodes
+    ADD CONSTRAINT scope_nodes_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: scope_grants scope_grants_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scope_grants
+    ADD CONSTRAINT scope_grants_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: scope_grants scope_grants_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scope_grants
+    ADD CONSTRAINT scope_grants_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: scope_grants scope_grants_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.scope_grants
+    ADD CONSTRAINT scope_grants_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.principals(id);
+
+
+--
+-- Name: record_shares record_shares_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_shares
+    ADD CONSTRAINT record_shares_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: record_shares record_shares_role_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_shares
+    ADD CONSTRAINT record_shares_role_id_fkey FOREIGN KEY (role_id) REFERENCES public.roles(id) ON DELETE CASCADE;
+
+
+--
+-- Name: record_shares record_shares_granted_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.record_shares
+    ADD CONSTRAINT record_shares_granted_by_fkey FOREIGN KEY (granted_by) REFERENCES public.principals(id);
+
+
+--
+-- Name: actor_chain_journal actor_chain_journal_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actor_chain_journal
+    ADD CONSTRAINT actor_chain_journal_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: actor_chain_journal actor_chain_journal_delegation_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actor_chain_journal
+    ADD CONSTRAINT actor_chain_journal_delegation_grant_id_fkey FOREIGN KEY (delegation_grant_id) REFERENCES public.delegation_grants(id);
+
+
+--
+-- Name: actor_chain_revocations actor_chain_revocations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.actor_chain_revocations
+    ADD CONSTRAINT actor_chain_revocations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approval_requests approval_requests_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_requests
+    ADD CONSTRAINT approval_requests_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approval_decisions approval_decisions_request_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_decisions
+    ADD CONSTRAINT approval_decisions_request_id_fkey FOREIGN KEY (request_id) REFERENCES public.approval_requests(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approval_decisions approval_decisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_decisions
+    ADD CONSTRAINT approval_decisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: approval_decisions approval_decisions_delegation_grant_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_decisions
+    ADD CONSTRAINT approval_decisions_delegation_grant_id_fkey FOREIGN KEY (delegation_grant_id) REFERENCES public.delegation_grants(id);
+
+
+--
+-- Name: connector_credentials connector_credentials_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.connector_credentials
+    ADD CONSTRAINT connector_credentials_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: datasource_sources datasource_sources_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.datasource_sources
+    ADD CONSTRAINT datasource_sources_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: org_generic_settings org_generic_settings_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.org_generic_settings
+    ADD CONSTRAINT org_generic_settings_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
@@ -7185,6 +7002,190 @@ ALTER TABLE ONLY public.webhook_subscriptions
 
 ALTER TABLE ONLY public.work_context_replay
     ADD CONSTRAINT work_context_replay_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dashboards dashboards_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dashboards
+    ADD CONSTRAINT dashboards_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: dashboards dashboards_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dashboards
+    ADD CONSTRAINT dashboards_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(uuid) ON DELETE SET NULL;
+
+
+--
+-- Name: installations installations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.installations
+    ADD CONSTRAINT installations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: installations installations_agent_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.installations
+    ADD CONSTRAINT installations_agent_principal_id_fkey FOREIGN KEY (agent_principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: installations installations_owner_principal_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.installations
+    ADD CONSTRAINT installations_owner_principal_id_fkey FOREIGN KEY (owner_principal_id) REFERENCES public.principals(id);
+
+
+--
+-- Name: installations installations_root_scope_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.installations
+    ADD CONSTRAINT installations_root_scope_node_id_fkey FOREIGN KEY (root_scope_node_id) REFERENCES public.scope_nodes(id);
+
+
+--
+-- Name: datasource_sources datasource_sources_boundary_node_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.datasource_sources
+    ADD CONSTRAINT datasource_sources_boundary_node_id_fkey FOREIGN KEY (boundary_node_id) REFERENCES public.scope_nodes(id);
+
+
+--
+-- Name: audit_events audit_events_event_type_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE public.audit_events
+    ADD CONSTRAINT audit_events_event_type_fkey FOREIGN KEY (event_type) REFERENCES public.audit_event_types(name);
+
+
+--
+-- Name: team_members team_members_team_org_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_members
+    ADD CONSTRAINT team_members_team_org_fkey FOREIGN KEY (team_id, org_id) REFERENCES public.teams(id, org_id) ON DELETE CASCADE;
+
+
+--
+-- Name: team_members team_members_parent_org_membership_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.team_members
+    ADD CONSTRAINT team_members_parent_org_membership_fkey FOREIGN KEY (org_id, user_id) REFERENCES public.organization_members(org_id, user_id) ON DELETE CASCADE;
+
+
+--
+-- Name: execution_custody execution_custody_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_custody
+    ADD CONSTRAINT execution_custody_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: execution_custody execution_custody_owner_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.execution_custody
+    ADD CONSTRAINT execution_custody_owner_id_fkey FOREIGN KEY (owner_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: event_subscriptions event_subscriptions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_subscriptions
+    ADD CONSTRAINT event_subscriptions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: event_subscriptions event_subscriptions_webhook_subscription_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.event_subscriptions
+    ADD CONSTRAINT event_subscriptions_webhook_subscription_id_fkey FOREIGN KEY (webhook_subscription_id) REFERENCES public.webhook_subscriptions(id) ON DELETE CASCADE;
+
+
+--
+-- Name: membership_integrity_findings membership_integrity_findings_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.membership_integrity_findings
+    ADD CONSTRAINT membership_integrity_findings_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_read_revisions source_read_revisions_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_read_revisions
+    ADD CONSTRAINT source_read_revisions_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: resource_follows resource_follows_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resource_follows
+    ADD CONSTRAINT resource_follows_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: resource_follows resource_follows_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.resource_follows
+    ADD CONSTRAINT resource_follows_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: github_app_setups github_app_setups_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_app_setups
+    ADD CONSTRAINT github_app_setups_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: github_app_setups github_app_setups_initiated_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_app_setups
+    ADD CONSTRAINT github_app_setups_initiated_by_fkey FOREIGN KEY (initiated_by) REFERENCES public.users(uuid) ON DELETE CASCADE;
+
+
+--
+-- Name: github_app_installations github_app_installations_org_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_app_installations
+    ADD CONSTRAINT github_app_installations_org_id_fkey FOREIGN KEY (org_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: github_app_installations github_app_installations_verified_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_app_installations
+    ADD CONSTRAINT github_app_installations_verified_by_fkey FOREIGN KEY (verified_by) REFERENCES public.users(uuid) ON DELETE SET NULL;
+
+
+--
+-- Name: sessions sessions_acting_as_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sessions
+    ADD CONSTRAINT sessions_acting_as_user_id_fkey FOREIGN KEY (acting_as_user_id) REFERENCES public.users(uuid) ON DELETE CASCADE;
 
 
 --
@@ -9552,5 +9553,6 @@ DO $owner_policy$ DECLARE owner_role name; BEGIN
  EXECUTE format('CREATE POLICY webhook_subscriptions_migration_owner_read ON public.webhook_subscriptions FOR SELECT TO %I USING (current_user = %L)', owner_role, owner_role);
 END $owner_policy$;
 GRANT SELECT, UPDATE, USAGE ON SEQUENCE public.job_state_transitions_sequence_seq TO CURRENT_USER;
+COMMENT ON SCHEMA public IS 'codefly store baseline a4f01260-32f2-4aa8-bae5-dec9c3fff4a1';
 SET row_security = on;
 SET check_function_bodies = on;
