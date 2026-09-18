@@ -23,7 +23,8 @@
 //   node scripts/ci/kit-version.mjs check
 
 import { execFileSync } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
@@ -92,9 +93,44 @@ function versionAt(ref, directory) {
   }
 }
 
+// What a tarball ships is the package's `files` list: the paths it names, minus
+// its `!` entries, plus package.json which npm always includes. A byte change
+// outside that set — a test, a fixture, a config — is not a change the registry
+// would see, so it must not demand a version; otherwise renaming a test fixture
+// forces a release of identical published bytes. Rendered as git pathspecs so
+// `diff` judges exactly the published set. No `files` list means npm publishes
+// the whole directory, and so does the gate.
+export function publishedPathspecs(directory, files) {
+  if (!Array.isArray(files) || files.length === 0) return [directory];
+  const entries = files.filter((entry) => typeof entry === "string");
+  return [
+    `${directory}/package.json`,
+    ...entries
+      .filter((entry) => !entry.startsWith("!"))
+      .map((entry) => `:(glob)${directory}/${entry}`),
+    ...entries
+      .filter((entry) => entry.startsWith("!"))
+      .map((entry) => `:(exclude,glob)${directory}/${entry.slice(1)}`),
+  ];
+}
+
+function publishedFiles(directory) {
+  const manifest = JSON.parse(
+    readFileSync(join(REPOSITORY_ROOT, directory, "package.json"), "utf8"),
+  );
+  return manifest.files;
+}
+
 function changedSince(ref, directory) {
   try {
-    git("diff", "--quiet", ref, "HEAD", "--", directory);
+    git(
+      "diff",
+      "--quiet",
+      ref,
+      "HEAD",
+      "--",
+      ...publishedPathspecs(directory, publishedFiles(directory)),
+    );
     return false;
   } catch (error) {
     if (error.status === 1) return true;

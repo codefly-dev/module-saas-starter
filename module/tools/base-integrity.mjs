@@ -154,6 +154,17 @@ function trackedFiles(moduleRoot) {
   );
 }
 
+// Base candidates on disk that git does not track. `gen` records only what git
+// tracks, so a new file that has not been added yet would be left out of the
+// manifest with nothing said — and surface only in a consumer as an unrecorded
+// base file. Reporting them makes the omission visible where it happens.
+export function untrackedBaseCandidates(moduleRoot = MODULE_ROOT) {
+  const tracked = trackedFiles(moduleRoot);
+  return walk(moduleRoot, [], moduleRoot)
+    .filter((onDisk) => !tracked.has(onDisk.normalize("NFC")))
+    .sort();
+}
+
 // The base files: every path on disk that git tracks and the exclusions admit,
 // as a Map from the spelling git recorded to the spelling on disk.
 function baseFiles(moduleRoot) {
@@ -922,6 +933,15 @@ function gen() {
   const rlsErrors = rlsGateErrors();
   if (rlsErrors.length) {
     rlsErrors.forEach((error) => console.error(`rls-migration-gate: ${error}`));
+    process.exit(1);
+  }
+  const untracked = untrackedBaseCandidates();
+  if (untracked.length) {
+    console.error(
+      `base-integrity: ${untracked.length} file(s) under the module tree are not tracked by git, `
+      + "so gen would leave them out of the manifest; `git add` them (or ignore them) first:",
+    );
+    untracked.forEach((rel) => console.error(`    ${rel}`));
     process.exit(1);
   }
   const manifest = computeBaseManifest();

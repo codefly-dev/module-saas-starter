@@ -21,6 +21,7 @@ import {
   isExcludedFile,
   productionTruthErrors,
   requiredAdditionsErrors,
+  untrackedBaseCandidates,
   verifyErrors,
   satisfiesWorkspaceRange,
   workspaceInstallGraphErrors,
@@ -527,6 +528,23 @@ test("an ignored build product never enters the manifest", { skip: NO_GIT }, (t)
   writeFileSync(join(root, "artifact"), "\x7fELF\0\0");
 
   assert.deepEqual(Object.keys(computeBaseManifest(root).files), [".gitignore", "src.txt"]);
+});
+
+// The base-file set is the index, so a file that is on disk but not yet added is
+// not a base file — and `gen` running before `git add` would record a manifest
+// without it, silently. The candidates are reported so gen can refuse.
+test("a base candidate git does not track is reported, an ignored one is not", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-untracked-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, ".gitignore"), "artifact\n");
+  writeFileSync(join(root, "src.txt"), "source\n");
+  git(root, "add", ".gitignore", "src.txt");
+  writeFileSync(join(root, "artifact"), "\x7fELF\0\0");
+  writeFileSync(join(root, "new.txt"), "not added yet\n");
+
+  assert.deepEqual(untrackedBaseCandidates(root), ["artifact", "new.txt"]);
+  git(root, "add", "new.txt");
+  assert.deepEqual(untrackedBaseCandidates(root), ["artifact"]);
 });
 
 test("an unreadable index fails the release rather than hashing the build", { skip: NO_GIT }, (t) => {

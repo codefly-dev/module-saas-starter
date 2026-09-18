@@ -59,8 +59,11 @@ The two halves run in different places, and confusing them wastes a cycle:
   deliberate base-file edit. Editing a base file without it fails two CI checks
   ("Base manifest integrity" and "Codefly CI").
 
-Regenerate from a **clean checkout** — `gen` walks the tree, so a dirty worktree
-makes it hash gitignored harness artifacts CI never sees:
+The base-file set is **what git tracks**: `gen` hashes `git ls-files`, so a
+gitignored artifact never enters the manifest, and a new file you have not
+`git add`ed yet is not a base file — `gen` refuses and lists it rather than
+record a manifest without it. Stage first, then regenerate, from a clean
+checkout:
 
 ```bash
 git worktree add --detach /tmp/bm-clean HEAD

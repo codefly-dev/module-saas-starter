@@ -267,7 +267,7 @@ their next owning change.
 | List identities          | ✅    | `ListUserIdentities` — gated to self or platform-admin (security fix 2026-04-25) |
 | Account deletion request | ❌    | Request/status scaffolding fails closed until a complete deletion, retention, provider-cleanup, and legal-hold workflow is wired |
 | Privacy export           | ❌    | Requests and their execution are durable, leased, and receipt-gated ([JOBS.md](./JOBS.md#privacy-workflow-adapter)); fails closed until a complete secure-artifact adapter is wired |
-| Verified privacy delete  | ❌    | Durable execution and per-step receipts are in place; no adapter ships, so dataset/provider inventory, retention authority, and legal-hold handling stay adopter work |
+| Verified privacy delete  | ❌    | The durable job and its per-step receipts are in place; no adapter ships, so dataset/provider inventory, retention authority, and legal-hold handling stay adopter work |
 
 ### Multi-tenancy (orgs / teams)
 

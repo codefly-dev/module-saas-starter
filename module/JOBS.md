@@ -418,7 +418,7 @@ subject transaction: an accepted request always has an owner, and a request
 whose job cannot be enqueued is not accepted at all. The schema carries that
 invariant — a request that can still progress must name a job.
 
-The request row is the product-visible projection of durable execution:
+The request row is the product-visible projection of the durable job:
 `pending`, `processing`, `retrying` (a retryable failure the platform will
 re-lease), `completed`, or `failed` (terminal until an operator replays the
 dead-lettered job). Request cancellation is not offered. The API surface
