@@ -159,7 +159,8 @@ func TestBillingWorkerPoolUsesLeastPrivilegeBypassRole(t *testing.T) {
 		FROM pg_roles
 		WHERE rolname = current_user`).Scan(&currentRole, &bypassRLS))
 	require.Equal(t, "app_billing_worker", currentRole)
-	require.True(t, bypassRLS)
+	// The billing worker sees its rows through its explicit policy, never by bypassing RLS.
+	require.False(t, bypassRLS)
 
 	var planCount int
 	require.NoError(t, pool.QueryRow(testCtx, `SELECT COUNT(*) FROM plans`).Scan(&planCount))

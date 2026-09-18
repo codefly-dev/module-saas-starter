@@ -630,7 +630,7 @@ func TestAddGitHubSource_EncryptsPerSourceAndOmitsSecrets(t *testing.T) {
 		OrgID:           testOrg,
 		Repo:            "acme/docs",
 		Paths:           []string{"docs", "docs"}, // duplicate is normalized away
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		AccessToken:     "ghp_secret",
 		WebhookSecret:   "whsec",
 	})
@@ -657,9 +657,9 @@ func TestAddGitHubSource_EncryptsPerSourceAndOmitsSecrets(t *testing.T) {
 
 func TestAddGitHubSource_Validation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
-	base := business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t"}
+	base := business.AddGitHubSourceInput{OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "guides", AccessToken: "t"}
 	cases := map[string]business.AddGitHubSourceInput{
-		"missing repo":       {OrgID: testOrg, CollectionLabel: "wiki", AccessToken: "t"},
+		"missing repo":       {OrgID: testOrg, CollectionLabel: "guides", AccessToken: "t"},
 		"bad repo":           mut(base, func(i *business.AddGitHubSourceInput) { i.Repo = "not-a-repo" }),
 		"missing collection": mut(base, func(i *business.AddGitHubSourceInput) { i.CollectionLabel = "" }),
 		"missing token":      mut(base, func(i *business.AddGitHubSourceInput) { i.AccessToken = "" }),
@@ -675,7 +675,7 @@ func TestResolveWebhookSource_ResolvesPerSource(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	withHook := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t", WebhookSecret: "whsec",
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "guides", AccessToken: "t", WebhookSecret: "whsec",
 	})
 	resolved, err := svc.ResolveWebhookSource(context.Background(), withHook.ID)
 	if err != nil || resolved.SigningSecret != "whsec" {
@@ -687,7 +687,7 @@ func TestResolveWebhookSource_ResolvesPerSource(t *testing.T) {
 	}
 
 	noHook := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/other", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/other", CollectionLabel: "guides", AccessToken: "t",
 	})
 	if _, err := svc.ResolveWebhookSource(context.Background(), noHook.ID); !errors.Is(err, business.ErrDatasourceSourceNotFound) {
 		t.Fatalf("unconfigured source: err = %v, want ErrDatasourceSourceNotFound", err)
@@ -705,7 +705,7 @@ func TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot(t *testing.T) {
 	producer := &recordingProducer{}
 	svc, audit := newDatasourceService(newDatasourceFakeStore(), producer, &fakeGitHub{})
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", CollectionLabel: "guides", AccessToken: "t",
 	})
 
 	jobID, err := svc.SyncDatasourceSource(context.Background(), "actor-1", testOrg, source.ID)
@@ -779,7 +779,7 @@ func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderAPI,
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		Credential:      "sekret",
 		API:             apiConfig(),
 	})
@@ -811,7 +811,7 @@ func TestAddSource_APIStoresConfigAndEncryptsCredential(t *testing.T) {
 func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	_, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "sekret", API: apiConfig(), WebhookSecret: "whsec",
 	})
 	if err == nil {
@@ -821,13 +821,13 @@ func TestAddSource_APIRejectsWebhookSecret(t *testing.T) {
 
 func TestAddSource_Validation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
-	base := business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", Credential: "c", API: apiConfig()}
+	base := business.AddSourceInput{OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", Credential: "c", API: apiConfig()}
 	cases := map[string]business.AddSourceInput{
-		"missing credential":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", API: apiConfig()},
+		"missing credential":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", API: apiConfig()},
 		"missing collection":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, Credential: "c", API: apiConfig()},
-		"unknown provider":    {OrgID: testOrg, Provider: "gitlab", CollectionLabel: "wiki", Credential: "c"},
-		"api without config":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki", Credential: "c"},
-		"github without repo": {OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "wiki", Credential: "c"},
+		"unknown provider":    {OrgID: testOrg, Provider: "gitlab", CollectionLabel: "guides", Credential: "c"},
+		"api without config":  {OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides", Credential: "c"},
+		"github without repo": {OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "guides", Credential: "c"},
 	}
 	cases["bad base url"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.BaseURL = "ftp://x" })
 	cases["bad credential kind"] = withAPI(base, func(c *business.APIDatasourceConfig) { c.CredentialKind = "oauth" })
@@ -865,7 +865,7 @@ func withAPI(in business.AddSourceInput, f func(*business.APIDatasourceConfig)) 
 func TestAddSource_GitHubBranchThroughGenericCall(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, CollectionLabel: "guides",
 		Credential: "ghp", Repo: "acme/docs", Branch: "main",
 	})
 	if err != nil {
@@ -957,7 +957,7 @@ func TestAddSource_CrawlerStoresConfigAndTakesNoCredential(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderCrawler,
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		Crawler:         crawlerConfig(),
 	})
 	if err != nil {
@@ -984,7 +984,7 @@ func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:           testOrg,
 		Provider:        business.DatasourceProviderUpload,
-		CollectionLabel: "wiki",
+		CollectionLabel: "guides",
 		Credential:      "secretkey",
 		Upload:          uploadConfig(),
 	})
@@ -1003,21 +1003,21 @@ func TestAddSource_UploadStoresConfigAndEncryptsSecretKey(t *testing.T) {
 func TestAddSource_NewProviderValidation(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 	cases := map[string]business.AddSourceInput{
-		"crawler without config": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki"},
-		"crawler bad sitemap": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
+		"crawler without config": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides"},
+		"crawler bad sitemap": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides",
 			Crawler: &business.CrawlerDatasourceConfig{SitemapURL: "ftp://x"}},
-		"crawler with credential": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
+		"crawler with credential": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides",
 			Credential: "nope", Crawler: crawlerConfig()},
-		"crawler with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki",
+		"crawler with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides",
 			WebhookSecret: "whsec", Crawler: crawlerConfig()},
-		"upload without config": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c"},
-		"upload without credential": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki",
+		"upload without config": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c"},
+		"upload without credential": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides",
 			Upload: uploadConfig()},
-		"upload bad endpoint": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
+		"upload bad endpoint": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c",
 			Upload: &business.UploadDatasourceConfig{Endpoint: "ftp://x", Region: "us-east-1", Bucket: "b", AccessKeyID: "k"}},
-		"upload missing region": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
+		"upload missing region": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c",
 			Upload: &business.UploadDatasourceConfig{Endpoint: "https://s3.example.com", Bucket: "b", AccessKeyID: "k"}},
-		"upload with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki", Credential: "c",
+		"upload with webhook": {OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides", Credential: "c",
 			WebhookSecret: "whsec", Upload: uploadConfig()},
 	}
 	for name, in := range cases {
@@ -1030,7 +1030,7 @@ func TestAddSource_NewProviderValidation(t *testing.T) {
 func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "wiki", Crawler: crawlerConfig(),
+		OrgID: testOrg, Provider: business.DatasourceProviderCrawler, CollectionLabel: "guides", Crawler: crawlerConfig(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1041,7 +1041,7 @@ func newCrawlerSource(t *testing.T, svc *business.Service) *business.DatasourceS
 func newUploadSource(t *testing.T, svc *business.Service) *business.DatasourceSource {
 	t.Helper()
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderUpload, CollectionLabel: "guides",
 		Credential: "secretkey", Upload: uploadConfig(),
 	})
 	if err != nil {
@@ -1228,7 +1228,7 @@ func TestRunDatasourceSync_APIEnqueuesFetchedBody(t *testing.T) {
 	svc.SetDatasourceAPIClientFactory(func(business.APIDatasourceConfig, string) business.APIContentClient { return fake })
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "sekret", API: apiConfig(),
 	})
 	if err != nil {
@@ -1279,7 +1279,7 @@ func TestAddSource_OAuth2StoresTokenSet(t *testing.T) {
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
 		OrgID:              testOrg,
 		Provider:           business.DatasourceProviderAPI,
-		CollectionLabel:    "wiki",
+		CollectionLabel:    "guides",
 		Credential:         "refresh-tok",
 		OAuth2ClientSecret: "client-sekret",
 		API:                oauthConfig(),
@@ -1339,7 +1339,7 @@ func TestRunDatasourceSync_OAuth2RefreshesRotatesAndBearer(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", OAuth2ClientSecret: "client-sekret", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1409,7 +1409,7 @@ func TestRunDatasourceSync_OAuth2RereadsRotatedCredentialUnderLock(t *testing.T)
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1456,7 +1456,7 @@ func TestRunDatasourceSync_OAuth2DefaultTTLWhenNoExpiry(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1486,7 +1486,7 @@ func TestRunDatasourceSync_OAuth2RejectedRefreshIsTerminal(t *testing.T) {
 	})
 
 	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
-		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "wiki",
+		OrgID: testOrg, Provider: business.DatasourceProviderAPI, CollectionLabel: "guides",
 		Credential: "refresh-tok", API: oauthConfig(),
 	})
 	if err != nil {
@@ -1532,10 +1532,10 @@ func TestAddSource_ReusesCollectionNodeByLabel(t *testing.T) {
 	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
 
 	a := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/a", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/a", CollectionLabel: "guides", AccessToken: "t",
 	})
 	b := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/b", CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/b", CollectionLabel: "guides", AccessToken: "t",
 	})
 	c := addSource(t, svc, business.AddGitHubSourceInput{
 		OrgID: testOrg, Repo: "acme/c", CollectionLabel: "docs", AccessToken: "t",

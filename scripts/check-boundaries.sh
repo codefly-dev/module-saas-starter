@@ -11,8 +11,9 @@
 # reported so its line gets removed. Do not add to the baseline to land a change.
 #
 # Exempt: this gate's own files, AGENTS.md and CLAUDE.md (they state the rule and so
-# must name the forbidden words), and any line that says who *consumes* this repo —
-# the one place the handbook allows naming a consumer.
+# must name the forbidden words). Nothing else: a line that names a consumer is a
+# leak whatever verb it uses, and the one place a consumer may be named is the
+# handbook, outside this repository.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -24,8 +25,7 @@ touch "$BASE"
 
 HITS="$(git ls-files -z \
   | grep -zvE '(^|/)(AGENTS|CLAUDE)\.md$|^scripts/(check-boundaries\.sh|boundaries\.(denylist|baseline))$' \
-  | xargs -0 grep -niEI "($PATTERN)" -- 2>/dev/null \
-  | grep -viE 'consum(er|ers|ed|es|ing)\b' || true)"
+  | xargs -0 grep -niEI "($PATTERN)" -- 2>/dev/null || true)"
 
 fail=0
 FILES="$(printf '%s\n' "$HITS" | cut -d: -f1 | sort -u | sed '/^$/d')"

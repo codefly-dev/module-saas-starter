@@ -107,7 +107,7 @@ describe("SolutionDashboards", () => {
 			),
 		);
 
-		renderInApp(<SolutionDashboards graph={graph} solutionId="lastlogin" />);
+		renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 
 		// Bar widget: each event_type bucket becomes a labelled bar.
 		expect(await screen.findByText("saas.auth.login")).toBeTruthy();
@@ -142,7 +142,7 @@ describe("SolutionDashboards", () => {
 			),
 		);
 
-		renderInApp(<SolutionDashboards graph={graph} solutionId="lastlogin" />);
+		renderInApp(<SolutionDashboards graph={graph} solutionId="example" />);
 
 		// The healthy total-logins stat resolves (3 + 5)...
 		expect(await screen.findByText("8")).toBeTruthy();
@@ -154,7 +154,7 @@ describe("SolutionDashboards", () => {
 		authState.organizationId = undefined;
 
 		const { container } = renderInApp(
-			<SolutionDashboards graph={graph} solutionId="lastlogin" />,
+			<SolutionDashboards graph={graph} solutionId="example" />,
 		);
 
 		// Card shells render immediately, but each body stays gated behind its

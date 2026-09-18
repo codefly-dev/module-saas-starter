@@ -25,6 +25,10 @@ actually runs, so a story cannot be quietly retired into a skipped test. It
 does not report on the page comparison, because a check standing in for one it
 never made is worse than none.
 
+**The one plan is [docs/PLAN.md](./docs/PLAN.md)**: one row per `HOST-*` story
+with its status, the test that proves it, and the operations it exercises. No
+other document in this repository is a plan.
+
 ## What it owns
 
 Every capability below is an operation in the generated catalog; the catalog,

@@ -42,7 +42,7 @@ jobs:
         run: node --test module/tools/base-integrity.test.mjs
       - name: Test the RLS migration gate
         run: node --test module/tools/rls-migration-gate.test.mjs
-      - name: Verify managed baseline provenance and explicit source selection
+      - name: Verify the store baseline's provenance and staging
         run: python3 -m unittest discover -s qualification/managed-database -p 'test_*.py'
       - name: Test the migration pairing gate
         run: node --test module/tools/migration-pairing-gate.test.mjs
@@ -206,7 +206,7 @@ jobs:
       - name: Enforce the declared-policy -> handler-enforcement lockstep
         working-directory: module/services/accounts/code
         run: go test -run 'Lockstep|RequiredCapabilities|ScanHandlers|EnforcementAllowlist' ./pkg/adapters/
-      - name: Qualify managed database install, upgrade and role boundaries
+      - name: Qualify the store baseline install and role boundaries
         run: |
           docker pull postgres@sha256:fe03a7605299a34ddf5e4f285dff78c3d7190a576b3c6b46f2fcff69f4bffd54
           python3 qualification/managed-database/ci.py /tmp/managed-database-qualification.json
@@ -330,7 +330,6 @@ jobs:
             go.sum
             module/tools/go.sum
             module/services/*/code/go.sum
-            libraries/execution-custody-sdk/go/go.sum
       - name: Validate module agent
         env:
           GOWORK: "off"
@@ -341,14 +340,6 @@ jobs:
         run: |
           (cd libraries/source-read-sdk/go && go test ./... && go vet ./...)
           bash scripts/ci/test-source-read.sh
-      - name: Test private custody SDK conformance
-        working-directory: libraries/execution-custody-sdk/go
-        env:
-          GOWORK: "off"
-        run: |
-          go mod verify
-          go test -race ./...
-          go vet ./...
       - name: Reject direct Codefly runtime-carrier access
         working-directory: module/tools
         env:

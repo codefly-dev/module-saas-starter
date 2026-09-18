@@ -419,10 +419,10 @@ describe("proxy solution CSP", () => {
 	});
 
 	it("admits every registered solution, deduplicated by origin", async () => {
-		const wiki = {
+		const guides = {
 			...AUDIT,
-			id: "wiki",
-			nav: { title: "Wiki", path: "/s/wiki" },
+			id: "guides",
+			nav: { title: "Guides", path: "/s/guides" },
 			frontend: {
 				...AUDIT.frontend,
 				manifestUrl: "http://localhost:34041/assets/mf-manifest.json",
@@ -437,7 +437,7 @@ describe("proxy solution CSP", () => {
 				manifestUrl: "http://localhost:8091/twin/mf-manifest.json",
 			},
 		};
-		stubListing([AUDIT, wiki, auditTwin]);
+		stubListing([AUDIT, guides, auditTwin]);
 
 		const response = await proxy(authedDocument("https://app.example/"));
 		expect(directive(cspOf(response), "connect-src")).toBe(
@@ -563,15 +563,15 @@ describe("proxy solution CSP", () => {
 		const fetchMock = stubListing([AUDIT]);
 		await proxy(authedDocument("https://app.example/"));
 
-		const wiki = {
+		const guides = {
 			...AUDIT,
-			id: "wiki",
+			id: "guides",
 			frontend: {
 				...AUDIT.frontend,
 				manifestUrl: "http://localhost:34041/assets/mf-manifest.json",
 			},
 		};
-		stubListing([AUDIT, wiki]);
+		stubListing([AUDIT, guides]);
 		advanceClock(6_000);
 
 		const csp = cspOf(await proxy(authedDocument("https://app.example/")));

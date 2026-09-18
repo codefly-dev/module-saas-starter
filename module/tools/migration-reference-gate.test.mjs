@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { referenceErrors, needsReplay } from './migration-reference-gate.mjs';
+import { createHash } from 'node:crypto';
+import { declaredFold, referenceErrors, needsReplay } from './migration-reference-gate.mjs';
 const path = n => `module/services/store/migrations/${n}_example.up.sql`;
 const tree = (...versions) => new Map(versions.map(n => [path(n), 'body']));
 
@@ -15,13 +16,41 @@ test('shipped bodies cannot be edited, deleted, or renamed', () => {
     assert.match(referenceErrors(tree(131), after)[0], /shipped migration changed or deleted/);
   }
 });
+// Folding the ledger into one regenerated baseline deletes every shipped file, which
+// is exactly what the gate exists to refuse — unless the fold is declared: the
+// provenance names each folded file by content, the reference is exactly those files,
+// and none survives. Then the new baseline may start at 1.
+test('a declared fold of the whole ledger is accepted, anything less is not', () => {
+  const content = { [path(1)]: 'first', [path(2)]: 'second' };
+  const sha = text => createHash('sha256').update(text).digest('hex');
+  const hashOf = p => sha(content[p]);
+  const before = new Map(Object.keys(content).map(p => [p, 'blob']));
+  const folded = new Map([[path(1).replace('1_example', '1_baseline'), 'baseline']]);
+  const provenance = { replaced_sha256: Object.fromEntries(Object.entries(content).map(([p, t]) => [p, sha(t)])) };
+
+  assert.equal(declaredFold(before, folded, provenance, hashOf), true);
+  assert.deepEqual(referenceErrors(before, folded, true), []);
+  // Without the declaration the same tree is a mass deletion.
+  assert.equal(declaredFold(before, folded, null, hashOf), false);
+  assert.equal(referenceErrors(before, folded, false).length, 3);
+  // A reference holding a file the fold never recorded is not the folded ledger.
+  const wider = new Map([...before, [path(3), 'blob']]);
+  assert.equal(declaredFold(wider, folded, provenance, () => sha('first')), false);
+  // A reference file whose content differs from what was folded was edited, not folded.
+  assert.equal(declaredFold(before, folded, provenance, () => sha('tampered')), false);
+  // A folded file that survives in the tree is a fold that did not happen.
+  assert.equal(declaredFold(before, new Map([...folded, [path(2), 'blob']]), provenance, hashOf), false);
+  // Once merged, the reference is the baseline itself and the normal rules apply.
+  assert.equal(declaredFold(folded, folded, provenance, () => sha('baseline')), false);
+});
+
 test('frontiers are independent per service', () => {
   const after = tree(131);
   after.set('module/services/example/migrations/1_example.up.sql', 'body');
   assert.deepEqual(referenceErrors(tree(131), after), []);
 });
 test('replay covers migrations, runner, dependency pins, and the gate itself', () => {
-  for (const path of ['module/services/store/migrations/136_example.up.sql', 'module/services/store/code/main.go', 'module/services/store/code/go.mod', 'module/tools/migration-reference-gate.mjs', '.github/workflows/ci.yml', 'module/deployment/topology.bindings.codefly.yaml']) assert.equal(needsReplay([path]), true, path);
+  for (const path of ['module/services/store/migrations/1_baseline.up.sql', 'module/services/store/code/main.go', 'module/services/store/code/go.mod', 'module/services/store/tools/generate_baseline.py', 'module/services/store/baseline.provenance.json', 'module/tools/migration-reference-gate.mjs', '.github/workflows/ci.yml', 'module/deployment/topology.bindings.codefly.yaml']) assert.equal(needsReplay([path]), true, path);
   assert.equal(needsReplay(['module/services/frontend/code/src/app/page.tsx', 'RELEASE_GATES.md']), false);
 });
 

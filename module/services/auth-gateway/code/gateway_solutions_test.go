@@ -102,7 +102,7 @@ func TestGateway_Solution_Unregistered_BadGateway(t *testing.T) {
 // with no bearer, so gating them would break same-origin loading.
 func TestGateway_Solution_PublicSurface_NoToken_OK(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
-	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+	fake := registerSolutionUpstream(t, gw, "example-go")
 
 	for _, path := range []string{
 		"/assets/mf-manifest.json",
@@ -111,7 +111,7 @@ func TestGateway_Solution_PublicSurface_NoToken_OK(t *testing.T) {
 		"/assets",
 		"/.well-known/capabilities",
 	} {
-		req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go"+path, nil)
+		req := httptest.NewRequest(http.MethodGet, "/solutions/example-go"+path, nil)
 		w := httptest.NewRecorder()
 		gw.ServeHTTP(w, req)
 
@@ -126,9 +126,9 @@ func TestGateway_Solution_PublicSurface_NoToken_OK(t *testing.T) {
 // can't diverge (e.g. an upstream that reads the raw dot segments differently).
 func TestGateway_Solution_PublicSurface_ForwardsCleanedPath(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
-	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+	fake := registerSolutionUpstream(t, gw, "example-go")
 
-	req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go/assets/./chunks/../app.1a2b3c.js", nil)
+	req := httptest.NewRequest(http.MethodGet, "/solutions/example-go/assets/./chunks/../app.1a2b3c.js", nil)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -140,9 +140,9 @@ func TestGateway_Solution_PublicSurface_ForwardsCleanedPath(t *testing.T) {
 // spoofing identity headers reaches the upstream with them stripped.
 func TestGateway_Solution_PublicSurface_StripsSpoofedIdentity(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
-	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+	fake := registerSolutionUpstream(t, gw, "example-go")
 
-	req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go/assets/mf-manifest.json", nil)
+	req := httptest.NewRequest(http.MethodGet, "/solutions/example-go/assets/mf-manifest.json", nil)
 	req.Header.Set("x-user-id", "attacker")
 	req.Header.Set("x-org-role", "super_admin")
 	w := httptest.NewRecorder()
@@ -157,9 +157,9 @@ func TestGateway_Solution_PublicSurface_StripsSpoofedIdentity(t *testing.T) {
 // still auth-required, so it cannot be used as an unauthenticated write path.
 func TestGateway_Solution_PublicSurface_NonReadStillAuthRequired(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
-	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+	fake := registerSolutionUpstream(t, gw, "example-go")
 
-	req := httptest.NewRequest(http.MethodPost, "/solutions/lastlogin-go/assets/mf-manifest.json", nil)
+	req := httptest.NewRequest(http.MethodPost, "/solutions/example-go/assets/mf-manifest.json", nil)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -171,9 +171,9 @@ func TestGateway_Solution_PublicSurface_NonReadStillAuthRequired(t *testing.T) {
 // authenticated endpoint: the decision is made on the cleaned path.
 func TestGateway_Solution_PublicSurface_TraversalStillAuthRequired(t *testing.T) {
 	gw, _, _, _ := newGatewayHarness(t)
-	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+	fake := registerSolutionUpstream(t, gw, "example-go")
 
-	req := httptest.NewRequest(http.MethodGet, "/solutions/lastlogin-go/assets/../lastlogin", nil)
+	req := httptest.NewRequest(http.MethodGet, "/solutions/example-go/assets/../example", nil)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -181,26 +181,26 @@ func TestGateway_Solution_PublicSurface_TraversalStillAuthRequired(t *testing.T)
 	require.Nil(t, fake.lastHeaders, "upstream must not be reached without auth")
 }
 
-// A solution's data endpoints stay auth-required: /lastlogin needs a valid
+// A solution's data endpoints stay auth-required: /example needs a valid
 // bearer for both GET and POST, and reaches the upstream once presented.
 func TestGateway_Solution_DataEndpoint_RequiresBearer(t *testing.T) {
 	gw, _, _, priv := newGatewayHarness(t)
-	fake := registerSolutionUpstream(t, gw, "lastlogin-go")
+	fake := registerSolutionUpstream(t, gw, "example-go")
 
 	for _, method := range []string{http.MethodGet, http.MethodPost} {
 		fake.lastHeaders = nil
-		noTok := httptest.NewRequest(method, "/solutions/lastlogin-go/lastlogin", nil)
+		noTok := httptest.NewRequest(method, "/solutions/example-go/example", nil)
 		w := httptest.NewRecorder()
 		gw.ServeHTTP(w, noTok)
-		require.Equal(t, http.StatusUnauthorized, w.Code, "%s /lastlogin without a bearer must be denied", method)
+		require.Equal(t, http.StatusUnauthorized, w.Code, "%s /example without a bearer must be denied", method)
 		require.Nil(t, fake.lastHeaders, "upstream must not be reached without auth")
 
-		withTok := httptest.NewRequest(method, "/solutions/lastlogin-go/lastlogin", nil)
+		withTok := httptest.NewRequest(method, "/solutions/example-go/example", nil)
 		withTok.Header.Set("authorization", "Bearer "+signValidToken(t, priv))
 		w = httptest.NewRecorder()
 		gw.ServeHTTP(w, withTok)
-		require.Equal(t, http.StatusOK, w.Code, "%s /lastlogin with a valid bearer is forwarded", method)
-		require.Equal(t, "/lastlogin", fake.lastPath)
+		require.Equal(t, http.StatusOK, w.Code, "%s /example with a valid bearer is forwarded", method)
+		require.Equal(t, "/example", fake.lastPath)
 	}
 }
 

@@ -58,7 +58,6 @@ updates:
     directories:
       - /
       - /libraries/source-read-sdk/go
-      - /libraries/execution-custody-sdk/go
     schedule:
       interval: weekly
     open-pull-requests-limit: 1

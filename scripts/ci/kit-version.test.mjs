@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 
-import { newestBaseline, PUBLISHED_KIT_PACKAGES, staleVersionErrors } from "./kit-version.mjs";
+import {
+  newestBaseline,
+  PUBLISHED_KIT_PACKAGES,
+  staleVersionErrors,
+  publishedPathspecs,
+} from "./kit-version.mjs";
 import { PACKAGES } from "../../module/services/frontend/code/scripts/publish-frontend-kit.mjs";
 
 const REPOSITORY_ROOT = join(import.meta.dirname, "..", "..");
@@ -53,6 +58,54 @@ test("each package is judged on its own", () => {
   assert.deepEqual(staleVersionErrors({ baseline: BASELINE, packages }), [
     "@codefly-dev/saas-sdk: its content changed since v0.0.58 but its version is still 0.2.0",
   ]);
+});
+
+// ---------------------------------------------------------------------------
+// publishedPathspecs — only published bytes can demand a version
+// ---------------------------------------------------------------------------
+
+// Renaming a fixture inside a package's tests changed no published byte, yet the
+// gate demanded a kit release; the tarball's own `files` list is what decides,
+// and it becomes the pathspecs `git diff` is asked to judge.
+test("the package's `files` list is what the diff judges", () => {
+  assert.deepEqual(
+    publishedPathspecs("pkg/ui", ["dist", "src", "!src/**/__tests__/**", "!src/**/*.test.*", "README.md"]),
+    [
+      "pkg/ui/package.json",
+      ":(glob)pkg/ui/dist",
+      ":(glob)pkg/ui/src",
+      ":(glob)pkg/ui/README.md",
+      ":(exclude,glob)pkg/ui/src/**/__tests__/**",
+      ":(exclude,glob)pkg/ui/src/**/*.test.*",
+    ],
+  );
+});
+
+// A whitelist that never names the tests keeps them out just as an exclusion does.
+test("a path outside the `files` list is not judged", () => {
+  assert.deepEqual(publishedPathspecs("pkg/sdk", ["dist", "README.md"]), [
+    "pkg/sdk/package.json",
+    ":(glob)pkg/sdk/dist",
+    ":(glob)pkg/sdk/README.md",
+  ]);
+});
+
+test("no `files` list publishes, and judges, the whole directory", () => {
+  assert.deepEqual(publishedPathspecs("pkg/ui", undefined), ["pkg/ui"]);
+  assert.deepEqual(publishedPathspecs("pkg/ui", []), ["pkg/ui"]);
+});
+
+// Every published package declares what it ships, so a fixture rename in any of
+// them stays a non-event; a package that dropped its `files` list would quietly
+// put its tests back under the gate.
+test("each published package declares the files it ships", () => {
+  for (const { directory } of PUBLISHED_KIT_PACKAGES) {
+    const manifest = JSON.parse(readFileSync(join(REPOSITORY_ROOT, directory, "package.json"), "utf8"));
+    assert.ok(
+      Array.isArray(manifest.files) && manifest.files.length > 0,
+      `${directory} publishes its whole directory`,
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------

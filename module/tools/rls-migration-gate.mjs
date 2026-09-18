@@ -330,8 +330,17 @@ export function analyzeSql(sql) {
     /^\s*DO\b/i.test(stmt) ? expandDoBlock(stmt) : [stmt],
   );
 
+  // Tenant isolation is owed where request traffic can reach: a table the request
+  // role holds no privilege on is a platform or worker relation, whose boundary is
+  // the grant itself (the live-database authority check holds that), not a policy.
+  const reachable = new Set();
+  let everyTableReachable = false;
   for (const stmt of statements) {
     let m;
+    if ((m = /^\s*GRANT\s+[\s\S]*?\bON\s+(?:TABLE\s+)?(ALL\s+TABLES\s+IN\s+SCHEMA\s+\w+|[^;]+?)\s+TO\s+([^;]+)/i.exec(stmt)) && /\bapp_tenant\b/i.test(m[2])) {
+      if (/^ALL\s+TABLES/i.test(m[1])) everyTableReachable = true;
+      else for (const name of m[1].split(",")) reachable.add(stripName(name.trim()));
+    }
     if ((m = /^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?("?[\w.]+"?)\s*\(/i.exec(stmt))) {
       const name = stripName(m[1]);
       const body = balanced(stmt, stmt.indexOf("(", m.index)).inner;
@@ -346,7 +355,7 @@ export function analyzeSql(sql) {
       tables.set(name, { tenantColumn });
     } else if ((m = /^\s*DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?[\w.]+"?)/i.exec(stmt))) {
       tables.delete(stripName(m[1]));
-    } else if ((m = /^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?("?[\w.]+"?)\s+(ENABLE|FORCE)\s+ROW\s+LEVEL\s+SECURITY/i.exec(stmt))) {
+    } else if ((m = /^\s*ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?("?[\w.]+"?)\s+(ENABLE|FORCE)\s+ROW\s+LEVEL\s+SECURITY/i.exec(stmt))) {
       const name = stripName(m[1]);
       const state = rls.get(name) ?? { enabled: false, forced: false };
       if (/ENABLE/i.test(m[2])) state.enabled = true;
@@ -415,6 +424,7 @@ export function analyzeSql(sql) {
   const errors = [];
   for (const [name, { tenantColumn }] of tables) {
     if (!tenantColumn) continue;
+    if (!everyTableReachable && !reachable.has(name)) continue;
     const state = rls.get(name) ?? { enabled: false, forced: false };
     if (!state.enabled || !state.forced) {
       const missing = [!state.enabled && "ENABLE", !state.forced && "FORCE"].filter(Boolean);
@@ -443,7 +453,7 @@ export function analyzeSql(sql) {
         if (expr !== null && expr.trim().toLowerCase() !== "false" && !SCOPING_SETTING.test(expr) && !(
           p.roles?.length === 1 &&
           ["app_control_plane", "app_billing_worker", "app_webhook_worker", "app_job_worker"].includes(p.roles[0]) &&
-          expr.trim() === `current_user = '${p.roles[0]}'`
+          exactRolePredicate(expr) === `current_user = '${p.roles[0]}'`
         )) {
           errors.push(
             `${name}: policy ${p.policy} has a ${clause} predicate that never references app.current_org_id/app.current_user_id — it may be accidentally unconditional`,
@@ -453,6 +463,18 @@ export function analyzeSql(sql) {
     }
   }
   return errors.sort();
+}
+
+// The one predicate shape the background-role exception admits, read the way it
+// is written by hand (`current_user = 'app_job_worker'`) and the way pg_dump
+// writes it back (`(CURRENT_USER = 'app_job_worker'::name)`): the same predicate,
+// so the same verdict.
+function exactRolePredicate(expr) {
+  let text = expr.trim();
+  while (text.startsWith("(") && text.endsWith(")") && balanced(text, 0).end === text.length) {
+    text = text.slice(1, -1).trim();
+  }
+  return text.replace(/\bCURRENT_USER\b/g, "current_user").replace(/'::name\b/g, "'").replace(/\s+/g, " ");
 }
 
 export function rlsGateErrors(moduleRoot = MODULE_ROOT) {

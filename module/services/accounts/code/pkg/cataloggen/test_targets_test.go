@@ -96,7 +96,7 @@ func TestAccountsTargetMetadataRetainsConservativeInputs(t *testing.T) {
 		for _, input := range []string{
 			"module/services/accounts/code/pkg/business/audit_registry.go",
 			"module/services/accounts/code/pkg/gen/saas/accounts/v1/accounts.pb.go",
-			"module/services/store/migrations/42_rls_principals.up.sql",
+			"module/services/store/migrations/1_baseline.up.sql",
 			"module/contracts/api/accounts/connect/proto/saas/accounts/v1/audit.proto",
 			"module/tools/composition/composition.go",
 			"module/deployment/topology.bindings.codefly.yaml",

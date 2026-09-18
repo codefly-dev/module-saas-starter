@@ -29,7 +29,7 @@ func pushDelivery(ref, before, after string, created, deleted bool) []byte {
 func githubSource(t *testing.T, svc *business.Service, branch string, paths []string, cursor string) *business.DatasourceSource {
 	t.Helper()
 	source := addSource(t, svc, business.AddGitHubSourceInput{
-		OrgID: testOrg, Repo: "acme/docs", Branch: branch, Paths: paths, CollectionLabel: "wiki", AccessToken: "t",
+		OrgID: testOrg, Repo: "acme/docs", Branch: branch, Paths: paths, CollectionLabel: "guides", AccessToken: "t",
 	})
 	source.LastIngestedCommit = cursor
 	return source

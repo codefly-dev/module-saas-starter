@@ -3,7 +3,6 @@
 package adapters_test
 
 import (
-	"accounts/pkg/business"
 	"accounts/pkg/infra"
 	"context"
 	"fmt"
@@ -64,7 +63,7 @@ func TestAccountsLocalProxyStore(t *testing.T) {
 		b, _ := strconv.Atoi(strings.Split(filepath.Base(migrations[j]), "_")[0])
 		return a < b
 	})
-	require.Len(t, migrations, 127)
+	require.Len(t, migrations, 1)
 	for _, path := range migrations {
 		sql, err := os.ReadFile(path)
 		require.NoError(t, err)
@@ -77,7 +76,6 @@ GRANT USAGE ON SCHEMA public TO proxy_reader,proxy_writer;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO proxy_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO proxy_writer;
 GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO proxy_writer;
-REVOKE ALL ON execution_custody FROM proxy_reader,proxy_writer;
 GRANT app_tenant,app_control_plane,app_job_worker,app_webhook_worker,app_billing_worker TO proxy_writer;`)
 	require.NoError(t, err)
 	owner, org := uuid.NewString(), uuid.NewString()
@@ -92,8 +90,6 @@ GRANT app_tenant,app_control_plane,app_job_worker,app_webhook_worker,app_billing
 		var user string
 		require.NoError(t, pool.QueryRow(ctx, "SELECT current_user").Scan(&user))
 		require.Equal(t, entry.user, user)
-		_, err = pool.Exec(ctx, "SELECT * FROM execution_custody")
-		require.Error(t, err)
 		pool.Close()
 	}
 	open := func() *infra.PostgresStore {
@@ -102,27 +98,13 @@ GRANT app_tenant,app_control_plane,app_job_worker,app_webhook_worker,app_billing
 		return store
 	}
 	store := open()
-	record := business.ExecutionCustodyRecord{Reference: uuid.NewString(), OwnerID: owner, OrgID: org, AdmissionID: "proxy-fixture", Fingerprint: strings.Repeat("a", 64), Envelope: "cfs1:vault-transit:non-secret-storage-fixture", ExpiresAt: time.Now().Add(time.Minute).Truncate(time.Microsecond)}
-	original, err := store.RegisterExecutionCustody(ctx, record)
-	require.NoError(t, err)
-	_, err = store.Pool().Exec(ctx, "SELECT * FROM execution_custody")
-	require.Error(t, err, "tenant role must not read private custody")
-	store.Close()
-	store = open()
 	defer store.Close()
-	recovered, err := store.GetExecutionCustody(ctx, record.Reference)
-	require.NoError(t, err)
-	require.Equal(t, original.Reference, recovered.Reference)
-	require.Equal(t, original.Envelope, recovered.Envelope)
-	require.True(t, original.ExpiresAt.Equal(recovered.ExpiresAt))
 	_, err = infra.NewPostgresStoreWithCapabilities(ctx, reader, connection("proxy_writer", readerSocket))
 	require.Error(t, err, "identity sockets must be distinct")
 	for _, makePool := range []func(context.Context, string) (*pgxpool.Pool, error){infra.NewJobWorkerPoolFromURL, infra.NewWebhookProjectionPoolFromURL, infra.NewBillingWorkerPoolFromURL} {
 		pool, err := makePool(ctx, writer)
 		require.NoError(t, err)
-		_, err = pool.Exec(ctx, "SELECT * FROM execution_custody")
-		require.Error(t, err, "fixed worker role must not read private custody")
 		pool.Close()
 	}
-	t.Log("Accounts two-socket identities, full migrations, private custody recovery and three fixed worker pools passed")
+	t.Log("Accounts two-socket identities, full migrations and three fixed worker pools passed")
 }

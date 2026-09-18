@@ -65,8 +65,8 @@ func TestServicePreflightPackage(t *testing.T) {
 		declared       []string
 	}{
 		{"roles", `CREATE ROLE (app_[a-z_]+)`, policy.Roles},
-		{"types", `CREATE TYPE ([a-z_]+) AS ENUM`, policy.Types},
-		{"extensions", `CREATE EXTENSION IF NOT EXISTS "?([a-z_-]+)"?;`, policy.Extensions},
+		{"types", `CREATE TYPE (?:public\.)?([a-z_]+) AS ENUM`, policy.Types},
+		{"extensions", `CREATE EXTENSION IF NOT EXISTS "?([a-z_-]+)"?(?: WITH SCHEMA [a-z_]+)?;`, policy.Extensions},
 	} {
 		expected := map[string]bool{}
 		for _, match := range regexp.MustCompile(check.pattern).FindAllSubmatch(source, -1) {

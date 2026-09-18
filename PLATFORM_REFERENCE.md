@@ -7,8 +7,7 @@ a cloud-coupling scorecard, and testing lessons — and maps each item to what
 **this** Go/Postgres/Codefly starter already ships, partially ships, or has
 not built. It exists so the starter can adopt the proven patterns and skip the
 recorded mistakes without re-deriving them. It is a **reference**, not a plan:
-the executable backlog lives in [ROADMAP.md](./ROADMAP.md) and
-[TODO.md](./TODO.md).
+the plan is [docs/PLAN.md](./docs/PLAN.md).
 
 The audited platform is a *different* codebase (GCP, FastAPI, Firestore). Its
 lessons transfer; its mechanisms do not. Where this starter reaches the same
@@ -32,7 +31,7 @@ Trust level of the cited docs matters. [PRODUCTION_READY.md](./PRODUCTION_READY.
 [module/AUTHORIZATION_CATALOG.md](./module/AUTHORIZATION_CATALOG.md),
 [module/DEPLOYMENT_TOPOLOGY.md](./module/DEPLOYMENT_TOPOLOGY.md), and
 `docs/authorization/9-reference/current-state.md` describe **shipped** behavior.
-`module/docs/IDENTITY_ACCESS_PLAN.md` and [APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)
+[docs/historical/IDENTITY_ACCESS_PLAN.md](./docs/historical/IDENTITY_ACCESS_PLAN.md) and [APPROVALS_DESIGN.md](./APPROVALS_DESIGN.md)
 and [FRONTEND_ARCHITECTURE.md](./FRONTEND_ARCHITECTURE.md) are **forward-looking**
 and are not evidence of current implementation.
 
@@ -48,7 +47,7 @@ and are not evidence of current implementation.
 | Self-minted session JWT + own JWKS | ✅ | Backend mints an Ed25519 session JWT (`sub/org/or/pr/sid`); the gateway verifies it (signature, claims, revocation) but never mints. `GET /v1/auth/.well-known/jwks.json` (`pkg/adapters/jwks_http.go`); the gateway resolves the verifying key by the token's `kid` from a refreshing JWKS cache, so overlapping keys verify without a deploy (#532). This is the "own session JWT is the primary path" escape hatch the audit recommends. |
 | JIT provisioning | ✅ | `pkg/auth/pg/resolver.go` upserts `(provider, sub)` → `user_identities`/`users` in one tx, plus `BOOTSTRAP_ADMIN_EMAIL` super-admin bootstrap. |
 | Session revocation | ✅ ↔ | The audit's platform left this permanently stubbed (501). This starter **closed that gap**: refresh-rotation with reuse detection, plus migration-70 DB triggers that atomically revoke affected sessions on user-status / membership / role / MFA change, and migration-71 device-cap eviction (`sr` claim, [AUTHZ.md](./AUTHZ.md), [module/DATABASE_AUTHORITY.md](./module/DATABASE_AUTHORITY.md)). |
-| Enterprise SSO / per-tenant `authMode` | 🟡 | Per-org IdP directory (`org_identity_providers`, RLS migration 92), pre-auth domain/host→provider discovery (`pkg/business/identity_discovery.go`), and WorkOS SSO setup/disable (`pkg/business/sso_admin.go`, `/admin/sso`). No shipped `authMode`/"require-SSO" enforcement flag; the login/invite/signup split that would make it explicit is proposal-only (`module/docs/IDENTITY_ACCESS_PLAN.md`). |
+| Enterprise SSO / per-tenant `authMode` | 🟡 | Per-org IdP directory (`org_identity_providers`, RLS migration 92), pre-auth domain/host→provider discovery (`pkg/business/identity_discovery.go`), and WorkOS SSO setup/disable (`pkg/business/sso_admin.go`, `/admin/sso`). No shipped `authMode`/"require-SSO" enforcement flag; the login/invite/signup split that would make it explicit was proposal-only (`docs/historical/IDENTITY_ACCESS_PLAN.md`). |
 
 **Adopt/keep:** session revocation and self-minted sessions are already the
 audit's recommended shape — hold that line.
@@ -124,7 +123,7 @@ from the audited platform, so read the mapping carefully.
 |---|---|---|
 | Tenant directory + members | ✅ | `organizations`, `organization_members`, `teams`/`team_members`, all RLS-scoped; `OrganizationService`/`TeamService` CRUD; `/admin/organizations`, `/admin/teams`. Postgres-first — the audit explicitly regrets Firestore-first, so this is the recommended shape. |
 | Per-product enablement flags (`provisioned`/`visible`) | 🟡 | Entitlement/plan gates (`entitlement_overrides`, `plans`, `plan_entitlements`) answer "is this org allowed this capability"; runtime rollout moved to Unleash (`feature-flags@1`), and the DB `feature_flags` table is retired/read-only ([MODULE.md](./MODULE.md)). No generic per-product provisioned/visible matrix beyond entitlements. |
-| Tenant-lifecycle admin UI | 🟡 | Org settings + member management ship; ownership transfer / suspension / deletion are roadmap P4.1 ([ROADMAP.md](./ROADMAP.md)). The audit calls the *absence* of any lifecycle UI untenable past ~5 tenants — the starter is ahead here but not complete. |
+| Tenant-lifecycle admin UI | 🟡 | Org settings + member management ship; ownership transfer / suspension / deletion are not built ([docs/PLAN.md](./docs/PLAN.md)). The audit calls the *absence* of any lifecycle UI untenable past ~5 tenants — the starter is ahead here but not complete. |
 
 ### 1.5 The admin console
 
@@ -349,13 +348,13 @@ starter already follows.
 
 ## 6. Open gaps for the starter
 
-Honest backlog implied by the mapping above; sequence and ownership live in
-[ROADMAP.md](./ROADMAP.md) / [TODO.md](./TODO.md), not here.
+Honest backlog implied by the mapping above; what is owed and to which story
+lives in [docs/PLAN.md](./docs/PLAN.md), not here.
 
 **Read this list as historical input, not as current ground truth.** It is
 written by hand and closes by hand, so an entry survives its own remediation
 until someone notices — the solution-role entry did exactly that for the whole
-life of store migrations 98 and 112. Confirm any entry below against the code it
+life of two store migrations. Confirm any entry below against the code it
 names before treating it as an open gap.
 
 - **Read-access auditing** (§1.8) — the access-set audit pattern with an inline

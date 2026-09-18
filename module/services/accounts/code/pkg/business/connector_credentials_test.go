@@ -168,7 +168,7 @@ func TestConnectorCredential_FetchGitHubSourceContents(t *testing.T) {
 	_, orgID := mustUserAndOrg(t, ctx, "conn-fetch@rls-test.com", "conn-fetch", "Acme Fetch")
 	sourceID := uuid.NewString()
 
-	want := []byte("# Wiki root\n")
+	want := []byte("# Guides root\n")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
@@ -197,7 +197,7 @@ func TestConnectorCredential_FetchGitHubSourceContents(t *testing.T) {
 	require.NoError(t, testService.PutGitHubSourceCredential(ctx, orgID, sourceID,
 		business.SourceCredential{GitHubApp: testAppCredential(t)}))
 
-	content, err := testService.FetchGitHubSourceContents(ctx, orgID, sourceID, "acme", "wiki", "README.md", "main")
+	content, err := testService.FetchGitHubSourceContents(ctx, orgID, sourceID, "acme", "guides", "README.md", "main")
 	require.NoError(t, err)
 	require.Equal(t, githubconnector.ContentTypeFile, content.Type)
 	require.Equal(t, want, content.Content)

@@ -162,7 +162,7 @@ describe("createDatasourceClient", () => {
 	it("calls the live DatasourceService through the gateway with the host token", async () => {
 		const { calls } = stubFetch(oneSource);
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "test-token",
 		});
 
@@ -187,7 +187,7 @@ describe("createDatasourceClient", () => {
 		]);
 		expect(calls).toHaveLength(1);
 		expect(calls[0].url).toContain(
-			"/api/solutions/wiki/proxy/saas.accounts.v1.DatasourceService/ListSources",
+			"/api/solutions/guides/proxy/saas.accounts.v1.DatasourceService/ListSources",
 		);
 		expect(calls[0].authorization).toBe("Bearer test-token");
 	});
@@ -202,7 +202,7 @@ describe("createDatasourceClient", () => {
 			],
 		});
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "test-token",
 		});
 
@@ -227,7 +227,7 @@ describe("createDatasourceClient", () => {
 			],
 		});
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "test-token",
 		});
 
@@ -254,7 +254,7 @@ describe("createDatasourceClient", () => {
 		for (const status of statuses) {
 			stubFetch({ datasources: [{ ...source, status }] });
 			const client = createDatasourceClient({
-				apiBase: "/api/solutions/wiki/proxy",
+				apiBase: "/api/solutions/guides/proxy",
 				getAccessToken: () => "test-token",
 			});
 
@@ -271,7 +271,7 @@ describe("createDatasourceClient", () => {
 		const [source] = oneSource.datasources;
 		stubFetch({ datasources: [{ ...source, statusReason: "" }] });
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "test-token",
 		});
 
@@ -285,7 +285,7 @@ describe("createDatasourceClient", () => {
 		const { calls } = stubFetch({ datasources: [] });
 		let token = "first";
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => token,
 		});
 
@@ -301,7 +301,7 @@ describe("createDatasourceClient", () => {
 		const { calls } = stubFetchSequence([unauthorized(), reply(oneSource)]);
 		const refreshAccessToken = vi.fn(async () => "fresh-token");
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "stale-token",
 			refreshAccessToken,
 		});
@@ -319,7 +319,7 @@ describe("createDatasourceClient", () => {
 	it("recovers an initial 401 when no token was installed yet", async () => {
 		const { calls } = stubFetchSequence([unauthorized(), reply(oneSource)]);
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => null,
 			refreshAccessToken: async () => "fresh-token",
 		});
@@ -332,7 +332,7 @@ describe("createDatasourceClient", () => {
 	it("does not retry a 401 without a refresh capability", async () => {
 		stubFetchSequence([unauthorized()]);
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "stale-token",
 		});
 
@@ -341,7 +341,7 @@ describe("createDatasourceClient", () => {
 
 	it("surfaces the original error when refresh yields no token", async () => {
 		const client = createDatasourceClient({
-			apiBase: "/api/solutions/wiki/proxy",
+			apiBase: "/api/solutions/guides/proxy",
 			getAccessToken: () => "stale-token",
 			refreshAccessToken: async () => null,
 		});
@@ -360,7 +360,7 @@ describe("DatasourcesPanel gateway binding", () => {
 			<DatasourcesPanel
 				orgId="org-1"
 				gateway={{
-					apiBase: "/api/solutions/wiki/proxy",
+					apiBase: "/api/solutions/guides/proxy",
 					getAccessToken: () => "test-token",
 				}}
 			/>,
@@ -378,7 +378,7 @@ describe("DatasourcesPanel gateway binding", () => {
 			<DatasourcesPanel
 				orgId="org-1"
 				gateway={{
-					apiBase: "/api/solutions/wiki/proxy",
+					apiBase: "/api/solutions/guides/proxy",
 					getAccessToken: () => null,
 				}}
 			/>,

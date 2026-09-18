@@ -54,7 +54,8 @@ func TestJobWorkerPoolHasExactAuthority(t *testing.T) {
 		&canEnqueueMessages,
 	))
 	require.Equal(t, "app_job_worker", currentRole)
-	require.True(t, bypassRLS)
+	// The worker sees its rows through its explicit policy, never by bypassing RLS.
+	require.False(t, bypassRLS)
 	require.True(t, canSelectMessages)
 	require.True(t, canInsertMessages)
 	require.True(t, canUpdateMessages)

@@ -15,7 +15,8 @@ supporting cache/store/vault/telemetry services. It is published as an
 immutable module package that downstream workspaces **compose** (never fork).
 
 - Architecture, service graph, and capability ownership: [MODULE.md](./MODULE.md)
-- Feature inventory: [module/FEATURES.md](./module/FEATURES.md)
+- The one plan, one row per handbook story: [docs/PLAN.md](./docs/PLAN.md).
+  Nothing else here is a plan; findings go on the tracker's one issue.
 - First-run walkthrough: [module/GETTING_STARTED.md](./module/GETTING_STARTED.md)
 
 `codefly run service --fixture dev-admin` boots the whole graph locally (Docker

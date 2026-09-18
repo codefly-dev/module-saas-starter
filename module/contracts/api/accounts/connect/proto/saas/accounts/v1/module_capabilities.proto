@@ -21,7 +21,7 @@ import "saas/policy/v1/options.proto";
 // running on its own database, not able to join the saas-starter transaction —
 // uses to reach platform capabilities it would otherwise rebuild: durable job
 // enqueue and lease, user notification, approval requests, and typed audit
-// emission. The document store is the first consumer.
+// emission. A composed module is its first consumer.
 //
 // The surface is EXPOSURE_INTERNAL: it is reached over the accounts internal
 // listener behind the cluster-internal token, carrying the caller's

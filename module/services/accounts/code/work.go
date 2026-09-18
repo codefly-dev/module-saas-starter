@@ -629,10 +629,6 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
-	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen, installerHandler)
-	if err != nil {
-		return nil, err
-	}
 
 	// Local development surfaces the underlying Authenticate failure reason for
 	// debugging; every deployed environment returns generic auth errors so the
@@ -969,14 +965,7 @@ func doWork(ctx context.Context) (Clean, error) {
 			}
 		}
 
-		sweepCustody := func() {
-			if err := store.PurgeExecutionCustody(retentionCtx, time.Now()); err != nil {
-				rw.Warn("execution custody expiry sweep failed")
-			}
-		}
-
 		// Run once immediately on startup.
-		sweepCustody()
 		runRetention()
 		sweepReplay()
 		sweepPrivacyArtifacts()
@@ -999,7 +988,6 @@ func doWork(ctx context.Context) (Clean, error) {
 				sweepReplay()
 				sweepPrivacyArtifacts()
 			case <-reconcileTicker.C:
-				sweepCustody()
 				sweepReconcile()
 				sweepInstallationRecheck()
 			}
@@ -1012,11 +1000,6 @@ func doWork(ctx context.Context) (Clean, error) {
 			retentionCancel()
 			return nil, err
 		}
-	}
-	closeCustody, err := startExecutionCustody(ctx, custodyServer)
-	if err != nil {
-		retentionCancel()
-		return nil, err
 	}
 	if stripeWebhookWorker != nil {
 		stripeWebhookWorker.Start(ctx)
@@ -1040,7 +1023,6 @@ func doWork(ctx context.Context) (Clean, error) {
 	followFanoutWorker.Start(ctx)
 
 	return func() {
-		closeCustody()
 		sw := wool.Get(ctx).In("shutdown")
 		if stripeWebhookWorker != nil {
 			sw.Info("stopping Stripe webhook worker")

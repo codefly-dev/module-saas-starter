@@ -1133,7 +1133,7 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 	// audit trail; platform admins see anything. No org_id means a platform-wide
 	// read, which requires platform admin — UNLESS the caller carries a verified
 	// active org: default the read to that org rather than denying, so an org
-	// member (including a solution acting on the user's behalf, e.g. lastlogin)
+	// member (including a solution acting on the user's behalf, e.g. a composed solution)
 	// sees their own org's audit trail without a platform grant.
 	if req.OrgId == "" {
 		if err := requirePlatformAdmin(ctx, actorID); err != nil {

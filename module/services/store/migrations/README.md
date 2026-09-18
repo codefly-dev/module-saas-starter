@@ -1,30 +1,47 @@
 # Database migrations
 
-The store runs golang-migrate. Every numeric version must have exactly one
-matching `.up.sql` and `.down.sql`. Shipped files are immutable: corrections
-must be new forward migrations; there is no edit/delete exception policy.
+The store runs golang-migrate over **one generated baseline**: `1_baseline.up.sql`
+is the schema, seed rows, roles, grants, policies and function owners of an empty
+database, exported by `../tools/generate_baseline.py` from a disposable PostgreSQL
+16 that had the previous ledger applied. `../baseline.provenance.json` records
+which files it folded and their hashes. The ledger carries **no upgrade path**: a
+database installed by an earlier ledger is recreated, never migrated forward, and
+the runner refuses one rather than leave it behind (`code/main.go`,
+`refuseForeignLedger`).
 
-Choose a version above the target branch's highest version, including gaps.
-Concurrent schema changes must merge in numeric order. If a higher version
-lands first, renumber the unshipped pair above the new frontier before retrying.
-A successful clean install does not prove an existing database will execute a
-lower-numbered migration.
+## Changing the schema
 
-The required **Base manifest integrity** context validates every PR and merge
-queue candidate against its event's base SHA, using the proposed merged tree.
-It rejects duplicate versions, missing pairs, changes to shipped files, and
-new versions at or below that reference's frontier. The queue rechecks against
-the base it will actually merge onto; a green PR run cannot reserve a number.
+Add a forward migration above the baseline, as a matched `N_name.up.sql` /
+`N_name.down.sql` pair with `N` above the current frontier. A shipped file is
+immutable; corrections are new forward migrations. When the ledger has grown
+enough to be worth reading as one schema again, fold it:
 
-Migration, store runner/dependency, topology, and migration-gate/CI changes also
-run PostgreSQL upgrade and clean-install checks. The upgrade installs the
-reference tree, seeds a user, organization, membership, and team, then runs the
-proposed runner and migrations. It records every completed added version,
-checks fixture preservation, and compares the full schema dump (including
-functions, policies, and grants) with a separate clean-install cluster. A
-test-only migration exercises execution tracking and data backfill even when
-only the runner changed. Domain-specific backfills still need their own tests
-with representative historical data beyond this shared fixture.
+```sh
+python3 module/services/store/tools/generate_baseline.py        # from the working tree
+python3 module/services/store/tools/generate_baseline.py --from-ref <ref>
+```
+
+The generator replaces every file here with a regenerated `1_baseline` and
+rewrites the provenance. Never edit the baseline by hand: the provenance digest
+refuses it (`qualification/managed-database/stage.py`), and so does the
+reference gate.
+
+## What CI proves
+
+The required **Base manifest integrity** context runs
+`module/tools/migration-reference-gate.mjs` against the event's base SHA. A forward
+migration must exceed the reference frontier, and no shipped file may change or
+disappear. A fold is the one legal deletion, and only when declared: the provenance
+must name every reference file by content and none may survive.
+
+When the change touches the ledger, the runner, the topology or the gates, CI
+replays it on real PostgreSQL 16 clusters (`code/migration_upgrade_test.go`). A
+forward migration is proved as an upgrade — install the reference, seed
+representative tenant rows, apply the proposal, compare with a clean install and
+check nothing was lost. A fold is proved as equivalence — a clean install of the
+reference ledger and of the proposal must dump to the same schema and carry the
+same seed rows. Both prove that a database installed by a ledger the proposal
+does not contain is refused.
 
 From the repository root, with Go and Docker available:
 
@@ -34,15 +51,10 @@ node module/tools/migration-reference-gate.mjs origin/main --replay
 ```
 
 [`../test-targets.json`](../test-targets.json) declares these as two planner
-targets: reference validation, which starts no container, and the upgrade and
-clean-install qualification, which starts throwaway PostgreSQL clusters. A gate
-compares that declaration with this gate's replay scope across every tracked
-path: an input that triggers replay but is not declared, and a declared root
-outside the replay scope, both fail. The qualification target takes its
-PostgreSQL image and readiness budget from the upgrade test instead of restating
-them, and `module/tools/test-targets-gate.mjs` holds every catalog to one schema.
+targets; `module/tools/test-targets-gate.mjs` holds the declaration to the gate's
+replay scope in both directions.
 
-Reference validation compares committed trees. CI uses full Git history and
-passes `pull_request.base.sha` or `merge_group.base_sha` directly, rather than
-the feature branch's old merge base. Pushes use the previous commit; new tags
-and manual runs without a previous commit validate the current tree.
+Reference validation compares committed trees. CI passes `pull_request.base.sha`
+or `merge_group.base_sha` directly rather than the feature branch's old merge
+base. Pushes use the previous commit; new tags and manual runs without a previous
+commit validate the current tree.

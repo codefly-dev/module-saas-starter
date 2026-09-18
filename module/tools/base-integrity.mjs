@@ -14,6 +14,7 @@
 // and a consumer's `modules/<name>/`, no path config needed. The script hashes itself, so
 // tampering with the guard is itself caught.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join, relative, dirname, resolve } from "node:path";
@@ -122,6 +123,59 @@ function walk(dir, out = [], base = MODULE_ROOT) {
 }
 
 const sha = (abs) => createHash("sha256").update(readFileSync(abs)).digest("hex");
+
+// What ships is what git tracks, not what happens to be on the release engineer's
+// disk: a gitignored build product under the module tree would otherwise enter the
+// manifest as a base file no consumer can restore. The index is therefore the
+// authority for the base-file set, and a tree whose index cannot be read is not a
+// tree a release may be cut from.
+//
+// Keyed by NFC because the two sides can disagree about spelling: git records a
+// precomposed path where macOS hands readdir the decomposed bytes that created it.
+// The value is the spelling git recorded, which is the key the manifest carries.
+function trackedFiles(moduleRoot) {
+  const { status, stdout, stderr, error } = spawnSync(
+    "git",
+    ["ls-files", "-z"],
+    { cwd: moduleRoot, encoding: "utf8", maxBuffer: Infinity },
+  );
+  if (status !== 0) {
+    throw new Error(
+      `base-integrity: cannot read git's index in ${moduleRoot} — gen and verify ` +
+        `determine what ships from it, so they run against canonical's checkout: ` +
+        (error?.message ?? stderr?.trim() ?? `git ls-files exited ${status}`),
+    );
+  }
+  return new Map(
+    stdout
+      .split("\0")
+      .filter((rel) => rel !== "")
+      .map((rel) => [rel.normalize("NFC"), rel]),
+  );
+}
+
+// Base candidates on disk that git does not track. `gen` records only what git
+// tracks, so a new file that has not been added yet would be left out of the
+// manifest with nothing said — and surface only in a consumer as an unrecorded
+// base file. Reporting them makes the omission visible where it happens.
+export function untrackedBaseCandidates(moduleRoot = MODULE_ROOT) {
+  const tracked = trackedFiles(moduleRoot);
+  return walk(moduleRoot, [], moduleRoot)
+    .filter((onDisk) => !tracked.has(onDisk.normalize("NFC")))
+    .sort();
+}
+
+// The base files: every path on disk that git tracks and the exclusions admit,
+// as a Map from the spelling git recorded to the spelling on disk.
+function baseFiles(moduleRoot) {
+  const tracked = trackedFiles(moduleRoot);
+  const pairs = [];
+  for (const onDisk of walk(moduleRoot, [], moduleRoot)) {
+    const recorded = tracked.get(onDisk.normalize("NFC"));
+    if (recorded !== undefined) pairs.push([recorded, onDisk]);
+  }
+  return new Map(pairs.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+}
 
 const FRONTEND_CODE_ROOT = join(MODULE_ROOT, "services", "frontend", "code");
 const PACKAGE_LOCK_FIELDS = [
@@ -817,10 +871,10 @@ const serviceOf = (rel) => {
 // Re-derive the manifest a fresh `gen` would write for `moduleRoot`, without touching disk.
 // `gen` persists this; the release gate compares it against the committed manifest.
 export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
-  const files = walk(moduleRoot, [], moduleRoot).sort();
+  const base = baseFiles(moduleRoot);
   const hashes = {};
-  for (const rel of files) hashes[rel] = sha(join(moduleRoot, rel));
-  return { note: MANIFEST_NOTE, fileCount: files.length, files: hashes };
+  for (const [rel, onDisk] of base) hashes[rel] = sha(join(moduleRoot, onDisk));
+  return { note: MANIFEST_NOTE, fileCount: base.size, files: hashes };
 }
 
 // The canonical release gate: the committed manifest must equal a fresh regeneration of the
@@ -879,6 +933,15 @@ function gen() {
   const rlsErrors = rlsGateErrors();
   if (rlsErrors.length) {
     rlsErrors.forEach((error) => console.error(`rls-migration-gate: ${error}`));
+    process.exit(1);
+  }
+  const untracked = untrackedBaseCandidates();
+  if (untracked.length) {
+    console.error(
+      `base-integrity: ${untracked.length} file(s) under the module tree are not tracked by git, `
+      + "so gen would leave them out of the manifest; `git add` them (or ignore them) first:",
+    );
+    untracked.forEach((rel) => console.error(`    ${rel}`));
     process.exit(1);
   }
   const manifest = computeBaseManifest();
@@ -957,8 +1020,8 @@ function check() {
   if (omitted) console.log(`  composed subset: skipped ${omitted} base files for ${omittedSvcs.size} non-composed service(s): ${[...omittedSvcs].sort().join(", ")}`);
 
   // Anything on disk that isn't a known base file is a legal side-addition.
-  const manifestSet = new Set(Object.keys(files));
-  const additions = walk(MODULE_ROOT).filter((r) => !manifestSet.has(r));
+  const manifestSet = new Set(Object.keys(files).map((r) => r.normalize("NFC")));
+  const additions = walk(MODULE_ROOT).filter((r) => !manifestSet.has(r.normalize("NFC")));
 
   // The allowlist is an escape hatch for genuinely per-consumer base files — kept loud so it can
   // never hide drift silently. Entries here are tech debt: prefer a config seam or a side-module.

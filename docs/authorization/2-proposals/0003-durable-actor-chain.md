@@ -1,6 +1,6 @@
 # RFC-0003 — Durable, linked, revocable actor chain
 
-- **Status:** Review (#177) — proposed decisions below, pending sign-off; draft ADR [0004](../9-reference/decisions/0004-durable-actor-chain.md)
+- **Status:** Accepted 2026-09-17 — shipped; the record is ADR [0004](../9-reference/decisions/0004-durable-actor-chain.md)
 - **Created:** 2026-08-19
 - **Serves:** [acting-on-behalf](../0-product/stories/acting-on-behalf.md) A2–A5; behaviors B12–B14.
 - **Relates to:** the existing capability chain + `delegation_grants` (the mechanism already exists).

@@ -206,7 +206,7 @@ func TestMintInstallationTokenSurfacesAPIError(t *testing.T) {
 
 func TestFetchRepoContentsDecodesFile(t *testing.T) {
 	cred, key := credentialWithKey(t)
-	want := []byte("# Living Wiki\n\nHello from GitHub.\n")
+	want := []byte("# Living Guides\n\nHello from GitHub.\n")
 	fake := &fakeGitHub{
 		appPublicKey: &key.PublicKey,
 		appID:        cred.AppID,
@@ -217,7 +217,7 @@ func TestFetchRepoContentsDecodesFile(t *testing.T) {
 	defer server.Close()
 
 	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
-	got, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "docs/README.md", "main")
+	got, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", "docs/README.md", "main")
 	require.NoError(t, err)
 	require.Equal(t, githubconnector.ContentTypeFile, got.Type)
 	require.Equal(t, want, got.Content)
@@ -239,7 +239,7 @@ func TestFetchRepoContentsListsDirectory(t *testing.T) {
 	defer server.Close()
 
 	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
-	got, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "docs", "")
+	got, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", "docs", "")
 	require.NoError(t, err)
 	require.Equal(t, githubconnector.ContentTypeDir, got.Type)
 	require.Len(t, got.Entries, 2)
@@ -262,12 +262,12 @@ func TestFetchRepoContentsRootUsesBareEndpoint(t *testing.T) {
 	defer server.Close()
 
 	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
-	got, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "", "")
+	got, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", "", "")
 	require.NoError(t, err)
 	require.Equal(t, githubconnector.ContentTypeDir, got.Type)
 	require.Len(t, got.Entries, 1)
 	// The repo root must hit the canonical bare endpoint, not a trailing-slash form.
-	require.Equal(t, "/repos/acme/wiki/contents", fake.contentPath())
+	require.Equal(t, "/repos/acme/guides/contents", fake.contentPath())
 }
 
 func TestFetchRepoContentsTooLargeFileIsDistinguishable(t *testing.T) {
@@ -282,7 +282,7 @@ func TestFetchRepoContentsTooLargeFileIsDistinguishable(t *testing.T) {
 	defer server.Close()
 
 	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
-	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "big.bin", "")
+	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", "big.bin", "")
 	require.ErrorIs(t, err, githubconnector.ErrFileTooLarge,
 		"an oversized file must be a distinguishable sentinel so callers can skip it")
 }
@@ -294,7 +294,7 @@ func TestFetchRepoContentsNotFound(t *testing.T) {
 	defer server.Close()
 
 	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
-	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "missing.md", "")
+	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", "missing.md", "")
 	require.Error(t, err)
 	require.True(t, githubconnector.IsNotFound(err), "expected a 404 classification, got %v", err)
 }
@@ -318,14 +318,14 @@ func TestFetchRepoContentsCachesInstallationToken(t *testing.T) {
 	)
 
 	for _, path := range []string{"a.md", "b.md"} {
-		_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", path, "")
+		_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", path, "")
 		require.NoError(t, err)
 	}
 	require.Equal(t, 1, fake.mints(), "second fetch must reuse the cached token")
 
 	// Advance past the refresh window (expiry - 1m); the next fetch re-mints.
 	now = base.Add(60 * time.Minute)
-	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "a.md", "")
+	_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", "a.md", "")
 	require.NoError(t, err)
 	require.Equal(t, 2, fake.mints(), "an expiring token must be re-minted")
 }
@@ -352,7 +352,7 @@ func TestFetchRepoContentsSingleFlightsTokenMint(t *testing.T) {
 	for i := 0; i < goroutines; i++ {
 		go func() {
 			defer wg.Done()
-			_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "wiki", "a.md", "")
+			_, err := conn.FetchRepoContents(context.Background(), cred, "acme", "guides", "a.md", "")
 			require.NoError(t, err)
 		}()
 	}
@@ -364,7 +364,7 @@ func TestFetchRepoContentsSingleFlightsTokenMint(t *testing.T) {
 func TestMintInstallationTokenNarrowsToRequestedScope(t *testing.T) {
 	cred, key := credentialWithKey(t)
 	cred.Scope = &githubconnector.InstallationScope{
-		Repositories: []string{"wiki"},
+		Repositories: []string{"guides"},
 		Permissions:  map[string]string{"contents": "read", "metadata": "read"},
 	}
 	fake := &fakeGitHub{appPublicKey: &key.PublicKey, appID: cred.AppID, tokenExpiry: time.Now().Add(time.Hour)}
@@ -380,7 +380,7 @@ func TestMintInstallationTokenNarrowsToRequestedScope(t *testing.T) {
 		Permissions  map[string]string `json:"permissions"`
 	}
 	require.NoError(t, json.Unmarshal(fake.mintBody(), &requested))
-	require.Equal(t, []string{"wiki"}, requested.Repositories)
+	require.Equal(t, []string{"guides"}, requested.Repositories)
 	require.Equal(t, map[string]string{"contents": "read", "metadata": "read"}, requested.Permissions)
 }
 
@@ -412,21 +412,21 @@ func TestInstallationTokenCacheIsKeyedByScopeAndRevision(t *testing.T) {
 	defer server.Close()
 	conn := githubconnector.NewConnector(githubconnector.WithBaseURL(server.URL))
 
-	wiki := cred
-	wiki.Scope = &githubconnector.InstallationScope{Repositories: []string{"wiki"}}
+	guides := cred
+	guides.Scope = &githubconnector.InstallationScope{Repositories: []string{"guides"}}
 	handbook := cred
 	handbook.Scope = &githubconnector.InstallationScope{Repositories: []string{"handbook"}}
-	rotated := wiki
+	rotated := guides
 	rotated.Binding = "2026-09-14T10:00:00Z"
 
 	fetch := func(c githubconnector.AppCredential) {
 		t.Helper()
-		_, err := conn.FetchRepoContents(context.Background(), c, "acme", "wiki", "a.md", "")
+		_, err := conn.FetchRepoContents(context.Background(), c, "acme", "guides", "a.md", "")
 		require.NoError(t, err)
 	}
 
-	fetch(wiki)
-	fetch(wiki)
+	fetch(guides)
+	fetch(guides)
 	require.Equal(t, 1, fake.mints(), "the same authority must reuse its cached token")
 
 	fetch(handbook)
@@ -435,8 +435,8 @@ func TestInstallationTokenCacheIsKeyedByScopeAndRevision(t *testing.T) {
 	fetch(rotated)
 	require.Equal(t, 3, fake.mints(), "a rotated credential must not reuse the superseded token")
 
-	reordered := wiki
-	reordered.Scope = &githubconnector.InstallationScope{Repositories: []string{"wiki"}}
+	reordered := guides
+	reordered.Scope = &githubconnector.InstallationScope{Repositories: []string{"guides"}}
 	fetch(reordered)
 	require.Equal(t, 3, fake.mints(), "an equivalent scope must resolve to the same cache entry")
 }

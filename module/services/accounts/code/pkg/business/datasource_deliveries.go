@@ -563,7 +563,7 @@ func upsertChangeType(status string) string {
 
 // enqueueChangeSetFile emits one v2 per-file ingest job. An upsert/rename fetches
 // the blob inline when it fits the payload cap, else omits it and carries a
-// signed content ticket the document store redeems through ResolveContentTicket.
+// signed content ticket the consuming module redeems through ResolveContentTicket.
 // A delete carries no content.
 func (s *Service) enqueueChangeSetFile(ctx context.Context, source *DatasourceSource, client GitHubContentClient, op changeOp, ref, commit, changeSet, deliveryID string) error {
 	w := wool.Get(ctx).In("enqueueChangeSetFile")

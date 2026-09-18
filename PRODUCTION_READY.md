@@ -412,9 +412,10 @@ Every commit that touches auth lands with tests. No separate test pass.
 
 ## Current work and verification gates
 
-The original phased authentication migration is complete. Remaining hardening
-work is tracked only in `TODO.md`; duplicating an ordered backlog here caused
-the implementation and this document to diverge.
+The original phased authentication migration is complete. What the host still
+owes its handbook contract is tracked in one place, [docs/PLAN.md](./docs/PLAN.md);
+duplicating a backlog here caused the implementation and this document to
+diverge.
 
 Every authentication/session change must pass these Codefly-owned gates:
 

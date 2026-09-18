@@ -51,3 +51,25 @@
 # through its ports and never knows which one. (A line that says who consumes the host
 # is exempted by the script — the one place the handbook allows naming a consumer.)
 \bdocument[-_ ]stores?\b
+
+# Durable execution is the orchestration module's: admission, workers, per-attempt
+# effects, installed releases. The host offers a queue and knows nothing of what runs
+# on it, so the vocabulary of a workload runner — and the private custody surface that
+# once carried it here — may not appear in this tree.
+executioncustody
+\bexecution[- ]custody\b
+\bcustody[-_ ](sdk|listener|broker|grant|qualification|projection)s?\b
+\bworker[-_ ]?uris?\b
+\binvoke[-_ ]?action\b
+\btask[-_ ]?resource[-_ ]?kind\b
+\bexecution[-_ ]?(consumer[-_ ]?polic(y|ies)|grants?|workers?|releases?)\b
+\binstalled[-_ ]releases?\b
+\bmodel[-_ ]invocation\b
+\btask[-_ ]?service\b
+
+# The other modules' names: a host file may describe a consumer generically, never
+# name one.
+\bmodel[-_ ]gateway\b
+\brecord[-_ ]stores?\b
+\bcompute[-_ ]engine\b
+\brobin\b

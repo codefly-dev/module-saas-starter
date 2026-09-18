@@ -17,7 +17,6 @@ Read before changing the plugin boundary:
 
 1. [Architecture](frontend-plugin-architecture.md)
 2. [Implementation plan](frontend-plugin-platform-implementation-plan.md)
-3. [Execution TODO](frontend-plugin-platform-todo.md)
 4. [Packaging ADR](adr/0001-frontend-plugin-packaging.md)
 5. [Public import map](frontend-plugin-public-api.md)
 6. [Same-origin BFF contract](frontend-plugin-bff-contract.md)
