@@ -3045,6 +3045,25 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/features/notifications/ui/notification-banner.tsx",
+			"imports": [
+				"@tanstack/react-query",
+				"lucide-react",
+				"next/navigation",
+				"sonner",
+				"@/lib/auth",
+				"@/shared/ui",
+				"../service/mutations",
+				"../service/queries"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Owns the notifications workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/features/notifications/ui/notification-bell.tsx",
 			"imports": [
 				"@tanstack/react-query",
