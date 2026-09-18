@@ -20,14 +20,17 @@ finding about any row is a comment or a checkbox there, never a new issue.
 Status: **proven** · **unproven** (behaviour believed present, no story test) ·
 **implementation gap** (a test cannot pass until code changes). *Surface* names
 the operations the proving test exercises, spelled as the page's Interface block
-(pinned at `v0.0.55`) spells them; it is what the page's `Surface:` line has to
-carry once the handbook pull request lands. A dash means the story exercises no
+(pinned at `v0.0.55`) spells them — bare names, so `AddMember` and `Update`
+read against the section the story sits in; it is what the page's `Surface:`
+line has to carry once the handbook pull request lands. The `ENT` rows also
+exercise whichever operation the plan gate ends up refusing; it is named once
+the gate exists. A dash means the story exercises no
 accounts operation and the page should say so.
 
 | Story | Status | Proving test | Surface |
 |---|---|---|---|
 | HOST-ID-001 · Every request carries who and for whom | proven | `pkg/business/story_host_test.go` `TestStory_HOST_ID_001` | `StartTask` |
-| HOST-ID-002 · An invitation is what makes someone a colleague | unproven | — | `CreateInvitation`, `AcceptInvitation`, `ListMembers`, `Team.AddMember`, `CheckPermission` |
+| HOST-ID-002 · An invitation is what makes someone a colleague | unproven | — | `CreateInvitation`, `AcceptInvitation`, `ListMembers`, `AddMember`, `CheckPermission` |
 | HOST-ID-003 · A revoked invitation cannot be accepted | unproven | — | `CreateInvitation`, `RevokeInvitation`, `AcceptInvitation` |
 | HOST-ID-004 · A key can do only what its scopes name | unproven | — | `CreateAPIKey`, `ValidateAPIKey`, `QueryAuditLog` |
 | HOST-ID-005 · A revoked key does nothing | unproven | — | `CreateAPIKey`, `RevokeAPIKey`, `ValidateAPIKey` |
@@ -43,14 +46,14 @@ accounts operation and the page should say so.
 | HOST-APR-001 · Work waits for the decision it needs | unproven | — | `RequestApproval`, `GetApproval` |
 | HOST-APR-002 · An approved request resumes the work | unproven | — | `RequestApproval`, `GetApproval`, `ClaimJobs` |
 | HOST-APR-003 · A refused request never happens | unproven | — | `RequestApproval`, `GetApproval`, `QueryAuditLog` |
-| HOST-NTF-001 · A category I switched off does not reach me | unproven | — | `UserSettings.Update`, `NotifyUser`, `ListNotifications` |
-| HOST-NTF-002 · What I must be told reaches me anyway | unproven | — | `UserSettings.Update`, `NotifyUser`, `ListNotifications` |
+| HOST-NTF-001 · A category I switched off does not reach me | unproven | — | `Update`, `NotifyUser`, `ListNotifications` |
+| HOST-NTF-002 · What I must be told reaches me anyway | unproven | — | `Update`, `NotifyUser`, `ListNotifications` |
 | HOST-SRC-001 · A connected source's changes reach the module | unproven | — | `AddGitHubSource`, `SyncSource`, `ClaimJobs`, `FetchDatasourceBlob` |
 | HOST-SRC-002 · A rewritten history reconciles | implementation gap | — | `SyncSource`, `ClaimJobs` |
 | HOST-DASH-001 · A private dashboard is mine and my administrators' | unproven | — | `CreateDashboard`, `ListDashboards` |
 | HOST-DASH-002 · Sharing makes it readable, not writable | unproven | — | `ShareDashboard`, `GetDashboard`, `UpdateDashboard` |
-| HOST-ENT-001 · A plan gate refuses what the plan excludes | implementation gap | — | `GetOrgEntitlements` and the gated operation |
-| HOST-ENT-002 · A flag cannot buy an entitlement | implementation gap | — | `UpsertFeatureFlag`, `GetOrgEntitlements` and the gated operation |
+| HOST-ENT-001 · A plan gate refuses what the plan excludes | implementation gap | — | `GetOrgEntitlements` |
+| HOST-ENT-002 · A flag cannot buy an entitlement | implementation gap | — | `UpsertFeatureFlag`, `GetOrgEntitlements` |
 | HOST-USE-001 · Usage counts once | unproven | — | `ConsumeUsage`, `GetUsage` |
 | HOST-USE-002 · A quota holds | unproven | — | `ConsumeUsage`, `GetUsage`, `OverrideEntitlement` |
 | HOST-BILL-001 · The public catalogue is what is actually on sale | unproven | — | `ListPublicPlans` |
