@@ -19,26 +19,28 @@ import (
 // ModuleInstallationRequest describes one immutable organization installation.
 // The accountable owner and delegation are never accepted from this request.
 type ModuleInstallationRequest struct {
-	ModuleID                string   `json:"moduleId"`
-	OrganizationSlug        string   `json:"organizationSlug"`
-	AgentIdentifier         string   `json:"agentIdentifier"`
-	SolutionIdentifier      string   `json:"solutionIdentifier"`
-	RoleID                  string   `json:"roleId"`
-	ExpectedRolePermissions []string `json:"expectedRolePermissions"`
-	AllowedAudiences        []string `json:"allowedAudiences"`
-	AllowedScopes           []string `json:"allowedScopes"`
-	DisplayName             string   `json:"displayName"`
-	RootScopeLabel          string   `json:"rootScopeLabel"`
+	AuthorityReferenceVersion string   `json:"authorityReferenceVersion,omitempty"`
+	ModuleID                  string   `json:"moduleId"`
+	OrganizationSlug          string   `json:"organizationSlug"`
+	AgentIdentifier           string   `json:"agentIdentifier"`
+	SolutionIdentifier        string   `json:"solutionIdentifier"`
+	RoleID                    string   `json:"roleId"`
+	ExpectedRolePermissions   []string `json:"expectedRolePermissions"`
+	AllowedAudiences          []string `json:"allowedAudiences"`
+	AllowedScopes             []string `json:"allowedScopes"`
+	DisplayName               string   `json:"displayName"`
+	RootScopeLabel            string   `json:"rootScopeLabel"`
 }
 
 type ModuleInstallationResult struct {
-	State          string `json:"state"`
-	Changed        bool   `json:"changed"`
-	OrganizationID string `json:"organizationId"`
-	PrincipalID    string `json:"principalId,omitempty"`
-	InstallationID string `json:"installationId,omitempty"`
-	ScopeNodeID    string `json:"scopeNodeId,omitempty"`
-	GrantID        string `json:"grantId,omitempty"`
+	AuthorityReference *ModuleInstallationAuthorityReference `json:"authorityReference,omitempty"`
+	State              string                                `json:"state"`
+	Changed            bool                                  `json:"changed"`
+	OrganizationID     string                                `json:"organizationId"`
+	PrincipalID        string                                `json:"principalId,omitempty"`
+	InstallationID     string                                `json:"installationId,omitempty"`
+	ScopeNodeID        string                                `json:"scopeNodeId,omitempty"`
+	GrantID            string                                `json:"grantId,omitempty"`
 }
 
 // InstallerDelegation is an explicit bootstrap authorization by the organization
@@ -162,6 +164,9 @@ type ModuleInstallationStore interface {
 }
 
 func (s *Service) ReconcileModuleInstallation(ctx context.Context, caller ModuleCaller, policy *InstallerPolicy, req ModuleInstallationRequest, apply bool) (*ModuleInstallationResult, error) {
+	if req.AuthorityReferenceVersion != "" && req.AuthorityReferenceVersion != ModuleInstallationAuthorityVersion {
+		return nil, ErrInstallationAuthorityVersion
+	}
 	delegation, err := policy.Authorize(caller, req, time.Now())
 	if err != nil {
 		return nil, err
@@ -195,6 +200,12 @@ func (s *Service) ReconcileModuleInstallation(ctx context.Context, caller Module
 		if err != nil {
 			return err
 		}
+		if req.AuthorityReferenceVersion != "" && result.State == "ready" {
+			result.AuthorityReference, err = moduleInstallationAuthority(caller, delegation, req, result)
+			if err != nil {
+				return err
+			}
+		}
 		if !result.Changed {
 			return nil
 		}
@@ -203,5 +214,10 @@ func (s *Service) ReconcileModuleInstallation(ctx context.Context, caller Module
 		}
 		return s.emitTx(ctx, caller.PrincipalID, ActorTypeSystem, EventInstallationCreated, "installation", result.InstallationID, org.Id, map[string]any{"agent_principal_id": result.PrincipalID, "solution_identifier": req.SolutionIdentifier, "role_id": req.RoleID, "owner_principal_id": delegation.OwnerPrincipalID})
 	})
-	return result, err
+	if err != nil {
+		// Never expose a verified authority reference from a transaction whose
+		// audit or commit failed. A caller must inspect again after uncertainty.
+		return nil, err
+	}
+	return result, nil
 }

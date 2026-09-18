@@ -220,6 +220,29 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.False(t, repeat.Changed)
 	require.Equal(t, result.InstallationID, repeat.InstallationID)
 	post("verify", request, issued.Token, 200)
+	require.Nil(t, result.AuthorityReference)
+	require.Nil(t, repeat.AuthorityReference)
+	request.AuthorityReferenceVersion = business.ModuleInstallationAuthorityVersion
+	var reference *business.ModuleInstallationAuthorityReference
+	for _, mode := range []string{"inspect", "apply", "verify"} {
+		raw = post(mode, request, issued.Token, 200)
+		var observed business.ModuleInstallationResult
+		require.NoError(t, json.Unmarshal(raw, &observed))
+		require.False(t, observed.Changed)
+		require.Equal(t, result.PrincipalID, observed.PrincipalID)
+		require.Equal(t, result.InstallationID, observed.InstallationID)
+		require.NotNil(t, observed.AuthorityReference)
+		require.Equal(t, business.ModuleInstallationAuthorityVersion, observed.AuthorityReference.SchemaVersion)
+		require.Regexp(t, `^sha256:[a-f0-9]{64}$`, observed.AuthorityReference.Digest)
+		if reference == nil {
+			reference = observed.AuthorityReference
+		} else {
+			require.Equal(t, reference, observed.AuthorityReference)
+		}
+	}
+	request.AuthorityReferenceVersion = "unsupported"
+	post("inspect", request, issued.Token, 400)
+	request.AuthorityReferenceVersion = business.ModuleInstallationAuthorityVersion
 	require.Equal(t, 1, countAuditEvents(t, string(business.EventInstallationCreated), result.InstallationID))
 	request.OrganizationSlug = "another-org"
 	post("apply", request, issued.Token, 403)
