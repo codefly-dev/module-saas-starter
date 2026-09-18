@@ -40,6 +40,8 @@ var auditActorTypeIndirectSites = map[string]string{
 	"webhooks.go:DeleteSubscription":    "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:ReplayWebhookDelivery": "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 	"webhooks.go:RotateWebhookSecret":   "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
+
+	"execution_custody.go:RecordExecutionCustodyExchange": "AuditActor.Type, rejected by AuditActor.validate before the record is written — and the broker withholds the child when this record cannot commit, so a rejected actor type costs a credential rather than a mutation.",
 }
 
 func TestAuditActorTypes_AreTheValuesTheColumnAdmits(t *testing.T) {
