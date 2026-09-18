@@ -354,7 +354,7 @@ lives in [docs/PLAN.md](./docs/PLAN.md), not here.
 **Read this list as historical input, not as current ground truth.** It is
 written by hand and closes by hand, so an entry survives its own remediation
 until someone notices — the solution-role entry did exactly that for the whole
-life of store migrations 98 and 112. Confirm any entry below against the code it
+life of two store migrations. Confirm any entry below against the code it
 names before treating it as an open gap.
 
 - **Read-access auditing** (§1.8) — the access-set audit pattern with an inline

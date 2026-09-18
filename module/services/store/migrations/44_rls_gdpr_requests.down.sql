@@ -1,3 +1,0 @@
-DROP POLICY IF EXISTS gdpr_requests_user ON gdpr_requests;
-ALTER TABLE gdpr_requests NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE gdpr_requests DISABLE ROW LEVEL SECURITY;

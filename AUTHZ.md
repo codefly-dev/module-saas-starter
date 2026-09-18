@@ -847,7 +847,7 @@ into the L2 tables without forking migrations, using the catalog importer.
 
 ### Workflow
 
-Built-in roles can only be written with RLS bypassed (migrations 32, 65), so the
+Built-in roles can only be written with RLS bypassed (the store baseline forces it), so the
 importer runs under the audited `app_control_plane` role. The connection
 principal must be a member of that role (the same authority migrations run
 under).

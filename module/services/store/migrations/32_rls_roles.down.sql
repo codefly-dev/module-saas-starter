@@ -1,7 +1,0 @@
-DROP POLICY IF EXISTS role_assignments_polymorphic ON role_assignments;
-ALTER TABLE role_assignments NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE role_assignments DISABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS roles_polymorphic ON roles;
-ALTER TABLE roles NO FORCE ROW LEVEL SECURITY;
-ALTER TABLE roles DISABLE ROW LEVEL SECURITY;

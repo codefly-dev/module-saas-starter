@@ -483,12 +483,19 @@ func TestPostgresAuditPolicyAsNonOwner(t *testing.T) {
 	ident := pgx.Identifier{name}.Sanitize()
 	_, err = tx.Exec(ctx, "CREATE ROLE "+ident+" NOLOGIN NOSUPERUSER NOBYPASSRLS; CREATE SCHEMA "+ident+"; SET LOCAL search_path TO "+ident+"; CREATE TABLE audit_events(org_id text, actor_id text, event_type text, payload jsonb); INSERT INTO audit_events VALUES ('org-a','reader','saas.document.read','{}'),('org-b','reader','saas.document.read','{}'),(NULL,'reader','saas.document.read','{}')")
 	require.NoError(t, err)
-	for _, migration := range []string{"31_rls_audit_events.up.sql", "122_audit_events_user_scoped_insert.up.sql"} {
-		sql, err := os.ReadFile("../../../../store/migrations/" + migration)
-		require.NoError(t, err)
-		_, err = tx.Exec(ctx, string(sql))
-		require.NoError(t, err)
-	}
+	// The isolation the real table carries, stated as the ledger states it: a
+	// tenant policy scoped by app.current_org_id, with the user-scoped insert
+	// path for rows that belong to no organization.
+	_, err = tx.Exec(ctx, `
+		ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
+		ALTER TABLE audit_events FORCE ROW LEVEL SECURITY;
+		CREATE POLICY audit_events_tenant ON audit_events
+			USING (org_id IS NOT NULL AND org_id::text = current_setting('app.current_org_id', true))
+			WITH CHECK (
+				(org_id IS NOT NULL AND org_id::text = current_setting('app.current_org_id', true))
+				OR (org_id IS NULL AND actor_id IS NOT NULL AND actor_id::text = current_setting('app.current_user_id', true))
+			)`)
+	require.NoError(t, err)
 	_, err = tx.Exec(ctx, "GRANT USAGE ON SCHEMA "+ident+" TO "+ident+"; GRANT SELECT ON audit_events TO "+ident+"; SET LOCAL ROLE "+ident)
 	require.NoError(t, err)
 	ctx = context.WithValue(ctx, "tx", tx) //nolint:staticcheck // production transaction key

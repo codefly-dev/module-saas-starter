@@ -1,6 +1,0 @@
-DROP FUNCTION IF EXISTS public.publish_domain_event(
-    UUID, TEXT, TEXT, TEXT, TIMESTAMPTZ, TEXT, TEXT, TEXT, BYTEA, UUID, TEXT,
-    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, INTEGER, BYTEA
-);
-DROP TABLE IF EXISTS public.event_subscriptions;
-DROP TABLE IF EXISTS public.domain_events;

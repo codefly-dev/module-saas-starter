@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real offline PostgreSQL install/upgrade and authority qualification."""
+"""Real offline PostgreSQL install and authority qualification of the one-baseline ledger."""
 import argparse,hashlib,json,os,re,shutil,subprocess,tempfile,time,uuid
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[2]
@@ -30,11 +30,9 @@ def migrate(c,user,stage,migrate_binary):
     return r.stderr.strip()
 
 def bootstrap(c,user,package):
-    expected={p.name:p.read_bytes() for p in (ROOT/'module/services/store/migrations').glob('*.sql')
-              if user=='postgres' or int(p.name.split('_')[0])>135}
-    if user!='postgres':expected.update({p.name:p.read_bytes() for p in (ROOT/'module/services/store/baselines/managed-v1').glob('*.sql')})
+    expected={p.name:p.read_bytes() for p in (ROOT/'module/services/store/migrations').glob('*.sql')}
     actual={p.name:p.read_bytes() for p in (package/'bootstrap/sources/store').glob('*.sql')}
-    assert actual==expected,'package SQL does not match the candidate profile'
+    assert actual==expected,'package SQL does not match the ledger'
     run(['docker','cp',str(package),c+':/tmp/package'])
     return replay_bootstrap(c,user)
 
@@ -83,7 +81,7 @@ def migration_command(c,user,*direction):
             f'postgres://{user}@/users?host=/var/run/postgresql&sslmode=disable',*direction]
 
 def migration_safety(migrate_binary,tests,containers):
-    baseline=(ROOT/'module/services/store/baselines/managed-v1/135_managed_baseline.up.sql').read_text()
+    baseline=(ROOT/'module/services/store/migrations/1_baseline.up.sql').read_text()
     for kind,setup,error in [
         ('role','CREATE ROLE app_tenant;','requires absent application roles'),
         ('relation','CREATE TABLE public.existing_data(id int);','requires an empty application database'),
@@ -94,45 +92,33 @@ def migration_safety(migrate_binary,tests,containers):
         r=sql(c,'BEGIN;\n'+baseline,user='example_migrator',check=False)
         assert r.returncode and error in r.stderr,(kind,r.stderr)
         assert sql(c,"SELECT count(*) FROM pg_roles WHERE rolname='app_job_worker'").stdout.strip()=='0'
-        tests.append({'case':'fresh_refuses_existing_'+kind+'_without_partial_roles','passed':True})
+        tests.append({'case':'baseline_refuses_existing_'+kind+'_without_partial_roles','passed':True})
         run(['docker','rm','-f','-v',c]);containers.remove(c)
-    # A different upgrade actor must not become the endpoint-read policy owner.
-    c=start();containers.append(c)
-    sql(c,'CREATE ROLE example_migrator LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS CREATEROLE; ALTER DATABASE users OWNER TO example_migrator;')
-    sql(c,'BEGIN;'+baseline+'COMMIT;',user='example_migrator')
-    sql(c,'BEGIN;'+(ROOT/'module/services/store/migrations/136_explicit_background_rls.up.sql').read_text()+'COMMIT;')
-    assert sql(c,"SELECT r.rolname FROM pg_policy p JOIN pg_roles r ON r.oid=p.polroles[1] WHERE p.polname='webhook_subscriptions_migration_owner_read'").stdout.strip()=='example_migrator'
-    sql(c,"""INSERT INTO users(uuid,primary_email) VALUES ('10000000-0000-0000-0000-000000000001','one@example.com');
-INSERT INTO organizations(id,name,slug,owner_id) VALUES ('20000000-0000-0000-0000-000000000001','Example','example','10000000-0000-0000-0000-000000000001');
-INSERT INTO webhook_subscriptions(id,org_id,url,secret_encrypted) VALUES ('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001','https://example.com','synthetic');
-BEGIN; SET LOCAL ROLE app_tenant; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001';
-SELECT public.sync_webhook_event_subscriptions('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000001',ARRAY['saas.auth.login']); COMMIT;""")
-    assert sql(c,'SELECT count(*) FROM event_subscriptions').stdout.strip()=='1'
-    tests.append({'case':'different_upgrade_actor_preserves_non_bypass_sync_owner_and_endpoint_read_policy','passed':True})
-    run(['docker','rm','-f','-v',c]);containers.remove(c)
+    # A baseline that fails or is interrupted part-way leaves nothing behind but
+    # a dirty ledger: no roles, no relations, no policies, no half-installed grant.
+    marker='REVOKE CREATE ON SCHEMA public FROM PUBLIC;'
+    assert marker in baseline
     for mode in ['failure','interruption']:
         c=start();containers.append(c)
         sql(c,'CREATE ROLE example_migrator LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS CREATEROLE; ALTER DATABASE users OWNER TO example_migrator;')
-        with tempfile.TemporaryDirectory(prefix='managed-failure-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='baseline-failure-') as tmp:
             stage=Path(tmp)/'stage';stage.mkdir()
-            for f in (ROOT/'module/services/store/baselines/managed-v1').glob('*.sql'):shutil.copy(f,stage/f.name)
-            migrate(c,'example_migrator',stage,migrate_binary)
-            up=(ROOT/'module/services/store/migrations/136_explicit_background_rls.up.sql').read_text()
-            injected=up.replace('GRANT CREATE ON SCHEMA public TO app_control_plane;',
-                'GRANT CREATE ON SCHEMA public TO app_control_plane;\n'+('SELECT 1/0;' if mode=='failure' else 'SELECT pg_sleep(30);'),1)
-            failure=stage/'136_explicit_background_rls.up.sql';failure.write_text(injected)
-            run(['docker','cp',str(failure),c+':/tmp/stage/'+failure.name])
+            for f in (ROOT/'module/services/store/migrations').glob('*.sql'):shutil.copy(f,stage/f.name)
+            injected=baseline.replace(marker,('SELECT 1/0;' if mode=='failure' else 'SELECT pg_sleep(30);')+'\n'+marker,1)
+            (stage/'1_baseline.up.sql').write_text(injected)
+            run(['docker','cp',str(stage),c+':/tmp/stage'])
+            run(['docker','cp',str(migrate_binary),c+':/tmp/migrate'])
             if mode=='failure':
                 r=run(migration_command(c,'example_migrator','up'),check=False)
                 assert r.returncode and 'division by zero' in r.stderr,r.stderr
             else:
                 process=subprocess.Popen(migration_command(c,'example_migrator','up'),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
                 try:
-                    for _ in range(200):
+                    for _ in range(400):
                         pid=sql(c,"SELECT pid FROM pg_stat_activity WHERE usename='example_migrator' AND wait_event='PgSleep'").stdout.strip()
                         if pid:break
                         time.sleep(.05)
-                    else:raise AssertionError('interruption fixture never reached temporary grant')
+                    else:raise AssertionError('interruption fixture never reached the injected wait')
                     assert pid.isdigit()
                     sql(c,'SELECT pg_terminate_backend('+pid+');')
                     process.communicate(timeout=15)
@@ -140,11 +126,11 @@ SELECT public.sync_webhook_event_subscriptions('20000000-0000-0000-0000-00000000
                 finally:
                     if process.poll() is None:
                         process.kill();process.communicate(timeout=5)
-            assert sql(c,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='136:true'
-            assert sql(c,"SELECT count(*) FROM pg_policy WHERE polname LIKE '%_explicit_rows'").stdout.strip()=='0'
-            assert sql(c,"SELECT bool_and(NOT has_schema_privilege(rolname,'public','CREATE')) FROM pg_roles WHERE rolname LIKE 'app_%'").stdout.strip()=='t'
-            assert sql(c,"SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE proname='enqueue_job_message'").stdout.strip()=='example_migrator'
-            tests.append({'case':'migration_'+mode+'_rolls_back_policies_function_owner_and_temporary_create_grant_leaves_dirty_ledger','passed':True})
+            assert sql(c,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='1:true'
+            assert sql(c,"SELECT count(*) FROM pg_roles WHERE rolname LIKE 'app_%'").stdout.strip()=='0'
+            assert sql(c,"SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind IN ('r','p') AND c.relname<>'schema_migrations'").stdout.strip()=='0'
+            assert sql(c,'SELECT count(*) FROM pg_policy').stdout.strip()=='0'
+            tests.append({'case':'baseline_'+mode+'_rolls_back_everything_and_leaves_dirty_ledger','passed':True})
         run(['docker','rm','-f','-v',c]);containers.remove(c)
 
 def qualify(c,label,tests):
@@ -237,71 +223,59 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--migrate',type=Path,required=True)
     p.add_argument('--output',type=Path,required=True)
-    p.add_argument('--fresh-package',type=Path)
-    p.add_argument('--upgrade-package',type=Path)
+    p.add_argument('--package',type=Path,help='a staged managed-bootstrap package built from this ledger')
     args=p.parse_args();containers=[];tests=[];bootstrap_receipts=[]
-    head=max(int(p.name.split('_')[0]) for p in (ROOT/'module/services/store/migrations').glob('*.up.sql'))
-    # Rolling back is counted in migrations, never in version numbers. Versions
-    # are deliberately not contiguous — migrations/README.md requires a new
-    # version above the target branch's frontier "including gaps", and parallel
-    # branches hold numbers that land out of order or never land — so a step
-    # count of head-N walks past N the moment any number in between is missing.
-    above=lambda version:sum(1 for f in (ROOT/'module/services/store/migrations').glob('*.up.sql') if int(f.name.split('_')[0])>version)
-    if bool(args.fresh_package)!=bool(args.upgrade_package):p.error('both packages required together')
+    ledger=ROOT/'module/services/store/migrations'
+    head=max(int(f.name.split('_')[0]) for f in ledger.glob('*.up.sql'))
     try:
+        # The same ledger installed by a superuser and by the least-privileged
+        # principal a managed install gets (CREATEROLE, no SUPERUSER, no BYPASSRLS)
+        # must produce one schema, one authority catalog and one seed catalog.
         canonical=start();containers.append(canonical)
         fresh=start();containers.append(fresh)
-        if args.fresh_package:
+        sql(fresh,'CREATE ROLE example_migrator LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS CREATEROLE; ALTER DATABASE users OWNER TO example_migrator;')
+        if args.package:
             for c in [canonical,fresh]:
                 # External logins inherit their directly granted access group.
                 # The group and all application roles remain NOINHERIT.
                 sql(c,'CREATE ROLE example_reader LOGIN INHERIT; CREATE ROLE example_writer LOGIN INHERIT;')
-        with tempfile.TemporaryDirectory(prefix='managed-rls-stage-') as tmp:
+        with tempfile.TemporaryDirectory(prefix='baseline-stage-') as tmp:
             staged=Path(tmp)/'stage';staged.mkdir()
-            # Canonical legacy installation, including additive policy upgrade.
-            for f in (ROOT/'module/services/store/migrations').glob('*.sql'):shutil.copy(f,staged/f.name)
-            if args.upgrade_package:bootstrap_receipts.append(bootstrap(canonical,'postgres',args.upgrade_package))
-            else:migrate(canonical,'postgres',staged,args.migrate)
-            tests.append({'case':'canonical_upgrade_to_head','passed':True})
-            sql(fresh,'CREATE ROLE example_migrator LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS CREATEROLE; ALTER DATABASE users OWNER TO example_migrator;')
-            for f in staged.iterdir():f.unlink()
-            for f in (ROOT/'module/services/store/baselines/managed-v1').glob('*.sql'):shutil.copy(f,staged/f.name)
-            # Everything the baseline does not already contain, which is the same
-            # rule stage.py and bootstrap() state: the baseline installs through
-            # 135, so the fresh profile carries every later migration. Naming one
-            # version here instead would silently drop the next migration anybody
-            # adds from the fresh install, and this equivalence check is exactly
-            # what would then report the two profiles as differing.
-            for f in (ROOT/'module/services/store/migrations').glob('*.sql'):
-                if int(f.name.split('_')[0])>135:shutil.copy(f,staged/f.name)
-            if args.fresh_package:bootstrap_receipts.append(bootstrap(fresh,'example_migrator',args.fresh_package))
-            else:migrate(fresh,'example_migrator',staged,args.migrate)
-            assert sql(fresh,'SELECT version::text || \':\' || dirty::text FROM schema_migrations').stdout.strip()==f'{head}:false'
-            tests.append({'case':'non_superuser_non_bypass_install_to_head','passed':True})
+            for f in ledger.glob('*.sql'):shutil.copy(f,staged/f.name)
+            for c,user in [(canonical,'postgres'),(fresh,'example_migrator')]:
+                if args.package:bootstrap_receipts.append(bootstrap(c,user,args.package))
+                else:migrate(c,user,staged,args.migrate)
+                assert sql(c,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()==f'{head}:false'
+            tests.append({'case':'superuser_and_non_superuser_non_bypass_install_to_head','passed':True})
             before=catalog(fresh)
-            if args.fresh_package:bootstrap_receipts.append(replay_bootstrap(fresh,'example_migrator'))
-            else:run(['docker','exec',fresh,'/tmp/migrate','-path','/tmp/stage','-database','postgres://example_migrator@/users?host=/var/run/postgresql&sslmode=disable','up'])
+            if args.package:bootstrap_receipts.append(replay_bootstrap(fresh,'example_migrator'))
+            else:run(migration_command(fresh,'example_migrator','up'))
             assert before==catalog(fresh)
-            tests.append({'case':'normal_ledger_replay_no_change','passed':True})
+            tests.append({'case':'ledger_replay_no_change','passed':True})
             a,b=catalog(canonical),catalog(fresh)
             if a!=b:
                 args.output.parent.mkdir(parents=True,exist_ok=True)
-                (args.output.parent/'canonical-schema.sql').write_text(a)
-                (args.output.parent/'managed-schema.sql').write_text(b)
-                raise AssertionError('schema dump differs; inspect retained comparison')
+                (args.output.parent/'superuser-schema.sql').write_text(a)
+                (args.output.parent/'principal-schema.sql').write_text(b)
+                raise AssertionError('schema dump differs between install principals; inspect retained comparison')
             aa,bb=authorities(canonical),authorities(fresh)
             if aa!=bb:
                 args.output.parent.mkdir(parents=True,exist_ok=True)
-                (args.output.parent/'canonical-authority.json').write_text(json.dumps(aa,indent=2))
-                (args.output.parent/'managed-authority.json').write_text(json.dumps(bb,indent=2))
-                raise AssertionError('authority catalog differs')
-            tests.append({'case':'canonical_schema_acl_and_definer_owner_equivalence','passed':True})
+                (args.output.parent/'superuser-authority.json').write_text(json.dumps(aa,indent=2))
+                (args.output.parent/'principal-authority.json').write_text(json.dumps(bb,indent=2))
+                raise AssertionError('authority catalog differs between install principals')
+            tests.append({'case':'schema_acl_and_definer_owner_equivalence_across_install_principals','passed':True})
             assert seed_catalog(canonical)==seed_catalog(fresh),'seed catalog semantics differ'
             tests.append({'case':'seed_natural_keys_values_and_foreign_keys_equivalent','passed':True})
+            # The endpoint-read policy belongs to whoever owns subscription sync — the
+            # installing principal — never to the generator's superuser.
+            assert sql(fresh,"SELECT r.rolname FROM pg_policy p JOIN pg_roles r ON r.oid=p.polroles[1] WHERE p.polname='webhook_subscriptions_migration_owner_read'").stdout.strip()=='example_migrator'
+            tests.append({'case':'endpoint_read_policy_owned_by_the_installing_principal','passed':True})
             for c in [canonical,fresh]:
-                assert sql(c,"SELECT bool_and(NOT has_schema_privilege(rolname,'public','CREATE') AND NOT has_database_privilege(rolname,'users','CREATE') AND NOT has_database_privilege(rolname,'users','TEMP')) FROM pg_roles WHERE rolname IN ('app_tenant','app_control_plane','app_billing_worker','app_webhook_worker','app_job_worker')").stdout.strip()=='t'
-            tests.append({'case':'runtime_roles_no_database_create_temp_or_schema_create','passed':True})
-            if args.fresh_package:
+                assert sql(c,"SELECT bool_and(NOT has_schema_privilege(rolname,'public','CREATE') AND NOT has_database_privilege(rolname,'users','CREATE') AND NOT has_database_privilege(rolname,'users','TEMP')) FROM pg_roles WHERE rolname LIKE 'app_%'").stdout.strip()=='t'
+                assert sql(c,"SELECT bool_and(NOT rolbypassrls AND NOT rolsuper AND NOT rolcanlogin AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolinherit) FROM pg_roles WHERE rolname LIKE 'app_%'").stdout.strip()=='t'
+            tests.append({'case':'runtime_roles_are_nobypassrls_and_hold_no_database_create_temp_or_schema_create','passed':True})
+            if args.package:
                 for c in [canonical,fresh]:
                     for role in ROLES:
                         assert sql(c,'SET ROLE '+role+'; SELECT current_user;',user='example_writer').stdout.strip()==role
@@ -312,29 +286,9 @@ def main():
                     for login in ['example_reader','example_writer']:
                         assert '42501' in sql(c,'SET ROLE '+owner+';',user=login,check=False).stderr
                 tests.append({'case':'managed_access_reconciler_exact_runtime_role_assumption_and_ledger_ddl_denial','passed':True})
-            # Exercise the declared legacy rollback using the normal ledger.
-            # Packages stage their immutable sources elsewhere; copy the same
-            # source bytes for the migration CLI's explicit local down test.
-            if args.upgrade_package:
-                run(['docker','cp',str(ROOT/'module/services/store/migrations'),canonical+':/tmp/stage'])
-                run(['docker','cp',str(args.migrate),canonical+':/tmp/migrate'])
-            # Down to 135, not down one step: the case is about rolling back the
-            # explicit-policies upgrade, and every migration added after it has
-            # to come off first for that to be what actually happens.
-            run(migration_command(canonical,'postgres','down',str(above(135))))
-            assert sql(canonical,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='135:false'
-            assert sql(canonical,"SELECT count(*) FROM pg_policy WHERE polname LIKE '%_explicit_rows'").stdout.strip()=='0'
-            assert sql(canonical,"SELECT bool_and(NOT has_schema_privilege(rolname,'public','CREATE')) FROM pg_roles WHERE rolname LIKE 'app_%'").stdout.strip()=='t'
-            run(migration_command(canonical,'postgres','up'))
-            assert catalog(canonical)==a
-            tests.append({'case':'legacy_rollback_and_reapply_preserves_schema_and_runtime_ddl_denial','passed':True})
-            # Legacy keeps BYPASSRLS; prove explicit policies are sufficient after
-            # a separately authorized fixture-only attribute reduction.
-            for role in ROLES[1:]:sql(canonical,'ALTER ROLE '+role+' NOBYPASSRLS;')
-            for c,label in [(fresh,'fresh'),(canonical,'legacy_after_attribute_reduction')]:
-                assert sql(c,"SELECT bool_and(NOT rolbypassrls AND NOT rolsuper AND NOT rolcanlogin AND NOT rolcreaterole AND NOT rolcreatedb AND NOT rolreplication AND NOT rolinherit) FROM pg_roles WHERE rolname IN ('app_tenant','app_control_plane','app_billing_worker','app_webhook_worker','app_job_worker')").stdout.strip()=='t'
+            for c,label in [(fresh,'principal'),(canonical,'superuser')]:
                 qualify(c,label,tests)
-                if args.fresh_package:
+                if args.package:
                     scope="BEGIN; SET LOCAL app.current_org_id='20000000-0000-0000-0000-000000000001'; SET LOCAL app.current_user_id='10000000-0000-0000-0000-000000000001'; "
                     assert sql(c,scope+'SELECT count(*) FROM organization_authorization_revisions; ROLLBACK;',user='example_reader').stdout.strip()=='1'
                     assert sql(c,scope+"SELECT count(*) FROM organization_authorization_revisions WHERE org_id='20000000-0000-0000-0000-000000000002'; ROLLBACK;",user='example_reader').stdout.strip()=='0'
@@ -348,25 +302,30 @@ WHERE member.rolname IN ('example_reader','example_writer','example_ro','example
                     for edge in memberships:
                         assert edge['set_option'] and not edge['admin_option'],edge
                         assert edge['inherit_option']==(edge['member'] in ['example_reader','example_writer']),edge
-                    tests.append({'profile':label,'case':'ambient_reader_inherits_select_with_tenant_isolation_and_no_write_or_custody_visibility','passed':True})
+                    tests.append({'profile':label,'case':'ambient_reader_inherits_select_with_tenant_isolation_and_no_write','passed':True})
                     tests.append({'profile':label,'case':'writer_group_does_not_inherit_application_roles_and_requires_explicit_set_role','passed':True,'memberships':memberships})
-            if args.fresh_package:
+            # The baseline is forward-only: a down is refused before it removes
+            # anything, and only the ledger records the attempt.
+            if args.package:
                 run(['docker','cp',str(staged),fresh+':/tmp/stage'])
                 run(['docker','cp',str(args.migrate),fresh+':/tmp/migrate'])
-            # Later migrations may legitimately add and remove their own policies.
-            # Snapshot the policy inventory at 136, immediately before the guarded
-            # downgrade, so its refusal still proves that it removed no policy.
-            if above(136):
-                run(migration_command(fresh,'example_migrator','down',str(above(136))))
-            assert sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='136:false'
+            above=sum(1 for f in ledger.glob('*.up.sql') if int(f.name.split('_')[0])>1)
+            if above:
+                run(migration_command(fresh,'example_migrator','down',str(above)))
+                assert sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='1:false'
             policy_before=sql(fresh,'SELECT count(*) FROM pg_policy').stdout
             r=run(migration_command(fresh,'example_migrator','down','1'),check=False)
-            assert r.returncode and 'background policy rollback requires' in r.stderr,r.stderr
+            assert r.returncode and 'forward-only' in r.stderr,r.stderr
             assert sql(fresh,'SELECT count(*) FROM pg_policy').stdout==policy_before
-            assert sql(fresh,"SELECT version::text||':'||dirty::text FROM schema_migrations").stdout.strip()=='135:true'
-            tests.append({'case':'managed_rollback_refuses_before_any_policy_removal_and_leaves_dirty_ledger','passed':True})
+            # A down of the first version targets "no version": golang-migrate marks
+            # that target dirty before running the file, so the refusal leaves the
+            # ledger at -1:true with the schema intact. `migrate force 1` recovers it;
+            # nothing is dropped.
+            ledger_state=sql(fresh,"SELECT coalesce(string_agg(version::text||':'||dirty::text,','),'') FROM schema_migrations").stdout.strip()
+            assert ledger_state=='-1:true',ledger_state
+            tests.append({'case':'baseline_down_is_refused_before_any_removal_and_leaves_dirty_ledger','passed':True})
         migration_safety(args.migrate,tests,containers)
-        receipt={'passed':True,'source':run(['git','rev-parse','HEAD'],cwd=ROOT).stdout.strip(),'dirty':bool(run(['git','status','--porcelain'],cwd=ROOT).stdout),'postgres_image':IMAGE,'server_version':sql(fresh,'SHOW server_version').stdout.strip(),'tests':tests,'bootstrap_receipts':bootstrap_receipts,'local_only':True,'managed_calls':0,'migrate_binary_sha256':hashlib.sha256(args.migrate.read_bytes()).hexdigest()}
+        receipt={'passed':True,'source':run(['git','rev-parse','HEAD'],cwd=ROOT).stdout.strip(),'dirty':bool(run(['git','status','--porcelain'],cwd=ROOT).stdout),'postgres_image':IMAGE,'server_version':sql(canonical,'SHOW server_version').stdout.strip(),'ledger_head':head,'tests':tests,'bootstrap':bootstrap_receipts}
         args.output.parent.mkdir(parents=True,exist_ok=True);args.output.write_text(json.dumps(receipt,indent=2)+'\n')
         print(json.dumps({'passed':True,'tests':len(tests),'output':str(args.output)}))
     finally:

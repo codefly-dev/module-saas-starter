@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"regexp"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -50,11 +51,20 @@ func TestAuditActorTypes_AreTheValuesTheColumnAdmits(t *testing.T) {
 		ActorTypeAgent:  true,
 	}
 	// The constants must themselves match the column's CHECK. Reading the
-	// migration keeps this from being a check of the code against itself.
-	checkSQL, err := os.ReadFile(filepath.Join(auditMigrationsDir(t), "97_audit_events_typed_partitioned.up.sql"))
+	// ledger keeps this from being a check of the code against itself; the
+	// constraint is found wherever the ledger currently states it.
+	ledger, err := filepath.Glob(filepath.Join(auditMigrationsDir(t), "*.up.sql"))
 	require.NoError(t, err)
+	var checkSQL []string
+	constraint := regexp.MustCompile(`(?m)^.*actor_type.*CHECK.*$|^.*CHECK.*actor_type.*$`)
+	for _, file := range ledger {
+		body, err := os.ReadFile(file)
+		require.NoError(t, err)
+		checkSQL = append(checkSQL, constraint.FindAllString(string(body), -1)...)
+	}
+	require.NotEmpty(t, checkSQL, "the ledger states no CHECK constraint on actor_type")
 	for value := range registered {
-		require.Contains(t, string(checkSQL), "'"+value+"'",
+		require.Contains(t, strings.Join(checkSQL, "\n"), "'"+value+"'",
 			"actor type %q is not admitted by the audit_events.actor_type CHECK constraint", value)
 	}
 

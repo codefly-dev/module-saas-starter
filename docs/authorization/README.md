@@ -62,9 +62,9 @@ Where each capability is in the pipeline. Update this row when a stage completes
 
 | Capability | Product | Spec | Proposal | Impl | Notes |
 |---|---|---|---|---|---|
-| Hierarchical / layered scope | ✅ (#177) | ✅ | ✅ RFC-0001 accepted → ADR-0002 | ✅ store migration 98; `RegisterScopeNode`, `GrantScope`, `CheckAccess` | ltree ancestor-match; scope resolved from id |
-| Per-record sharing | ✅ (#177) | ✅ | ✅ RFC-0002 accepted → ADR-0003 | ✅ store migration 98; `ShareRecord`, `ListShares`, `RevokeShare` | intra-org v1; `share` is a capability |
-| Acting on behalf of (agents) | ✅ (#177) | ✅ | ✅ RFC-0003 accepted → ADR-0004 | ✅ store migration 99 (`actor_chain_journal`, revocations) | chain home = Accounts; single owner |
+| Hierarchical / layered scope | ✅ (#177) | ✅ | ✅ RFC-0001 accepted → ADR-0002 | ✅ in the store baseline; `RegisterScopeNode`, `GrantScope`, `CheckAccess` | ltree ancestor-match; scope resolved from id |
+| Per-record sharing | ✅ (#177) | ✅ | ✅ RFC-0002 accepted → ADR-0003 | ✅ in the store baseline; `ShareRecord`, `ListShares`, `RevokeShare` | intra-org v1; `share` is a capability |
+| Acting on behalf of (agents) | ✅ (#177) | ✅ | ✅ RFC-0003 accepted → ADR-0004 | ✅ in the store baseline (`actor_chain_journal`, revocations) | chain home = Accounts; single owner |
 | Field-level visibility | ✅ decided (#179) | — | ✅ ADR-0005 | ⛔ out of scope | cut v1; split RPCs by tier; B15 latent |
 | Typed scope registry | ✅ (#177) | ✅ | ✅ folded into RFC-0001 | ✅ with hierarchical scope | closes the untyped-scope gap |
 | ABAC / conditional | ◻︎ | ◻︎ | ◻︎ | ◻︎ | bounded predicates in Go (COND questions still open) |
@@ -72,8 +72,8 @@ Where each capability is in the pipeline. Update this row when a stage completes
 Legend: ✅ done/decided · ◻︎ not started · ⛔ out of scope · — n/a.
 
 The three RFCs were **accepted on 2026-09-17**: each had shipped in the tree
-(store migrations 98 and 99, and the Permission operations above, all in the
-generated catalog) while the board still read "to review". A board that names a
+(`scope_nodes`, `record_shares` and `actor_chain_journal` in the store baseline,
+and the Permission operations above, all in the generated catalog) while the board still read "to review". A board that names a
 review nobody is holding is not a plan, so it now records what is true. What the
 shipped behaviour still owes its stories (`HOST-ID-006`, `HOST-AUTHZ-*`) is
 tracked in the repository's one plan, [docs/PLAN.md](../PLAN.md).
