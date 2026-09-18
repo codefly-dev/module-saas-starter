@@ -36,7 +36,6 @@ func moduleInstallationAuthority(caller ModuleCaller, delegation InstallerDelega
 	payload := map[string]any{
 		"schema_version":      ModuleInstallationAuthorityVersion,
 		"module_id":           req.ModuleID,
-		"organization_slug":   req.OrganizationSlug,
 		"agent_identifier":    req.AgentIdentifier,
 		"solution_identifier": req.SolutionIdentifier,
 	}

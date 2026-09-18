@@ -244,7 +244,7 @@ current policy checks still happen through the existing runtime mechanisms.
 The versioned hash input is one JSON object with these exact keys:
 
 - `schema_version`, set to the requested supported version;
-- `module_id`, `organization_slug`, `agent_identifier`, `solution_identifier`,
+- `module_id`, `agent_identifier`, `solution_identifier`,
   from the authorized request;
 - `organization_id`, `principal_id`, `installation_id`, `scope_node_id`, `grant_id`,
   from the verified persisted installation;
@@ -262,7 +262,9 @@ encoder. Consumers use the opaque server result; they do not each reimplement
 this calculation. A change to these fields or encoding requires a schema decision.
 
 Software versions, image references, full deployment approval digests, display
-labels, installer credential material and delegation expiry are absent. A
+labels, organization lookup spelling, installer credential material and delegation
+expiry are absent. Organization identity uses the verified UUID, so case aliases
+accepted by slug lookup preserve the reference. A
 successful reinspection after an approved delegation renewal therefore retains
 the reference when the installation contract is unchanged. Expired/revoked
 policy still refuses inspection. The existing versioned `agentIdentifier` is

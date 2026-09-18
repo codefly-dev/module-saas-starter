@@ -11,6 +11,7 @@ import (
 
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -82,8 +83,10 @@ func TestInstallationAuthorityIsGenericAndStableForSameVerifiedContract(t *testi
 			svc, store, caller, policy, req := authorityInstallationFixture(t, module)
 			first := verifiedAuthority(t, svc, caller, policy, req)
 			digests = append(digests, first.Digest)
-			// Labels, delegation renewal, request mode and ordering are not authority
-			// identity. Software/images are not fields of the Accounts request at all.
+			// This controlled store tests fingerprint exclusions, not permission to
+			// mutate immutable display names in the real installation store. Labels,
+			// delegation renewal, request mode and ordering are not authority identity.
+			// Software/images are not fields of the Accounts request at all.
 			req.DisplayName, req.RootScopeLabel = "New label", "New root label"
 			policy.Delegations[0].ExpiresAt = time.Now().Add(2 * time.Hour)
 			slices.Reverse(policy.Delegations[0].RolePermissions)
@@ -100,7 +103,7 @@ func TestInstallationAuthorityIsGenericAndStableForSameVerifiedContract(t *testi
 	require.NotEqual(t, digests[0], digests[1], "one module's contract must not satisfy another")
 }
 func TestInstallationAuthorityChangesForEveryAuthorityDimension(t *testing.T) {
-	for _, field := range []string{"module", "organization", "organization-slug", "agent", "solution", "role", "permissions", "audiences", "scopes", "owner", "installer", "principal", "installation", "scope-node", "grant"} {
+	for _, field := range []string{"module", "organization", "agent", "solution", "role", "permissions", "audiences", "scopes", "owner", "installer", "principal", "installation", "scope-node", "grant"} {
 		t.Run(field, func(t *testing.T) {
 			svc, store, caller, policy, req := authorityInstallationFixture(t, "example-one")
 			before := verifiedAuthority(t, svc, caller, policy, req)
@@ -116,8 +119,6 @@ func TestInstallationAuthorityChangesForEveryAuthorityDimension(t *testing.T) {
 				d.OrganizationID = id
 				caller.BoundOrg = id
 				store.result.OrganizationID = id
-			case "organization-slug":
-				req.OrganizationSlug = "another-org"
 			case "agent":
 				req.AgentIdentifier = req.ModuleID + ":2.0.0"
 				d.AgentIdentifiers = []string{req.AgentIdentifier}
@@ -210,7 +211,7 @@ func TestInstallationAuthorityCanonicalGolden(t *testing.T) {
 	got := verifiedAuthority(t, svc, caller, policy, req)
 	// Pinned independently from the documented canonical JSON, not from the
 	// production encoder. Changing the contract requires a version decision.
-	require.Equal(t, "sha256:8b1bd3abac020f3304f7a7285b87d203002fee82a243415d29c9bcfbd9e8967f", got.Digest)
+	require.Equal(t, "sha256:55816f0b3346273e460d1745e4c46f6c74a63a0baf4ed755fe3dcc394f74e570", got.Digest)
 	require.False(t, strings.Contains(got.Digest, req.AgentIdentifier))
 }
 
@@ -221,4 +222,11 @@ func TestInstallationAuthorityIsWithheldWhenTransactionCommitFails(t *testing.T)
 	require.ErrorIs(t, err, store.commitFailure)
 	require.Nil(t, result)
 	require.Equal(t, 1, store.calls)
+}
+
+func TestInstallationAuthorityIgnoresOrganizationLookupCase(t *testing.T) {
+	svc, _, caller, policy, req := authorityInstallationFixture(t, "example-one")
+	before := verifiedAuthority(t, svc, caller, policy, req)
+	req.OrganizationSlug = strings.ToUpper(req.OrganizationSlug)
+	require.Equal(t, before, verifiedAuthority(t, svc, caller, policy, req))
 }
