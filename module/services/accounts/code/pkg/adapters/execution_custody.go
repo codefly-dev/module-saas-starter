@@ -76,7 +76,7 @@ type custodyPayload struct {
 // the handler in a body logger or mount it on the public gateway. Client roots
 // authenticate workers; owner admission instead uses the real Accounts JWT.
 func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Config) (*http.Server, error) {
-	if config.Authority == nil || config.Authority.configureErr != nil || config.Authority.verifier == nil || config.Minter == nil || config.Store == nil || config.Cipher == nil || len(config.Consumers) == 0 || tlsConfig == nil || tlsConfig.ClientCAs == nil || len(tlsConfig.Certificates) == 0 {
+	if config.Authority == nil || config.Authority.configureErr != nil || config.Authority.verifier == nil || config.Minter == nil || config.Store == nil || config.Cipher == nil || len(config.Consumers) == 0 || !hasCustodyIdentity(tlsConfig) || tlsConfig.ClientCAs == nil {
 		return nil, errors.New("execution custody dependencies and TLS identities required")
 	}
 	consumers := make(map[string]ExecutionConsumerPolicy, len(config.Consumers))
@@ -89,11 +89,9 @@ func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Con
 	}
 	config.Consumers = consumers
 	b := &executionCustody{config: config}
-	tc := tlsConfig.Clone()
-	tc.MinVersion = tls.VersionTLS13
+	tc := custodyListenerTLS(tlsConfig)
 	tc.ClientAuth = tls.VerifyClientCertIfGiven
 	tc.InsecureSkipVerify = false
-	tc.GetConfigForClient = nil
 	return &http.Server{Handler: b, TLSConfig: tc, ReadHeaderTimeout: 3 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}, nil
 }
 

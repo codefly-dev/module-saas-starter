@@ -27,9 +27,9 @@ import (
 	minter "accounts/pkg/auth/ed25519"
 	pgauth "accounts/pkg/auth/pg"
 	"accounts/pkg/business"
-	"accounts/pkg/certreload"
 	"accounts/pkg/infra"
 
+	codefly "github.com/codefly-dev/sdk-go"
 	"github.com/google/uuid"
 )
 
@@ -166,10 +166,16 @@ func run(ctx context.Context, file string) error {
 	if !ok {
 		return errors.New("Ed25519 key required")
 	}
-	if _, err = privateRead(c.TLSKeyFile); err != nil {
-		return err
-	}
-	reloader, err := certreload.New(c.TLSCertFile, c.TLSKeyFile, os.ReadFile)
+	// The three listeners share this identity. The SDK's CertificateReloader
+	// serves a rotated leaf on the next handshake; the key is read through
+	// privateRead at startup and on every reload, so a rotation that lands
+	// readable beyond the owner is refused and the last good leaf keeps serving.
+	reloader, err := codefly.NewCertificateReloader(c.TLSCertFile, c.TLSKeyFile, codefly.WithFileReader(func(path string) ([]byte, error) {
+		if path == c.TLSKeyFile {
+			return privateRead(path)
+		}
+		return os.ReadFile(path)
+	}))
 	if err != nil {
 		return err
 	}
@@ -200,7 +206,9 @@ func run(ctx context.Context, file string) error {
 	adapters.SetInternalToken(strings.TrimSpace(string(internal)))
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: c.Issuer, KeyID: jwt.KeyID(), PrivateKey: key, Authority: store})
-	tc := &tls.Config{Certificates: []tls.Certificate{*reloader.Current()}, GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
+	// Only GetCertificate, no static Certificates entry: Go would serve the
+	// static leaf instead to a peer dialing by IP, which sends no SNI.
+	tc := &tls.Config{GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
 	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: infra.NewVaultClientDirect(c.VaultURL, c.VaultToken), Consumers: c.Consumers}, tc)
 	if err != nil {
 		return err
