@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -220,6 +221,43 @@ func TestModuleInstallationPostgresHTTPAuthenticationAndAudit(t *testing.T) {
 	require.False(t, repeat.Changed)
 	require.Equal(t, result.InstallationID, repeat.InstallationID)
 	post("verify", request, issued.Token, 200)
+	require.Nil(t, result.AuthorityReference)
+	require.Nil(t, repeat.AuthorityReference)
+	request.AuthorityReferenceVersion = business.ModuleInstallationAuthorityVersion
+	var reference *business.ModuleInstallationAuthorityReference
+	for _, mode := range []string{"inspect", "apply", "verify"} {
+		raw = post(mode, request, issued.Token, 200)
+		var observed business.ModuleInstallationResult
+		require.NoError(t, json.Unmarshal(raw, &observed))
+		require.False(t, observed.Changed)
+		require.Equal(t, result.PrincipalID, observed.PrincipalID)
+		require.Equal(t, result.InstallationID, observed.InstallationID)
+		require.NotNil(t, observed.AuthorityReference)
+		require.Equal(t, business.ModuleInstallationAuthorityVersion, observed.AuthorityReference.SchemaVersion)
+		require.Regexp(t, `^sha256:[a-f0-9]{64}$`, observed.AuthorityReference.Digest)
+		if reference == nil {
+			reference = observed.AuthorityReference
+		} else {
+			require.Equal(t, reference, observed.AuthorityReference)
+		}
+	}
+	// Slug lookup is case-insensitive; both spellings must identify the same
+	// persisted authority through the actual HTTP and PostgreSQL path.
+	request.OrganizationSlug = strings.ToUpper(request.OrganizationSlug)
+	for _, mode := range []string{"inspect", "apply", "verify"} {
+		raw = post(mode, request, issued.Token, 200)
+		var sameOrganization business.ModuleInstallationResult
+		require.NoError(t, json.Unmarshal(raw, &sameOrganization))
+		require.False(t, sameOrganization.Changed)
+		require.Equal(t, result.OrganizationID, sameOrganization.OrganizationID)
+		require.Equal(t, result.PrincipalID, sameOrganization.PrincipalID)
+		require.Equal(t, result.InstallationID, sameOrganization.InstallationID)
+		require.Equal(t, reference, sameOrganization.AuthorityReference)
+	}
+
+	request.AuthorityReferenceVersion = "unsupported"
+	post("inspect", request, issued.Token, 400)
+	request.AuthorityReferenceVersion = business.ModuleInstallationAuthorityVersion
 	require.Equal(t, 1, countAuditEvents(t, string(business.EventInstallationCreated), result.InstallationID))
 	request.OrganizationSlug = "another-org"
 	post("apply", request, issued.Token, 403)

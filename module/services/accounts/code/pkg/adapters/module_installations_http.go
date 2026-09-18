@@ -123,6 +123,10 @@ func (h *ModuleInstallationHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http
 	}
 	result, err := h.service.ReconcileModuleInstallation(r.Context(), caller, policy, req, mode == "apply")
 	if err != nil {
+		if errors.Is(err, business.ErrInstallationAuthorityVersion) {
+			installerError(w, http.StatusBadRequest, "unsupported authority reference version")
+			return
+		}
 		if errors.Is(err, business.ErrInstallerDenied) {
 			installerError(w, http.StatusForbidden, "installer delegation denied")
 			return

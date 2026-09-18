@@ -210,3 +210,72 @@ projection, mesh reachability, solution routing/UI enablement, controlled or
 paid-provider execution, or signed-in UI-to-runtime acceptance. Those require
 a designated isolated target and separate coordinated effects. The full
 `codefly ci run` release gate and hosted integration remain mandatory.
+
+## Proposed independent authority reference
+
+The existing request accepts an optional `authorityReferenceVersion` set to
+`accounts.module-installation-authority/v1`. Omission preserves the existing
+response byte shape (no new authority field). An unsupported version returns
+400; it never silently falls back. A successful opted-in `ready` result also
+contains:
+
+```json
+{
+  "authorityReference": {
+    "schemaVersion": "accounts.module-installation-authority/v1",
+    "digest": "sha256:<64 lowercase hexadecimal characters>"
+  }
+}
+```
+
+Accounts produces this reference only after the existing delegation, tenant,
+owner eligibility, exact role/ceiling, installation ownership and health checks
+succeed. An absent installation has no reference. A transaction/audit/commit
+error returns no result, including when the commit outcome is uncertain; inspect
+again using the existing bounded recovery protocol. Generating a reference adds
+no registration, grant, audit exemption or authority transition.
+
+This is the identity of the verified installation contract, not a signature,
+credential, software release, global authorization revision or promise of future
+readiness. Consumers retain their trusted Accounts instance/issuer binding and
+continue live authorization; this digest alone grants nothing. Revocation and
+current policy checks still happen through the existing runtime mechanisms.
+
+The versioned hash input is one JSON object with these exact keys:
+
+- `schema_version`, set to the requested supported version;
+- `module_id`, `agent_identifier`, `solution_identifier`,
+  from the authorized request;
+- `organization_id`, `principal_id`, `installation_id`, `scope_node_id`, `grant_id`,
+  from the verified persisted installation;
+- `owner_principal_id`, `role_id`, `role_permissions`, `allowed_audiences`,
+  `allowed_scopes`, from the matching approved delegation;
+- `installer_principal_id`, from the verified caller.
+
+UUIDs are canonical lowercase, hyphenated and nonnil. Permission/audience/scope
+sets are nonempty, bounded and duplicate-free, sorted by Go string ordering
+(UTF-8 byte order). Object keys are sorted. Encoding is compact UTF-8 JSON with
+HTML escaping disabled, no trailing newline, standard JSON control-character
+escapes, and escaped U+2028/U+2029. The output is `sha256:` followed by the lowercase
+hex digest. The golden test pins the encoded contract independently of the Go
+encoder. Consumers use the opaque server result; they do not each reimplement
+this calculation. A change to these fields or encoding requires a schema decision.
+
+Software versions, image references, full deployment approval digests, display
+labels, organization lookup spelling, installer credential material and delegation
+expiry are absent. Organization identity uses the verified UUID, so case aliases
+accepted by slug lookup preserve the reference. A
+successful reinspection after an approved delegation renewal therefore retains
+the reference when the installation contract is unchanged. Expired/revoked
+policy still refuses inspection. The existing versioned `agentIdentifier` is
+an authority selector: ordinary code updates retain it; changing it remains an
+explicit approved installation transition. This does not loosen immutable-agent
+or existing-installation conflict checks.
+
+Shared installation tooling should carry this reference and the returned
+principal ID into versioned, generated consumer configuration/projections. Keep
+full desired-software identity on deployment approvals, target checks and
+receipts. New consumers require the supported authority response and refuse a
+missing or unknown version; old servers reject the new request field. Adopting
+this response does not itself migrate an existing consumer, validate software
+compatibility or qualify an installed rollout.
