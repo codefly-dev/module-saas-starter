@@ -59,6 +59,11 @@ const (
 	attrDeliveryID    = "datasource.delivery_id"
 	attrChangeSet     = "datasource.change_set"
 	attrReconcileMode = "datasource.reconcile_mode"
+	// attrRequestedBy carries the subject who explicitly requested a forced
+	// reconcile through to its one snapshot delivery. It is absent for periodic
+	// and webhook work. The ingest owner may use it only as a notification
+	// recipient; the job's tenant remains the authority boundary.
+	attrRequestedBy = "datasource.requested_by"
 
 	reconcileModeConditional = "conditional"
 	reconcileModeForce       = "force"
@@ -263,7 +268,7 @@ func (s *Service) NewDatasourceDeliveryJobHandler() jobs.Handler {
 			return err
 		case DatasourceReconcileTopic:
 			force := envelope.GetAttributes()[attrReconcileMode] == reconcileModeForce
-			_, err := s.ReconcileGitHubSource(ctx, source, force, envelope.GetId())
+			_, err := s.ReconcileGitHubSource(ctx, source, force, envelope.GetId(), envelope.GetAttributes()[attrRequestedBy])
 			return err
 		default:
 			return jobs.NewProcessingError("datasource.invalid_job", "unexpected datasource delivery topic", false)
@@ -374,7 +379,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 // force is false (periodic reconcile) it snapshots only if the head differs from
 // the cursor; when force is true ("Sync now") it always snapshots. It reports
 // whether a snapshot was enqueued.
-func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceSource, force bool, requestJobID string) (bool, error) {
+func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceSource, force bool, requestJobID string, requestedBy ...string) (bool, error) {
 	w := wool.Get(ctx).In("ReconcileGitHubSource")
 	if s.datasourceCipher == nil || s.datasourceJobs == nil || s.newGitHubClient == nil {
 		return false, w.NewError("datasource connector is not configured")
@@ -398,7 +403,11 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if !force && head == source.LastIngestedCommit {
 		return false, nil
 	}
-	disp, err := s.snapshotAt(ctx, source, client, head, requestJobID, requestJobID, false)
+	requester := ""
+	if len(requestedBy) > 0 {
+		requester = strings.TrimSpace(requestedBy[0])
+	}
+	disp, err := s.snapshotAt(ctx, source, client, head, requestJobID, requestJobID, false, requester)
 	if err != nil {
 		return false, err
 	}
@@ -414,7 +423,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 // is the reconcile path for a created branch, a force push, a truncated compare,
 // the periodic reconcile, and an explicit "Sync now". forcePush records the
 // force-push audit alongside the change-set audit.
-func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
+func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, commit, deliveryID, requestJobID string, forcePush bool, requestedBy ...string) (DeliveryDisposition, error) {
 	w := wool.Get(ctx).In("snapshotAt")
 	files, err := client.ListFiles(ctx, source.Repo, commit, source.Paths)
 	if err != nil {
@@ -468,6 +477,17 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 		// same reconcile job must resolve to its original snapshot delivery.
 		idempotencyPath += "\x00" + requestJobID
 	}
+	attributes := map[string]string{
+		attrSourceID:   source.ID,
+		attrOrgID:      source.OrgID,
+		attrBoundaryID: source.BoundaryNodeID,
+		attrRepo:       source.Repo,
+		attrCommit:     commit,
+		attrDeliveryID: deliveryID,
+	}
+	if len(requestedBy) > 0 && strings.TrimSpace(requestedBy[0]) != "" {
+		attributes[attrRequestedBy] = strings.TrimSpace(requestedBy[0])
+	}
 	if _, err := s.datasourceJobs.EnqueueJob(ctx, &jobsv1.EnqueueJobRequest{
 		Job: &jobsv1.NewJob{
 			Direction:      jobsv1.JobDirection_JOB_DIRECTION_INBOX,
@@ -480,14 +500,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 			Payload:        payload,
 			ContentType:    "application/json",
 			MaxAttempts:    datasourceIngestMaxAttempts,
-			Attributes: map[string]string{
-				attrSourceID:   source.ID,
-				attrOrgID:      source.OrgID,
-				attrBoundaryID: source.BoundaryNodeID,
-				attrRepo:       source.Repo,
-				attrCommit:     commit,
-				attrDeliveryID: deliveryID,
-			},
+			Attributes:     attributes,
 		},
 	}); err != nil {
 		return "", w.Wrapf(err, "enqueue snapshot")

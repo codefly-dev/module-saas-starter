@@ -634,12 +634,15 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 	if got := producer.jobs[0].GetAttributes()["datasource.delivery_id"]; got != requestJobID {
 		t.Fatalf("snapshot correlation = %q, want request job %q", got, requestJobID)
 	}
+	if got := producer.jobs[0].GetAttributes()["datasource.requested_by"]; got != "" {
+		t.Fatalf("periodic snapshot requester = %q, want none", got)
+	}
 
 	// A second explicit sync at the same commit must create a delivery that can
 	// be correlated to the second request rather than resolving to the first
 	// request's idempotent snapshot.
 	secondRequestJobID := "22222222-2222-2222-2222-222222222222"
-	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, true, secondRequestJobID)
+	enqueued, err = svc.ReconcileGitHubSource(context.Background(), source, true, secondRequestJobID, "actor-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,6 +654,9 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 	}
 	if got := producer.jobs[1].GetAttributes()["datasource.delivery_id"]; got != secondRequestJobID {
 		t.Fatalf("second snapshot correlation = %q, want request job %q", got, secondRequestJobID)
+	}
+	if got := producer.jobs[1].GetAttributes()["datasource.requested_by"]; got != "actor-1" {
+		t.Fatalf("forced snapshot requester = %q, want actor-1", got)
 	}
 }
 
