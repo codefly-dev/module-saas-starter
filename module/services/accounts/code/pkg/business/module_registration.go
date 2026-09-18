@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/codefly-dev/core/wool"
@@ -64,16 +65,77 @@ type SolutionRegistrationMinter interface {
 // kind and the signing capability for it. A nil authority denies everything: a
 // deployment that has not said who may register must not let anyone.
 type registrationAuthority struct {
-	declaration func() (map[string][sha256.Size]byte, error)
-	mint        func(id string) (string, time.Time, error)
-	denied      error
+	declared func() map[string][sha256.Size]byte
+	mint     func(id string) (string, time.Time, error)
+	denied   error
 }
 
 // fixedDeclaration is the policy of a registrant kind whose declaration is
 // composed into the host build and therefore cannot change under a running
 // process.
-func fixedDeclaration(secrets map[string][sha256.Size]byte) func() (map[string][sha256.Size]byte, error) {
-	return func() (map[string][sha256.Size]byte, error) { return secrets, nil }
+func fixedDeclaration(secrets map[string][sha256.Size]byte) func() map[string][sha256.Size]byte {
+	return func() map[string][sha256.Size]byte { return secrets }
+}
+
+// declarationReader resolves a declaration that can change under a running
+// process. It reads the raw value on every call — that is the whole point — but
+// parses it only when the value actually changes, and reports a declaration
+// that stopped parsing, and its later recovery, once per state rather than once
+// per exchange.
+//
+// Both properties come from the same place, which is why they are one type. A
+// malformed declaration is STICKY: it stays malformed until an operator fixes
+// it, while every registrant keeps retrying on its own beat. Re-parsing per
+// exchange would burn the parse on an unchanged string and emit one identical
+// warning per beat per registrant for as long as the misconfiguration lasts,
+// burying the one line that says what is wrong. Keying on the raw value makes
+// "this is the same state" the same fact that makes the parse unnecessary.
+type declarationReader struct {
+	read func() string
+
+	mu      sync.Mutex
+	raw     string
+	loaded  bool
+	secrets map[string][sha256.Size]byte
+	broken  bool
+}
+
+// declared returns the identities the declaration currently authorizes. A
+// declaration that does not parse authorizes nobody: a nil map declares no
+// identity, so every comparison against it fails closed exactly as an empty
+// declaration does.
+func (r *declarationReader) declared() map[string][sha256.Size]byte {
+	// Read outside the lock, so concurrent exchanges do not serialize on it.
+	// Two callers straddling an edit can therefore store their results out of
+	// order, leaving the cache holding the older string. That costs one extra
+	// parse on the next call, which corrects it, and cannot decide anything
+	// wrongly: each caller authorizes against the value IT read, which is the
+	// strongest thing true at the moment it asked.
+	raw := r.read()
+
+	r.mu.Lock()
+	if r.loaded && raw == r.raw {
+		secrets := r.secrets
+		r.mu.Unlock()
+		return secrets
+	}
+	secrets, err := ParseRegistrationSecrets(raw)
+	recovered := err == nil && r.broken
+	r.raw, r.loaded, r.secrets, r.broken = raw, true, secrets, err != nil
+	r.mu.Unlock()
+
+	// Reported outside the lock, and only on a state change, so exactly one
+	// caller can ever report a given transition.
+	switch {
+	case err != nil:
+		wool.Get(context.Background()).In("declarationReader.declared").Warn(
+			"registration declaration no longer parses; denying every registration until it is corrected",
+			wool.ErrField(err))
+	case recovered:
+		wool.Get(context.Background()).In("declarationReader.declared").Info(
+			"registration declaration parses again; registrations are no longer denied for it")
+	}
+	return secrets
 }
 
 // authorize reports whether `secret` is the declared credential for `id`,
@@ -83,17 +145,14 @@ func fixedDeclaration(secrets map[string][sha256.Size]byte) func() (map[string][
 // undeclared identity compares against a zero digest rather than returning
 // early, so response time does not reveal what a composition declared.
 // `declared` is still required, so the zero digest can never authenticate on its
-// own. Re-reading the declaration first costs the same for every id, so it
-// leaves that property intact.
-func (a *registrationAuthority) authorize(id, secret string) (bool, error) {
-	secrets, err := a.declaration()
-	if err != nil {
-		return false, err
-	}
-	expected, declared := secrets[id]
+// own. Resolving the declaration first costs the same for every id — and, for a
+// declaration that has not changed, does not scale with how many identities it
+// holds — so it leaves that property intact.
+func (a *registrationAuthority) authorize(id, secret string) bool {
+	expected, declared := a.declared()[id]
 	presented := sha256.Sum256([]byte(secret))
 	matched := subtle.ConstantTimeCompare(expected[:], presented[:]) == 1
-	return declared && secret != "" && matched, nil
+	return declared && secret != "" && matched
 }
 
 // SetModuleRegistrar wires module-registration issuance. Called once at startup
@@ -102,14 +161,14 @@ func (a *registrationAuthority) authorize(id, secret string) (bool, error) {
 // cannot change without a new deployment and is held as parsed.
 func (s *Service) SetModuleRegistrar(minter ModuleRegistrationMinter, secrets map[string][sha256.Size]byte) {
 	s.moduleRegistrar = &registrationAuthority{
-		declaration: fixedDeclaration(secrets),
-		mint:        minter.MintModuleRegistration,
-		denied:      ErrModuleRegistrationDenied,
+		declared: fixedDeclaration(secrets),
+		mint:     minter.MintModuleRegistration,
+		denied:   ErrModuleRegistrationDenied,
 	}
 }
 
 func (s *Service) SetModuleIdentitySecrets(secrets map[string][sha256.Size]byte) {
-	s.moduleIdentity = &registrationAuthority{declaration: fixedDeclaration(secrets)}
+	s.moduleIdentity = &registrationAuthority{declared: fixedDeclaration(secrets)}
 }
 
 // SetSolutionRegistrar wires solution-registration issuance, from the separate
@@ -123,12 +182,11 @@ func (s *Service) SetModuleIdentitySecrets(secrets map[string][sha256.Size]byte)
 // at the next restart of this service, and withdrawing one likewise kept minting
 // until then.
 func (s *Service) SetSolutionRegistrar(minter SolutionRegistrationMinter, declaration func() string) {
+	reader := &declarationReader{read: declaration}
 	s.solutionRegistrar = &registrationAuthority{
-		declaration: func() (map[string][sha256.Size]byte, error) {
-			return ParseRegistrationSecrets(declaration())
-		},
-		mint:   minter.MintSolutionRegistration,
-		denied: ErrSolutionRegistrationDenied,
+		declared: reader.declared,
+		mint:     minter.MintSolutionRegistration,
+		denied:   ErrSolutionRegistrationDenied,
 	}
 }
 
@@ -173,7 +231,7 @@ func (s *Service) ModuleMintRegistration(ctx context.Context, prefix, secret str
 	if s.moduleRegistrar == nil {
 		return "", time.Time{}, ErrModuleRegistrationDenied
 	}
-	token, expiresAt, err := s.moduleRegistrar.authorizeAndMint(ctx, prefix, secret)
+	token, expiresAt, err := s.moduleRegistrar.authorizeAndMint(prefix, secret)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -201,7 +259,7 @@ func (s *Service) SolutionMintRegistration(ctx context.Context, solutionID, secr
 	if s.solutionRegistrar == nil {
 		return "", time.Time{}, ErrSolutionRegistrationDenied
 	}
-	token, expiresAt, err := s.solutionRegistrar.authorizeAndMint(ctx, solutionID, secret)
+	token, expiresAt, err := s.solutionRegistrar.authorizeAndMint(solutionID, secret)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -219,23 +277,8 @@ func (s *Service) SolutionMintRegistration(ctx context.Context, solutionID, secr
 // authorizeAndMint is the one path both registrant kinds run: validate the
 // identity shape, authenticate the presented secret against the declaration for
 // exactly that identity, and sign.
-//
-// A declaration that no longer parses denies every registrant rather than
-// reading as "nothing is declared" — the refusal a caller sees is the same one
-// it gets for a wrong secret, so the reason stays undiscriminating, and the
-// operator learns the actual cause from the log.
-func (a *registrationAuthority) authorizeAndMint(ctx context.Context, id, secret string) (string, time.Time, error) {
-	if a.mint == nil || !registrationIdentityPattern.MatchString(id) {
-		return "", time.Time{}, a.denied
-	}
-	authorized, err := a.authorize(id, secret)
-	if err != nil {
-		wool.Get(ctx).In("registrationAuthority.authorizeAndMint").Warn(
-			"registration declaration no longer parses; denying every registration until it is corrected",
-			wool.ErrField(err))
-		return "", time.Time{}, a.denied
-	}
-	if !authorized {
+func (a *registrationAuthority) authorizeAndMint(id, secret string) (string, time.Time, error) {
+	if a.mint == nil || !registrationIdentityPattern.MatchString(id) || !a.authorize(id, secret) {
 		return "", time.Time{}, a.denied
 	}
 	return a.mint(id)
@@ -258,11 +301,9 @@ type ModuleWorkContextAuthority struct {
 // module can never name a tenant it was not granted by asking for it.
 func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkContextAuthority, error) {
 	authority := s.moduleIdentity
-	if authority == nil || !registrationIdentityPattern.MatchString(prefix) {
-		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
-	}
-	authorized, err := authority.authorize(prefix, secret)
-	if err != nil || !authorized {
+	if authority == nil ||
+		!registrationIdentityPattern.MatchString(prefix) ||
+		!authority.authorize(prefix, secret) {
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	principalID := ModulePrincipalID(prefix)

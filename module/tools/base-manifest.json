@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2258,
+  "fileCount": 2259,
   "files": {
     "AGENTS.md": "b04b2cea0530fda5f3c25ee10684feb3e2b27a1ec23ec139bad75ee91c26ae58",
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
@@ -530,7 +530,8 @@
     "services/accounts/code/pkg/business/module_place_record_test.go": "6a17058d77867d5074efeb52dc9ca237927349fb541056898fb716961c0edb07",
     "services/accounts/code/pkg/business/module_read_audience.go": "f890091f0d8842ea60337381acd6e43ef324227a7331d2606a4bb2d089591050",
     "services/accounts/code/pkg/business/module_read_audience_test.go": "110c24f52c9e2bf29f520334a251a646fabf6fc538b5efc925f02a89132e5e1f",
-    "services/accounts/code/pkg/business/module_registration.go": "13a6db47a8e6ca6127ea1e5be78d75f1001d552df109e6ae7ffa85804936f1bd",
+    "services/accounts/code/pkg/business/module_registration.go": "028d11bad3c9ee934f8ec0497de65749c3c6171e6a2d9ef66717d1e163fcfaa0",
+    "services/accounts/code/pkg/business/module_registration_declaration_test.go": "ef7b0b5df31f1711b69e58e167000873dd7106693a8ef4bfd57611a90e980ad2",
     "services/accounts/code/pkg/business/notification_policy.go": "1563e236e24d7e80997d44ce5daf37d4338d1962e35d9e32440e906e1f87603d",
     "services/accounts/code/pkg/business/notification_policy_test.go": "5515d651eae93ba48c85b162bccf677a4a93b793ce96b48e489be9c8b6101d85",
     "services/accounts/code/pkg/business/notifications.go": "41ff7158282b19401d51652ff24be91eae5121ed0815d1370003810793fed177",
