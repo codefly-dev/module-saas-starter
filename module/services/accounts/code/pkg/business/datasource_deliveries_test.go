@@ -652,6 +652,9 @@ func TestReconcile_SnapshotsOnlyWhenHeadMoved(t *testing.T) {
 	if got := producer.jobs[1].GetAttributes()["datasource.delivery_id"]; got != secondRequestJobID {
 		t.Fatalf("second snapshot correlation = %q, want request job %q", got, secondRequestJobID)
 	}
+	if _, disclosed := producer.jobs[1].GetAttributes()["datasource.requested_by"]; disclosed {
+		t.Fatal("forced snapshot disclosed audit-classified actor provenance in job attributes")
+	}
 }
 
 func TestRunDatasourceReconcile_SchedulesDueSourcesOnly(t *testing.T) {
