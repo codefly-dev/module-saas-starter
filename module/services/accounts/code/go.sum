@@ -64,8 +64,8 @@ github.com/codefly-dev/gortk v0.2.0 h1:7bOlS5valYz2zil+fZctQNcPCYBcPj86abcw9N8h1
 github.com/codefly-dev/gortk v0.2.0/go.mod h1:dDWUMFgAP063OCGhTEpV7FFUj9+zTcxxO/nV80VKEwg=
 github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go v0.0.0-20260916051945-1c36fb884752 h1:y1brCxmBSSE9n/FOFjz0nk/goEMv6/1ruxhGQtmGgrk=
 github.com/codefly-dev/module-saas-starter/libraries/execution-custody-sdk/go v0.0.0-20260916051945-1c36fb884752/go.mod h1:0ZPzNQBjwl6b9KrFy/alUznUKzT9z+pE9STI3X7q3Vg=
-github.com/codefly-dev/sdk-go v0.1.65 h1:/AKs/XzaVW5P5VAPXSi8ZOUZHMP3N5bUq92DN6/Y2RM=
-github.com/codefly-dev/sdk-go v0.1.65/go.mod h1:IBVdaC5quw571pOELRCqZdhh6Y6pO5WE2F+jFG0EUEA=
+github.com/codefly-dev/sdk-go v0.1.66-0.20260917202218-97dfea9e20d8 h1:kUgGR2k9TONe/frbU/oIHx0P7OgSJHZnrAzdLhhF9Ic=
+github.com/codefly-dev/sdk-go v0.1.66-0.20260917202218-97dfea9e20d8/go.mod h1:IBVdaC5quw571pOELRCqZdhh6Y6pO5WE2F+jFG0EUEA=
 github.com/codefly-dev/service-postgres v0.0.129 h1:g9HEW8NBB4XWrtaHU2/HZmARwwbBNuaZBJ1raGgQyg0=
 github.com/codefly-dev/service-postgres v0.0.129/go.mod h1:Mm2q0Y5FU0vY6ZX1vjhxQ+GUzA8Hii1cuTfwEmc8Dwg=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
