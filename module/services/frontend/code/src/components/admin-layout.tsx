@@ -1,7 +1,13 @@
 "use client";
 
 import type { NavItem, PluginNavSection } from "@codefly/saas-plugin-contract";
-import { Boxes, ChevronRight, ChevronUp, LogOut, ShieldCheck } from "lucide-react";
+import {
+	Boxes,
+	ChevronRight,
+	ChevronUp,
+	LogOut,
+	ShieldCheck,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -33,15 +39,16 @@ import {
 	SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/sonner";
+import { NotificationBanner } from "@/features/notifications/ui/notification-banner";
 import { NotificationBell } from "@/features/notifications/ui/notification-bell";
 import { useAppearance } from "@/lib/appearance-provider";
 import { useAuth } from "@/lib/auth";
 import { sessionDisplayLabel } from "@/lib/auth-session";
 import { getNavigationIcon } from "@/lib/navigation-icons";
 import { canPresent, selectNavigation } from "@/lib/plugins/presentation";
-import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
 import { useFrontendConfig } from "@/lib/providers";
 import { cn } from "@/lib/utils";
+import { useRegisteredSolutions } from "@/solutions/SolutionsMenu";
 
 function isNavActive(pathname: string, href: string): boolean {
 	if (href === "/") return pathname === "/";
@@ -258,7 +265,6 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 								))}
 						</>
 					)}
-
 				</SidebarContent>
 
 				<SidebarFooter>
@@ -312,6 +318,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
 					<ThemeToggle />
 					<NotificationBell />
 				</header>
+				<NotificationBanner />
 				{/* Route-content fade-in. The key={pathname} forces React
             to remount the wrapper on every navigation, replaying the
             CSS animation. Snappy (200ms) so it feels like polish, not

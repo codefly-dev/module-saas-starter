@@ -10,6 +10,7 @@ export type NotificationType =
 
 export interface Notification {
 	id: string;
+	orgId: string;
 	title: string;
 	body: string;
 	type: NotificationType;

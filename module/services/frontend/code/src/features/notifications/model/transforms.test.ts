@@ -10,6 +10,7 @@ describe("notification transforms", () => {
 		const readAt = new Date("2026-07-28T12:35:00.000Z");
 		const message = create(NotificationSchema, {
 			id: "notification-1",
+			orgId: "org-1",
 			title: "You've been invited",
 			body: "Join Acme",
 			type: "info",
@@ -20,6 +21,7 @@ describe("notification transforms", () => {
 
 		expect(toNotification(message)).toEqual({
 			id: "notification-1",
+			orgId: "org-1",
 			title: "You've been invited",
 			body: "Join Acme",
 			type: "info",

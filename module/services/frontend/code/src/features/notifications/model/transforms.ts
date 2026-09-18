@@ -26,6 +26,7 @@ export function notificationActionUrl(actionUrl: string): string | undefined {
 export function toNotification(message: NotificationMessage): Notification {
 	return {
 		id: message.id,
+		orgId: message.orgId,
 		title: message.title,
 		body: message.body,
 		type: message.type as NotificationType,

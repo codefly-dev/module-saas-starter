@@ -27,6 +27,9 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/features/notifications/ui/notification-bell", () => ({
 	NotificationBell: () => null,
 }));
+vi.mock("@/features/notifications/ui/notification-banner", () => ({
+	NotificationBanner: () => null,
+}));
 vi.mock("@/components/theme-toggle", () => ({ ThemeToggle: () => null }));
 vi.mock("@/components/rate-limit-banner", () => ({
 	RateLimitBanner: () => null,
