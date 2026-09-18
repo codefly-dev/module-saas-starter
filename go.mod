@@ -3,7 +3,7 @@ module github.com/codefly-dev/agents/modules/saas-starter
 go 1.27.0
 
 require (
-	github.com/codefly-dev/core v0.3.27
+	github.com/codefly-dev/core v0.3.31
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -12,7 +12,7 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
