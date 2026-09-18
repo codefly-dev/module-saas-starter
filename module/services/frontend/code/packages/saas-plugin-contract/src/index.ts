@@ -1,7 +1,10 @@
 export { buildFrontendServiceAllowlist } from "./allowlist.js";
+export type { SanitizedFrontendAppearance } from "./appearance.js";
 export {
 	DEFAULT_FRONTEND_APPEARANCE,
+	FRONTEND_APPEARANCE_FIELD_NAMES,
 	resolveFrontendAppearance,
+	sanitizeFrontendAppearance,
 } from "./appearance.js";
 export type { FrontendDefinition } from "./composition.js";
 export {
@@ -28,8 +31,8 @@ export type {
 	FrontendThemePreference,
 	FrontendThemeTokenOverrides,
 	FrontendThemeTokens,
-	InstalledFrontendService,
 	InstalledDashboardWidget,
+	InstalledFrontendService,
 	InstalledPluginRoute,
 	NavItem,
 	NavigationPlacement,

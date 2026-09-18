@@ -30,11 +30,11 @@
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"peerDependencies": {
-		"@codefly/saas-plugin-contract": "2.1.0",
+		"@codefly/saas-plugin-contract": "2.2.0",
 		"react": ">=19.2 <20"
 	},
 	"devDependencies": {
-		"@codefly/saas-plugin-contract": "2.1.0",
+		"@codefly/saas-plugin-contract": "2.2.0",
 		"@testing-library/react": "^16.1.0",
 		"@types/react": "19.2.17",
 		"happy-dom": "^20.8.9",

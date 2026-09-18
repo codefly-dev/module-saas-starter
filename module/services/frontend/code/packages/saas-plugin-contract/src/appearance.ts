@@ -145,6 +145,111 @@ function resolveTokens(
 	return Object.freeze({ ...DEFAULT_FRONTEND_APPEARANCE[mode], ...overrides });
 }
 
+/**
+ * The fields a skin descriptor's `appearance` object may carry: the structural
+ * tokens plus the two per-mode token maps. Exported because the names are the
+ * vocabulary — a descriptor-owning repository needs them to check its own JSON
+ * before a host ever sees it, and `sanitizeFrontendAppearance` needs them to
+ * say which keys it dropped.
+ */
+export const FRONTEND_APPEARANCE_FIELD_NAMES = [
+	"defaultTheme",
+	"radius",
+	"fontSans",
+	"fontHeading",
+	"spacing",
+	"fontSizeBase",
+	"sidebarWidth",
+	"sidebarWidthIcon",
+	"borderWidth",
+	"shadowStrength",
+	"light",
+	"dark",
+] as const;
+
+export interface SanitizedFrontendAppearance {
+	/**
+	 * The definition with every unrecognised key removed — or the input returned
+	 * unchanged when it is not an object at all, so `resolveFrontendAppearance`
+	 * stays the one place that rejects a malformed descriptor.
+	 *
+	 * Deliberately `unknown`, not `FrontendAppearanceDefinition | undefined`:
+	 * this function's whole purpose is parsing untrusted runtime JSON, where
+	 * `null` and arrays reach it and are passed straight through. Declaring the
+	 * narrower type would tell the next caller that `undefined` is the only
+	 * non-object case it has to consider, which is false. Pass this to
+	 * `resolveFrontendAppearance`, which is the type guard as well as the gate.
+	 */
+	definition: unknown;
+	/**
+	 * The keys that were removed, as `field` or `mode.token` paths, in the
+	 * order encountered. Empty when the definition was already clean.
+	 */
+	dropped: string[];
+}
+
+/**
+ * Strip unrecognised keys from an appearance definition instead of rejecting it.
+ *
+ * `resolveFrontendAppearance` is all-or-nothing by design: one unknown field
+ * throws, which is the right behaviour for a compile-time composition where a
+ * typo should stop the build. It is the wrong granularity for a descriptor that
+ * arrives at runtime, because the caller's only recourse is to discard the whole
+ * skin — so a single stale key costs every other token the descriptor carries
+ * and a customer's palette silently becomes the stock default.
+ *
+ * This keeps the injection gate exactly where it was. Only unknown *keys* are
+ * removed here; every surviving value still goes through `resolveFrontendAppearance`
+ * and its `SAFE_CSS_VALUE` / length / range checks. An unknown key carries no
+ * value into the output, so dropping one cannot widen what reaches CSS.
+ */
+export function sanitizeFrontendAppearance(
+	definition: unknown,
+): SanitizedFrontendAppearance {
+	if (
+		definition === undefined ||
+		definition === null ||
+		typeof definition !== "object" ||
+		Array.isArray(definition)
+	)
+		return { definition, dropped: [] };
+
+	const dropped: string[] = [];
+	const clean: Record<string, unknown> = {};
+
+	for (const [field, value] of Object.entries(definition)) {
+		if (
+			!(FRONTEND_APPEARANCE_FIELD_NAMES as readonly string[]).includes(field)
+		) {
+			dropped.push(field);
+			continue;
+		}
+		clean[field] = value;
+	}
+
+	for (const mode of ["light", "dark"] as const) {
+		const tokens = clean[mode];
+		if (tokens === null || typeof tokens !== "object" || Array.isArray(tokens))
+			continue;
+		const cleanTokens: Record<string, unknown> = {};
+		for (const [token, value] of Object.entries(tokens)) {
+			if (
+				!(FRONTEND_APPEARANCE_TOKEN_NAMES as readonly string[]).includes(token)
+			) {
+				dropped.push(`${mode}.${token}`);
+				continue;
+			}
+			cleanTokens[token] = value;
+		}
+		clean[mode] = cleanTokens;
+	}
+
+	return {
+		definition: clean as FrontendAppearanceDefinition,
+		dropped,
+	};
+}
+
 export function resolveFrontendAppearance(
 	definition: FrontendAppearanceDefinition | undefined,
 ): FrontendAppearance {
@@ -155,24 +260,7 @@ export function resolveFrontendAppearance(
 			!Array.isArray(definition),
 		"appearance must be an object",
 	);
-	exactKeys(
-		definition,
-		[
-			"defaultTheme",
-			"radius",
-			"fontSans",
-			"fontHeading",
-			"spacing",
-			"fontSizeBase",
-			"sidebarWidth",
-			"sidebarWidthIcon",
-			"borderWidth",
-			"shadowStrength",
-			"light",
-			"dark",
-		],
-		"appearance",
-	);
+	exactKeys(definition, FRONTEND_APPEARANCE_FIELD_NAMES, "appearance");
 	const defaultTheme =
 		definition.defaultTheme ?? DEFAULT_FRONTEND_APPEARANCE.defaultTheme;
 	assertAppearance(

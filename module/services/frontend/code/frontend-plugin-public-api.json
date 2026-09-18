@@ -4,12 +4,13 @@
 	"packages": {
 		"@codefly/saas-plugin-contract": {
 			"status": "active",
-			"packageVersion": "2.1.0",
+			"packageVersion": "2.2.0",
 			"entrypoints": [".", "./capabilities"],
 			"entrypointExports": {
 				".": [
 					"FRONTEND_PLUGIN_CONTRACT_VERSION",
 					"FRONTEND_APPEARANCE_TOKEN_NAMES",
+					"FRONTEND_APPEARANCE_FIELD_NAMES",
 					"DEFAULT_FRONTEND_APPEARANCE",
 					"DashboardWidget",
 					"FrontendAppearance",
@@ -42,10 +43,12 @@
 					"PresentationAccess",
 					"PresentationRequirement",
 					"PresentationRole",
+					"SanitizedFrontendAppearance",
 					"buildFrontendServiceAllowlist",
 					"defineFrontend",
 					"definePlugin",
 					"resolveFrontendAppearance",
+					"sanitizeFrontendAppearance",
 					"validateFrontendPlugins"
 				],
 				"./capabilities": [

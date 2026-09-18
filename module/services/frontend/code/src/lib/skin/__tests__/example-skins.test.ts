@@ -4,7 +4,7 @@ import {
 	resolveFrontendAppearance,
 } from "@codefly/saas-plugin-contract";
 import type { ResolvedSkinBase, SkinSource } from "@codefly-dev/ui/skin";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearSkinCache, resolveSkin } from "..";
 import { fileSkinSource } from "../sources";
 
@@ -45,13 +45,35 @@ function exampleSource(name: string): SkinSource {
  * resolver + contract validator, not silently fall back to the default. If a
  * token name is renamed or a value goes out of range, these break instead of a
  * deployment.
+ *
+ * The rename half of that promise needs `expectsNoDiagnostics` below, not the
+ * value assertions. A renamed token used to throw and flip `skin.source` to
+ * "default", which every assertion here caught; now it is dropped and reported,
+ * and the resolution still succeeds. The two examples declare 88 tokens between
+ * them and the value assertions name 8, so without asserting that resolving
+ * them is silent, a rename of any of the other 80 would sail through green.
  */
 describe("shipped example skins", () => {
 	// The resolver caches per host; both example skins resolve under host "*",
 	// so clear between tests or one test sees another's cached skin.
 	beforeEach(() => clearSkinCache());
 
+	/**
+	 * Fail if resolving emits any diagnostic. The resolver reports a dropped
+	 * unknown key, and a rejected descriptor, at `error` level — a shipped
+	 * example must produce neither.
+	 */
+	function expectsNoDiagnostics() {
+		const error = vi.spyOn(console, "error").mockImplementation(() => {});
+		return () => {
+			const messages = error.mock.calls.map((call) => String(call[0]));
+			error.mockRestore();
+			expect(messages).toEqual([]);
+		};
+	}
+
 	it("resolves Helios from its mounted default.json", async () => {
+		const assertSilent = expectsNoDiagnostics();
 		const skin = await resolveSkin({
 			fallback,
 			host: null,
@@ -68,9 +90,12 @@ describe("shipped example skins", () => {
 		expect(skin.branding.title).toBe("Helios Console");
 		expect(skin.branding.logo?.lightSrc).toBe("/brand/helios-logo.svg");
 		expect(skin.branding.logo?.darkSrc).toBe("/brand/helios-logo-dark.svg");
+		// Every token the descriptor declares is one this contract still defines.
+		assertSilent();
 	});
 
 	it("resolves Nocturne from its mounted default.json", async () => {
+		const assertSilent = expectsNoDiagnostics();
 		const skin = await resolveSkin({
 			fallback,
 			host: null,
@@ -83,6 +108,7 @@ describe("shipped example skins", () => {
 		expect(skin.appearance.fontHeading).toContain("Courier New");
 		expect(skin.branding.name).toBe("Nocturne");
 		expect(skin.branding.logo?.lightSrc).toBe("/brand/nocturne-logo.svg");
+		assertSilent();
 	});
 
 	it("gives the two example skins genuinely different appearances", async () => {

@@ -24,9 +24,14 @@ export interface ResolvedSkin extends ResolvedSkinBase {
  * Untrusted skin descriptor as delivered by a runtime source (env blob,
  * mounted ConfigMap file, or a CMS/config API). Every field is validated
  * before use — the appearance through the contract's `resolveFrontendAppearance`
- * and branding assets through an HTTPS/relative allowlist. Unknown or unsafe
- * values fall back to the compiled default, so a bad descriptor can never break
- * a page or inject CSS.
+ * and branding assets through an HTTPS/relative allowlist.
+ *
+ * Unknown appearance *keys* are dropped and named at `error` level, and the
+ * tokens the descriptor did declare still apply: a descriptor written against a
+ * newer or older token vocabulary must not cost a customer their whole brand.
+ * An unsafe or out-of-range *value* is still a rejection of the whole
+ * descriptor, which falls back to the compiled default. So a bad descriptor can
+ * never break a page or inject CSS.
  */
 export interface RawSkinDescriptor {
 	appearance?: FrontendAppearanceDefinition;

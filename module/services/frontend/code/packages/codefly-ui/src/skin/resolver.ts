@@ -3,6 +3,7 @@ import {
 	type FrontendAppearanceDefinition,
 	type FrontendBranding,
 	resolveFrontendAppearance,
+	sanitizeFrontendAppearance,
 } from "@codefly/saas-plugin-contract";
 import type {
 	RawBrandingOverride,
@@ -18,6 +19,21 @@ const CACHE_TTL_MS = 30_000;
 // bound; entries are also dropped as they expire (see resolveSkin).
 export const CACHE_MAX_ENTRIES = 512;
 const cache = new Map<string, { skin: ResolvedSkin; expires: number }>();
+
+// A dropped-key report is a property of the descriptor, not of the request, so
+// it is emitted once per descriptor shape rather than once per resolution.
+// Without that, the report sits behind the per-host cache above, whose keys are
+// attacker-controllable Host headers: every distinct header misses the cache,
+// re-resolves the same mounted descriptor, and re-emits the same error line, so
+// a skin that is merely stale becomes one error-level log record per request.
+// Bounded and evicted like the cache for the same reason.
+export const REPORTED_DROPS_MAX_ENTRIES = 64;
+const reportedDrops = new Set<string>();
+// Key names come from an untrusted descriptor (`RawSkinDescriptor`), so a report
+// caps how many it names and how long each may be. Unbounded, a descriptor with
+// 50k unknown keys emits a single ~390KB log line.
+const MAX_REPORTED_KEYS = 20;
+const MAX_REPORTED_KEY_LENGTH = 64;
 
 export interface ResolveSkinOptions {
 	/** Compiled default skin; used verbatim when no source overrides it. */
@@ -69,21 +85,31 @@ export async function resolveSkin(
 		}
 		if (!descriptor) continue;
 		try {
-			// The contract validator is the single injection gate: unsafe CSS,
-			// unknown fields, and out-of-range values all throw here.
-			const appearance = mergeAppearance(
-				opts.fallback.appearance,
+			// Unrecognised keys are dropped and named rather than sinking the whole
+			// descriptor: a stale key is usually a skin written against a newer or
+			// older token vocabulary, and discarding the other tokens over it renders
+			// the stock default in place of a customer's brand. The injection gate is
+			// unchanged — every surviving value still goes through the contract
+			// validator below, which throws on unsafe CSS and out-of-range values.
+			const { definition, dropped } = sanitizeFrontendAppearance(
 				descriptor.appearance,
 			);
+			const appearance = mergeAppearance(opts.fallback.appearance, definition);
 			const branding = mergeBranding(
 				opts.fallback.branding,
 				descriptor.branding,
 			);
 			resolved = { appearance, branding, source: source.name };
+			// Reported only now, because only now is it true. mergeAppearance throws
+			// on an unsafe or out-of-range value, and a descriptor rejected there is
+			// discarded whole — reporting the dropped keys before it ran would claim
+			// the surviving tokens had been applied to a request that went on to
+			// render the compiled default instead.
+			if (dropped.length > 0) reportDroppedKeys(source.name, host, dropped);
 			break;
 		} catch (error) {
-			console.warn(
-				`[skin] descriptor from '${source.name}' rejected for host=${host ?? "*"}:`,
+			console.error(
+				`[skin] descriptor from '${source.name}' rejected for host=${host ?? "*"}, rendering the compiled default instead:`,
 				error,
 			);
 		}
@@ -93,9 +119,57 @@ export async function resolveSkin(
 	return resolved;
 }
 
-/** Test/ops helper: drop the in-memory resolution cache. */
+/**
+ * Test/ops helper: drop the in-memory resolution cache. Clears the dropped-key
+ * report ledger with it — that ledger suppresses repeat reports, so leaving it
+ * populated across a cache clear would silence the next report of a shape
+ * already seen.
+ */
 export function clearSkinCache(): void {
 	cache.clear();
+	reportedDrops.clear();
+}
+
+/**
+ * Name the appearance keys a descriptor declared that this contract does not
+ * define, once per descriptor shape.
+ *
+ * Both caps here are about untrusted input rather than tidiness: the key names
+ * are descriptor-controlled, so they are stripped of control characters (a
+ * newline in a key name otherwise forges a whole log record) and truncated, and
+ * only the first `MAX_REPORTED_KEYS` are named with the rest summarised.
+ */
+function reportDroppedKeys(
+	sourceName: string,
+	host: string | null,
+	dropped: readonly string[],
+): void {
+	const named = dropped.slice(0, MAX_REPORTED_KEYS).map(safeKeyName);
+	// The signature is built from the capped names, never the raw array, so the
+	// ledger cannot retain an oversized descriptor's key list.
+	const signature = `${sourceName}\u0000${dropped.length}\u0000${named.join("\u0000")}`;
+	if (reportedDrops.has(signature)) return;
+	if (reportedDrops.size >= REPORTED_DROPS_MAX_ENTRIES) {
+		const oldest = reportedDrops.values().next().value;
+		if (oldest !== undefined) reportedDrops.delete(oldest);
+	}
+	reportedDrops.add(signature);
+	const remaining = dropped.length - named.length;
+	const list =
+		remaining > 0
+			? `${named.join(", ")} (+${remaining} more)`
+			: named.join(", ");
+	console.error(
+		`[skin] descriptor from '${sourceName}' for host=${host ?? "*"} declares ${dropped.length} unknown appearance key(s), ignored: ${list}. The remaining tokens were applied; update the descriptor or the token contract so the intended values take effect. Reported once per descriptor shape.`,
+	);
+}
+
+/** Render one descriptor-controlled key name safely into a single log record. */
+function safeKeyName(key: string): string {
+	const printable = key.replace(/[\p{Cc}\p{Cf}]/gu, "\uFFFD");
+	return printable.length > MAX_REPORTED_KEY_LENGTH
+		? `${printable.slice(0, MAX_REPORTED_KEY_LENGTH)}…`
+		: printable;
 }
 
 function setCache(key: string, skin: ResolvedSkin, expires: number): void {
@@ -118,17 +192,21 @@ function setCache(key: string, skin: ResolvedSkin, expires: number): void {
  */
 function mergeAppearance(
 	fallback: FrontendAppearance,
-	override: FrontendAppearanceDefinition | undefined,
+	override: unknown,
 ): FrontendAppearance {
 	if (override === undefined) return fallback;
 	// Validate the raw override in isolation (rejects null/array/unknown-field/
 	// unsafe-value descriptors exactly as before merging changed behaviour).
-	resolveFrontendAppearance(override);
+	// This call is also the type guard: nothing that is not a well-formed
+	// definition survives it, so the assertion below rests on a runtime check
+	// made one line earlier, not on trusting the caller.
+	resolveFrontendAppearance(override as FrontendAppearanceDefinition);
+	const definition = override as FrontendAppearanceDefinition;
 	return resolveFrontendAppearance({
 		...fallback,
-		...override,
-		light: { ...fallback.light, ...(override.light ?? {}) },
-		dark: { ...fallback.dark, ...(override.dark ?? {}) },
+		...definition,
+		light: { ...fallback.light, ...(definition.light ?? {}) },
+		dark: { ...fallback.dark, ...(definition.dark ?? {}) },
 	});
 }
 
