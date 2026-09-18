@@ -23,7 +23,7 @@
 		"test": "vitest run --config vitest.config.ts"
 	},
 	"dependencies": {
-		"@codefly/saas-plugin-contract": "2.1.0"
+		"@codefly/saas-plugin-contract": "2.2.0"
 	},
 	"devDependencies": {
 		"ajv": "^8.17.1",

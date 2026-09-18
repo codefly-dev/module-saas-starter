@@ -117,7 +117,7 @@ are defined by the
 Product packages do not gain backend authority from this frontend API.
 
 `@codefly/saas-plugin-contract/capabilities` is the protobuf-defined backend
-handshake surface. Its package version is `2.1.0`; the React package version is
+handshake surface. Its package version is `2.2.0`; the React package version is
 `0.4.1`. The published contract package includes the canonical
 `proto/saas/frontend/plugin/v1/capabilities.proto`, generated message/service
 schemas, strict ProtoJSON helpers, and fixed REST/Connect operation constants.
