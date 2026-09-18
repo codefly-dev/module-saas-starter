@@ -725,8 +725,8 @@ func TestSyncDatasourceSource_GitHubSchedulesForcedSnapshot(t *testing.T) {
 	if job.GetAttributes()["datasource.reconcile_mode"] != "force" {
 		t.Fatalf("reconcile mode = %q, want force", job.GetAttributes()["datasource.reconcile_mode"])
 	}
-	if got := job.GetAttributes()["datasource.requested_by"]; got != "actor-1" {
-		t.Fatalf("requested by = %q, want the authenticated sync requester", got)
+	if _, disclosed := job.GetAttributes()["datasource.requested_by"]; disclosed {
+		t.Fatal("sync request disclosed audit-classified actor provenance in job attributes")
 	}
 	// The job platform validates content_type (min_len 1) on every enqueue; a
 	// request job that carries only attributes still has to declare one, or

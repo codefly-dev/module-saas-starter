@@ -1010,7 +1010,6 @@ func (s *Service) SyncDatasourceSource(ctx context.Context, actorID, orgID, id s
 				attrOrgID:         source.OrgID,
 				attrBoundaryID:    source.BoundaryNodeID,
 				attrReconcileMode: reconcileModeForce,
-				attrRequestedBy:   actorID,
 			},
 		}
 	} else {
