@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/codefly-dev/core/wool"
 )
 
 // Federation-registration credential issuance.
@@ -62,47 +64,71 @@ type SolutionRegistrationMinter interface {
 // kind and the signing capability for it. A nil authority denies everything: a
 // deployment that has not said who may register must not let anyone.
 type registrationAuthority struct {
-	secrets map[string][sha256.Size]byte
-	mint    func(id string) (string, time.Time, error)
-	denied  error
+	declaration func() (map[string][sha256.Size]byte, error)
+	mint        func(id string) (string, time.Time, error)
+	denied      error
 }
 
-// authorize reports whether `secret` is the declared credential for `id`.
+// fixedDeclaration is the policy of a registrant kind whose declaration is
+// composed into the host build and therefore cannot change under a running
+// process.
+func fixedDeclaration(secrets map[string][sha256.Size]byte) func() (map[string][sha256.Size]byte, error) {
+	return func() (map[string][sha256.Size]byte, error) { return secrets, nil }
+}
+
+// authorize reports whether `secret` is the declared credential for `id`,
+// against the declaration as it stands now.
 //
 // Comparison runs the same way whether or not the identity was declared: an
 // undeclared identity compares against a zero digest rather than returning
 // early, so response time does not reveal what a composition declared.
 // `declared` is still required, so the zero digest can never authenticate on its
-// own.
-func (a *registrationAuthority) authorize(id, secret string) bool {
-	expected, declared := a.secrets[id]
+// own. Re-reading the declaration first costs the same for every id, so it
+// leaves that property intact.
+func (a *registrationAuthority) authorize(id, secret string) (bool, error) {
+	secrets, err := a.declaration()
+	if err != nil {
+		return false, err
+	}
+	expected, declared := secrets[id]
 	presented := sha256.Sum256([]byte(secret))
 	matched := subtle.ConstantTimeCompare(expected[:], presented[:]) == 1
-	return declared && secret != "" && matched
+	return declared && secret != "" && matched, nil
 }
 
 // SetModuleRegistrar wires module-registration issuance. Called once at startup
 // with the composition's declared secrets; leaving it unset denies every
-// registration.
+// registration. A module is composed into this host's build, so its declaration
+// cannot change without a new deployment and is held as parsed.
 func (s *Service) SetModuleRegistrar(minter ModuleRegistrationMinter, secrets map[string][sha256.Size]byte) {
 	s.moduleRegistrar = &registrationAuthority{
-		secrets: secrets,
-		mint:    minter.MintModuleRegistration,
-		denied:  ErrModuleRegistrationDenied,
+		declaration: fixedDeclaration(secrets),
+		mint:        minter.MintModuleRegistration,
+		denied:      ErrModuleRegistrationDenied,
 	}
 }
 
 func (s *Service) SetModuleIdentitySecrets(secrets map[string][sha256.Size]byte) {
-	s.moduleIdentity = &registrationAuthority{secrets: secrets}
+	s.moduleIdentity = &registrationAuthority{declaration: fixedDeclaration(secrets)}
 }
 
 // SetSolutionRegistrar wires solution-registration issuance, from the separate
 // declaration that governs who may publish a host-origin remote.
-func (s *Service) SetSolutionRegistrar(minter SolutionRegistrationMinter, secrets map[string][sha256.Size]byte) {
+//
+// `declaration` is read on EVERY exchange rather than parsed once here. A
+// solution is not composed into this host: it mounts by registering against a
+// host that is already serving, which is what makes it addable, replaceable and
+// removable without redeploying the host. Holding the parsed allowlist for the
+// process lifetime broke exactly that — authorizing a publisher took effect only
+// at the next restart of this service, and withdrawing one likewise kept minting
+// until then.
+func (s *Service) SetSolutionRegistrar(minter SolutionRegistrationMinter, declaration func() string) {
 	s.solutionRegistrar = &registrationAuthority{
-		secrets: secrets,
-		mint:    minter.MintSolutionRegistration,
-		denied:  ErrSolutionRegistrationDenied,
+		declaration: func() (map[string][sha256.Size]byte, error) {
+			return ParseRegistrationSecrets(declaration())
+		},
+		mint:   minter.MintSolutionRegistration,
+		denied: ErrSolutionRegistrationDenied,
 	}
 }
 
@@ -112,14 +138,17 @@ func (s *Service) SetSolutionRegistrar(minter SolutionRegistrationMinter, secret
 // registrant kinds are declared in this form, in their own configuration key.
 func ParseRegistrationSecrets(raw string) (map[string][sha256.Size]byte, error) {
 	secrets := map[string][sha256.Size]byte{}
-	for _, entry := range strings.Split(raw, ",") {
+	for position, entry := range strings.Split(raw, ",") {
 		entry = strings.TrimSpace(entry)
 		if entry == "" {
 			continue
 		}
 		prefix, digest, ok := strings.Cut(entry, ":")
 		if !ok {
-			return nil, fmt.Errorf("registration secret %q is not identity:sha256hex", entry)
+			// Located, not quoted: an entry with no separator is most often a
+			// plaintext secret pasted where its digest belongs, and this error
+			// reaches a log.
+			return nil, fmt.Errorf("registration secret at position %d is not identity:sha256hex", position+1)
 		}
 		prefix = strings.TrimSpace(prefix)
 		if !registrationIdentityPattern.MatchString(prefix) || len(prefix) > 63 {
@@ -144,7 +173,7 @@ func (s *Service) ModuleMintRegistration(ctx context.Context, prefix, secret str
 	if s.moduleRegistrar == nil {
 		return "", time.Time{}, ErrModuleRegistrationDenied
 	}
-	token, expiresAt, err := s.moduleRegistrar.authorizeAndMint(prefix, secret)
+	token, expiresAt, err := s.moduleRegistrar.authorizeAndMint(ctx, prefix, secret)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -172,7 +201,7 @@ func (s *Service) SolutionMintRegistration(ctx context.Context, solutionID, secr
 	if s.solutionRegistrar == nil {
 		return "", time.Time{}, ErrSolutionRegistrationDenied
 	}
-	token, expiresAt, err := s.solutionRegistrar.authorizeAndMint(solutionID, secret)
+	token, expiresAt, err := s.solutionRegistrar.authorizeAndMint(ctx, solutionID, secret)
 	if err != nil {
 		return "", time.Time{}, err
 	}
@@ -190,8 +219,23 @@ func (s *Service) SolutionMintRegistration(ctx context.Context, solutionID, secr
 // authorizeAndMint is the one path both registrant kinds run: validate the
 // identity shape, authenticate the presented secret against the declaration for
 // exactly that identity, and sign.
-func (a *registrationAuthority) authorizeAndMint(id, secret string) (string, time.Time, error) {
-	if a.mint == nil || !registrationIdentityPattern.MatchString(id) || !a.authorize(id, secret) {
+//
+// A declaration that no longer parses denies every registrant rather than
+// reading as "nothing is declared" — the refusal a caller sees is the same one
+// it gets for a wrong secret, so the reason stays undiscriminating, and the
+// operator learns the actual cause from the log.
+func (a *registrationAuthority) authorizeAndMint(ctx context.Context, id, secret string) (string, time.Time, error) {
+	if a.mint == nil || !registrationIdentityPattern.MatchString(id) {
+		return "", time.Time{}, a.denied
+	}
+	authorized, err := a.authorize(id, secret)
+	if err != nil {
+		wool.Get(ctx).In("registrationAuthority.authorizeAndMint").Warn(
+			"registration declaration no longer parses; denying every registration until it is corrected",
+			wool.ErrField(err))
+		return "", time.Time{}, a.denied
+	}
+	if !authorized {
 		return "", time.Time{}, a.denied
 	}
 	return a.mint(id)
@@ -214,9 +258,11 @@ type ModuleWorkContextAuthority struct {
 // module can never name a tenant it was not granted by asking for it.
 func (s *Service) ModuleAuthorizeWorkContext(prefix, secret string) (ModuleWorkContextAuthority, error) {
 	authority := s.moduleIdentity
-	if authority == nil ||
-		!registrationIdentityPattern.MatchString(prefix) ||
-		!authority.authorize(prefix, secret) {
+	if authority == nil || !registrationIdentityPattern.MatchString(prefix) {
+		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
+	}
+	authorized, err := authority.authorize(prefix, secret)
+	if err != nil || !authorized {
 		return ModuleWorkContextAuthority{}, ErrModuleRegistrationDenied
 	}
 	principalID := ModulePrincipalID(prefix)

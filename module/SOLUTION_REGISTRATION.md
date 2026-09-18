@@ -58,6 +58,15 @@ reuses its issuer rather than adding a second one:
    token — `aud=solution-registration`, `sub=solution:<id>`, `solution=<id>`,
    with a `jti` — emitting a `saas.solution.registration_minted` audit event.
    Unset means **no solution may register**.
+
+   That declaration is read **on every exchange**, not held from startup. A
+   solution mounts against a host that is already serving, so authorizing one
+   takes effect when it is authorized and withdrawing one stops its next
+   renewal — neither waits for accounts to restart. A declaration that stops
+   parsing denies every solution, with the same refusal a wrong secret gets and
+   the reason in the operator's log. The `MODULE_REGISTRATION_SECRETS` beside it
+   is deliberately not treated this way: a module is composed into this host's
+   build, so its declaration cannot change without a new deployment anyway.
 3. The solution presents that token in `X-Codefly-Solution-Registration` to both
    `POST /solutions/_register` (gateway, `{id, upstream}`) and
    `POST /api/solutions/register` (frontend, the manifest). `DELETE` on either
@@ -170,7 +179,9 @@ this contract must declare `SOLUTION_REGISTRATION_SECRETS` for every solution it
 expects to register and provision each plaintext to its solution, exactly as
 `MODULE_REGISTRATION_SECRETS` is provisioned today. Until it does, registration
 fails closed and no solution is served — which is the intended direction of
-failure for a surface that decides what executes in the host origin.
+failure for a surface that decides what executes in the host origin. Adding an
+entry afterwards is enough on this side; what remains is for the deployment's
+own configuration carrier to deliver the new value to the running process.
 
 Registrations that already exist at upgrade time are carried over, not locked
 out. Before this contract the gateway stored a registration's publisher as the

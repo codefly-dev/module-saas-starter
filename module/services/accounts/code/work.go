@@ -417,9 +417,16 @@ func doWork(ctx context.Context) (Clean, error) {
 	// remote executes in the host origin with the viewer's credentials, so who
 	// may publish one is stated on its own key rather than inherited from the
 	// module list. Unset means no solution may register.
-	solutionRegistrationSecrets, err := business.ParseRegistrationSecrets(
-		workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS"))
-	if err != nil {
+	//
+	// The declaration is handed over as a reader, not as a parsed map: unlike a
+	// module, a solution mounts against a host that is already serving, so
+	// authorizing or withdrawing one must not wait for this service to restart.
+	// It is still parsed once here, so a malformed declaration refuses to boot
+	// rather than silently denying every registration at runtime.
+	solutionRegistrationSecrets := func() string {
+		return workspaceEnv("federation", "SOLUTION_REGISTRATION_SECRETS")
+	}
+	if _, err := business.ParseRegistrationSecrets(solutionRegistrationSecrets()); err != nil {
 		return nil, fmt.Errorf("read solution registration secrets: %w", err)
 	}
 	service.SetSolutionRegistrar(minter, solutionRegistrationSecrets)
