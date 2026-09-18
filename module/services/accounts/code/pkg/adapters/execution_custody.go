@@ -56,6 +56,9 @@ type ExecutionCustodyConfig struct {
 	Minter    auth.JWTMinter
 	Store     business.ExecutionCustodyStore
 	Cipher    business.SecretCipher
+	// Audit records every child the broker mints. It is required: the broker is
+	// not a policy-intercepted RPC, so nothing else journals its exchanges.
+	Audit     business.ExecutionCustodyAudit
 	Consumers map[string]ExecutionConsumerPolicy
 }
 
@@ -75,7 +78,7 @@ type custodyPayload struct {
 // the handler in a body logger or mount it on the public gateway. Client roots
 // authenticate workers; owner admission instead uses the real Accounts JWT.
 func NewExecutionCustodyServer(config ExecutionCustodyConfig, tlsConfig *tls.Config) (*http.Server, error) {
-	if config.Authority == nil || config.Authority.configureErr != nil || config.Authority.verifier == nil || config.Minter == nil || config.Store == nil || config.Cipher == nil || len(config.Consumers) == 0 || tlsConfig == nil || tlsConfig.ClientCAs == nil || len(tlsConfig.Certificates) == 0 {
+	if config.Authority == nil || config.Authority.configureErr != nil || config.Authority.verifier == nil || config.Minter == nil || config.Store == nil || config.Cipher == nil || config.Audit == nil || len(config.Consumers) == 0 || tlsConfig == nil || tlsConfig.ClientCAs == nil || len(tlsConfig.Certificates) == 0 {
 		return nil, errors.New("execution custody dependencies and TLS identities required")
 	}
 	consumers := make(map[string]ExecutionConsumerPolicy, len(config.Consumers))
@@ -440,6 +443,13 @@ func (b *executionCustody) register(ctx context.Context, identity *auth.Identity
 		return zero, status.Error(codes.Unavailable, "")
 	}
 	if stored.Reference == "" {
+		// This mint is NOT recorded, and the exchange path below is. Recording it
+		// correctly means writing the audit row in the same transaction that
+		// inserts the custody record: audit-then-insert can record a registration
+		// that never happened, and insert-then-audit lets a retry return the stored
+		// credential through the idempotent path above without ever writing a row.
+		// The store exposes no such transaction today, so the gap is stated rather
+		// than half-closed. See the issue filed against this service.
 		ttl := min(int64(900), in.TaskExpiresAt-time.Now().Unix()-3)
 		issued, err := b.config.Authority.exchangeVerifiedParent(parentToken, parent, actor, &gen.ExchangeWorkContextAudienceRequest{OrgId: in.Binding.OrgID, Audience: p.TaskAudience, AttenuatedScopes: []*gen.WorkContextScope{{ResourceKind: p.TaskResourceKind, ResourceIds: []string{parent.TaskId}, Actions: p.TaskActions}}, ReplayPolicy: gen.WorkContextReplayPolicy_WORK_CONTEXT_REPLAY_POLICY_IDEMPOTENT, TtlSeconds: int32(ttl)})
 		if err != nil {
@@ -618,6 +628,17 @@ func (b *executionCustody) exchange(ctx context.Context, worker string, in wire.
 	}
 	if _, _, _, err := b.config.Authority.verifyParent(ctx, record.OrgID, record.OwnerID, payload.Request.ParentToken); err != nil {
 		return zero, err
+	}
+	// The child exists and is still authorized: record it before releasing it.
+	// Every field is a verified claim, the stored binding, or a request selector
+	// already matched against the installed policy, and none is bearer material.
+	// No record means no child.
+	currentActor := child.OwnerPrincipalId
+	if n := len(child.ActorChain); n > 0 {
+		currentActor = child.ActorChain[n-1].PrincipalId
+	}
+	if err := b.config.Audit.RecordExecutionCustodyExchange(ctx, business.ExecutionCustodyExchange{OrgID: record.OrgID, OwnerPrincipalID: child.OwnerPrincipalId, ActorPrincipalID: currentActor, Audience: child.Audience, Operation: in.Operation, Lookup: in.Lookup, Consumer: payload.Request.Binding.Consumer, Reference: record.Reference, TaskID: child.TaskId, ExpiresAt: time.Unix(child.ExpiresAtUnix, 0)}); err != nil {
+		return zero, status.Error(codes.Unavailable, "")
 	}
 	return wire.Child{Token: issued.Token, ExpiresAt: child.ExpiresAtUnix}, nil
 }

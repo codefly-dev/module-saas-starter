@@ -3,6 +3,7 @@ package main
 import (
 	"accounts/pkg/adapters"
 	"accounts/pkg/auth"
+	"accounts/pkg/business"
 	"accounts/pkg/certreload"
 	"accounts/pkg/infra"
 	"context"
@@ -63,7 +64,7 @@ func projectedCustodyFile(path string) ([]byte, error) {
 	return data, nil
 }
 
-func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultClient, minter auth.JWTMinter, keyID string, key ed25519.PrivateKey, revokerWired, failOpen bool, installer http.Handler) (*executionCustodyHost, error) {
+func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultClient, audit business.ExecutionCustodyAudit, minter auth.JWTMinter, keyID string, key ed25519.PrivateKey, revokerWired, failOpen bool, installer http.Handler) (*executionCustodyHost, error) {
 	path := strings.TrimSpace(workspaceEnv("security", "EXECUTION_CUSTODY_CONFIG_FILE"))
 	if path == "" {
 		return nil, nil
@@ -107,7 +108,7 @@ func configuredExecutionCustody(store *infra.PostgresStore, cipher *infra.VaultC
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: "saas-starter", KeyID: keyID, PrivateKey: key, Authority: store})
 	tc := &tls.Config{Certificates: []tls.Certificate{*reloader.Current()}, GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
-	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: minter, Store: store, Cipher: cipher, Consumers: config.Consumers}, tc)
+	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: minter, Store: store, Cipher: cipher, Audit: audit, Consumers: config.Consumers}, tc)
 	if err != nil {
 		return nil, err
 	}

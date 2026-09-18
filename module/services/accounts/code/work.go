@@ -629,7 +629,7 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 
 	adapters.WithService(service)
-	custodyServer, err := configuredExecutionCustody(store, vaultClient, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen, installerHandler)
+	custodyServer, err := configuredExecutionCustody(store, vaultClient, service, minter, minter.KeyID(), priv, rateLimiterWired, revocationFailOpen, installerHandler)
 	if err != nil {
 		return nil, err
 	}

@@ -8,13 +8,13 @@ import (
 
 func TestExecutionCustodyMountDisabledAndRevocationRequired(t *testing.T) {
 	t.Setenv("EXECUTION_CUSTODY_CONFIG_FILE", "")
-	server, err := configuredExecutionCustody(nil, nil, nil, "", nil, false, true, nil)
+	server, err := configuredExecutionCustody(nil, nil, nil, nil, "", nil, false, true, nil)
 	if err != nil || server != nil {
 		t.Fatal("absent projection must leave listener disabled")
 	}
 	t.Setenv("EXECUTION_CUSTODY_CONFIG_FILE", "/not-read-before-revocation-check")
 	for _, mode := range [][2]bool{{false, false}, {true, true}} {
-		if _, err := configuredExecutionCustody(nil, nil, nil, "", nil, mode[0], mode[1], nil); err == nil || err.Error() != "execution custody requires fail-closed access-token revocation" {
+		if _, err := configuredExecutionCustody(nil, nil, nil, nil, "", nil, mode[0], mode[1], nil); err == nil || err.Error() != "execution custody requires fail-closed access-token revocation" {
 			t.Fatal("unsafe revocation configuration accepted")
 		}
 	}
@@ -44,7 +44,7 @@ func TestCustodyProjectionSupportsPrivateAtomicMount(t *testing.T) {
 func TestCustodyRequiresExplicitDatabaseTransport(t *testing.T) {
 	t.Setenv("EXECUTION_CUSTODY_CONFIG_FILE", "/not-read-before-transport-check")
 	t.Setenv("ACCOUNTS_DATABASE_TRANSPORT", "")
-	if _, err := configuredExecutionCustody(nil, nil, nil, "", nil, true, false, nil); err == nil || err.Error() != "execution custody requires explicit verified-tls or local-identity-proxy database transport" {
+	if _, err := configuredExecutionCustody(nil, nil, nil, nil, "", nil, true, false, nil); err == nil || err.Error() != "execution custody requires explicit verified-tls or local-identity-proxy database transport" {
 		t.Fatal("unspecified hosted database transport accepted")
 	}
 }

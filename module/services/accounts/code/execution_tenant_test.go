@@ -125,7 +125,7 @@ func TestExecutionTenantReal(t *testing.T) {
 		p := filepath.Join(dir, uuid.NewString())
 		require.NoError(t, os.WriteFile(p, raw, 0400))
 		t.Setenv("EXECUTION_CUSTODY_CONFIG_FILE", p)
-		h, e := configuredExecutionCustody(store, cipher, jwt, jwt.KeyID(), key, true, false, nil)
+		h, e := configuredExecutionCustody(store, cipher, svc, jwt, jwt.KeyID(), key, true, false, nil)
 		require.NoError(t, e)
 		return h
 	}

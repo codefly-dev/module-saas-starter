@@ -11,6 +11,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -112,6 +113,13 @@ func TestExecutionCustodyReal(t *testing.T) {
 	defer func() { store.Close() }()
 	svc, err := business.NewService(store)
 	require.NoError(t, err)
+	// The broker withholds a child it cannot record, so this fixture needs the same
+	// transactional emitter the host wires; without one every exchange below would
+	// return Unavailable and the registration would never be reached.
+	emitter, err := business.NewDurableAuditEmitter(store, store)
+	require.NoError(t, err)
+	svc.SetAuditEmitter(emitter)
+	require.NoError(t, svc.VerifyAuditWiring())
 	oldService := service
 	WithService(svc)
 	defer WithService(oldService)
@@ -137,7 +145,7 @@ func TestExecutionCustodyReal(t *testing.T) {
 		"record":   {Audience: "example.receipts", InvokeScopes: []wire.InstalledScope{{ResourceKind: "example.receipts", Actions: []string{"append", "read"}}}, LookupScopes: []wire.InstalledScope{{ResourceKind: "example.receipts", Actions: []string{"read"}}}},
 	}}
 	cipher := infra.NewVaultClientDirect(os.Getenv("CUSTODY_TEST_VAULT"), os.Getenv("CUSTODY_TEST_VAULT_TOKEN"))
-	config := ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: cipher, Consumers: map[string]ExecutionConsumerPolicy{"example": policy}}
+	config := ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: cipher, Audit: svc, Consumers: map[string]ExecutionConsumerPolicy{"example": policy}}
 	serverTLS, workerTLS, otherTLS, caPEM := custodyTLS(t)
 	serve := func() (*httptest.Server, *wire.Client, *wire.Client, *wire.Client) {
 		server, err := NewExecutionCustodyServer(config, serverTLS)
@@ -614,6 +622,316 @@ path "transit/decrypt/api-keys" { capabilities = ["update"] }`)
 
 func protoEqualCustodyLineage(a, b *base.WorkContextV1) bool {
 	return custodyJSONHash(custodyLineage(a)) == custodyJSONHash(custodyLineage(b))
+}
+
+// custodyAuditStore is the persistence the audit cases need and nothing more:
+// insert-once custody records, the owner's membership, and a tenant transaction
+// that simply runs. TestExecutionCustodyReal covers real PostgreSQL and Vault.
+type custodyAuditStore struct {
+	business.Store
+	owner   string
+	records map[string]business.ExecutionCustodyRecord
+}
+
+func (s *custodyAuditStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (s *custodyAuditStore) GetPlatformRole(context.Context, string) (string, error) { return "", nil }
+
+func (s *custodyAuditStore) GetOrgMembership(_ context.Context, _, userID string) (*gen.OrgMembership, error) {
+	if userID != s.owner {
+		return nil, nil
+	}
+	return &gen.OrgMembership{UserId: userID, Role: gen.OrgRole_ORG_ROLE_MEMBER}, nil
+}
+
+func (s *custodyAuditStore) RegisterExecutionCustody(ctx context.Context, v business.ExecutionCustodyRecord) (business.ExecutionCustodyRecord, error) {
+	if existing, _ := s.FindExecutionCustody(ctx, v.OrgID, v.OwnerID, v.AdmissionID); existing.Reference != "" {
+		return existing, nil
+	}
+	s.records[v.Reference] = v
+	return v, nil
+}
+
+func (s *custodyAuditStore) FindExecutionCustody(_ context.Context, org, owner, admission string) (business.ExecutionCustodyRecord, error) {
+	for _, v := range s.records {
+		if v.OrgID == org && v.OwnerID == owner && v.AdmissionID == admission {
+			return v, nil
+		}
+	}
+	return business.ExecutionCustodyRecord{}, nil
+}
+
+func (s *custodyAuditStore) GetExecutionCustody(_ context.Context, reference string) (business.ExecutionCustodyRecord, error) {
+	return s.records[reference], nil
+}
+
+func (s *custodyAuditStore) PurgeExecutionCustody(context.Context, time.Time) error { return nil }
+
+// custodyAuthorityFake resolves fixed facts, and can turn stale after a number
+// of resolutions to model authority changing while a child is being issued.
+type custodyAuthorityFake struct {
+	workContextAuthorityFake
+	calls      int
+	staleAfter int
+}
+
+func (f *custodyAuthorityFake) ResolveWorkContextAuthority(ctx context.Context, org, owner, actor string, permissions []business.WorkContextPermission) (*business.WorkContextAuthorityFacts, error) {
+	f.calls++
+	facts, err := f.workContextAuthorityFake.ResolveWorkContextAuthority(ctx, org, owner, actor, permissions)
+	if err != nil || f.staleAfter == 0 || f.calls <= f.staleAfter {
+		return facts, err
+	}
+	stale := *facts
+	stale.OrganizationRevision++
+	return &stale, nil
+}
+
+// failingAuditEmitter models an audit backend that cannot commit.
+type failingAuditEmitter struct{ recordingAuditEmitter }
+
+func (*failingAuditEmitter) EmitTx(context.Context, business.AuditEntry) error {
+	return errors.New("audit backend unavailable")
+}
+
+type custodyAuditFixture struct {
+	broker       *executionCustody
+	service      *business.Service
+	audit        *recordingAuditEmitter
+	store        *custodyAuditStore
+	authority    *custodyAuthorityFake
+	issuer       *WorkContextAuthorityServer
+	registration wire.Registration
+	parentToken  string
+	org          string
+	owner        string
+	actor        string
+}
+
+// newCustodyAuditFixture registers one execution through the broker's own
+// register path, so every exchange below runs against a genuine sealed record.
+// delegated selects a parent acting through an agent rather than an owner-only
+// one.
+func newCustodyAuditFixture(t *testing.T, policy ExecutionConsumerPolicy, delegated bool) *custodyAuditFixture {
+	t.Helper()
+	f := &custodyAuditFixture{org: uuid.NewString(), owner: uuid.NewString(), actor: uuid.NewString(), audit: &recordingAuditEmitter{}}
+	f.store = &custodyAuditStore{owner: f.owner, records: map[string]business.ExecutionCustodyRecord{}}
+	f.authority = &custodyAuthorityFake{workContextAuthorityFake: workContextAuthorityFake{facts: &business.WorkContextAuthorityFacts{OrganizationRevision: 12, Actor: &business.Principal{ID: f.actor, Kind: "agent"}}}}
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	f.issuer = &WorkContextAuthorityServer{}
+	f.issuer.Configure(WorkContextAuthorityConfiguration{Issuer: "example.work", KeyID: "example-key", PrivateKey: key, Authority: f.authority})
+	require.NoError(t, f.issuer.configureErr)
+
+	f.service, err = business.NewService(f.store)
+	require.NoError(t, err)
+	f.service.SetAuditEmitter(f.audit)
+	previous := service
+	service = f.service
+	t.Cleanup(func() { service = previous })
+
+	prepared, err := prepareExecutionConsumerPolicy("example", policy)
+	require.NoError(t, err)
+	f.broker = &executionCustody{config: ExecutionCustodyConfig{Authority: f.issuer, Store: f.store, Cipher: passthroughWebhookCipher{}, Audit: f.service, Consumers: map[string]ExecutionConsumerPolicy{"example": prepared}}}
+
+	taskID, sessionID := uuid.NewString(), uuid.NewString()
+	scopes := []*base.WorkScopeV1{{ResourceKind: "example.model", ResourceIds: []string{"example-profile"}, Actions: []string{"invoke", "read"}}, {ResourceKind: "example.receipts", Actions: []string{"append", "read"}}, {ResourceKind: "example.tasks", ResourceIds: []string{taskID}, Actions: []string{"execute", "read", "start"}}}
+	start := codefly.StartTaskInput{Audience: policy.ParentAudience, TenantID: f.org, OwnerPrincipalID: f.owner, TaskID: taskID, SessionID: sessionID, AuthorizationRevision: 12, ReplayPolicy: codefly.WorkContextReplayIdempotent, AuthorityScopes: scopes, TTL: 10 * time.Minute}
+	if delegated {
+		start.ActorChain = []*base.WorkActorV1{{PrincipalId: f.actor, PrincipalKind: "agent", DelegationId: uuid.NewString(), GrantedScopes: scopes}}
+	}
+	parent, claims, err := f.issuer.signer.StartTask(start)
+	require.NoError(t, err)
+	f.parentToken = parent.Encoded()
+
+	identity := &auth.Identity{UserID: uuid.MustParse(f.owner), OrgID: uuid.MustParse(f.org), OrgRole: "owner"}
+	input := wire.RegisterRequest{Binding: wire.Binding{OrgID: f.org, OwnerID: f.owner, AdmissionID: strings.Repeat("a", 48), IntentDigest: strings.Repeat("b", 64), TaskID: taskID, SessionID: sessionID, Consumer: "example", Profile: policy.Profile}, ParentToken: f.parentToken, TaskExpiresAt: claims.ExpiresAtUnix - 20}
+	f.registration, err = f.broker.register(t.Context(), identity, input)
+	require.NoError(t, err)
+	require.Empty(t, f.audit.entries, "registration is not an exchange")
+	return f
+}
+
+func (f *custodyAuditFixture) request(operation string) wire.ExchangeRequest {
+	return wire.ExchangeRequest{Reference: f.registration.Reference, Binding: f.registration.Binding, Operation: operation}
+}
+
+func custodyAuditOperationsPolicy() ExecutionConsumerPolicy {
+	return ExecutionConsumerPolicy{WorkerURI: "spiffe://example.test/worker", ParentAudience: "example.facade", TaskAudience: "example.tasks", Profile: "example-profile@1", TaskResourceKind: "example.tasks", TaskActions: []string{"execute", "read", "start"}, Operations: map[string]ExecutionOperationPolicy{
+		"generate": {Audience: "example.model", InvokeScopes: []wire.InstalledScope{{ResourceKind: "example.model", Actions: []string{"invoke", "read"}, ResourceIDs: []string{"example-profile"}}}, LookupScopes: []wire.InstalledScope{{ResourceKind: "example.model", Actions: []string{"read"}, ResourceIDs: []string{"example-profile"}}}},
+		"record":   {Audience: "example.receipts", InvokeScopes: []wire.InstalledScope{{ResourceKind: "example.receipts", Actions: []string{"append", "read"}}}, LookupScopes: []wire.InstalledScope{{ResourceKind: "example.receipts", Actions: []string{"read"}}}},
+	}}
+}
+
+// The broker is an HTTP handler, so no method policy journals what it mints.
+// Every released child must therefore leave exactly one audit record, a refused
+// exchange must leave none, and a record that cannot commit must withhold the
+// child.
+func TestExecutionCustodyExchangeAudit(t *testing.T) {
+	const worker = "spiffe://example.test/worker"
+
+	t.Run("successful_exchange_writes_one_record", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), true)
+		child, err := f.broker.exchange(t.Context(), worker, f.request("generate"))
+		require.NoError(t, err)
+		entry := f.audit.only(t)
+		require.Equal(t, business.EventWorkContextAudienceExch, entry.EventType)
+		require.Equal(t, f.org, entry.OrgID)
+		require.Equal(t, f.actor, entry.ActorID)
+		require.Equal(t, business.ActorTypeAgent, entry.ActorType)
+		require.Equal(t, "execution_custody", entry.Resource)
+		require.Equal(t, f.registration.Reference, entry.ResourceID)
+		require.Equal(t, map[string]any{
+			"owner_principal_id": f.owner,
+			"actor_principal_id": f.actor,
+			"audience":           "example.model",
+			"operation":          "generate",
+			"lookup":             false,
+			"consumer":           "example",
+			"task_id":            f.registration.Binding.TaskID,
+			"expires_at":         time.Unix(child.ExpiresAt, 0).UTC().Format(time.RFC3339),
+		}, entry.Payload)
+		require.NoError(t, business.ValidatePayload(entry.EventType, entry.Payload), "every recorded field must be registered, or exports drop it")
+
+		// Identifiers only: no bearer material and no nonce reaches the spine.
+		token, err := codefly.ParseWorkContextToken(child.Token)
+		require.NoError(t, err)
+		claims, err := f.issuer.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: f.issuer.issuer, Audience: "example.model"})
+		require.NoError(t, err)
+		recorded, err := json.Marshal(entry)
+		require.NoError(t, err)
+		for name, secret := range map[string]string{"child token": child.Token, "parent token": f.parentToken, "task token": f.registration.TaskToken, "child nonce": claims.Nonce} {
+			require.NotEmpty(t, secret, name)
+			require.NotContains(t, string(recorded), secret, name)
+		}
+		require.NotContains(t, string(recorded), "example-profile", "scope resource ids are not recorded")
+	})
+
+	t.Run("each_released_child_is_its_own_record", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), true)
+		lookup := f.request("record")
+		lookup.Lookup = true
+		for _, request := range []wire.ExchangeRequest{f.request("generate"), f.request("generate"), lookup} {
+			_, err := f.broker.exchange(t.Context(), worker, request)
+			require.NoError(t, err)
+		}
+		require.Len(t, f.audit.entries, 3)
+		last := f.audit.entries[2].Payload
+		require.Equal(t, "record", last["operation"])
+		require.Equal(t, "example.receipts", last["audience"])
+		require.Equal(t, true, last["lookup"])
+	})
+
+	t.Run("legacy_policy_records_no_operation", func(t *testing.T) {
+		legacy := ExecutionConsumerPolicy{TaskResourceKind: "example.tasks", TaskActions: []string{"execute", "read", "start"}, WorkerURI: worker, ParentAudience: "example.facade", TaskAudience: "example.tasks", Audience: "example.model", Profile: "example-profile@1", ResourceKind: "example.model", ResourceID: "example-profile", InvokeAction: "invoke", ReadAction: "read"}
+		f := newCustodyAuditFixture(t, legacy, true)
+		request := f.request("")
+		request.Audience = "example.model"
+		_, err := f.broker.exchange(t.Context(), worker, request)
+		require.NoError(t, err)
+		entry := f.audit.only(t)
+		require.NotContains(t, entry.Payload, "operation")
+		require.Equal(t, "example.model", entry.Payload["audience"])
+	})
+
+	t.Run("owner_only_parent_is_attributed_to_the_owner", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), false)
+		_, err := f.broker.exchange(t.Context(), worker, f.request("generate"))
+		require.NoError(t, err)
+		entry := f.audit.only(t)
+		require.Equal(t, f.owner, entry.ActorID)
+		require.Equal(t, business.ActorTypeUser, entry.ActorType)
+		require.Equal(t, f.owner, entry.Payload["actor_principal_id"])
+	})
+
+	t.Run("denied_exchange_writes_no_record", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), true)
+		denials := map[string]struct {
+			worker string
+			change func(*wire.ExchangeRequest)
+			code   codes.Code
+		}{
+			"wrong_worker":      {worker: "spiffe://example.test/other", change: func(*wire.ExchangeRequest) {}, code: codes.PermissionDenied},
+			"wrong_binding":     {worker: worker, change: func(v *wire.ExchangeRequest) { v.Binding.IntentDigest = strings.Repeat("c", 64) }, code: codes.PermissionDenied},
+			"unknown_operation": {worker: worker, change: func(v *wire.ExchangeRequest) { v.Operation = "other" }, code: codes.PermissionDenied},
+			"unknown_reference": {worker: worker, change: func(v *wire.ExchangeRequest) { v.Reference = uuid.NewString() }, code: codes.NotFound},
+		}
+		for name, denial := range denials {
+			t.Run(name, func(t *testing.T) {
+				request := f.request("generate")
+				denial.change(&request)
+				child, err := f.broker.exchange(t.Context(), denial.worker, request)
+				require.Equal(t, denial.code, status.Code(err))
+				require.Equal(t, wire.Child{}, child)
+				require.Empty(t, f.audit.entries)
+			})
+		}
+		t.Run("expired_record", func(t *testing.T) {
+			record := f.store.records[f.registration.Reference]
+			record.ExpiresAt = time.Now().Add(-time.Second)
+			f.store.records[f.registration.Reference] = record
+			child, err := f.broker.exchange(t.Context(), worker, f.request("generate"))
+			require.Equal(t, codes.FailedPrecondition, status.Code(err))
+			require.Equal(t, wire.Child{}, child)
+			require.Empty(t, f.audit.entries)
+		})
+	})
+
+	// The record follows the post-issuance parent check, so authority that
+	// changes while the child is being signed leaves neither child nor record.
+	t.Run("authority_change_during_issuance_writes_no_record", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), true)
+		f.authority.calls, f.authority.staleAfter = 0, 1
+		child, err := f.broker.exchange(t.Context(), worker, f.request("generate"))
+		require.Equal(t, codes.FailedPrecondition, status.Code(err))
+		require.Equal(t, wire.Child{}, child)
+		require.Equal(t, 2, f.authority.calls, "the parent is verified before and after signing")
+		require.Empty(t, f.audit.entries)
+	})
+
+	t.Run("audit_failure_returns_no_child", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), true)
+		f.service.SetAuditEmitter(&failingAuditEmitter{})
+		child, err := f.broker.exchange(t.Context(), worker, f.request("generate"))
+		require.Equal(t, codes.Unavailable, status.Code(err))
+		require.Empty(t, status.Convert(err).Message(), "the broker never explains a failure to a worker")
+		require.Equal(t, wire.Child{}, child)
+
+		// Recovery is a retry: the next exchange mints and records a fresh child.
+		f.service.SetAuditEmitter(f.audit)
+		_, err = f.broker.exchange(t.Context(), worker, f.request("generate"))
+		require.NoError(t, err)
+		f.audit.only(t)
+	})
+
+	// emitTx is a no-op without an emitter. A host that never wired one must
+	// not mint unrecorded children behind a success.
+	t.Run("unwired_audit_returns_no_child", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), true)
+		unwired, err := business.NewService(f.store)
+		require.NoError(t, err)
+		f.broker.config.Audit = unwired
+		child, err := f.broker.exchange(t.Context(), worker, f.request("generate"))
+		require.Equal(t, codes.Unavailable, status.Code(err))
+		require.Equal(t, wire.Child{}, child)
+		require.Empty(t, f.audit.entries)
+	})
+
+	t.Run("broker_refuses_to_start_without_audit", func(t *testing.T) {
+		f := newCustodyAuditFixture(t, custodyAuditOperationsPolicy(), true)
+		serverTLS, _, _, _ := custodyTLS(t)
+		_, key, err := ed25519.GenerateKey(rand.Reader)
+		require.NoError(t, err)
+		config := f.broker.config
+		config.Minter = minter.New(minter.Config{Issuer: "example.accounts", Audience: "example.accounts"}, key, nil)
+		config.Consumers = map[string]ExecutionConsumerPolicy{"example": custodyAuditOperationsPolicy()}
+		_, err = NewExecutionCustodyServer(config, serverTLS)
+		require.NoError(t, err)
+		config.Audit = nil
+		_, err = NewExecutionCustodyServer(config, serverTLS)
+		require.Error(t, err)
+	})
 }
 
 func TestExecutionCustodyOperationPolicies(t *testing.T) {

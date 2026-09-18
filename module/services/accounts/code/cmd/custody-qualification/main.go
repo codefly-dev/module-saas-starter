@@ -194,6 +194,17 @@ func run(ctx context.Context, file string) error {
 	if err != nil {
 		return err
 	}
+	// The broker withholds a child it cannot record, so this process needs the
+	// same transactional emitter the ordinary host wires, and refuses to start
+	// without one for the same reason.
+	emitter, err := business.NewDurableAuditEmitter(store, store)
+	if err != nil {
+		return err
+	}
+	service.SetAuditEmitter(emitter)
+	if err := service.VerifyAuditWiring(); err != nil {
+		return err
+	}
 	jwt := minter.New(minter.Config{Issuer: c.AuthIssuer, Audience: c.AuthAudience}, key, pgauth.NewSessionStore(store))
 	service.SetJWTMinter(jwt)
 	adapters.WithService(service)
@@ -201,7 +212,7 @@ func run(ctx context.Context, file string) error {
 	authority := &adapters.WorkContextAuthorityServer{}
 	authority.Configure(adapters.WorkContextAuthorityConfiguration{Issuer: c.Issuer, KeyID: jwt.KeyID(), PrivateKey: key, Authority: store})
 	tc := &tls.Config{Certificates: []tls.Certificate{*reloader.Current()}, GetCertificate: reloader.GetCertificate, ClientCAs: roots, MinVersion: tls.VersionTLS13}
-	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: infra.NewVaultClientDirect(c.VaultURL, c.VaultToken), Consumers: c.Consumers}, tc)
+	broker, err := adapters.NewExecutionCustodyServer(adapters.ExecutionCustodyConfig{Authority: authority, Minter: jwt, Store: store, Cipher: infra.NewVaultClientDirect(c.VaultURL, c.VaultToken), Audit: service, Consumers: c.Consumers}, tc)
 	if err != nil {
 		return err
 	}

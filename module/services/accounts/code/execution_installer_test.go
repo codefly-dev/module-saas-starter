@@ -127,7 +127,7 @@ func newInstallerListener(t *testing.T, enabled bool) installerListenerFixture {
 		require.Nil(t, handler)
 	}
 	// Use the production host constructor: the fixture must not mount routes.
-	host, err := configuredExecutionCustody(nil, infra.NewVaultClientDirect("https://example.invalid", ""), jwt, jwt.KeyID(), key, true, false, handler)
+	host, err := configuredExecutionCustody(nil, infra.NewVaultClientDirect("https://example.invalid", ""), service, jwt, jwt.KeyID(), key, true, false, handler)
 	require.NoError(t, err)
 	addresses := map[string]string{}
 	stop, err := startExecutionCustodyWithListener(host, func(name string) (net.Listener, error) {

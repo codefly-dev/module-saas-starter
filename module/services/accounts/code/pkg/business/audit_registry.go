@@ -385,7 +385,8 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventWorkContextTaskStarted, CategoryAccess, "A signed Work Context was issued for a new agent task and root session."),
 	mutation(EventWorkContextRootSession, CategoryAccess, "A new root agent session was started under an existing task."),
 	mutation(EventWorkContextChildSession, CategoryAccess, "An attenuated child agent session was started."),
-	mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
+	mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience.",
+		executionCustodyExchangeFields...),
 	mutation(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
 
 	observation(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method")),
@@ -528,6 +529,22 @@ const webhookAdminVersion = 2
 // intermediary, and the chain lives nowhere but the request's token.
 var webhookAdminFields = []PayloadField{
 	strs("delegated_by"),
+}
+
+// executionCustodyExchangeFields is the payload of an audience exchange minted
+// by the execution custody broker. The custody reference is the row's
+// resource_id and the current actor its actor_id; `operation` is absent under a
+// legacy single-audience policy. Identifiers only: no token, nonce or scope
+// resource id is ever recorded.
+var executionCustodyExchangeFields = []PayloadField{
+	uid("owner_principal_id"),
+	uid("actor_principal_id"),
+	str("audience"),
+	str("operation"),
+	PayloadField{Name: "lookup", Kind: FieldBool},
+	str("consumer"),
+	str("task_id"),
+	str("expires_at"),
 }
 
 // documentFields is the shared payload of every document.* event. `solution`
