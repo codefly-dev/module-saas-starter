@@ -100,6 +100,41 @@ without the key, so the workflow requests reuse only when the secret is present
 and otherwise runs everything. That is also what keeps fork pull requests, which
 GitHub gives no secrets, passing.
 
+## Persisting the resolved agents
+
+Every task binds the digest of the agent binary it executes, so a job that runs
+one resolves each pinned agent — local cache, then `AGENT_NIX_FLAKE`, then
+`AGENT_REGISTRY`, then the GitHub release — before it can execute a task or
+match a reused record. On a cold runner that is a release fetch per agent, in
+every job, on every run, including runs where nothing executes.
+
+Measured on two successful runs of `main`,
+[35277937608](https://github.com/codefly-dev/module-saas-starter/actions/runs/35277937608)
+and
+[35255201609](https://github.com/codefly-dev/module-saas-starter/actions/runs/35255201609):
+20 and 26 downloads, 70s and 89s in total. The per-agent cost is not the mean
+but its spread — 0.5s at best, 30.6s for one `go-grpc` fetch in the supply-chain
+job, which spent 39s and 57s resolving agents in the two runs, and 22s for the
+single agent the SDK-boundary job loads.
+
+The four jobs that run an agent now restore `~/.codefly/agents` from one cache
+keyed on `topology.bindings.codefly.yaml`, the source of truth for every pin.
+The planner is not one of them: it resolves the selection and spawns nothing.
+Two properties make a stale restore harmless rather than dangerous. An agent
+lives at a path carrying its version, so an entry restored from an older key can
+only be missing an agent, never hold the wrong one under its name; and a missing
+agent resolves remotely exactly as it does today. The fallback key therefore
+turns a pin bump into one download rather than a full cold resolution, while the
+architecture stays in both keys — the path records an agent's version but not
+its platform.
+
+Two things this does not do. The repository's Actions cache already holds more
+than the 10 GB GitHub keeps (10.7 GB across 60 entries when this was written, no
+result-store entry among them), so this entry displaces another; every cache
+here refills on a miss, so that costs time, never correctness. And the first run
+on any new pin set still pays the full resolution — the cost becomes occasional,
+not absent.
+
 ## Hosted result
 
 One complete hosted run on commit `b0b521e4`,

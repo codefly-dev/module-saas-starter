@@ -350,6 +350,19 @@ jobs:
         env:
           GOWORK: "off"
         run: go test -run TestMergedProtocolGeneratorsUseOneInvocation .
+      # A pinned agent resolves from this directory before the Nix flake, the
+      # OCI registry and the GitHub release, so a warm one ends the resolution
+      # before the network. The bindings file is the source of truth for every
+      # pin, and the cached path carries the agent's version, so an entry
+      # restored from an older key can only be missing an agent, never wrong
+      # about one — and a miss downloads it exactly as before.
+      - name: Cache resolved service agents
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.codefly/agents
+          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/deployment/topology.bindings.codefly.yaml') }}
+          restore-keys: |
+            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       - name: Check exported API contracts are in sync with the proto
@@ -604,6 +617,13 @@ jobs:
           key: npm-quality-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/services/*/code/package-lock.json') }}
           restore-keys: |
             npm-quality-${{ runner.os }}-${{ runner.arch }}-
+      - name: Cache resolved service agents
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.codefly/agents
+          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/deployment/topology.bindings.codefly.yaml') }}
+          restore-keys: |
+            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       - name: Download the replay plan
@@ -816,6 +836,13 @@ jobs:
             go.sum
             module/tools/go.sum
             module/services/*/code/go.sum
+      - name: Cache resolved service agents
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.codefly/agents
+          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/deployment/topology.bindings.codefly.yaml') }}
+          restore-keys: |
+            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       # Temporal's amd64 image expands beyond Core's managed 512 MiB Syft
@@ -894,6 +921,13 @@ jobs:
         with:
           version: v0.33.0
           driver: docker
+      - name: Cache resolved service agents
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.codefly/agents
+          key: codefly-agents-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('module/deployment/topology.bindings.codefly.yaml') }}
+          restore-keys: |
+            codefly-agents-${{ runner.os }}-${{ runner.arch }}-
       - name: Install Codefly
         run: bash scripts/ci/install-codefly.sh
       - name: Download the replay plan

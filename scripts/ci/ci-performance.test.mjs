@@ -311,6 +311,34 @@ test('a failing quality command still fails its matrix job', () => {
   }
 });
 
+// Every task binds the digest of the agent binary it executes, so a job that
+// runs one resolves each pinned agent before it can execute or reuse anything.
+// Cold, that is a GitHub release fetch per agent: 20 and 26 downloads costing
+// 70s and 89s across runs 35277937608 and 35255201609, up to 30s for a single
+// agent. The planner spawns none and stays uncached.
+test('every job that runs a service agent restores them from one keyed cache', () => {
+  const step = job => (job.steps ?? []).find(candidate => candidate.name === 'Cache resolved service agents');
+  const installs = Object.entries(workflow.jobs)
+    .filter(([, job]) => (job.steps ?? []).some(candidate => candidate.run === 'bash scripts/ci/install-codefly.sh'));
+  assert.deepEqual(installs.filter(([, job]) => step(job)).map(([name]) => name).sort(),
+    ['codefly-build', 'codefly-quality-phases', 'codefly-supply-chain', 'sdk-boundary']);
+
+  // The bindings file is the source of truth for every pin, so a bump earns a
+  // new entry and the fallback then restores the agents the bump did not touch
+  // — the difference between one download and a full cold resolution. Both
+  // halves carry the runner's architecture: the cached path carries an agent's
+  // version but not its platform, so a fallback that crossed architectures
+  // would restore a binary the CLI finds, runs, and cannot execute.
+  const pins = "${{ hashFiles('module/deployment/topology.bindings.codefly.yaml') }}";
+  const fallback = '${{ runner.os }}-${{ runner.arch }}-';
+  for (const [name, job] of installs.filter(([, candidate]) => step(candidate))) {
+    const cache = step(job);
+    assert.equal(cache.with.path, '~/.codefly/agents', name);
+    assert.equal(cache.with['restore-keys'].trim(), `codefly-agents-${fallback}`, name);
+    assert.equal(cache.with.key, `codefly-agents-${fallback}${pins}`, name);
+  }
+});
+
 test('every buf setup authenticates, so no job resolves a release on the shared anonymous rate limit', () => {
   const steps = Object.values(workflow.jobs)
     .flatMap(job => job.steps ?? [])
