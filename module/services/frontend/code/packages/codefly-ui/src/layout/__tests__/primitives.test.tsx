@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { Badge, Button, Input, Separator, Skeleton } from "../index.js";
 import * as layout from "../index.js";
+import { Badge, Button, Input, Separator, Skeleton } from "../index.js";
 
 afterEach(cleanup);
 
