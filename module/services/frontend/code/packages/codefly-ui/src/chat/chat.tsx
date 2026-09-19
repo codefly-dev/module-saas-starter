@@ -37,7 +37,7 @@ function Avatar({ label }: { label: string }) {
 	return (
 		<SharedAvatar
 			aria-hidden="true"
-			className="h-8 w-8 shrink-0 select-none text-xs"
+			className="h-8 w-8 shrink-0 select-none type-caption-plain"
 		>
 			<AvatarFallback>{initials(label)}</AvatarFallback>
 		</SharedAvatar>
@@ -53,12 +53,12 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 			<div
 				className={cn("flex max-w-[75%] flex-col gap-1", isUser && "items-end")}
 			>
-				<span className="text-xs font-medium text-muted-foreground">
+				<span className="type-chat-author text-muted-foreground">
 					{author}
 				</span>
 				<div
 					className={cn(
-						"whitespace-pre-wrap rounded-lg px-3 py-2 text-sm",
+						"whitespace-pre-wrap rounded-lg px-3 py-2 type-chat-message",
 						isUser
 							? "bg-primary text-primary-foreground"
 							: "bg-muted text-foreground",
@@ -194,7 +194,7 @@ export function Chat({
 			>
 				{messages.length === 0
 					? (emptyState ?? (
-							<div className="m-auto text-sm text-muted-foreground">
+							<div className="m-auto type-body text-muted-foreground">
 								No messages yet.
 							</div>
 						))

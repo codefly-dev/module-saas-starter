@@ -169,7 +169,9 @@ drift in CI.
 | `surface-title-snug` | `4` | `500` | `1.375` | — | `heading` |
 | `surface-title-tight` | `4` | `500` | `1` | — | `heading` |
 | `surface-title-compact` | `3` | `500` | `1.375` | — | `heading` |
+| `surface-title-plain` | `4` | `500` | — | — | — |
 | `surface-description` | `3` | — | `1.25rem` | — | — |
+| `plain` | — | `400` | — | — | — |
 | `page-title` | `7` | `700` | `2rem` | `-0.025em` | — |
 | `section-title` | `5` | `600` | `1.75rem` | `-0.025em` | — |
 | `body` | `3` | — | `1.25rem` | — | — |
@@ -184,7 +186,9 @@ drift in CI.
 | `control-xs` | `2` | `500` | `1rem` | — | — |
 | `control-touch` | `4` | — | `1.5rem` | — | — |
 | `metric-value` | `7` | `600` | `2rem` | `-0.025em` | — |
+| `metric-value-lg` | `8` | `600` | `2.25rem` | `-0.025em` | — |
 | `metric-total` | `9` | `700` | `2.5rem` | `-0.025em` | — |
+| `metric-unit` | `3` | `400` | `1.25rem` | — | — |
 | `caption` | `2` | `500` | `1rem` | — | — |
 | `chart-label` | `1` | — | `1` | — | — |
 <!-- type-roles-table:end -->
@@ -198,20 +202,24 @@ drift in CI.
 | `surface-title-snug` | `card-title` |
 | `surface-title-tight` | `dialog-title` |
 | `surface-title-compact` | `card-title-sm` |
+| `surface-title-plain` | `card-heading` |
 | `surface-description` | `card-description`, `dialog-description`, `sheet-description`, `alert-dialog-description` |
+| `plain` | `metric-delta-label` |
 | `page-title` | `page-title` |
 | `section-title` | `section-title`, `empty-state-title-illustrated` |
-| `body` | `card`, `dialog-content`, `input`, `textarea`, `select-trigger`, `command-input`, `command-input-wrapper`, `command-empty`, `table`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `error-state`, `empty-state-description`, `metric-label`, `chat-message` |
-| `emphasis` | `table-head`, `table-footer`, `error-state-title` |
+| `body` | `body`, `card`, `dialog-content`, `sheet-content`, `section-description`, `input`, `textarea`, `select-trigger`, `command-input`, `command-empty`, `table`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `sidebar-menu-button`, `sidebar-menu-button-lg`, `sidebar-menu-sub-button`, `error-state`, `input-group-text`, `input-group-control`, `empty-state-description`, `metric-label`, `chat-message` |
+| `emphasis` | `emphasis`, `table-head`, `table-footer`, `sidebar-menu-button-active`, `error-state-title` |
 | `control-label` | `label` |
-| `menu-item` | `select-item`, `dropdown-menu-item`, `command-item` |
-| `group-label` | `dropdown-menu-label`, `badge`, `sidebar-menu-badge` |
-| `group-label-plain` | `select-label`, `tooltip-content` |
+| `menu-item` | `select-item`, `dropdown-menu-item`, `dropdown-menu-checkbox-item`, `dropdown-menu-radio-item`, `dropdown-menu-sub-trigger`, `command-item` |
+| `group-label` | `dropdown-menu-label`, `command-group`, `badge`, `sidebar-group-label`, `sidebar-menu-badge` |
+| `group-label-plain` | `caption-plain`, `select-label`, `tooltip-content`, `avatar-fallback-sm`, `sidebar-menu-button-sm`, `sidebar-menu-sub-button-sm` |
 | `shortcut` | `dropdown-menu-shortcut`, `command-shortcut` |
-| `control` | `tabs-trigger`, `empty-state-title` |
+| `control` | `tabs-trigger`, `input-group-addon`, `empty-state-title`, `metric-heading` |
 | `control-touch` | `input-touch`, `textarea-touch` |
 | `metric-value` | `metric-value` |
+| `metric-value-lg` | `metric-value-lg` |
 | `metric-total` | `metric-total` |
+| `metric-unit` | `metric-unit` |
 | `caption` | `metric-delta`, `chat-author` |
 | `chart-label` | `chart-label` |
 <!-- type-slots-table:end -->

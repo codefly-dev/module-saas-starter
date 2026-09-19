@@ -34,7 +34,7 @@ const GRID_COLS: Record<1 | 2 | 3 | 4, string> = {
 function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 	const { series, visualization } = widget;
 	if (series.points.length === 0) {
-		return <div className="py-6 text-sm text-muted-foreground">No data yet.</div>;
+		return <div className="py-6 type-body text-muted-foreground">No data yet.</div>;
 	}
 	switch (visualization) {
 		case "line":
@@ -45,14 +45,14 @@ function WidgetBody({ widget }: { widget: DashboardWidgetView }) {
 			return <BarList points={series.points} />;
 		case "number":
 			return series.total === null ? (
-				<p className="text-sm text-muted-foreground">Total unavailable</p>
+				<p className="type-body text-muted-foreground">Total unavailable</p>
 			) : (
 				<StatChart total={series.total} points={series.points} />
 			);
 		case "table":
 			return (
 				<div className="overflow-x-auto">
-					<table className="w-full text-sm">
+					<table className="w-full type-body">
 						<tbody>
 							{series.points.map((p) => (
 								<tr key={p.key} className="border-b last:border-0">
@@ -74,7 +74,7 @@ function WidgetCard({ widget, columns }: { widget: DashboardWidgetView; columns:
 	return (
 		<Card title={widget.title} className={COL_SPAN[span]}>
 			{widget.series.coverage === "partial" && (
-				<p role="status" className="text-sm text-muted-foreground">
+				<p role="status" className="type-body text-muted-foreground">
 					Partial telemetry
 				</p>
 			)}

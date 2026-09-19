@@ -61,14 +61,14 @@ export function EmptyState({
 			</div>
 			<h3
 				className={cn(
-					"text-sm font-medium text-foreground",
-					variant === "illustrated" && "text-lg font-semibold tracking-tight",
+					"type-empty-state-title text-foreground",
+					variant === "illustrated" && "type-empty-state-title-illustrated",
 				)}
 			>
 				{heading}
 			</h3>
 			{description && (
-				<p className="max-w-sm text-sm text-muted-foreground">{description}</p>
+				<p className="max-w-sm type-empty-state-description text-muted-foreground">{description}</p>
 			)}
 			{children}
 		</div>

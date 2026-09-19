@@ -53,7 +53,7 @@ export function MetricProvenance({
 	timezone?: string;
 }) {
 	return (
-		<div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+		<div className="flex flex-wrap gap-x-3 gap-y-1 type-chart-label text-muted-foreground">
 			<span>Source: {source}</span>
 			<span>Timezone: {timezone}</span>
 			<span>

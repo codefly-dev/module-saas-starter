@@ -138,7 +138,7 @@ function Legend({
 			{series.map((s, i) => (
 				<li
 					key={s.name}
-					className="flex items-center gap-1.5 text-xs text-muted-foreground"
+					className="flex items-center gap-1.5 type-caption-plain text-muted-foreground"
 				>
 					<span
 						className={cn(
@@ -224,7 +224,7 @@ function Axes({
 							y={y}
 							textAnchor="end"
 							dominantBaseline="middle"
-							className="fill-muted-foreground text-[10px] tabular-nums"
+							className="fill-muted-foreground type-chart-label tabular-nums"
 						>
 							{formatValue(tick)}
 						</text>
@@ -238,7 +238,7 @@ function Axes({
 						x={geo.xs[i]}
 						y={geo.plotBottom + 16}
 						textAnchor="middle"
-						className="fill-muted-foreground text-[10px]"
+						className="fill-muted-foreground type-chart-label"
 					>
 						{label}
 					</text>
@@ -302,19 +302,19 @@ function Tooltip({
 			style={{ left: `${leftPercent}%` }}
 			aria-hidden
 		>
-			<div className="mb-1 text-[11px] text-muted-foreground">
+			<div className="mb-1 type-chart-label text-muted-foreground">
 				{geo.labels[index]}
 			</div>
 			<ul className="space-y-0.5">
 				{geo.resolved.map((s, i) => (
-					<li key={s.name} className="flex items-center gap-2 text-xs">
+					<li key={s.name} className="flex items-center gap-2 type-caption-plain">
 						<span
 							className="inline-block h-0.5 w-3 rounded-full"
 							style={{ backgroundColor: chartSeriesColor(i) }}
 							aria-hidden
 						/>
 						<span className="text-muted-foreground">{s.name}</span>
-						<span className="ml-auto font-medium tabular-nums">
+						<span className="ml-auto type-emphasis tabular-nums">
 							{s.values[index] === null
 								? MISSING
 								: formatValue(s.values[index] as number)}
@@ -341,7 +341,7 @@ function EmptyChart({
 			style={{ aspectRatio: `${VIEW_W} / ${height}` }}
 			aria-label={`${title}: no data`}
 		>
-			<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+			<div className="flex h-full items-center justify-center type-body text-muted-foreground">
 				No data
 			</div>
 		</figure>
