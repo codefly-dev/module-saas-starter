@@ -3,6 +3,7 @@ import { join } from "node:path";
 import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
+	resolveTypeSlot,
 } from "@codefly/saas-plugin-contract";
 import {
 	assertSkinSurvives,
@@ -74,6 +75,21 @@ describe("shipped example skins", () => {
 		expect(skin.branding.title).toBe("Helios Console");
 		expect(skin.branding.logo?.lightSrc).toBe("/brand/helios-logo.svg");
 		expect(skin.branding.logo?.darkSrc).toBe("/brand/helios-logo-dark.svg");
+		// Layers 1 to 3: a moved scale step, a re-weighted role, a re-pointed slot
+		// and a taller control rung, so the examples exercise the vocabulary rather
+		// than only the colour half.
+		expect(skin.appearance.typeScale["7"]).toBe("1.625rem");
+		expect(skin.appearance.typeRoles["page-title"].weight).toBe("600");
+		expect(skin.appearance.typeSlots["card-description"]).toBe("menu-item");
+		expect(skin.appearance.controlSizes.default.height).toBe("9");
+		// A step the skin moved reaches every role that points at it...
+		expect(resolveTypeSlot(skin.appearance, "page-title").fontSize).toBe(
+			"1.625rem",
+		);
+		// ...and a role it did not restate keeps the compiled default.
+		expect(resolveTypeSlot(skin.appearance, "section-title").fontSize).toBe(
+			"1.125rem",
+		);
 	});
 
 	it("resolves Nocturne from its mounted default.json", async () => {

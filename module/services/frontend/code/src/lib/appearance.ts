@@ -1,12 +1,28 @@
 import {
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
+	FRONTEND_CONTROL_SIZE_NAMES,
+	FRONTEND_TYPE_SLOT_NAMES,
 	type FrontendAppearance,
 	type FrontendAppearanceTokenName,
+	type ResolvedTypeSlot,
+	resolveTypeRole,
+	resolveTypeSlot,
 } from "@codefly/saas-plugin-contract";
 import type { CSSProperties } from "react";
 
+/**
+ * The custom properties a resolved skin puts on `<html>`: the appearance tokens,
+ * plus the flattened type slots and control rungs the generated utilities read.
+ * A property a slot's role does not decide is absent rather than empty, so every
+ * key is optional.
+ */
 export type AppearanceStyleProperties = CSSProperties &
-	Record<`--appearance-${string}`, string>;
+	Partial<
+		Record<
+			`--appearance-${string}` | `--type-${string}` | `--control-${string}`,
+			string
+		>
+	>;
 
 export function appearanceVariableName(
 	mode: "light" | "dark",
@@ -38,7 +54,60 @@ export function appearanceStyleProperties(
 		for (const token of FRONTEND_APPEARANCE_TOKEN_NAMES)
 			properties[appearanceVariableName(mode, token)] = appearance[mode][token];
 	}
+	// Layers 1 to 3, flattened. The stylesheet declares one utility per slot that
+	// reads these five variables; a property the slot's role does NOT decide is
+	// left unset here on purpose. All five are inherited CSS properties, so a
+	// `var()` with no definition is invalid at computed-value time and the element
+	// inherits — which is exactly what the tree does today where a component sets
+	// no size or weight. Emitting a value everywhere would instead plant a
+	// declaration where one never existed.
+	for (const slot of FRONTEND_TYPE_SLOT_NAMES)
+		writeTypeProperties(
+			properties,
+			`--type-${slot}`,
+			resolveTypeSlot(appearance, slot),
+		);
+	for (const size of FRONTEND_CONTROL_SIZE_NAMES) {
+		const rung = appearance.controlSizes[size];
+		// Geometry is stored as `--spacing` multiples, not lengths, so a skin that
+		// changes density moves control geometry with it instead of pinning it.
+		properties[`--control-${size}-height`] = spacingUnits(rung.height);
+		properties[`--control-${size}-padding-x`] = spacingUnits(rung.paddingX);
+		properties[`--control-${size}-icon`] = spacingUnits(rung.icon);
+		writeTypeProperties(
+			properties,
+			`--control-${size}-text`,
+			resolveTypeRole(appearance, rung.text),
+		);
+	}
 	return properties as AppearanceStyleProperties;
+}
+
+/** `8` becomes `calc(var(--spacing) * 8)`, matching Tailwind's own sizing utilities. */
+function spacingUnits(multiple: string): string {
+	return `calc(var(--spacing) * ${multiple})`;
+}
+
+function writeTypeProperties(
+	properties: Record<string, string>,
+	prefix: string,
+	resolved: ResolvedTypeSlot,
+): void {
+	if (resolved.fontSize !== undefined)
+		properties[`${prefix}-size`] = resolved.fontSize;
+	if (resolved.fontWeight !== undefined)
+		properties[`${prefix}-weight`] = resolved.fontWeight;
+	if (resolved.lineHeight !== undefined)
+		properties[`${prefix}-leading`] = resolved.lineHeight;
+	if (resolved.letterSpacing !== undefined)
+		properties[`${prefix}-tracking`] = resolved.letterSpacing;
+	if (resolved.fontFamily !== undefined)
+		properties[`${prefix}-family`] =
+			resolved.fontFamily === "heading"
+				? "var(--font-heading)"
+				: resolved.fontFamily === "mono"
+					? "var(--font-mono)"
+					: "var(--font-sans)";
 }
 
 export function readableForeground(hexColor: string): "#000000" | "#ffffff" {
