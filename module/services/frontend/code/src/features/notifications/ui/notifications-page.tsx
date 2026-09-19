@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { CheckCheck, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -12,7 +13,10 @@ import { notificationQueries } from "../service/queries";
 export function NotificationsPage() {
 	const queryClient = useQueryClient();
 	const router = useRouter();
-	const { data, isLoading } = useQuery(notificationQueries.list(50));
+	const [pages, setPages] = useState<string[]>([""]);
+	const { data, isLoading, error } = useQuery(
+		notificationQueries.list(50, { pageToken: pages[pages.length - 1] }),
+	);
 	const notifications = data?.notifications ?? [];
 
 	const markReadMutation = useMutation({
@@ -69,6 +73,9 @@ export function NotificationsPage() {
 				</Button>
 			</div>
 
+			{error && (
+				<p role="alert">Could not load notifications. Please try again.</p>
+			)}
 			{isLoading ? (
 				<div className="space-y-3">
 					{Array.from({ length: 5 }).map((_, i) => (
@@ -138,6 +145,26 @@ export function NotificationsPage() {
 					))}
 				</div>
 			)}
+			<div className="flex gap-2">
+				{pages.length > 1 && (
+					<Button
+						variant="outline"
+						onClick={() => setPages((current) => current.slice(0, -1))}
+					>
+						Newer notifications
+					</Button>
+				)}
+				{data?.nextPageToken && (
+					<Button
+						variant="outline"
+						onClick={() =>
+							setPages((current) => [...current, data.nextPageToken])
+						}
+					>
+						Older notifications
+					</Button>
+				)}
+			</div>
 		</div>
 	);
 }

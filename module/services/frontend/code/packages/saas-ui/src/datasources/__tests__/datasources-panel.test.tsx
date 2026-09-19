@@ -284,6 +284,9 @@ describe("DatasourcesPanel", () => {
 		fireEvent.change(screen.getByLabelText("Paths (optional)"), {
 			target: { value: "docs/\nsrc/api/" },
 		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "Markdown only (.md)" }),
+		);
 		fireEvent.change(screen.getByLabelText("Target collection"), {
 			target: { value: "docs" },
 		});
@@ -301,6 +304,7 @@ describe("DatasourcesPanel", () => {
 			orgId: "org-1",
 			repo: "codefly-dev/module-saas-starter",
 			paths: ["docs/", "src/api/"],
+			fileExtensions: [".md"],
 			branch: "",
 			targetCollection: "docs",
 			accessToken: "ghp_token",
@@ -404,10 +408,13 @@ describe("DatasourcesPanel boundary column", () => {
 	});
 
 	it("distinguishes no readable collection from empty indexed content", async () => {
-        const client = fakeClient({listSources: vi.fn(async () => [sampleSource]), listAccessibleScopes: vi.fn(async () => [])});
-        renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-        expect(await screen.findByText(/No readable collection/)).toBeTruthy();
-    });
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listAccessibleScopes: vi.fn(async () => []),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+	});
 
 	it("refetches boundaries after a source is connected", async () => {
 		// Connecting resolves the target collection to a boundary node, so a
@@ -431,7 +438,9 @@ describe("DatasourcesPanel boundary column", () => {
 		await openConnectForm(client);
 		expect(await screen.findByText("11111111")).toBeTruthy();
 
-		fireEvent.click(screen.getByRole("button", { name: /^validate and connect$/i }));
+		fireEvent.click(
+			screen.getByRole("button", { name: /^validate and connect$/i }),
+		);
 
 		await waitFor(() => expect(screen.getByText("Docs")).toBeTruthy());
 	});
@@ -570,19 +579,27 @@ it.each(["first", "second"])(
 	},
 );
 
- it("reconnects the same source without creating or deleting a source", async () => {
-  const client = fakeClient({listSources: vi.fn(async () => [sampleSource])});
-  renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-  fireEvent.click(await screen.findByRole("button", {name: "Reconnect"}));
-  const token = screen.getByLabelText("New GitHub PAT");
-  expect(token.getAttribute("type")).toBe("password");
-  fireEvent.change(token, {target:{value:"replacement-test-token"}});
-  fireEvent.click(screen.getByRole("button", {name:"Reconnect and sync"}));
-  await waitFor(() => expect(client.syncSource).toHaveBeenCalledWith("org-1", "ds-1", "replacement-test-token"));
-  expect(client.addGitHubSource).not.toHaveBeenCalled();
-  expect(client.deleteSource).not.toHaveBeenCalled();
-  expect((await screen.findByRole("status")).textContent).toContain("Credential replaced");
- });
+it("reconnects the same source without creating or deleting a source", async () => {
+	const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+	renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+	fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
+	const token = screen.getByLabelText("New GitHub PAT");
+	expect(token.getAttribute("type")).toBe("password");
+	fireEvent.change(token, { target: { value: "replacement-test-token" } });
+	fireEvent.click(screen.getByRole("button", { name: "Reconnect and sync" }));
+	await waitFor(() =>
+		expect(client.syncSource).toHaveBeenCalledWith(
+			"org-1",
+			"ds-1",
+			"replacement-test-token",
+		),
+	);
+	expect(client.addGitHubSource).not.toHaveBeenCalled();
+	expect(client.deleteSource).not.toHaveBeenCalled();
+	expect((await screen.findByRole("status")).textContent).toContain(
+		"Credential replaced",
+	);
+});
 
 describe("GitHub App onboarding", () => {
 	const appRepositories = [
@@ -601,7 +618,8 @@ describe("GitHub App onboarding", () => {
 	function appClient(overrides: Partial<DatasourceClient> = {}) {
 		return fakeClient({
 			beginGitHubAppSetup: vi.fn(async () => ({
-				installUrl: "https://github.com/apps/codefly/installations/new?state=s1",
+				installUrl:
+					"https://github.com/apps/codefly/installations/new?state=s1",
 				state: "s1",
 				expiresAt: undefined,
 			})),
@@ -630,9 +648,7 @@ describe("GitHub App onboarding", () => {
 		expect(method.value).toBe("app");
 		// The App path asks for no token at all — that is the whole point of it.
 		expect(screen.queryByLabelText("Access token")).toBeNull();
-		expect(
-			[...method.options].map((option) => option.textContent),
-		).toEqual([
+		expect([...method.options].map((option) => option.textContent)).toEqual([
 			"GitHub App (recommended)",
 			"Fine-grained personal access token",
 		]);
@@ -692,15 +708,21 @@ describe("GitHub App onboarding", () => {
 		const client = appClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		await waitFor(() => expect(client.completeGitHubAppSetup).toHaveBeenCalled());
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalled(),
+		);
 	});
 
 	it("burns the state out of the URL so a reload cannot replay it", async () => {
-		landOn("?tab=sources&installation_id=42&setup_action=install&state=s1&code=oauth-1");
+		landOn(
+			"?tab=sources&installation_id=42&setup_action=install&state=s1&code=oauth-1",
+		);
 		const client = appClient();
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		await waitFor(() => expect(client.completeGitHubAppSetup).toHaveBeenCalled());
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalled(),
+		);
 		// The state is single-use, so leaving it in the URL would make a refresh
 		// report a rejection for a setup that in fact succeeded.
 		expect(window.location.search).toBe("?tab=sources");
@@ -777,7 +799,9 @@ describe("GitHub App onboarding", () => {
 			listSources: vi.fn(async () => [sampleSource]),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		fireEvent.click(await screen.findByRole("button", { name: "Use GitHub App" }));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Use GitHub App" }),
+		);
 
 		await waitFor(() =>
 			expect(client.migrateGitHubSourceToApp).toHaveBeenCalledWith(
@@ -794,7 +818,9 @@ describe("GitHub App onboarding", () => {
 	});
 
 	it("hides the migration action when the client cannot perform it", async () => {
-		const client = fakeClient({ listSources: vi.fn(async () => [sampleSource]) });
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
 		await screen.findByRole("button", { name: "Reconnect" });
@@ -812,7 +838,9 @@ describe("GitHub App onboarding", () => {
 			}),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
-		fireEvent.click(await screen.findByRole("button", { name: "Use GitHub App" }));
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Use GitHub App" }),
+		);
 
 		const alert = await screen.findByRole("alert");
 		expect(alert.textContent).toContain(sampleSource.repo);
@@ -859,7 +887,9 @@ describe("GitHub App onboarding", () => {
 
 		rerender(panel("org-B"));
 
-		await waitFor(() => expect(screen.queryByLabelText("Repository")).toBeNull());
+		await waitFor(() =>
+			expect(screen.queryByLabelText("Repository")).toBeNull(),
+		);
 		expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1);
 	});
 
@@ -879,7 +909,9 @@ describe("GitHub App onboarding", () => {
 			</StrictMode>,
 		);
 
-		await waitFor(() => expect(client.completeGitHubAppSetup).toHaveBeenCalled());
+		await waitFor(() =>
+			expect(client.completeGitHubAppSetup).toHaveBeenCalled(),
+		);
 		await screen.findByLabelText("Repository");
 		expect(client.completeGitHubAppSetup).toHaveBeenCalledTimes(1);
 	});
@@ -927,7 +959,9 @@ describe("GitHub App onboarding", () => {
 
 		// Every option disabled with no explanation is a dead end the reader
 		// cannot act on.
-		const status = await screen.findByText(/already connects every repository/i);
+		const status = await screen.findByText(
+			/already connects every repository/i,
+		);
 		expect(status).toBeTruthy();
 	});
 
@@ -966,7 +1000,9 @@ describe("GitHub App onboarding", () => {
 		fireEvent.click(
 			screen.getByRole("button", { name: "Connect through the GitHub App" }),
 		);
-		await waitFor(() => expect(client.addGitHubSource).toHaveBeenCalledTimes(1));
+		await waitFor(() =>
+			expect(client.addGitHubSource).toHaveBeenCalledTimes(1),
+		);
 
 		// Reopening to connect a second repository the same installation grants.
 		fireEvent.click(
@@ -990,9 +1026,9 @@ describe("GitHub App onboarding", () => {
 		fireEvent.change(await screen.findByLabelText("Repository"), {
 			target: { value: "codefly-dev/module-saas-starter" },
 		});
-		expect(
-			(screen.getByLabelText(/^Branch/) as HTMLInputElement).value,
-		).toBe("main");
+		expect((screen.getByLabelText(/^Branch/) as HTMLInputElement).value).toBe(
+			"main",
+		);
 
 		const method = screen.getByLabelText("Authentication");
 		fireEvent.change(method, { target: { value: "pat" } });
@@ -1014,7 +1050,8 @@ describe("GitHub App onboarding", () => {
 		// GitHub install with nothing to show for it.
 		const client = fakeClient({
 			beginGitHubAppSetup: vi.fn(async () => ({
-				installUrl: "https://github.com/apps/codefly/installations/new?state=s1",
+				installUrl:
+					"https://github.com/apps/codefly/installations/new?state=s1",
 				state: "s1",
 				expiresAt: undefined,
 			})),

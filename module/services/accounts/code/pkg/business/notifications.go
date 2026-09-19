@@ -39,6 +39,15 @@ type UnreadResourceReference struct {
 	Unread       int
 }
 
+var ErrInvalidNotificationPageToken = errors.New("invalid notification page token")
+var ErrInvalidNotificationFilter = errors.New("invalid notification filter")
+
+// NotificationFilter narrows a caller-owned inbox before pagination.
+type NotificationFilter struct {
+	OrgID      string
+	UnreadOnly bool
+}
+
 // CreateNotificationInput separates delivery policy from presentation.
 type CreateNotificationInput struct {
 	UserID    string
@@ -152,14 +161,14 @@ func notificationIDForKey(idempotencyKey string) string {
 // The page token is the one the store derived from the rows it READ, not from
 // the rows kept: paging advances by rows read, so a heavily filtered page
 // shortens rather than stalling the cursor or skipping the rows behind it.
-func (s *Service) ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error) {
+func (s *Service) ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string, filters ...NotificationFilter) ([]*Notification, string, error) {
 	if pageSize <= 0 {
 		pageSize = 50
 	}
 	var notifs []*Notification
 	var next string
 	if err := s.store.WithUserTx(ctx, userID, func(ctx context.Context) error {
-		ns, nt, err := s.store.ListNotifications(ctx, userID, pageSize, pageToken)
+		ns, nt, err := s.store.ListNotifications(ctx, userID, pageSize, pageToken, filters...)
 		notifs, next = ns, nt
 		return err
 	}); err != nil {

@@ -153,9 +153,12 @@ func (x *Notification) GetHasAction() bool {
 }
 
 type ListNotificationsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	PageSize      int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	PageSize  int32                  `protobuf:"varint,1,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken string                 `protobuf:"bytes,2,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	// Filters the caller-owned inbox before pagination. Empty includes all orgs.
+	OrgId         string `protobuf:"bytes,3,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	UnreadOnly    bool   `protobuf:"varint,4,opt,name=unread_only,json=unreadOnly,proto3" json:"unread_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -202,6 +205,20 @@ func (x *ListNotificationsRequest) GetPageToken() string {
 		return x.PageToken
 	}
 	return ""
+}
+
+func (x *ListNotificationsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListNotificationsRequest) GetUnreadOnly() bool {
+	if x != nil {
+		return x.UnreadOnly
+	}
+	return false
 }
 
 type ListNotificationsResponse struct {
@@ -574,11 +591,14 @@ const file_saas_accounts_v1_notifications_proto_rawDesc = "" +
 	"created_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1d\n" +
 	"\n" +
 	"has_action\x18\n" +
-	" \x01(\bR\thasAction\"a\n" +
+	" \x01(\bR\thasAction\"\x99\x01\n" +
 	"\x18ListNotificationsRequest\x12&\n" +
 	"\tpage_size\x18\x01 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d \x00R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x02 \x01(\tR\tpageToken\"\x89\x01\n" +
+	"page_token\x18\x02 \x01(\tR\tpageToken\x12\x15\n" +
+	"\x06org_id\x18\x03 \x01(\tR\x05orgId\x12\x1f\n" +
+	"\vunread_only\x18\x04 \x01(\bR\n" +
+	"unreadOnly\"\x89\x01\n" +
 	"\x19ListNotificationsResponse\x12D\n" +
 	"\rnotifications\x18\x01 \x03(\v2\x1e.saas.accounts.v1.NotificationR\rnotifications\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x17\n" +

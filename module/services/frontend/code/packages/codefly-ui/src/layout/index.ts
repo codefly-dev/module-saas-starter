@@ -200,3 +200,5 @@ export {
 	Stack,
 } from "./page.js";
 export type { SectionProps } from "./page.js";
+
+export { Banner, type BannerProps } from "./banner.js";

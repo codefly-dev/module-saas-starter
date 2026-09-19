@@ -12,6 +12,18 @@ const valid = {
 };
 
 describe("connectGitHubSchema", () => {
+	it("accepts extension filters and rejects globs or paths", () => {
+		for (const fileExtensions of [undefined, "", ".md", ".MD, .mdx"]) {
+			expect(
+				connectGitHubSchema.safeParse({ ...valid, fileExtensions }).success,
+			).toBe(true);
+		}
+		for (const fileExtensions of ["md", "**/*.md", "../md", ".md/file"]) {
+			expect(
+				connectGitHubSchema.safeParse({ ...valid, fileExtensions }).success,
+			).toBe(false);
+		}
+	});
 	it("accepts a well-formed connect payload", () => {
 		expect(connectGitHubSchema.safeParse(valid).success).toBe(true);
 	});

@@ -31,6 +31,20 @@ export const connectGitHubSchema = z
 				"A path prefix is too long (max 512 characters)",
 			),
 		branch: z.string().max(255, "Branch name too long").optional(),
+		fileExtensions: z
+			.string()
+			.optional()
+			.refine(
+				(raw) => parsePaths(raw).length <= 32,
+				"Too many extensions (max 32)",
+			)
+			.refine(
+				(raw) =>
+					parsePaths(raw).every((value) =>
+						/^\.[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(value),
+					),
+				"Use suffixes such as .md or .mdx, separated by commas; no paths or globs",
+			),
 		boundaryNodeId: z.string().optional(),
 		targetCollection: z
 			.string()

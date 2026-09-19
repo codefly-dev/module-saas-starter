@@ -6739,6 +6739,19 @@
             "name": "pageToken",
             "required": false,
             "type": "string"
+          },
+          {
+            "description": "Filters the caller-owned inbox before pagination. Empty includes all orgs.",
+            "in": "query",
+            "name": "orgId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "in": "query",
+            "name": "unreadOnly",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "responses": {

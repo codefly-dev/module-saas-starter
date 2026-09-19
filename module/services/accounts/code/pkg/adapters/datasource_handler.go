@@ -34,6 +34,7 @@ func (h *datasourceConnectHandler) AddGitHubSource(
 		OrgID:           req.Msg.OrgId,
 		Repo:            req.Msg.Repo,
 		Paths:           req.Msg.Paths,
+		FileExtensions:  req.Msg.FileExtensions,
 		Branch:          req.Msg.Branch,
 		BoundaryNodeID:  req.Msg.GetBoundaryNodeId(),
 		CollectionLabel: req.Msg.GetCollectionLabel(),
@@ -70,6 +71,7 @@ func (h *datasourceConnectHandler) AddSource(
 	if gh := req.Msg.GetGithub(); gh != nil {
 		input.Repo = gh.Repo
 		input.Paths = gh.Paths
+		input.FileExtensions = gh.FileExtensions
 		input.Branch = gh.Branch
 	}
 	if api := req.Msg.GetApi(); api != nil {
@@ -335,9 +337,10 @@ func datasourceSourceToProto(source *business.DatasourceSource) *gen.Datasource 
 	}
 	if source.Provider == business.DatasourceProviderGitHub {
 		out.Github = &gen.GitHubDatasourceConfig{
-			Repo:   source.Repo,
-			Paths:  source.Paths,
-			Branch: source.Branch,
+			Repo:           source.Repo,
+			Paths:          source.Paths,
+			FileExtensions: source.FileExtensions,
+			Branch:         source.Branch,
 		}
 	}
 	if source.API != nil {
@@ -458,6 +461,7 @@ func datasourceCatalog() *gen.GetDatasourceCatalogResponse {
 				ConfigFields: []*gen.DatasourceConfigField{
 					{Key: "repo", DisplayName: "Repository", Help: "owner/name, e.g. codefly-dev/module-saas-starter", Required: true},
 					{Key: "paths", DisplayName: "Paths", Help: "Path prefixes to ingest; empty means the whole repository.", Required: false},
+					{Key: "file_extensions", DisplayName: "File types", Help: "Case-insensitive suffix allowlist such as .md or .mdx, intersected with paths; empty means all types.", Required: false},
 					{Key: "branch", DisplayName: "Branch", Help: "Git ref to pull; empty resolves to the default branch.", Required: false},
 				},
 				SupportsWebhook: true,
