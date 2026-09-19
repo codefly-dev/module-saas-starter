@@ -33,6 +33,9 @@ function packageVersion(dir: string): string {
 }
 
 describe("shared kit versions match their published packages", () => {
+	it("keeps the two UI kits co-versioned", () => {
+		expect(packageVersion("saas-ui")).toBe(packageVersion("codefly-ui"));
+	});
 	it.each(Object.entries(SHARE_KEY_TO_DIR))(
 		"%s shares its real package.json version",
 		(shareKey, dir) => {

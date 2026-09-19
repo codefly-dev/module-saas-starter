@@ -4,6 +4,9 @@ import (
 	"accounts/pkg/datasource/github"
 	"reflect"
 	"testing"
+
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestFileExtensionsNormalizeAndValidate(t *testing.T) {
@@ -14,6 +17,8 @@ func TestFileExtensionsNormalizeAndValidate(t *testing.T) {
 	for _, bad := range []string{"", "md", "**/*.md", "../md", ".md/file", "."} {
 		if _, err := normalizeFileExtensions([]string{bad}); err == nil {
 			t.Errorf("accepted invalid extension %q", bad)
+		} else if status.Code(err) != codes.InvalidArgument {
+			t.Errorf("invalid extension reported as %s, want InvalidArgument", status.Code(err))
 		}
 	}
 	for _, name := range []string{"README.md", "docs/README.MD", "a/b/c.md"} {
