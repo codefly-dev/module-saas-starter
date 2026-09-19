@@ -1,4 +1,7 @@
 import { version as reactVersion } from "react";
+import { version as kitVersion } from "../../packages/codefly-ui/package.json";
+import { version as saasUiVersion } from "../../packages/saas-ui/package.json";
+import { version as saasSdkVersion } from "../../packages/saas-sdk/package.json";
 
 /**
  * What this host offers a runtime-loaded solution remote, stated as data so the
@@ -26,14 +29,12 @@ export const SOLUTION_MANIFEST_SCHEMA_MAJOR = 1;
 export const SOLUTION_HOST_CONTRACT_MAJOR = 1;
 
 /**
- * The UI kit (`@codefly-dev/ui` + `@codefly-dev/saas-ui`) ships lockstep with this
- * host, so one version covers both. It MUST track the packages' real version — a
- * shared module that under-reports its version can lose singleton resolution to
- * a remote that bundles a higher one, splitting the instance the dedup exists to
- * keep single. The `kit-shared-version` test pins this to the packages' actual
- * versions so a bump can't drift it silently.
+ * Read each shipped package's version at build time. Registration and browser
+ * federation use the same values without importing client-only kit code on the
+ * server. Package bumps cannot leave stale or incorrectly co-versioned shares.
  */
-export const CODEFLY_KIT_VERSION = "0.3.4";
+export const CODEFLY_KIT_VERSION = kitVersion;
+export const CODEFLY_SAAS_UI_VERSION = saasUiVersion;
 
 /**
  * `@codefly-dev/saas-sdk` tracks the published accounts/connect API contract,
@@ -42,7 +43,7 @@ export const CODEFLY_KIT_VERSION = "0.3.4";
  * `kit-shared-version` invariant, checked per package rather than against one
  * shared constant).
  */
-export const CODEFLY_SAAS_SDK_VERSION = "0.3.3";
+export const CODEFLY_SAAS_SDK_VERSION = saasSdkVersion;
 
 /**
  * The exact versions this host publishes into the Module-Federation shared
@@ -63,7 +64,7 @@ export const HOST_SHARED_VERSIONS: Readonly<Record<string, string>> = {
 	"@codefly-dev/ui/plugin-host": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host/runtime": CODEFLY_KIT_VERSION,
 	"@codefly-dev/ui/plugin-host/ui": CODEFLY_KIT_VERSION,
-	"@codefly-dev/saas-ui": CODEFLY_KIT_VERSION,
+	"@codefly-dev/saas-ui": CODEFLY_SAAS_UI_VERSION,
 	"@codefly-dev/saas-sdk": CODEFLY_SAAS_SDK_VERSION,
 };
 
