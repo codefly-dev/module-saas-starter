@@ -32,7 +32,7 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   (webhook delivery, periodic reconcile, or a tenant's "Sync now" forced
   reconcile) — it never sets `last_synced_at`, so "Never" is dropped rather than
   shown above live provenance. Loading/error/empty are first-class.
-- `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, branch,
+- `<ConnectGitHubForm onSubmit={…} … />` — the connect form (repo, paths, file types, branch,
   target collection, webhook secret, and an access token only on the PAT path).
 - `createDatasourceClient({ apiBase, getAccessToken, refreshAccessToken })` — builds the
   gateway-bound `DatasourceClient` (with 401 refresh-and-retry) directly, for driving the
@@ -40,6 +40,18 @@ The components drive a `DatasourceClient` contract. There are two ways to bind i
   transport you already own.
 - Hooks over a `DatasourceClient`: `useListSources`, `useAddGitHubSource`,
   `useSyncSource`, `useDeleteSource`, `useAccessibleScopes`.
+
+### Selecting file types
+
+New GitHub sources can restrict file types with `fileExtensions`, a
+case-insensitive suffix allowlist (for example `[".md", ".mdx"]`). The form offers
+a Markdown-only preset and custom comma-separated suffixes. Empty means all
+types, preserving existing connections. Suffixes intersect with the path prefixes;
+they are not globs. The host stores the filter and applies it before fetching
+content, including snapshots and renames across the filter boundary. The table
+shows the saved selection. This is an ingestion selection, not a read grant.
+Editing an existing source's filter and deleting previously ingested files are
+not supported by this change.
 
 ### Connecting through the GitHub App
 

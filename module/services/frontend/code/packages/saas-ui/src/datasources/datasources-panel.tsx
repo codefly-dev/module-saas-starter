@@ -191,6 +191,9 @@ function DatasourcesPanelView({
 				orgId,
 				repo: values.repo,
 				paths: parsePaths(values.paths),
+				fileExtensions: parsePaths(values.fileExtensions).map((value) =>
+					value.toLowerCase(),
+				),
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
 				boundaryNodeId: values.boundaryNodeId || undefined,
@@ -735,6 +738,11 @@ function SourcesTable({
 									<span className="text-muted-foreground">All</span>
 								) : (
 									source.paths.join(", ")
+								)}
+								{!!source.fileExtensions?.length && (
+									<div className="text-xs text-muted-foreground">
+										Only {source.fileExtensions.join(", ")}
+									</div>
 								)}
 							</TableCell>
 							<TableCell className={cellClass}>

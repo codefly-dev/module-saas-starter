@@ -284,6 +284,9 @@ describe("DatasourcesPanel", () => {
 		fireEvent.change(screen.getByLabelText("Paths (optional)"), {
 			target: { value: "docs/\nsrc/api/" },
 		});
+		fireEvent.click(
+			screen.getByRole("button", { name: "Markdown only (.md)" }),
+		);
 		fireEvent.change(screen.getByLabelText("Target collection"), {
 			target: { value: "docs" },
 		});
@@ -301,11 +304,26 @@ describe("DatasourcesPanel", () => {
 			orgId: "org-1",
 			repo: "codefly-dev/module-saas-starter",
 			paths: ["docs/", "src/api/"],
+			fileExtensions: [".md"],
 			branch: "",
 			targetCollection: "docs",
 			accessToken: "ghp_token",
 			webhookSecret: "",
 		});
+	});
+
+	it("refuses a glob before connecting and explains the field error", async () => {
+		const client = fakeClient();
+		await openConnectForm(client);
+		const input = screen.getByLabelText("File types (optional)");
+		fireEvent.change(input, { target: { value: "**/*.md" } });
+		fireEvent.click(
+			screen.getByRole("button", { name: /^validate and connect$/i }),
+		);
+		const error = await screen.findByRole("alert");
+		expect(error.textContent).toContain("no paths or globs");
+		expect(input.getAttribute("aria-describedby")).toBe(error.id);
+		expect(client.addGitHubSource).not.toHaveBeenCalled();
 	});
 
 	it("surfaces a connect failure in the form and keeps the dialog open", async () => {

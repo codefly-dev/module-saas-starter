@@ -273,6 +273,7 @@ type DatasourceSource struct {
 	Provider            string
 	Repo                string
 	Paths               []string
+	FileExtensions      []string
 	Branch              string
 	API                 *APIDatasourceConfig
 	Crawler             *CrawlerDatasourceConfig
@@ -317,10 +318,11 @@ func (d *DatasourceSource) WebhookConfigured() bool {
 // AccessToken and WebhookSecret are plaintext; each is encrypted through the
 // SecretCipher and only its envelope reference is persisted.
 type AddGitHubSourceInput struct {
-	OrgID  string
-	Repo   string
-	Paths  []string
-	Branch string
+	OrgID          string
+	Repo           string
+	Paths          []string
+	FileExtensions []string
+	Branch         string
 	// The data boundary the source writes into: exactly one of an existing scope
 	// node's id, or a label to mint a new `collection` node (issue #473).
 	BoundaryNodeID  string
@@ -474,6 +476,10 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 	if err := requireBoundarySpec(input.BoundaryNodeID, input.CollectionLabel); err != nil {
 		return nil, w.Wrap(err)
 	}
+	extensions, err := normalizeFileExtensions(input.FileExtensions)
+	if err != nil {
+		return nil, w.Wrap(err)
+	}
 	if s.datasourceCipher == nil {
 		return nil, w.NewError("datasource secret cipher is not configured")
 	}
@@ -489,6 +495,7 @@ func (s *Service) AddGitHubSource(ctx context.Context, actorID string, input Add
 		Provider:          DatasourceProviderGitHub,
 		Repo:              repo,
 		Paths:             normalizePaths(input.Paths),
+		FileExtensions:    extensions,
 		Branch:            strings.TrimSpace(input.Branch),
 		Status:            DatasourceStatusActive,
 		ReconcileInterval: defaultDatasourceReconcileInterval,
@@ -547,9 +554,10 @@ type AddSourceInput struct {
 	WebhookSecret   string
 
 	// GitHub provider config.
-	Repo   string
-	Paths  []string
-	Branch string
+	Repo           string
+	Paths          []string
+	FileExtensions []string
+	Branch         string
 
 	// API provider config.
 	API *APIDatasourceConfig
@@ -599,6 +607,10 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		if !validRepo(repo) {
 			return nil, w.NewError("repo must be in owner/name form")
 		}
+		extensions, err := normalizeFileExtensions(input.FileExtensions)
+		if err != nil {
+			return nil, w.Wrap(err)
+		}
 		// The same resolution AddGitHubSource performs: a supplied credential is a
 		// repository-scoped PAT, and none connects through the deployment's App.
 		// Sharing it keeps the provider-agnostic call from refusing a connect the
@@ -611,6 +623,7 @@ func (s *Service) AddSource(ctx context.Context, actorID string, input AddSource
 		source.GitHubInstallationID = installationID
 		source.Repo = repo
 		source.Paths = normalizePaths(input.Paths)
+		source.FileExtensions = extensions
 		source.Branch = strings.TrimSpace(input.Branch)
 		source.ReconcileInterval = defaultDatasourceReconcileInterval
 		nextReconcile := time.Now().UTC().Add(defaultDatasourceReconcileInterval)

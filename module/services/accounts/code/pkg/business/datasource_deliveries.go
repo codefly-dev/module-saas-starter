@@ -357,7 +357,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		return DispositionStale, nil
 	}
 
-	ops := s.changeOps(comparison.Files, source.Paths)
+	ops := s.changeOps(comparison.Files, source.Paths, source.FileExtensions)
 	changeSet := base + "..." + push.After
 	for _, op := range ops {
 		if err := s.enqueueChangeSetFile(ctx, source, client, op, branch, push.After, changeSet, deliveryID); err != nil {
@@ -427,6 +427,9 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	ref := "refs/heads/" + branch
 	manifest := snapshotManifest{Ref: ref, Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
 	for _, f := range files {
+		if !fileTypeAllowed(f.Path, source.FileExtensions) {
+			continue
+		}
 		manifest.Files = append(manifest.Files, snapshotFile{Path: f.Path, BlobSHA: f.SHA, Size: f.Size})
 	}
 	ordinal, err := s.allocateOrdinal(ctx, source.ID)
@@ -527,25 +530,26 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	return DispositionSnapshot, nil
 }
 
-// changeOps maps a compare's files to ingest ops under the source's path filter.
+// changeOps maps a compare's files to ingest ops under the source's path and type filters.
 // A rename is a rename only when both endpoints are in scope; a rename into scope
 // is an upsert of the new path, a rename out of scope is a delete of the old
 // path. Ops are returned in path order so a crash mid-set replays deterministically.
-func (s *Service) changeOps(files []github.ChangedFile, paths []string) []changeOp {
+func (s *Service) changeOps(files []github.ChangedFile, paths, extensions []string) []changeOp {
+	inScope := func(name string) bool { return pathInScope(name, paths) && fileTypeAllowed(name, extensions) }
 	var ops []changeOp
 	for _, f := range files {
 		switch f.Status {
 		case "added", "modified", "changed", "copied":
-			if pathInScope(f.Filename, paths) {
+			if inScope(f.Filename) {
 				ops = append(ops, changeOp{path: f.Filename, blobSHA: f.SHA, changeType: upsertChangeType(f.Status)})
 			}
 		case "removed":
-			if pathInScope(f.Filename, paths) {
+			if inScope(f.Filename) {
 				ops = append(ops, changeOp{path: f.Filename, changeType: changeTypeRemoved})
 			}
 		case "renamed":
-			fromIn := pathInScope(f.PreviousFilename, paths)
-			toIn := pathInScope(f.Filename, paths)
+			fromIn := inScope(f.PreviousFilename)
+			toIn := inScope(f.Filename)
 			switch {
 			case fromIn && toIn:
 				ops = append(ops, changeOp{path: f.Filename, prevPath: f.PreviousFilename, blobSHA: f.SHA, changeType: changeTypeRenamed})

@@ -15,6 +15,7 @@ export interface DatasourceView {
 	provider: DatasourceProviderName;
 	repo: string;
 	paths: string[];
+	fileExtensions?: string[];
 	branch: string;
 	/** The scope node the source's Entries land in (issue #473). */
 	boundaryNodeId: string;
@@ -93,6 +94,7 @@ export interface ConnectGitHubInput {
 	orgId: string;
 	repo: string;
 	paths: string[];
+	fileExtensions?: string[];
 	branch: string;
 	targetCollection: string;
 	boundaryNodeId?: string;

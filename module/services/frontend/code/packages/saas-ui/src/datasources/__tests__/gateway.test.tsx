@@ -176,6 +176,7 @@ describe("createDatasourceClient", () => {
 				repo: "codefly-dev/module-saas-starter",
 				paths: ["docs/"],
 				branch: "",
+				fileExtensions: [],
 				boundaryNodeId: "11111111-1111-1111-1111-111111111111",
 				webhookConfigured: true,
 				status: "active",
@@ -440,6 +441,13 @@ it("connects to the selected node without deriving authority from its label", as
  await client.addGitHubSource({orgId: "org-1", repo: "acme/example", paths: [], branch: "main", targetCollection: "Example Collection", boundaryNodeId: "11111111-1111-1111-1111-111111111111", accessToken: "test-pat", webhookSecret: ""});
  expect(calls[0].body).toMatchObject({boundaryNodeId: "11111111-1111-1111-1111-111111111111"});
  expect(calls[0].body).not.toHaveProperty("collectionLabel");
+});
+
+it("carries a source file filter through the generated SDK", async () => {
+ const {calls} = stubFetch({});
+ const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token"});
+ await client.addGitHubSource({orgId: "org-1", repo: "acme/example", paths: ["docs/"], fileExtensions: [".md", ".mdx"], branch: "main", targetCollection: "Example Collection", accessToken: "test-pat", webhookSecret: ""});
+ expect(calls[0].body).toMatchObject({paths: ["docs/"], fileExtensions: [".md", ".mdx"]});
 });
 
 it("reports no readable scope when the composition declares no content resource", async () => {

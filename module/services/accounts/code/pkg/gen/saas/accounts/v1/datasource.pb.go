@@ -231,9 +231,12 @@ type GitHubDatasourceConfig struct {
 	// Repository-relative path prefixes to ingest. Empty means the whole repo.
 	Paths []string `protobuf:"bytes,2,rep,name=paths,proto3" json:"paths,omitempty"`
 	// Git ref (branch) to pull. Empty resolves to the repository default branch.
-	Branch        string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	// Optional case-insensitive file suffixes, e.g. [".md", ".mdx"]. Empty
+	// admits every file type within paths. Applied before content is fetched.
+	FileExtensions []string `protobuf:"bytes,4,rep,name=file_extensions,json=fileExtensions,proto3" json:"file_extensions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *GitHubDatasourceConfig) Reset() {
@@ -285,6 +288,13 @@ func (x *GitHubDatasourceConfig) GetBranch() string {
 		return x.Branch
 	}
 	return ""
+}
+
+func (x *GitHubDatasourceConfig) GetFileExtensions() []string {
+	if x != nil {
+		return x.FileExtensions
+	}
+	return nil
 }
 
 // ApiOAuth2Config is the non-secret OAuth 2.0 configuration of an API source
@@ -823,8 +833,10 @@ type AddGitHubSourceRequest struct {
 	// (X-Hub-Signature-256). Optional at creation; when omitted, live webhook
 	// ingestion stays off until a later call supplies one. Encrypted at receipt.
 	WebhookSecret string `protobuf:"bytes,7,opt,name=webhook_secret,json=webhookSecret,proto3" json:"webhook_secret,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// Optional file suffix allowlist, intersected with paths (not a glob).
+	FileExtensions []string `protobuf:"bytes,10,rep,name=file_extensions,json=fileExtensions,proto3" json:"file_extensions,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AddGitHubSourceRequest) Reset() {
@@ -922,6 +934,13 @@ func (x *AddGitHubSourceRequest) GetWebhookSecret() string {
 		return x.WebhookSecret
 	}
 	return ""
+}
+
+func (x *AddGitHubSourceRequest) GetFileExtensions() []string {
+	if x != nil {
+		return x.FileExtensions
+	}
+	return nil
 }
 
 type isAddGitHubSourceRequest_Boundary interface {
@@ -2462,11 +2481,12 @@ var File_saas_accounts_v1_datasource_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\n" +
-	"!saas/accounts/v1/datasource.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"Z\n" +
+	"!saas/accounts/v1/datasource.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x17saas/jobs/v1/jobs.proto\x1a\x1csaas/policy/v1/options.proto\"\xb5\x01\n" +
 	"\x16GitHubDatasourceConfig\x12\x12\n" +
 	"\x04repo\x18\x01 \x01(\tR\x04repo\x12\x14\n" +
 	"\x05paths\x18\x02 \x03(\tR\x05paths\x12\x16\n" +
-	"\x06branch\x18\x03 \x01(\tR\x06branch\"c\n" +
+	"\x06branch\x18\x03 \x01(\tR\x06branch\x12Y\n" +
+	"\x0ffile_extensions\x18\x04 \x03(\tB0\xbaH-\x92\x01*\x10 \"&r$\x10\x02\x18!2\x1e^\\.[A-Za-z0-9][A-Za-z0-9._-]*$R\x0efileExtensions\"c\n" +
 	"\x0fApiOAuth2Config\x12\x1b\n" +
 	"\ttoken_url\x18\x01 \x01(\tR\btokenUrl\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12\x16\n" +
@@ -2510,7 +2530,7 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x10boundary_node_id\x18\x0e \x01(\tR\x0eboundaryNodeId\x12D\n" +
 	"\x10last_ingested_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\x0elastIngestedAt\x120\n" +
 	"\x14last_ingested_commit\x18\x10 \x01(\tR\x12lastIngestedCommit\x12#\n" +
-	"\rstatus_reason\x18\x11 \x01(\tR\fstatusReasonJ\x04\b\x04\x10\x05R\x11target_collection\"\xc0\x03\n" +
+	"\rstatus_reason\x18\x11 \x01(\tR\fstatusReasonJ\x04\b\x04\x10\x05R\x11target_collection\"\x9b\x04\n" +
 	"\x16AddGitHubSourceRequest\x12\x1f\n" +
 	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12A\n" +
 	"\x04repo\x18\x02 \x01(\tB-\xbaH*r(\x10\x03\x18\xff\x012!^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$R\x04repo\x12'\n" +
@@ -2520,7 +2540,9 @@ const file_saas_accounts_v1_datasource_proto_rawDesc = "" +
 	"\x10collection_label\x18\t \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\x01\x18\xff\x01H\x00R\x0fcollectionLabel\x12+\n" +
 	"\faccess_token\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\vaccessToken\x12/\n" +
-	"\x0ewebhook_secret\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\rwebhookSecretB\x11\n" +
+	"\x0ewebhook_secret\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\rwebhookSecret\x12Y\n" +
+	"\x0ffile_extensions\x18\n" +
+	" \x03(\tB0\xbaH-\x92\x01*\x10 \"&r$\x10\x02\x18!2\x1e^\\.[A-Za-z0-9][A-Za-z0-9._-]*$R\x0efileExtensionsB\x11\n" +
 	"\bboundary\x12\x05\xbaH\x02\b\x01J\x04\b\x05\x10\x06R\x11target_collection\"W\n" +
 	"\x17AddGitHubSourceResponse\x12<\n" +
 	"\n" +

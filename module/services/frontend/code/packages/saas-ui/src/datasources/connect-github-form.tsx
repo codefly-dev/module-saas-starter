@@ -54,6 +54,7 @@ export function ConnectGitHubForm({
 			repo: "",
 			boundaryNodeId: "",
 			paths: "",
+			fileExtensions: "",
 			branch: "",
 			targetCollection: "",
 			accessToken: "",
@@ -85,7 +86,7 @@ export function ConnectGitHubForm({
 			aria-modal="true"
 			aria-label="Connect GitHub"
 		>
-			<div className="w-full max-w-[500px] rounded-lg border bg-card p-6 text-card-foreground shadow-lg">
+			<div className="w-full max-w-[500px] max-h-[90dvh] overflow-y-auto rounded-lg border bg-card p-6 text-card-foreground shadow-lg">
 				<div className="mb-4 space-y-1">
 					<h3 className="text-lg font-semibold tracking-tight">
 						Connect GitHub
@@ -254,6 +255,46 @@ export function ConnectGitHubForm({
 					</div>
 
 					<div className="space-y-2">
+						<Label htmlFor={idFor("extensions")}>File types (optional)</Label>
+						<Input
+							id={idFor("extensions")}
+							placeholder=".md, .mdx"
+							aria-invalid={!!errors.fileExtensions}
+							aria-describedby={
+								errors.fileExtensions
+									? idFor("extensions-error")
+									: idFor("extensions-help")
+							}
+							{...form.register("fileExtensions")}
+						/>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() =>
+								form.setValue("fileExtensions", ".md", { shouldValidate: true })
+							}
+						>
+							Markdown only (.md)
+						</Button>
+						<p
+							id={idFor("extensions-help")}
+							className="text-xs text-muted-foreground"
+						>
+							Comma-separated suffixes, case-insensitive. Empty includes all
+							file types. Applied during ingestion within the paths above.
+						</p>
+						{errors.fileExtensions && (
+							<p
+								id={idFor("extensions-error")}
+								role="alert"
+								className={errorClass}
+							>
+								{errors.fileExtensions.message}
+							</p>
+						)}
+					</div>
+
+					<div className="space-y-2">
 						<Label htmlFor={idFor("branch")}>Branch (optional)</Label>
 						<Input
 							id={idFor("branch")}
@@ -284,7 +325,8 @@ export function ConnectGitHubForm({
 										form.setValue(
 											"targetCollection",
 											collections.find(
-												(collection) => collection.nodeId === event.target.value,
+												(collection) =>
+													collection.nodeId === event.target.value,
 											)?.label ?? "",
 										);
 									}}
