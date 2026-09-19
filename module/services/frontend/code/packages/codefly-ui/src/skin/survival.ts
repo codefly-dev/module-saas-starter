@@ -69,7 +69,7 @@ export interface SkinSurvivalOptions {
 const DESCRIPTOR_SOURCE_NAME = "descriptor";
 
 /** Top-level descriptor keys the resolver reads. Anything else is inert. */
-const RESOLVED_DESCRIPTOR_KEYS = ["appearance", "branding"];
+const RESOLVED_DESCRIPTOR_KEYS = ["appearance", "branding", "rules"];
 
 /**
  * Resolve a descriptor through the real resolver and report every declared leaf
@@ -102,6 +102,9 @@ export async function checkSkinSurvival(
 	const mismatches: SkinLeafMismatch[] = [];
 	collect(descriptor.appearance, skin.appearance, "appearance", mismatches);
 	collect(descriptor.branding, skin.branding, "branding", mismatches);
+	// Layer 4 is data a checker reads rather than a rendered value, but it is
+	// still declared and still has to survive, so it is walked like the rest.
+	collect(descriptor.rules, skin.rules, "rules", mismatches);
 	for (const key of Object.keys(descriptor)) {
 		if (RESOLVED_DESCRIPTOR_KEYS.includes(key)) continue;
 		// A top-level key beside `appearance`/`branding` is not validated — the

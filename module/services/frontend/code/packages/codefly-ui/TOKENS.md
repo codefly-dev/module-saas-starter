@@ -251,6 +251,58 @@ a slot, because a caller choosing `size="sm"` is choosing the whole rung.
 }
 ```
 
+### Layer 4 — rules
+
+Constraints a design system has **stated**, carried as data and checked at build
+time. "A page title appears once" is not a render token, but it is a perfectly
+good lint rule, and a written rule is a constraint a checker can enforce.
+
+Rules sit **beside** `appearance`, not inside it. Layers 1 to 3 are consumed at
+render time and every value they carry reaches CSS, so they pass the injection
+gate; a rule reaches a checker and never a stylesheet, so it has its own schema.
+Putting it inside `appearance` would mean widening the thing whose narrowness is
+the security property.
+
+```jsonc
+{
+  "rules": {
+    "slots": { "page-title": { "maxPerPage": 1 } },
+    "headingOrder": "no-skip"
+  }
+}
+```
+
+`checkSkinRules(root, skin.rules)` from `@codefly-dev/ui/skin` reads a rendered
+tree — a test render, a story, a document — through the same `data-slot`
+attribute layer 3 points at, and reports what it finds; `assertSkinRules` throws
+instead. Only rules something enforces are accepted: a field that validates and
+is then ignored reads as a promise, which is worse than its absence. Usage rules
+needing a notion of "surface" are therefore not here, because there is no surface
+vocabulary to check them against.
+
+## What a skin cannot carry
+
+The ladder's third rung — structurally different component anatomy, a header
+that is not this header — is **not** a descriptor field. It is the vetted
+micro-frontend tier, with its own admission and trust model, and it is meant to
+stay hard to reach.
+
+`remotes` used to be declared on the descriptor as reserved for that rung and was
+never resolved. A field nothing reads is worse than an absent one: a descriptor
+carrying it validated cleanly while the value went nowhere. It has been removed,
+and `checkSkinSurvival` now reports any top-level key the resolver does not read,
+so an author who writes one is told rather than left to find out in a render.
+
+Three things stay outside the vocabulary entirely, and saying so is part of being
+honest about what it does carry:
+
+- **Taste.** Whether the composed result reads as *right* to the person who owns
+  the design. No amount of vocabulary produces that judgement.
+- **Rules nobody wrote down.** Layer 4 encodes constraints a system has stated.
+  Most large systems keep much of their real rule set as drawings, conventions
+  and review habits; those have to be extracted before they can be encoded.
+- **The approval.** A design review is a process, not an artifact.
+
 ## Per-skin overrides
 
 A skin is a validated data descriptor, not code. It carries a **partial**

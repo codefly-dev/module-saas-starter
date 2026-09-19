@@ -3,6 +3,7 @@ import {
 	type FrontendAppearanceDefinition,
 	type FrontendBranding,
 	resolveFrontendAppearance,
+	resolveSkinRules,
 } from "@codefly/saas-plugin-contract";
 import type {
 	RawBrandingOverride,
@@ -47,7 +48,12 @@ export async function resolveSkin(
 	const host = opts.host ?? null;
 	const now = opts.now ?? (() => Date.now());
 
-	if (sources.length === 0) return { ...opts.fallback, source: "default" };
+	const fallbackSkin: ResolvedSkin = {
+		...opts.fallback,
+		source: "default",
+		rules: resolveSkinRules(undefined),
+	};
+	if (sources.length === 0) return fallbackSkin;
 
 	const cacheKey = host ?? "*";
 	const cached = cache.get(cacheKey);
@@ -58,7 +64,7 @@ export async function resolveSkin(
 	}
 
 	const key: SkinKey = { host };
-	let resolved: ResolvedSkin = { ...opts.fallback, source: "default" };
+	let resolved: ResolvedSkin = fallbackSkin;
 
 	for (const source of sources) {
 		let descriptor: Awaited<ReturnType<SkinSource["load"]>>;
@@ -79,7 +85,11 @@ export async function resolveSkin(
 				opts.fallback.branding,
 				descriptor.branding,
 			);
-			resolved = { appearance, branding, source: source.name };
+			// Rules are validated in the same try as the appearance, so a descriptor
+			// with a bad rule degrades exactly like one with a bad token rather than
+			// half-applying.
+			const rules = resolveSkinRules(descriptor.rules);
+			resolved = { appearance, branding, rules, source: source.name };
 			break;
 		} catch (error) {
 			console.warn(

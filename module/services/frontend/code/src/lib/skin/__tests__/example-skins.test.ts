@@ -105,6 +105,9 @@ describe("shipped example skins", () => {
 		expect(skin.appearance.fontHeading).toContain("Courier New");
 		expect(skin.branding.name).toBe("Nocturne");
 		expect(skin.branding.logo?.lightSrc).toBe("/brand/nocturne-logo.svg");
+		// Layer 4: rules are carried through as data and never reach CSS.
+		expect(skin.rules.slots?.["page-title"]?.maxPerPage).toBe(1);
+		expect(skin.rules.headingOrder).toBe("no-skip");
 	});
 
 	// Value assertions cover the handful of fields a human thought to name; the

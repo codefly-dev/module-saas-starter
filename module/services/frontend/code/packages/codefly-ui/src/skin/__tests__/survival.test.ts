@@ -109,9 +109,16 @@ describe("checkSkinSurvival", () => {
 
 	// A top-level key beside `appearance`/`branding` is never read — nothing
 	// validates it, so without this it would look accepted.
+	// `remotes` was a declared-but-never-resolved field until it was removed. A
+	// descriptor carrying it validated cleanly while the value went nowhere, so
+	// the check has to report any top-level key the resolver does not read. The
+	// cast is the case under test: the type no longer admits the key.
 	it("reports a top-level key the resolver does not read", async () => {
 		const report = await checkSkinSurvival(
-			{ ...clean, remotes: { checkout: "https://example.com/remote.js" } },
+			{
+				...clean,
+				remotes: { checkout: "https://example.com/remote.js" },
+			} as RawSkinDescriptor,
 			{ fallback },
 		);
 		expect(report.mismatches.map((mismatch) => mismatch.path)).toEqual([
