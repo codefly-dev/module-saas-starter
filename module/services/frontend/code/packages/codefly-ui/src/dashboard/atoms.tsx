@@ -103,7 +103,7 @@ export function Axis({ plot, x, y }: { plot: Plot; x?: XAxis; y?: YAxis }) {
 					y={y.scale(tick)}
 					textAnchor="end"
 					dominantBaseline="middle"
-					className="fill-muted-foreground text-[10px] tabular-nums"
+					className="fill-muted-foreground type-chart-label tabular-nums"
 				>
 					{formatValue(tick)}
 				</text>
@@ -115,7 +115,7 @@ export function Axis({ plot, x, y }: { plot: Plot; x?: XAxis; y?: YAxis }) {
 						x={scaleX(i, x.keys.length, plot)}
 						y={plot.bottom + 14}
 						textAnchor="middle"
-						className="fill-muted-foreground text-[10px]"
+						className="fill-muted-foreground type-chart-label"
 					>
 						{formatKey(key)}
 					</text>

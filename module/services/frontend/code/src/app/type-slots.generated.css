@@ -10,12 +10,44 @@
  * unset and the element inherits, which is what the untouched tree does today.
  */
 
+@utility type-body {
+	font-size: var(--type-body-size);
+	font-weight: var(--type-body-weight);
+	line-height: var(--type-body-leading);
+	letter-spacing: var(--type-body-tracking);
+	font-family: var(--type-body-family);
+}
+
+@utility type-caption-plain {
+	font-size: var(--type-caption-plain-size);
+	font-weight: var(--type-caption-plain-weight);
+	line-height: var(--type-caption-plain-leading);
+	letter-spacing: var(--type-caption-plain-tracking);
+	font-family: var(--type-caption-plain-family);
+}
+
+@utility type-emphasis {
+	font-size: var(--type-emphasis-size);
+	font-weight: var(--type-emphasis-weight);
+	line-height: var(--type-emphasis-leading);
+	letter-spacing: var(--type-emphasis-tracking);
+	font-family: var(--type-emphasis-family);
+}
+
 @utility type-card {
 	font-size: var(--type-card-size);
 	font-weight: var(--type-card-weight);
 	line-height: var(--type-card-leading);
 	letter-spacing: var(--type-card-tracking);
 	font-family: var(--type-card-family);
+}
+
+@utility type-card-heading {
+	font-size: var(--type-card-heading-size);
+	font-weight: var(--type-card-heading-weight);
+	line-height: var(--type-card-heading-leading);
+	letter-spacing: var(--type-card-heading-tracking);
+	font-family: var(--type-card-heading-family);
 }
 
 @utility type-card-title {
@@ -66,6 +98,14 @@
 	font-family: var(--type-dialog-description-family);
 }
 
+@utility type-sheet-content {
+	font-size: var(--type-sheet-content-size);
+	font-weight: var(--type-sheet-content-weight);
+	line-height: var(--type-sheet-content-leading);
+	letter-spacing: var(--type-sheet-content-tracking);
+	font-family: var(--type-sheet-content-family);
+}
+
 @utility type-sheet-title {
 	font-size: var(--type-sheet-title-size);
 	font-weight: var(--type-sheet-title-weight);
@@ -112,6 +152,14 @@
 	line-height: var(--type-section-title-leading);
 	letter-spacing: var(--type-section-title-tracking);
 	font-family: var(--type-section-title-family);
+}
+
+@utility type-section-description {
+	font-size: var(--type-section-description-size);
+	font-weight: var(--type-section-description-weight);
+	line-height: var(--type-section-description-leading);
+	letter-spacing: var(--type-section-description-tracking);
+	font-family: var(--type-section-description-family);
 }
 
 @utility type-label {
@@ -186,6 +234,30 @@
 	font-family: var(--type-dropdown-menu-item-family);
 }
 
+@utility type-dropdown-menu-checkbox-item {
+	font-size: var(--type-dropdown-menu-checkbox-item-size);
+	font-weight: var(--type-dropdown-menu-checkbox-item-weight);
+	line-height: var(--type-dropdown-menu-checkbox-item-leading);
+	letter-spacing: var(--type-dropdown-menu-checkbox-item-tracking);
+	font-family: var(--type-dropdown-menu-checkbox-item-family);
+}
+
+@utility type-dropdown-menu-radio-item {
+	font-size: var(--type-dropdown-menu-radio-item-size);
+	font-weight: var(--type-dropdown-menu-radio-item-weight);
+	line-height: var(--type-dropdown-menu-radio-item-leading);
+	letter-spacing: var(--type-dropdown-menu-radio-item-tracking);
+	font-family: var(--type-dropdown-menu-radio-item-family);
+}
+
+@utility type-dropdown-menu-sub-trigger {
+	font-size: var(--type-dropdown-menu-sub-trigger-size);
+	font-weight: var(--type-dropdown-menu-sub-trigger-weight);
+	line-height: var(--type-dropdown-menu-sub-trigger-leading);
+	letter-spacing: var(--type-dropdown-menu-sub-trigger-tracking);
+	font-family: var(--type-dropdown-menu-sub-trigger-family);
+}
+
 @utility type-dropdown-menu-label {
 	font-size: var(--type-dropdown-menu-label-size);
 	font-weight: var(--type-dropdown-menu-label-weight);
@@ -210,12 +282,12 @@
 	font-family: var(--type-command-input-family);
 }
 
-@utility type-command-input-wrapper {
-	font-size: var(--type-command-input-wrapper-size);
-	font-weight: var(--type-command-input-wrapper-weight);
-	line-height: var(--type-command-input-wrapper-leading);
-	letter-spacing: var(--type-command-input-wrapper-tracking);
-	font-family: var(--type-command-input-wrapper-family);
+@utility type-command-group {
+	font-size: var(--type-command-group-size);
+	font-weight: var(--type-command-group-weight);
+	line-height: var(--type-command-group-leading);
+	letter-spacing: var(--type-command-group-tracking);
+	font-family: var(--type-command-group-family);
 }
 
 @utility type-command-item {
@@ -314,6 +386,14 @@
 	font-family: var(--type-avatar-fallback-family);
 }
 
+@utility type-avatar-fallback-sm {
+	font-size: var(--type-avatar-fallback-sm-size);
+	font-weight: var(--type-avatar-fallback-sm-weight);
+	line-height: var(--type-avatar-fallback-sm-leading);
+	letter-spacing: var(--type-avatar-fallback-sm-tracking);
+	font-family: var(--type-avatar-fallback-sm-family);
+}
+
 @utility type-avatar-group-count {
 	font-size: var(--type-avatar-group-count-size);
 	font-weight: var(--type-avatar-group-count-weight);
@@ -328,6 +408,62 @@
 	line-height: var(--type-sidebar-group-content-leading);
 	letter-spacing: var(--type-sidebar-group-content-tracking);
 	font-family: var(--type-sidebar-group-content-family);
+}
+
+@utility type-sidebar-group-label {
+	font-size: var(--type-sidebar-group-label-size);
+	font-weight: var(--type-sidebar-group-label-weight);
+	line-height: var(--type-sidebar-group-label-leading);
+	letter-spacing: var(--type-sidebar-group-label-tracking);
+	font-family: var(--type-sidebar-group-label-family);
+}
+
+@utility type-sidebar-menu-button {
+	font-size: var(--type-sidebar-menu-button-size);
+	font-weight: var(--type-sidebar-menu-button-weight);
+	line-height: var(--type-sidebar-menu-button-leading);
+	letter-spacing: var(--type-sidebar-menu-button-tracking);
+	font-family: var(--type-sidebar-menu-button-family);
+}
+
+@utility type-sidebar-menu-button-sm {
+	font-size: var(--type-sidebar-menu-button-sm-size);
+	font-weight: var(--type-sidebar-menu-button-sm-weight);
+	line-height: var(--type-sidebar-menu-button-sm-leading);
+	letter-spacing: var(--type-sidebar-menu-button-sm-tracking);
+	font-family: var(--type-sidebar-menu-button-sm-family);
+}
+
+@utility type-sidebar-menu-button-lg {
+	font-size: var(--type-sidebar-menu-button-lg-size);
+	font-weight: var(--type-sidebar-menu-button-lg-weight);
+	line-height: var(--type-sidebar-menu-button-lg-leading);
+	letter-spacing: var(--type-sidebar-menu-button-lg-tracking);
+	font-family: var(--type-sidebar-menu-button-lg-family);
+}
+
+@utility type-sidebar-menu-button-active {
+	font-size: var(--type-sidebar-menu-button-active-size);
+	font-weight: var(--type-sidebar-menu-button-active-weight);
+	line-height: var(--type-sidebar-menu-button-active-leading);
+	letter-spacing: var(--type-sidebar-menu-button-active-tracking);
+	font-family: var(--type-sidebar-menu-button-active-family);
+}
+
+@utility type-sidebar-menu-sub-button {
+	font-size: var(--type-sidebar-menu-sub-button-size);
+	font-weight: var(--type-sidebar-menu-sub-button-weight);
+	line-height: var(--type-sidebar-menu-sub-button-leading);
+	letter-spacing: var(--type-sidebar-menu-sub-button-tracking);
+	font-family: var(--type-sidebar-menu-sub-button-family);
+}
+
+@utility type-sidebar-menu-sub-button-sm {
+	font-size: var(--type-sidebar-menu-sub-button-sm-size);
+	font-weight: var(--type-sidebar-menu-sub-button-sm-weight);
+	line-height: var(--type-sidebar-menu-sub-button-sm-leading);
+	letter-spacing: var(--type-sidebar-menu-sub-button-sm-tracking);
+	font-family: var(--type-sidebar-menu-sub-button-sm-family);
 }
 
 @utility type-sidebar-menu-badge {
@@ -352,6 +488,30 @@
 	line-height: var(--type-error-state-title-leading);
 	letter-spacing: var(--type-error-state-title-tracking);
 	font-family: var(--type-error-state-title-family);
+}
+
+@utility type-input-group-addon {
+	font-size: var(--type-input-group-addon-size);
+	font-weight: var(--type-input-group-addon-weight);
+	line-height: var(--type-input-group-addon-leading);
+	letter-spacing: var(--type-input-group-addon-tracking);
+	font-family: var(--type-input-group-addon-family);
+}
+
+@utility type-input-group-text {
+	font-size: var(--type-input-group-text-size);
+	font-weight: var(--type-input-group-text-weight);
+	line-height: var(--type-input-group-text-leading);
+	letter-spacing: var(--type-input-group-text-tracking);
+	font-family: var(--type-input-group-text-family);
+}
+
+@utility type-input-group-control {
+	font-size: var(--type-input-group-control-size);
+	font-weight: var(--type-input-group-control-weight);
+	line-height: var(--type-input-group-control-leading);
+	letter-spacing: var(--type-input-group-control-tracking);
+	font-family: var(--type-input-group-control-family);
 }
 
 @utility type-empty-state-title {
@@ -386,6 +546,22 @@
 	font-family: var(--type-metric-value-family);
 }
 
+@utility type-metric-value-lg {
+	font-size: var(--type-metric-value-lg-size);
+	font-weight: var(--type-metric-value-lg-weight);
+	line-height: var(--type-metric-value-lg-leading);
+	letter-spacing: var(--type-metric-value-lg-tracking);
+	font-family: var(--type-metric-value-lg-family);
+}
+
+@utility type-metric-unit {
+	font-size: var(--type-metric-unit-size);
+	font-weight: var(--type-metric-unit-weight);
+	line-height: var(--type-metric-unit-leading);
+	letter-spacing: var(--type-metric-unit-tracking);
+	font-family: var(--type-metric-unit-family);
+}
+
 @utility type-metric-total {
 	font-size: var(--type-metric-total-size);
 	font-weight: var(--type-metric-total-weight);
@@ -402,12 +578,28 @@
 	font-family: var(--type-metric-delta-family);
 }
 
+@utility type-metric-delta-label {
+	font-size: var(--type-metric-delta-label-size);
+	font-weight: var(--type-metric-delta-label-weight);
+	line-height: var(--type-metric-delta-label-leading);
+	letter-spacing: var(--type-metric-delta-label-tracking);
+	font-family: var(--type-metric-delta-label-family);
+}
+
 @utility type-metric-label {
 	font-size: var(--type-metric-label-size);
 	font-weight: var(--type-metric-label-weight);
 	line-height: var(--type-metric-label-leading);
 	letter-spacing: var(--type-metric-label-tracking);
 	font-family: var(--type-metric-label-family);
+}
+
+@utility type-metric-heading {
+	font-size: var(--type-metric-heading-size);
+	font-weight: var(--type-metric-heading-weight);
+	line-height: var(--type-metric-heading-leading);
+	letter-spacing: var(--type-metric-heading-tracking);
+	font-family: var(--type-metric-heading-family);
 }
 
 @utility type-chart-label {
