@@ -207,8 +207,8 @@ drift in CI.
 | `plain` | `metric-delta-label` |
 | `page-title` | `page-title` |
 | `section-title` | `section-title`, `empty-state-title-illustrated` |
-| `body` | `body`, `card`, `dialog-content`, `sheet-content`, `section-description`, `input`, `textarea`, `select-trigger`, `command-input`, `command-empty`, `table`, `pagination-ellipsis`, `table-toolbar`, `table-empty-state`, `card-metadata`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `sidebar-menu-button`, `sidebar-menu-button-lg`, `sidebar-menu-sub-button`, `error-state`, `input-group-text`, `input-group-control`, `empty-state-description`, `metric-label`, `chat-message` |
-| `emphasis` | `emphasis`, `table-head`, `table-footer`, `sidebar-menu-button-active`, `error-state-title` |
+| `body` | `body`, `card`, `dialog-content`, `sheet-content`, `section-description`, `input`, `textarea`, `select-trigger`, `command-input`, `command-empty`, `banner`, `table`, `pagination-ellipsis`, `table-toolbar`, `table-empty-state`, `card-metadata`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `sidebar-menu-button`, `sidebar-menu-button-lg`, `sidebar-menu-sub-button`, `error-state`, `input-group-text`, `input-group-control`, `empty-state-description`, `metric-label`, `chat-message` |
+| `emphasis` | `emphasis`, `banner-title`, `table-head`, `table-footer`, `sidebar-menu-button-active`, `error-state-title` |
 | `control-label` | `label` |
 | `menu-item` | `select-item`, `dropdown-menu-item`, `dropdown-menu-checkbox-item`, `dropdown-menu-radio-item`, `dropdown-menu-sub-trigger`, `command-item` |
 | `group-label` | `dropdown-menu-label`, `command-group`, `badge`, `card-eyebrow`, `sidebar-group-label`, `sidebar-menu-badge` |
