@@ -125,6 +125,44 @@ Two complete example skins — one light, one sharp-cornered dark — live in
 mounted-file source → resolver → contract validator) in
 `src/lib/skin/__tests__/example-skins.test.ts`.
 
+## Proving a skin survives
+
+A skin descriptor is written in one repository and validated in another, and the
+two halves of that split fail quietly together: the contract validator is
+**fail-closed** (a field it does not define throws) while the resolver is
+**fail-safe** (it catches and keeps the compiled default). So one unrecognised
+key costs a descriptor *every* value it carried, and the only trace is a log line
+on a server.
+
+The check for that ships here rather than in each authoring repository, because a
+private schema next to the descriptor would pass while the real resolver
+disagreed:
+
+```ts
+import { assertSkinSurvives } from "@codefly-dev/ui/skin";
+
+await assertSkinSurvives(descriptor, {
+  fallback,                    // the compiled default the product overlays
+  sources: [mountedFileSource], // the deployment's OWN chain, not a stand-in
+  expectSource: "file",        // the product can never silently BE the fallback
+});
+```
+
+It resolves the descriptor, walks every leaf it declared, and throws naming each
+one that did not reach the render along with the source that won.
+`checkSkinSurvival` returns the same thing as a report instead of throwing.
+
+Two results are worth knowing before reading a failure:
+
+- **A rejected descriptor reports every leaf**, not the offending key alone. That
+  is the fail-closed/fail-safe composition being shown, not a bug in the check.
+- **An unsafe `logo.lightSrc` reports the whole `branding.logo`**, because the
+  resolver keeps a logo only when its light source passes the asset allowlist —
+  the alt text and dark variant go with it.
+
+`FRONTEND_APPEARANCE_FIELD_NAMES` in the contract names the accepted `appearance`
+fields, alongside `FRONTEND_APPEARANCE_TOKEN_NAMES` for the per-mode colors.
+
 ## Consuming by name
 
 - **Kit components** reference token utilities only (`bg-card`,

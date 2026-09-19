@@ -1,6 +1,6 @@
 {
 	"name": "@codefly/saas-plugin-contract",
-	"version": "2.1.0",
+	"version": "2.2.0",
 	"description": "React-free serializable frontend plugin metadata and composition for the Codefly SaaS host.",
 	"type": "module",
 	"sideEffects": false,

@@ -13,6 +13,7 @@ export type {
 	DashboardWidget,
 	FrontendAppearance,
 	FrontendAppearanceDefinition,
+	FrontendAppearanceFieldName,
 	FrontendAppearanceTokenName,
 	FrontendBranding,
 	FrontendConfig,
@@ -28,8 +29,8 @@ export type {
 	FrontendThemePreference,
 	FrontendThemeTokenOverrides,
 	FrontendThemeTokens,
-	InstalledFrontendService,
 	InstalledDashboardWidget,
+	InstalledFrontendService,
 	InstalledPluginRoute,
 	NavItem,
 	NavigationPlacement,
@@ -42,6 +43,7 @@ export type {
 	PresentationRole,
 } from "./contracts.js";
 export {
+	FRONTEND_APPEARANCE_FIELD_NAMES,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
 } from "./contracts.js";

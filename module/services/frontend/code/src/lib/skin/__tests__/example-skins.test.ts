@@ -1,9 +1,15 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
 } from "@codefly/saas-plugin-contract";
-import type { ResolvedSkinBase, SkinSource } from "@codefly-dev/ui/skin";
+import {
+	assertSkinSurvives,
+	type RawSkinDescriptor,
+	type ResolvedSkinBase,
+	type SkinSource,
+} from "@codefly-dev/ui/skin";
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearSkinCache, resolveSkin } from "..";
 import { fileSkinSource } from "../sources";
@@ -84,6 +90,27 @@ describe("shipped example skins", () => {
 		expect(skin.branding.name).toBe("Nocturne");
 		expect(skin.branding.logo?.lightSrc).toBe("/brand/nocturne-logo.svg");
 	});
+
+	// Value assertions cover the handful of fields a human thought to name; the
+	// example skins declare 88 tokens between them, so a rename of any of the
+	// other 80 would pass every test above. The exported survival check walks
+	// EVERY declared leaf through the real mounted-file source and fails on any
+	// one that did not reach the render — the same guarantee a descriptor-owning
+	// repository gets by depending on the contract instead of hand-rolling it.
+	it.each(["helios", "nocturne"])(
+		"%s survives resolution leaf for leaf, from the file source",
+		async (name) => {
+			const descriptor = JSON.parse(
+				readFileSync(join(exampleDir(name), "default.json"), "utf8"),
+			) as RawSkinDescriptor;
+			const skin = await assertSkinSurvives(descriptor, {
+				fallback,
+				sources: [exampleSource(name)],
+				expectSource: "file",
+			});
+			expect(skin.source).toBe("file");
+		},
+	);
 
 	it("gives the two example skins genuinely different appearances", async () => {
 		// Distinct hosts so the two resolutions don't share a cache entry.
