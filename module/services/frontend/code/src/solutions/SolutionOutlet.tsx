@@ -28,7 +28,7 @@ import * as ReactDOM from "react-dom";
 
 import type { DashboardAuthoring } from "@/features/dashboard";
 import { authedFetch, getToken, refreshToken } from "@/lib/connect/token-store";
-import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
+import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_UI_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
 
 // Sealed layers. A higher layer COMPOSES what a lower layer ships but cannot
 // shadow or replace it: a solution remote renders against the one true instance
@@ -37,7 +37,7 @@ import { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION } from "./host-runtime";
 // downward" — packages/codefly-ui/ARCHITECTURE.md.)
 //
 // This host config is one half of that seal: every sealed layer package — React,
-// the co-versioned kit, and each module UI package — is shared as a
+// the kit, and each module UI package — is shared as a
 // Module-Federation `singleton`. singleton keeps exactly ONE instance across the
 // host and every remote (drop it and two copies coexist, splitting React context
 // and the skin). The seal is cooperative — it also relies on each remote's build
@@ -56,7 +56,7 @@ const SEALED_SHARE_CONFIG = {
 // declared requirements they do not satisfy, so both sides have to agree on one
 // set of numbers. Re-exported here because the share config below and the
 // `kit-shared-version` test have always read them from this module.
-export { CODEFLY_KIT_VERSION, CODEFLY_SAAS_SDK_VERSION };
+export { CODEFLY_KIT_VERSION, CODEFLY_SAAS_UI_VERSION, CODEFLY_SAAS_SDK_VERSION };
 
 // The co-versioned kit + module-UI packages, sealed into the Module-Federation
 // scope. This is the single source of truth the `kit-shared-version` test
@@ -108,7 +108,7 @@ export const CODEFLY_KIT_SHARED = {
 		shareConfig: SEALED_SHARE_CONFIG,
 	},
 	"@codefly-dev/saas-ui": {
-		version: CODEFLY_KIT_VERSION,
+		version: CODEFLY_SAAS_UI_VERSION,
 		lib: () => SaasUi,
 		shareConfig: SEALED_SHARE_CONFIG,
 	},

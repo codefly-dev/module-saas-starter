@@ -111,10 +111,11 @@ release that changed the kit *without* bumping `version` fails rather than
 overwrite an immutable version, so a stale `@codefly-dev/ui` can never silently
 ship to solutions.
 
-The version is co-versioned with `@codefly-dev/saas-ui` and with the host's
-`CODEFLY_KIT_VERSION` (`src/solutions/SolutionOutlet.tsx`); the
-`kit-shared-version` test pins all three together, so one bump means three
-edits.
+The version is co-versioned with `@codefly-dev/saas-ui`. The host reads each
+package's actual manifest version in `src/solutions/host-runtime.ts` for both
+registration compatibility and federation sharing; no host version literal
+needs updating. The `kit-shared-version` test checks both the shared versions
+and the UI kits' co-versioning.
 
 ## Skin resolution
 
