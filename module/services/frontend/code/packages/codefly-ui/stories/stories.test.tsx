@@ -2,6 +2,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
 import * as composites from "./composites.stories";
+import * as foundations from "./foundations.stories";
 import * as controls from "./controls.stories";
 import * as primitives from "./primitives.stories";
 import * as metrics from "./metrics.stories";
@@ -11,6 +12,7 @@ import * as semanticTables from "./semantic-table.stories";
 afterEach(cleanup);
 for (const [section, stories] of Object.entries({
 	controls,
+	foundations,
 	primitives,
 	metrics,
 	tables,

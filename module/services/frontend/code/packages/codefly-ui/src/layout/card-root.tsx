@@ -92,12 +92,42 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
 	);
 }
 
+/** A short kicker above a card's title: a category, a status, a source. */
+function CardEyebrow({ className, ...props }: React.ComponentProps<"div">) {
+	return (
+		<div
+			data-slot="card-eyebrow"
+			className={cn(
+				"type-card-eyebrow uppercase text-muted-foreground",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
+/** A row of secondary facts about a card's subject. */
+function CardMetadata({ className, ...props }: React.ComponentProps<"div">) {
+	return (
+		<div
+			data-slot="card-metadata"
+			className={cn(
+				"type-card-metadata flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
 export {
-	CardRoot,
 	CardAction,
 	CardContent,
 	CardDescription,
+	CardEyebrow,
 	CardFooter,
 	CardHeader,
+	CardMetadata,
+	CardRoot,
 	CardTitle,
 };

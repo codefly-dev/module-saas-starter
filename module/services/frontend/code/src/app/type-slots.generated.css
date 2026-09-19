@@ -330,6 +330,70 @@
 	font-family: var(--type-table-family);
 }
 
+@utility type-segmented-control-segment {
+	font-size: var(--type-segmented-control-segment-size);
+	font-weight: var(--type-segmented-control-segment-weight);
+	line-height: var(--type-segmented-control-segment-leading);
+	letter-spacing: var(--type-segmented-control-segment-tracking);
+	font-family: var(--type-segmented-control-segment-family);
+}
+
+@utility type-pagination-ellipsis {
+	font-size: var(--type-pagination-ellipsis-size);
+	font-weight: var(--type-pagination-ellipsis-weight);
+	line-height: var(--type-pagination-ellipsis-leading);
+	letter-spacing: var(--type-pagination-ellipsis-tracking);
+	font-family: var(--type-pagination-ellipsis-family);
+}
+
+@utility type-field-description {
+	font-size: var(--type-field-description-size);
+	font-weight: var(--type-field-description-weight);
+	line-height: var(--type-field-description-leading);
+	letter-spacing: var(--type-field-description-tracking);
+	font-family: var(--type-field-description-family);
+}
+
+@utility type-field-error {
+	font-size: var(--type-field-error-size);
+	font-weight: var(--type-field-error-weight);
+	line-height: var(--type-field-error-leading);
+	letter-spacing: var(--type-field-error-tracking);
+	font-family: var(--type-field-error-family);
+}
+
+@utility type-table-toolbar {
+	font-size: var(--type-table-toolbar-size);
+	font-weight: var(--type-table-toolbar-weight);
+	line-height: var(--type-table-toolbar-leading);
+	letter-spacing: var(--type-table-toolbar-tracking);
+	font-family: var(--type-table-toolbar-family);
+}
+
+@utility type-table-empty-state {
+	font-size: var(--type-table-empty-state-size);
+	font-weight: var(--type-table-empty-state-weight);
+	line-height: var(--type-table-empty-state-leading);
+	letter-spacing: var(--type-table-empty-state-tracking);
+	font-family: var(--type-table-empty-state-family);
+}
+
+@utility type-card-eyebrow {
+	font-size: var(--type-card-eyebrow-size);
+	font-weight: var(--type-card-eyebrow-weight);
+	line-height: var(--type-card-eyebrow-leading);
+	letter-spacing: var(--type-card-eyebrow-tracking);
+	font-family: var(--type-card-eyebrow-family);
+}
+
+@utility type-card-metadata {
+	font-size: var(--type-card-metadata-size);
+	font-weight: var(--type-card-metadata-weight);
+	line-height: var(--type-card-metadata-leading);
+	letter-spacing: var(--type-card-metadata-tracking);
+	font-family: var(--type-card-metadata-family);
+}
+
 @utility type-table-head {
 	font-size: var(--type-table-head-size);
 	font-weight: var(--type-table-head-weight);

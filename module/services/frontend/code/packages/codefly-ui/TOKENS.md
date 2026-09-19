@@ -203,18 +203,18 @@ drift in CI.
 | `surface-title-tight` | `dialog-title` |
 | `surface-title-compact` | `card-title-sm` |
 | `surface-title-plain` | `card-heading` |
-| `surface-description` | `card-description`, `dialog-description`, `sheet-description`, `alert-dialog-description` |
+| `surface-description` | `card-description`, `dialog-description`, `sheet-description`, `alert-dialog-description`, `field-description`, `field-error` |
 | `plain` | `metric-delta-label` |
 | `page-title` | `page-title` |
 | `section-title` | `section-title`, `empty-state-title-illustrated` |
-| `body` | `body`, `card`, `dialog-content`, `sheet-content`, `section-description`, `input`, `textarea`, `select-trigger`, `command-input`, `command-empty`, `table`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `sidebar-menu-button`, `sidebar-menu-button-lg`, `sidebar-menu-sub-button`, `error-state`, `input-group-text`, `input-group-control`, `empty-state-description`, `metric-label`, `chat-message` |
+| `body` | `body`, `card`, `dialog-content`, `sheet-content`, `section-description`, `input`, `textarea`, `select-trigger`, `command-input`, `command-empty`, `table`, `pagination-ellipsis`, `table-toolbar`, `table-empty-state`, `card-metadata`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `sidebar-menu-button`, `sidebar-menu-button-lg`, `sidebar-menu-sub-button`, `error-state`, `input-group-text`, `input-group-control`, `empty-state-description`, `metric-label`, `chat-message` |
 | `emphasis` | `emphasis`, `table-head`, `table-footer`, `sidebar-menu-button-active`, `error-state-title` |
 | `control-label` | `label` |
 | `menu-item` | `select-item`, `dropdown-menu-item`, `dropdown-menu-checkbox-item`, `dropdown-menu-radio-item`, `dropdown-menu-sub-trigger`, `command-item` |
-| `group-label` | `dropdown-menu-label`, `command-group`, `badge`, `sidebar-group-label`, `sidebar-menu-badge` |
+| `group-label` | `dropdown-menu-label`, `command-group`, `badge`, `card-eyebrow`, `sidebar-group-label`, `sidebar-menu-badge` |
 | `group-label-plain` | `caption-plain`, `select-label`, `tooltip-content`, `avatar-fallback-sm`, `sidebar-menu-button-sm`, `sidebar-menu-sub-button-sm` |
 | `shortcut` | `dropdown-menu-shortcut`, `command-shortcut` |
-| `control` | `tabs-trigger`, `input-group-addon`, `empty-state-title`, `metric-heading` |
+| `control` | `segmented-control-segment`, `tabs-trigger`, `input-group-addon`, `empty-state-title`, `metric-heading` |
 | `control-touch` | `input-touch`, `textarea-touch` |
 | `metric-value` | `metric-value` |
 | `metric-value-lg` | `metric-value-lg` |

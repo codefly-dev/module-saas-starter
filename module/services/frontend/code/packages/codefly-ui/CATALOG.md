@@ -9,7 +9,7 @@ not evidence that all primitives, stories or production callers had migrated.
 
 | Tier | Contract |
 | --- | --- |
-| `layout` (rank 1) | Native and Base UI controls, compound CardRoot/TabsRoot, data-in Card/Tabs, page layout, feedback, responsive Sidebar and Toaster |
+| `layout` (rank 1) | Native and Base UI controls, compound CardRoot/TabsRoot, data-in Card/Tabs, SegmentedControl, Pagination, Field, table toolbar and empty state, page layout, feedback, responsive Sidebar and Toaster |
 | `dashboard` (rank 3) | Declarative dashboard, point charts, multi-series metric charts, tiles, provenance and sparklines |
 | `chat` (rank 3) | Resolved messages and injected send action |
 | `table` (rank 3) | DataTable driven by an injected TanStack table instance |
@@ -30,6 +30,20 @@ Every inventory entry records explicit story file/export references or a
 families and stale story references. DOM render checks do not establish browser,
 external skin, provider workflow or visual regression coverage; those remain
 separate evidence. See the migration document for outstanding closure work.
+
+## Type and control geometry
+
+No component here carries a raw `text-*`, `font-*`, `leading-*` or `tracking-*`
+utility, and no control carries a literal height. A component names its **type
+slot** (`type-card-title`) or its **control rung** (`control-sm`); the skin
+decides what either renders as. The vocabulary — an ordinal scale, the roles
+that point into it, the slots that point at roles, and the rungs — is
+[TOKENS.md](./TOKENS.md), and `src/__tests__/no-raw-type-primitives.test.ts`
+refuses a primitive as a default-deny, the same way colour is already refused.
+
+For a control the type belongs to the RUNG rather than to a size variant: a
+caller choosing `size="sm"` chooses the height, the inline padding, the label's
+type and the glyph size together.
 
 ## Conventions
 
