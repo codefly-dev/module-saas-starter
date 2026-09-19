@@ -37,10 +37,11 @@ import (
 // helper rather than listing its call sites keeps a new caller from failing
 // this gate for a reason that is already guaranteed.
 var auditActorTypeIndirectSites = map[string]string{
-	"webhooks.go:CreateSubscription":    "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
-	"webhooks.go:DeleteSubscription":    "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
-	"webhooks.go:ReplayWebhookDelivery": "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
-	"webhooks.go:RotateWebhookSecret":   "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
+	"delegated_audience_audit.go:ObserveDelegatedAudienceExchange": "delegatedAudienceActorType returns only registered constants; TestDelegatedAudienceActorTypeSpeaksTheRegisteredVocabulary pins every branch.",
+	"webhooks.go:CreateSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
+	"webhooks.go:DeleteSubscription":                               "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
+	"webhooks.go:ReplayWebhookDelivery":                            "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
+	"webhooks.go:RotateWebhookSecret":                              "AuditActor.Type, rejected by AuditActor.validate before the mutation opens its transaction.",
 }
 
 func TestAuditActorTypes_AreTheValuesTheColumnAdmits(t *testing.T) {

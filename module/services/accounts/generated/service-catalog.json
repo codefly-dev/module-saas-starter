@@ -176,6 +176,7 @@
         "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs",
         "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent",
         "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob",
+        "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience",
         "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
         "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob",
         "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval",
@@ -4403,6 +4404,51 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience",
+      "service": "ModuleCapabilitiesService",
+      "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
+      "method": "ExchangeDelegatedOperationAudience",
+      "input_type": "saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest",
+      "output_type": "saas.accounts.v1.IssuedWorkContext",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/module_capabilities.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.module.delegated_audience_exchange"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS_AND_FAILURE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Exchange a current signed parent through one installed operation binding.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience",
       "service": "ModuleCapabilitiesService",
       "full_service": "saas.accounts.v1.ModuleCapabilitiesService",
@@ -4426,8 +4472,10 @@
         "resource_bindings": [],
         "mfa": "MFA_REQUIREMENT_NONE",
         "audit": {
-          "events": [],
-          "emission": "AUDIT_EMISSION_NONE"
+          "events": [
+            "saas.module.delegated_audience_exchange"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS_AND_FAILURE"
         },
         "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
         "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",

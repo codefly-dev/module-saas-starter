@@ -22,6 +22,26 @@ func installReadBinding() {
 		}},
 	})
 }
+
+func installedOperationRegistry(includeGenerate bool) business.ModulePrincipalRegistry {
+	operations := map[string]business.ModuleOperationAudience{
+		"record": {
+			Audience:     "example-receipts",
+			InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "receipts", Actions: []string{"append", "read"}}},
+			LookupScopes: []business.ModuleOperationScope{{ResourceKind: "receipts", Actions: []string{"read"}}},
+		},
+	}
+	if includeGenerate {
+		operations["generate"] = business.ModuleOperationAudience{
+			Audience:     "example-producer",
+			InvokeScopes: []business.ModuleOperationScope{{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIDs: []string{"result-1"}}},
+			LookupScopes: []business.ModuleOperationScope{{ResourceKind: "results", Actions: []string{"read"}, ResourceIDs: []string{"result-1"}}},
+		}
+	}
+	return business.ModulePrincipalRegistry{
+		business.ModulePrincipalID("example"): {Prefix: "example", Tenant: readOrg, OperationAudiences: operations},
+	}
+}
 func readExchangeRequest(t *testing.T, parent string) *connect.Request[gen.ModuleExchangeDelegatedReadAudienceRequest] {
 	t.Helper()
 	token, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
@@ -86,6 +106,100 @@ func TestDelegatedReadExchangeOwnerAndDenials(t *testing.T) {
 	out, err = client.ExchangeDelegatedReadAudience(context.Background(), readExchangeRequest(t, parent))
 	require.Error(t, err)
 	require.Nil(t, out)
+}
+
+func TestDelegatedOperationExchangeUsesInstalledScopesAndIsolatesRevocation(t *testing.T) {
+	_, facts, client, _ := sourceReadFixture(t)
+	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
+	parentToken, _, err := workContextSingleton.signer.StartTask(codefly.StartTaskInput{
+		Audience: "example", TenantID: readOrg, OwnerPrincipalID: readOwner,
+		TaskID: "019f6bf7-1111-7111-8111-111111111111", SessionID: "019f6bf7-2222-7222-8222-222222222222",
+		AuthorizationRevision: facts.facts.EffectiveRevision(), ReplayPolicy: codefly.WorkContextReplayIdempotent,
+		AuthorityScopes: []*basev0.WorkScopeV1{
+			{ResourceKind: "receipts", Actions: []string{"append", "read"}},
+			{ResourceKind: "results", Actions: []string{"read", "write"}, ResourceIds: []string{"result-1"}},
+		},
+	})
+	require.NoError(t, err)
+	parent := parentToken.Encoded()
+	exchange := func(binding string, lookup bool) (*basev0.WorkContextV1, error) {
+		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
+		if err != nil {
+			return nil, err
+		}
+		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: lookup})
+		req.Header().Set(codefly.WorkContextHeaderName, module.Encoded())
+		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
+		out, err := client.ExchangeDelegatedOperationAudience(context.Background(), req)
+		if err != nil {
+			return nil, err
+		}
+		token, err := codefly.ParseWorkContextToken(out.Msg.Token)
+		if err != nil {
+			return nil, err
+		}
+		return workContextSingleton.verifier.Verify(token, codefly.WorkContextExpectations{Issuer: "accounts.test"})
+	}
+
+	invoked, err := exchange("generate", false)
+	require.NoError(t, err)
+	require.Equal(t, "example-producer", invoked.Audience)
+	require.NoError(t, codefly.RequireWorkContextScope(invoked, codefly.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
+
+	lookup, err := exchange("generate", true)
+	require.NoError(t, err)
+	require.Error(t, codefly.RequireWorkContextScope(lookup, codefly.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "write", RequireExplicitResource: true}))
+	require.NoError(t, codefly.RequireWorkContextScope(lookup, codefly.WorkContextScopeRequirement{ResourceKind: "results", ResourceID: "result-1", Action: "read", RequireExplicitResource: true}))
+
+	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(false))
+	_, err = exchange("generate", false)
+	require.Error(t, err)
+	recorded, err := exchange("record", false)
+	require.NoError(t, err)
+	require.Equal(t, "example-receipts", recorded.Audience)
+	require.NoError(t, codefly.RequireWorkContextScope(recorded, codefly.WorkContextScopeRequirement{ResourceKind: "receipts", ResourceID: "any", Action: "append"}))
+}
+
+func TestDelegatedOperationExchangeAuditsVerifiedAttributionAndOutcome(t *testing.T) {
+	_, facts, client, mint := sourceReadFixture(t)
+	service.SetModuleCapabilities(nil, nil, installedOperationRegistry(true))
+	audit := &recordingAuditEmitter{}
+	service.SetAuditEmitter(audit)
+	parent := mint("example", "results", "read")
+
+	exchange := func(binding string) error {
+		module, _, err := workContextSingleton.StartModuleTask(business.ModuleWorkContextAuthority{PrincipalID: business.ModulePrincipalID("example"), Tenant: readOrg})
+		require.NoError(t, err)
+		req := connect.NewRequest(&gen.ModuleExchangeDelegatedOperationAudienceRequest{BindingId: binding, ParentWorkContextToken: parent, Lookup: true})
+		req.Header().Set(codefly.WorkContextHeaderName, module.Encoded())
+		req.Header().Set("x-codefly-internal-token", "source-read-test-perimeter")
+		_, err = client.ExchangeDelegatedOperationAudience(context.Background(), req)
+		return err
+	}
+
+	require.NoError(t, exchange("generate"))
+	require.Error(t, exchange("missing"))
+	facts.facts.OrganizationRevision++
+	require.Error(t, exchange("generate"))
+	require.Len(t, audit.entries, 3)
+	for i, outcome := range []string{business.DelegatedAudienceExchangeIssued, business.DelegatedAudienceExchangeRefused, business.DelegatedAudienceExchangeRefused} {
+		entry := audit.entries[i]
+		require.Equal(t, business.EventDelegatedAudienceExchange, entry.EventType)
+		require.Equal(t, readOwner, entry.ActorID)
+		require.Equal(t, readOrg, entry.OrgID)
+		require.Equal(t, readOwner, entry.Payload["owner_principal_id"])
+		require.Equal(t, readOwner, entry.Payload["actor_principal_id"])
+		require.Equal(t, string(business.ModulePrincipalID("example")), entry.Payload["module_principal_id"])
+		require.Equal(t, "operation", entry.Payload["binding_kind"])
+		require.Equal(t, true, entry.Payload["lookup"])
+		require.Equal(t, outcome, entry.Payload["outcome"])
+	}
+	require.Equal(t, "example-producer", audit.entries[0].Payload["audience"])
+	require.NotContains(t, audit.entries[0].Payload, "refusal_code")
+	require.Equal(t, "PermissionDenied", audit.entries[1].Payload["refusal_code"])
+	require.NotContains(t, audit.entries[1].Payload, "audience")
+	require.Equal(t, "FailedPrecondition", audit.entries[2].Payload["refusal_code"])
+	require.NotContains(t, audit.entries[2].Payload, "audience")
 }
 
 type readExchangeAuthority struct {

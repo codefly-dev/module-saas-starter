@@ -171,6 +171,7 @@ const (
 	EventAPIKeyCreated               EventType = "saas.api_key.created"
 	EventModuleRegistrationMint      EventType = "saas.module.registration_minted"
 	EventModuleWorkContextMint       EventType = "saas.module.work_context_minted"
+	EventDelegatedAudienceExchange   EventType = "saas.module.delegated_audience_exchange"
 	EventSolutionRegistrationMint    EventType = "saas.solution.registration_minted"
 	EventSolutionRegistrationUpdated EventType = "saas.solution.registration_updated"
 	EventSolutionRegistrationDeleted EventType = "saas.solution.registration_deleted"
@@ -343,6 +344,16 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventAPIKeyCreated, CategoryAccess, "An API key was minted.", uid("key_id"), PayloadField{Name: "scopes", Kind: FieldStringArray}),
 	mutation(EventModuleRegistrationMint, CategoryAccess, "A composed module was issued a gateway registration credential.", str("prefix")),
 	mutation(EventModuleWorkContextMint, CategoryAccess, "A composed module was issued a Work Context for its service principal.", str("prefix"), str("tenant")),
+	observation(EventDelegatedAudienceExchange, CategoryAccess, "A composed module's installed delegated-audience exchange was issued or refused.",
+		PayloadField{Name: "owner_principal_id", Kind: FieldUUID, Required: true},
+		PayloadField{Name: "actor_principal_id", Kind: FieldUUID, Required: true},
+		PayloadField{Name: "module_principal_id", Kind: FieldString, Required: true},
+		PayloadField{Name: "binding_kind", Kind: FieldEnum, Required: true, Enum: []string{"read", "operation"}},
+		PayloadField{Name: "binding_id", Kind: FieldString, Required: true},
+		str("audience"),
+		PayloadField{Name: "lookup", Kind: FieldBool, Required: true},
+		PayloadField{Name: "outcome", Kind: FieldEnum, Required: true, Enum: []string{DelegatedAudienceExchangeIssued, DelegatedAudienceExchangeRefused}},
+		PayloadField{Name: "refusal_code", Kind: FieldEnum, Enum: []string{"InvalidArgument", "Unauthenticated", "PermissionDenied", "FailedPrecondition", "Unavailable", "Internal"}}),
 	mutation(EventSolutionRegistrationMint, CategoryAccess, "A solution was issued a gateway and frontend registration credential.", str("solution_id")),
 	mutation(EventSolutionRegistrationUpdated, CategoryAccess, "A solution registered or replaced one half of its runtime registration.", str("solution_id"), str("publisher"), str("half"), PayloadField{Name: "revision", Kind: FieldInt}),
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),

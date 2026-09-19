@@ -21,29 +21,30 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
-	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName  = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
-	ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
-	ModuleCapabilitiesService_PlaceRecord_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
-	ModuleCapabilitiesService_EnqueueJob_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
-	ModuleCapabilitiesService_ClaimJobs_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
-	ModuleCapabilitiesService_HeartbeatJob_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
-	ModuleCapabilitiesService_AckJob_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
-	ModuleCapabilitiesService_NackJob_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
-	ModuleCapabilitiesService_NotifyUser_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
-	ModuleCapabilitiesService_RequestApproval_FullMethodName               = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
-	ModuleCapabilitiesService_GetApproval_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
-	ModuleCapabilitiesService_CancelApproval_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
-	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
-	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
-	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName        = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
-	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
-	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName         = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
-	ModuleCapabilitiesService_PublishEvent_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
-	ModuleCapabilitiesService_Subscribe_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
-	ModuleCapabilitiesService_Unsubscribe_FullMethodName                   = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
-	ModuleCapabilitiesService_ListSubscriptions_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
-	ModuleCapabilitiesService_ReplayEvents_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
+	ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedReadAudience"
+	ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName = "/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"
+	ModuleCapabilitiesService_CheckWorkContextRecordAccess_FullMethodName       = "/saas.accounts.v1.ModuleCapabilitiesService/CheckWorkContextRecordAccess"
+	ModuleCapabilitiesService_ListReadableSourceCollections_FullMethodName      = "/saas.accounts.v1.ModuleCapabilitiesService/ListReadableSourceCollections"
+	ModuleCapabilitiesService_PlaceRecord_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/PlaceRecord"
+	ModuleCapabilitiesService_EnqueueJob_FullMethodName                         = "/saas.accounts.v1.ModuleCapabilitiesService/EnqueueJob"
+	ModuleCapabilitiesService_ClaimJobs_FullMethodName                          = "/saas.accounts.v1.ModuleCapabilitiesService/ClaimJobs"
+	ModuleCapabilitiesService_HeartbeatJob_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/HeartbeatJob"
+	ModuleCapabilitiesService_AckJob_FullMethodName                             = "/saas.accounts.v1.ModuleCapabilitiesService/AckJob"
+	ModuleCapabilitiesService_NackJob_FullMethodName                            = "/saas.accounts.v1.ModuleCapabilitiesService/NackJob"
+	ModuleCapabilitiesService_NotifyUser_FullMethodName                         = "/saas.accounts.v1.ModuleCapabilitiesService/NotifyUser"
+	ModuleCapabilitiesService_RequestApproval_FullMethodName                    = "/saas.accounts.v1.ModuleCapabilitiesService/RequestApproval"
+	ModuleCapabilitiesService_GetApproval_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
+	ModuleCapabilitiesService_CancelApproval_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
+	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
+	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
+	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
+	ModuleCapabilitiesService_MintModuleWorkContext_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext"
+	ModuleCapabilitiesService_PublishEvent_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/PublishEvent"
+	ModuleCapabilitiesService_Subscribe_FullMethodName                          = "/saas.accounts.v1.ModuleCapabilitiesService/Subscribe"
+	ModuleCapabilitiesService_Unsubscribe_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/Unsubscribe"
+	ModuleCapabilitiesService_ListSubscriptions_FullMethodName                  = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubscriptions"
+	ModuleCapabilitiesService_ReplayEvents_FullMethodName                       = "/saas.accounts.v1.ModuleCapabilitiesService/ReplayEvents"
 )
 
 // ModuleCapabilitiesServiceClient is the client API for ModuleCapabilitiesService service.
@@ -53,6 +54,10 @@ type ModuleCapabilitiesServiceClient interface {
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(ctx context.Context, in *ModuleExchangeDelegatedReadAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
+	// ExchangeDelegatedOperationAudience authenticates the module independently
+	// of a current parent context and exchanges only an installed operation's
+	// invoke scopes, or its read-only receipt-lookup subset.
+	ExchangeDelegatedOperationAudience(ctx context.Context, in *ModuleExchangeDelegatedOperationAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(ctx context.Context, in *CheckWorkContextRecordAccessRequest, opts ...grpc.CallOption) (*CheckWorkContextRecordAccessResponse, error)
@@ -129,6 +134,16 @@ func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedReadAudience(ctx cont
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(IssuedWorkContext)
 	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ExchangeDelegatedReadAudience_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *moduleCapabilitiesServiceClient) ExchangeDelegatedOperationAudience(ctx context.Context, in *ModuleExchangeDelegatedOperationAudienceRequest, opts ...grpc.CallOption) (*IssuedWorkContext, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssuedWorkContext)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -371,6 +386,10 @@ type ModuleCapabilitiesServiceServer interface {
 	// ExchangeDelegatedReadAudience authenticates the module independently of a
 	// current parent context and exchanges only its installed read-only binding.
 	ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error)
+	// ExchangeDelegatedOperationAudience authenticates the module independently
+	// of a current parent context and exchanges only an installed operation's
+	// invoke scopes, or its read-only receipt-lookup subset.
+	ExchangeDelegatedOperationAudience(context.Context, *ModuleExchangeDelegatedOperationAudienceRequest) (*IssuedWorkContext, error)
 	// Checks current owner and every delegated actor against true record placement,
 	// intersected with the verified capability's attenuated resource/action scope.
 	CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error)
@@ -445,6 +464,9 @@ type UnimplementedModuleCapabilitiesServiceServer struct{}
 
 func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedReadAudience(context.Context, *ModuleExchangeDelegatedReadAudienceRequest) (*IssuedWorkContext, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedReadAudience not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ExchangeDelegatedOperationAudience(context.Context, *ModuleExchangeDelegatedOperationAudienceRequest) (*IssuedWorkContext, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExchangeDelegatedOperationAudience not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) CheckWorkContextRecordAccess(context.Context, *CheckWorkContextRecordAccessRequest) (*CheckWorkContextRecordAccessResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckWorkContextRecordAccess not implemented")
@@ -548,6 +570,24 @@ func _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler(srv interf
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedReadAudience(ctx, req.(*ModuleExchangeDelegatedReadAudienceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleExchangeDelegatedOperationAudienceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedOperationAudience(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ExchangeDelegatedOperationAudience(ctx, req.(*ModuleExchangeDelegatedOperationAudienceRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -951,6 +991,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExchangeDelegatedReadAudience",
 			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedReadAudience_Handler,
+		},
+		{
+			MethodName: "ExchangeDelegatedOperationAudience",
+			Handler:    _ModuleCapabilitiesService_ExchangeDelegatedOperationAudience_Handler,
 		},
 		{
 			MethodName: "CheckWorkContextRecordAccess",
