@@ -1087,7 +1087,7 @@
     "services/accounts/gateway.bindings.codefly.yaml": "b48bc5d11624e09383a542dc88cc739514a66d594a4b5a5ef8659b95a7215733",
     "services/accounts/generated/authz-methods.json": "3c3fd7cfdeeb8a57215cd88e54912cfb992d0c8352fe8f3896c4ba681506cb62",
     "services/accounts/generated/gateway-routes.json": "0b2dda2d53defb595b6b8529c6e3807880913f58f830597e42b816abb0f6c895",
-    "services/accounts/generated/openapi-raw/api.swagger.json": "85c9afd04c3f15fb1bfb6f5519aca0e6229fab6418b113e50339c31faf3d1512",
+    "services/accounts/generated/openapi-raw/api.swagger.json": "b30b75b66c54718fc9113776fc3d887119be7dffe14f2c386bd566c275277f8d",
     "services/accounts/generated/rest-surface.json": "474f2fe9233411c50c7b3d044040705b826fbadcbd8e0f874eaf7afec694fd62",
     "services/accounts/generated/service-catalog.json": "d0969a706b40c8d17a1165d625aa2dee25c2c0dfa84751b488c72f6351d01271",
     "services/accounts/kreya/customers.krproj": "712a153d7e7051a9d3685c1e4856351af1c174e697911e48bbca16d3d7a138d5",
