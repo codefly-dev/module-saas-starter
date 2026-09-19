@@ -5,6 +5,13 @@ import {
 	type FrontendAppearanceDefinition,
 	type FrontendThemeTokens,
 } from "./contracts.js";
+import {
+	DEFAULT_CONTROL_SIZES,
+	DEFAULT_TYPE_ROLES,
+	DEFAULT_TYPE_SCALE,
+	DEFAULT_TYPE_SLOTS,
+	resolveTypographyLayers,
+} from "./typography.js";
 
 const light: FrontendThemeTokens = {
 	background: "oklch(1 0 0)",
@@ -86,6 +93,10 @@ export const DEFAULT_FRONTEND_APPEARANCE: FrontendAppearance = deepFreeze({
 		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 	// Structural defaults reproduce today's exact layout; omitting any of them
 	// leaves the rendered product byte-for-byte unchanged.
+	typeScale: DEFAULT_TYPE_SCALE,
+	typeRoles: DEFAULT_TYPE_ROLES,
+	typeSlots: DEFAULT_TYPE_SLOTS,
+	controlSizes: DEFAULT_CONTROL_SIZES,
 	spacing: "0.25rem",
 	fontSizeBase: "1rem",
 	sidebarWidth: "16rem",
@@ -183,6 +194,7 @@ export function resolveFrontendAppearance(
 	);
 	const borderWidth = resolveLength("borderWidth", definition.borderWidth);
 	const shadowStrength = resolveShadowStrength(definition.shadowStrength);
+	const layers = resolveTypographyLayers(definition);
 	return deepFreeze({
 		defaultTheme,
 		radius,
@@ -194,6 +206,7 @@ export function resolveFrontendAppearance(
 		sidebarWidthIcon,
 		borderWidth,
 		shadowStrength,
+		...layers,
 		light: resolveTokens("light", definition.light),
 		dark: resolveTokens("dark", definition.dark),
 	});

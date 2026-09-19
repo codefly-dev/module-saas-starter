@@ -116,6 +116,17 @@ export interface FrontendPlugin {
 	routes?: readonly PluginRoute[];
 }
 
+import type {
+	FrontendControlSizeOverrides,
+	FrontendControlSizes,
+	FrontendTypeRoleOverrides,
+	FrontendTypeRoles,
+	FrontendTypeScale,
+	FrontendTypeScaleOverrides,
+	FrontendTypeSlotOverrides,
+	FrontendTypeSlots,
+} from "./typography.js";
+
 export interface FrontendBranding {
 	name: string;
 	mark: string;
@@ -193,6 +204,14 @@ export interface FrontendAppearanceDefinition {
 	borderWidth?: string;
 	/** Unitless multiplier (0–2) on the elevation/shadow scale. */
 	shadowStrength?: string;
+	/** Layer 1: the ordinal type ramp every role points into. */
+	typeScale?: FrontendTypeScaleOverrides;
+	/** Layer 2: named bundles of size, weight, line height, tracking and family. */
+	typeRoles?: FrontendTypeRoleOverrides;
+	/** Layer 3: which role each surface uses. */
+	typeSlots?: FrontendTypeSlotOverrides;
+	/** Control geometry rungs; each carries the type role its label uses. */
+	controlSizes?: FrontendControlSizeOverrides;
 	light?: FrontendThemeTokenOverrides;
 	dark?: FrontendThemeTokenOverrides;
 }
@@ -219,6 +238,10 @@ export const FRONTEND_APPEARANCE_FIELD_NAMES = [
 	"sidebarWidthIcon",
 	"borderWidth",
 	"shadowStrength",
+	"typeScale",
+	"typeRoles",
+	"typeSlots",
+	"controlSizes",
 	"light",
 	"dark",
 ] as const satisfies readonly (keyof FrontendAppearanceDefinition)[];
@@ -238,6 +261,10 @@ export interface FrontendAppearance {
 	sidebarWidthIcon: string;
 	borderWidth: string;
 	shadowStrength: string;
+	typeScale: FrontendTypeScale;
+	typeRoles: FrontendTypeRoles;
+	typeSlots: FrontendTypeSlots;
+	controlSizes: FrontendControlSizes;
 	light: FrontendThemeTokens;
 	dark: FrontendThemeTokens;
 }

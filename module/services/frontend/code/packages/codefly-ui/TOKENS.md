@@ -101,6 +101,148 @@ the density, corner, type, and elevation scales app-wide.
 | `shadowStrength` | Unitless multiplier (0–2) on the elevation scale | `1` |
 <!-- structural-table:end -->
 
+## Four layers, not one token bag
+
+Colour reskins because every layer names a token rather than a value. Type,
+weight and control geometry never got that treatment — they are raw utilities
+compiled into component source, and in one class list the two are
+indistinguishable:
+
+```
+bg-primary text-primary-foreground   ← semantic, reskins
+text-sm font-medium h-8 px-2.5       ← primitive, welded in
+```
+
+Collapsing four different things into one namespace is what makes a token set
+look unable to carry a real design system. Separated, most of the apparent
+conflict is missing indirection:
+
+| Layer | What it is | Example |
+| --- | --- | --- |
+| **1 · Scale** | ordinal values, no meaning | step `3` is `0.875rem` |
+| **2 · Roles** | a named bundle pointing into the scale | `menu-item` is step 3 at `1.25rem` |
+| **3 · Slots** | which role a surface uses | `command-item` uses `menu-item` |
+| **Rungs** | the same pattern for control geometry | `sm` is 7 spacing units tall |
+
+A role is a pointer *into* the scale, so roles → scale is total and lossless and
+the reverse is never needed: a customer can name `Display 01` while the ramp
+stays ordinal underneath, and two design-system flavours become two role maps
+over one scale — which is exactly what a single `fontSizeBase` multiplier cannot
+express. Slots are the kit's own `data-slot` names, so layer 3 wires a
+convention that already exists in the source rather than inventing one.
+
+**Every field of a role is optional**, deliberately: a role declares only the
+properties it decides. `emphasis` is a weight and nothing else, because
+`table-head` sets `font-medium` today and inherits its size. The five properties
+a role can set are all inherited in CSS, so a property the role leaves out has no
+custom property, its `var()` is invalid at computed-value time, and the element
+inherits — which is what the untouched tree does. Forcing a value everywhere
+would plant a declaration where none existed.
+
+A component reaches these through one generated utility per slot and per rung
+(`type-card-title`, `control-sm`), written by
+`scripts/generate-type-utilities.mjs` from the vocabulary below and checked for
+drift in CI.
+
+### Layer 1 — the type scale
+
+<!-- type-scale-table:start -->
+| Step | Default |
+| ---- | ------- |
+| `1` | `0.625rem` |
+| `2` | `0.75rem` |
+| `3` | `0.875rem` |
+| `4` | `1rem` |
+| `5` | `1.125rem` |
+| `6` | `1.25rem` |
+| `7` | `1.5rem` |
+| `8` | `1.875rem` |
+| `9` | `2.25rem` |
+<!-- type-scale-table:end -->
+
+### Layer 2 — the roles
+
+<!-- type-roles-table:start -->
+| Role | Size | Weight | Line height | Tracking | Family |
+| ---- | ---- | ------ | ----------- | -------- | ------ |
+| `surface-title` | `4` | `500` | `1.5rem` | — | `heading` |
+| `surface-title-snug` | `4` | `500` | `1.375` | — | `heading` |
+| `surface-title-tight` | `4` | `500` | `1` | — | `heading` |
+| `surface-title-compact` | `3` | `500` | `1.375` | — | `heading` |
+| `surface-description` | `3` | — | `1.25rem` | — | — |
+| `page-title` | `7` | `700` | `2rem` | `-0.025em` | — |
+| `section-title` | `5` | `600` | `1.75rem` | `-0.025em` | — |
+| `body` | `3` | — | `1.25rem` | — | — |
+| `emphasis` | — | `500` | — | — | — |
+| `control-label` | `3` | `500` | `1` | — | — |
+| `menu-item` | `3` | — | `1.25rem` | — | — |
+| `group-label` | `2` | `500` | `1rem` | — | — |
+| `group-label-plain` | `2` | — | `1rem` | — | — |
+| `shortcut` | `2` | — | `1rem` | `0.1em` | — |
+| `control` | `3` | `500` | `1.25rem` | — | — |
+| `control-sm` | `2` | `500` | `1rem` | — | — |
+| `control-xs` | `2` | `500` | `1rem` | — | — |
+| `control-touch` | `4` | — | `1.5rem` | — | — |
+| `metric-value` | `7` | `600` | `2rem` | `-0.025em` | — |
+| `metric-total` | `9` | `700` | `2.5rem` | `-0.025em` | — |
+| `caption` | `2` | `500` | `1rem` | — | — |
+| `chart-label` | `1` | — | `1` | — | — |
+<!-- type-roles-table:end -->
+
+### Layer 3 — the slots
+
+<!-- type-slots-table:start -->
+| Role | Slots that use it by default |
+| ---- | ---------------------------- |
+| `surface-title` | `sheet-title`, `alert-dialog-title` |
+| `surface-title-snug` | `card-title` |
+| `surface-title-tight` | `dialog-title` |
+| `surface-title-compact` | `card-title-sm` |
+| `surface-description` | `card-description`, `dialog-description`, `sheet-description`, `alert-dialog-description` |
+| `page-title` | `page-title` |
+| `section-title` | `section-title`, `empty-state-title-illustrated` |
+| `body` | `card`, `dialog-content`, `input`, `textarea`, `select-trigger`, `command-input`, `command-input-wrapper`, `command-empty`, `table`, `table-caption`, `tabs-content`, `avatar-fallback`, `avatar-group-count`, `sidebar-group-content`, `error-state`, `empty-state-description`, `metric-label`, `chat-message` |
+| `emphasis` | `table-head`, `table-footer`, `error-state-title` |
+| `control-label` | `label` |
+| `menu-item` | `select-item`, `dropdown-menu-item`, `command-item` |
+| `group-label` | `dropdown-menu-label`, `badge`, `sidebar-menu-badge` |
+| `group-label-plain` | `select-label`, `tooltip-content` |
+| `shortcut` | `dropdown-menu-shortcut`, `command-shortcut` |
+| `control` | `tabs-trigger`, `empty-state-title` |
+| `control-touch` | `input-touch`, `textarea-touch` |
+| `metric-value` | `metric-value` |
+| `metric-total` | `metric-total` |
+| `caption` | `metric-delta`, `chat-author` |
+| `chart-label` | `chart-label` |
+<!-- type-slots-table:end -->
+
+### Control rungs
+
+Height, padding and icon are **`--spacing` multiples, not lengths**, so control
+geometry follows a skin's density instead of pinning it. Each rung carries the
+type role its label uses: for a control, type belongs to the rung rather than to
+a slot, because a caller choosing `size="sm"` is choosing the whole rung.
+
+<!-- control-sizes-table:start -->
+| Rung | Height | Padding X | Icon | Text role |
+| ---- | ------ | --------- | ---- | --------- |
+| `xs` | `6` | `2` | `3` | `control-xs` |
+| `sm` | `7` | `2.5` | `3.5` | `control-sm` |
+| `default` | `8` | `2.5` | `4` | `control` |
+| `lg` | `9` | `2.5` | `4` | `control` |
+<!-- control-sizes-table:end -->
+
+```jsonc
+{
+  "appearance": {
+    "typeScale": { "7": "1.625rem" },
+    "typeRoles": { "page-title": { "weight": "600", "tracking": "-0.04em" } },
+    "typeSlots": { "card-title": "section-title" },
+    "controlSizes": { "default": { "height": "9", "paddingX": "3" } }
+  }
+}
+```
+
 ## Per-skin overrides
 
 A skin is a validated data descriptor, not code. It carries a **partial**

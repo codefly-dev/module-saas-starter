@@ -32,6 +32,14 @@ import {
 } from "@codefly/saas-plugin-contract";
 ```
 
+The appearance contract also carries the four-layer type and geometry vocabulary
+— `FRONTEND_TYPE_SCALE_STEPS`, `FRONTEND_TYPE_ROLE_NAMES`,
+`FRONTEND_TYPE_SLOT_NAMES` and `FRONTEND_CONTROL_SIZE_NAMES`, with
+`resolveTypeSlot` to flatten a slot through its role into the scale. Consumers
+that render against the kit never need these: a component names a slot and the
+host compiles the utility. They are exported for a repository that authors skin
+descriptors and for tooling that checks one.
+
 `FRONTEND_APPEARANCE_FIELD_NAMES` is the vocabulary `resolveFrontendAppearance`
 accepts inside `appearance`, exported because a repository that authors skin
 descriptors has to see what it is writing against. That repository proves its

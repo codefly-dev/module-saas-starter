@@ -1,7 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
 import {
+	DEFAULT_CONTROL_SIZES,
 	DEFAULT_FRONTEND_APPEARANCE,
+	DEFAULT_TYPE_ROLES,
+	DEFAULT_TYPE_SCALE,
+	DEFAULT_TYPE_SLOTS,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
+	FRONTEND_CONTROL_SIZE_NAMES,
+	FRONTEND_TYPE_ROLE_NAMES,
+	FRONTEND_TYPE_SCALE_STEPS,
+	FRONTEND_TYPE_SLOT_NAMES,
 } from "@codefly/saas-plugin-contract";
 import { describe, expect, it } from "vitest";
 
@@ -54,8 +62,15 @@ function rowContaining(region: string, key: string): string | undefined {
 	return region.split("\n").find((line) => line.includes(`\`${key}\``));
 }
 
-it("delimits both TOKENS.md tables with start/end markers", () => {
-	for (const marker of ["token-table", "structural-table"]) {
+it("delimits every TOKENS.md table with start/end markers", () => {
+	for (const marker of [
+		"token-table",
+		"structural-table",
+		"type-scale-table",
+		"type-roles-table",
+		"type-slots-table",
+		"control-sizes-table",
+	]) {
 		expect(doc, `missing <!-- ${marker}:start -->`).toContain(
 			`<!-- ${marker}:start -->`,
 		);
@@ -159,5 +174,125 @@ describe("token-contract guard detector (self-test)", () => {
 		expect(structuralSample).toContain("`Correct, sans-serif`");
 		const headingRow = rowContaining(region, "fontHeading") as string;
 		expect(headingRow).not.toContain("`Correct, sans-serif`");
+	});
+});
+
+// The four layers document a vocabulary a skin author writes against, so the
+// same drift guard the colour tokens have applies: a role renamed, a default
+// changed, or a slot re-pointed in code while the document still describes the
+// old one would send an author at a name that no longer exists.
+const typeScaleRegion = tableRegion(doc, "type-scale-table");
+const typeRolesRegion = tableRegion(doc, "type-roles-table");
+const typeSlotsRegion = tableRegion(doc, "type-slots-table");
+const controlSizesRegion = tableRegion(doc, "control-sizes-table");
+
+/** A role's row prints an undeclared property as an em dash, not as a blank cell. */
+function cell(value: string | undefined): string {
+	return value === undefined ? "—" : `\`${value}\``;
+}
+
+describe("TOKENS.md documents the type scale", () => {
+	for (const step of FRONTEND_TYPE_SCALE_STEPS) {
+		it(`documents step ${step} and its default`, () => {
+			const row = rowContaining(typeScaleRegion, step);
+			expect(row, `TOKENS.md has no scale row for step ${step}`).toBeDefined();
+			expect(row as string).toContain(`\`${DEFAULT_TYPE_SCALE[step]}\``);
+		});
+	}
+
+	it("documents no step outside the contract", () => {
+		const documented = [...typeScaleRegion.matchAll(/^\| `(\d+)` \|/gm)].map(
+			(match) => match[1],
+		);
+		expect(documented.sort()).toEqual([...FRONTEND_TYPE_SCALE_STEPS].sort());
+	});
+});
+
+describe("TOKENS.md documents every type role", () => {
+	for (const name of FRONTEND_TYPE_ROLE_NAMES) {
+		it(`documents ${name} with every property it decides`, () => {
+			const row = rowContaining(typeRolesRegion, name);
+			expect(row, `TOKENS.md has no role row for ${name}`).toBeDefined();
+			const role = DEFAULT_TYPE_ROLES[name];
+			const line = row as string;
+			for (const value of [
+				cell(role.size),
+				cell(role.weight),
+				cell(role.lineHeight),
+				cell(role.tracking),
+				cell(role.family),
+			]) {
+				expect(line, `${name} row must carry ${value}`).toContain(value);
+			}
+		});
+	}
+
+	it("documents no role outside the contract", () => {
+		const documented = [
+			...typeRolesRegion.matchAll(/^\| `([a-z0-9-]+)` \|/gm),
+		].map((match) => match[1]);
+		expect(documented.sort()).toEqual([...FRONTEND_TYPE_ROLE_NAMES].sort());
+	});
+});
+
+describe("TOKENS.md documents which role each slot uses", () => {
+	for (const slot of FRONTEND_TYPE_SLOT_NAMES) {
+		it(`documents ${slot} under the role it uses`, () => {
+			const role = DEFAULT_TYPE_SLOTS[slot];
+			const row = rowContaining(typeSlotsRegion, role);
+			expect(row, `TOKENS.md has no slot row for role ${role}`).toBeDefined();
+			expect(
+				row as string,
+				`${slot} is missing from the ${role} row`,
+			).toContain(`\`${slot}\``);
+		});
+	}
+
+	it("lists no slot the contract does not declare", () => {
+		const documented = new Set(
+			[...typeSlotsRegion.matchAll(/`([a-z0-9-]+)`/g)].map((match) => match[1]),
+		);
+		const declared = new Set<string>([
+			...FRONTEND_TYPE_SLOT_NAMES,
+			...FRONTEND_TYPE_ROLE_NAMES,
+		]);
+		for (const name of documented)
+			expect(
+				declared.has(name),
+				`TOKENS.md names '${name}', which is neither a slot nor a role`,
+			).toBe(true);
+	});
+});
+
+describe("TOKENS.md documents the control rungs", () => {
+	for (const size of FRONTEND_CONTROL_SIZE_NAMES) {
+		it(`documents rung ${size} with its geometry and text role`, () => {
+			const row = rowContaining(controlSizesRegion, size);
+			expect(row, `TOKENS.md has no rung row for ${size}`).toBeDefined();
+			const rung = DEFAULT_CONTROL_SIZES[size];
+			const line = row as string;
+			for (const value of [rung.height, rung.paddingX, rung.icon, rung.text])
+				expect(line, `${size} row must carry \`${value}\``).toContain(
+					`\`${value}\``,
+				);
+		});
+	}
+});
+
+// Self-test: the layer tables are checked by the same row-scoped detector as the
+// colour tables, so prove it still refuses a wrong value on the right row.
+describe("layer table detector (self-test)", () => {
+	const sample =
+		"<!-- type-roles-table:start -->\n| `body` | `3` | — | `1.25rem` | — | — |\n| `emphasis` | — | `500` | — | — | — |\n<!-- type-roles-table:end -->";
+	const region = tableRegion(sample, "type-roles-table");
+
+	it("finds a role row and its declared properties", () => {
+		expect(rowContaining(region, "body") as string).toContain("`1.25rem`");
+	});
+
+	it("is not fooled by another row carrying the value", () => {
+		expect(rowContaining(region, "emphasis") as string).not.toContain(
+			"`1.25rem`",
+		);
 	});
 });
