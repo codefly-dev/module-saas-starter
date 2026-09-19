@@ -27,15 +27,21 @@ export function Banner({
 }: BannerProps) {
 	return (
 		<div
+			data-slot="banner"
 			role="status"
 			aria-live="polite"
 			className={cn(
-				"flex items-center justify-between gap-4 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 text-sm",
+				"flex items-center justify-between gap-4 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 type-banner",
 				className,
 			)}
 		>
 			<div className="min-w-0">
-				<div className="font-medium text-foreground">{title}</div>
+				<div
+					data-slot="banner-title"
+					className="type-banner-title text-foreground"
+				>
+					{title}
+				</div>
 				{children && <div className="text-muted-foreground">{children}</div>}
 			</div>
 			{(actions || onDismiss) && (

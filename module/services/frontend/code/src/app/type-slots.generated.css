@@ -322,6 +322,22 @@
 	font-family: var(--type-badge-family);
 }
 
+@utility type-banner {
+	font-size: var(--type-banner-size);
+	font-weight: var(--type-banner-weight);
+	line-height: var(--type-banner-leading);
+	letter-spacing: var(--type-banner-tracking);
+	font-family: var(--type-banner-family);
+}
+
+@utility type-banner-title {
+	font-size: var(--type-banner-title-size);
+	font-weight: var(--type-banner-title-weight);
+	line-height: var(--type-banner-title-leading);
+	letter-spacing: var(--type-banner-title-tracking);
+	font-family: var(--type-banner-title-family);
+}
+
 @utility type-table {
 	font-size: var(--type-table-size);
 	font-weight: var(--type-table-weight);
