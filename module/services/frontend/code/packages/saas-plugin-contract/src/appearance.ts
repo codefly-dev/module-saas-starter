@@ -1,4 +1,5 @@
 import {
+	FRONTEND_APPEARANCE_FIELD_NAMES,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
 	type FrontendAppearance,
 	type FrontendAppearanceDefinition,
@@ -155,24 +156,7 @@ export function resolveFrontendAppearance(
 			!Array.isArray(definition),
 		"appearance must be an object",
 	);
-	exactKeys(
-		definition,
-		[
-			"defaultTheme",
-			"radius",
-			"fontSans",
-			"fontHeading",
-			"spacing",
-			"fontSizeBase",
-			"sidebarWidth",
-			"sidebarWidthIcon",
-			"borderWidth",
-			"shadowStrength",
-			"light",
-			"dark",
-		],
-		"appearance",
-	);
+	exactKeys(definition, FRONTEND_APPEARANCE_FIELD_NAMES, "appearance");
 	const defaultTheme =
 		definition.defaultTheme ?? DEFAULT_FRONTEND_APPEARANCE.defaultTheme;
 	assertAppearance(

@@ -18,6 +18,7 @@ package root:
 ```ts
 import {
 	DEFAULT_FRONTEND_APPEARANCE,
+	FRONTEND_APPEARANCE_FIELD_NAMES,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
   FRONTEND_PLUGIN_CONTRACT_VERSION,
   buildFrontendServiceAllowlist,
@@ -30,6 +31,14 @@ import {
 	type FrontendThemePreference,
 } from "@codefly/saas-plugin-contract";
 ```
+
+`FRONTEND_APPEARANCE_FIELD_NAMES` is the vocabulary `resolveFrontendAppearance`
+accepts inside `appearance`, exported because a repository that authors skin
+descriptors has to see what it is writing against. That repository proves its
+descriptors with `assertSkinSurvives` from `@codefly-dev/ui/skin`, which resolves
+a descriptor through the real resolver and fails on any declared field that did
+not reach the render. Neither is a schema to copy: a private copy would pass
+while the real validator disagreed, which is the failure both exist to prevent.
 
 The public root contains the versioned plugin/config types, retained navigation,
 route, widget, and logical service requirement types, and pure
