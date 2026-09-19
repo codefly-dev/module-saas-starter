@@ -280,6 +280,26 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/codefly-ui/src/layout/banner.tsx",
+			"imports": [
+				"lucide-react",
+				"react",
+				"./button.js",
+				"./cn.js"
+			],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Reusable banner presentation; host owns notification queries and read lifecycle.",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/primitives.stories.tsx",
+					"export": "NotificationBanner"
+				}
+			],
+			"coverage": "owner stories; browser/skin verification pending",
+			"remaining": "Verify interactive accessibility and rendering under external skins."
+		},
+		{
 			"source": "packages/codefly-ui/src/layout/button.tsx",
 			"imports": [
 				"@base-ui/react/button",

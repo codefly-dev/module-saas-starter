@@ -262,15 +262,16 @@ export function ConnectGitHubForm({
 							aria-invalid={!!errors.fileExtensions}
 							{...form.register("fileExtensions")}
 						/>
-						<button
+						<Button
 							type="button"
-							className="text-xs underline"
+							variant="link"
+							className="h-auto px-0 text-xs"
 							onClick={() =>
 								form.setValue("fileExtensions", ".md", { shouldValidate: true })
 							}
 						>
 							Markdown only (.md)
-						</button>
+						</Button>
 						<p className="text-xs text-muted-foreground">
 							Comma-separated suffixes, case-insensitive. Empty includes all
 							file types. Applied during ingestion within the paths above.
