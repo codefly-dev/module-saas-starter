@@ -46,6 +46,8 @@ Its authority is declared in the `module-capabilities` group's
 | `queues` | enqueue and claim |
 | `namespaces` | event publish |
 | `resources` | the permission resource types its own content is governed by, bounding both the content reads this host authorizes for it and the records it may place at a scope node |
+| `read_audiences` | installed read-only bindings from a retained parent to a fixed audience and canonical scopes |
+| `operation_audiences` | installed operation bindings with fixed audience, canonical invoke scopes, and a read-only lookup subset |
 | `tenant` | the org it is bound to |
 | `cross_tenant` | an inbox worker serving every tenant |
 

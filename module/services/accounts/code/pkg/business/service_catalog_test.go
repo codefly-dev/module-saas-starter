@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 32)
-	require.Len(t, catalog.GetMethods(), 209)
+	require.Len(t, catalog.GetMethods(), 210)
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -47,6 +47,15 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, []catalogv1.Protocol{catalogv1.Protocol_PROTOCOL_GRPC, catalogv1.Protocol_PROTOCOL_CONNECT}, readableSources.GetProtocols())
 	require.Equal(t, "saas.accounts.v1.ListReadableSourceCollectionsRequest", readableSources.GetInputType())
 	require.Equal(t, "saas.accounts.v1.ListReadableSourceCollectionsResponse", readableSources.GetOutputType())
+
+	operationExchange := methods["/saas.accounts.v1.ModuleCapabilitiesService/ExchangeDelegatedOperationAudience"]
+	require.NotNil(t, operationExchange)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_INTERNAL, operationExchange.GetPolicy().GetExposure())
+	require.Empty(t, operationExchange.GetHttpBindings())
+	require.Equal(t, []catalogv1.Protocol{catalogv1.Protocol_PROTOCOL_GRPC, catalogv1.Protocol_PROTOCOL_CONNECT}, operationExchange.GetProtocols())
+	require.Equal(t, "saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest", operationExchange.GetInputType())
+	require.Equal(t, "saas.accounts.v1.IssuedWorkContext", operationExchange.GetOutputType())
+	require.Equal(t, []string{"saas.module.delegated_audience_exchange"}, operationExchange.GetPolicy().GetAudit().GetEvents())
 
 	collectionAccess := methods["/saas.accounts.v1.PermissionService/ListCollectionAccess"]
 	require.NotNil(t, collectionAccess)

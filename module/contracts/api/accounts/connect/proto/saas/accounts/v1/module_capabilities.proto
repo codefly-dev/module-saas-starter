@@ -577,6 +577,14 @@ message ModuleExchangeDelegatedReadAudienceRequest {
  string parent_work_context_token = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
 }
 
+// Selects one immutable installed operation binding. The caller chooses only
+// invocation versus receipt lookup; audience, scopes and lifetime are policy.
+message ModuleExchangeDelegatedOperationAudienceRequest {
+ string binding_id = 1 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 128];
+ string parent_work_context_token = 2 [(buf.validate.field).string.min_len = 1, (buf.validate.field).string.max_len = 32768];
+ bool lookup = 3;
+}
+
 service ModuleCapabilitiesService {
  // ExchangeDelegatedReadAudience authenticates the module independently of a
  // current parent context and exchanges only its installed read-only binding.
@@ -585,7 +593,30 @@ service ModuleCapabilitiesService {
    exposure: EXPOSURE_INTERNAL
    tenant: TENANT_REQUIREMENT_NONE
    mfa: MFA_REQUIREMENT_NONE
-   audit: {emission: AUDIT_EMISSION_NONE}
+   audit: {
+    events: "saas.module.delegated_audience_exchange"
+    emission: AUDIT_EMISSION_SUCCESS_AND_FAILURE
+   }
+   idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+   rate_limit: RATE_LIMIT_CLASS_INTERNAL
+   request_sensitivity: SENSITIVITY_SECRET
+   response_sensitivity: SENSITIVITY_SECRET
+   platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+  };
+ }
+
+ // ExchangeDelegatedOperationAudience authenticates the module independently
+ // of a current parent context and exchanges only an installed operation's
+ // invoke scopes, or its read-only receipt-lookup subset.
+ rpc ExchangeDelegatedOperationAudience(ModuleExchangeDelegatedOperationAudienceRequest) returns (IssuedWorkContext) {
+  option (saas.policy.v1.method_policy) = {
+   exposure: EXPOSURE_INTERNAL
+   tenant: TENANT_REQUIREMENT_NONE
+   mfa: MFA_REQUIREMENT_NONE
+   audit: {
+    events: "saas.module.delegated_audience_exchange"
+    emission: AUDIT_EMISSION_SUCCESS_AND_FAILURE
+   }
    idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
    rate_limit: RATE_LIMIT_CLASS_INTERNAL
    request_sensitivity: SENSITIVITY_SECRET
