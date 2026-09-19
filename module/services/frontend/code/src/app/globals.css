@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./shadcn.css";
+/* Generated from the contract's type slots and control rungs; see
+   scripts/generate-type-utilities.mjs. */
+@import "./type-slots.generated.css";
 
 /* The host owns the single compiled stylesheet (CSS ownership: host authority,
    host CSS authority). Its Tailwind build only scans files it can see, so it must

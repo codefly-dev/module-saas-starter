@@ -50,7 +50,13 @@ sits outside this stack.
    `src/__tests__/architecture.test.ts` — no host `@/` imports, no network I/O —
    and by the plugin-free surface check in `src/__tests__/package-contract.test.ts`.)*
 
-4. **Tokens flow through everything.** Color and spacing come from the skin;
+4. **Tokens flow through everything.** Color, type and control geometry come
+   from the skin; a component names its SLOT (`type-card-title`) or its control
+   RUNG (`control-sm`), never a size, a weight or a height. That is what stops a
+   component encoding a design decision: it declares *where* a decision applies
+   and the skin decides *which* decision that is. The vocabulary is four layers —
+   an ordinal scale, roles pointing into it, slots pointing at roles, and control
+   rungs — enumerated in [TOKENS.md](./TOKENS.md). Color and spacing come from the skin;
    components stroke with `currentColor` / `--primary`, so a skin change
    re-themes the whole catalog for free. The token vocabulary — the single set
    of names every tier consumes, with light/dark defaults — is the contract in

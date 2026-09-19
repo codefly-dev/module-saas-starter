@@ -5,72 +5,6 @@
 // `src/components/ui/*` re-export from here. Exported from `@codefly-dev/ui/layout`,
 // mirroring `@codefly-dev/ui/dashboard`. No host context, no SDK — React only.
 
-// Page containers
-export { Card, type CardProps } from "./card.js";
-export { type TabItem, Tabs, type TabsProps } from "./tabs.js";
-
-// Feedback / state
-export { EmptyState, type EmptyStateProps } from "./empty-state.js";
-export { ErrorState, type ErrorStateProps } from "./error-state.js";
-
-// Actions
-export { Button, buttonVariants } from "./button.js";
-
-// Forms
-export { Input } from "./input.js";
-export { Textarea } from "./textarea.js";
-export { Label } from "./label.js";
-export { Checkbox } from "./checkbox.js";
-export { Switch } from "./switch.js";
-export {
-	Select,
-	SelectContent,
-	SelectGroup,
-	SelectItem,
-	SelectLabel,
-	SelectScrollDownButton,
-	SelectScrollUpButton,
-	SelectSeparator,
-	SelectTrigger,
-	SelectValue,
-} from "./select.js";
-
-// Data display
-export { Badge, badgeVariants } from "./badge.js";
-export {
-	Avatar,
-	AvatarBadge,
-	AvatarFallback,
-	AvatarGroup,
-	AvatarGroupCount,
-	AvatarImage,
-} from "./avatar.js";
-export {
-	Table,
-	TableBody,
-	TableCaption,
-	TableCell,
-	TableFooter,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "./table.js";
-export { Skeleton } from "./skeleton.js";
-export { Separator } from "./separator.js";
-
-// Overlays
-export {
-	Dialog,
-	DialogClose,
-	DialogContent,
-	DialogDescription,
-	DialogFooter,
-	DialogHeader,
-	DialogOverlay,
-	DialogPortal,
-	DialogTitle,
-	DialogTrigger,
-} from "./dialog.js";
 export {
 	AlertDialog,
 	AlertDialogAction,
@@ -86,11 +20,55 @@ export {
 	AlertDialogTrigger,
 } from "./alert-dialog.js";
 export {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "./tooltip.js";
+	Avatar,
+	AvatarBadge,
+	AvatarFallback,
+	AvatarGroup,
+	AvatarGroupCount,
+	AvatarImage,
+} from "./avatar.js";
+// Data display
+export { Badge, badgeVariants } from "./badge.js";
+// Actions
+export { Button, buttonVariants } from "./button.js";
+// Page containers
+export { Card, type CardProps } from "./card.js";
+export {
+	CardAction,
+	CardContent,
+	CardDescription,
+	CardEyebrow,
+	CardFooter,
+	CardHeader,
+	CardMetadata,
+	CardRoot,
+	CardTitle,
+} from "./card-root.js";
+export { Checkbox } from "./checkbox.js";
+export {
+	Command,
+	CommandDialog,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+	CommandSeparator,
+	CommandShortcut,
+} from "./command.js";
+// Overlays
+export {
+	Dialog,
+	DialogClose,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogOverlay,
+	DialogPortal,
+	DialogTitle,
+	DialogTrigger,
+} from "./dialog.js";
 export {
 	DropdownMenu,
 	DropdownMenuCheckboxItem,
@@ -108,37 +86,12 @@ export {
 	DropdownMenuSubTrigger,
 	DropdownMenuTrigger,
 } from "./dropdown-menu.js";
-
-export {
-	CardRoot,
-	CardAction,
-	CardContent,
-	CardDescription,
-	CardFooter,
-	CardHeader,
-	CardTitle,
-} from "./card-root.js";
-
-export {
-	TabsRoot,
-	TabsContent,
-	TabsList,
-	TabsTrigger,
-	tabsListVariants,
-} from "./tabs-root.js";
-
-export {
-	Command,
-	CommandDialog,
-	CommandEmpty,
-	CommandGroup,
-	CommandInput,
-	CommandItem,
-	CommandList,
-	CommandSeparator,
-	CommandShortcut,
-} from "./command.js";
-
+// Feedback / state
+export { EmptyState, type EmptyStateProps } from "./empty-state.js";
+export { ErrorState, type ErrorStateProps } from "./error-state.js";
+export { Field, type FieldControlProps, type FieldProps } from "./field.js";
+// Forms
+export { Input } from "./input.js";
 export {
 	InputGroup,
 	InputGroupAddon,
@@ -147,7 +100,42 @@ export {
 	InputGroupText,
 	InputGroupTextarea,
 } from "./input-group.js";
-
+export { Label } from "./label.js";
+export type { SectionProps } from "./page.js";
+export {
+	Grid,
+	Layout,
+	Page,
+	PageHeader,
+	Panel,
+	Section,
+	Stack,
+} from "./page.js";
+export { Pagination, type PaginationProps } from "./pagination.js";
+export {
+	PAGE_GAP,
+	type PaginationEntry,
+	type PaginationRangeOptions,
+	paginationRange,
+} from "./pagination-model.js";
+export {
+	SegmentedControl,
+	type SegmentedControlOption,
+	type SegmentedControlProps,
+} from "./segmented-control.js";
+export {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectLabel,
+	SelectScrollDownButton,
+	SelectScrollUpButton,
+	SelectSeparator,
+	SelectTrigger,
+	SelectValue,
+} from "./select.js";
+export { Separator } from "./separator.js";
 export {
 	Sheet,
 	SheetClose,
@@ -158,7 +146,6 @@ export {
 	SheetTitle,
 	SheetTrigger,
 } from "./sheet.js";
-
 export {
 	Sidebar,
 	SidebarContent,
@@ -185,20 +172,36 @@ export {
 	SidebarTrigger,
 	useSidebar,
 } from "./sidebar.js";
-
+export { Skeleton } from "./skeleton.js";
 export { Toaster } from "./sonner.js";
-
-export { useIsMobile } from "./use-mobile.js";
-
+export { Switch } from "./switch.js";
 export {
-	Grid,
-	Layout,
-	Page,
-	PageHeader,
-	Panel,
-	Section,
-	Stack,
-} from "./page.js";
-export type { SectionProps } from "./page.js";
+	Table,
+	TableBody,
+	TableCaption,
+	TableCell,
+	TableEmptyState,
+	TableFooter,
+	TableHead,
+	TableHeader,
+	TableRow,
+	TableToolbar,
+} from "./table.js";
+export { type TabItem, Tabs, type TabsProps } from "./tabs.js";
+export {
+	TabsContent,
+	TabsList,
+	TabsRoot,
+	TabsTrigger,
+	tabsListVariants,
+} from "./tabs-root.js";
+export { Textarea } from "./textarea.js";
+export {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "./tooltip.js";
+export { useIsMobile } from "./use-mobile.js";
 
 export { Banner, type BannerProps } from "./banner.js";

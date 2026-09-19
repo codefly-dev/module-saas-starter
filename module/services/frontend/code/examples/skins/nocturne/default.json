@@ -60,5 +60,13 @@
       "darkSrc": "/brand/nocturne-logo-dark.svg",
       "alt": "Nocturne"
     }
+  },
+  "rules": {
+    "slots": {
+      "page-title": {
+        "maxPerPage": 1
+      }
+    },
+    "headingOrder": "no-skip"
   }
 }

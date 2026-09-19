@@ -18,6 +18,7 @@ package root:
 ```ts
 import {
 	DEFAULT_FRONTEND_APPEARANCE,
+	FRONTEND_APPEARANCE_FIELD_NAMES,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
   FRONTEND_PLUGIN_CONTRACT_VERSION,
   buildFrontendServiceAllowlist,
@@ -30,6 +31,28 @@ import {
 	type FrontendThemePreference,
 } from "@codefly/saas-plugin-contract";
 ```
+
+The appearance contract also carries the four-layer type and geometry vocabulary
+— `FRONTEND_TYPE_SCALE_STEPS`, `FRONTEND_TYPE_ROLE_NAMES`,
+`FRONTEND_TYPE_SLOT_NAMES` and `FRONTEND_CONTROL_SIZE_NAMES`, with
+`resolveTypeSlot` to flatten a slot through its role into the scale. Consumers
+that render against the kit never need these: a component names a slot and the
+host compiles the utility. They are exported for a repository that authors skin
+descriptors and for tooling that checks one.
+
+Layer 4 — build-time constraints such as "a page title appears once" — is
+`resolveSkinRules` and `FrontendSkinRules`, deliberately beside `appearance`
+rather than inside it: layers 1 to 3 reach CSS and pass the injection gate,
+while a rule reaches a checker and never a stylesheet. `checkSkinRules` in
+`@codefly-dev/ui/skin` enforces one against a rendered tree.
+
+`FRONTEND_APPEARANCE_FIELD_NAMES` is the vocabulary `resolveFrontendAppearance`
+accepts inside `appearance`, exported because a repository that authors skin
+descriptors has to see what it is writing against. That repository proves its
+descriptors with `assertSkinSurvives` from `@codefly-dev/ui/skin`, which resolves
+a descriptor through the real resolver and fails on any declared field that did
+not reach the render. Neither is a schema to copy: a private copy would pass
+while the real validator disagreed, which is the failure both exist to prevent.
 
 The public root contains the versioned plugin/config types, retained navigation,
 route, widget, and logical service requirement types, and pure

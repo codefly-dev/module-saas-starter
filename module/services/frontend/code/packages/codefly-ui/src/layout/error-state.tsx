@@ -29,7 +29,7 @@ export function ErrorState({
 		<div
 			data-slot="error-state"
 			role="alert"
-			className={cn("flex items-start gap-2 text-sm", className)}
+			className={cn("flex items-start gap-2 type-error-state", className)}
 		>
 			<div
 				data-slot="error-state-icon"
@@ -38,7 +38,7 @@ export function ErrorState({
 				{icon}
 			</div>
 			<div className="space-y-0.5">
-				<p className="font-medium text-destructive">{title}</p>
+				<p className="type-error-state-title text-destructive">{title}</p>
 				{detail && <p className="text-muted-foreground">{detail}</p>}
 			</div>
 		</div>

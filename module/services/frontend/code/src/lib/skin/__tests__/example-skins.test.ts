@@ -1,9 +1,16 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type FrontendBranding,
 	resolveFrontendAppearance,
+	resolveTypeSlot,
 } from "@codefly/saas-plugin-contract";
-import type { ResolvedSkinBase, SkinSource } from "@codefly-dev/ui/skin";
+import {
+	assertSkinSurvives,
+	type RawSkinDescriptor,
+	type ResolvedSkinBase,
+	type SkinSource,
+} from "@codefly-dev/ui/skin";
 import { beforeEach, describe, expect, it } from "vitest";
 import { clearSkinCache, resolveSkin } from "..";
 import { fileSkinSource } from "../sources";
@@ -68,6 +75,21 @@ describe("shipped example skins", () => {
 		expect(skin.branding.title).toBe("Helios Console");
 		expect(skin.branding.logo?.lightSrc).toBe("/brand/helios-logo.svg");
 		expect(skin.branding.logo?.darkSrc).toBe("/brand/helios-logo-dark.svg");
+		// Layers 1 to 3: a moved scale step, a re-weighted role, a re-pointed slot
+		// and a taller control rung, so the examples exercise the vocabulary rather
+		// than only the colour half.
+		expect(skin.appearance.typeScale["7"]).toBe("1.625rem");
+		expect(skin.appearance.typeRoles["page-title"].weight).toBe("600");
+		expect(skin.appearance.typeSlots["card-description"]).toBe("menu-item");
+		expect(skin.appearance.controlSizes.default.height).toBe("9");
+		// A step the skin moved reaches every role that points at it...
+		expect(resolveTypeSlot(skin.appearance, "page-title").fontSize).toBe(
+			"1.625rem",
+		);
+		// ...and a role it did not restate keeps the compiled default.
+		expect(resolveTypeSlot(skin.appearance, "section-title").fontSize).toBe(
+			"1.125rem",
+		);
 	});
 
 	it("resolves Nocturne from its mounted default.json", async () => {
@@ -83,7 +105,31 @@ describe("shipped example skins", () => {
 		expect(skin.appearance.fontHeading).toContain("Courier New");
 		expect(skin.branding.name).toBe("Nocturne");
 		expect(skin.branding.logo?.lightSrc).toBe("/brand/nocturne-logo.svg");
+		// Layer 4: rules are carried through as data and never reach CSS.
+		expect(skin.rules.slots?.["page-title"]?.maxPerPage).toBe(1);
+		expect(skin.rules.headingOrder).toBe("no-skip");
 	});
+
+	// Value assertions cover the handful of fields a human thought to name; the
+	// example skins declare 88 tokens between them, so a rename of any of the
+	// other 80 would pass every test above. The exported survival check walks
+	// EVERY declared leaf through the real mounted-file source and fails on any
+	// one that did not reach the render — the same guarantee a descriptor-owning
+	// repository gets by depending on the contract instead of hand-rolling it.
+	it.each(["helios", "nocturne"])(
+		"%s survives resolution leaf for leaf, from the file source",
+		async (name) => {
+			const descriptor = JSON.parse(
+				readFileSync(join(exampleDir(name), "default.json"), "utf8"),
+			) as RawSkinDescriptor;
+			const skin = await assertSkinSurvives(descriptor, {
+				fallback,
+				sources: [exampleSource(name)],
+				expectSource: "file",
+			});
+			expect(skin.source).toBe("file");
+		},
+	);
 
 	it("gives the two example skins genuinely different appearances", async () => {
 		// Distinct hosts so the two resolutions don't share a cache entry.

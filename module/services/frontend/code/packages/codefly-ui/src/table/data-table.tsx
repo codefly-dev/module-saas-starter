@@ -125,7 +125,7 @@ export function DataTable<T>({
 			{/* Pagination */}
 			{table.getPageCount() > 1 && (
 				<div className="flex items-center justify-between px-2 py-4">
-					<p className="text-sm text-muted-foreground">
+					<p className="type-body text-muted-foreground">
 						Page {table.getState().pagination.pageIndex + 1} of{" "}
 						{table.getPageCount()}
 					</p>

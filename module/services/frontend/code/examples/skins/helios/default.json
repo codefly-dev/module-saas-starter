@@ -10,6 +10,29 @@
     "sidebarWidthIcon": "3.25rem",
     "borderWidth": "1px",
     "shadowStrength": "1.4",
+    "typeScale": {
+      "7": "1.625rem"
+    },
+    "typeRoles": {
+      "page-title": {
+        "weight": "600",
+        "tracking": "-0.04em"
+      },
+      "surface-title-snug": {
+        "family": "heading",
+        "lineHeight": "1.5rem"
+      }
+    },
+    "typeSlots": {
+      "card-description": "menu-item",
+      "empty-state-title": "emphasis"
+    },
+    "controlSizes": {
+      "default": {
+        "height": "9",
+        "paddingX": "3"
+      }
+    },
     "light": {
       "background": "oklch(0.99 0.012 85)",
       "foreground": "oklch(0.24 0.02 60)",
@@ -53,7 +76,7 @@
     "name": "Helios",
     "mark": "H",
     "title": "Helios Console",
-    "description": "The operations console for Helios \u2014 bright, warm, and built for daytime teams.",
+    "description": "The operations console for Helios — bright, warm, and built for daytime teams.",
     "favicon": "/brand/helios-logo.svg",
     "logo": {
       "lightSrc": "/brand/helios-logo.svg",

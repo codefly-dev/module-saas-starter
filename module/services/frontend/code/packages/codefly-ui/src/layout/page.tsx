@@ -59,7 +59,9 @@ function PageHeader({
 		>
 			<div className="space-y-1">
 				{title != null && (
-					<h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+					<h1 data-slot="page-title" className="type-page-title">
+						{title}
+					</h1>
 				)}
 				{description != null && (
 					<p className="text-muted-foreground">{description}</p>
@@ -176,10 +178,17 @@ function Section({
 				<div className="flex items-start justify-between gap-4">
 					<div className="space-y-1">
 						{title != null && (
-							<h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+							<h2 data-slot="section-title" className="type-section-title">
+								{title}
+							</h2>
 						)}
 						{description != null && (
-							<p className="text-sm text-muted-foreground">{description}</p>
+							<p
+										data-slot="section-description"
+										className="type-section-description text-muted-foreground"
+									>
+										{description}
+									</p>
 						)}
 					</div>
 					{actions != null && (

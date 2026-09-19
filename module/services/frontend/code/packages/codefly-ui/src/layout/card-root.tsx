@@ -12,7 +12,7 @@ function CardRoot({
 			data-slot="card"
 			data-size={size}
 			className={cn(
-				"group/card flex flex-col gap-4 overflow-hidden rounded-xl bg-card py-4 text-sm text-card-foreground ring-1 ring-foreground/10 has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+				"group/card flex flex-col gap-4 overflow-hidden rounded-xl bg-card py-4 type-card text-card-foreground ring-1 ring-foreground/10 has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
 				className,
 			)}
 			{...props}
@@ -38,7 +38,7 @@ function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
 		<div
 			data-slot="card-title"
 			className={cn(
-				"font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
+				"type-card-title group-data-[size=sm]/card:type-card-title-sm",
 				className,
 			)}
 			{...props}
@@ -50,7 +50,7 @@ function CardDescription({ className, ...props }: React.ComponentProps<"div">) {
 	return (
 		<div
 			data-slot="card-description"
-			className={cn("text-sm text-muted-foreground", className)}
+			className={cn("type-card-description text-muted-foreground", className)}
 			{...props}
 		/>
 	);
@@ -92,12 +92,42 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
 	);
 }
 
+/** A short kicker above a card's title: a category, a status, a source. */
+function CardEyebrow({ className, ...props }: React.ComponentProps<"div">) {
+	return (
+		<div
+			data-slot="card-eyebrow"
+			className={cn(
+				"type-card-eyebrow uppercase text-muted-foreground",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
+/** A row of secondary facts about a card's subject. */
+function CardMetadata({ className, ...props }: React.ComponentProps<"div">) {
+	return (
+		<div
+			data-slot="card-metadata"
+			className={cn(
+				"type-card-metadata flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
 export {
-	CardRoot,
 	CardAction,
 	CardContent,
 	CardDescription,
+	CardEyebrow,
 	CardFooter,
 	CardHeader,
+	CardMetadata,
+	CardRoot,
 	CardTitle,
 };

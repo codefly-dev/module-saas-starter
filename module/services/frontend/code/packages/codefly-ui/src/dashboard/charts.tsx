@@ -122,7 +122,7 @@ export function BarList({
 	return (
 		<div className={cn("flex flex-col gap-2", className)}>
 			{points.map((p) => (
-				<div key={p.key} className="flex items-center gap-2 text-sm">
+				<div key={p.key} className="flex items-center gap-2 type-body">
 					<span className="w-32 shrink-0 truncate text-muted-foreground" title={p.key}>
 						{format ? format(p.key) : p.key}
 					</span>
@@ -154,7 +154,7 @@ export function StatChart({
 	const style: React.CSSProperties = { color: "var(--primary)" };
 	return (
 		<div className={cn("flex items-end justify-between gap-4", className)}>
-			<span className="text-4xl font-bold tabular-nums tracking-tight">{total.toLocaleString()}</span>
+			<span className="type-metric-total tabular-nums">{total.toLocaleString()}</span>
 			<div className="w-[120px]" style={style}>
 				<LineChart points={points} height={40} />
 			</div>

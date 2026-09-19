@@ -116,6 +116,17 @@ export interface FrontendPlugin {
 	routes?: readonly PluginRoute[];
 }
 
+import type {
+	FrontendControlSizeOverrides,
+	FrontendControlSizes,
+	FrontendTypeRoleOverrides,
+	FrontendTypeRoles,
+	FrontendTypeScale,
+	FrontendTypeScaleOverrides,
+	FrontendTypeSlotOverrides,
+	FrontendTypeSlots,
+} from "./typography.js";
+
 export interface FrontendBranding {
 	name: string;
 	mark: string;
@@ -193,9 +204,50 @@ export interface FrontendAppearanceDefinition {
 	borderWidth?: string;
 	/** Unitless multiplier (0–2) on the elevation/shadow scale. */
 	shadowStrength?: string;
+	/** Layer 1: the ordinal type ramp every role points into. */
+	typeScale?: FrontendTypeScaleOverrides;
+	/** Layer 2: named bundles of size, weight, line height, tracking and family. */
+	typeRoles?: FrontendTypeRoleOverrides;
+	/** Layer 3: which role each surface uses. */
+	typeSlots?: FrontendTypeSlotOverrides;
+	/** Control geometry rungs; each carries the type role its label uses. */
+	controlSizes?: FrontendControlSizeOverrides;
 	light?: FrontendThemeTokenOverrides;
 	dark?: FrontendThemeTokenOverrides;
 }
+
+/**
+ * Every field `resolveFrontendAppearance` accepts inside `appearance`. Exported
+ * because a repository that authors skin descriptors must be able to see the
+ * vocabulary it is writing against: the validator is fail-closed, so a field
+ * outside this list costs the descriptor its whole appearance, and a private
+ * copy of the list in the authoring repository would pass while the real
+ * validator disagreed.
+ *
+ * `appearance-fields.test.ts` holds it to the resolved appearance's own keys, so
+ * the list cannot drift from what the validator reads.
+ */
+export const FRONTEND_APPEARANCE_FIELD_NAMES = [
+	"defaultTheme",
+	"radius",
+	"fontSans",
+	"fontHeading",
+	"spacing",
+	"fontSizeBase",
+	"sidebarWidth",
+	"sidebarWidthIcon",
+	"borderWidth",
+	"shadowStrength",
+	"typeScale",
+	"typeRoles",
+	"typeSlots",
+	"controlSizes",
+	"light",
+	"dark",
+] as const satisfies readonly (keyof FrontendAppearanceDefinition)[];
+
+export type FrontendAppearanceFieldName =
+	(typeof FRONTEND_APPEARANCE_FIELD_NAMES)[number];
 
 /** Fully resolved immutable appearance consumed by the host runtime. */
 export interface FrontendAppearance {
@@ -209,6 +261,10 @@ export interface FrontendAppearance {
 	sidebarWidthIcon: string;
 	borderWidth: string;
 	shadowStrength: string;
+	typeScale: FrontendTypeScale;
+	typeRoles: FrontendTypeRoles;
+	typeSlots: FrontendTypeSlots;
+	controlSizes: FrontendControlSizes;
 	light: FrontendThemeTokens;
 	dark: FrontendThemeTokens;
 }
