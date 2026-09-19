@@ -69,6 +69,15 @@ export type {
 	TypographyLayers,
 } from "./typography.js";
 export {
+	DEFAULT_FRONTEND_SKIN_RULES,
+	resolveSkinRules,
+} from "./skin-rules.js";
+export type {
+	FrontendHeadingOrderRule,
+	FrontendSkinRules,
+	FrontendSlotRule,
+} from "./skin-rules.js";
+export {
 	DEFAULT_CONTROL_SIZES,
 	DEFAULT_TYPE_ROLES,
 	DEFAULT_TYPE_SCALE,

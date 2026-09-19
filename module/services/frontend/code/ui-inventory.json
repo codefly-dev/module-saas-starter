@@ -484,6 +484,25 @@
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
 		},
 		{
+			"source": "packages/codefly-ui/src/layout/field.tsx",
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Label, hint, error and the aria wiring between them; the control arrives through a render prop.",
+			"imports": [
+				"./cn.js",
+				"./label.js",
+				"react"
+			],
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/foundations.stories.tsx",
+					"export": "Fields"
+				}
+			],
+			"coverage": "owner stories and unit tests; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
+		},
+		{
 			"source": "packages/codefly-ui/src/layout/input-group.tsx",
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
@@ -567,6 +586,55 @@
 			],
 			"coverage": "owner stories; browser/skin verification pending",
 			"remaining": "Verify explorer rendering, interactive accessibility and visual baselines under external skins."
+		},
+		{
+			"source": "packages/codefly-ui/src/layout/pagination.tsx",
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Pager rendering `paginationRange`; page numbers are Buttons at a control rung.",
+			"imports": [
+				"./button.js",
+				"./cn.js",
+				"./pagination-model.js",
+				"lucide-react",
+				"react"
+			],
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/foundations.stories.tsx",
+					"export": "PaginationShort"
+				},
+				{
+					"file": "packages/codefly-ui/stories/foundations.stories.tsx",
+					"export": "PaginationLong"
+				}
+			],
+			"coverage": "owner stories and unit tests; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
+		},
+		{
+			"source": "packages/codefly-ui/src/layout/segmented-control.tsx",
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"reason": "Single-choice control over the shared control rungs; the view switcher is a usage of this at `sm` with icon-only options, not a separate part.",
+			"imports": [
+				"./cn.js",
+				"@base-ui/react/toggle",
+				"@base-ui/react/toggle-group",
+				"react"
+			],
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/foundations.stories.tsx",
+					"export": "SegmentedControlStory"
+				},
+				{
+					"file": "packages/codefly-ui/stories/foundations.stories.tsx",
+					"export": "ControlRungs"
+				}
+			],
+			"coverage": "owner stories and unit tests; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/select.tsx",

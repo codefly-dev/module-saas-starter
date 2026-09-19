@@ -5,6 +5,11 @@ export {
 	resolveSkin,
 } from "./resolver.js";
 export {
+	assertSkinRules,
+	checkSkinRules,
+	type SkinRuleViolation,
+} from "./rules.js";
+export {
 	assertSkinSurvives,
 	checkSkinSurvival,
 	type SkinLeafMismatch,
