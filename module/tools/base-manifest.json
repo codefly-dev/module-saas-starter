@@ -1,6 +1,6 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2263,
+  "fileCount": 2264,
   "files": {
     "AGENTS.md": "b04b2cea0530fda5f3c25ee10684feb3e2b27a1ec23ec139bad75ee91c26ae58",
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
@@ -460,7 +460,7 @@
     "services/accounts/code/pkg/business/dashboards_test.go": "90f54fdbc059f7991bff283bdb632d23ff1a2e546ecc09792dc2bab438014a3d",
     "services/accounts/code/pkg/business/datasource_content_ticket.go": "04e579ec6fa75a246de2ff6bea1ca94690ae75fb6d172ad39e41fe54065812ad",
     "services/accounts/code/pkg/business/datasource_content_ticket_test.go": "cb5ba6560f63c82fcf774418a1e6606956a8d68fe8fe5ce53cec61757fe8c500",
-    "services/accounts/code/pkg/business/datasource_deliveries.go": "cbb81bcf67ad17c6880dbc0a7b59d0ef3624575b1e1f0e3281b4ab2926947a5d",
+    "services/accounts/code/pkg/business/datasource_deliveries.go": "9cfb326d9af17369b4e075c350738334a036d707106e261f417080b80351e512",
     "services/accounts/code/pkg/business/datasource_deliveries_test.go": "4c0cca918ac4a9ea8baecf7cc92b3415ed762f3448362c4c9a3deca4f182fccd",
     "services/accounts/code/pkg/business/datasource_failures.go": "fa1727c56fc63ec0a23582aaa617bd9ac0001716aaaa2f36d64f08524ffedef2",
     "services/accounts/code/pkg/business/datasource_github_app_push.go": "2339ef46d692616004eb734645cd958cf05f57923497535d53531ac3827782ec",
@@ -472,6 +472,7 @@
     "services/accounts/code/pkg/business/datasource_github_setup.go": "e4fa37985cedb8d6cd56bdbac37bb9e07ca2216744c6dc77968619ae88f1543d",
     "services/accounts/code/pkg/business/datasource_github_setup_test.go": "47ee6476b4cc92e67f28e64a35188cc41454ed645f095291f4c42a8c934d2b20",
     "services/accounts/code/pkg/business/datasource_installation_rotation_test.go": "06361e60fde03433a02f08377e3e65c6fa7ff6512e38b57a1ec4d3602884d2eb",
+    "services/accounts/code/pkg/business/datasource_snapshot_binding_test.go": "f1786c1d005fb49c3e97c8950cd139e5eb07ad89e6c1c3bc01f8ddfef13f035c",
     "services/accounts/code/pkg/business/datasource_validation.go": "20b36f1252a26eb4ef7a8a948233bd91a538c08090fca733d3cb757e609ef7aa",
     "services/accounts/code/pkg/business/datasource_validation_test.go": "da98b54e7a7c50844b78549ab716428dd4c5e947f572f4e840652139385a7cce",
     "services/accounts/code/pkg/business/datasources.go": "8c56984e2c50db7751d3a78a2fe737b222a79746fa7055ee9c453bb0a33dad28",
