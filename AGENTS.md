@@ -41,6 +41,23 @@ an unlabelled one.
 the place that owns the behaviour, or a *hack*. A hack does not become a fix by
 working, by being small, by being local, or by the real fix belonging elsewhere.
 
+**Never hand-edit generated code, and never hand-pick a generator's output.** Not
+one import, not one line, not "just reverting the file the generator touched by
+mistake". A generated file is a *function* of its inputs and its toolchain: edit
+the output and you have created a state no one can reproduce, that the next
+regeneration silently destroys, and that no review can distinguish from real
+drift. This includes the quieter form — running a generator and then keeping some
+of what it wrote and discarding the rest. If a regeneration produces bytes you do
+not want, the generator, its pins, or its inputs are wrong. Fix one of those, or
+file a precise issue against the tool that owns it, and say in the PR body that
+you could not regenerate cleanly. **A generated tree you had to curate by hand is
+a broken generator, reported as such — never a tidied diff.**
+
+Before changing any proto or generator input, run the generator with **no change
+at all** and require `git status` to come back clean. That two-minute check is
+what separates "my change churned the tree" from "my toolchain does not match
+CI", and it is the difference between a one-file diff and a hundred-file one.
+
 **Never hardcode what the system resolves** — injected environment, derived ports,
 service addresses, credentials copied out of another component's config. If you
 are typing one, you are encoding something true only on your machine for the next

@@ -16,6 +16,27 @@ behavioural rules (in a consumer, read your own).
 [DEPLOYMENT_TOPOLOGY.md](./DEPLOYMENT_TOPOLOGY.md) describe the graph;
 [services/README.md](./services/README.md) introduces the eight services.
 
+
+## Generated files are never edited by hand
+
+This tree is full of generated output — `pkg/gen/`, `generated/`, the catalogs,
+the TypeScript under `services/frontend/code/src/gen/`. **None of it is ever
+edited, and none of it is ever partially kept.** Running a generator and then
+reverting the files you did not want is the same mistake as editing them: the
+result is a tree no one can reproduce.
+
+Regenerate with the documented command for the service, run the whole chain, and
+require a clean `git status`. If the chain cannot reproduce what is committed,
+that is a bug in the generator, its pins, or its inputs: fix one of those, or
+file a precise issue against the tool that owns it and say in the PR body that
+you could not regenerate cleanly. Never keep some of what a generator wrote and
+discard the rest — a curated generated tree is a broken generator, reported as
+such, never a tidied diff.
+
+Before changing any proto or generator input, run the generator with no change
+at all and require a clean tree. That is what separates "my change churned the
+tree" from "my toolchain does not match CI".
+
 ## Generated files, and their source
 
 `deployment/topology.bindings.codefly.yaml` is **the source of truth** for the
