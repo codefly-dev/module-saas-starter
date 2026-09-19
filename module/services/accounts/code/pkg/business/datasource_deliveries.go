@@ -57,6 +57,7 @@ const (
 	datasourceReconcileSchemaVersion = 1
 
 	attrDeliveryID    = "datasource.delivery_id"
+	attrSourceRef     = "datasource.source_ref"
 	attrChangeSet     = "datasource.change_set"
 	attrReconcileMode = "datasource.reconcile_mode"
 
@@ -142,6 +143,7 @@ type changeSetFile struct {
 // snapshotManifest is the full-tree manifest a snapshot job carries: enough for
 // the module to diff against its own bindings and request only changed blobs.
 type snapshotManifest struct {
+	Ref    string         `json:"ref"`
 	Repo   string         `json:"repo"`
 	Commit string         `json:"commit"`
 	Files  []snapshotFile `json:"files"`
@@ -332,19 +334,19 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		base = push.Before
 	}
 	if base == "" {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", false)
+		return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", false)
 	}
 
 	comparison, err := client.Compare(ctx, source.Repo, base, push.After)
 	if err != nil {
 		if errors.Is(err, github.ErrNotFound) {
 			// base commit no longer reachable (force push) — snapshot.
-			return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", true)
+			return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", true)
 		}
 		return "", w.Wrapf(err, "compare %s...%s", base, push.After)
 	}
 	if comparison.Status == github.CompareStatusDiverged || comparison.Truncated {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", true)
+		return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", true)
 	}
 	if comparison.Status == github.CompareStatusBehind {
 		// head is an ancestor of the base: a redelivered or out-of-order older
@@ -398,7 +400,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if !force && head == source.LastIngestedCommit {
 		return false, nil
 	}
-	disp, err := s.snapshotAt(ctx, source, client, head, requestJobID, requestJobID, false)
+	disp, err := s.snapshotAt(ctx, source, client, branch, head, requestJobID, requestJobID, false)
 	if err != nil {
 		return false, err
 	}
@@ -414,13 +416,16 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 // is the reconcile path for a created branch, a force push, a truncated compare,
 // the periodic reconcile, and an explicit "Sync now". forcePush records the
 // force-push audit alongside the change-set audit.
-func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
+func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, branch, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
 	w := wool.Get(ctx).In("snapshotAt")
 	files, err := client.ListFiles(ctx, source.Repo, commit, source.Paths)
 	if err != nil {
 		return "", w.Wrapf(err, "list tree at %s", commit)
 	}
-	manifest := snapshotManifest{Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
+	// Reuse the branch already resolved and checked by the source compiler.
+	// Snapshot payload and authenticated delivery metadata must name the same ref.
+	ref := "refs/heads/" + branch
+	manifest := snapshotManifest{Ref: ref, Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
 	for _, f := range files {
 		manifest.Files = append(manifest.Files, snapshotFile{Path: f.Path, BlobSHA: f.SHA, Size: f.Size})
 	}
@@ -487,6 +492,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 				attrRepo:       source.Repo,
 				attrCommit:     commit,
 				attrDeliveryID: deliveryID,
+				attrSourceRef:  ref,
 			},
 		},
 	}); err != nil {
