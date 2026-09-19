@@ -191,6 +191,9 @@ function DatasourcesPanelView({
 				orgId,
 				repo: values.repo,
 				paths: parsePaths(values.paths),
+				fileExtensions: parsePaths(values.fileExtensions).map((value) =>
+					value.toLowerCase(),
+				),
 				branch: values.branch ?? "",
 				targetCollection: values.targetCollection,
 				boundaryNodeId: values.boundaryNodeId || undefined,
@@ -208,7 +211,11 @@ function DatasourcesPanelView({
 
 	const appSetupActive = !!appSetupReturn && appSetupReturn.orgId === orgId;
 	const appSetup = useQuery({
-		queryKey: ["github-app-setup", appSetupReturn?.orgId, appSetupReturn?.state],
+		queryKey: [
+			"github-app-setup",
+			appSetupReturn?.orgId,
+			appSetupReturn?.state,
+		],
 		queryFn: () =>
 			completeAppSetup!(
 				appSetupReturn!.orgId,
@@ -349,9 +356,8 @@ function DatasourcesPanelView({
 				</p>
 			) : scopes.isSuccess && boundaries.size === 0 ? (
 				<p role="status">
-					No readable collection. Ask an organization administrator for
-					read access. Connecting or syncing a source does not grant
-					access.
+					No readable collection. Ask an organization administrator for read
+					access. Connecting or syncing a source does not grant access.
 				</p>
 			) : null}
 			{client.listCollections ? (
@@ -463,7 +469,7 @@ function DatasourcesPanelView({
 					boundaries={boundaries}
 					onMigrateToApp={migrateToApp ? handleMigrateToApp : undefined}
 					migratingIds={migratingIds}
-                    permissionsResolved={scopes.isSuccess && !scopes.isError}
+					permissionsResolved={scopes.isSuccess && !scopes.isError}
 					syncingIds={syncingIds}
 					deletingIds={deletingIds}
 					onSync={handleSync}
@@ -682,7 +688,7 @@ const cellClass = "px-3 py-2 align-middle";
 function SourcesTable({
 	sources,
 	boundaries,
-    permissionsResolved,
+	permissionsResolved,
 	syncingIds,
 	deletingIds,
 	migratingIds,
@@ -694,7 +700,7 @@ function SourcesTable({
 }: {
 	sources: DatasourceView[];
 	boundaries: ReadonlyMap<string, AccessibleScopeView>;
-    permissionsResolved: boolean;
+	permissionsResolved: boolean;
 	syncingIds: ReadonlySet<string>;
 	deletingIds: ReadonlySet<string>;
 	migratingIds: ReadonlySet<string>;
@@ -736,6 +742,11 @@ function SourcesTable({
 								) : (
 									source.paths.join(", ")
 								)}
+								{!!source.fileExtensions?.length && (
+									<div className="text-xs text-muted-foreground">
+										Only {source.fileExtensions.join(", ")}
+									</div>
+								)}
 							</TableCell>
 							<TableCell className={cellClass}>
 								{source.branch || "default"}
@@ -743,7 +754,7 @@ function SourcesTable({
 							<TableCell className={cellClass}>
 								<BoundaryCell
 									nodeId={source.boundaryNodeId}
-                                    permissionsResolved={permissionsResolved}
+									permissionsResolved={permissionsResolved}
 									scope={boundaries.get(source.boundaryNodeId)}
 								/>
 							</TableCell>
@@ -819,13 +830,13 @@ function SourcesTable({
 }
 
 function BoundaryCell({
-    permissionsResolved,
+	permissionsResolved,
 	nodeId,
 	scope,
 }: {
 	nodeId: string;
 	scope: AccessibleScopeView | undefined;
-    permissionsResolved: boolean;
+	permissionsResolved: boolean;
 }) {
 	if (scope) {
 		return (
@@ -837,7 +848,14 @@ function BoundaryCell({
 			</div>
 		);
 	}
-	return <div><div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div><p className="text-xs">{permissionsResolved ? "No read access" : "Read permission unresolved"}</p></div>;
+	return (
+		<div>
+			<div className="font-mono text-xs">{shortBoundaryId(nodeId)}</div>
+			<p className="text-xs">
+				{permissionsResolved ? "No read access" : "Read permission unresolved"}
+			</p>
+		</div>
+	);
 }
 
 function SourceHistory({

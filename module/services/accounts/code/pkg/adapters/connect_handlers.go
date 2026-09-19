@@ -872,7 +872,10 @@ func (h *notificationConnectHandler) ListNotifications(ctx context.Context, req 
 	if pageSize == 0 {
 		pageSize = 50
 	}
-	notes, nextToken, err := h.svc.ListNotifications(ctx, userID, pageSize, req.Msg.PageToken)
+	notes, nextToken, err := h.svc.ListNotifications(ctx, userID, pageSize, req.Msg.PageToken, business.NotificationFilter{OrgID: req.Msg.OrgId, UnreadOnly: req.Msg.UnreadOnly})
+	if errors.Is(err, business.ErrInvalidNotificationPageToken) || errors.Is(err, business.ErrInvalidNotificationFilter) {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	if err != nil {
 		return nil, err
 	}

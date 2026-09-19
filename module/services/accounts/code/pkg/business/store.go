@@ -586,7 +586,7 @@ type Store interface {
 
 	// Notifications
 	CreateNotification(ctx context.Context, n *Notification) error
-	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*Notification, string, error)
+	ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string, filters ...NotificationFilter) ([]*Notification, string, error)
 	GetUnreadCount(ctx context.Context, userID string) (int, error)
 	// ListUnreadResourceReferences groups the user's unread follow items by the
 	// resource they refer to, so the caller can recheck visibility per resource

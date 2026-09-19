@@ -49,7 +49,7 @@ accounts operation and the page should say so.
 | HOST-NTF-001 · A category I switched off does not reach me | unproven | — | `Update`, `NotifyUser`, `ListNotifications` |
 | HOST-NTF-002 · What I must be told reaches me anyway | unproven | — | `Update`, `NotifyUser`, `ListNotifications` |
 | HOST-SRC-001 · A connected source's changes reach the module | unproven | — | `AddGitHubSource`, `SyncSource`, `ClaimJobs`, `FetchDatasourceBlob` |
-| HOST-SRC-002 · A rewritten history reconciles | implementation gap | — | `SyncSource`, `ClaimJobs` |
+| HOST-SRC-002 · A rewritten history reconciles | unproven | — | `SyncSource`, `ClaimJobs` |
 | HOST-DASH-001 · A private dashboard is mine and my administrators' | unproven | — | `CreateDashboard`, `ListDashboards` |
 | HOST-DASH-002 · Sharing makes it readable, not writable | unproven | — | `ShareDashboard`, `GetDashboard`, `UpdateDashboard` |
 | HOST-ENT-001 · A plan gate refuses what the plan excludes | implementation gap | — | `GetOrgEntitlements` |
@@ -61,11 +61,13 @@ accounts operation and the page should say so.
 | HOST-OBS-001 · Recording waits for my consent | implementation gap | — | — |
 | HOST-OBS-002 · Consent for one thing is not consent for another | implementation gap | — | — |
 
+The GitHub compiler already detects missing bases, diverged history and
+truncated comparisons and emits a snapshot (#487/#501). HOST-SRC-002 remains
+unproven until a named story test establishes consumer convergence and replay
+against the installed composition; absence of detection is no longer its gap.
+
 Where a row says *implementation gap*, this is what is missing:
 
-- **HOST-SRC-002** — the GitHub datasource has no detection of a rewritten
-  history; a force-push has to converge on one reconcile and a replay of that
-  reconcile must change nothing.
 - **HOST-ENT-001 / 002** — no "not included in the plan" refusal path exists in
   the accounts service; the gate has to be found or built, and the
   provider-neutral flag path proven unable to open a plan-excluded capability.

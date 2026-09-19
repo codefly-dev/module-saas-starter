@@ -3,10 +3,13 @@ package infra
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"accounts/pkg/business"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -59,7 +62,7 @@ func (s *PostgresStore) ExistingNotificationIDs(ctx context.Context, ids []strin
 	return existing, rows.Err()
 }
 
-func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string) ([]*business.Notification, string, error) {
+func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pageSize int, pageToken string, filters ...business.NotificationFilter) ([]*business.Notification, string, error) {
 	q := s.getQueryExecutor(ctx)
 
 	query := `
@@ -68,15 +71,42 @@ func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pa
 		WHERE user_id = $1`
 	args := []any{userID}
 
-	if pageToken != "" {
-		query += ` AND created_at < $2`
-		args = append(args, pageToken)
-		query += ` ORDER BY created_at DESC LIMIT $3`
-		args = append(args, pageSize)
-	} else {
-		query += ` ORDER BY created_at DESC LIMIT $2`
-		args = append(args, pageSize)
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 100
 	}
+	if len(filters) > 0 {
+		filter := filters[0]
+		if filter.OrgID != "" {
+			if _, err := uuid.Parse(filter.OrgID); err != nil {
+				return nil, "", business.ErrInvalidNotificationFilter
+			}
+			args = append(args, filter.OrgID)
+			query += fmt.Sprintf(" AND org_id = $%d", len(args))
+		}
+		if filter.UnreadOnly {
+			query += " AND read_at IS NULL"
+		}
+	}
+	if pageToken != "" {
+		stamp, id, composite := strings.Cut(pageToken, "|")
+		createdAt, err := time.Parse(time.RFC3339Nano, stamp)
+		if err != nil {
+			return nil, "", business.ErrInvalidNotificationPageToken
+		}
+		args = append(args, createdAt)
+		if composite {
+			if _, err := uuid.Parse(id); err != nil {
+				return nil, "", business.ErrInvalidNotificationPageToken
+			}
+			args = append(args, id)
+			query += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d)", len(args)-1, len(args))
+		} else {
+			// Accept cursors issued before the composite-cursor rollout.
+			query += fmt.Sprintf(" AND created_at < $%d", len(args))
+		}
+	}
+	args = append(args, pageSize+1)
+	query += fmt.Sprintf(" ORDER BY created_at DESC, id DESC LIMIT $%d", len(args))
 
 	rows, err := q.Query(ctx, query, args...)
 	if err != nil {
@@ -111,10 +141,14 @@ func (s *PostgresStore) ListNotifications(ctx context.Context, userID string, pa
 		notifications = append(notifications, &n)
 	}
 
-	// Next page token is the created_at of the last item
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
 	var nextToken string
-	if len(notifications) == pageSize {
-		nextToken = notifications[len(notifications)-1].CreatedAt.Format(time.RFC3339Nano)
+	if len(notifications) > pageSize {
+		notifications = notifications[:pageSize]
+		last := notifications[len(notifications)-1]
+		nextToken = last.CreatedAt.Format(time.RFC3339Nano) + "|" + last.ID
 	}
 
 	return notifications, nextToken, nil

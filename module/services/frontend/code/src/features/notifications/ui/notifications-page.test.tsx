@@ -10,6 +10,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+	pagination: false,
 	markRead: vi.fn(async () => undefined),
 	resolveAction: vi.fn(
 		async (_v: { id: string; unread: boolean }) =>
@@ -29,13 +30,15 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("../service/queries", () => ({
 	notificationQueries: {
-		list: () => ({
-			queryKey: ["notifications"],
+		list: (_size: number, options: { pageToken?: string } = {}) => ({
+			queryKey: ["notifications", options.pageToken],
 			queryFn: async () => ({
 				notifications: [
 					{
 						id: "notification-1",
-						title: "You've been invited",
+						title: options.pageToken
+							? "Earlier notification"
+							: "You've been invited",
 						body: "Join Acme",
 						type: "info",
 						read: false,
@@ -43,7 +46,7 @@ vi.mock("../service/queries", () => ({
 						hasAction: true,
 					},
 				],
-				nextPageToken: "",
+				nextPageToken: mocks.pagination && !options.pageToken ? "older" : "",
 			}),
 		}),
 	},
@@ -62,6 +65,7 @@ import { NotificationsPage } from "./notifications-page";
 
 afterEach(() => {
 	cleanup();
+	mocks.pagination = false;
 	mocks.markRead.mockClear();
 	mocks.resolveAction.mockClear();
 	mocks.push.mockClear();
@@ -81,6 +85,21 @@ function renderPage() {
 }
 
 describe("NotificationsPage", () => {
+	it("can reach older notifications and return to the first page", async () => {
+		mocks.pagination = true;
+		renderPage();
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Older notifications" }),
+		);
+		expect(await screen.findByText("Earlier notification")).toBeTruthy();
+		expect(
+			screen.queryByRole("button", { name: "Older notifications" }),
+		).toBeNull();
+		fireEvent.click(
+			screen.getByRole("button", { name: "Newer notifications" }),
+		);
+		expect(await screen.findByText("You've been invited")).toBeTruthy();
+	});
 	it("opens the re-authorized destination and only then marks it read", async () => {
 		renderPage();
 
@@ -89,7 +108,9 @@ describe("NotificationsPage", () => {
 		);
 
 		await waitFor(() => {
-			expect(mocks.push).toHaveBeenCalledWith("/invitations/accept?token=token");
+			expect(mocks.push).toHaveBeenCalledWith(
+				"/invitations/accept?token=token",
+			);
 		});
 		expect(mocks.resolveAction).toHaveBeenCalledWith("notification-1");
 		expect(mocks.markRead).toHaveBeenCalledWith("notification-1");

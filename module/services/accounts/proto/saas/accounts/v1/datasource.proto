@@ -56,6 +56,9 @@ message GitHubDatasourceConfig {
   repeated string paths = 2;
   // Git ref (branch) to pull. Empty resolves to the repository default branch.
   string branch = 3;
+  // Optional case-insensitive file suffixes, e.g. [".md", ".mdx"]. Empty
+  // admits every file type within paths. Applied before content is fetched.
+  repeated string file_extensions = 4;
 }
 
 // ApiCredentialKind is how the generic API connector presents its stored
@@ -240,6 +243,11 @@ message AddGitHubSourceRequest {
   // (X-Hub-Signature-256). Optional at creation; when omitted, live webhook
   // ingestion stays off until a later call supplies one. Encrypted at receipt.
   string webhook_secret = 7 [(buf.validate.field).string.max_len = 1024];
+  // Optional file suffix allowlist, intersected with paths (not a glob).
+  repeated string file_extensions = 10 [(buf.validate.field).repeated = {
+    max_items: 32
+    items: { string: { min_len: 2 max_len: 33 pattern: "^\\.[A-Za-z0-9][A-Za-z0-9._-]*$" } }
+  }];
 }
 
 message AddGitHubSourceResponse {

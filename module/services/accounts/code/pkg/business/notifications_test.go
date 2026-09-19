@@ -77,7 +77,7 @@ func (store *notificationVisibilityStore) WithOrgTx(ctx context.Context, orgID s
 	return fn(ctx)
 }
 
-func (store *notificationVisibilityStore) ListNotifications(_ context.Context, _ string, _ int, _ string) ([]*business.Notification, string, error) {
+func (store *notificationVisibilityStore) ListNotifications(_ context.Context, _ string, _ int, _ string, _ ...business.NotificationFilter) ([]*business.Notification, string, error) {
 	return store.page, store.nextToken, nil
 }
 

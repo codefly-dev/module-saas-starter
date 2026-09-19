@@ -369,16 +369,17 @@ see `JOBS.md` for the exact boundary and sequencing.
 | Feature                | Status | Notes                                                               |
 |------------------------|--------|---------------------------------------------------------------------|
 | In-app notifications   | ✅    | DB-backed, actionable, list / mark-read / unread-count; optional writes honor the user opt-out |
+| In-app banner          | ✅    | Active-tenant unread selection, current-action authorization, shared kit Banner; see [NOTIFICATIONS.md](NOTIFICATIONS.md) |
 | SSE notification stream| ✅    | `/api/notifications/stream` Server-Sent-Events                      |
 | Email transactional    | ✅    | Invitation, magic-link, and billing emails use a generated transactional outbox and isolated worker |
 | Email templates        | ✅    | Versioned DB catalog; strict variable resolution, HTML escaping, and immutable rendered job payloads |
 | Resend delivery events | ✅    | Exact-body Svix verification, stale/tamper rejection, durable `svix-id` dedup, PII-minimized history, monotonic invitation projection |
 | User notification prefs| 🟡    | Optional in-app and product/marketing/digest email policy is enforced; per-workflow overrides and unsubscribe are not yet available |
 | Outbound webhooks      | ✅    | Generated transactional outbox, Vault keys, SSRF-safe exact-body signing, generic fenced retries/dead letters, replay |
-| Resource follows       | ❌    | Contract defined in `module/FOLLOWS.md`; no follow relation, event→inbox bridge, or read-time visibility recheck is built |
+| Resource follows       | ✅    | Follow/Unfollow, catalog-gated event fan-out, read-time visibility and action reauthorization (#713, #721, #722, #727); producer reachability depends on composition |
 | Push notifications     | ❌    | No web/mobile push implementation or user-facing control            |
-| SMS notifications      | ❌    | No SMS provider                                                     |
-| Slack / Teams hooks    | 🟡    | Internal Slack notifier (errors/health); not customer-facing        |
+| SMS notifications      | ❌    | Sender interface and E.164 validation prepared; no provider, enrollment or delivery |
+| Slack / Teams hooks    | 🟡    | Internal ops Slack exists; bot transport/signature verification prepared but tenant installation and delivery remain open in #838. No Teams provider |
 
 ### Audit log
 

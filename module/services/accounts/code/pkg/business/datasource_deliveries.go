@@ -57,6 +57,7 @@ const (
 	datasourceReconcileSchemaVersion = 1
 
 	attrDeliveryID    = "datasource.delivery_id"
+	attrSourceRef     = "datasource.source_ref"
 	attrChangeSet     = "datasource.change_set"
 	attrReconcileMode = "datasource.reconcile_mode"
 
@@ -142,6 +143,7 @@ type changeSetFile struct {
 // snapshotManifest is the full-tree manifest a snapshot job carries: enough for
 // the module to diff against its own bindings and request only changed blobs.
 type snapshotManifest struct {
+	Ref    string         `json:"ref"`
 	Repo   string         `json:"repo"`
 	Commit string         `json:"commit"`
 	Files  []snapshotFile `json:"files"`
@@ -332,19 +334,19 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		base = push.Before
 	}
 	if base == "" {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", false)
+		return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", false)
 	}
 
 	comparison, err := client.Compare(ctx, source.Repo, base, push.After)
 	if err != nil {
 		if errors.Is(err, github.ErrNotFound) {
 			// base commit no longer reachable (force push) — snapshot.
-			return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", true)
+			return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", true)
 		}
 		return "", w.Wrapf(err, "compare %s...%s", base, push.After)
 	}
 	if comparison.Status == github.CompareStatusDiverged || comparison.Truncated {
-		return s.snapshotAt(ctx, source, client, push.After, deliveryID, "", true)
+		return s.snapshotAt(ctx, source, client, branch, push.After, deliveryID, "", true)
 	}
 	if comparison.Status == github.CompareStatusBehind {
 		// head is an ancestor of the base: a redelivered or out-of-order older
@@ -355,7 +357,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		return DispositionStale, nil
 	}
 
-	ops := s.changeOps(comparison.Files, source.Paths)
+	ops := s.changeOpsFiltered(comparison.Files, source.Paths, source.FileExtensions)
 	changeSet := base + "..." + push.After
 	for _, op := range ops {
 		if err := s.enqueueChangeSetFile(ctx, source, client, op, branch, push.After, changeSet, deliveryID); err != nil {
@@ -398,7 +400,7 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 	if !force && head == source.LastIngestedCommit {
 		return false, nil
 	}
-	disp, err := s.snapshotAt(ctx, source, client, head, requestJobID, requestJobID, false)
+	disp, err := s.snapshotAt(ctx, source, client, branch, head, requestJobID, requestJobID, false)
 	if err != nil {
 		return false, err
 	}
@@ -414,14 +416,20 @@ func (s *Service) ReconcileGitHubSource(ctx context.Context, source *DatasourceS
 // is the reconcile path for a created branch, a force push, a truncated compare,
 // the periodic reconcile, and an explicit "Sync now". forcePush records the
 // force-push audit alongside the change-set audit.
-func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
+func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, client GitHubContentClient, branch, commit, deliveryID, requestJobID string, forcePush bool) (DeliveryDisposition, error) {
 	w := wool.Get(ctx).In("snapshotAt")
 	files, err := client.ListFiles(ctx, source.Repo, commit, source.Paths)
 	if err != nil {
 		return "", w.Wrapf(err, "list tree at %s", commit)
 	}
-	manifest := snapshotManifest{Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
+	// Use the branch resolved by the host, not a downstream guess about the
+	// repository default. The authenticated job binding and payload must agree.
+	ref := "refs/heads/" + branch
+	manifest := snapshotManifest{Ref: ref, Repo: source.Repo, Commit: commit, Files: make([]snapshotFile, 0, len(files))}
 	for _, f := range files {
+		if !fileTypeAllowed(f.Path, source.FileExtensions) {
+			continue
+		}
 		manifest.Files = append(manifest.Files, snapshotFile{Path: f.Path, BlobSHA: f.SHA, Size: f.Size})
 	}
 	ordinal, err := s.allocateOrdinal(ctx, source.ID)
@@ -487,6 +495,7 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 				attrRepo:       source.Repo,
 				attrCommit:     commit,
 				attrDeliveryID: deliveryID,
+				attrSourceRef:  ref,
 			},
 		},
 	}); err != nil {
@@ -526,20 +535,25 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 // is an upsert of the new path, a rename out of scope is a delete of the old
 // path. Ops are returned in path order so a crash mid-set replays deterministically.
 func (s *Service) changeOps(files []github.ChangedFile, paths []string) []changeOp {
+	return s.changeOpsFiltered(files, paths, nil)
+}
+
+func (s *Service) changeOpsFiltered(files []github.ChangedFile, paths, extensions []string) []changeOp {
+	inScope := func(name string) bool { return pathInScope(name, paths) && fileTypeAllowed(name, extensions) }
 	var ops []changeOp
 	for _, f := range files {
 		switch f.Status {
 		case "added", "modified", "changed", "copied":
-			if pathInScope(f.Filename, paths) {
+			if inScope(f.Filename) {
 				ops = append(ops, changeOp{path: f.Filename, blobSHA: f.SHA, changeType: upsertChangeType(f.Status)})
 			}
 		case "removed":
-			if pathInScope(f.Filename, paths) {
+			if inScope(f.Filename) {
 				ops = append(ops, changeOp{path: f.Filename, changeType: changeTypeRemoved})
 			}
 		case "renamed":
-			fromIn := pathInScope(f.PreviousFilename, paths)
-			toIn := pathInScope(f.Filename, paths)
+			fromIn := inScope(f.PreviousFilename)
+			toIn := inScope(f.Filename)
 			switch {
 			case fromIn && toIn:
 				ops = append(ops, changeOp{path: f.Filename, prevPath: f.PreviousFilename, blobSHA: f.SHA, changeType: changeTypeRenamed})

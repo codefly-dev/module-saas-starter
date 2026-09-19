@@ -74,7 +74,11 @@ function stubFetchSequence(replies: FetchReply[]): { calls: FetchCall[] } {
 			expectRoutable(String(input));
 			calls.push({
 				url: String(input),
-				body: JSON.parse(typeof init.body === "string" ? init.body : new TextDecoder().decode(init.body as Uint8Array)),
+				body: JSON.parse(
+					typeof init.body === "string"
+						? init.body
+						: new TextDecoder().decode(init.body as Uint8Array),
+				),
 				authorization: new Headers(init.headers).get("authorization"),
 			});
 			const r = replies[Math.min(i, replies.length - 1)];
@@ -132,7 +136,7 @@ describe("createDatasourceClient", () => {
 		});
 		const operations = {
 			listSources: () => client.listSources("org-1"),
-            listAccessibleScopes: () => client.listAccessibleScopes!("org-1"),
+			listAccessibleScopes: () => client.listAccessibleScopes!("org-1"),
 			listActivity: () => client.listActivity!("org-1", "ds-1"),
 			addGitHubSource: () =>
 				client.addGitHubSource({
@@ -176,6 +180,7 @@ describe("createDatasourceClient", () => {
 				repo: "codefly-dev/module-saas-starter",
 				paths: ["docs/"],
 				branch: "",
+				fileExtensions: [],
 				boundaryNodeId: "11111111-1111-1111-1111-111111111111",
 				webhookConfigured: true,
 				status: "active",
@@ -425,33 +430,90 @@ it("reads source-specific typed audit history", async () => {
 });
 
 it("serializes a replacement credential only for reconnect on the existing source", async () => {
- const { calls } = stubFetch({ jobId: "job-1" });
- const client = createDatasourceClient({ apiBase: "http://example.test", getAccessToken: () => "viewer" });
- await expect(client.syncSource("org-1", "source-1", "test-only-replacement")).resolves.toBe("job-1");
- await client.syncSource("org-1", "source-1");
- expect(calls[0].url).toContain("saas.accounts.v1.DatasourceService/SyncSource");
- expect(calls[0].body).toEqual({ orgId: "org-1", id: "source-1", accessToken: "test-only-replacement" });
- expect(calls[1].body).toEqual({ orgId: "org-1", id: "source-1" });
+	const { calls } = stubFetch({ jobId: "job-1" });
+	const client = createDatasourceClient({
+		apiBase: "http://example.test",
+		getAccessToken: () => "viewer",
+	});
+	await expect(
+		client.syncSource("org-1", "source-1", "test-only-replacement"),
+	).resolves.toBe("job-1");
+	await client.syncSource("org-1", "source-1");
+	expect(calls[0].url).toContain(
+		"saas.accounts.v1.DatasourceService/SyncSource",
+	);
+	expect(calls[0].body).toEqual({
+		orgId: "org-1",
+		id: "source-1",
+		accessToken: "test-only-replacement",
+	});
+	expect(calls[1].body).toEqual({ orgId: "org-1", id: "source-1" });
 });
 
 it("connects to the selected node without deriving authority from its label", async () => {
- const {calls} = stubFetch({});
- const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token"});
- await client.addGitHubSource({orgId: "org-1", repo: "acme/example", paths: [], branch: "main", targetCollection: "Example Collection", boundaryNodeId: "11111111-1111-1111-1111-111111111111", accessToken: "test-pat", webhookSecret: ""});
- expect(calls[0].body).toMatchObject({boundaryNodeId: "11111111-1111-1111-1111-111111111111"});
- expect(calls[0].body).not.toHaveProperty("collectionLabel");
+	const { calls } = stubFetch({});
+	const client = createDatasourceClient({
+		apiBase: "/api/solutions/example/proxy",
+		getAccessToken: () => "test-token",
+	});
+	await client.addGitHubSource({
+		orgId: "org-1",
+		repo: "acme/example",
+		paths: [],
+		branch: "main",
+		targetCollection: "Example Collection",
+		boundaryNodeId: "11111111-1111-1111-1111-111111111111",
+		accessToken: "test-pat",
+		webhookSecret: "",
+	});
+	expect(calls[0].body).toMatchObject({
+		boundaryNodeId: "11111111-1111-1111-1111-111111111111",
+	});
+	expect(calls[0].body).not.toHaveProperty("collectionLabel");
+});
+
+it("carries a source file filter through the generated SDK", async () => {
+	const { calls } = stubFetch({});
+	const client = createDatasourceClient({
+		apiBase: "/api/solutions/example/proxy",
+		getAccessToken: () => "test-token",
+	});
+	await client.addGitHubSource({
+		orgId: "org-1",
+		repo: "acme/example",
+		paths: ["docs/"],
+		fileExtensions: [".md", ".mdx"],
+		branch: "main",
+		targetCollection: "Example Collection",
+		accessToken: "test-pat",
+		webhookSecret: "",
+	});
+	expect(calls[0].body).toMatchObject({
+		paths: ["docs/"],
+		fileExtensions: [".md", ".mdx"],
+	});
 });
 
 it("reports no readable scope when the composition declares no content resource", async () => {
- const {calls} = stubFetch({});
- const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token"});
- expect(await client.listAccessibleScopes!("org-1")).toEqual([]);
- expect(calls).toHaveLength(0);
+	const { calls } = stubFetch({});
+	const client = createDatasourceClient({
+		apiBase: "/api/solutions/example/proxy",
+		getAccessToken: () => "test-token",
+	});
+	expect(await client.listAccessibleScopes!("org-1")).toEqual([]);
+	expect(calls).toHaveLength(0);
 });
 
 it("asks the permission service for the resource the composition declared", async () => {
- const {calls} = stubFetch({});
- const client = createDatasourceClient({apiBase: "/api/solutions/example/proxy", getAccessToken: () => "test-token", contentResource: "example-records"});
- await client.listAccessibleScopes!("org-1");
- expect(calls[0].body).toMatchObject({resourceType: "example-records", action: "read"});
+	const { calls } = stubFetch({});
+	const client = createDatasourceClient({
+		apiBase: "/api/solutions/example/proxy",
+		getAccessToken: () => "test-token",
+		contentResource: "example-records",
+	});
+	await client.listAccessibleScopes!("org-1");
+	expect(calls[0].body).toMatchObject({
+		resourceType: "example-records",
+		action: "read",
+	});
 });

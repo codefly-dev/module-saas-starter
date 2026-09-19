@@ -162,3 +162,8 @@ scan this package's source** or the utilities used only here (e.g. the modal's
 - An external consumer that installs the built package from `node_modules` (which
   Tailwind v4 excludes by default) must opt it in, e.g.
   `@source "../node_modules/@codefly-dev/saas-ui/dist";` in its CSS.
+
+GitHub connection forms accept `fileExtensions` (for example `.md, .mdx`) and
+offer a Markdown preset. The host intersects suffixes with paths for snapshots
+and incremental changes; empty keeps all file types. The filter is selected at
+connection time and does not rewrite existing sources.

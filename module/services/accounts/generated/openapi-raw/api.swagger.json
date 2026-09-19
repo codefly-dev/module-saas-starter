@@ -2007,6 +2007,19 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "orgId",
+            "description": "Filters the caller-owned inbox before pagination. Empty includes all orgs.",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "unreadOnly",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
           }
         ],
         "tags": [

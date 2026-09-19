@@ -39,6 +39,12 @@ func scanDatasourceSource(row pgx.Row) (*business.DatasourceSource, error) {
 	d.ReconcileInterval = time.Duration(reconcileIntervalSeconds) * time.Second
 	if len(config) > 0 {
 		switch d.Provider {
+		case business.DatasourceProviderGitHub:
+			var filter business.GitHubFileFilter
+			if err := json.Unmarshal(config, &filter); err != nil {
+				return nil, err
+			}
+			d.FileExtensions = filter.FileExtensions
 		case business.DatasourceProviderAPI:
 			var api business.APIDatasourceConfig
 			if err := json.Unmarshal(config, &api); err != nil {
@@ -71,6 +77,8 @@ func (s *PostgresStore) InsertDatasourceSource(ctx context.Context, source *busi
 	}
 	var payload any
 	switch {
+	case source.Provider == business.DatasourceProviderGitHub:
+		payload = business.GitHubFileFilter{FileExtensions: source.FileExtensions}
 	case source.API != nil:
 		payload = source.API
 	case source.Crawler != nil:

@@ -37,6 +37,9 @@ message ListNotificationsRequest {
     lte: 100
   }];
   string page_token = 2;
+  // Filters the caller-owned inbox before pagination. Empty includes all orgs.
+  string org_id = 3;
+  bool unread_only = 4;
 }
 
 message ListNotificationsResponse {

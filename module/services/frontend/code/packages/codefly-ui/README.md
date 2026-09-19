@@ -130,3 +130,6 @@ const skin = await resolveSkin({
 
 The first source returning a valid descriptor wins; an invalid one is logged
 and skipped so the compiled default always renders.
+
+`Banner` from `@codefly-dev/ui/layout` renders persistent polite feedback with
+optional actions and dismissal. The caller owns data, authorization and read state.

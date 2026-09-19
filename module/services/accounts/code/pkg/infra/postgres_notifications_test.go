@@ -18,10 +18,8 @@ import (
 func TestCreateAndListNotifications(t *testing.T) {
 	userID := seedUser(t)
 
-	// Each insert in its OWN WithUserTx so created_at increments
-	// (CURRENT_TIMESTAMP returns the tx start time — wrapping all
-	// 3 in one tx would give them the same value and break the
-	// pagination cursor).
+	// Separate transactions cover the usual distinct-timestamp case.
+
 	for i := 0; i < 3; i++ {
 		n := &business.Notification{
 			ID:     business.NewIDString(),

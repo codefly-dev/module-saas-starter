@@ -1,4 +1,6 @@
+import { useState } from "react";
 import {
+	Banner,
 	Button,
 	Input,
 	Textarea,
@@ -219,4 +221,21 @@ export const Error = {
 			detail="The data provider is unavailable."
 		/>
 	),
+};
+
+export const NotificationBanner = {
+	render: function BannerExample() {
+		const [visible, setVisible] = useState(true);
+		return visible ? (
+			<Banner
+				title="Source updated"
+				onDismiss={() => setVisible(false)}
+				actions={<Button variant="link">View</Button>}
+			>
+				2 changes are ready.
+			</Banner>
+		) : (
+			<Button onClick={() => setVisible(true)}>Show notification</Button>
+		);
+	},
 };
