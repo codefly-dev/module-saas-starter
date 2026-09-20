@@ -150,7 +150,11 @@ export interface DatasourceClient {
 	/** Enqueues an async pull; resolves to the durable job id. */
 	syncSource(orgId: string, id: string, accessToken?: string): Promise<string>;
 	deleteSource(orgId: string, id: string): Promise<void>;
-	/** Enumerates the caller’s readable collection boundaries; failure must reject. */
+	/**
+	 * Enumerates the caller’s readable collection boundaries; failure must
+	 * reject, and so must a lookup that cannot be made at all — resolving empty
+	 * would report the caller as refused rather than unanswered.
+	 */
 	listAccessibleScopes?(orgId: string): Promise<AccessibleScopeView[]>;
 
 	/**

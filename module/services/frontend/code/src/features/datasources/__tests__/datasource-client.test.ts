@@ -130,6 +130,18 @@ it("propagates permission-service failure rather than reporting no grants", asyn
  await expect(datasourceClient.listCollections!("org-1")).rejects.toThrow("permission service unavailable");
 });
 
+it("leaves read access unresolved when the composition declares no content resource", async () => {
+ // An empty scope list would state that the viewer is refused; with no declared
+ // resource there is no question to ask, so the lookup rejects instead.
+ const previous = process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
+ delete process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
+ try {
+  await expect(datasourceClient.listAccessibleScopes!("org-1")).rejects.toThrow(/no collection content resource is declared/);
+ } finally {
+  process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE = previous;
+ }
+});
+
 it("refuses to grant when the composition declares no content resource", async () => {
  const previous = process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;
  delete process.env.NEXT_PUBLIC_COLLECTION_CONTENT_RESOURCE;

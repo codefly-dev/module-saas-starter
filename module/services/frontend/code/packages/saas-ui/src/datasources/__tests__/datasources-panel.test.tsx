@@ -386,6 +386,30 @@ describe("DatasourcesPanel", () => {
 
 describe("DatasourcesPanel boundary column", () => {
 	const boundaryId = sampleSource.boundaryNodeId;
+	const otherNodeId = "22222222-2222-2222-2222-222222222222";
+	const granted = {
+		nodeId: boundaryId,
+		label: "Docs",
+		scopePath: "root.docs",
+		grants: [
+			{
+				id: "grant-1",
+				subjectId: "user-1",
+				subjectKind: "principal" as const,
+				scopePath: "root.docs",
+				roleId: "role-1",
+				subjectLabel: "reader@example.com",
+				roleName: "Collection reader",
+				actorLabel: "admin@example.com",
+			},
+		],
+	};
+	const ungranted = {
+		...granted,
+		label: "Specs",
+		scopePath: "root.specs",
+		grants: [],
+	};
 
 	it("names the boundary and summarizes the caller's grants on it", async () => {
 		const client = fakeClient({
@@ -414,6 +438,85 @@ describe("DatasourcesPanel boundary column", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+	});
+
+	it("keeps the grant explainer off when one listed collection is readable", async () => {
+		// The headline and its explainer speak about collections, while the scope
+		// lookup answers for every node kind. Deciding it on the listed
+		// collections is what keeps the two from contradicting each other.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listCollections: vi.fn(async () => [
+				granted,
+				{ ...ungranted, nodeId: otherNodeId },
+			]),
+			listAccessibleScopes: vi.fn(async () => [
+				{
+					nodeId: boundaryId,
+					label: "Docs",
+					kind: "collection",
+					actions: ["read"],
+				},
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			await screen.findByText(/You can read this collection/),
+		).toBeTruthy();
+		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
+	});
+
+	it("still names no readable collection when only another scope kind is readable", async () => {
+		// The scope lookup answers for every node kind, and a grant on the solution
+		// node the collections hang under is not read access to any of them.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listCollections: vi.fn(async () => [granted]),
+			listAccessibleScopes: vi.fn(async () => [
+				{
+					nodeId: otherNodeId,
+					label: "Example solution",
+					kind: "solution",
+					actions: ["read"],
+				},
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+	});
+
+	it("asks no one for access to a collection when the organization has none", async () => {
+		// An empty collection list is not a collection the viewer was refused.
+		// Reading it as one tells the administrator of an empty organization to go
+		// ask an administrator for access to nothing.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listCollections: vi.fn(async () => []),
+			// Answered last, so the empty collection list is already committed when
+			// the scope answer lands. The source row's verdict and the headline then
+			// appear in the same commit, and asserting the headline's absence right
+			// after that row cannot pass by arriving early.
+			listAccessibleScopes: vi.fn(async () => {
+				await new Promise((settle) => setTimeout(settle, 20));
+				return [
+					{
+						nodeId: otherNodeId,
+						label: "Example solution",
+						kind: "solution",
+						actions: ["read"],
+					},
+				];
+			}),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		// Only a resolved scope answer turns the source row's boundary cell from
+		// "Read permission unresolved" into a verdict.
+		expect(await screen.findByText("No read access")).toBeTruthy();
+		expect(screen.queryByText(/No readable collection/)).toBeNull();
 	});
 
 	it("refetches boundaries after a source is connected", async () => {

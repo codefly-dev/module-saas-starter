@@ -176,6 +176,7 @@ function DatasourcesPanelView({
 		refetchInterval: 5000,
 	});
 	const [editingCollection, setEditingCollection] = useState<string>();
+	const listedCollections = collections.isError ? undefined : collections.data;
 	const selectedCollection = collections.isError
 		? undefined
 		: collections.data?.find(
@@ -340,6 +341,14 @@ function DatasourcesPanelView({
 			byNode.set(scope.nodeId, scope);
 		return byNode;
 	}, [scopes.data, scopes.isError]);
+	// The scope lookup answers for every node kind, so a grant on a solution node
+	// or on a placed record would silence a headline that speaks about
+	// collections. With collections listed the question can be asked exactly; with
+	// none listed — not yet loaded, or an organization that has none — there is no
+	// collection to be refused, so the scope set is all there is to go on.
+	const readableCollection = listedCollections?.length
+		? listedCollections.some((collection) => boundaries.has(collection.nodeId))
+		: boundaries.size > 0;
 
 	return (
 		<div className={cn("space-y-4", className)}>
@@ -354,7 +363,7 @@ function DatasourcesPanelView({
 					Couldn’t verify collection permissions. This does not mean there is no
 					indexed content.
 				</p>
-			) : scopes.isSuccess && boundaries.size === 0 ? (
+			) : scopes.isSuccess && !readableCollection ? (
 				<p role="status">
 					No readable collection. Ask an organization administrator for read
 					access. Connecting or syncing a source does not grant access.
