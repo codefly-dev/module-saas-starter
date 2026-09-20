@@ -39,13 +39,15 @@ const (
 	// the client's last event id.
 	subscriptionStreamHeartbeat = 15 * time.Second
 
-	// subscriptionStreamMaxLifetime bounds one connection. Authority is resolved
-	// when the stream opens, and a forwarded gateway identity carries no expiry
-	// this process can re-check, so the stream ends and the client reconnects —
-	// with its last event id, so the bound costs no events. A bearer is re-verified
-	// on every poll in addition to this, which is what makes a revoked session stop
-	// receiving within the poll interval rather than at the end of the lifetime.
-	subscriptionStreamMaxLifetime = 5 * time.Minute
+	// subscriptionStreamMaxLifetime bounds one connection. A forwarded gateway
+	// identity carries no expiry this process can re-check, so the only thing that
+	// stops such a stream outliving the credential that opened it is this bound —
+	// which therefore has to be SHORTER than an access token's own life (three
+	// minutes, ed25519.Config.AccessTokenTTL), not longer. The client reconnects
+	// with its last event id, and the re-read window means the bound costs no
+	// entries. A bearer is additionally re-verified on every poll, which stops a
+	// revoked session within the poll interval rather than at this bound.
+	subscriptionStreamMaxLifetime = 2 * time.Minute
 )
 
 // streamedEvent is what one frame carries. It names the entry and the change,
@@ -58,6 +60,10 @@ type streamedEvent struct {
 	Time            string          `json:"time,omitempty"`
 	DataContentType string          `json:"dataContentType,omitempty"`
 	Data            json.RawMessage `json:"data,omitempty"`
+	// DataOmitted tells a client the payload exists but was not carried inline, so
+	// it re-reads from the owning module instead of treating the entry as
+	// payloadless.
+	DataOmitted bool `json:"dataOmitted,omitempty"`
 }
 
 func NewSubscriptionStreamHandler(svc *business.Service) http.Handler {
@@ -76,7 +82,8 @@ func NewSubscriptionStreamHandler(svc *business.Service) http.Handler {
 			return
 		}
 
-		cursor, err := svc.OpenSubscriptionCursor(ctx, orgID, r.Header.Get("Last-Event-ID"))
+		presented := r.Header.Get("Last-Event-ID")
+		cursor, resolvedCursor, err := svc.OpenSubscriptionCursor(ctx, orgID, presented)
 		if err != nil {
 			wool.Get(ctx).In("subscriptionStream").Error("cannot open the journal cursor", wool.ErrField(err))
 			writeJSONError(w, http.StatusServiceUnavailable, "subscriptions are temporarily unavailable")
@@ -85,9 +92,22 @@ func NewSubscriptionStreamHandler(svc *business.Service) http.Handler {
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-store, no-transform")
-		w.Header().Set("Connection", "keep-alive")
 		w.Header().Set("X-Accel-Buffering", "no")
 		w.WriteHeader(http.StatusOK)
+
+		// A cursor that resolved to nothing is not the same as no cursor at all: the
+		// client believes it is holding a position, and the stream is about to start
+		// at the tenant's head instead. Retention aged it out, or it was never this
+		// tenant's — indistinguishable here, and deliberately so, because telling
+		// the two apart is the existence oracle the resolution avoids. Either way
+		// the client is told, so it re-syncs rather than concluding it missed
+		// nothing.
+		if presented != "" && !resolvedCursor {
+			if _, err := w.Write([]byte("event: reset\ndata: {\"reason\":\"cursor not resolved\"}\n\n")); err != nil {
+				return
+			}
+			_ = http.NewResponseController(w).Flush()
+		}
 
 		streamSubscriptions(w, r, svc, userID, orgID, cursor)
 	})
@@ -103,13 +123,16 @@ func streamSubscriptions(
 	ticker := time.NewTicker(subscriptionStreamPoll)
 	defer ticker.Stop()
 
+	// Every poll re-reads a window below the cursor so an entry whose producing
+	// transaction committed late is still delivered. That window is offered again
+	// on each poll, so the reader remembers what it has sent and drops the repeat;
+	// an entry falling out of the window behind the cursor is forgotten with it,
+	// which is what keeps this bounded rather than growing for the connection's
+	// life.
+	delivered := map[string]int64{}
+
 	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-		}
-		if time.Now().After(deadline) {
+		if r.Context().Err() != nil || time.Now().After(deadline) {
 			return
 		}
 		// Re-establishing the identity on every poll is what keeps an expired or
@@ -122,29 +145,74 @@ func streamSubscriptions(
 			return
 		}
 
-		events, next, err := svc.ReadSubscriptions(polled, orgID, userID, cursor)
+		events, next, more, err := svc.ReadSubscriptions(polled, orgID, userID, cursor)
 		if err != nil {
 			wool.Get(polled).In("subscriptionStream").Error("cannot read the journal", wool.ErrField(err))
 			return
 		}
-		cursor = next
 
+		wrote := false
 		for _, event := range events {
+			if _, repeat := delivered[event.EventID]; repeat {
+				continue
+			}
 			if err := writeStreamedEvent(w, event); err != nil {
 				return
 			}
+			delivered[event.EventID] = event.Seq
+			wrote = true
 		}
-		if len(events) == 0 {
-			if time.Since(lastFrame) < subscriptionStreamHeartbeat {
-				continue
-			}
+
+		cursor = next
+		forgetDeliveredBelow(delivered, cursor)
+
+		switch {
+		case wrote:
+			lastFrame = time.Now()
+		case time.Since(lastFrame) >= subscriptionStreamHeartbeat:
 			if _, err := w.Write([]byte(": keep-alive\n\n")); err != nil {
 				return
 			}
+			lastFrame = time.Now()
+		default:
+			// Nothing written, so nothing to flush; go straight on rather than
+			// paying for a flush that would do nothing.
+			if more {
+				continue
+			}
+			select {
+			case <-r.Context().Done():
+				return
+			case <-ticker.C:
+			}
+			continue
 		}
-		lastFrame = time.Now()
+
 		if err := control.Flush(); err != nil {
 			return
+		}
+		// A page that did not exhaust what is waiting is drained immediately: a
+		// client resuming after an outage would otherwise crawl forward one page
+		// per tick no matter how far behind it is.
+		if more {
+			continue
+		}
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// forgetDeliveredBelow drops what the re-read window can no longer offer again.
+// An entry below the window cannot come back, so remembering it would only grow
+// the set for as long as the connection lives.
+func forgetDeliveredBelow(delivered map[string]int64, cursor int64) {
+	floor := cursor - business.JournalRescanDepth
+	for id, seq := range delivered {
+		if seq < floor {
+			delete(delivered, id)
 		}
 	}
 }
@@ -164,6 +232,7 @@ func writeStreamedEvent(w http.ResponseWriter, event business.SubscriptionEvent)
 	// frame — and is dropped otherwise rather than guessed at. Either way the
 	// entry, its change type and its versions' owner are named, so a client that
 	// needs the content reads it from the module that owns it.
+	frame.DataOmitted = event.DataOmitted
 	if isJSONContentType(event.DataContentType) && json.Valid(event.Data) {
 		frame.DataContentType = event.DataContentType
 		frame.Data = json.RawMessage(event.Data)

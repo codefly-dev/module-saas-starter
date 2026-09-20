@@ -3,6 +3,8 @@ package adapters
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"accounts/pkg/auth"
 	"accounts/pkg/business"
 	gen "accounts/pkg/gen/saas/accounts/v1"
 
@@ -23,6 +26,7 @@ type streamStore struct {
 	mu         sync.Mutex
 	journal    []business.JournalEntry
 	accessible map[string]bool
+	payloads   map[string]business.JournalPayload
 	// opened closes when a reader has resolved its starting cursor. A stream
 	// starting live begins at whatever the journal held then, so a test that
 	// appends before that point is testing a different stream than it means to.
@@ -34,7 +38,7 @@ func (s *streamStore) WithOrgTx(ctx context.Context, _ string, fn func(context.C
 	return fn(ctx)
 }
 
-func (s *streamStore) ListTenantJournal(_ context.Context, afterSeq int64, limit int) ([]business.JournalEntry, error) {
+func (s *streamStore) ListTenantJournal(_ context.Context, _ string, afterSeq int64, limit int) ([]business.JournalEntry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	page := make([]business.JournalEntry, 0, limit)
@@ -46,20 +50,36 @@ func (s *streamStore) ListTenantJournal(_ context.Context, afterSeq int64, limit
 	return page, nil
 }
 
-func (s *streamStore) ResolveTenantJournalCursor(_ context.Context, eventID string) (int64, error) {
+func (s *streamStore) ResolveTenantJournalCursor(_ context.Context, _, eventID string) (int64, bool, error) {
 	defer s.openedOnce.Do(func() { close(s.opened) })
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var head int64
 	for _, entry := range s.journal {
 		if eventID != "" && entry.EventID == eventID {
-			return entry.Seq, nil
+			return entry.Seq, true, nil
 		}
 		if entry.Seq > head {
 			head = entry.Seq
 		}
 	}
-	return head, nil
+	return head, false, nil
+}
+
+func (s *streamStore) LoadTenantJournalPayloads(
+	_ context.Context, _ string, eventIDs []string, maxBytes int,
+) (map[string]business.JournalPayload, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]business.JournalPayload{}
+	for _, id := range eventIDs {
+		payload, ok := s.payloads[id]
+		if !ok || len(payload.Data) > maxBytes {
+			continue
+		}
+		out[id] = payload
+	}
+	return out, nil
 }
 
 func (s *streamStore) ListAccessibleResourceIDs(
@@ -76,6 +96,12 @@ func (s *streamStore) ListAccessibleResourceIDs(
 	return out, nil
 }
 
+func (s *streamStore) setPayload(eventID, contentType string, data []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.payloads[eventID] = business.JournalPayload{ContentType: contentType, Data: data}
+}
+
 func (s *streamStore) append(entry business.JournalEntry) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -83,7 +109,11 @@ func (s *streamStore) append(entry business.JournalEntry) {
 }
 
 func newStreamStore(accessibleIDs ...string) *streamStore {
-	store := &streamStore{accessible: map[string]bool{}, opened: make(chan struct{})}
+	store := &streamStore{
+		accessible: map[string]bool{},
+		payloads:   map[string]business.JournalPayload{},
+		opened:     make(chan struct{}),
+	}
 	for _, id := range accessibleIDs {
 		store.accessible[streamedResourceType+"|"+id] = true
 	}
@@ -228,10 +258,11 @@ func TestSubscriptionStreamDeliversAVisibleChangeAndHidesTheRest(t *testing.T) {
 		Seq: 1, EventID: "01930000-0000-7000-8000-000000000001", Type: streamedChangeType,
 		Subject: "hidden-entry", EventTime: time.Unix(1, 0).UTC(),
 	})
+	store.setPayload("01930000-0000-7000-8000-000000000002",
+		"application/json", []byte("{\n\"version\": 7\n}"))
 	store.append(business.JournalEntry{
 		Seq: 2, EventID: "01930000-0000-7000-8000-000000000002", Type: streamedChangeType,
 		Subject: "entry-1", EventTime: time.Unix(2, 0).UTC(),
-		DataContentType: "application/json", Data: []byte("{\n\"version\": 7\n}"),
 	})
 
 	body := awaitBody(t, response, "entry-1")
@@ -266,16 +297,27 @@ func TestSubscriptionStreamResumesFromTheLastEventID(t *testing.T) {
 
 	body := awaitBody(t, response, "01930000-0000-7000-8000-000000000003")
 	require.Contains(t, body, "01930000-0000-7000-8000-000000000002")
-	require.NotContains(t, body, "id: 01930000-0000-7000-8000-000000000001")
+	// The entry the cursor names is offered again: the window below the cursor is
+	// what recovers a transaction that committed after the cursor passed its seq,
+	// and the reader cannot tell a late commit from one it already sent. Delivery
+	// is at-least-once, as it is everywhere else in this contract, and a client
+	// dedupes on the event id.
+	require.Contains(t, body, "id: 01930000-0000-7000-8000-000000000001")
 }
 
+// A stream with no cursor starts at the head, not at the beginning of history.
+// The look-back window means it reaches a bounded distance behind that head —
+// bounded is the property, because an unbounded one would replay the tenant's
+// whole journal to every new reader.
 func TestSubscriptionStreamStartsLiveWithoutACursor(t *testing.T) {
 	useGatewayToken(t)
 	store := newStreamStore("entry-1")
-	store.append(business.JournalEntry{
-		Seq: 1, EventID: "01930000-0000-7000-8000-000000000001",
-		Type: streamedChangeType, Subject: "entry-1",
-	})
+	for seq := int64(1); seq <= 300; seq++ {
+		store.append(business.JournalEntry{
+			Seq: seq, EventID: fmt.Sprintf("01930000-0000-7000-8000-%012d", seq),
+			Type: streamedChangeType, Subject: "entry-1",
+		})
+	}
 	handler := newStreamHandler(t, store)
 
 	req, cancel := streamRequest(t, nil)
@@ -284,11 +326,14 @@ func TestSubscriptionStreamStartsLiveWithoutACursor(t *testing.T) {
 	awaitOpen(t, store)
 
 	store.append(business.JournalEntry{
-		Seq: 2, EventID: "01930000-0000-7000-8000-000000000002",
+		Seq: 301, EventID: "01930000-0000-7000-8000-000000000301",
 		Type: streamedChangeType, Subject: "entry-1",
 	})
-	body := awaitBody(t, response, "01930000-0000-7000-8000-000000000002")
-	require.NotContains(t, body, "01930000-0000-7000-8000-000000000001")
+	body := awaitBody(t, response, "01930000-0000-7000-8000-000000000301")
+	require.NotContains(t, body, "01930000-0000-7000-8000-000000000001",
+		"a live stream must not replay the tenant's history")
+	require.NotContains(t, body, "01930000-0000-7000-8000-000000000200",
+		"the look-back is bounded to the re-read window, not the whole journal")
 }
 
 func TestSubscriptionStreamRefusesAnUnauthenticatedOrMisroutedRequest(t *testing.T) {
@@ -316,4 +361,149 @@ func TestSubscriptionStreamRefusesAnUnauthenticatedOrMisroutedRequest(t *testing
 			require.Equal(t, probe.want, recorder.Code, recorder.Body.String())
 		})
 	}
+}
+
+// Every poll re-reads a window below the cursor so a late-committing entry is
+// recovered. That window is offered again each time, so the reader must send
+// each entry once — otherwise a client sees the same change repeatedly for as
+// long as it stays inside the window.
+func TestSubscriptionStreamSendsAReReadEntryOnlyOnce(t *testing.T) {
+	useGatewayToken(t)
+	store := newStreamStore("entry-1")
+	handler := newStreamHandler(t, store)
+
+	req, cancel := streamRequest(t, nil)
+	response, stop := serveUntil(t, handler, req, cancel)
+	defer stop()
+	awaitOpen(t, store)
+
+	store.append(business.JournalEntry{
+		Seq: 1, EventID: "01930000-0000-7000-8000-000000000001",
+		Type: streamedChangeType, Subject: "entry-1",
+	})
+	awaitBody(t, response, "01930000-0000-7000-8000-000000000001")
+
+	// Several more polls run over the same window before this returns.
+	store.append(business.JournalEntry{
+		Seq: 2, EventID: "01930000-0000-7000-8000-000000000002",
+		Type: streamedChangeType, Subject: "entry-1",
+	})
+	body := awaitBody(t, response, "01930000-0000-7000-8000-000000000002")
+	require.Equal(t, 1, strings.Count(body, "id: 01930000-0000-7000-8000-000000000001"),
+		"an entry inside the re-read window must be sent once, not once per poll")
+}
+
+// A cursor the tenant cannot resolve — aged out of retention, or never theirs —
+// starts the stream at the head. Saying nothing would let the client conclude it
+// missed nothing, so it is told to re-sync. This leaks nothing: "not in your
+// tenant" is what the caller already knows.
+func TestSubscriptionStreamAnnouncesAnUnresolvedCursor(t *testing.T) {
+	useGatewayToken(t)
+	store := newStreamStore("entry-1")
+	store.append(business.JournalEntry{
+		Seq: 1, EventID: "01930000-0000-7000-8000-000000000001",
+		Type: streamedChangeType, Subject: "entry-1",
+	})
+	handler := newStreamHandler(t, store)
+
+	req, cancel := streamRequest(t, map[string]string{
+		"Last-Event-ID": "01930000-0000-7000-8000-0000000000ff",
+	})
+	response, stop := serveUntil(t, handler, req, cancel)
+	defer stop()
+
+	body := awaitBody(t, response, "event: reset")
+	require.Contains(t, body, "cursor not resolved")
+
+	// A cursor that DOES resolve gets no reset frame.
+	req2, cancel2 := streamRequest(t, map[string]string{
+		"Last-Event-ID": "01930000-0000-7000-8000-000000000001",
+	})
+	store2 := newStreamStore("entry-1")
+	store2.append(business.JournalEntry{
+		Seq: 1, EventID: "01930000-0000-7000-8000-000000000001",
+		Type: streamedChangeType, Subject: "entry-1",
+	})
+	response2, stop2 := serveUntil(t, newStreamHandler(t, store2), req2, cancel2)
+	defer stop2()
+	awaitOpen(t, store2)
+	store2.append(business.JournalEntry{
+		Seq: 2, EventID: "01930000-0000-7000-8000-000000000002",
+		Type: streamedChangeType, Subject: "entry-1",
+	})
+	require.NotContains(t, awaitBody(t, response2, "000000000002"), "event: reset")
+}
+
+// A forwarded gateway identity carries no expiry this process can re-check, so
+// the lifetime bound is the only thing stopping a stream outliving the
+// credential that opened it. It must therefore be shorter than an access token's
+// own life.
+func TestSubscriptionStreamLifetimeIsShorterThanAnAccessToken(t *testing.T) {
+	// ed25519.Config defaults AccessTokenTTL to three minutes; a stream that
+	// outlived it would keep serving a logged-out person.
+	require.Less(t, subscriptionStreamMaxLifetime, 3*time.Minute)
+}
+
+// revocableAccessMinter stops verifying its token on demand, the way a logout or
+// an expiry does. It overrides VerifyAccess with its own lock because the stream
+// re-verifies on a goroutine while the test revokes on another.
+type revocableAccessMinter struct {
+	fixedAccessMinter
+	mu      sync.Mutex
+	revoked bool
+}
+
+func (m *revocableAccessMinter) VerifyAccess(string) (*auth.Identity, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.revoked {
+		return nil, errors.New("access token is invalid")
+	}
+	return m.identity, nil
+}
+
+func (m *revocableAccessMinter) revoke() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.revoked = true
+}
+
+// A bearer is re-verified on every poll, so a token that stops verifying ends
+// the stream rather than riding out the lifetime bound.
+func TestSubscriptionStreamEndsWhenTheBearerStopsVerifying(t *testing.T) {
+	useGatewayToken(t)
+	store := newStreamStore("entry-1")
+	service, err := business.NewService(store)
+	require.NoError(t, err)
+	service.SetFollowables([]business.FollowableResource{
+		{ResourceType: streamedResourceType, Events: []string{streamedChangeType}},
+	})
+
+	minter := &revocableAccessMinter{fixedAccessMinter: fixedAccessMinter{identity: &auth.Identity{
+		UserID: uuid.Must(uuid.NewV7()),
+		OrgID:  uuid.Must(uuid.NewV7()),
+	}}}
+	service.SetJWTMinter(minter)
+	handler := NewSubscriptionStreamHandler(service)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, SubscriptionStreamPath, nil).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer live-token")
+
+	response := newSyncBody()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeHTTP(response, req)
+	}()
+	awaitOpen(t, store)
+
+	minter.revoke()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("the stream outlived the credential that opened it")
+	}
+	require.Equal(t, http.StatusOK, response.Status())
 }

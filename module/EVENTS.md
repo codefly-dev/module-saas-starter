@@ -348,17 +348,45 @@ The cursor is the envelope `id`, carried in the frame's `id:` field and presente
 back as `Last-Event-ID`. Resolution runs under the tenant floor, so an id from
 another organization, an id that never existed and a cursor that is not a UUID
 are one answer — the tenant's own head — and the cursor can never become an
-existence oracle. A reader with no cursor starts live. Filtering advances the
-cursor over entries it dropped: leaving one pending would re-run the same denial
-on every poll and stall everything behind it.
+existence oracle. A cursor that resolved to nothing is announced with an `event:
+reset` frame before the stream begins: the reader is told its history was
+skipped rather than left to conclude it missed nothing, and saying so discloses
+nothing, because "not in your tenant" is what the caller already knows.
+Filtering advances the cursor over entries it dropped: leaving one pending would
+re-run the same denial on every poll and stall everything behind it.
+
+**`seq` is not a visibility frontier, and the stream does not treat it as one.**
+It is taken at `INSERT` — an identity column — while the row becomes visible at
+`COMMIT`, and `publish_domain_event` takes its serializing advisory lock only for
+a non-empty `partition_key`, which a followable type must not declare. A producer
+can therefore hold a low `seq` and commit after a higher one is already visible.
+A reader that advanced a plain high-water mark would pass that entry and never
+look back: it would sit in the journal with no cursor position that could ever
+yield it. Every poll therefore re-reads a bounded window *below* the cursor, so a
+late commit is still delivered. The cost is that an entry inside that window is
+offered more than once — **delivery is at-least-once, exactly as it is for a
+subscription, and a client dedupes on the event `id`** — and the residual limit
+is precise: an entry is missed only if more journal rows are committed between
+its own `INSERT` and its `COMMIT` than the window is deep. A reconnect re-reads
+the window too, so it costs duplicates rather than gaps.
+
+A page carries entry identities only; payloads are read afterwards, for the
+entries that passed the visibility filter. `domain_events.data` has no size
+`CHECK` of its own — the 1 MiB cap lives on `job_messages.payload`, which this
+path never touches — so reading payloads with the page would charge a reader with
+no access at all for every byte the tenant publishes. A payload above the inline
+bound is reported with `dataOmitted` rather than dropped silently, because a
+frame with no payload and no flag is indistinguishable from an entry that carries
+none.
 
 A connection is bounded. The bearer is re-verified on every poll, so a revoked or
 expired session stops receiving within the poll interval rather than holding a
 stream open past the credential that opened it; a forwarded gateway identity
 carries no expiry this process can re-check, so every connection also ends at a
-fixed lifetime and the client reconnects with its last event id, which costs no
-events. The journal has no change signal of its own, so the reader reads forward
-on a timer — one bounded page per tick per connected client. That is what
+fixed lifetime — one deliberately **shorter** than an access token's own life,
+or the bound would not bound anything. The journal has no change signal of its
+own, so the reader reads forward on a timer, and a page that did not exhaust what
+is waiting is drained immediately rather than one page per tick. That is what
 "within seconds" costs today, and it is the piece a `LISTEN`/`NOTIFY` or broker
 transport would replace without changing anything above it.
 

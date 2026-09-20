@@ -630,21 +630,32 @@ type Store interface {
 	// resurrecting a removed follow.
 	ResourceFollowIsLive(ctx context.Context, orgID, userID, resourceType, resourceID string) (bool, error)
 
-	// The tenant's committed journal. domain_events carries SELECT for app_tenant
-	// under an org-keyed RLS policy, so both run under WithOrgTx and the tenant
-	// floor is the first gate on what a reader can reach at all.
+	// The tenant's committed journal. All three run under WithOrgTx and take orgID
+	// besides: domain_events carries an org-keyed RLS policy, and the explicit
+	// predicate is a second gate on top of that floor, exactly as
+	// ListAccessibleScopes pins n.org_id rather than trusting RLS alone. Without
+	// it a caller that reached these under WithControlPlane — which bypasses RLS —
+	// would read every tenant's journal.
 	//
-	// ListTenantJournal returns one page of entries strictly after afterSeq, in
-	// seq order, at most limit rows. seq is unique and ascending, so the keyset
-	// cursor cannot skip or repeat a row the way an OFFSET over a concurrently
-	// written table can.
-	ListTenantJournal(ctx context.Context, afterSeq int64, limit int) ([]JournalEntry, error)
-	// ResolveTenantJournalCursor answers which seq a reader resumes after. An
-	// empty, unknown or foreign eventID resolves to the tenant's current head, so
-	// a reader with no usable cursor starts live: under the tenant floor an id
-	// belonging to another organization and an id that never existed are the same
-	// answer, which is what keeps the cursor from being an existence oracle.
-	ResolveTenantJournalCursor(ctx context.Context, eventID string) (int64, error)
+	// ListTenantJournal returns one page of entry identities strictly after
+	// afterSeq, in seq order, at most limit rows. It deliberately does NOT read
+	// the payload: the page is read before visibility is resolved, so fetching
+	// payloads here would make a reader with no access pay for every byte in the
+	// tenant.
+	ListTenantJournal(ctx context.Context, orgID string, afterSeq int64, limit int) ([]JournalEntry, error)
+	// LoadTenantJournalPayloads reads the producer payloads of entries the caller
+	// has already been authorized for. An entry whose payload exceeds maxBytes is
+	// absent from the result rather than truncated, so a caller can tell "no
+	// payload" from "too large to stream" and re-read it from its owner.
+	LoadTenantJournalPayloads(ctx context.Context, orgID string, eventIDs []string, maxBytes int) (map[string]JournalPayload, error)
+	// ResolveTenantJournalCursor answers which seq a reader resumes after, and
+	// whether the id it presented was resolved at all. An empty, unknown or
+	// foreign eventID resolves to the tenant's current head with resolved=false:
+	// under the tenant floor an id belonging to another organization and an id
+	// that never existed are the same answer, which is what keeps the cursor from
+	// being an existence oracle. The caller tells the reader that its history was
+	// skipped rather than leaving it to believe it is caught up.
+	ResolveTenantJournalCursor(ctx context.Context, orgID, eventID string) (seq int64, resolved bool, err error)
 
 	// MFA — exposed on the main Store interface so the auth layer's
 	// requireMFA gate can check enrollment without casting to MFAStore.
