@@ -92,6 +92,18 @@ describe("a control renders its rung, not a literal size", () => {
 		);
 	});
 
+	// Fidelity with the tree before rungs: a text `sm` button drew its inline
+	// glyph at the sm rung's edge, an icon-only `sm` button inherited the base
+	// 16px glyph. The port keeps both rather than shrinking every small icon
+	// button by two pixels unannounced.
+	it("keeps the icon-only sm glyph at the default edge", () => {
+		render(<Button size="icon-sm" aria-label="Open" />);
+		const className = screen.getByRole("button").className;
+		expect(className).toContain("control-icon-sm");
+		expect(className).toContain("control-glyph-default");
+		expect(className).not.toContain("control-glyph-sm");
+	});
+
 	// The input keeps its touch size below `md` and its smaller size above, which
 	// is two slots rather than a breakpoint hidden inside one role.
 	it("carries both input slots across the breakpoint", () => {
@@ -102,9 +114,13 @@ describe("a control renders its rung, not a literal size", () => {
 		expect(className).toContain("control-height-default");
 	});
 
-	// A caller override must still win. This is the regression tailwind-merge
-	// would otherwise cause: it cannot know a custom utility sets font size.
-	it("lets a caller override the rung's type", () => {
+	// A caller's `text-lg` overrides the rung's font size and NOTHING else: the
+	// rung stays on the element (its height, padding and weight still apply) and
+	// the generated utility's zero specificity lets the core one win that
+	// property. Dropping `control-sm` here would strip the button's geometry to
+	// change its type, which is the regression tailwind-merge's whole-class
+	// conflicts caused.
+	it("lets a caller override one property of the rung and keeps the rest", () => {
 		render(
 			<Button size="sm" className="text-lg">
 				Go
@@ -112,6 +128,6 @@ describe("a control renders its rung, not a literal size", () => {
 		);
 		const className = screen.getByRole("button").className;
 		expect(className).toContain("text-lg");
-		expect(className).not.toContain("control-sm");
+		expect(className).toContain("control-sm");
 	});
 });

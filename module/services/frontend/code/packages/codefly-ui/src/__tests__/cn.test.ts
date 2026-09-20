@@ -35,60 +35,74 @@ describe.each(implementations)("$tier/cn", ({ cn }) => {
 	});
 });
 
+// The skin's slot and rung utilities are custom AND composite: one class sets
+// several properties. tailwind-merge can only keep or drop a whole class, so the
+// one thing `cn` must never do is treat a caller's single-property override as a
+// conflict with a slot — `text-lg` would then delete the slot's weight, line
+// height and family, and `h-11` would strip a button's padding and text. The
+// generated utilities sit at zero specificity instead (`:where(&)`), so keeping
+// both classes is what makes the core utility override exactly one property.
+describe.each(implementations)(
+	"$tier/cn knows the skin utilities",
+	({ cn }) => {
+		it("keeps a raw utility BESIDE a type slot; the cascade overrides one property", () => {
+			expect(cn("type-card-title", "text-lg")).toBe("type-card-title text-lg");
+			expect(cn("type-card-title", "font-bold")).toBe(
+				"type-card-title font-bold",
+			);
+			expect(cn("type-table-head", "text-xs")).toBe("type-table-head text-xs");
+			expect(cn("font-mono tracking-[0.3em]", "md:type-input")).toBe(
+				"font-mono tracking-[0.3em] md:type-input",
+			);
+		});
 
-// The skin's slot and rung utilities are custom, so stock tailwind-merge does not
-// know what they conflict with: it would keep both a slot class and a caller's
-// `text-lg` and let CSS source order decide the winner. That is exactly the
-// silent override failure `cn` exists to prevent, and it would only show up as a
-// component that ignores its `className` on some builds.
-describe.each(implementations)("$tier/cn knows the skin utilities", ({ cn }) => {
-	it("lets a caller's raw utility override a type slot", () => {
-		expect(cn("type-card-title", "text-lg")).toBe("text-lg");
-		expect(cn("type-card-title", "font-bold")).toBe("font-bold");
-		expect(cn("type-card-title", "tracking-tight")).toBe("tracking-tight");
-	});
+		it("keeps a raw utility beside a control rung", () => {
+			expect(cn("control-default", "h-10")).toBe("control-default h-10");
+			expect(cn("control-lg", "px-2")).toBe("control-lg px-2");
+			expect(cn("control-icon-sm", "size-8")).toBe("control-icon-sm size-8");
+			expect(cn("control-height-default", "h-10")).toBe(
+				"control-height-default h-10",
+			);
+		});
 
-	it("lets a type slot override the raw utilities it replaces", () => {
-		expect(cn("text-sm font-medium leading-none", "type-card-title")).toBe(
-			"type-card-title",
-		);
-	});
+		it("resolves one slot against another", () => {
+			expect(cn("type-card-title", "type-page-title")).toBe("type-page-title");
+		});
 
-	it("resolves one slot against another", () => {
-		expect(cn("type-card-title", "type-page-title")).toBe("type-page-title");
-	});
+		it("resolves one full rung against another", () => {
+			expect(cn("control-sm", "control-lg")).toBe("control-lg");
+			expect(cn("control-default", "control-icon-sm")).toBe("control-icon-sm");
+			expect(cn("control-icon-sm", "control-default")).toBe("control-default");
+			expect(cn("control-height-default", "control-sm")).toBe("control-sm");
+		});
 
-	it("lets a caller resize a control rung", () => {
-		expect(cn("control-default", "h-10")).toBe("h-10");
-		expect(cn("control-sm", "control-lg")).toBe("control-lg");
-		expect(cn("control-default", "text-lg")).toBe("text-lg");
-	});
+		// A height-only rung after a full rung is an override of the height alone;
+		// it is emitted after the full rung, so keeping both is the right answer.
+		it("keeps a later height-only rung beside a full rung", () => {
+			expect(cn("control-sm", "control-height-default")).toBe(
+				"control-sm control-height-default",
+			);
+		});
 
-	// The groups are declared by the properties each utility SETS. Lumping the
-	// four control shapes together made a type slot delete a height-only rung
-	// standing beside it, which is how an input loses its height while its source
-	// still reads as migrated.
-	it("keeps a height-only rung beside a type slot", () => {
-		expect(cn("control-height-default", "type-input-touch")).toBe(
-			"control-height-default type-input-touch",
-		);
-		expect(cn("control-height-default", "type-sidebar-menu-button")).toBe(
-			"control-height-default type-sidebar-menu-button",
-		);
-	});
+		// A slot beside a rung sets overlapping text properties on purpose: the slot
+		// is emitted after the rung and wins by source order. Neither deletes the
+		// other, so an input keeps its height when its text takes a slot.
+		it("keeps a type slot beside any rung", () => {
+			expect(cn("control-height-default", "type-input-touch")).toBe(
+				"control-height-default type-input-touch",
+			);
+			expect(cn("control-default", "type-body")).toBe(
+				"control-default type-body",
+			);
+		});
 
-	it("still resolves rungs that do overlap", () => {
-		expect(cn("control-height-default", "control-sm")).toBe("control-sm");
-		expect(cn("control-default", "control-icon-sm")).toBe("control-icon-sm");
-		expect(cn("control-height-default", "h-10")).toBe("h-10");
-	});
-
-	it("keeps utilities the slot does not set", () => {
-		expect(cn("type-card-title", "text-muted-foreground")).toBe(
-			"type-card-title text-muted-foreground",
-		);
-		expect(cn("control-default", "rounded-lg")).toBe(
-			"control-default rounded-lg",
-		);
-	});
-});
+		it("keeps utilities the slot does not set", () => {
+			expect(cn("type-card-title", "text-muted-foreground")).toBe(
+				"type-card-title text-muted-foreground",
+			);
+			expect(cn("control-default", "rounded-lg")).toBe(
+				"control-default rounded-lg",
+			);
+		});
+	},
+);

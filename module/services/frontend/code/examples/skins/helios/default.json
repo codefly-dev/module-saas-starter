@@ -25,7 +25,7 @@
     },
     "typeSlots": {
       "card-description": "menu-item",
-      "empty-state-title": "emphasis"
+      "empty-state-title": "control-label"
     },
     "controlSizes": {
       "default": {
@@ -76,7 +76,7 @@
     "name": "Helios",
     "mark": "H",
     "title": "Helios Console",
-    "description": "The operations console for Helios — bright, warm, and built for daytime teams.",
+    "description": "The operations console for Helios \u2014 bright, warm, and built for daytime teams.",
     "favicon": "/brand/helios-logo.svg",
     "logo": {
       "lightSrc": "/brand/helios-logo.svg",

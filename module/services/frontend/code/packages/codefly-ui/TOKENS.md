@@ -133,16 +133,30 @@ convention that already exists in the source rather than inventing one.
 
 **Every field of a role is optional**, deliberately: a role declares only the
 properties it decides. `emphasis` is a weight and nothing else, because
-`table-head` sets `font-medium` today and inherits its size. The five properties
-a role can set are all inherited in CSS, so a property the role leaves out has no
-custom property, its `var()` is invalid at computed-value time, and the element
-inherits — which is what the untouched tree does. Forcing a value everywhere
-would plant a declaration where none existed.
+`table-head` sets `font-medium` today and inherits its size. A property the role
+leaves out is absent on both sides — the host never projects its custom property
+and the generated utility never declares it — so whatever else styles the
+element keeps doing so. Declaring it over an unset variable would *not* be the
+same as leaving it out: such a declaration still wins the cascade and only then
+computes to inherit, wiping a `font-mono` or `tracking-wide` beside it.
+
+That is why **the set of properties a slot decides is fixed when the kit is
+built**. A skin moves a role's values (any of them, all of them) but the
+resolver refuses one that adds a property to a role, or re-points a slot or rung
+at a role of a different shape: the utilities are generated once from the
+defaults, and the CSS could neither read the extra property nor stop declaring a
+missing one.
 
 A component reaches these through one generated utility per slot and per rung
-(`type-card-title`, `control-sm`), written by
-`scripts/generate-type-utilities.mjs` from the vocabulary below and checked for
-drift in CI.
+(`type-card-title`, `control-sm`), written by this package's
+`scripts/generate-type-utilities.mjs` from the vocabulary below into
+`src/skin/type-slots.generated.css`, exported as `@codefly-dev/ui/type-slots.css`
+and checked for drift in CI. Every utility is emitted at zero specificity
+(`:where(&)`), so a raw utility on the same element (`text-lg` on a card title,
+`h-11` on a button) overrides exactly the property it names and the rest of the
+slot or rung stands. The kit's `cn` therefore keeps a raw utility *beside* a slot
+rather than treating it as a conflict; the only classes it resolves against each
+other are two slots, or two rungs that both set a height.
 
 ### Layer 1 — the type scale
 

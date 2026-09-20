@@ -608,6 +608,36 @@ function assertKnownKeys(
 	);
 }
 
+/**
+ * The properties a role decides, as a comparable key. The kit's utilities are
+ * generated at BUILD time from the default layers and declare exactly these
+ * properties per slot; a declaration whose variable is unset does not vanish,
+ * it wins the cascade and computes to inherit. So a skin may move a role's
+ * values at runtime but never change which properties it decides, and a slot or
+ * rung may only be re-pointed at a role of the same shape. Fail-closed here,
+ * where the author sees it, rather than a silent no-op (a property the CSS
+ * never reads) or a silent reset (one it reads with nothing behind it).
+ */
+function decidedProperties(role: Readonly<FrontendTypeRole>): string {
+	return TYPE_ROLE_FIELDS.filter((field) => role[field] !== undefined).join(
+		",",
+	);
+}
+
+function assertSameShape(
+	context: string,
+	roles: FrontendTypeRoles,
+	chosen: FrontendTypeRoleName,
+	original: FrontendTypeRoleName,
+): void {
+	const want = decidedProperties(roles[original]);
+	const got = decidedProperties(roles[chosen]);
+	assertTypography(
+		want === got,
+		`${context} names role '${chosen}' which decides [${got}] where '${original}' decides [${want}]; the properties a slot decides are fixed when the kit is built, a skin moves their values`,
+	);
+}
+
 function resolveTypeScale(
 	overrides: FrontendTypeScaleOverrides | undefined,
 ): FrontendTypeScale {
@@ -645,6 +675,12 @@ function resolveTypeRoles(
 		const context = `appearance typeRole '${name}'`;
 		assertObject(override, context);
 		assertKnownKeys(override, TYPE_ROLE_FIELDS, context);
+		const base = DEFAULT_TYPE_ROLES[name as FrontendTypeRoleName];
+		for (const field of TYPE_ROLE_FIELDS)
+			assertTypography(
+				override[field] === undefined || base[field] !== undefined,
+				`${context} may not add '${field}': the properties a role decides are fixed when the kit is built, a skin moves their values`,
+			);
 		// Field-wise merge: a skin restating one property of a role keeps the
 		// rest, the same partiality the colour tokens have.
 		const merged: FrontendTypeRole = {
@@ -705,6 +741,12 @@ function resolveTypeSlots(
 			roles[role as FrontendTypeRoleName] !== undefined,
 			`appearance typeSlot '${slot}' names role '${role}' which is not declared`,
 		);
+		assertSameShape(
+			`appearance typeSlot '${slot}'`,
+			roles,
+			role as FrontendTypeRoleName,
+			DEFAULT_TYPE_SLOTS[slot as FrontendTypeSlotName],
+		);
 	}
 	return Object.freeze({ ...DEFAULT_TYPE_SLOTS, ...overrides });
 }
@@ -744,6 +786,12 @@ function resolveControlSizes(
 			(FRONTEND_TYPE_ROLE_NAMES as readonly string[]).includes(merged.text) &&
 				roles[merged.text] !== undefined,
 			`${context} text names unknown role '${String(merged.text)}'`,
+		);
+		assertSameShape(
+			`${context} text`,
+			roles,
+			merged.text,
+			DEFAULT_CONTROL_SIZES[name as FrontendControlSizeName].text,
 		);
 		resolved[name] = Object.freeze(merged);
 	}

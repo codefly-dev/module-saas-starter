@@ -197,21 +197,68 @@ describe("default slots flatten to the kit's current values", () => {
 describe("a skin overrides the layers partially and fail-closed", () => {
 	it("merges a role field-wise, keeping what it did not restate", () => {
 		const appearance = resolveFrontendAppearance(
-			definition({ typeRoles: { body: { weight: "600" } } }),
+			definition({ typeRoles: { "control-label": { weight: "600" } } }),
 		);
-		const body = resolveTypeSlot(appearance, "table");
-		expect(body.fontWeight).toBe("600");
-		expect(body.fontSize).toBe("0.875rem");
-		expect(body.lineHeight).toBe("1.25rem");
+		const label = resolveTypeSlot(appearance, "label");
+		expect(label.fontWeight).toBe("600");
+		expect(label.fontSize).toBe("0.875rem");
+		expect(label.lineHeight).toBe("1");
 	});
 
-	it("re-points a slot at another declared role", () => {
+	it("re-points a slot at another declared role of the same shape", () => {
 		const appearance = resolveFrontendAppearance(
-			definition({ typeSlots: { "card-title": "page-title" } }),
+			definition({ typeSlots: { "card-title": "surface-title-compact" } }),
 		);
-		expect(resolveTypeSlot(appearance, "card-title").fontSize).toBe("1.5rem");
+		expect(resolveTypeSlot(appearance, "card-title").fontSize).toBe(
+			"0.875rem",
+		);
 		// The role it left is untouched for every other slot that uses it.
 		expect(resolveTypeSlot(appearance, "sheet-title").fontSize).toBe("1rem");
+	});
+
+	// The kit's utilities are generated once, from the defaults, and declare
+	// exactly the properties each slot's role decides. A declaration over an unset
+	// variable does not disappear — it wins the cascade and computes to inherit —
+	// so a skin that changed a slot's SHAPE would either reset properties the CSS
+	// reads with nothing behind them, or set ones it never reads. Both are refused
+	// where the author can see it.
+	it.each([
+		[
+			{ typeRoles: { body: { family: "mono" } } },
+			/typeRole 'body' may not add 'family'/,
+		],
+		[
+			{ typeRoles: { emphasis: { size: "3" } } },
+			/typeRole 'emphasis' may not add 'size'/,
+		],
+		[
+			{ typeSlots: { "card-title": "page-title" } },
+			/typeSlot 'card-title' names role 'page-title' which decides \[size,weight,lineHeight,tracking\] where 'surface-title-snug' decides \[size,weight,lineHeight,family\]/,
+		],
+		[
+			{ controlSizes: { default: { text: "body" } } },
+			/controlSize 'default' text names role 'body' which decides/,
+		],
+	])("refuses a change of shape %j", (bad, message) => {
+		expect(() => resolveFrontendAppearance(definition(bad))).toThrow(message);
+	});
+
+	it("still lets a skin move every value a role decides", () => {
+		const appearance = resolveFrontendAppearance(
+			definition({
+				typeRoles: {
+					"surface-title-snug": {
+						size: "7",
+						weight: "700",
+						lineHeight: "2rem",
+						family: "sans",
+					},
+				},
+			}),
+		);
+		const title = resolveTypeSlot(appearance, "card-title");
+		expect(title.fontSize).toBe(DEFAULT_TYPE_SCALE["7"]);
+		expect(title.fontFamily).toBe("sans");
 	});
 
 	it("re-scales every role that points at a step when the step moves", () => {
@@ -228,9 +275,15 @@ describe("a skin overrides the layers partially and fail-closed", () => {
 		[{ typeScale: { "3": "12" } }, /typeScale step '3'/],
 		[{ typeScale: { "12": "1rem" } }, /typeScale has unknown field '12'/],
 		[{ typeRoles: { body: { size: "42" } } }, /size '42' is not a scale step/],
-		[{ typeRoles: { body: { weight: "450" } } }, /weight '450' is unsupported/],
+		[
+			{ typeRoles: { emphasis: { weight: "450" } } },
+			/weight '450' is unsupported/,
+		],
 		[{ typeRoles: { body: { lineHeight: "loose" } } }, /lineHeight must be/],
-		[{ typeRoles: { body: { tracking: "wide" } } }, /tracking must be/],
+		[
+			{ typeRoles: { "page-title": { tracking: "wide" } } },
+			/tracking must be/,
+		],
 		[{ typeRoles: { body: { shout: "yes" } } }, /unknown field 'shout'/],
 		[
 			{ typeRoles: { heroic: { size: "9" } } },

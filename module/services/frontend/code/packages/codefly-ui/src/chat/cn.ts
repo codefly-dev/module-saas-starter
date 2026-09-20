@@ -8,27 +8,30 @@ import { type ClassValue, clsx } from "clsx";
 import { extendTailwindMerge } from "tailwind-merge";
 
 // The skin's type slots (`type-card-title`) and control rungs (`control-sm`) are
-// custom utilities, so stock tailwind-merge cannot know what they conflict with:
-// it would keep BOTH `type-card-title` and a caller's `text-lg` and let CSS
-// source order decide, which is exactly the silent override failure `cn` exists
-// to prevent.
+// custom utilities, so stock tailwind-merge does not know them. What it must
+// know is narrow, and deliberately so.
 //
-// Each group is declared by the properties it actually sets, not by its name.
-// Lumping the four `control-*` shapes together would make a type slot delete a
-// height-only rung standing beside it, which is how an input loses its height.
+// A slot or rung is COMPOSITE: one class sets several properties. tailwind-merge
+// can only keep or drop a whole class, so declaring `text-lg` as conflicting with
+// `type-card-title` would make a caller's size override delete the slot's
+// weight, line height and family with it — and `h-11` would strip a button's
+// padding and text along with its height. Instead the generated utilities sit at
+// zero specificity (`:where(&)`, see scripts/generate-type-utilities.mjs in
+// this package), so a core utility on the same element overrides exactly the property it
+// names, whatever the source order. `cn` keeps both classes and the cascade does
+// the partial override no merge could.
 //
-//   type-<slot>            font size, weight, line height, tracking, family
-//   control-<size>         + height and inline padding
+// What `cn` does resolve is skin-against-skin, where two whole shapes really do
+// replace each other and the later one must win:
+//
+//   type-<slot>            the slot's text: two slots on one element is a bug
+//   control-<size>         height, inline padding and the rung's text
 //   control-height-<size>  height alone (a container sized to a rung)
 //   control-icon-<size>    a square control: height, width, no inline padding
 //   control-glyph-<size>   the glyph inside a control: width and height
-const TYPE = [
-	"font-size",
-	"font-weight",
-	"leading",
-	"tracking",
-	"font-family",
-] as const;
+//
+// A slot beside a rung is left alone on purpose: the slot's text is emitted
+// after the rung's and wins by source order, which is the intended reading.
 const SIZE_NAME = (value: string) =>
 	["xs", "sm", "default", "lg"].includes(value);
 
@@ -48,45 +51,11 @@ const twMerge = extendTailwindMerge<
 			"skin-control-glyph": [{ control: [{ glyph: [SIZE_NAME] }] }],
 		},
 		conflictingClassGroups: {
-			// A later raw utility wins over an earlier custom one...
-			...Object.fromEntries(
-				TYPE.map((group) => [
-					group,
-					["skin-type", "skin-control", "skin-control-icon"],
-				]),
-			),
-			h: [
-				"skin-control",
-				"skin-control-height",
-				"skin-control-icon",
-				"skin-control-glyph",
-			],
-			w: ["skin-control-icon", "skin-control-glyph"],
-			size: ["skin-control-icon", "skin-control-glyph"],
-			px: ["skin-control", "skin-control-icon"],
-			// ...and a later custom utility wins over what it replaces. A type slot
-			// does NOT clear a height-only rung: they set disjoint properties.
-			"skin-type": [...TYPE, "skin-control", "skin-control-icon"],
-			"skin-control": [
-				...TYPE,
-				"h",
-				"px",
-				"skin-type",
-				"skin-control-height",
-				"skin-control-icon",
-			],
-			"skin-control-height": ["h", "skin-control", "skin-control-icon"],
-			"skin-control-icon": [
-				...TYPE,
-				"h",
-				"w",
-				"size",
-				"px",
-				"skin-type",
-				"skin-control",
-				"skin-control-height",
-			],
-			"skin-control-glyph": ["h", "w", "size"],
+			// A later full rung replaces an earlier one of any shape that also
+			// sets the height. A later height-only rung does NOT replace a full
+			// rung: it is emitted after it and overrides the height alone.
+			"skin-control": ["skin-control-height", "skin-control-icon"],
+			"skin-control-icon": ["skin-control", "skin-control-height"],
 		},
 	},
 });

@@ -28,9 +28,15 @@ const buttonVariants = cva(
 				icon: "control-icon-default [&_svg:not([class*='size-'])]:control-glyph-default",
 				"icon-xs":
 					"control-icon-xs rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:control-glyph-xs",
+				// An icon-only `sm` button shows its glyph at the DEFAULT rung's icon
+				// edge, not the sm rung's: the glyph is the whole content, and the
+				// tree before rungs inherited the base 16px here while a text `sm`
+				// button drew its inline glyph at 14px. Keeping both is fidelity, not
+				// an exception to the rung.
 				"icon-sm":
-					"control-icon-sm rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:control-glyph-sm",
-				"icon-lg": "control-icon-lg [&_svg:not([class*='size-'])]:control-glyph-lg",
+					"control-icon-sm rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:control-glyph-default",
+				"icon-lg":
+					"control-icon-lg [&_svg:not([class*='size-'])]:control-glyph-lg",
 			},
 		},
 		defaultVariants: {

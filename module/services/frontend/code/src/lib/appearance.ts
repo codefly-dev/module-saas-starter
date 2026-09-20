@@ -54,13 +54,12 @@ export function appearanceStyleProperties(
 		for (const token of FRONTEND_APPEARANCE_TOKEN_NAMES)
 			properties[appearanceVariableName(mode, token)] = appearance[mode][token];
 	}
-	// Layers 1 to 3, flattened. The stylesheet declares one utility per slot that
-	// reads these five variables; a property the slot's role does NOT decide is
-	// left unset here on purpose. All five are inherited CSS properties, so a
-	// `var()` with no definition is invalid at computed-value time and the element
-	// inherits — which is exactly what the tree does today where a component sets
-	// no size or weight. Emitting a value everywhere would instead plant a
-	// declaration where one never existed.
+	// Layers 1 to 3, flattened. The kit's generated stylesheet declares one
+	// utility per slot reading exactly the variables the slot's role decides, and
+	// this projects exactly those: both derive the set from the same contract,
+	// which refuses a skin that would change it. A property the role does not
+	// decide is therefore absent on both sides — never declared, never projected
+	// — so the element keeps whatever else styles it, as it did before slots.
 	for (const slot of FRONTEND_TYPE_SLOT_NAMES)
 		writeTypeProperties(
 			properties,
