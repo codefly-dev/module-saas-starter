@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -67,12 +68,12 @@ func declaredStrings(t *testing.T, value *structpb.Value) []string {
 // states the exchange directly or as a numbered handshake.
 func declaredToken(t *testing.T, content *structpb.Struct) map[string]*structpb.Value {
 	t.Helper()
-	if token, ok := content.Fields["token"]; ok {
-		return token.GetStructValue().Fields
+	if token, ok := content.GetFields()["token"]; ok {
+		return token.GetStructValue().GetFields()
 	}
-	for _, step := range content.Fields["handshake"].GetListValue().GetValues() {
+	for _, step := range content.GetFields()["handshake"].GetListValue().GetValues() {
 		if token, ok := step.GetStructValue().GetFields()["token"]; ok {
-			return token.GetStructValue().Fields
+			return token.GetStructValue().GetFields()
 		}
 	}
 	t.Fatal("contract declares no minted token")
@@ -216,14 +217,74 @@ func TestRegistrationCredentialsMatchTheMinter(t *testing.T) {
 		if !strings.Contains(minter, credential.principal) {
 			t.Errorf("%s no longer builds the subject %s that contract %q declares", minterSource, credential.principal, credential.contract)
 		}
-		if ttl := fields["ttlSeconds"].GetNumberValue(); ttl != 300 {
-			t.Errorf("contract %q declares ttlSeconds %v", credential.contract, ttl)
+		if ttl := fields["ttlSeconds"].GetNumberValue(); ttl != mintedTTLSeconds(t, minter) {
+			t.Errorf("contract %q declares ttlSeconds %v, minter issues %v", credential.contract, ttl, mintedTTLSeconds(t, minter))
 		}
 	}
+}
 
-	if !strings.Contains(minter, "registrationTTL = 5 * time.Minute") {
-		t.Errorf("%s no longer mints registration credentials with the declared 300-second lifetime", minterSource)
+// mintedTTLSeconds reads the lifetime accounts actually stamps on a registration
+// credential, in the minutes the source expresses it in.
+func mintedTTLSeconds(t *testing.T, minter string) float64 {
+	t.Helper()
+	match := regexp.MustCompile(`registrationTTL = (\d+) \* time\.Minute`).FindStringSubmatch(minter)
+	if match == nil {
+		t.Fatalf("%s does not declare registrationTTL in minutes", minterSource)
 	}
+	minutes, err := strconv.Atoi(match[1])
+	if err != nil {
+		t.Fatalf("parse registrationTTL: %v", err)
+	}
+	return float64(minutes * 60)
+}
+
+// TestDeclaredBodyLimitsMatchTheHandlers holds each declared bound to the
+// constant that enforces it. These are the numbers most likely to be copied
+// from prose and left behind: the token exchange and the registration write
+// bound different bodies at different sizes.
+func TestDeclaredBodyLimitsMatchTheHandlers(t *testing.T) {
+	moduleRoot := findModuleRoot(t)
+	contracts := loadBehavioralContracts(t, moduleRoot)
+	credential := readSource(t, moduleRoot, "services/auth-gateway/code/gateway_solution_credential.go")
+	registration := readSource(t, moduleRoot, "services/auth-gateway/code/gateway_solutions.go")
+
+	exchange := at(t, contractByID(t, contracts, "registration.solution.credential"), "exchange", "requestBodyLimitBytes").GetNumberValue()
+	if enforced := goConstant(t, credential, "solutionRegisterMaxBytes"); exchange != enforced {
+		t.Errorf("credential exchange declares a %v-byte bound, the handler enforces %v", exchange, enforced)
+	}
+
+	write := at(t, contractByID(t, contracts, "registration.solution.gateway-upstream"), "requestBodyLimitBytes").GetNumberValue()
+	if enforced := goConstant(t, registration, "maxSolutionRegistrationBytes"); write != enforced {
+		t.Errorf("registration write declares a %v-byte bound, the handler enforces %v", write, enforced)
+	}
+	// The frontend half states the same gateway bound rather than a bound of
+	// its own, so it must move with the constant too.
+	manifest := at(t, contractByID(t, contracts, "registration.solution.frontend-remote"), "manifestBound").GetStringValue()
+	if !strings.Contains(manifest, fmt.Sprintf("%d", int(goConstant(t, registration, "maxSolutionRegistrationBytes")))) {
+		t.Errorf("frontend manifest bound %q no longer names the gateway's enforced limit", manifest)
+	}
+}
+
+// goConstant evaluates a byte-size constant written either as a plain integer
+// or as a shifted one (256 << 10).
+func goConstant(t *testing.T, source, name string) float64 {
+	t.Helper()
+	match := regexp.MustCompile(name + `\s*=\s*(\d+)(?:\s*<<\s*(\d+))?`).FindStringSubmatch(source)
+	if match == nil {
+		t.Fatalf("source does not declare %s", name)
+	}
+	value, err := strconv.Atoi(match[1])
+	if err != nil {
+		t.Fatalf("parse %s: %v", name, err)
+	}
+	if match[2] != "" {
+		shift, err := strconv.Atoi(match[2])
+		if err != nil {
+			t.Fatalf("parse %s shift: %v", name, err)
+		}
+		value <<= shift
+	}
+	return float64(value)
 }
 
 // TestDeclaredRegistrationSurfacesExist holds every declared route, header and

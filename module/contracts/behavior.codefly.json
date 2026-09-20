@@ -71,7 +71,10 @@
           "x-assurance-level",
           "x-mfa-verified-at"
         ],
-        "credentialKinds": ["session", "api_key"],
+        "credentialKinds": [
+          "session",
+          "api_key"
+        ],
         "rules": [
           "An upstream reads identity only from these headers; it never re-derives identity from a forwarded bearer.",
           "x-credential-kind names what the perimeter authenticated, a fact only the perimeter holds.",
@@ -92,11 +95,14 @@
           "method": "POST",
           "path": "/solutions/_registration-token",
           "on": "auth-gateway",
-          "body": {"id": "<solution-id>"},
+          "body": {
+            "id": "<solution-id>"
+          },
           "headers": {
             "X-Codefly-Internal-Token": "cluster-internal perimeter check, not the authorization",
             "X-Codefly-Solution-Secret": "the solution's own registration secret"
-          }
+          },
+          "requestBodyLimitBytes": 4096
         },
         "broker": {
           "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
@@ -109,7 +115,10 @@
           "key": "Ed25519, published through JWKS",
           "audience": "solution-registration",
           "subject": "solution:<id>",
-          "claims": ["solution", "jti"],
+          "claims": [
+            "solution",
+            "jti"
+          ],
           "ttlSeconds": 300
         },
         "rules": [
@@ -124,12 +133,17 @@
       "id": "registration.solution.gateway-upstream",
       "requiredByAll": true,
       "documentation": "SOLUTION_REGISTRATION.md",
-      "dependencies": ["behavior/registration.solution.credential"],
+      "dependencies": [
+        "behavior/registration.solution.credential"
+      ],
       "contract": {
         "register": {
           "method": "POST",
           "path": "/solutions/_register",
-          "body": {"id": "<solution-id>", "upstream": "<host:port>"},
+          "body": {
+            "id": "<solution-id>",
+            "upstream": "<host:port>"
+          },
           "credentialHeader": "X-Codefly-Solution-Registration",
           "withdraw": "DELETE on the same path"
         },
@@ -146,7 +160,7 @@
           "preContract": "A registration stored before publisher binding carried the bare id as its publisher. The upgrade rewrites that one pre-contract default to solution:<id>, so the solution's own credential keeps renewing its record. A row whose publisher was self-asserted as anything else was never authenticated and is left as it is. Every registration now carries a non-empty verified publisher."
         },
         "revision": "The gateway supplies the compare-and-swap revision it last saw. A registrant never supplies one.",
-        "requestBodyLimitBytes": 4096,
+        "requestBodyLimitBytes": 262144,
         "identity": "The id is one catalog-identity segment, so reserved underscore-prefixed sub-paths cannot be shadowed.",
         "upstream": {
           "allowed": "composition-local only: loopback and private ranges, mesh short names and cluster suffixes",
@@ -157,13 +171,33 @@
         "proxy": {
           "path": "/solutions/{id}/...",
           "check": "the same ext_authz Check and identity-header discipline as catalog routes",
-          "unauthenticated": {"subPaths": ["/assets", "/.well-known"], "methods": ["GET", "HEAD"]}
+          "unauthenticated": {
+            "subPaths": [
+              "/assets",
+              "/.well-known"
+            ],
+            "methods": [
+              "GET",
+              "HEAD"
+            ]
+          }
         },
         "registry": {
           "method": "GET",
           "path": "/solutions/_registry",
-          "returns": ["id", "publisher", "revision", "status"],
-          "statuses": ["active", "pending", "expired", "incompatible", "tombstoned"],
+          "returns": [
+            "id",
+            "publisher",
+            "revision",
+            "status"
+          ],
+          "statuses": [
+            "active",
+            "pending",
+            "expired",
+            "incompatible",
+            "tombstoned"
+          ],
           "neverReturns": "an upstream"
         }
       }
@@ -191,9 +225,9 @@
           "the first registration binds the id to the credential's subject; a different subject is refused with 409",
           "jti burned on use"
         ],
-        "requestBodyLimitBytes": 65536,
         "trustTier": "A registered remote is loaded as a Module-Federation remote and executes as JavaScript in the host origin, receiving the viewer's capabilities. Registering a solution is approximately equivalent to deploying first-party code. Module-Federation singleton sharing, CSP origin inclusion, and row-level security are not sandboxes.",
-        "page": "/s/{id}"
+        "page": "/s/{id}",
+        "manifestBound": "The route applies no bound of its own. The manifest is bounded at 262144 bytes where the gateway accepts it, which is also the registry's limit."
       }
     },
     {
@@ -202,11 +236,31 @@
       "contract": {
         "principle": "Every declared requirement is checked before activation, so an incompatible remote is never handed to a browser. A declared requirement the host does not check is not a compatibility contract.",
         "manifestFields": [
-          {"field": "schemaVersion", "checkedAgainst": "SOLUTION_MANIFEST_SCHEMA_MAJOR", "defaultWhenAbsent": "1"},
-          {"field": "frontend.hostContract", "checkedAgainst": "SOLUTION_HOST_CONTRACT_MAJOR", "defaultWhenAbsent": "1"},
-          {"field": "frontend.reactRange", "checkedAgainst": "the host's real React version", "defaultWhenAbsent": "unconstrained"},
-          {"field": "frontend.shared", "checkedAgainst": "the versions the host publishes into the sealed scope", "defaultWhenAbsent": "unconstrained"},
-          {"field": "frontend.exposedModule", "checkedAgainst": "must be a ./Name key", "defaultWhenAbsent": "none"}
+          {
+            "field": "schemaVersion",
+            "checkedAgainst": "SOLUTION_MANIFEST_SCHEMA_MAJOR",
+            "defaultWhenAbsent": "1"
+          },
+          {
+            "field": "frontend.hostContract",
+            "checkedAgainst": "SOLUTION_HOST_CONTRACT_MAJOR",
+            "defaultWhenAbsent": "1"
+          },
+          {
+            "field": "frontend.reactRange",
+            "checkedAgainst": "the host's real React version",
+            "defaultWhenAbsent": "unconstrained"
+          },
+          {
+            "field": "frontend.shared",
+            "checkedAgainst": "the versions the host publishes into the sealed scope",
+            "defaultWhenAbsent": "unconstrained"
+          },
+          {
+            "field": "frontend.exposedModule",
+            "checkedAgainst": "must be a ./Name key",
+            "defaultWhenAbsent": "none"
+          }
         ],
         "hostMajors": {
           "SOLUTION_MANIFEST_SCHEMA_MAJOR": 1,
@@ -237,7 +291,15 @@
         "refusal": {
           "whole": "A refused registration is refused whole.",
           "fallback": "If the id already had a valid registration, that registration keeps serving. The last known valid one is never replaced by a rejected update.",
-          "response": {"status": 409, "body": {"error": "incompatible_runtime", "reasons": ["..."]}},
+          "response": {
+            "status": 409,
+            "body": {
+              "error": "incompatible_runtime",
+              "reasons": [
+                "..."
+              ]
+            }
+          },
           "noFallback": "If the id has no valid registration to fall back on, its page renders a temporarily-unavailable panel rather than a 404, and the technical cause stays in the server log."
         }
       }
@@ -260,7 +322,9 @@
               "X-Codefly-Internal-Token": "cluster-internal perimeter check",
               "X-Codefly-Module-Secret": "the module's own registration secret"
             },
-            "body": {"prefix": "<module-prefix>"}
+            "body": {
+              "prefix": "<module-prefix>"
+            }
           },
           {
             "step": 2,
@@ -282,7 +346,10 @@
             "method": "POST",
             "path": "/modules/_register",
             "credentialHeader": "X-Codefly-Module-Registration",
-            "body": {"prefix": "<module-prefix>", "upstream": "<host:port>"}
+            "body": {
+              "prefix": "<module-prefix>",
+              "upstream": "<host:port>"
+            }
           }
         ],
         "rules": [
@@ -309,7 +376,9 @@
             "X-Codefly-Internal-Token": "cluster-internal perimeter check",
             "X-Codefly-Module-Secret": "the module's identity secret"
           },
-          "body": {"prefix": "<module-prefix>"}
+          "body": {
+            "prefix": "<module-prefix>"
+          }
         },
         "broker": {
           "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
