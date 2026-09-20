@@ -83,7 +83,10 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
 - A **preflight** from a registered origin is answered before routing, from the
   origin alone — a preflight carries no credential, so approving one authorizes
   nothing. An origin the registry does not know falls through to the router and
-  is refused, exactly as before.
+  is refused, exactly as before. It never promises what the request path would
+  withhold: a solution's public sub-paths run with identity stripped and no
+  ext_authz check, so a bearer there names no client, and a preflight that
+  intends to send one is refused rather than answered.
 - The **request** is bound in `proxyTo`, the one point every forwarded request
   passes through whatever route matched it: a token naming a client must arrive
   from an origin that client registered, or it is refused before it reaches any
@@ -97,17 +100,27 @@ answer the way `gateway_solution_registry.go` caches the solution registry, and
 Two deliberate limits. **Credentials are never allowed**: a registered client
 authenticates with its bearer, and echoing `access-control-allow-credentials`
 would additionally let a cross-origin page ride the host's session cookie.
-And a request whose token names **no** client is untouched by all of this — it
-takes the same path with the same headers as before the registry existed, which
-matters because the frontend's proxy copies the browser's `Origin` header
-through verbatim, so a host page's own same-site POST arrives here carrying an
-origin the registry has never heard of.
+And a request presenting a credential that names **no** client — the host's own
+web session, an API key — is untouched by all of this. It takes the same path
+with the same headers as before the registry existed, which matters because the
+frontend's proxy copies the browser's `Origin` header through verbatim, so a
+host page's own same-site write arrives here carrying an origin the registry has
+never heard of. A cookie is treated as such a credential: a cross-origin page
+cannot attach one, so a request bearing one came through that proxy.
+
+A request carrying **no** credential at all is the one case judged on its origin
+alone, because obtaining the first token is itself a cross-origin call made
+before there is any `azp` to bind to. Judging it on the bearer would leave a
+registered client able to sign in and never able to read the token it signed in
+for — the exchange would be served, the code spent, and the browser would
+discard the response.
 
 Consequently the solution **public** surface (`/assets`, `/.well-known`) is
-served with identity stripped and so carries no client, and stays closed
-cross-origin. A registered client fetches solution data with its bearer; it
-cannot load a solution's federation chunks through this gateway from its own
-origin.
+granted on its origin alone, like any other uncredentialed read — a module
+loader pulling a remote's chunks is exactly that. What it cannot do is carry a
+bearer: identity is stripped there and no ext_authz check runs, so the gateway
+has nothing to bind, and both halves say no rather than one promising what the
+other drops.
 
 ## Brokering a module's Work Context
 

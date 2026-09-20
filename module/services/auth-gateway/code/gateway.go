@@ -358,6 +358,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
 func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	// Every forwarded request passes through here, whichever route matched it,
+	// so this is where a request is bound to the origins its client registered.
+	// Ahead of the limiter, not inside proxyTo: a refusal must not spend the
+	// org's budget, and a 429 has to carry the grant or the caller sees an
+	// opaque CORS failure instead of the reason it was throttled.
+	w, ok := g.authorizeCrossOrigin(w, r)
+	if !ok {
+		return
+	}
 	if g.rateLimiter != nil {
 		g.rateLimiter.Middleware(limiterFailureModeFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.proxyTo(w, r, upstream, entry)
@@ -378,14 +387,6 @@ func limiterFailureModeFor(entry *RouteEntry) limiterFailureMode {
 }
 
 func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
-	// Every forwarded request passes through here, whichever route matched it,
-	// so this is where a request that ext_authz resolved to a registered client
-	// is bound to the origins that client registered.
-	w, ok := g.authorizeCrossOrigin(w, r)
-	if !ok {
-		return
-	}
-
 	// Public origin and gateway credentials are backend capabilities owned by
 	// this process. They are stamped after all caller-supplied trust headers
 	// have been removed, including for public Accounts routes without a bearer

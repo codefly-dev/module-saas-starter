@@ -44,7 +44,18 @@ const (
 	// triggers. Without it, requests from origins that are not registered —
 	// which any host page's own cross-site POST supplies, and which an attacker
 	// can supply at will — would each turn into a registry read.
+	//
+	// It bounds ATTEMPTS, not successes. A registry that cannot be read is
+	// precisely when unknown origins arrive most often — every origin is
+	// unknown while the snapshot is empty — so a floor that only advanced on
+	// success would leave each miss driving its own read, which is the opposite
+	// of what it is here for.
 	clientRefreshFloor = 250 * time.Millisecond
+	// clientRegistryLookupTimeout bounds a refresh made on the request path.
+	// The reconcile loop can afford clientRegistryCallTimeout because nothing
+	// waits on it; a browser waiting out ten seconds to be told its origin is
+	// not registered cannot.
+	clientRegistryLookupTimeout = 2 * time.Second
 )
 
 // clientRegistryClient is the registry surface the gateway consumes. The
@@ -92,8 +103,11 @@ type clientRegistryCache struct {
 	mu            sync.RWMutex
 	originClients map[string]map[string]struct{}
 	loaded        bool
-	loadedAt      time.Time
-	refreshing    sync.Mutex
+	// attemptedAt is when a read was last ATTEMPTED, successfully or not. The
+	// floor is measured from it rather than from the last success; see
+	// clientRefreshFloor.
+	attemptedAt time.Time
+	refreshing  sync.Mutex
 }
 
 func newClientRegistryCache(client clientRegistryClient) *clientRegistryCache {
@@ -109,10 +123,12 @@ func newClientRegistryCache(client clientRegistryClient) *clientRegistryCache {
 // A failure leaves the previous snapshot in place: an accounts outage must not
 // withdraw cross-origin access from every registered client at once.
 func (c *clientRegistryCache) load(ctx context.Context) error {
-	if c.client == nil {
-		return errClientRegistryUnconfigured
-	}
-	resp, err := c.client.List(ctx, &accountsv1.ListRegisteredClientsRequest{})
+	resp, err := c.read(ctx)
+
+	c.mu.Lock()
+	c.attemptedAt = c.now()
+	c.mu.Unlock()
+
 	if err != nil {
 		return err
 	}
@@ -136,8 +152,14 @@ func (c *clientRegistryCache) load(ctx context.Context) error {
 	defer c.mu.Unlock()
 	c.originClients = index
 	c.loaded = true
-	c.loadedAt = c.now()
 	return nil
+}
+
+func (c *clientRegistryCache) read(ctx context.Context) (*accountsv1.ListRegisteredClientsResponse, error) {
+	if c.client == nil {
+		return nil, errClientRegistryUnconfigured
+	}
+	return c.client.List(ctx, &accountsv1.ListRegisteredClientsRequest{})
 }
 
 func (c *clientRegistryCache) refresh(ctx context.Context) error {
@@ -153,11 +175,13 @@ func (c *clientRegistryCache) refreshIfStale(ctx context.Context) error {
 	c.refreshing.Lock()
 	defer c.refreshing.Unlock()
 	c.mu.RLock()
-	fresh := c.loaded && c.now().Sub(c.loadedAt) < clientRefreshFloor
+	fresh := !c.attemptedAt.IsZero() && c.now().Sub(c.attemptedAt) < clientRefreshFloor
 	c.mu.RUnlock()
 	if fresh {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, clientRegistryLookupTimeout)
+	defer cancel()
 	return c.load(ctx)
 }
 

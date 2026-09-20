@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,7 +97,9 @@ func TestCORS_RegisteredClientCallsSolutionOnItsBearerAlone(t *testing.T) {
 	require.Equal(t, http.StatusOK, served.Code)
 	require.Equal(t, addinOrigin, served.Header().Get("Access-Control-Allow-Origin"))
 	require.Contains(t, served.Header().Values("Vary"), "Origin")
-	// Audited with the person and the client: the upstream sees both.
+	// The upstream is told both who called and which client they came through.
+	// This asserts the projection only — what an upstream records in its audit
+	// trail is that service's own behaviour, not the gateway's.
 	require.Equal(t, addinClient, solution.lastHeaders.Get("X-Client-Id"))
 	require.NotEmpty(t, solution.lastHeaders.Get("X-User-Id"))
 
@@ -422,4 +425,171 @@ func TestCORS_UnreadableRegistryFailsClosedWithoutDisturbingEveryoneElse(t *test
 	unanswered := httptest.NewRecorder()
 	gw.ServeHTTP(unanswered, preflight)
 	require.Equal(t, http.StatusNotFound, unanswered.Code)
+}
+
+// Obtaining the first token is itself a cross-origin call, made before the
+// client has any bearer to name it. Judging that call on `azp` would leave a
+// registered client able to sign in and never able to read the token it signed
+// in for: the exchange would be served — the code spent, the refresh token
+// rotated — and the browser would discard the response.
+func TestCORS_TokenExchangeIsGrantedBeforeTheClientHasABearer(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	twoRegisteredClients(t, gw)
+
+	preflight := httptest.NewRequest(http.MethodOptions, "/v1/auth/refresh", nil)
+	preflight.Header.Set("Origin", addinOrigin)
+	preflight.Header.Set("Access-Control-Request-Method", "POST")
+	promised := httptest.NewRecorder()
+	gw.ServeHTTP(promised, preflight)
+	require.Equal(t, http.StatusNoContent, promised.Code)
+
+	exchange := httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", strings.NewReader(`{}`))
+	exchange.Header.Set("Origin", addinOrigin)
+	exchange.Header.Set("Content-Type", "application/json")
+	served := httptest.NewRecorder()
+	gw.ServeHTTP(served, exchange)
+
+	require.Equal(t, http.StatusOK, served.Code)
+	require.Equal(t, addinOrigin, served.Header().Get("Access-Control-Allow-Origin"),
+		"the preflight promised this origin access; the exchange must actually grant it")
+	require.Empty(t, served.Header().Get("Access-Control-Allow-Credentials"),
+		"granting an uncredentialed call must not also open the host's cookie")
+}
+
+// The bootstrap grant is for callers with no credential at all. A request that
+// presents one naming no client — the host's own web session, arriving with the
+// Origin its proxy copied through — is still granted nothing.
+func TestCORS_BootstrapGrantDoesNotExtendToCredentialedCallers(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	registerClients(t, gw, registeredClient(addinClient, addinOrigin, "https://host.example"))
+
+	bearer := httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", strings.NewReader(`{}`))
+	bearer.Header.Set("Origin", "https://host.example")
+	bearer.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+	withBearer := httptest.NewRecorder()
+	gw.ServeHTTP(withBearer, bearer)
+	require.Empty(t, withBearer.Header().Get("Access-Control-Allow-Origin"))
+
+	cookie := httptest.NewRequest(http.MethodPost, "/v1/auth/refresh", strings.NewReader(`{}`))
+	cookie.Header.Set("Origin", "https://host.example")
+	cookie.Header.Set("Cookie", "session=abc")
+	withCookie := httptest.NewRecorder()
+	gw.ServeHTTP(withCookie, cookie)
+	require.Empty(t, withCookie.Header().Get("Access-Control-Allow-Origin"),
+		"a cookie means the frontend's proxy forwarded a host session, not a client bootstrapping")
+}
+
+// Several procedures declare IDEMPOTENCY_REQUIREMENT_REQUIRED. A browser omits
+// any header the preflight did not allow, so a preflight that withheld
+// idempotency-key would make those procedures uncallable by any client, with no
+// client-side fix available.
+func TestCORS_PreflightAllowsTheHeadersThisAPIRequires(t *testing.T) {
+	gw, _, _, _ := newGatewayHarness(t)
+	twoRegisteredClients(t, gw)
+
+	req := httptest.NewRequest(http.MethodOptions, "/v1/users", nil)
+	req.Header.Set("Origin", addinOrigin)
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "authorization, idempotency-key")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusNoContent, w.Code)
+	allowed := strings.ToLower(w.Header().Get("Access-Control-Allow-Headers"))
+	for _, required := range []string{"authorization", "content-type", "idempotency-key", "traceparent"} {
+		require.Contains(t, allowed, required)
+	}
+}
+
+// A preflight must never promise access the request path then withholds. The
+// solution public surface is served with identity stripped and no ext_authz
+// check, so a bearer there names no client and nothing can be bound — say no at
+// the preflight rather than serve the request and have the browser bin it.
+func TestCORS_PreflightRefusesWhatThePublicSolutionSurfaceCannotGrant(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	twoRegisteredClients(t, gw)
+	registerSolutionUpstream(t, gw, "example")
+
+	withBearer := httptest.NewRequest(http.MethodOptions, "/solutions/example/assets/remote.js", nil)
+	withBearer.Header.Set("Origin", addinOrigin)
+	withBearer.Header.Set("Access-Control-Request-Method", "GET")
+	withBearer.Header.Set("Access-Control-Request-Headers", "authorization")
+	promised := httptest.NewRecorder()
+	gw.ServeHTTP(promised, withBearer)
+	require.NotEqual(t, http.StatusNoContent, promised.Code)
+	require.Empty(t, promised.Header().Get("Access-Control-Allow-Origin"))
+
+	// Without a bearer the same surface is granted, and the fetch that follows
+	// actually carries the grant — a module loader pulling a remote's chunks.
+	plain := httptest.NewRequest(http.MethodGet, "/solutions/example/assets/remote.js", nil)
+	plain.Header.Set("Origin", addinOrigin)
+	loaded := httptest.NewRecorder()
+	gw.ServeHTTP(loaded, plain)
+	require.Equal(t, http.StatusOK, loaded.Code)
+	require.Equal(t, addinOrigin, loaded.Header().Get("Access-Control-Allow-Origin"))
+	_ = priv
+}
+
+// A throttled client must be able to read why. The binding runs ahead of the
+// limiter, so a 429 carries the grant — and a refused cross-origin request
+// never spends the org's budget at all.
+func TestCORS_ThrottledResponseIsReadableAndRefusalsCostNoBudget(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	twoRegisteredClients(t, gw)
+	gw.rateLimiter = NewRateLimiter(1)
+
+	token := signClientToken(t, priv, addinClient)
+	call := func(origin string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+		gw.ServeHTTP(w, req)
+		return w
+	}
+
+	// Refusals from an unregistered origin must not consume the budget...
+	for i := 0; i < 5; i++ {
+		require.Equal(t, http.StatusForbidden, call(portalOrigin).Code)
+	}
+	// ...so the whole budget (limit 1 + burst 1 = 2/org/min) is still there.
+	require.Equal(t, http.StatusOK, call(addinOrigin).Code)
+	require.Equal(t, http.StatusOK, call(addinOrigin).Code)
+
+	throttled := call(addinOrigin)
+	require.Equal(t, http.StatusTooManyRequests, throttled.Code)
+	require.Equal(t, addinOrigin, throttled.Header().Get("Access-Control-Allow-Origin"),
+		"a 429 the caller cannot read is indistinguishable from a CORS misconfiguration")
+}
+
+// Vary is appended, not duplicated: the gateway proxies upstreams that answer
+// CORS themselves, and a doubled field name is a cache-key smell.
+func TestCORS_VaryIsNotDuplicatedAgainstAnUpstreamThatSetsIt(t *testing.T) {
+	gw, _, _, priv := newGatewayHarness(t)
+	twoRegisteredClients(t, gw)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Vary", "Origin")
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	registerSolutionHalves(t, gw, "example", srv.URL)
+
+	req := httptest.NewRequest(http.MethodGet, "/solutions/example/thing", nil)
+	req.Header.Set("Authorization", "Bearer "+signClientToken(t, priv, addinClient))
+	req.Header.Set("Origin", addinOrigin)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	origins := 0
+	for _, value := range w.Header().Values("Vary") {
+		for _, name := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(name), "Origin") {
+				origins++
+			}
+		}
+	}
+	require.Equal(t, 1, origins)
+	require.Contains(t, strings.Join(w.Header().Values("Vary"), ","), "Accept-Encoding")
 }
