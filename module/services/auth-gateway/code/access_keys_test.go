@@ -216,7 +216,7 @@ func TestAccessJWKS_StartupOutageRecoversWithoutRestart(t *testing.T) {
 	clock := newTestClock(t, authz)
 	gateway := NewGateway(authz, NewRouteMatcher(testRouteEntries(), nil),
 		map[string]*url.URL{"accounts": MustURL(server.URL), "frontend": MustURL(server.URL)}, nil,
-		newFakeSolutionRegistry())
+		newFakeSolutionRegistry(), newFakeClientRegistry())
 
 	token := signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now()))
 	requireDenied(t, authz, token, 503)
@@ -267,7 +267,7 @@ func TestAccessJWKS_StaleKeysDoNotWithdrawTheListener(t *testing.T) {
 		map[string]*url.URL{
 			"accounts": MustURL(publisher.server.URL),
 			"frontend": MustURL(publisher.server.URL),
-		}, nil, newFakeSolutionRegistry())
+		}, nil, newFakeSolutionRegistry(), newFakeClientRegistry())
 
 	requireAdmitted(t, authz, signAccessToken(t, priv, accessKeyID(pub), validClaims(time.Now())))
 	publisher.server.Close()

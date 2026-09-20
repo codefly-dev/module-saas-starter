@@ -147,7 +147,12 @@ var httpAllowedPerimeterFiles = map[string]bool{
 	// gateway_modules.go proxies runtime-registered composed-module REST
 	// upstreams. It runs the same ext_authz Check as any protected route and
 	// reaches no external IdP — the ext_authz check remains the token authority.
-	"gateway_modules.go":   true,
+	"gateway_modules.go": true,
+	// gateway_cors.go answers cross-origin access for registered clients. It
+	// decides from the registry snapshot and from the client id the ext_authz
+	// check already resolved from a locally verified token; it makes no network
+	// call of its own and reaches no external IdP.
+	"gateway_cors.go":      true,
 	"main.go":              true,
 	"ratelimit.go":         true,
 	"telemetry_metrics.go": true,
@@ -231,7 +236,7 @@ var wantEmittedHeaders = []string{
 	"x-scoped-roles", "x-scoped-roles-truncated", "x-auth-id", "x-user-email",
 	"x-user-name", "x-session-id", "x-acting-as-user-id", "x-act", "x-scopes",
 	"x-credential-kind", "x-mfa-satisfied", "x-authentication-methods", "x-auth-time",
-	"x-assurance-level", "x-mfa-verified-at", "x-codefly-gateway-token",
+	"x-assurance-level", "x-mfa-verified-at", "x-client-id", "x-codefly-gateway-token",
 }
 
 // TestPerimeter_SuccessPathEmitsCanonicalHeadersOnly asserts the ext_authz

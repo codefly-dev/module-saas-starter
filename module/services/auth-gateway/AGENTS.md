@@ -64,6 +64,51 @@ registration attempt**, not cached across a gateway restart. Registration only
 adds a proxy target — every proxied `/v1/<module>/*` request still runs the full
 ext_authz check.
 
+## A registered client calls without a proxy
+
+The host's own frontend reaches this gateway through a server-side proxy, so it
+never needed cross-origin access and the gateway answered none: no `OPTIONS`, no
+`access-control-allow-origin`. That made the proxy the only door. A second
+client — an add-in, a CLI, a customer portal — could only get in by holding the
+same shared secret, which is the arrangement the boundary rules forbid.
+
+What opens the door is an identity, not a relaxation. accounts mints a client's
+access token with `azp` naming its registration, the ext_authz check projects
+that as `x-client-id` (stripped from caller input like every other canonical
+identity header), and `ClientRegistryService/ListRegisteredClients` says which
+exact browser origins that client declared. `code/gateway_clients.go` caches the
+answer the way `gateway_solution_registry.go` caches the solution registry, and
+`code/gateway_cors.go` decides from it:
+
+- A **preflight** from a registered origin is answered before routing, from the
+  origin alone — a preflight carries no credential, so approving one authorizes
+  nothing. An origin the registry does not know falls through to the router and
+  is refused, exactly as before.
+- The **request** is bound in `proxyTo`, the one point every forwarded request
+  passes through whatever route matched it: a token naming a client must arrive
+  from an origin that client registered, or it is refused before it reaches any
+  upstream. A token issued to one client is therefore useless from another's
+  page, on catalog, solution, and federated-module routes alike.
+- `X-Codefly-Public-Origin` — the WebAuthn relying party, the origin an OAuth
+  start is validated against — is derived from that registration. The frontend's
+  internal-token path still establishes it too; the registration is the stronger
+  claim, since it names the client rather than only the process that forwarded.
+
+Two deliberate limits. **Credentials are never allowed**: a registered client
+authenticates with its bearer, and echoing `access-control-allow-credentials`
+would additionally let a cross-origin page ride the host's session cookie.
+And a request whose token names **no** client is untouched by all of this — it
+takes the same path with the same headers as before the registry existed, which
+matters because the frontend's proxy copies the browser's `Origin` header
+through verbatim, so a host page's own same-site POST arrives here carrying an
+origin the registry has never heard of.
+
+Consequently the solution **public** surface (`/assets`, `/.well-known`) is
+served with identity stripped and so carries no client, and stays closed
+cross-origin. A registered client fetches solution data with its bearer; it
+cannot load a solution's federation chunks through this gateway from its own
+origin.
+
 ## Brokering a module's Work Context
 
 `POST /modules/_work-context` mirrors the registration exchange: the

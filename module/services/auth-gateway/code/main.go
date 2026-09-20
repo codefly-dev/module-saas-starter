@@ -228,8 +228,13 @@ func main() {
 		// re-registering, then on its interval so a registration made against
 		// another replica converges here.
 		solutionRegistry := &accountsSolutionRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
-		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry)
+		// The registered-client registry is reached the same way. Its reconcile
+		// loop is what lets a client added to the deployment's configuration
+		// reach this replica without restarting it.
+		clientRegistry := &accountsClientRegistry{conn: internalAPIConn, internalToken: authz.internalToken}
+		gateway := NewGateway(authz, matcher, upstreams, rateLimiter, solutionRegistry, clientRegistry)
 		go gateway.solutions.reconcile(ctx)
+		go gateway.clients.reconcile(ctx)
 		if apiHTTPURL != "" {
 			gateway.workContext = newWorkContextVerifier(apiHTTPURL)
 			// Warm in the background: per-request verification lazily refreshes
