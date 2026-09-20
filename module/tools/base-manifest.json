@@ -177,7 +177,7 @@
     "generated/reference-composition/services/accounts/proto/saas/composed/settings/v1/settings.proto": "9629c2f0a1ec6ed638784b23a99978bf7c71bbaa1c8ee29e2decaab273e933af",
     "generated/reference-composition/services/frontend/code/src/gen/saas/settings/v1/field_catalog.ts": "83ad42f05c7c2a4359fc18a1fd8f7e56961bbdd65f50ad98810608d88c6ae30f",
     "generated/reference-composition/services/frontend/code/src/generated/frontend-contributions.ts": "057360f7883f3d02d9a313432297bfeb76182ffc1f9b9f4932a9e9254428995e",
-    "module.package.codefly.yaml": "00b701b1df04722f90a13f84b8270c62878c93725191820450208281be271595",
+    "module.package.codefly.yaml": "a18f232f248852a77829ffb45842eb2c45f324792217125bb869158d0113bb8a",
     "public/site.config.json": "4a6e76802a6ac46298b0f8ce7fbbb687ca670f1259474f4a8b32c335937916f1",
     "services/README.md": "34d7ac4be959ce756ae67946f3b8b6479ac472b6cbbf8ebd33015eb0ff9ca244",
     "services/accounts/AGENTS.md": "180fee6a26d684299cf7a2bb97874207cb95dba9a6701ed162b657832fc43697",
