@@ -7,13 +7,16 @@ import { type ReactNode, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { createBrowserOnboardingReminderStore } from "../application/browser-reminder-store";
+import { browserStorage } from "../application/browser-storage";
 import { useOnboardingController } from "../react/use-onboarding-controller";
 import { OnboardingWizardView } from "./onboarding-wizard";
 
 // One store for the module: `useSyncExternalStore` compares the subscribe
 // function by identity, so building it per render would resubscribe forever.
+// This runs at module evaluation, where an uncaught throw takes the whole
+// bundle down, so the storage getter goes through `browserStorage`.
 const reminderStore = createBrowserOnboardingReminderStore(
-	typeof window === "undefined" ? null : window.localStorage,
+	browserStorage("local"),
 );
 
 export function OnboardingGate({ children }: { children: ReactNode }) {

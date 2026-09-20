@@ -22,7 +22,7 @@
 
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { cn } from "../layout/cn.js";
 import { formatAxisKey } from "./format.js";
 import {
@@ -387,6 +387,7 @@ function ChartFrame({
 	overlay: (geo: FrameGeometry, index: number) => ReactNode;
 }) {
 	const [active, setActive] = useState<number | null>(null);
+	const clipId = useId();
 	const geo = computeGeometry(series, height, band, stacked);
 
 	if (geo.labels.length === 0) {
@@ -408,7 +409,22 @@ function ChartFrame({
 				aria-hidden
 			>
 				<Axes geo={geo} formatValue={formatValue} />
-				{marks(geo)}
+				{/* The marks are clipped to the plot, padded by an end marker's
+				    radius so a point on the plot's edge keeps its whole dot. The
+				    extent is computed to contain every point, so this changes
+				    nothing when the geometry is right; it is what keeps a wrong
+				    extent — or a value a future mark type forgets to include —
+				    from drawing over the axes and outside the frame instead of
+				    merely being cut off. */}
+				<clipPath id={clipId}>
+					<rect
+						x={geo.plotLeft - MARK_CLIP_PAD}
+						y={geo.plotTop - MARK_CLIP_PAD}
+						width={geo.plotRight - geo.plotLeft + 2 * MARK_CLIP_PAD}
+						height={geo.plotBottom - geo.plotTop + 2 * MARK_CLIP_PAD}
+					/>
+				</clipPath>
+				<g clipPath={`url(#${clipId})`}>{marks(geo)}</g>
 				{active !== null && overlay(geo, active)}
 				<HoverOverlay geo={geo} onSelect={setActive} />
 			</svg>
@@ -443,12 +459,16 @@ function Crosshair({ geo, x }: { geo: FrameGeometry; x: number }) {
 	);
 }
 
+const END_MARKER_RADIUS = 3.5;
+/** Radius plus the marker's own stroke: what the mark clip must leave room for. */
+const MARK_CLIP_PAD = END_MARKER_RADIUS + 1;
+
 function EndMarker({ x, y, color }: { x: number; y: number; color: string }) {
 	return (
 		<circle
 			cx={x}
 			cy={y}
-			r={3.5}
+			r={END_MARKER_RADIUS}
 			fill={color}
 			className="stroke-card"
 			strokeWidth={2}

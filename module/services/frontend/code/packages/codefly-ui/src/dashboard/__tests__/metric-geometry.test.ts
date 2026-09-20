@@ -247,8 +247,27 @@ describe("stackSeries", () => {
 		expect(stackedExtent(stacked)).toEqual([0, 61]);
 	});
 
-	it("handles no series", () => {
+	// A negative contribution hangs below zero on its own running total. Folding
+	// it into the positive total would draw it over the band beneath, and an
+	// extent that started at zero would push its band off the plot entirely.
+	it("diverges at zero and keeps a negative band inside the extent", () => {
+		const [a, b, c] = stackSeries([
+			resolved("a", [5, 5]),
+			resolved("b", [-3, 2]),
+			resolved("c", [-4, -1]),
+		]);
+		expect(a.base).toEqual([0, 0]);
+		expect(a.top).toEqual([5, 5]);
+		expect(b.base).toEqual([0, 5]);
+		expect(b.top).toEqual([-3, 7]);
+		expect(c.base).toEqual([-3, 0]);
+		expect(c.top).toEqual([-7, -1]);
+		expect(stackedExtent([a, b, c])).toEqual([-7, 7]);
+	});
+
+	it("never returns a degenerate extent", () => {
 		expect(stackSeries([])).toEqual([]);
-		expect(stackedExtent([])).toEqual([0, 0]);
+		expect(stackedExtent([])).toEqual([0, 1]);
+		expect(stackedExtent(stackSeries([resolved("a", [0, 0])]))).toEqual([0, 1]);
 	});
 });

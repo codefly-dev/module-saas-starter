@@ -204,6 +204,11 @@ export interface StackedSeries extends ResolvedSeries {
  * Stack series cumulatively in the order given: the first is drawn on the
  * bottom, each next one on top of the running total.
  *
+ * The stack diverges at zero: a positive value sits on the positive running
+ * total, a negative one hangs below the negative running total. Summing signs
+ * into one total would draw a negative contribution as a band that overlaps the
+ * one beneath it, and the column's height would read as "less than the parts".
+ *
  * A gap (`null`) contributes nothing and keeps the band flat at the base there
  * rather than dropping to zero, which is what a viewer reads as "no data" and
  * not "fell to nothing". `values` is kept as the series' OWN values, so the
@@ -212,18 +217,37 @@ export interface StackedSeries extends ResolvedSeries {
  */
 export function stackSeries(series: ResolvedSeries[]): StackedSeries[] {
 	const length = series[0]?.values.length ?? 0;
-	const running = new Array<number>(length).fill(0);
+	const above = new Array<number>(length).fill(0);
+	const below = new Array<number>(length).fill(0);
 	return series.map((s) => {
-		const base = running.slice();
-		const top = base.map((b, i) => b + (s.values[i] ?? 0));
-		for (let i = 0; i < length; i += 1) running[i] = top[i];
+		const base = new Array<number>(length);
+		const top = new Array<number>(length);
+		for (let i = 0; i < length; i += 1) {
+			const value = s.values[i] ?? 0;
+			const running = value < 0 ? below : above;
+			base[i] = running[i];
+			top[i] = running[i] + value;
+			running[i] = top[i];
+		}
 		return { ...s, base, top };
 	});
 }
 
-/** The y extent a stacked chart must fit: zero to the tallest column. */
+/**
+ * The y extent a stacked chart must fit: from the deepest column below zero to
+ * the tallest above it, always including zero. Never degenerate — a chart with
+ * nothing to draw still needs an axis — and every band's floor and ceiling is
+ * inside it, so a negative contribution scales the plot rather than leaving it.
+ */
 export function stackedExtent(stacked: StackedSeries[]): [number, number] {
+	let min = 0;
 	let max = 0;
-	for (const s of stacked) for (const t of s.top) if (t > max) max = t;
-	return [0, max];
+	for (const s of stacked) {
+		for (const t of s.top) {
+			if (t < min) min = t;
+			if (t > max) max = t;
+		}
+	}
+	if (min === 0 && max === 0) return [0, 1];
+	return [min, max];
 }
