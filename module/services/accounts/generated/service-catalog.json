@@ -253,6 +253,7 @@
         "/saas.accounts.v1.PermissionService/CreateRole",
         "/saas.accounts.v1.PermissionService/Decide",
         "/saas.accounts.v1.PermissionService/DeleteRole",
+        "/saas.accounts.v1.PermissionService/ExplainPermission",
         "/saas.accounts.v1.PermissionService/GrantScope",
         "/saas.accounts.v1.PermissionService/ListAccessibleScopes",
         "/saas.accounts.v1.PermissionService/ListCollectionAccess",
@@ -6722,6 +6723,55 @@
       },
       "policy_tier": "platform_admin",
       "description": "Delete a custom role.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/ExplainPermission",
+      "service": "PermissionService",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "ExplainPermission",
+      "input_type": "saas.accounts.v1.ExplainPermissionRequest",
+      "output_type": "saas.accounts.v1.ExplainPermissionResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_ADMIN",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_admin",
+      "description": "Ask the authorization service whether a subject may act in this organization.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

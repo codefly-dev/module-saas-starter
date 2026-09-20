@@ -29,6 +29,7 @@ const (
 	PermissionService_RevokeRole_FullMethodName           = "/saas.accounts.v1.PermissionService/RevokeRole"
 	PermissionService_ListRoleAssignments_FullMethodName  = "/saas.accounts.v1.PermissionService/ListRoleAssignments"
 	PermissionService_CheckPermission_FullMethodName      = "/saas.accounts.v1.PermissionService/CheckPermission"
+	PermissionService_ExplainPermission_FullMethodName    = "/saas.accounts.v1.PermissionService/ExplainPermission"
 	PermissionService_Decide_FullMethodName               = "/saas.accounts.v1.PermissionService/Decide"
 	PermissionService_CheckAccess_FullMethodName          = "/saas.accounts.v1.PermissionService/CheckAccess"
 	PermissionService_ListAccessibleScopes_FullMethodName = "/saas.accounts.v1.PermissionService/ListAccessibleScopes"
@@ -55,6 +56,14 @@ type PermissionServiceClient interface {
 	RevokeRole(ctx context.Context, in *RevokeRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	ListRoleAssignments(ctx context.Context, in *ListRoleAssignmentsRequest, opts ...grpc.CallOption) (*ListRoleAssignmentsResponse, error)
 	CheckPermission(ctx context.Context, in *CheckPermissionRequest, opts ...grpc.CallOption) (*CheckPermissionResponse, error)
+	// ExplainPermission is the authenticated, organization-scoped companion to
+	// CheckPermission: an administrator asks the decision point whether a
+	// subject in their own organization may act, and reads the same answer the
+	// decision returns to a service. Read-only, and it evaluates the RBAC layer
+	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
+	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+	// have no administrator to supply them.
+	ExplainPermission(ctx context.Context, in *ExplainPermissionRequest, opts ...grpc.CallOption) (*ExplainPermissionResponse, error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward
 	// compatibility while existing clients migrate. Both RPCs route
@@ -179,6 +188,16 @@ func (c *permissionServiceClient) CheckPermission(ctx context.Context, in *Check
 	return out, nil
 }
 
+func (c *permissionServiceClient) ExplainPermission(ctx context.Context, in *ExplainPermissionRequest, opts ...grpc.CallOption) (*ExplainPermissionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExplainPermissionResponse)
+	err := c.cc.Invoke(ctx, PermissionService_ExplainPermission_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *permissionServiceClient) Decide(ctx context.Context, in *DecideRequest, opts ...grpc.CallOption) (*DecideResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DecideResponse)
@@ -293,6 +312,14 @@ type PermissionServiceServer interface {
 	RevokeRole(context.Context, *RevokeRoleRequest) (*emptypb.Empty, error)
 	ListRoleAssignments(context.Context, *ListRoleAssignmentsRequest) (*ListRoleAssignmentsResponse, error)
 	CheckPermission(context.Context, *CheckPermissionRequest) (*CheckPermissionResponse, error)
+	// ExplainPermission is the authenticated, organization-scoped companion to
+	// CheckPermission: an administrator asks the decision point whether a
+	// subject in their own organization may act, and reads the same answer the
+	// decision returns to a service. Read-only, and it evaluates the RBAC layer
+	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
+	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+	// have no administrator to supply them.
+	ExplainPermission(context.Context, *ExplainPermissionRequest) (*ExplainPermissionResponse, error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward
 	// compatibility while existing clients migrate. Both RPCs route
@@ -360,6 +387,9 @@ func (UnimplementedPermissionServiceServer) ListRoleAssignments(context.Context,
 }
 func (UnimplementedPermissionServiceServer) CheckPermission(context.Context, *CheckPermissionRequest) (*CheckPermissionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CheckPermission not implemented")
+}
+func (UnimplementedPermissionServiceServer) ExplainPermission(context.Context, *ExplainPermissionRequest) (*ExplainPermissionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ExplainPermission not implemented")
 }
 func (UnimplementedPermissionServiceServer) Decide(context.Context, *DecideRequest) (*DecideResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Decide not implemented")
@@ -552,6 +582,24 @@ func _PermissionService_CheckPermission_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PermissionServiceServer).CheckPermission(ctx, req.(*CheckPermissionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_ExplainPermission_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExplainPermissionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).ExplainPermission(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_ExplainPermission_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).ExplainPermission(ctx, req.(*ExplainPermissionRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -774,6 +822,10 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CheckPermission",
 			Handler:    _PermissionService_CheckPermission_Handler,
+		},
+		{
+			MethodName: "ExplainPermission",
+			Handler:    _PermissionService_ExplainPermission_Handler,
 		},
 		{
 			MethodName: "Decide",

@@ -178,3 +178,27 @@ func TestCollectionAccessRequiresOrganizationAdmin(t *testing.T) {
 		})
 	}
 }
+
+func TestExplainPermissionRequiresOrganizationAdmin(t *testing.T) {
+	enableEnforcement(t)
+	const method = "/saas.accounts.v1.PermissionService/ExplainPermission"
+	for _, role := range []gen.OrgRole{gen.OrgRole_ORG_ROLE_MEMBER, gen.OrgRole_ORG_ROLE_ADMIN, gen.OrgRole_ORG_ROLE_OWNER} {
+		t.Run(role.String(), func(t *testing.T) {
+			installEnforceService(t, memberStore(role))
+			err := enforceCentralPolicy(enforceActorCtx(), method)
+			if role == gen.OrgRole_ORG_ROLE_MEMBER {
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+				_, err = (&PermServer{}).ExplainPermission(enforceActorCtx(), &gen.ExplainPermissionRequest{
+					OrgId:       enforceOrgID,
+					SubjectId:   enforceActorID,
+					SubjectKind: gen.SubjectKind_SUBJECT_KIND_PRINCIPAL,
+					Resource:    "roles",
+					Action:      "read",
+				})
+				require.Equal(t, codes.PermissionDenied, status.Code(err))
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
