@@ -183,3 +183,34 @@ func TestDatasourceStatusToProto_MapsEveryStoredStatus(t *testing.T) {
 		}
 	}
 }
+
+// The projection is the only place an administrator sees which filter a
+// connected source is running under, so the stored allowlist has to reach the
+// GitHub config on the wire — and an empty one has to project as an empty
+// repeated field, which every client reads as "all file types".
+func TestDatasourceSourceToProto_ProjectsFileExtensions(t *testing.T) {
+	filtered := datasourceSourceToProto(&business.DatasourceSource{
+		ID:             "11111111-1111-1111-1111-111111111111",
+		OrgID:          "22222222-2222-2222-2222-222222222222",
+		Provider:       business.DatasourceProviderGitHub,
+		Status:         business.DatasourceStatusActive,
+		Repo:           "acme/docs",
+		Paths:          []string{"docs"},
+		FileExtensions: []string{".md", ".mdx"},
+	})
+	got := filtered.GetGithub().GetFileExtensions()
+	if len(got) != 2 || got[0] != ".md" || got[1] != ".mdx" {
+		t.Errorf("file_extensions = %v", got)
+	}
+
+	legacy := datasourceSourceToProto(&business.DatasourceSource{
+		ID:       "11111111-1111-1111-1111-111111111111",
+		OrgID:    "22222222-2222-2222-2222-222222222222",
+		Provider: business.DatasourceProviderGitHub,
+		Status:   business.DatasourceStatusActive,
+		Repo:     "acme/docs",
+	})
+	if got := legacy.GetGithub().GetFileExtensions(); len(got) != 0 {
+		t.Errorf("legacy file_extensions = %v, want empty", got)
+	}
+}

@@ -38,7 +38,7 @@ func TestFileExtensionsNormalizeAndValidate(t *testing.T) {
 
 func TestFileExtensionsIncrementalRenameCrossesFilter(t *testing.T) {
 	svc := &Service{}
-	ops := svc.changeOpsFiltered([]github.ChangedFile{
+	ops := svc.changeOps([]github.ChangedFile{
 		{Filename: "docs/in.md", PreviousFilename: "docs/in.txt", Status: "renamed", SHA: "a"},
 		{Filename: "docs/out.txt", PreviousFilename: "docs/out.md", Status: "renamed", SHA: "b"},
 		{Filename: "docs/keep.MD", PreviousFilename: "docs/old.md", Status: "renamed", SHA: "c"},

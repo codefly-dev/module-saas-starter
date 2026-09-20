@@ -357,7 +357,7 @@ func (s *Service) CompileGitHubDelivery(ctx context.Context, source *DatasourceS
 		return DispositionStale, nil
 	}
 
-	ops := s.changeOpsFiltered(comparison.Files, source.Paths, source.FileExtensions)
+	ops := s.changeOps(comparison.Files, source.Paths, source.FileExtensions)
 	changeSet := base + "..." + push.After
 	for _, op := range ops {
 		if err := s.enqueueChangeSetFile(ctx, source, client, op, branch, push.After, changeSet, deliveryID); err != nil {
@@ -530,15 +530,12 @@ func (s *Service) snapshotAt(ctx context.Context, source *DatasourceSource, clie
 	return DispositionSnapshot, nil
 }
 
-// changeOps maps a compare's files to ingest ops under the source's path filter.
-// A rename is a rename only when both endpoints are in scope; a rename into scope
-// is an upsert of the new path, a rename out of scope is a delete of the old
-// path. Ops are returned in path order so a crash mid-set replays deterministically.
-func (s *Service) changeOps(files []github.ChangedFile, paths []string) []changeOp {
-	return s.changeOpsFiltered(files, paths, nil)
-}
-
-func (s *Service) changeOpsFiltered(files []github.ChangedFile, paths, extensions []string) []changeOp {
+// changeOps maps a compare's files to ingest ops under the source's path prefixes
+// intersected with its file-suffix allowlist. A rename is a rename only when both
+// endpoints are in scope; a rename into scope is an upsert of the new path, a
+// rename out of scope is a delete of the old path. Ops are returned in path order
+// so a crash mid-set replays deterministically.
+func (s *Service) changeOps(files []github.ChangedFile, paths, extensions []string) []changeOp {
 	inScope := func(name string) bool { return pathInScope(name, paths) && fileTypeAllowed(name, extensions) }
 	var ops []changeOp
 	for _, f := range files {
