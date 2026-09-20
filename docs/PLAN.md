@@ -141,7 +141,10 @@ Things only a person with the keys can do; nothing here proceeds past them.
 - Sequence the consuming solution that still imports the retired private-custody
   client library onto the orchestration module's admission surface
   before adopting the release that removes that private listener (store
-  migration 148 drops its table).
+  migration 148 drops its table). The full order, and the two other consumer
+  conversions an upgrade depends on, is
+  [module/INTERNAL_TRANSPORT.md](../module/INTERNAL_TRANSPORT.md) § Adopting a
+  release that removed the TLS listeners.
 - The CI result-reuse gap is the CLI's: `codefly ci run` binds a task's cache
   identity to the digest of the *installed* agent binary, and on a fresh runner
   the pinned agents are not installed when that identity is computed, so every

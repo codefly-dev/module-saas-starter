@@ -91,3 +91,7 @@ carry no build-time knowledge of its consumers — so a composed module reaches 
 capability surface in a mesh-enforced deployment only when its own workspace
 declares that dependency and regenerates the policy. A valid Work Context does
 not substitute for it: mTLS refuses the call before any token is read.
+
+The transport underneath — h2c rather than server TLS, the resolved origin, and
+the key set a consumer verifies host-signed credentials against — is
+[../../INTERNAL_TRANSPORT.md](../../INTERNAL_TRANSPORT.md).

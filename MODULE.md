@@ -42,6 +42,8 @@ A codefly **module** is a collection of **services**; each service owns its own 
 - Gateway route contract and rollout boundary: `module/GATEWAY_ROUTES.md`
 - Solution trust model, registration authority, and compatibility: `module/SOLUTION_REGISTRATION.md`
 - Access-token signing-key rotation runbook: `module/KEY_ROTATION.md`
+- Module-to-host internal gRPC transport, and the origin/key rules a consumer
+  must follow: `module/INTERNAL_TRANSPORT.md`
 - Generated REST inventory: `module/services/accounts/generated/rest-surface.json`
 - REST/OpenAPI contract and extension boundary: `module/REST_SURFACE.md`
 - Resource follow subscriptions over events and notifications: `module/FOLLOWS.md`
