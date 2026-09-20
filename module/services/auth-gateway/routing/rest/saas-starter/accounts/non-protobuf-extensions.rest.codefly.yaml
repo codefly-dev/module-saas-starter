@@ -36,3 +36,8 @@ routes:
       extension:
         exposed: true
         protected: true
+    - path: /v1/subscriptions/stream
+      method: GET
+      extension:
+        exposed: true
+        protected: true

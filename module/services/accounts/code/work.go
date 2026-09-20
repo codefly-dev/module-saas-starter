@@ -677,6 +677,11 @@ func doWork(ctx context.Context) (Clean, error) {
 		})
 	}
 	adapters.RegisterHTTPRoute("/v1/status", adapters.NewStatusHTTPHandler(service))
+	// The live companion to the follow bridge above: the same declared followable
+	// resources read forward by a connected client. It declares nothing of its
+	// own, so a composition that declares no followable resource leaves the stream
+	// open and silent rather than leaking undeclared journal traffic.
+	adapters.RegisterHTTPRoute(adapters.SubscriptionStreamPath, adapters.NewSubscriptionStreamHandler(service))
 
 	// Email production and transport are split by the generic outbox. Request
 	// paths render templates and enqueue exact messages in their product
