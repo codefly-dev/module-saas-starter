@@ -55,7 +55,7 @@ export function DataPrivacyPage({
 	return (
 		<div className="space-y-6">
 			<div>
-				<h2 className="text-2xl font-bold tracking-tight">Data Privacy</h2>
+				<h2 data-slot="page-title" className="type-page-title">Data Privacy</h2>
 				<p className="text-muted-foreground">
 					Review the starter&apos;s data-request workflows and the production
 					adapters your deployment still requires.

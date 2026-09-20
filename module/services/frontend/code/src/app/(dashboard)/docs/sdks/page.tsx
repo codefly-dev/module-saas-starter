@@ -184,7 +184,7 @@ export default function SDKDocsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">SDK Documentation</h1>
+				<h1 data-slot="page-title" className="type-page-title">SDK Documentation</h1>
 				<p className="text-muted-foreground">
 					Integrate with the API using the Connect protocol. Available for
 					JavaScript, Python, and Go.

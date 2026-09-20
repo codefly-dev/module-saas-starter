@@ -151,6 +151,15 @@ export const FRONTEND_APPEARANCE_TOKEN_NAMES = [
 	"popoverForeground",
 	"primary",
 	"primaryForeground",
+	// Interaction states of the primary action. OPTIONAL in the resolved
+	// theme: a skin that decides them gets flat hover/pressed/disabled fills
+	// (the way a design sheet specifies a button); one that does not keeps the
+	// derived states the stylesheet falls back to. There is no neutral default
+	// value for "the pressed shade of this blue", so absence is the default.
+	"primaryHover",
+	"primaryActive",
+	"disabled",
+	"disabledForeground",
 	"secondary",
 	"secondaryForeground",
 	"muted",
@@ -178,9 +187,22 @@ export const FRONTEND_APPEARANCE_TOKEN_NAMES = [
 
 export type FrontendAppearanceTokenName =
 	(typeof FRONTEND_APPEARANCE_TOKEN_NAMES)[number];
+/** The tokens a resolved theme may leave absent; the stylesheet derives them. */
+export const FRONTEND_OPTIONAL_APPEARANCE_TOKEN_NAMES = [
+	"primaryHover",
+	"primaryActive",
+	"disabled",
+	"disabledForeground",
+] as const satisfies readonly FrontendAppearanceTokenName[];
+export type FrontendOptionalAppearanceTokenName =
+	(typeof FRONTEND_OPTIONAL_APPEARANCE_TOKEN_NAMES)[number];
 export type FrontendThemePreference = "light" | "dark" | "system";
 export type FrontendThemeTokens = Readonly<
-	Record<FrontendAppearanceTokenName, string>
+	Record<
+		Exclude<FrontendAppearanceTokenName, FrontendOptionalAppearanceTokenName>,
+		string
+	> &
+		Partial<Record<FrontendOptionalAppearanceTokenName, string>>
 >;
 export type FrontendThemeTokenOverrides = Readonly<
 	Partial<Record<FrontendAppearanceTokenName, string>>
@@ -190,8 +212,15 @@ export type FrontendThemeTokenOverrides = Readonly<
 export interface FrontendAppearanceDefinition {
 	defaultTheme?: FrontendThemePreference;
 	radius?: string;
+	/**
+	 * The corner of an ACTION (buttons), separate from `radius` so a design can
+	 * pill its buttons without pilling every card, field and dialog. Absent, a
+	 * button's corner derives from `radius` exactly as before.
+	 */
+	buttonRadius?: string;
 	fontSans?: string;
 	fontHeading?: string;
+	fontMono?: string;
 	/** Base spacing unit driving every Tailwind spacing utility (density). */
 	spacing?: string;
 	/** Root font size; rescales all rem-based typography. */
@@ -230,8 +259,10 @@ export interface FrontendAppearanceDefinition {
 export const FRONTEND_APPEARANCE_FIELD_NAMES = [
 	"defaultTheme",
 	"radius",
+	"buttonRadius",
 	"fontSans",
 	"fontHeading",
+	"fontMono",
 	"spacing",
 	"fontSizeBase",
 	"sidebarWidth",
@@ -249,12 +280,22 @@ export const FRONTEND_APPEARANCE_FIELD_NAMES = [
 export type FrontendAppearanceFieldName =
 	(typeof FRONTEND_APPEARANCE_FIELD_NAMES)[number];
 
+/** Fields a resolved appearance may leave absent; the stylesheet derives them. */
+export const FRONTEND_OPTIONAL_APPEARANCE_FIELD_NAMES = [
+	"buttonRadius",
+] as const satisfies readonly FrontendAppearanceFieldName[];
+export type FrontendOptionalAppearanceFieldName =
+	(typeof FRONTEND_OPTIONAL_APPEARANCE_FIELD_NAMES)[number];
+
 /** Fully resolved immutable appearance consumed by the host runtime. */
 export interface FrontendAppearance {
 	defaultTheme: FrontendThemePreference;
 	radius: string;
+	/** Absent when the skin left it to `radius`; the stylesheet then derives it. */
+	buttonRadius?: string;
 	fontSans: string;
 	fontHeading: string;
+	fontMono: string;
 	spacing: string;
 	fontSizeBase: string;
 	sidebarWidth: string;

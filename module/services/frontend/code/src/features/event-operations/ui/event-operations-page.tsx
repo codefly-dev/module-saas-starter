@@ -72,7 +72,7 @@ export function EventOperationsPage() {
 		<div className="space-y-6">
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Event operations</h1>
+					<h1 data-slot="page-title" className="type-page-title">Event operations</h1>
 					<p className="text-muted-foreground">
 						Domain-event catalog, subscribers, relay lag, and dead letters across
 						the platform. Payloads never cross this surface.

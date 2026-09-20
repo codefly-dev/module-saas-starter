@@ -5,22 +5,45 @@
 		"@codefly/saas-plugin-contract": {
 			"status": "active",
 			"packageVersion": "2.2.0",
-			"entrypoints": [".", "./capabilities"],
+			"entrypoints": [
+				".",
+				"./capabilities"
+			],
 			"entrypointExports": {
 				".": [
-					"FRONTEND_PLUGIN_CONTRACT_VERSION",
+					"DEFAULT_CONTROL_SIZES",
+					"DEFAULT_FRONTEND_APPEARANCE",
+					"DEFAULT_FRONTEND_SKIN_RULES",
+					"DEFAULT_TYPE_ROLES",
+					"DEFAULT_TYPE_SCALE",
+					"DEFAULT_TYPE_SLOTS",
+					"DashboardWidget",
 					"FRONTEND_APPEARANCE_FIELD_NAMES",
 					"FRONTEND_APPEARANCE_TOKEN_NAMES",
-					"DEFAULT_FRONTEND_APPEARANCE",
-					"DashboardWidget",
+					"FRONTEND_CONTROL_SIZE_NAMES",
+					"FRONTEND_OPTIONAL_APPEARANCE_FIELD_NAMES",
+					"FRONTEND_OPTIONAL_APPEARANCE_TOKEN_NAMES",
+					"FRONTEND_PLUGIN_CONTRACT_VERSION",
+					"FRONTEND_TYPE_FAMILIES",
+					"FRONTEND_TYPE_ROLE_NAMES",
+					"FRONTEND_TYPE_SCALE_STEPS",
+					"FRONTEND_TYPE_SLOT_NAMES",
+					"FRONTEND_TYPE_WEIGHTS",
 					"FrontendAppearance",
 					"FrontendAppearanceDefinition",
 					"FrontendAppearanceFieldName",
 					"FrontendAppearanceTokenName",
 					"FrontendBranding",
 					"FrontendConfig",
+					"FrontendControlSize",
+					"FrontendControlSizeName",
+					"FrontendControlSizeOverrides",
+					"FrontendControlSizes",
 					"FrontendDefinition",
+					"FrontendHeadingOrderRule",
 					"FrontendLogo",
+					"FrontendOptionalAppearanceFieldName",
+					"FrontendOptionalAppearanceTokenName",
 					"FrontendPlugin",
 					"FrontendServiceAllowlist",
 					"FrontendServiceAllowlistEntry",
@@ -29,45 +52,11 @@
 					"FrontendServiceProtocol",
 					"FrontendServiceRequirement",
 					"FrontendServiceTarget",
+					"FrontendSkinRules",
+					"FrontendSlotRule",
 					"FrontendThemePreference",
 					"FrontendThemeTokenOverrides",
 					"FrontendThemeTokens",
-					"InstalledFrontendService",
-					"InstalledDashboardWidget",
-					"InstalledPluginRoute",
-					"NavItem",
-					"NavigationPlacement",
-					"NavigationSurface",
-					"PluginNavigation",
-					"PluginNavSection",
-					"PluginRoute",
-					"PresentationAccess",
-					"PresentationRequirement",
-					"PresentationRole",
-					"buildFrontendServiceAllowlist",
-					"defineFrontend",
-					"definePlugin",
-					"resolveFrontendAppearance",
-					"validateFrontendPlugins",
-					"DEFAULT_FRONTEND_SKIN_RULES",
-					"FrontendHeadingOrderRule",
-					"FrontendSkinRules",
-					"FrontendSlotRule",
-					"resolveSkinRules",
-					"DEFAULT_CONTROL_SIZES",
-					"DEFAULT_TYPE_ROLES",
-					"DEFAULT_TYPE_SCALE",
-					"DEFAULT_TYPE_SLOTS",
-					"FRONTEND_CONTROL_SIZE_NAMES",
-					"FRONTEND_TYPE_FAMILIES",
-					"FRONTEND_TYPE_ROLE_NAMES",
-					"FRONTEND_TYPE_SCALE_STEPS",
-					"FRONTEND_TYPE_SLOT_NAMES",
-					"FRONTEND_TYPE_WEIGHTS",
-					"FrontendControlSize",
-					"FrontendControlSizeName",
-					"FrontendControlSizeOverrides",
-					"FrontendControlSizes",
 					"FrontendTypeFamily",
 					"FrontendTypeRole",
 					"FrontendTypeRoleName",
@@ -81,11 +70,29 @@
 					"FrontendTypeSlots",
 					"FrontendTypeTracking",
 					"FrontendTypeWeight",
+					"InstalledDashboardWidget",
+					"InstalledFrontendService",
+					"InstalledPluginRoute",
+					"NavItem",
+					"NavigationPlacement",
+					"NavigationSurface",
+					"PluginNavSection",
+					"PluginNavigation",
+					"PluginRoute",
+					"PresentationAccess",
+					"PresentationRequirement",
+					"PresentationRole",
 					"ResolvedTypeSlot",
 					"TypographyLayers",
+					"buildFrontendServiceAllowlist",
+					"defineFrontend",
+					"definePlugin",
+					"resolveFrontendAppearance",
+					"resolveSkinRules",
 					"resolveTypeRole",
 					"resolveTypeSlot",
-					"resolveTypographyLayers"
+					"resolveTypographyLayers",
+					"validateFrontendPlugins"
 				],
 				"./capabilities": [
 					"FRONTEND_PLUGIN_CAPABILITIES_BFF_PATH",
@@ -109,7 +116,11 @@
 		"@codefly/saas-plugin-react": {
 			"status": "active",
 			"packageVersion": "0.4.1",
-			"entrypoints": [".", "./runtime", "./ui"],
+			"entrypoints": [
+				".",
+				"./runtime",
+				"./ui"
+			],
 			"entrypointExports": {
 				".": [
 					"FrontendPluginComponent",
@@ -160,7 +171,9 @@
 		"@codefly/saas-settings": {
 			"status": "active",
 			"packageVersion": "0.1.0",
-			"entrypoints": ["."],
+			"entrypoints": [
+				"."
+			],
 			"entrypointExports": {
 				".": [
 					"SettingsField",
@@ -175,8 +188,12 @@
 		},
 		"@codefly/saas-plugin-testkit": {
 			"status": "planned",
-			"entrypoints": ["."],
-			"entrypointExports": { ".": [] }
+			"entrypoints": [
+				"."
+			],
+			"entrypointExports": {
+				".": []
+			}
 		}
 	},
 	"forbiddenImportPatterns": [

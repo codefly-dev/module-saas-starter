@@ -15,6 +15,8 @@ export type {
 	FrontendAppearanceDefinition,
 	FrontendAppearanceFieldName,
 	FrontendAppearanceTokenName,
+	FrontendOptionalAppearanceFieldName,
+	FrontendOptionalAppearanceTokenName,
 	FrontendBranding,
 	FrontendConfig,
 	FrontendLogo,
@@ -45,6 +47,8 @@ export type {
 export {
 	FRONTEND_APPEARANCE_FIELD_NAMES,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
+	FRONTEND_OPTIONAL_APPEARANCE_FIELD_NAMES,
+	FRONTEND_OPTIONAL_APPEARANCE_TOKEN_NAMES,
 	FRONTEND_PLUGIN_CONTRACT_VERSION,
 } from "./contracts.js";
 export type {

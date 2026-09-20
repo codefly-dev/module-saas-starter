@@ -56,6 +56,10 @@ variables read — it does not layer one over the other.
 | `popoverForeground` | `--popover-foreground` | Text on popovers | `oklch(0.145 0 0)` | `oklch(0.985 0 0)` |
 | `primary` | `--primary` | Primary action / brand fill | `oklch(0.205 0 0)` | `oklch(0.922 0 0)` |
 | `primaryForeground` | `--primary-foreground` | Text/icon on the primary fill | `oklch(0.985 0 0)` | `oklch(0.205 0 0)` |
+| `primaryHover` | `--primary-hover` | Primary action, hovered. Optional: absent, derives from `primary` | `undefined` | `undefined` |
+| `primaryActive` | `--primary-active` | Primary action, pressed. Optional: absent, derives from `primary` | `undefined` | `undefined` |
+| `disabled` | `--disabled` | Disabled action fill. Optional: absent, the variant fades to 50% instead | `undefined` | `undefined` |
+| `disabledForeground` | `--disabled-foreground` | Text on the disabled fill. Optional | `undefined` | `undefined` |
 | `secondary` | `--secondary` | Secondary surface / fill | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
 | `secondaryForeground` | `--secondary-foreground` | Text on the secondary fill | `oklch(0.205 0 0)` | `oklch(0.985 0 0)` |
 | `muted` | `--muted` | Low-emphasis surface | `oklch(0.97 0 0)` | `oklch(0.269 0 0)` |
@@ -91,8 +95,10 @@ the density, corner, type, and elevation scales app-wide.
 | ----- | ------ | ------- |
 | `defaultTheme` | Initial mode when the viewer has no preference | `system` |
 | `radius` | Corner radius scale (`--radius`, `rounded-*`) | `0.625rem` |
+| `buttonRadius` | The corner of an action (`--appearance-button-radius`, read by Button alone), so a design can pill its buttons without pilling every surface. Optional: absent, a button's corner derives from `radius` as before | — |
 | `fontSans` | Body font (`--font-sans`) | `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif` |
 | `fontHeading` | Heading font (`--font-heading`) | `system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif` |
+| `fontMono` | Monospace font (`--font-mono`) | `ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace` |
 | `spacing` | Base spacing unit / density (`--spacing`) | `0.25rem` |
 | `fontSizeBase` | Root font size; rescales rem typography | `1rem` |
 | `sidebarWidth` | Expanded sidebar width | `16rem` |
@@ -186,8 +192,8 @@ other are two slots, or two rungs that both set a height.
 | `surface-title-plain` | `4` | `500` | — | — | — |
 | `surface-description` | `3` | — | `1.25rem` | — | — |
 | `plain` | — | `400` | — | — | — |
-| `page-title` | `7` | `700` | `2rem` | `-0.025em` | — |
-| `section-title` | `5` | `600` | `1.75rem` | `-0.025em` | — |
+| `page-title` | `7` | `700` | `2rem` | `-0.025em` | `sans` |
+| `section-title` | `5` | `600` | `1.75rem` | `-0.025em` | `sans` |
 | `body` | `3` | — | `1.25rem` | — | — |
 | `emphasis` | — | `500` | — | — | — |
 | `control-label` | `3` | `500` | `1` | — | — |
@@ -293,6 +299,17 @@ instead. Only rules something enforces are accepted: a field that validates and
 is then ignored reads as a promise, which is worse than its absence. Usage rules
 needing a notion of "surface" are therefore not here, because there is no surface
 vocabulary to check them against.
+
+## Fonts a skin can name
+
+`fontSans`, `fontHeading` and `fontMono` are family stacks, and a stack is only
+as real as the faces the document can load. The host self-hosts a catalog
+(`src/app/fonts.ts`): Figtree, Inter, JetBrains Mono, Newsreader, Roboto and
+Source Serif 4, in the weights the type roles can ask for. A skin that names one
+of these gets it offline and identically everywhere; a skin that names a face
+outside the catalog falls through to the next entry of its own stack, which is
+why every stack ends in a generic family. A proprietary display face is not
+bundled; name its open stand-in first and the proprietary face second.
 
 ## What a skin cannot carry
 

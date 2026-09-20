@@ -119,6 +119,7 @@ describe("TOKENS.md documents the structural and typographic tokens", () => {
 		"radius",
 		"fontSans",
 		"fontHeading",
+		"fontMono",
 		"spacing",
 		"fontSizeBase",
 		"sidebarWidth",

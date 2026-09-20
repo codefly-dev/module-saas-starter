@@ -259,7 +259,7 @@ export function LoginPage() {
 					<div className="rounded-2xl border bg-card text-card-foreground shadow-xl shadow-black/5 dark:shadow-black/20">
 						<div className="p-8 space-y-6">
 							<div className="space-y-1.5">
-								<h1 className="text-2xl font-semibold tracking-tight">
+								<h1 data-slot="page-title" className="type-page-title">
 									Sign in
 								</h1>
 								<p className="text-sm text-muted-foreground">

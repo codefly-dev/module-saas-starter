@@ -91,6 +91,9 @@ export const DEFAULT_FRONTEND_APPEARANCE: FrontendAppearance = deepFreeze({
 		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 	fontHeading:
 		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+	// Tailwind's own default mono stack, so a skin that names none is unchanged.
+	fontMono:
+		'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
 	// Structural defaults reproduce today's exact layout; omitting any of them
 	// leaves the rendered product byte-for-byte unchanged.
 	typeScale: DEFAULT_TYPE_SCALE,
@@ -181,10 +184,18 @@ export function resolveFrontendAppearance(
 		typeof radius === "string" && SAFE_RADIUS.test(radius),
 		"appearance radius must be 0 or a px/rem/em length",
 	);
+	const buttonRadius = definition.buttonRadius;
+	if (buttonRadius !== undefined)
+		assertAppearance(
+			typeof buttonRadius === "string" && SAFE_RADIUS.test(buttonRadius),
+			"appearance buttonRadius must be 0 or a px/rem/em length",
+		);
 	const fontSans = definition.fontSans ?? DEFAULT_FRONTEND_APPEARANCE.fontSans;
 	const fontHeading = definition.fontHeading ?? fontSans;
+	const fontMono = definition.fontMono ?? DEFAULT_FRONTEND_APPEARANCE.fontMono;
 	validateValue(fontSans, "appearance fontSans");
 	validateValue(fontHeading, "appearance fontHeading");
+	validateValue(fontMono, "appearance fontMono");
 	const spacing = resolveLength("spacing", definition.spacing);
 	const fontSizeBase = resolveLength("fontSizeBase", definition.fontSizeBase);
 	const sidebarWidth = resolveLength("sidebarWidth", definition.sidebarWidth);
@@ -198,8 +209,10 @@ export function resolveFrontendAppearance(
 	return deepFreeze({
 		defaultTheme,
 		radius,
+		...(buttonRadius === undefined ? {} : { buttonRadius }),
 		fontSans,
 		fontHeading,
+		fontMono,
 		spacing,
 		fontSizeBase,
 		sidebarWidth,

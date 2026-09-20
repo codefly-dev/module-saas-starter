@@ -233,7 +233,7 @@ describe("a skin overrides the layers partially and fail-closed", () => {
 		],
 		[
 			{ typeSlots: { "card-title": "page-title" } },
-			/typeSlot 'card-title' names role 'page-title' which decides \[size,weight,lineHeight,tracking\] where 'surface-title-snug' decides \[size,weight,lineHeight,family\]/,
+			/typeSlot 'card-title' names role 'page-title' which decides \[size,weight,lineHeight,tracking,family\] where 'surface-title-snug' decides \[size,weight,lineHeight,family\]/,
 		],
 		[
 			{ controlSizes: { default: { text: "body" } } },

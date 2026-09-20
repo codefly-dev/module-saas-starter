@@ -25,7 +25,7 @@ export default async function SolutionPage({
 
 	return (
 		<div className="flex flex-col gap-4 p-6">
-			<h1 className="text-xl font-semibold">{solution.nav.title}</h1>
+			<h1 data-slot="page-title" className="type-page-title">{solution.nav.title}</h1>
 			{solution.dashboard && (
 				<SolutionDashboards
 					graph={solution.dashboard}

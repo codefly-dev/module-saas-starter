@@ -306,17 +306,23 @@ export const DEFAULT_TYPE_ROLES: FrontendTypeRoles = Object.freeze({
 	// Weight alone, stepping back OUT of an inherited one: a delta's label sits
 	// inside an emphasised run and must not inherit its weight.
 	plain: Object.freeze({ weight: "400" }),
+	// Page-level headings decide their family (the body face today) so a skin
+	// can move them — and only them — onto a display face. A design that reserves
+	// its serif for page titles is the common case, and a role that did not
+	// decide family could never be re-pointed there.
 	"page-title": Object.freeze({
 		size: "7",
 		weight: "700",
 		lineHeight: "2rem",
 		tracking: "-0.025em",
+		family: "sans",
 	}),
 	"section-title": Object.freeze({
 		size: "5",
 		weight: "600",
 		lineHeight: "1.75rem",
 		tracking: "-0.025em",
+		family: "sans",
 	}),
 	body: Object.freeze({ size: "3", lineHeight: "1.25rem" }),
 	// Weight alone: `table-head` and `table-footer` set `font-medium` and inherit

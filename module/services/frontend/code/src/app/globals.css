@@ -45,6 +45,13 @@
   --radius-xl: calc(var(--radius) * 1.4);
   --font-heading: var(--appearance-font-heading);
   --font-sans: var(--appearance-font-sans);
+  --font-mono: var(--appearance-font-mono);
+  /* Interaction states of the primary action. A skin that decides them wins;
+     otherwise they derive from --primary here, in one place. */
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-disabled: var(--disabled);
+  --color-disabled-foreground: var(--disabled-foreground);
   /* Base spacing unit: rescales every spacing/size utility (density). */
   --spacing: var(--appearance-spacing);
   /* Elevation scale, tunable via the shadowStrength multiplier. */
@@ -89,6 +96,20 @@
 	--popover-foreground: var(--appearance-light-popover-foreground);
 	--primary: var(--appearance-light-primary);
 	--primary-foreground: var(--appearance-light-primary-foreground);
+	--primary-hover: var(
+		--appearance-light-primary-hover,
+		color-mix(in oklab, var(--primary) 90%, transparent)
+	);
+	--primary-active: var(
+		--appearance-light-primary-active,
+		color-mix(in oklab, var(--primary) 80%, transparent)
+	);
+	--disabled: var(--appearance-light-disabled, var(--primary));
+	--disabled-foreground: var(
+		--appearance-light-disabled-foreground,
+		var(--primary-foreground)
+	);
+	--disabled-opacity: var(--appearance-light-disabled-opacity, 0.5);
 	--secondary: var(--appearance-light-secondary);
 	--secondary-foreground: var(--appearance-light-secondary-foreground);
 	--muted: var(--appearance-light-muted);
@@ -127,6 +148,20 @@
 	--popover-foreground: var(--appearance-dark-popover-foreground);
 	--primary: var(--appearance-dark-primary);
 	--primary-foreground: var(--appearance-dark-primary-foreground);
+	--primary-hover: var(
+		--appearance-dark-primary-hover,
+		color-mix(in oklab, var(--primary) 90%, transparent)
+	);
+	--primary-active: var(
+		--appearance-dark-primary-active,
+		color-mix(in oklab, var(--primary) 80%, transparent)
+	);
+	--disabled: var(--appearance-dark-disabled, var(--primary));
+	--disabled-foreground: var(
+		--appearance-dark-disabled-foreground,
+		var(--primary-foreground)
+	);
+	--disabled-opacity: var(--appearance-dark-disabled-opacity, 0.5);
 	--secondary: var(--appearance-dark-secondary);
 	--secondary-foreground: var(--appearance-dark-secondary-foreground);
 	--muted: var(--appearance-dark-muted);

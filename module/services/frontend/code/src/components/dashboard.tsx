@@ -240,7 +240,7 @@ export function Dashboard({ data }: { data: DashboardData }) {
 				<div className="flex items-center justify-between">
 					<div>
 						{data.title && (
-							<h1 className="text-2xl font-bold tracking-tight">
+							<h1 data-slot="page-title" className="type-page-title">
 								{data.title}
 							</h1>
 						)}

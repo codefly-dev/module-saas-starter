@@ -43,6 +43,7 @@ export function appearanceStyleProperties(
 		"--appearance-radius": appearance.radius,
 		"--appearance-font-sans": appearance.fontSans,
 		"--appearance-font-heading": appearance.fontHeading,
+		"--appearance-font-mono": appearance.fontMono,
 		"--appearance-spacing": appearance.spacing,
 		"--appearance-font-size-base": appearance.fontSizeBase,
 		"--appearance-sidebar-width": appearance.sidebarWidth,
@@ -50,9 +51,20 @@ export function appearanceStyleProperties(
 		"--appearance-border-width": appearance.borderWidth,
 		"--appearance-shadow-strength": appearance.shadowStrength,
 	};
+	// Optional values are projected only when the skin decided them; the
+	// stylesheet's `var(--…, fallback)` derives the rest. `--appearance-…-disabled
+	// -opacity` is the presence signal for the disabled fill: a decided fill
+	// renders flat at full opacity, an absent one keeps the faded variant.
+	if (appearance.buttonRadius !== undefined)
+		properties["--appearance-button-radius"] = appearance.buttonRadius;
 	for (const mode of ["light", "dark"] as const) {
-		for (const token of FRONTEND_APPEARANCE_TOKEN_NAMES)
-			properties[appearanceVariableName(mode, token)] = appearance[mode][token];
+		for (const token of FRONTEND_APPEARANCE_TOKEN_NAMES) {
+			const value = appearance[mode][token];
+			if (value !== undefined)
+				properties[appearanceVariableName(mode, token)] = value;
+		}
+		if (appearance[mode].disabled !== undefined)
+			properties[`--appearance-${mode}-disabled-opacity`] = "1";
 	}
 	// Layers 1 to 3, flattened. The kit's generated stylesheet declares one
 	// utility per slot reading exactly the variables the slot's role decides, and

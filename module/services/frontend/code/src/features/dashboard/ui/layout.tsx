@@ -17,7 +17,7 @@ export function Layout({
 			{(title || description) && (
 				<header className="space-y-1">
 					{title && (
-						<h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+						<h1 data-slot="page-title" className="type-page-title">{title}</h1>
 					)}
 					{description && (
 						<p className="text-muted-foreground">{description}</p>

@@ -65,7 +65,7 @@ describe("checkSkinSurvival", () => {
 				...clean,
 				appearance: {
 					...clean.appearance,
-					buttonRadius: "8px",
+					buttonHeight: "2.5rem",
 				} as RawSkinDescriptor["appearance"],
 			},
 			{ fallback, expectSource: "descriptor" },
@@ -74,7 +74,7 @@ describe("checkSkinSurvival", () => {
 		expect(report.ok).toBe(false);
 		expect(report.mismatches.map((mismatch) => mismatch.path)).toEqual(
 			expect.arrayContaining([
-				"appearance.buttonRadius",
+				"appearance.buttonHeight",
 				"appearance.defaultTheme",
 				"appearance.radius",
 				"appearance.light.primary",

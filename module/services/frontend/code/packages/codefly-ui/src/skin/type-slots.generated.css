@@ -152,6 +152,7 @@
 		font-weight: var(--type-page-title-weight);
 		line-height: var(--type-page-title-leading);
 		letter-spacing: var(--type-page-title-tracking);
+		font-family: var(--type-page-title-family);
 	}
 }
 
@@ -161,6 +162,7 @@
 		font-weight: var(--type-section-title-weight);
 		line-height: var(--type-section-title-leading);
 		letter-spacing: var(--type-section-title-tracking);
+		font-family: var(--type-section-title-family);
 	}
 }
 
@@ -570,6 +572,7 @@
 		font-weight: var(--type-empty-state-title-illustrated-weight);
 		line-height: var(--type-empty-state-title-illustrated-leading);
 		letter-spacing: var(--type-empty-state-title-illustrated-tracking);
+		font-family: var(--type-empty-state-title-illustrated-family);
 	}
 }
 

@@ -4,6 +4,7 @@ import { ConsentBanner } from "@/components/consent-banner";
 import { appearanceStyleProperties } from "@/lib/appearance";
 import { Providers } from "@/lib/providers";
 import { resolveSkin, shouldResolveHost, sourcesFromEnv } from "@/lib/skin";
+import "./fonts";
 import "./globals.css";
 import frontendConfig from "../../frontend.config";
 

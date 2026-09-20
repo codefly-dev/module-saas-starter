@@ -100,7 +100,7 @@ export function WaitlistAdminPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">Waitlist</h1>
+				<h1 data-slot="page-title" className="type-page-title">Waitlist</h1>
 				<p className="text-muted-foreground">
 					Review access requests and their acquisition attribution.
 				</p>
