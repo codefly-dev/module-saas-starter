@@ -112,10 +112,12 @@ The collection panel reads its content resource from the `contentResource` on th
 gateway binding, and the server matches grants against the `resources` each composed
 module declares in `MODULE_PRINCIPALS`. Neither names a resource itself: this kit
 ships with the host, which holds no domain content. A deployment that declares none
-gets a client with no `listAccessibleScopes`, so it grants nothing and the panel
-reports the viewer's read access as unresolved. It does not report the viewer as
-refused: an empty scope list is a verdict about their authority, and nothing
-authorised the kit to state one. `ListCollectionAccess`, which the host answers from
+grants nothing, and its `listAccessibleScopes` rejects rather than resolving
+empty, so the panel reports the viewer's read access as unresolved. It does not
+report the viewer as refused: an empty scope list is a verdict about their
+authority, and nothing authorised the kit to state one. The method stays present
+on the client either way, so a consumer calling it through the optional-property
+`!` keeps a resolvable call rather than a missing one. `ListCollectionAccess`, which the host answers from
 the union of every composed module's declared resources, still lists a collection's
 readers — so an administrator can see a grant that this deployment's own
 `contentResource` does not cover.

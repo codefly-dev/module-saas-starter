@@ -497,15 +497,48 @@ it("carries a source file filter through the generated SDK", async () => {
 it("cannot answer the scope question when the composition declares no content resource", async () => {
 	// An empty scope list is a verdict — the panel renders it as the viewer
 	// holding no read access — and an undeclared composition authorised nobody to
-	// state one. The absent method is what leaves the answer unresolved instead.
+	// state one. Rejecting is what leaves the answer unresolved instead. The
+	// method stays present: consumers of the published kit call it through the
+	// optional-property `!`, so removing it would crash them rather than answer.
 	const { calls } = stubFetch({});
 	const client = createDatasourceClient({
 		apiBase: "/api/solutions/example/proxy",
 		getAccessToken: () => "test-token",
 	});
-	expect(client.listAccessibleScopes).toBeUndefined();
-	expect("listAccessibleScopes" in client).toBe(false);
+	expect(client.listAccessibleScopes).toBeTypeOf("function");
+	await expect(client.listAccessibleScopes!("org-1")).rejects.toThrow(
+		/no collection content resource is declared/,
+	);
 	expect(calls).toHaveLength(0);
+});
+
+it("never tells an undeclared deployment's viewer they were refused", async () => {
+	// End to end over the real gateway client: the panel must not render the
+	// "No readable collection" verdict, nor "No access" on a source row, from a
+	// lookup that never happened.
+	const { calls } = stubFetch(oneSource);
+
+	render(
+		<DatasourcesPanel
+			orgId="org-1"
+			gateway={{
+				apiBase: "/api/solutions/example/proxy",
+				getAccessToken: () => "test-token",
+			}}
+		/>,
+	);
+
+	expect(
+		await screen.findByText("codefly-dev/module-saas-starter"),
+	).toBeTruthy();
+	await waitFor(() =>
+		expect(screen.getByText(/Read permission unresolved/)).toBeTruthy(),
+	);
+	expect(screen.queryByText(/No readable collection/)).toBeNull();
+	expect(screen.queryByText("No access")).toBeNull();
+	expect(
+		calls.some((call) => call.url.includes("ListMyAccessibleScopes")),
+	).toBe(false);
 });
 
 it("asks the permission service for the resource the composition declared", async () => {

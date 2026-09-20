@@ -7,7 +7,6 @@ import {
 	render,
 	screen,
 	waitFor,
-	within,
 } from "@testing-library/react";
 import { StrictMode, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -489,20 +488,34 @@ describe("DatasourcesPanel boundary column", () => {
 		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
 	});
 
-	it("says a readable collection's access is unresolved rather than refused", async () => {
-		// A client with no listAccessibleScopes — the composition declared no
-		// content resource, so there is no resource to ask about. The collection's
-		// own readers still list, and saying "no read access" beside them would
-		// state a verdict nothing here computed.
+	it("asks no one for access to a collection when the organization has none", async () => {
+		// An empty collection list is not a collection the viewer was refused.
+		// Reading it as one tells the administrator of an empty organization to go
+		// ask an administrator for access to nothing.
 		const client = fakeClient({
 			listSources: vi.fn(async () => [sampleSource]),
-			listCollections: vi.fn(async () => [granted]),
+			listCollections: vi.fn(async () => []),
+			// Answered last, so the empty collection list is already committed when
+			// the scope answer lands. The source row's verdict and the headline then
+			// appear in the same commit, and asserting the headline's absence right
+			// after that row cannot pass by arriving early.
+			listAccessibleScopes: vi.fn(async () => {
+				await new Promise((settle) => setTimeout(settle, 20));
+				return [
+					{
+						nodeId: otherNodeId,
+						label: "Example solution",
+						kind: "solution",
+						actions: ["read"],
+					},
+				];
+			}),
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 
-		const access = within(await screen.findByLabelText("Collection access"));
-		expect(await access.findByText(/Read permission unresolved/)).toBeTruthy();
-		expect(access.queryByText(/You do not have read access/)).toBeNull();
+		// Only a resolved scope answer turns the source row's boundary cell from
+		// "Read permission unresolved" into a verdict.
+		expect(await screen.findByText("No read access")).toBeTruthy();
 		expect(screen.queryByText(/No readable collection/)).toBeNull();
 	});
 

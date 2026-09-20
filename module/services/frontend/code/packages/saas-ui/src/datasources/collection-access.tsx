@@ -24,8 +24,8 @@ export function CollectionReadBoundary({
 	if (!client.listAccessibleScopes || scopes.isError)
 		return (
 			<p role="alert">
-				Couldn’t verify collection permissions. Content stays hidden until they
-				resolve.
+				Couldn’t verify collection permissions. Retry when the permission
+				service is available.
 			</p>
 		);
 	if (scopes.isPending)

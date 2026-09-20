@@ -32,10 +32,10 @@ export interface GatewayBinding {
 	 * Permission resource type the collection's content is governed by, as the
 	 * composition declares it. This kit ships with the host and holds no domain
 	 * content, so it cannot know whether a collection holds documents, rows or
-	 * models — the consumer mounting it says. Omitted means undeclared, and the
-	 * client then carries no `listAccessibleScopes` at all: with no resource to
-	 * ask about there is no verdict to report, and the panel says so rather than
-	 * claiming the viewer was refused.
+	 * models — the consumer mounting it says. Omitted means undeclared, and
+	 * `listAccessibleScopes` then rejects: with no resource to ask about there is
+	 * no verdict to report, and the panel reports the lookup as unresolved rather
+	 * than claiming the viewer was refused.
 	 */
 	contentResource?: string;
 	/** Reads the current access token (may be null before the first exchange). */
@@ -62,42 +62,44 @@ export function datasourceClientOverTransport(
 	contentResource?: string,
 ): DatasourceClient {
 	const client = accounts.New(transport).datasource();
-	// Nothing declared the content's resource type, so there is no question to ask
-	// the permission service. The method is then absent rather than answering with
-	// an empty set: an empty set is a verdict, and the components render it as the
-	// viewer holding no read access — a statement about their authority that an
-	// undeclared composition has given nobody the standing to make. Absence is how
-	// this contract already says "unresolved".
-	const listAccessibleScopes = contentResource
-		? async (orgId: string): Promise<AccessibleScopeView[]> => {
-				const scopes: AccessibleScopeView[] = [];
-				let pageToken = "";
-				do {
-					const page = await accounts
-						.New(transport)
-						.accessibleScope()
-						.listMyAccessibleScopes({
-							orgId,
-							resourceType: contentResource,
-							action: "read",
-							pageSize: 1000,
-							pageToken,
-						});
-					scopes.push(
-						...page.scopes.map((scope) => ({
-							nodeId: scope.nodeId,
-							label: scope.label,
-							kind: scope.kind,
-							actions: ["read"],
-						})),
-					);
-					pageToken = page.nextPageToken;
-				} while (pageToken);
-				return scopes;
-			}
-		: undefined;
 	return {
-		...(listAccessibleScopes ? { listAccessibleScopes } : {}),
+		async listAccessibleScopes(orgId) {
+			// Nothing declared the content's resource type, so there is no question
+			// to ask the permission service. Rejecting is how this contract already
+			// reports an answer it could not obtain; resolving with an empty set
+			// would instead state that the viewer holds no read access, a verdict
+			// about their authority that an undeclared composition gave nobody the
+			// standing to make.
+			if (!contentResource) {
+				throw new Error(
+					"no collection content resource is declared for this deployment, so read access cannot be resolved",
+				);
+			}
+			const scopes: AccessibleScopeView[] = [];
+			let pageToken = "";
+			do {
+				const page = await accounts
+					.New(transport)
+					.accessibleScope()
+					.listMyAccessibleScopes({
+						orgId,
+						resourceType: contentResource,
+						action: "read",
+						pageSize: 1000,
+						pageToken,
+					});
+				scopes.push(
+					...page.scopes.map((scope) => ({
+						nodeId: scope.nodeId,
+						label: scope.label,
+						kind: scope.kind,
+						actions: ["read"],
+					})),
+				);
+				pageToken = page.nextPageToken;
+			} while (pageToken);
+			return scopes;
+		},
 		async listActivity(orgId, sourceId) {
 			const audit = accounts.New(transport).audit();
 			const types = [

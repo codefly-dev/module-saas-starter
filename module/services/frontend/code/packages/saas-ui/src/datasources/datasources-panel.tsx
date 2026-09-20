@@ -177,9 +177,11 @@ function DatasourcesPanelView({
 	});
 	const [editingCollection, setEditingCollection] = useState<string>();
 	const listedCollections = collections.isError ? undefined : collections.data;
-	const selectedCollection = listedCollections?.find(
-		(collection) => collection.nodeId === editingCollection,
-	);
+	const selectedCollection = collections.isError
+		? undefined
+		: collections.data?.find(
+				(collection) => collection.nodeId === editingCollection,
+			);
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -341,9 +343,10 @@ function DatasourcesPanelView({
 	}, [scopes.data, scopes.isError]);
 	// The scope lookup answers for every node kind, so a grant on a solution node
 	// or on a placed record would silence a headline that speaks about
-	// collections. With the collection list in hand the question can be asked
-	// exactly; without it the scope set is all there is to go on.
-	const readableCollection = listedCollections
+	// collections. With collections listed the question can be asked exactly; with
+	// none listed — not yet loaded, or an organization that has none — there is no
+	// collection to be refused, so the scope set is all there is to go on.
+	const readableCollection = listedCollections?.length
 		? listedCollections.some((collection) => boundaries.has(collection.nodeId))
 		: boundaries.size > 0;
 
@@ -374,7 +377,7 @@ function DatasourcesPanelView({
 							access is required.
 						</p>
 					) : (
-						listedCollections?.map((collection) => (
+						collections.data?.map((collection) => (
 							<div key={collection.nodeId}>
 								<span>
 									{collection.label} ·{" "}
