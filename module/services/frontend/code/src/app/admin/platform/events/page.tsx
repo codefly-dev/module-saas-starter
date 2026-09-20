@@ -4,7 +4,7 @@ import { EventOperationsPage } from "@/features/event-operations";
 function AccessDenied() {
 	return (
 		<div className="rounded-lg border p-6">
-			<h1 className="text-xl font-semibold">Super administrator required</h1>
+			<h1 data-slot="page-title" className="type-page-title">Super administrator required</h1>
 			<p className="mt-2 text-sm text-muted-foreground">
 				Event operations span all tenants and are restricted to platform super
 				administrators.

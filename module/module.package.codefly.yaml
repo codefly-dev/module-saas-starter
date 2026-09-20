@@ -112,6 +112,12 @@ claims:
   - {kind: package, key: "@codefly-dev/ui", owner: base}
   - {kind: package, key: "@connectrpc/connect", owner: base}
   - {kind: package, key: "@connectrpc/connect-web", owner: base}
+  - {kind: package, key: "@fontsource/figtree", owner: base}
+  - {kind: package, key: "@fontsource/inter", owner: base}
+  - {kind: package, key: "@fontsource/jetbrains-mono", owner: base}
+  - {kind: package, key: "@fontsource/newsreader", owner: base}
+  - {kind: package, key: "@fontsource/roboto", owner: base}
+  - {kind: package, key: "@fontsource/source-serif-4", owner: base}
   - {kind: package, key: "@hookform/resolvers", owner: base}
   - {kind: package, key: "@module-federation/runtime", owner: base}
   - {kind: package, key: "@playwright/test", owner: base}

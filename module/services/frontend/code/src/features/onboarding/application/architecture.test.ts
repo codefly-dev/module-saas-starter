@@ -12,6 +12,7 @@ describe("onboarding frontend architecture", () => {
 	test.each([
 		"application/backend.ts",
 		"application/browser-draft-store.ts",
+		"application/browser-reminder-store.ts",
 		"application/controller.ts",
 		"service/client.ts",
 	])("%s remains framework-free", (path) => {

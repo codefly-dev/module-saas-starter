@@ -34,6 +34,12 @@ export {
 	SelectTrigger,
 	SelectValue,
 } from "./select.js";
+export { Field, type FieldControlProps, type FieldProps } from "./field.js";
+export {
+	SegmentedControl,
+	type SegmentedControlOption,
+	type SegmentedControlProps,
+} from "./segmented-control.js";
 
 // Data display
 export { Badge, badgeVariants } from "./badge.js";
@@ -50,13 +56,22 @@ export {
 	TableBody,
 	TableCaption,
 	TableCell,
+	TableEmptyState,
 	TableFooter,
 	TableHead,
 	TableHeader,
 	TableRow,
+	TableToolbar,
 } from "./table.js";
 export { Skeleton } from "./skeleton.js";
 export { Separator } from "./separator.js";
+export { Pagination, type PaginationProps } from "./pagination.js";
+export {
+	PAGE_GAP,
+	type PaginationEntry,
+	type PaginationRangeOptions,
+	paginationRange,
+} from "./pagination-model.js";
 
 // Overlays
 export {
@@ -110,19 +125,21 @@ export {
 } from "./dropdown-menu.js";
 
 export {
-	CardRoot,
 	CardAction,
 	CardContent,
 	CardDescription,
+	CardEyebrow,
 	CardFooter,
 	CardHeader,
+	CardMetadata,
+	CardRoot,
 	CardTitle,
 } from "./card-root.js";
 
 export {
-	TabsRoot,
 	TabsContent,
 	TabsList,
+	TabsRoot,
 	TabsTrigger,
 	tabsListVariants,
 } from "./tabs-root.js";
@@ -190,6 +207,7 @@ export { Toaster } from "./sonner.js";
 
 export { useIsMobile } from "./use-mobile.js";
 
+export type { SectionProps } from "./page.js";
 export {
 	Grid,
 	Layout,
@@ -199,6 +217,5 @@ export {
 	Section,
 	Stack,
 } from "./page.js";
-export type { SectionProps } from "./page.js";
 
 export { Banner, type BannerProps } from "./banner.js";

@@ -1,19 +1,19 @@
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import type { ComponentProps } from "react";
 import {
-	MetricProvenance,
-	type MetricState,
-	MetricStateBadge,
-} from "./metric-state.js";
-import { Sparkline } from "./sparkline.js";
-import {
 	CardRoot as Card,
 	CardContent,
 	CardFooter,
 	CardHeader,
 } from "../layout/card-root.js";
-import { Skeleton } from "../layout/skeleton.js";
 import { cn } from "../layout/cn.js";
+import { Skeleton } from "../layout/skeleton.js";
+import {
+	MetricProvenance,
+	type MetricState,
+	MetricStateBadge,
+} from "./metric-state.js";
+import { Sparkline } from "./sparkline.js";
 
 export type MetricFormat = "number" | "compact" | "currency" | "percent";
 
@@ -103,10 +103,10 @@ function MetricValue({
 	// Standalone figures use the font's proportional digits — tabular-nums is
 	// for columns that must align, and looks loose at display sizes.
 	return (
-		<span className={cn("text-2xl font-semibold tracking-tight", className)}>
+		<span className={cn("type-metric-value", className)}>
 			{valueless ? "—" : formatMetricValue(metric.value, metric.format)}
 			{!valueless && metric.unit && (
-				<span className="ml-1 text-sm font-normal text-muted-foreground">
+				<span className="ml-1 type-metric-unit text-muted-foreground">
 					{metric.unit}
 				</span>
 			)}
@@ -119,7 +119,17 @@ function MetricDelta({
 	deltaLabel,
 	higherIsBetter = true,
 }: Pick<Metric, "delta" | "deltaLabel" | "higherIsBetter">) {
-	if (delta === undefined) return null;
+	// No delta with a named comparison period means the period had nothing to
+	// compare against — a change from zero is not a percentage. Say which
+	// period rather than leaving a blank where a viewer expects an arrow.
+	if (delta === undefined) {
+		if (!deltaLabel) return null;
+		return (
+			<span className="type-metric-delta text-muted-foreground">
+				no data {deltaLabel}
+			</span>
+		);
+	}
 
 	const magnitude = new Intl.NumberFormat("en-US", {
 		style: "percent",
@@ -131,10 +141,12 @@ function MetricDelta({
 	// for a delta like 0.0004.
 	if (Math.round(Math.abs(delta) * 1000) === 0) {
 		return (
-			<span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground">
+			<span className="inline-flex items-center gap-0.5 type-metric-delta text-muted-foreground">
 				<Minus className="size-3" aria-hidden />
 				{magnitude}
-				{deltaLabel && <span className="font-normal">{deltaLabel}</span>}
+				{deltaLabel && (
+					<span className="type-metric-delta-label">{deltaLabel}</span>
+				)}
 			</span>
 		);
 	}
@@ -145,7 +157,7 @@ function MetricDelta({
 	return (
 		<span
 			className={cn(
-				"inline-flex items-center gap-0.5 text-xs font-medium",
+				"inline-flex items-center gap-0.5 type-metric-delta",
 				good ? "text-primary" : "text-destructive",
 			)}
 		>
@@ -153,7 +165,9 @@ function MetricDelta({
 			{up ? "+" : "−"}
 			{magnitude}
 			{deltaLabel && (
-				<span className="font-normal text-muted-foreground">{deltaLabel}</span>
+				<span className="type-metric-delta-label text-muted-foreground">
+					{deltaLabel}
+				</span>
 			)}
 		</span>
 	);
@@ -178,7 +192,9 @@ export function StatTile({
 	return (
 		<Card className={cn("gap-1.5 p-4", className)}>
 			<div className="flex items-center justify-between gap-2">
-				<span className="text-sm text-muted-foreground">{metric.label}</span>
+				<span className="type-metric-label text-muted-foreground">
+					{metric.label}
+				</span>
 				{metric.state && <MetricStateBadge state={metric.state} />}
 			</div>
 			<div className="flex items-end justify-between gap-3">
@@ -216,14 +232,14 @@ export function MetricCard({
 	return (
 		<Card className={className}>
 			<CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-				<span className="text-sm font-medium text-muted-foreground">
+				<span className="type-metric-heading text-muted-foreground">
 					{metric.label}
 				</span>
 				{metric.state && <MetricStateBadge state={metric.state} />}
 			</CardHeader>
 			<CardContent className="flex items-end justify-between gap-3">
 				<div className="flex flex-col gap-1">
-					<MetricValue metric={metric} className="text-3xl" />
+					<MetricValue metric={metric} className="type-metric-value-lg" />
 					<MetricDelta
 						delta={metric.delta}
 						deltaLabel={metric.deltaLabel}

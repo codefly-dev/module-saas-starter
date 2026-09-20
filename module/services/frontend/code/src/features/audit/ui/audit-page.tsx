@@ -10,15 +10,35 @@ import {
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
+	SegmentedControl,
 	Select,
 	SelectContent,
 	SelectItem,
 	SelectTrigger,
 	SelectValue,
 } from "@/shared/ui";
+import {
+	AUDIT_BUCKETS,
+	AUDIT_RANGE_PRESETS,
+	type AuditBucket,
+	type AuditRangePreset,
+	auditWindows,
+	byEventType,
+	countEventTypes,
+	defaultBucketFor,
+	distinctCount,
+	newUserEventTypes,
+	pivotByTime,
+	relativeChange,
+	SECURITY_CATEGORY,
+	sliceCategory,
+	topGroups,
+	totalCount,
+} from "../model/analytics";
 import { formatAuditAction } from "../model/transforms";
 import { useExportAuditLog } from "../service/mutations";
 import {
+	type AuditGroupDimension,
 	useAuditAggregate,
 	useAuditEventTypes,
 	useAuditLog,
@@ -30,6 +50,15 @@ export function AuditPage() {
 	const [eventTypeFilter, setEventTypeFilter] = useState("all");
 	const [categoryFilter, setCategoryFilter] = useState("all");
 	const [namespaceFilter, setNamespaceFilter] = useState("all");
+	const [range, setRange] = useState<AuditRangePreset>("30d");
+	// The bucket follows the range until the viewer picks one: 90 days at a
+	// daily grain is noise, and a viewer who changed it meant to.
+	const [bucketChoice, setBucketChoice] = useState<AuditBucket | null>(null);
+	const bucket = bucketChoice ?? defaultBucketFor(range);
+	// Windows are derived once per range so every query shares one `now`:
+	// otherwise each hook's key would carry its own timestamp and nothing
+	// would ever hit the cache twice.
+	const windows = useMemo(() => auditWindows(range), [range]);
 
 	const eventType = eventTypeFilter === "all" ? undefined : eventTypeFilter;
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
@@ -38,41 +67,157 @@ export function AuditPage() {
 	const { organizationId } = useAuth();
 
 	const { data: eventTypes } = useAuditEventTypes();
+	// The table shows the same window the tiles and the series describe.
 	const { data, isLoading } = useAuditLog({
 		eventType,
 		category,
 		namespace,
+		from: windows.current.from,
+		to: windows.current.to,
 		pageSize: 100,
 	});
 	const events = useMemo(() => data?.events ?? [], [data]);
-	const { directory: actorNames, failed: actorNamesFailed } =
-		usePrincipalDirectory(
-			organizationId ?? "",
-			events.map((e) => e.actorId),
-		);
 	const exportMutation = useExportAuditLog();
 
-	const {
-		data: byType,
-		isLoading: byTypeLoading,
-		error: byTypeError,
-	} = useAuditAggregate({
+	const scope = { eventType, category, namespace };
+	const current = { from: windows.current.from, to: windows.current.to };
+	const previous = { from: windows.previous.from, to: windows.previous.to };
+
+	// One headline aggregate per window, grouped by category then event type
+	// and NOT filtered by category: every tile slices it client-side (exact,
+	// since category is a group dimension), and the security tile reads its
+	// own category whatever the viewer is drilling into.
+	const headline = {
 		eventType,
-		category,
 		namespace,
-		groupBy: "event_type",
+		groupBys: ["category", "event_type"] as AuditGroupDimension[],
+	};
+	const headlineNow = useAuditAggregate({ ...headline, ...current });
+	const headlineBefore = useAuditAggregate({ ...headline, ...previous });
+	// Distinct actors cannot be read off a grouped count, so they keep their
+	// own aggregate; the top-actors list reads the same one.
+	const actorsNow = useAuditAggregate({
+		...scope,
+		...current,
+		groupBy: "actor",
 	});
+	const actorsBefore = useAuditAggregate({
+		...scope,
+		...previous,
+		groupBy: "actor",
+	});
+
 	const {
-		data: byDay,
-		isLoading: byDayLoading,
-		error: byDayError,
+		data: byTimeAndCategory,
+		isLoading: seriesLoading,
+		error: seriesError,
 	} = useAuditAggregate({
-		eventType,
-		category,
-		namespace,
-		groupBy: "time",
-		bucket: "day",
+		...scope,
+		...current,
+		groupBys: ["time", "category"],
+		bucket,
 	});
+
+	const inScopeNow = useMemo(
+		() => sliceCategory(headlineNow.data ?? [], category),
+		[headlineNow.data, category],
+	);
+	const inScopeBefore = useMemo(
+		() => sliceCategory(headlineBefore.data ?? [], category),
+		[headlineBefore.data, category],
+	);
+	const byTypeNow = useMemo(() => byEventType(inScopeNow), [inScopeNow]);
+	const byTypeBefore = useMemo(
+		() => byEventType(inScopeBefore),
+		[inScopeBefore],
+	);
+	// The registry decides which names still mean "a person joined".
+	const newUserTypes = useMemo(
+		() => newUserEventTypes(eventTypes ?? []),
+		[eventTypes],
+	);
+
+	const tiles = useMemo(() => {
+		const tile = (
+			id: string,
+			label: string,
+			now: number,
+			before: number,
+			extra: { higherIsBetter?: boolean } = {},
+		) => ({
+			id,
+			label,
+			value: now,
+			format: "compact" as const,
+			delta: relativeChange(now, before),
+			deltaLabel: `vs previous ${range}`,
+			...extra,
+		});
+		const newUsers = tile(
+			"new-users",
+			"New users",
+			countEventTypes(byTypeNow, newUserTypes),
+			countEventTypes(byTypeBefore, newUserTypes),
+		);
+		// Say so when the registry no longer knows the names this tile counts:
+		// a zero here would otherwise read as "nobody joined".
+		if (eventTypes !== undefined && newUserTypes.length === 0)
+			newUsers.deltaLabel = "no registered new-user event type";
+		return [
+			tile(
+				"events",
+				"Events",
+				totalCount(inScopeNow),
+				totalCount(inScopeBefore),
+			),
+			newUsers,
+			tile(
+				"actors",
+				"Active actors",
+				distinctCount(actorsNow.data ?? []),
+				distinctCount(actorsBefore.data ?? []),
+			),
+			// A rise in security events is worth a look, not a celebration.
+			tile(
+				"security",
+				"Security events",
+				totalCount(sliceCategory(headlineNow.data ?? [], SECURITY_CATEGORY)),
+				totalCount(sliceCategory(headlineBefore.data ?? [], SECURITY_CATEGORY)),
+				{
+					higherIsBetter: false,
+				},
+			),
+		];
+	}, [
+		range,
+		eventTypes,
+		newUserTypes,
+		inScopeNow,
+		inScopeBefore,
+		byTypeNow,
+		byTypeBefore,
+		headlineNow.data,
+		headlineBefore.data,
+		actorsNow.data,
+		actorsBefore.data,
+	]);
+	const tilesLoading = headlineNow.isLoading || actorsNow.isLoading;
+	const tilesError = headlineNow.error ?? actorsNow.error;
+
+	const { directory: actorNames, failed: actorNamesFailed } =
+		usePrincipalDirectory(organizationId ?? "", [
+			...events.map((e) => e.actorId),
+			...(actorsNow.data ?? []).map((b) => b.key),
+		]);
+	const stacked = useMemo(
+		() => pivotByTime(byTimeAndCategory ?? []),
+		[byTimeAndCategory],
+	);
+	const topTypes = useMemo(() => topGroups(byTypeNow, 6), [byTypeNow]);
+	const topActors = useMemo(
+		() => topGroups(actorsNow.data ?? [], 6),
+		[actorsNow.data],
+	);
 
 	// Categories are the distinct set advertised by the registry.
 	const categories = useMemo(() => {
@@ -96,25 +241,32 @@ export function AuditPage() {
 		return list.slice().sort((a, b) => a.name.localeCompare(b.name));
 	}, [eventTypes, category, namespace]);
 
-	const topTypes = useMemo(
-		() => (byType ?? []).slice(0, 6),
-		[byType],
-	);
-	const dayPoints = useMemo(
-		() =>
-			(byDay ?? [])
-				.slice()
-				.sort((a, b) => a.key.localeCompare(b.key))
-				.map((b) => b.count),
-		[byDay],
-	);
-
 	const handleExport = (format: "csv" | "json") => {
 		exportMutation.mutate({ format, eventType });
 	};
 
 	const actions = (
 		<>
+			<SegmentedControl
+				size="sm"
+				aria-label="Time range"
+				options={AUDIT_RANGE_PRESETS.map((preset) => ({
+					value: preset,
+					label: preset,
+				}))}
+				value={range}
+				onValueChange={(value) => {
+					setRange(value);
+					setBucketChoice(null);
+				}}
+			/>
+			<SegmentedControl
+				size="sm"
+				aria-label="Time bucket"
+				options={AUDIT_BUCKETS.map((b) => ({ value: b, label: b }))}
+				value={bucket}
+				onValueChange={setBucketChoice}
+			/>
 			<DropdownMenu>
 				<DropdownMenuTrigger
 					render={
@@ -202,17 +354,26 @@ export function AuditPage() {
 
 	const dashboard: DashboardData = {
 		title: "Audit Log",
-		description: "View all system events and user activity.",
+		description: `What happened in the last ${range}, and who did it.`,
 		actions,
 		widgets: [
 			{
-				id: "events-over-time",
-				kind: "sparkline",
-				title: "Events over time",
-				description: "Daily event volume for the current filter.",
-				points: dayPoints,
-				isLoading: byDayLoading,
-				error: byDayError,
+				id: "headline",
+				kind: "metrics",
+				metrics: tiles,
+				isLoading: tilesLoading,
+				error: tilesError,
+				emptyMessage: "No events in range.",
+			},
+			{
+				id: "events-by-category",
+				kind: "series",
+				span: "full",
+				title: "Events over time, by category",
+				description: `Per ${bucket}, stacked; the outline is the total.`,
+				series: stacked.series,
+				isLoading: seriesLoading,
+				error: seriesError,
 				emptyMessage: "No events in range.",
 			},
 			{
@@ -224,8 +385,21 @@ export function AuditPage() {
 					label: formatAuditAction(b.key),
 					value: b.count,
 				})),
-				isLoading: byTypeLoading,
-				error: byTypeError,
+				isLoading: headlineNow.isLoading,
+				error: headlineNow.error,
+				emptyMessage: "No events in range.",
+			},
+			{
+				id: "top-actors",
+				kind: "bars",
+				title: "Top actors",
+				description: "Who did the most, for the current filter.",
+				items: topActors.map((b) => ({
+					label: actorNames.get(b.key) ?? b.key.slice(0, 8),
+					value: b.count,
+				})),
+				isLoading: actorsNow.isLoading,
+				error: actorsNow.error,
 				emptyMessage: "No events in range.",
 			},
 			{

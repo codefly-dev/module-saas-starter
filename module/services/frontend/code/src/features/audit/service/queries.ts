@@ -33,6 +33,8 @@ export function useAuditLog(
 				category: params.category ?? "",
 				namespace: params.namespace ?? "",
 				actorId: params.actorId ?? "",
+				from: params.from ? timestampFromDate(params.from) : undefined,
+				to: params.to ? timestampFromDate(params.to) : undefined,
 				pageSize: params.pageSize ?? 50,
 			}),
 		enabled: options.enabled,

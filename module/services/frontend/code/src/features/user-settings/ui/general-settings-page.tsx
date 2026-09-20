@@ -207,7 +207,7 @@ function GeneralSettingsForm({
 	return (
 		<div className="space-y-6 max-w-3xl">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">Preferences</h1>
+				<h1 data-slot="page-title" className="type-page-title">Preferences</h1>
 				<p className="text-muted-foreground">
 					Theme, locale, and email preferences. Synced across all your devices.
 				</p>

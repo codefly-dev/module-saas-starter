@@ -46,6 +46,9 @@ export {
 	type Point,
 	unionLabels,
 	resolveSeries,
+	stackSeries,
+	stackedExtent,
+	type StackedSeries,
 	valuesExtent,
 	axisPositions,
 } from "./metric-geometry.js";

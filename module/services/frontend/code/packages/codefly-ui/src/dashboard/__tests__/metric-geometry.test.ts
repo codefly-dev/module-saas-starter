@@ -7,6 +7,8 @@ import {
 	linePath,
 	niceTicks,
 	resolveSeries,
+	stackedExtent,
+	stackSeries,
 	unionLabels,
 	valuesExtent,
 } from "../metric-geometry.js";
@@ -196,5 +198,76 @@ describe("path builders", () => {
 		expect(path.endsWith("Z")).toBe(true);
 		expect(path).toContain("L10.00,20.00");
 		expect(path).toContain("L0.00,20.00");
+	});
+});
+
+describe("stackSeries", () => {
+	const resolved = (name: string, values: (number | null)[]) => ({
+		name,
+		values,
+	});
+
+	it("stacks each series on the running total beneath it", () => {
+		const [a, b, c] = stackSeries([
+			resolved("a", [1, 2, 3]),
+			resolved("b", [10, 10, 10]),
+			resolved("c", [100, 0, 100]),
+		]);
+		expect(a.base).toEqual([0, 0, 0]);
+		expect(a.top).toEqual([1, 2, 3]);
+		expect(b.base).toEqual([1, 2, 3]);
+		expect(b.top).toEqual([11, 12, 13]);
+		expect(c.top).toEqual([111, 12, 113]);
+	});
+
+	// A tooltip and the accessible table report what a series CONTRIBUTED,
+	// never the height it is drawn at; the draw height is `top`, not `values`.
+	it("keeps each series' own values untouched", () => {
+		const [, b] = stackSeries([resolved("a", [5, 5]), resolved("b", [1, 2])]);
+		expect(b.values).toEqual([1, 2]);
+	});
+
+	// A gap is "no data", not "fell to zero": the band stays flat at its base
+	// and the series above are not pulled down.
+	it("treats a gap as contributing nothing", () => {
+		const [a, b] = stackSeries([
+			resolved("a", [4, null, 4]),
+			resolved("b", [1, 1, 1]),
+		]);
+		expect(a.top).toEqual([4, 0, 4]);
+		expect(b.base).toEqual([4, 0, 4]);
+		expect(b.top).toEqual([5, 1, 5]);
+	});
+
+	it("scales a stacked chart to its tallest column, from zero", () => {
+		const stacked = stackSeries([
+			resolved("a", [1, 50]),
+			resolved("b", [60, 1]),
+		]);
+		expect(stackedExtent(stacked)).toEqual([0, 61]);
+	});
+
+	// A negative contribution hangs below zero on its own running total. Folding
+	// it into the positive total would draw it over the band beneath, and an
+	// extent that started at zero would push its band off the plot entirely.
+	it("diverges at zero and keeps a negative band inside the extent", () => {
+		const [a, b, c] = stackSeries([
+			resolved("a", [5, 5]),
+			resolved("b", [-3, 2]),
+			resolved("c", [-4, -1]),
+		]);
+		expect(a.base).toEqual([0, 0]);
+		expect(a.top).toEqual([5, 5]);
+		expect(b.base).toEqual([0, 5]);
+		expect(b.top).toEqual([-3, 7]);
+		expect(c.base).toEqual([-3, 0]);
+		expect(c.top).toEqual([-7, -1]);
+		expect(stackedExtent([a, b, c])).toEqual([-7, 7]);
+	});
+
+	it("never returns a degenerate extent", () => {
+		expect(stackSeries([])).toEqual([]);
+		expect(stackedExtent([])).toEqual([0, 1]);
+		expect(stackedExtent(stackSeries([resolved("a", [0, 0])]))).toEqual([0, 1]);
 	});
 });

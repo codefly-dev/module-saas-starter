@@ -11,6 +11,12 @@
  * into the `DashboardWidget` union without touching consumers.
  */
 
+import {
+	type ChartSeries,
+	KPIRow,
+	type Metric,
+	MetricAreaChart,
+} from "@codefly-dev/ui/dashboard";
 import type { ReactNode } from "react";
 import { Sparkline } from "@/components/sparkline";
 import {
@@ -60,7 +66,33 @@ export interface NodeWidget extends WidgetIdentity {
 	node: ReactNode;
 }
 
-export type DashboardWidget = SparklineWidget | BarsWidget | NodeWidget;
+/**
+ * A row of headline numbers with optional period deltas. Spans the grid: a
+ * tile row is a summary of the page, not one card among peers.
+ */
+export interface MetricsWidget extends CardWidgetBase {
+	kind: "metrics";
+	metrics: Metric[];
+}
+
+/**
+ * Several aligned series over one axis, drawn stacked. Each series carries
+ * every label; the kit aligns by index, so a caller zero-fills gaps first.
+ */
+export interface SeriesWidget extends CardWidgetBase {
+	kind: "series";
+	series: ChartSeries[];
+	/** Stack the series so the outline is the total. Defaults to true. */
+	stacked?: boolean;
+	formatValue?: (value: number) => string;
+}
+
+export type DashboardWidget =
+	| SparklineWidget
+	| BarsWidget
+	| MetricsWidget
+	| SeriesWidget
+	| NodeWidget;
 
 export interface DashboardData {
 	title?: string;
@@ -163,6 +195,32 @@ function Widget({ widget }: { widget: DashboardWidget }) {
 					<Bars items={widget.items} />
 				</CardWidget>
 			);
+		case "metrics":
+			// A tile row is chrome-free: the tiles are the cards. The state
+			// framework still applies while there is nothing to show.
+			return (
+				<div className={spanClass("full")}>
+					{withState(
+						widget,
+						widget.metrics.length === 0,
+						<KPIRow metrics={widget.metrics} />,
+					)}
+				</div>
+			);
+		case "series":
+			return (
+				<CardWidget
+					widget={widget}
+					isEmpty={widget.series.every((s) => s.data.length === 0)}
+				>
+					<MetricAreaChart
+						title={widget.title ?? "Series"}
+						series={widget.series}
+						stacked={widget.stacked ?? true}
+						formatValue={widget.formatValue}
+					/>
+				</CardWidget>
+			);
 		case "node":
 			return <div className={spanClass(widget.span)}>{widget.node}</div>;
 		default: {
@@ -182,7 +240,9 @@ export function Dashboard({ data }: { data: DashboardData }) {
 				<div className="flex items-center justify-between">
 					<div>
 						{data.title && (
-							<h1 className="text-2xl font-bold tracking-tight">{data.title}</h1>
+							<h1 data-slot="page-title" className="type-page-title">
+								{data.title}
+							</h1>
 						)}
 						{data.description && (
 							<p className="text-muted-foreground">{data.description}</p>

@@ -1,9 +1,17 @@
 import {
+	FRONTEND_APPEARANCE_FIELD_NAMES,
 	FRONTEND_APPEARANCE_TOKEN_NAMES,
 	type FrontendAppearance,
 	type FrontendAppearanceDefinition,
 	type FrontendThemeTokens,
 } from "./contracts.js";
+import {
+	DEFAULT_CONTROL_SIZES,
+	DEFAULT_TYPE_ROLES,
+	DEFAULT_TYPE_SCALE,
+	DEFAULT_TYPE_SLOTS,
+	resolveTypographyLayers,
+} from "./typography.js";
 
 const light: FrontendThemeTokens = {
 	background: "oklch(1 0 0)",
@@ -83,8 +91,15 @@ export const DEFAULT_FRONTEND_APPEARANCE: FrontendAppearance = deepFreeze({
 		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 	fontHeading:
 		'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+	// Tailwind's own default mono stack, so a skin that names none is unchanged.
+	fontMono:
+		'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
 	// Structural defaults reproduce today's exact layout; omitting any of them
 	// leaves the rendered product byte-for-byte unchanged.
+	typeScale: DEFAULT_TYPE_SCALE,
+	typeRoles: DEFAULT_TYPE_ROLES,
+	typeSlots: DEFAULT_TYPE_SLOTS,
+	controlSizes: DEFAULT_CONTROL_SIZES,
 	spacing: "0.25rem",
 	fontSizeBase: "1rem",
 	sidebarWidth: "16rem",
@@ -155,24 +170,7 @@ export function resolveFrontendAppearance(
 			!Array.isArray(definition),
 		"appearance must be an object",
 	);
-	exactKeys(
-		definition,
-		[
-			"defaultTheme",
-			"radius",
-			"fontSans",
-			"fontHeading",
-			"spacing",
-			"fontSizeBase",
-			"sidebarWidth",
-			"sidebarWidthIcon",
-			"borderWidth",
-			"shadowStrength",
-			"light",
-			"dark",
-		],
-		"appearance",
-	);
+	exactKeys(definition, FRONTEND_APPEARANCE_FIELD_NAMES, "appearance");
 	const defaultTheme =
 		definition.defaultTheme ?? DEFAULT_FRONTEND_APPEARANCE.defaultTheme;
 	assertAppearance(
@@ -186,10 +184,18 @@ export function resolveFrontendAppearance(
 		typeof radius === "string" && SAFE_RADIUS.test(radius),
 		"appearance radius must be 0 or a px/rem/em length",
 	);
+	const buttonRadius = definition.buttonRadius;
+	if (buttonRadius !== undefined)
+		assertAppearance(
+			typeof buttonRadius === "string" && SAFE_RADIUS.test(buttonRadius),
+			"appearance buttonRadius must be 0 or a px/rem/em length",
+		);
 	const fontSans = definition.fontSans ?? DEFAULT_FRONTEND_APPEARANCE.fontSans;
 	const fontHeading = definition.fontHeading ?? fontSans;
+	const fontMono = definition.fontMono ?? DEFAULT_FRONTEND_APPEARANCE.fontMono;
 	validateValue(fontSans, "appearance fontSans");
 	validateValue(fontHeading, "appearance fontHeading");
+	validateValue(fontMono, "appearance fontMono");
 	const spacing = resolveLength("spacing", definition.spacing);
 	const fontSizeBase = resolveLength("fontSizeBase", definition.fontSizeBase);
 	const sidebarWidth = resolveLength("sidebarWidth", definition.sidebarWidth);
@@ -199,17 +205,21 @@ export function resolveFrontendAppearance(
 	);
 	const borderWidth = resolveLength("borderWidth", definition.borderWidth);
 	const shadowStrength = resolveShadowStrength(definition.shadowStrength);
+	const layers = resolveTypographyLayers(definition);
 	return deepFreeze({
 		defaultTheme,
 		radius,
+		...(buttonRadius === undefined ? {} : { buttonRadius }),
 		fontSans,
 		fontHeading,
+		fontMono,
 		spacing,
 		fontSizeBase,
 		sidebarWidth,
 		sidebarWidthIcon,
 		borderWidth,
 		shadowStrength,
+		...layers,
 		light: resolveTokens("light", definition.light),
 		dark: resolveTokens("dark", definition.dark),
 	});

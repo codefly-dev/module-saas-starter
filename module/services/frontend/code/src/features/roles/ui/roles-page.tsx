@@ -34,7 +34,7 @@ function RolesPageForOrganization({
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Roles</h1>
+					<h1 data-slot="page-title" className="type-page-title">Roles</h1>
 					<p className="text-muted-foreground">
 						{orgId
 							? "Manage roles and permissions for the selected organization."

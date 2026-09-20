@@ -107,10 +107,21 @@ it("shares every exported kit subpath", () => {
 		readFileSync("packages/codefly-ui/package.json", "utf8"),
 	);
 	for (const path of Object.keys(manifest.exports)) {
+		// A stylesheet export is not a runtime module: whoever compiles the kit
+		// imports it into their Tailwind entry, and the host's one stylesheet is
+		// what a remote renders under. There is nothing to share as a singleton.
+		if (path.endsWith(".css")) continue;
 		expect(SEALED_PACKAGES).toContain(
 			path === "." ? "@codefly-dev/ui" : `@codefly-dev/ui${path.slice(1)}`,
 		);
 	}
+});
+
+it("exports the kit's stylesheet for consumers that compile it", () => {
+	const manifest = JSON.parse(
+		readFileSync("packages/codefly-ui/package.json", "utf8"),
+	);
+	expect(manifest.exports["./type-slots.css"]).toMatch(/\.css$/);
 });
 
 it("a generic consumer resolves the loaded host layout singleton", async () => {

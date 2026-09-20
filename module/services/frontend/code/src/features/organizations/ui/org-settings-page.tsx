@@ -74,7 +74,7 @@ export function OrgSettingsPage({ orgId = "default" }: { orgId?: string }) {
 		return (
 			<div className="space-y-6">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">
+					<h1 data-slot="page-title" className="type-page-title">
 						Organization Settings
 					</h1>
 					<p className="text-muted-foreground">Loading...</p>
@@ -86,7 +86,7 @@ export function OrgSettingsPage({ orgId = "default" }: { orgId?: string }) {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">
+				<h1 data-slot="page-title" className="type-page-title">
 					Organization Settings
 				</h1>
 				<p className="text-muted-foreground">

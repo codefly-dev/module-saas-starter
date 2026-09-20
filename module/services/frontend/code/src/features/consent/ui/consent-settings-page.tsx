@@ -69,7 +69,7 @@ export function ConsentSettingsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">Privacy choices</h1>
+				<h1 data-slot="page-title" className="type-page-title">Privacy choices</h1>
 				<p className="text-muted-foreground">
 					Withdraw optional consent at any time. Changes take effect
 					immediately.

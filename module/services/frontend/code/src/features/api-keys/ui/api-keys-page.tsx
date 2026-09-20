@@ -17,7 +17,7 @@ export function APIKeysPage() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">API Keys</h1>
+					<h1 data-slot="page-title" className="type-page-title">API Keys</h1>
 					<p className="text-muted-foreground">
 						Manage API keys for programmatic access.
 					</p>

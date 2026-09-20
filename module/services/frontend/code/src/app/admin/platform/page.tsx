@@ -53,7 +53,7 @@ export default function PlatformPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">
+				<h1 data-slot="page-title" className="type-page-title">
 					Platform Management
 				</h1>
 				<p className="text-muted-foreground">

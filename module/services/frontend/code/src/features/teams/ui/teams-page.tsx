@@ -106,7 +106,7 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
-				<h2 className="text-2xl font-bold tracking-tight">Teams</h2>
+				<h2 data-slot="page-title" className="type-page-title">Teams</h2>
 				<div className="flex items-center gap-3">
 					<OrgSelector />
 					{orgId && (

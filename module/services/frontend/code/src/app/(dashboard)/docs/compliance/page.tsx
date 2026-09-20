@@ -16,7 +16,7 @@ export default function CompliancePage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h1 className="text-2xl font-bold tracking-tight">
+				<h1 data-slot="page-title" className="type-page-title">
 					Security &amp; Trust Readiness
 				</h1>
 				<p className="text-muted-foreground mt-1">

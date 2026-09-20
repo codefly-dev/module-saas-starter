@@ -105,7 +105,7 @@ export function SSOAdminPage() {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<div>
-					<h1 className="text-2xl font-bold tracking-tight">Single Sign-On</h1>
+					<h1 data-slot="page-title" className="type-page-title">Single Sign-On</h1>
 					<p className="text-muted-foreground">
 						Wire your IdP (Okta, Azure AD, Google Workspace, etc.) to route
 						users in your domain through SAML / OIDC. Self-serve via the WorkOS

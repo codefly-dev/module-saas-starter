@@ -25,9 +25,11 @@ const GUARDED_PRIMITIVES: Array<{
 		class: "gap-0 rounded-lg border p-4 shadow-sm ring-0",
 	},
 	{
+		// Section's heading now names its type SLOT rather than three raw
+		// utilities, so the string that identifies a re-inline moved with it.
 		owner: "Section (layout/page.tsx)",
 		file: "page.tsx",
-		class: "text-lg font-semibold tracking-tight",
+		class: "type-section-title",
 	},
 ];
 
@@ -98,6 +100,11 @@ describe("no re-inlined layout primitives outside the layout tier", () => {
 	// Self-test: the guard is only useful if its detector actually fires. Feed it
 	// the card surface string and prove it reports a hit, so a green run means
 	// "no re-inline found", never "the detector was silently disarmed".
+	it("detects a re-inlined section heading (self-test)", () => {
+		const violating = `<h2 className="type-section-title">{title}</h2>`;
+		expect(reInlinedPrimitive(violating)?.owner).toBe("Section (layout/page.tsx)");
+	});
+
 	it("detects a re-inlined card surface string (self-test)", () => {
 		const violating = `<div className="gap-0 rounded-lg border p-4 shadow-sm ring-0" />`;
 		expect(reInlinedPrimitive(violating)?.owner).toBe("Card (layout/card.tsx)");

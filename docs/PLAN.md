@@ -77,6 +77,12 @@ Where a row says *implementation gap*, this is what is missing:
   supersede the drifted ADR-0002 bullets (style isolation at the mount boundary;
   solution assets served same-origin through the host proxy), and the story
   gains an `And`: a rejected skin is never silently swapped for another.
+
+  The skin vocabulary itself is now four layers — an ordinal type scale, the
+  roles that point into it, the slots that say which role a surface uses, and
+  the control rungs — with the authoring-time survival check exported from the
+  contract so a descriptor-owning repository catches a mismatch before it
+  deploys rather than rendering the stock default (#823).
 - **HOST-OBS-001 / 002** — the browser error-tracking SDK records navigation
   breadcrumbs with the query string, so `history.replaceState` away from a
   secret-bearing URL writes the OAuth `code`/`state`, the magic-link `token` and

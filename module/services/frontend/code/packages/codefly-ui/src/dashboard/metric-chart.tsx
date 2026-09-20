@@ -22,8 +22,9 @@
 
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { cn } from "../layout/cn.js";
+import { formatAxisKey } from "./format.js";
 import {
 	areaPath,
 	axisPositions,
@@ -33,6 +34,8 @@ import {
 	niceTicks,
 	type ResolvedSeries,
 	resolveSeries,
+	stackedExtent,
+	stackSeries,
 	unionLabels,
 	valuesExtent,
 } from "./metric-geometry.js";
@@ -57,6 +60,12 @@ export function chartSeriesColor(index: number): string {
 
 export interface MetricChartProps {
 	series: ChartSeries[];
+	/**
+	 * Draw series cumulatively, each band on top of the ones before it, so the
+	 * outline is the total and every band is legible. Off, series overlay and
+	 * the smaller ones hide behind the larger. Area charts only.
+	 */
+	stacked?: boolean;
 	/** Names the chart for the accessible label; also shown by consumers' card. */
 	title: string;
 	className?: string;
@@ -84,6 +93,7 @@ function computeGeometry(
 	series: ChartSeries[],
 	height: number,
 	band: boolean,
+	stacked = false,
 ): FrameGeometry {
 	const plotLeft = MARGIN.left;
 	const plotRight = VIEW_W - MARGIN.right;
@@ -91,7 +101,10 @@ function computeGeometry(
 	const plotBottom = height - MARGIN.bottom;
 	const labels = unionLabels(series);
 	const resolved = resolveSeries(series, labels);
-	const [min, max] = valuesExtent(resolved);
+	// A stacked chart scales to its tallest column, not its tallest series.
+	const [min, max] = stacked
+		? stackedExtent(stackSeries(resolved))
+		: valuesExtent(resolved);
 	const ticks = niceTicks(min, max);
 	const scaleY = linearScale(
 		ticks[0],
@@ -138,7 +151,7 @@ function Legend({
 			{series.map((s, i) => (
 				<li
 					key={s.name}
-					className="flex items-center gap-1.5 text-xs text-muted-foreground"
+					className="flex items-center gap-1.5 type-caption-plain text-muted-foreground"
 				>
 					<span
 						className={cn(
@@ -224,7 +237,7 @@ function Axes({
 							y={y}
 							textAnchor="end"
 							dominantBaseline="middle"
-							className="fill-muted-foreground text-[10px] tabular-nums"
+							className="fill-muted-foreground type-chart-label tabular-nums"
 						>
 							{formatValue(tick)}
 						</text>
@@ -238,9 +251,9 @@ function Axes({
 						x={geo.xs[i]}
 						y={geo.plotBottom + 16}
 						textAnchor="middle"
-						className="fill-muted-foreground text-[10px]"
+						className="fill-muted-foreground type-chart-label"
 					>
-						{label}
+						{formatAxisKey(label)}
 					</text>
 				) : null,
 			)}
@@ -302,19 +315,22 @@ function Tooltip({
 			style={{ left: `${leftPercent}%` }}
 			aria-hidden
 		>
-			<div className="mb-1 text-[11px] text-muted-foreground">
-				{geo.labels[index]}
+			<div className="mb-1 type-chart-label text-muted-foreground">
+				{formatAxisKey(geo.labels[index])}
 			</div>
 			<ul className="space-y-0.5">
 				{geo.resolved.map((s, i) => (
-					<li key={s.name} className="flex items-center gap-2 text-xs">
+					<li
+						key={s.name}
+						className="flex items-center gap-2 type-caption-plain"
+					>
 						<span
 							className="inline-block h-0.5 w-3 rounded-full"
 							style={{ backgroundColor: chartSeriesColor(i) }}
 							aria-hidden
 						/>
 						<span className="text-muted-foreground">{s.name}</span>
-						<span className="ml-auto font-medium tabular-nums">
+						<span className="ml-auto type-emphasis tabular-nums">
 							{s.values[index] === null
 								? MISSING
 								: formatValue(s.values[index] as number)}
@@ -341,7 +357,7 @@ function EmptyChart({
 			style={{ aspectRatio: `${VIEW_W} / ${height}` }}
 			aria-label={`${title}: no data`}
 		>
-			<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+			<div className="flex h-full items-center justify-center type-body text-muted-foreground">
 				No data
 			</div>
 		</figure>
@@ -361,6 +377,7 @@ function ChartFrame({
 	formatValue = (value) => fullFormat.format(value),
 	legendMarker,
 	band = false,
+	stacked = false,
 	marks,
 	overlay,
 }: MetricChartProps & {
@@ -370,7 +387,8 @@ function ChartFrame({
 	overlay: (geo: FrameGeometry, index: number) => ReactNode;
 }) {
 	const [active, setActive] = useState<number | null>(null);
-	const geo = computeGeometry(series, height, band);
+	const clipId = useId();
+	const geo = computeGeometry(series, height, band, stacked);
 
 	if (geo.labels.length === 0) {
 		return <EmptyChart title={title} height={height} className={className} />;
@@ -391,7 +409,22 @@ function ChartFrame({
 				aria-hidden
 			>
 				<Axes geo={geo} formatValue={formatValue} />
-				{marks(geo)}
+				{/* The marks are clipped to the plot, padded by an end marker's
+				    radius so a point on the plot's edge keeps its whole dot. The
+				    extent is computed to contain every point, so this changes
+				    nothing when the geometry is right; it is what keeps a wrong
+				    extent — or a value a future mark type forgets to include —
+				    from drawing over the axes and outside the frame instead of
+				    merely being cut off. */}
+				<clipPath id={clipId}>
+					<rect
+						x={geo.plotLeft - MARK_CLIP_PAD}
+						y={geo.plotTop - MARK_CLIP_PAD}
+						width={geo.plotRight - geo.plotLeft + 2 * MARK_CLIP_PAD}
+						height={geo.plotBottom - geo.plotTop + 2 * MARK_CLIP_PAD}
+					/>
+				</clipPath>
+				<g clipPath={`url(#${clipId})`}>{marks(geo)}</g>
 				{active !== null && overlay(geo, active)}
 				<HoverOverlay geo={geo} onSelect={setActive} />
 			</svg>
@@ -426,12 +459,16 @@ function Crosshair({ geo, x }: { geo: FrameGeometry; x: number }) {
 	);
 }
 
+const END_MARKER_RADIUS = 3.5;
+/** Radius plus the marker's own stroke: what the mark clip must leave room for. */
+const MARK_CLIP_PAD = END_MARKER_RADIUS + 1;
+
 function EndMarker({ x, y, color }: { x: number; y: number; color: string }) {
 	return (
 		<circle
 			cx={x}
 			cy={y}
-			r={3.5}
+			r={END_MARKER_RADIUS}
 			fill={color}
 			className="stroke-card"
 			strokeWidth={2}
@@ -491,12 +528,43 @@ export function LineChart(props: MetricChartProps) {
 }
 
 export function AreaChart(props: MetricChartProps) {
+	const { stacked = false } = props;
 	return (
 		<ChartFrame
 			{...props}
 			legendMarker="line"
-			marks={(geo) =>
-				geo.resolved.map((s, i) => {
+			marks={(geo) => {
+				if (stacked) {
+					// Bands are drawn bottom-up, each between its own floor (the
+					// bands beneath it) and its ceiling. The line traces the
+					// ceiling so the topmost line is the total.
+					return stackSeries(geo.resolved).map((s, i) => {
+						const tops = seriesPoints(s.top, geo);
+						const bases = seriesPoints(s.base, geo);
+						if (tops.length === 0) return <g key={s.name} />;
+						const color = chartSeriesColor(i);
+						const last = tops[tops.length - 1];
+						return (
+							<g key={s.name}>
+								<path
+									d={bandPath(tops, bases)}
+									fill={color}
+									fillOpacity={0.28}
+								/>
+								<path
+									d={linePath(tops)}
+									fill="none"
+									stroke={color}
+									strokeWidth={1.5}
+									strokeLinejoin="round"
+									vectorEffect="non-scaling-stroke"
+								/>
+								<EndMarker x={last.x} y={last.y} color={color} />
+							</g>
+						);
+					});
+				}
+				return geo.resolved.map((s, i) => {
 					const points = seriesPoints(s.values, geo);
 					if (points.length === 0) return <g key={s.name} />;
 					const color = chartSeriesColor(i);
@@ -520,11 +588,27 @@ export function AreaChart(props: MetricChartProps) {
 							<EndMarker x={last.x} y={last.y} color={color} />
 						</g>
 					);
-				})
-			}
+				});
+			}}
 			overlay={LineOverlay}
 		/>
 	);
+}
+
+/** A closed region between a ceiling polyline and a floor polyline. */
+function bandPath(
+	tops: { x: number; y: number }[],
+	bases: { x: number; y: number }[],
+): string {
+	const up = tops
+		.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`)
+		.join(" ");
+	const down = bases
+		.slice()
+		.reverse()
+		.map((p) => `L${p.x},${p.y}`)
+		.join(" ");
+	return `${up} ${down} Z`;
 }
 
 /** Rounds the data-end (top for positive, bottom for negative) of a column. */

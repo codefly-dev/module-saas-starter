@@ -12,7 +12,7 @@ function Table({ className, ...props }: React.ComponentProps<"table">) {
 		>
 			<table
 				data-slot="table"
-				className={cn("w-full caption-bottom text-sm", className)}
+				className={cn("w-full caption-bottom type-table", className)}
 				{...props}
 			/>
 		</div>
@@ -44,7 +44,7 @@ function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
 		<tfoot
 			data-slot="table-footer"
 			className={cn(
-				"border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
+				"border-t bg-muted/50 type-table-footer [&>tr]:last:border-b-0",
 				className,
 			)}
 			{...props}
@@ -70,7 +70,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
 		<th
 			data-slot="table-head"
 			className={cn(
-				"h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
+				"h-10 px-2 text-left align-middle type-table-head whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
 				className,
 			)}
 			{...props}
@@ -98,9 +98,55 @@ function TableCaption({
 	return (
 		<caption
 			data-slot="table-caption"
-			className={cn("mt-4 text-sm text-muted-foreground", className)}
+			className={cn("mt-4 type-table-caption text-muted-foreground", className)}
 			{...props}
 		/>
+	);
+}
+
+/**
+ * The row of filters and actions above a table. It is a sibling of the table
+ * rather than part of it, because a `<table>` may not contain arbitrary markup
+ * and a toolbar rendered inside one is invalid HTML the browser silently moves.
+ */
+function TableToolbar({ className, ...props }: React.ComponentProps<"div">) {
+	return (
+		<div
+			data-slot="table-toolbar"
+			className={cn(
+				"type-table-toolbar flex items-center justify-between gap-2 py-2",
+				className,
+			)}
+			{...props}
+		/>
+	);
+}
+
+/**
+ * The "nothing here" row. It spans every column, so it takes `colSpan` rather
+ * than guessing: a wrong span leaves an empty cell beside the message and breaks
+ * the row's border.
+ */
+function TableEmptyState({
+	colSpan,
+	className,
+	children,
+	...props
+}: React.ComponentProps<"td"> & { colSpan: number }) {
+	return (
+		<tr data-slot="table-empty-state-row" className="hover:bg-transparent">
+			<td
+				colSpan={colSpan}
+				data-slot="table-empty-state"
+				className={cn(
+					"type-table-empty-state p-6 text-center text-muted-foreground",
+					className,
+				)}
+				{...props}
+			>
+				{children}
+			</td>
+		</tr>
 	);
 }
 
@@ -109,8 +155,10 @@ export {
 	TableBody,
 	TableCaption,
 	TableCell,
+	TableEmptyState,
 	TableFooter,
 	TableHead,
 	TableHeader,
 	TableRow,
+	TableToolbar,
 };

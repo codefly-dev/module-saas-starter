@@ -24,7 +24,9 @@ export function Card({ title, actions, children, className }: CardProps) {
 		>
 			{(title || actions) && (
 				<div className="mb-3 flex items-center justify-between gap-4">
-					{title && <h3 className="text-base font-medium">{title}</h3>}
+					{title && <h3 data-slot="card-heading" className="type-card-heading">
+							{title}
+						</h3>}
 					{actions && <div className="flex items-center gap-2">{actions}</div>}
 				</div>
 			)}

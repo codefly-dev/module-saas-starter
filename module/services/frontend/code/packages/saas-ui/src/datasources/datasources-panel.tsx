@@ -6,11 +6,11 @@ import {
 	Input,
 	Label,
 	Table,
-	TableHeader,
 	TableBody,
-	TableHead,
-	TableRow,
 	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
 } from "@codefly-dev/ui/layout";
 
 import { ConnectError } from "@connectrpc/connect";
@@ -351,60 +351,191 @@ function DatasourcesPanelView({
 		: boundaries.size > 0;
 
 	return (
-		<div className={cn("space-y-4", className)}>
-			<div className="flex items-center justify-end">
-				<Button type="button" onClick={() => setShowConnect(true)}>
-					Connect GitHub
-				</Button>
-			</div>
+		<div className={cn("space-y-6", className)}>
+			<section aria-label="Sources" className="space-y-3">
+				<div className="flex items-start justify-between gap-4">
+					<div>
+						<h3 className="type-section-title">Sources</h3>
+						<p className="type-body text-muted-foreground">
+							Repositories this organization ingests from.
+						</p>
+					</div>
+					<Button type="button" onClick={() => setShowConnect(true)}>
+						Connect GitHub
+					</Button>
+				</div>
 
-			{scopes.isError ? (
-				<p role="alert">
-					Couldn’t verify collection permissions. This does not mean there is no
-					indexed content.
-				</p>
-			) : scopes.isSuccess && !readableCollection ? (
-				<p role="status">
-					No readable collection. Ask an organization administrator for read
-					access. Connecting or syncing a source does not grant access.
-				</p>
-			) : null}
+				{scopes.isError ? (
+					<p role="alert" className="type-body text-destructive">
+						Couldn’t verify collection permissions. This does not mean there is
+						no indexed content.
+					</p>
+				) : scopes.isSuccess && !readableCollection ? (
+					<p role="status" className="type-body text-muted-foreground">
+						No readable collection. Ask an organization administrator for read
+						access. Connecting or syncing a source does not grant access.
+					</p>
+				) : null}
+				{selectedCollection && (
+					<CollectionGrants
+						client={client}
+						orgId={orgId}
+						collection={selectedCollection}
+					/>
+				)}
+				{activitySource && (
+					<SourceHistory
+						client={client}
+						orgId={orgId}
+						source={activitySource}
+						onClose={() => setActivitySource(null)}
+					/>
+				)}
+
+				{syncNotice && (
+					<p role="status" className="text-sm text-muted-foreground">
+						{syncNotice}
+					</p>
+				)}
+				{actionError && (
+					<div
+						role="alert"
+						className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+					>
+						<span>{actionError}</span>
+						<Button
+							type="button"
+							className="text-xs underline"
+							onClick={() => setActionError(null)}
+						>
+							Dismiss
+						</Button>
+					</div>
+				)}
+
+				{list.isLoading ? (
+					<PanelMessage>Loading data sources…</PanelMessage>
+				) : list.isError ? (
+					<PanelMessage tone="error">
+						Couldn&apos;t load data sources. Retry shortly or check the service
+						status.
+					</PanelMessage>
+				) : sources.length === 0 ? (
+					<div className="flex flex-col items-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center">
+						<p className="type-emphasis">No data sources connected.</p>
+						<p className="type-body text-muted-foreground">
+							Connect a GitHub repository to start ingesting.
+						</p>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setShowConnect(true)}
+						>
+							Connect a repository
+						</Button>
+					</div>
+				) : (
+					<SourcesTable
+						onActivity={client.listActivity ? setActivitySource : undefined}
+						onReconnect={(source) => {
+							setReconnectError(undefined);
+							setReconnecting(source);
+						}}
+						sources={sources}
+						boundaries={boundaries}
+						onMigrateToApp={migrateToApp ? handleMigrateToApp : undefined}
+						migratingIds={migratingIds}
+						permissionsResolved={scopes.isSuccess && !scopes.isError}
+						syncingIds={syncingIds}
+						deletingIds={deletingIds}
+						onSync={handleSync}
+						onDelete={handleDelete}
+					/>
+				)}
+			</section>
+
 			{client.listCollections ? (
-				<section aria-label="Collection access" className="space-y-2">
+				<section aria-label="Collection access" className="space-y-3">
+					<div>
+						<h3 className="type-section-title">Collection access</h3>
+						<p className="type-body text-muted-foreground">
+							Who can read what a source ingests. Connecting or syncing a source
+							never grants access; a grant does.
+						</p>
+					</div>
 					{collections.isError ? (
-						<p role="alert">
+						<p role="alert" className="type-body text-destructive">
 							Couldn’t inspect collection grants. Organization administrator
 							access is required.
 						</p>
 					) : (
-						collections.data?.map((collection) => (
-							<div key={collection.nodeId}>
-								<span>
-									{collection.label} ·{" "}
-									{scopes.isError || !scopes.isSuccess
-										? "Read permission unresolved"
-										: boundaries.has(collection.nodeId)
-											? "You can read this collection"
-											: "You do not have read access"}{" "}
-									· Readers:{" "}
-									{collection.grants
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Collection</TableHead>
+									<TableHead>Your access</TableHead>
+									<TableHead>Readers</TableHead>
+									<TableHead className="w-0" />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{(collections.data ?? []).map((collection) => {
+									const readable =
+										scopes.isSuccess && !scopes.isError
+											? boundaries.has(collection.nodeId)
+											: undefined;
+									const readers = collection.grants
 										.map((grant) => grant.subjectLabel)
-										.join(", ") || "No collection read grants"}
-								</span>
-								{client.grantCollectionRead &&
-									client.revokeCollectionRead &&
-									client.listGrantSubjects && (
-										<Button
-											type="button"
-											variant="link"
-											size="sm"
-											onClick={() => setEditingCollection(collection.nodeId)}
-										>
-											Manage read grants for {collection.label}
-										</Button>
-									)}
-							</div>
-						))
+										.join(", ");
+									return (
+										<TableRow key={collection.nodeId}>
+											<TableCell className="type-emphasis">
+												{collection.label}
+											</TableCell>
+											<TableCell>
+												{readable === undefined ? (
+													<span className="text-muted-foreground">
+														Read permission unresolved
+													</span>
+												) : readable ? (
+													<Badge variant="secondary">
+														You can read this collection
+													</Badge>
+												) : (
+													<Badge variant="outline">
+														You do not have read access
+													</Badge>
+												)}
+											</TableCell>
+											<TableCell className="text-muted-foreground">
+												<span className="sr-only">Readers: </span>
+												{readers || "No collection read grants"}
+											</TableCell>
+											<TableCell className="text-right">
+												{client.grantCollectionRead &&
+													client.revokeCollectionRead &&
+													client.listGrantSubjects && (
+														<Button
+															type="button"
+															variant="ghost"
+															size="sm"
+															onClick={() =>
+																setEditingCollection(collection.nodeId)
+															}
+														>
+															Manage read grants
+															<span className="sr-only">
+																{" "}
+																for {collection.label}
+															</span>
+														</Button>
+													)}
+											</TableCell>
+										</TableRow>
+									);
+								})}
+							</TableBody>
+						</Table>
 					)}
 				</section>
 			) : (
@@ -417,73 +548,6 @@ function DatasourcesPanelView({
 					Manage collection read grants in the host (organization
 					administrators)
 				</Button>
-			)}
-			{selectedCollection && (
-				<CollectionGrants
-					client={client}
-					orgId={orgId}
-					collection={selectedCollection}
-				/>
-			)}
-			{activitySource && (
-				<SourceHistory
-					client={client}
-					orgId={orgId}
-					source={activitySource}
-					onClose={() => setActivitySource(null)}
-				/>
-			)}
-
-			{syncNotice && (
-				<p role="status" className="text-sm text-muted-foreground">
-					{syncNotice}
-				</p>
-			)}
-			{actionError && (
-				<div
-					role="alert"
-					className="flex items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
-				>
-					<span>{actionError}</span>
-					<Button
-						type="button"
-						className="text-xs underline"
-						onClick={() => setActionError(null)}
-					>
-						Dismiss
-					</Button>
-				</div>
-			)}
-
-			{list.isLoading ? (
-				<PanelMessage>Loading data sources…</PanelMessage>
-			) : list.isError ? (
-				<PanelMessage tone="error">
-					Couldn&apos;t load data sources. Retry shortly or check the service
-					status.
-				</PanelMessage>
-			) : sources.length === 0 ? (
-				<PanelMessage>
-					No data sources connected. Connect a GitHub repository to start
-					ingesting.
-				</PanelMessage>
-			) : (
-				<SourcesTable
-					onActivity={client.listActivity ? setActivitySource : undefined}
-					onReconnect={(source) => {
-						setReconnectError(undefined);
-						setReconnecting(source);
-					}}
-					sources={sources}
-					boundaries={boundaries}
-					onMigrateToApp={migrateToApp ? handleMigrateToApp : undefined}
-					migratingIds={migratingIds}
-					permissionsResolved={scopes.isSuccess && !scopes.isError}
-					syncingIds={syncingIds}
-					deletingIds={deletingIds}
-					onSync={handleSync}
-					onDelete={handleDelete}
-				/>
 			)}
 
 			{reconnecting && (

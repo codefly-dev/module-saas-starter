@@ -52,7 +52,7 @@ export default function DashboardClient() {
 					}}
 				/>
 				<div className="relative flex flex-col gap-2">
-					<h1 className="text-3xl font-bold tracking-tight capitalize">
+					<h1 data-slot="page-title" className="type-page-title capitalize">
 						Welcome back, {greetingName}
 					</h1>
 					<p className="text-muted-foreground">

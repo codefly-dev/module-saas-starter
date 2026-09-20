@@ -3,6 +3,7 @@ import {
 	type FrontendAppearanceDefinition,
 	type FrontendBranding,
 	resolveFrontendAppearance,
+	resolveSkinRules,
 } from "@codefly/saas-plugin-contract";
 import type {
 	RawBrandingOverride,
@@ -32,6 +33,13 @@ export interface ResolveSkinOptions {
 	 */
 	sources: SkinSource[];
 	now?: () => number;
+	/**
+	 * `false` resolves without reading or writing the per-host cache. For a
+	 * one-off resolution beside a running host — a survival check, a preview —
+	 * that must neither see another descriptor's cached result nor evict the
+	 * live one. The default serves requests and caches.
+	 */
+	cache?: boolean;
 }
 
 /**
@@ -47,10 +55,16 @@ export async function resolveSkin(
 	const host = opts.host ?? null;
 	const now = opts.now ?? (() => Date.now());
 
-	if (sources.length === 0) return { ...opts.fallback, source: "default" };
+	const fallbackSkin: ResolvedSkin = {
+		...opts.fallback,
+		source: "default",
+		rules: resolveSkinRules(undefined),
+	};
+	if (sources.length === 0) return fallbackSkin;
 
+	const useCache = opts.cache !== false;
 	const cacheKey = host ?? "*";
-	const cached = cache.get(cacheKey);
+	const cached = useCache ? cache.get(cacheKey) : undefined;
 	if (cached) {
 		if (cached.expires > now()) return cached.skin;
 		// Expired: drop it now rather than leaving dead entries to accumulate.
@@ -58,7 +72,7 @@ export async function resolveSkin(
 	}
 
 	const key: SkinKey = { host };
-	let resolved: ResolvedSkin = { ...opts.fallback, source: "default" };
+	let resolved: ResolvedSkin = fallbackSkin;
 
 	for (const source of sources) {
 		let descriptor: Awaited<ReturnType<SkinSource["load"]>>;
@@ -79,7 +93,11 @@ export async function resolveSkin(
 				opts.fallback.branding,
 				descriptor.branding,
 			);
-			resolved = { appearance, branding, source: source.name };
+			// Rules are validated in the same try as the appearance, so a descriptor
+			// with a bad rule degrades exactly like one with a bad token rather than
+			// half-applying.
+			const rules = resolveSkinRules(descriptor.rules);
+			resolved = { appearance, branding, rules, source: source.name };
 			break;
 		} catch (error) {
 			console.warn(
@@ -89,7 +107,7 @@ export async function resolveSkin(
 		}
 	}
 
-	setCache(cacheKey, resolved, now() + CACHE_TTL_MS);
+	if (useCache) setCache(cacheKey, resolved, now() + CACHE_TTL_MS);
 	return resolved;
 }
 

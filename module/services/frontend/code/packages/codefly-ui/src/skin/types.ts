@@ -3,6 +3,7 @@ import type {
 	FrontendAppearanceDefinition,
 	FrontendBranding,
 	FrontendLogo,
+	FrontendSkinRules,
 } from "@codefly/saas-plugin-contract";
 
 /**
@@ -18,6 +19,11 @@ export interface ResolvedSkinBase {
 export interface ResolvedSkin extends ResolvedSkinBase {
 	/** Which source produced the skin; "default" when nothing overrode it. */
 	source: string;
+	/**
+	 * Layer 4. Build-time constraints, never rendered: `checkSkinRules` reads
+	 * them against a rendered tree and nothing here reaches CSS.
+	 */
+	rules: FrontendSkinRules;
 }
 
 /**
@@ -32,12 +38,17 @@ export interface RawSkinDescriptor {
 	appearance?: FrontendAppearanceDefinition;
 	branding?: RawBrandingOverride;
 	/**
-	 * RESERVED for Layer 4 (component-level overrides via the vetted micro-FE
-	 * tier, per ADR-0002). Not resolved yet — declared so the descriptor schema
-	 * anticipates it and sources can start carrying it.
+	 * Layer 4: constraints checked at build time, never rendered.
 	 */
-	remotes?: unknown;
+	rules?: unknown;
 }
+
+// `remotes` was declared here as RESERVED for the vetted micro-frontend tier and
+// never resolved. A descriptor field nothing reads is worse than an absent one:
+// it reads as a promise, and a descriptor carrying it validated cleanly while
+// the value went nowhere. The ladder's third rung is still written down — in
+// TOKENS.md, where it is documentation — and `checkSkinSurvival` now reports a
+// top-level key the resolver does not read, so an author who writes one is told.
 
 export interface RawBrandingOverride {
 	name?: string;

@@ -45,7 +45,7 @@ export function MFASettingsPage() {
 	return (
 		<div className="space-y-6">
 			<div>
-				<h2 className="text-2xl font-bold tracking-tight">
+				<h2 data-slot="page-title" className="type-page-title">
 					Multi-factor authentication
 				</h2>
 				<p className="text-muted-foreground">
