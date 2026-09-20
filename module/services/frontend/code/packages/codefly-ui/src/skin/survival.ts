@@ -1,4 +1,4 @@
-import { clearSkinCache, resolveSkin } from "./resolver.js";
+import { resolveSkin } from "./resolver.js";
 import type {
 	RawSkinDescriptor,
 	ResolvedSkin,
@@ -89,15 +89,15 @@ export async function checkSkinSurvival(
 			load: async () => descriptor,
 		} satisfies SkinSource,
 	];
-	// The resolver caches per host for a TTL; a caller checking several
-	// descriptors in one process would otherwise read the first one's result.
-	clearSkinCache();
+	// Outside the per-host cache on both sides: a caller checking several
+	// descriptors in one process must not read the first one's result, and a
+	// check run beside a serving host must not evict what that host resolved.
 	const skin = await resolveSkin({
 		fallback: options.fallback,
 		sources,
 		host: null,
+		cache: false,
 	});
-	clearSkinCache();
 
 	const mismatches: SkinLeafMismatch[] = [];
 	collect(descriptor.appearance, skin.appearance, "appearance", mismatches);

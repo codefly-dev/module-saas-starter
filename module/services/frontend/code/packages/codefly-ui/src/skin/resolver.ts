@@ -33,6 +33,13 @@ export interface ResolveSkinOptions {
 	 */
 	sources: SkinSource[];
 	now?: () => number;
+	/**
+	 * `false` resolves without reading or writing the per-host cache. For a
+	 * one-off resolution beside a running host — a survival check, a preview —
+	 * that must neither see another descriptor's cached result nor evict the
+	 * live one. The default serves requests and caches.
+	 */
+	cache?: boolean;
 }
 
 /**
@@ -55,8 +62,9 @@ export async function resolveSkin(
 	};
 	if (sources.length === 0) return fallbackSkin;
 
+	const useCache = opts.cache !== false;
 	const cacheKey = host ?? "*";
-	const cached = cache.get(cacheKey);
+	const cached = useCache ? cache.get(cacheKey) : undefined;
 	if (cached) {
 		if (cached.expires > now()) return cached.skin;
 		// Expired: drop it now rather than leaving dead entries to accumulate.
@@ -99,7 +107,7 @@ export async function resolveSkin(
 		}
 	}
 
-	setCache(cacheKey, resolved, now() + CACHE_TTL_MS);
+	if (useCache) setCache(cacheKey, resolved, now() + CACHE_TTL_MS);
 	return resolved;
 }
 

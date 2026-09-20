@@ -50,29 +50,29 @@ export function OrgSelector() {
 		}
 	}
 
+	const placeholder = isLoading
+		? "Loading orgs…"
+		: isSwitching
+			? "Switching…"
+			: "Select organization…";
+
 	return (
 		<Select
-			value={organizationId ?? ""}
+			value={organizationId ?? null}
 			onValueChange={handleChange}
 			disabled={isLoading || isSwitching}
 		>
 			<SelectTrigger className="w-[260px]">
 				<Building2 className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-				<SelectValue
-					placeholder={
-						isLoading
-							? "Loading orgs…"
-							: isSwitching
-								? "Switching…"
-								: "Select organization…"
-					}
-				>
+				<SelectValue placeholder={placeholder}>
 					{/* Resolve the label from the list rather than trusting item
 					    registration: the selected id is known before the items
-					    have mounted, and the primitive then shows the raw value —
-					    a UUID where the organization's name belongs. */}
+					    have mounted, and the primitive would show the raw value —
+					    a UUID where the organization's name belongs. While the
+					    list is still loading the id resolves to nothing, and the
+					    trigger must say so rather than go blank. */}
 					{(value: string | null) =>
-						orgs.find((org) => org.id === value)?.name ?? null
+						orgs.find((org) => org.id === value)?.name ?? placeholder
 					}
 				</SelectValue>
 			</SelectTrigger>

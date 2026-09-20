@@ -145,6 +145,38 @@ describe("resolveSkin", () => {
 		expect(load).toHaveBeenCalledTimes(2);
 	});
 
+	// A survival check or a preview resolves beside a serving host. It must not
+	// read what the host cached for that key, and it must not evict it either:
+	// the earlier clear-the-cache approach made one admin preview re-resolve
+	// every host's skin on its next request.
+	it("resolves outside the cache when asked, leaving the live entry alone", async () => {
+		let now = 1_000;
+		const live = vi.fn(async () => ({ appearance: { radius: "1rem" } }));
+		const preview = vi.fn(async () => ({ appearance: { radius: "2rem" } }));
+		const opts = { fallback, host: "acme.example.com", now: () => now };
+		const served = await resolveSkin({
+			...opts,
+			sources: [{ name: "live", load: live }],
+		});
+		expect(served.appearance.radius).toBe("1rem");
+
+		const previewed = await resolveSkin({
+			...opts,
+			sources: [{ name: "preview", load: preview }],
+			cache: false,
+		});
+		expect(previewed.appearance.radius).toBe("2rem");
+		expect(preview).toHaveBeenCalledTimes(1);
+
+		now += 5_000;
+		const again = await resolveSkin({
+			...opts,
+			sources: [{ name: "live", load: live }],
+		});
+		expect(again.appearance.radius).toBe("1rem");
+		expect(live).toHaveBeenCalledTimes(1);
+	});
+
 	it("bounds the cache so a flood of distinct hosts cannot grow it without bound", async () => {
 		const loads = new Map<string, number>();
 		// Each host loads through a shared counter so eviction is observable.

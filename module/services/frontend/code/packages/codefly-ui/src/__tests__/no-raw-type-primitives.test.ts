@@ -20,13 +20,8 @@ import { describe, expect, it } from "vitest";
 // utility: `text-[10px]` is off any scale, so it cannot be reskinned, cannot be
 // audited, and would survive a guard that only matched the named steps.
 
-/** Font families are tokens, not decisions, so a component may still name one. */
-const ALLOWED_FONT_UTILITIES = new Set([
-	"font-sans",
-	"font-heading",
-	"font-mono",
-]);
-
+// Font families are tokens, not decisions, so `font-sans` / `font-heading` /
+// `font-mono` are not matched: the family alternation below lists weights only.
 const RAW_TYPE_UTILITY =
 	/(?:^|[\s"'`])(?:[a-z0-9-]+(?:\[[^\]]*\])?(?:\/[a-z0-9-]+)?:)*(text-(?:xs|sm|base|lg|xl|[2-9]xl)|text-\[[^\]]+\]|font-(?:thin|extralight|light|normal|medium|semibold|bold|extrabold|black)|leading-[a-z0-9-]+|leading-\[[^\]]+\]|tracking-[a-z]+|tracking-\[[^\]]+\])(?=$|[\s"'`])/g;
 
@@ -46,11 +41,7 @@ function classStrings(source: string): string[] {
 export function rawTypeUtilities(source: string): string[] {
 	const found: string[] = [];
 	for (const value of classStrings(source)) {
-		for (const match of value.matchAll(RAW_TYPE_UTILITY)) {
-			const utility = match[1];
-			if (ALLOWED_FONT_UTILITIES.has(utility)) continue;
-			found.push(utility);
-		}
+		for (const match of value.matchAll(RAW_TYPE_UTILITY)) found.push(match[1]);
 	}
 	return found;
 }
@@ -77,6 +68,19 @@ function sourceFiles(dir: string): string[] {
 const srcDir = kitSrcDir();
 const files = sourceFiles(srcDir);
 
+// `@codefly-dev/saas-ui` ships beside this kit at the same version and renders
+// inside the same skin, so the guard covers it too. Its data-sources surface
+// predates the slots and still hardcodes primitives; those files are pinned
+// here at their EXACT counts so the debt can only shrink, and a line is deleted
+// when its file reaches zero. Anything else in that package is default-deny.
+const SAAS_UI_BASELINE: Record<string, number> = {
+	"datasources/collection-access.tsx": 2,
+	"datasources/connect-github-form.tsx": 16,
+	"datasources/datasources-panel.tsx": 22,
+};
+const saasUiDir = resolve(srcDir, "../../saas-ui/src");
+const saasUiFiles = existsSync(saasUiDir) ? sourceFiles(saasUiDir) : [];
+
 describe("kit source names slots and rungs, never raw type primitives", () => {
 	// A green run must mean "scanned real files", never "scanned nothing".
 	it("scans a non-empty tree including a migrated component", () => {
@@ -97,6 +101,31 @@ describe("kit source names slots and rungs, never raw type primitives", () => {
 			).toEqual([]);
 		});
 	}
+});
+
+describe("saas-ui names slots and rungs, with a shrinking baseline", () => {
+	it("scans the sibling package", () => {
+		expect(saasUiFiles.length).toBeGreaterThan(0);
+	});
+
+	for (const file of saasUiFiles) {
+		const name = relative(saasUiDir, file).split("\\").join("/");
+		it(`${name} carries no raw type utility beyond its baseline`, () => {
+			const found = rawTypeUtilities(readFileSync(file, "utf8"));
+			const allowed = SAAS_UI_BASELINE[name] ?? 0;
+			expect(
+				found.length,
+				found.length > allowed
+					? `${name} hardcodes ${[...new Set(found)].join(", ")} — name a type slot (type-<slot>) or a control rung instead`
+					: `${name} now has ${found.length} raw type utilities, fewer than its baseline of ${allowed}: lower the baseline (delete the line at zero)`,
+			).toBe(allowed);
+		});
+	}
+
+	it("keeps no baseline line for a file that is gone", () => {
+		for (const name of Object.keys(SAAS_UI_BASELINE))
+			expect(existsSync(join(saasUiDir, name)), name).toBe(true);
+	});
 });
 
 // Detector self-tests: the guard is only useful if it fires. A green suite must

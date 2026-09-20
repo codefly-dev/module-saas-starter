@@ -9,22 +9,22 @@ import {
 } from "@testing-library/react";
 import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CardContent, CardRoot } from "../card-root.js";
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupInput,
-} from "../input-group.js";
+import { CardRoot, CardContent } from "../card-root.js";
+import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "../tabs-root.js";
 import {
 	Sheet,
 	SheetContent,
-	SheetDescription,
 	SheetHeader,
 	SheetTitle,
+	SheetDescription,
 	SheetTrigger,
 } from "../sheet.js";
 import { SidebarProvider, SidebarTrigger, useSidebar } from "../sidebar.js";
-import { TabsContent, TabsList, TabsRoot, TabsTrigger } from "../tabs-root.js";
+import {
+	InputGroup,
+	InputGroupInput,
+	InputGroupAddon,
+} from "../input-group.js";
 
 afterEach(() => {
 	cleanup();
