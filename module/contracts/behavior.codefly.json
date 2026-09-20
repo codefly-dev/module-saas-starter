@@ -409,10 +409,10 @@
             "a kind='solution' scope node",
             "a least-privilege standing grant with an audience and scope ceiling",
             "an accountable owner of record",
-            "an installation row",
-            "the durable event subscriptions the solution declared"
+            "an installation row"
           ],
-          "uninstall": "reverses exactly that composition"
+          "uninstall": "Removes the agent's standing grant and revokes the agent principal, then marks the installation revoked. It does NOT reverse the whole composition: the scope node is retained so a reinstall reuses it, and durable subscriptions are not deleted. Revoking the agent principal is what withdraws the authority.",
+          "subscriptions": "The solution's declared consumes are materialized into durable subscriptions for the new agent principal AFTER the install transaction commits, not as part of the composition. The write is idempotent and best-effort: a failure is logged and the install still succeeds, to be recovered by a reinstall or a runtime Subscribe. A solution that consumes nothing materializes nothing."
         },
         "entitlement": {
           "procedure": "BillingService",

@@ -331,3 +331,41 @@ func TestDeclaredRegistrationSurfacesExist(t *testing.T) {
 		}
 	}
 }
+
+// TestInstallationAuthorityMatchesTheStore holds the declared installation
+// effect to the statements that produce it. The distinction the declaration
+// turns on — uninstall withdraws authority but deliberately retains the scope
+// node, and materializes subscriptions outside the install transaction — is the
+// kind of detail a trust-model summary states once and then outlives.
+func TestInstallationAuthorityMatchesTheStore(t *testing.T) {
+	moduleRoot := findModuleRoot(t)
+	content := contractByID(t, loadBehavioralContracts(t, moduleRoot), "authorization.solution.installation-authority")
+	store := readSource(t, moduleRoot, "services/accounts/code/pkg/infra/postgres_installations.go")
+	service := readSource(t, moduleRoot, "services/accounts/code/pkg/business/installations.go")
+
+	for _, effect := range []string{"DELETE FROM scope_grants", "revoked_at = CURRENT_TIMESTAMP", "status = 'revoked'"} {
+		if !strings.Contains(store, effect) {
+			t.Errorf("declared uninstall effect %q is no longer performed", effect)
+		}
+	}
+	// The declaration promises the node survives an uninstall. Nothing may start
+	// deleting it without the contract saying so.
+	if regexp.MustCompile(`DELETE\s+FROM\s+scope_nodes`).MatchString(store) {
+		t.Error("uninstall now deletes the scope node the contract declares is retained")
+	}
+	uninstall := at(t, content, "installation", "uninstall").GetStringValue()
+	if !strings.Contains(uninstall, "retained") || !strings.Contains(uninstall, "not deleted") {
+		t.Errorf("declared uninstall no longer states what it leaves behind: %q", uninstall)
+	}
+
+	// Subscriptions are declared as a post-commit, best-effort write. If they
+	// ever move inside the transaction, or start failing the install, the
+	// declaration is wrong in a way a consumer would act on.
+	index := strings.Index(service, "MaterializeSubscriptionsFromCatalog(ctx")
+	if index < 0 {
+		t.Fatal("installation service no longer materializes declared subscriptions")
+	}
+	if !strings.Contains(service[index:min(index+240, len(service))], "w.Warn(") {
+		t.Error("subscription materialization is no longer best-effort, but the contract still declares it as such")
+	}
+}

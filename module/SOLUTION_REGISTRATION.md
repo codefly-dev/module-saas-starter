@@ -166,9 +166,14 @@ boundary is deliberate:
 - **Per-org installation** (`InstallationService/InstallSolution`) governs
   **agent authority only**. Installing composes an agent principal, a
   `kind='solution'` scope node, a least-privilege standing grant with an
-  audience/scope ceiling, an accountable owner of record, an installation row,
-  and the durable event subscriptions the solution declared. Uninstalling
-  reverses exactly that composition.
+  audience/scope ceiling, an accountable owner of record, and an installation
+  row. The solution's declared consumes are materialized into durable
+  subscriptions *after* that transaction commits — idempotent and best-effort,
+  so a failure is logged and recovered by a reinstall or a runtime `Subscribe`
+  rather than failing the install. Uninstalling removes the standing grant and
+  revokes the agent principal, which is what withdraws the authority; it does
+  **not** reverse the whole composition, because the scope node is retained for
+  a reinstall to reuse and the subscriptions are not deleted.
 - **Entitlement** (plans and grants, `BillingService`) governs feature
   availability within the product and is independent of both.
 
