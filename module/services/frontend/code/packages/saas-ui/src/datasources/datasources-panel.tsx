@@ -176,11 +176,10 @@ function DatasourcesPanelView({
 		refetchInterval: 5000,
 	});
 	const [editingCollection, setEditingCollection] = useState<string>();
-	const selectedCollection = collections.isError
-		? undefined
-		: collections.data?.find(
-				(collection) => collection.nodeId === editingCollection,
-			);
+	const listedCollections = collections.isError ? undefined : collections.data;
+	const selectedCollection = listedCollections?.find(
+		(collection) => collection.nodeId === editingCollection,
+	);
 	const addMutation = useAddGitHubSource(client);
 	const syncMutation = useSyncSource(client);
 	const deleteMutation = useDeleteSource(client);
@@ -340,6 +339,13 @@ function DatasourcesPanelView({
 			byNode.set(scope.nodeId, scope);
 		return byNode;
 	}, [scopes.data, scopes.isError]);
+	// The scope lookup answers for every node kind, so a grant on a solution node
+	// or on a placed record would silence a headline that speaks about
+	// collections. With the collection list in hand the question can be asked
+	// exactly; without it the scope set is all there is to go on.
+	const readableCollection = listedCollections
+		? listedCollections.some((collection) => boundaries.has(collection.nodeId))
+		: boundaries.size > 0;
 
 	return (
 		<div className={cn("space-y-4", className)}>
@@ -354,7 +360,7 @@ function DatasourcesPanelView({
 					Couldn’t verify collection permissions. This does not mean there is no
 					indexed content.
 				</p>
-			) : scopes.isSuccess && boundaries.size === 0 ? (
+			) : scopes.isSuccess && !readableCollection ? (
 				<p role="status">
 					No readable collection. Ask an organization administrator for read
 					access. Connecting or syncing a source does not grant access.
@@ -368,7 +374,7 @@ function DatasourcesPanelView({
 							access is required.
 						</p>
 					) : (
-						collections.data?.map((collection) => (
+						listedCollections?.map((collection) => (
 							<div key={collection.nodeId}>
 								<span>
 									{collection.label} ·{" "}

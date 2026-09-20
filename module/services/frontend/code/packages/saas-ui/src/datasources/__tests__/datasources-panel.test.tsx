@@ -7,6 +7,7 @@ import {
 	render,
 	screen,
 	waitFor,
+	within,
 } from "@testing-library/react";
 import { StrictMode, type ReactElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -386,6 +387,30 @@ describe("DatasourcesPanel", () => {
 
 describe("DatasourcesPanel boundary column", () => {
 	const boundaryId = sampleSource.boundaryNodeId;
+	const otherNodeId = "22222222-2222-2222-2222-222222222222";
+	const granted = {
+		nodeId: boundaryId,
+		label: "Docs",
+		scopePath: "root.docs",
+		grants: [
+			{
+				id: "grant-1",
+				subjectId: "user-1",
+				subjectKind: "principal" as const,
+				scopePath: "root.docs",
+				roleId: "role-1",
+				subjectLabel: "reader@example.com",
+				roleName: "Collection reader",
+				actorLabel: "admin@example.com",
+			},
+		],
+	};
+	const ungranted = {
+		...granted,
+		label: "Specs",
+		scopePath: "root.specs",
+		grants: [],
+	};
 
 	it("names the boundary and summarizes the caller's grants on it", async () => {
 		const client = fakeClient({
@@ -414,6 +439,71 @@ describe("DatasourcesPanel boundary column", () => {
 		});
 		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
 		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+	});
+
+	it("keeps the grant explainer off when one listed collection is readable", async () => {
+		// The headline and its explainer speak about collections, while the scope
+		// lookup answers for every node kind. Deciding it on the listed
+		// collections is what keeps the two from contradicting each other.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listCollections: vi.fn(async () => [
+				granted,
+				{ ...ungranted, nodeId: otherNodeId },
+			]),
+			listAccessibleScopes: vi.fn(async () => [
+				{
+					nodeId: boundaryId,
+					label: "Docs",
+					kind: "collection",
+					actions: ["read"],
+				},
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(
+			await screen.findByText(/You can read this collection/),
+		).toBeTruthy();
+		expect(screen.queryByText(/No readable collection/)).toBeNull();
+		expect(screen.getByText(/You do not have read access/)).toBeTruthy();
+	});
+
+	it("still names no readable collection when only another scope kind is readable", async () => {
+		// The scope lookup answers for every node kind, and a grant on the solution
+		// node the collections hang under is not read access to any of them.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listCollections: vi.fn(async () => [granted]),
+			listAccessibleScopes: vi.fn(async () => [
+				{
+					nodeId: otherNodeId,
+					label: "Example solution",
+					kind: "solution",
+					actions: ["read"],
+				},
+			]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		expect(await screen.findByText(/No readable collection/)).toBeTruthy();
+	});
+
+	it("says a readable collection's access is unresolved rather than refused", async () => {
+		// A client with no listAccessibleScopes — the composition declared no
+		// content resource, so there is no resource to ask about. The collection's
+		// own readers still list, and saying "no read access" beside them would
+		// state a verdict nothing here computed.
+		const client = fakeClient({
+			listSources: vi.fn(async () => [sampleSource]),
+			listCollections: vi.fn(async () => [granted]),
+		});
+		renderWithClient(<DatasourcesPanel client={client} orgId="org-1" />);
+
+		const access = within(await screen.findByLabelText("Collection access"));
+		expect(await access.findByText(/Read permission unresolved/)).toBeTruthy();
+		expect(access.queryByText(/You do not have read access/)).toBeNull();
+		expect(screen.queryByText(/No readable collection/)).toBeNull();
 	});
 
 	it("refetches boundaries after a source is connected", async () => {

@@ -87,8 +87,8 @@ that host action; admin permission APIs are not added to the public SDK.
 
 `createDatasourceClient` queries the SDK's caller-scoped `ListMyAccessibleScopes`
 with read on that resource, follows every page, and propagates failures. No readable
-collection and permission-service failure have separate states; neither is an
-empty search result or proof of an indexing failure.
+collection, permission-service failure, and an unresolved lookup have separate
+states; none is an empty search result or proof of an indexing failure.
 
 A consuming collection or chat page can wrap **all** private state beneath
 `CollectionReadBoundary` (inside its React Query provider), passing `client`,
@@ -112,7 +112,13 @@ The collection panel reads its content resource from the `contentResource` on th
 gateway binding, and the server matches grants against the `resources` each composed
 module declares in `MODULE_PRINCIPALS`. Neither names a resource itself: this kit
 ships with the host, which holds no domain content. A deployment that declares none
-therefore reports no read grants — that is the fail-closed answer, not a bug.
+gets a client with no `listAccessibleScopes`, so it grants nothing and the panel
+reports the viewer's read access as unresolved. It does not report the viewer as
+refused: an empty scope list is a verdict about their authority, and nothing
+authorised the kit to state one. `ListCollectionAccess`, which the host answers from
+the union of every composed module's declared resources, still lists a collection's
+readers — so an administrator can see a grant that this deployment's own
+`contentResource` does not cover.
 
 The `dev-admin` fixture provisions an `Example Collection` and a `Collection reader`
 role via Accounts' registration/grant service paths. Only `admin@acme.com` and

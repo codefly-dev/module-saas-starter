@@ -494,13 +494,17 @@ it("carries a source file filter through the generated SDK", async () => {
 	});
 });
 
-it("reports no readable scope when the composition declares no content resource", async () => {
+it("cannot answer the scope question when the composition declares no content resource", async () => {
+	// An empty scope list is a verdict — the panel renders it as the viewer
+	// holding no read access — and an undeclared composition authorised nobody to
+	// state one. The absent method is what leaves the answer unresolved instead.
 	const { calls } = stubFetch({});
 	const client = createDatasourceClient({
 		apiBase: "/api/solutions/example/proxy",
 		getAccessToken: () => "test-token",
 	});
-	expect(await client.listAccessibleScopes!("org-1")).toEqual([]);
+	expect(client.listAccessibleScopes).toBeUndefined();
+	expect("listAccessibleScopes" in client).toBe(false);
 	expect(calls).toHaveLength(0);
 });
 

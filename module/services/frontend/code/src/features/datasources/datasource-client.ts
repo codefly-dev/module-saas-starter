@@ -46,9 +46,12 @@ const teams = createClient(TeamService, apiTransport);
 export const datasourceClient: DatasourceClient = {
 	...datasourceClientOverTransport(apiTransport),
 	// Resolve the declared resource per call, not at module load, so a scope query
-	// reflects the deployment's configuration rather than import order.
-	listAccessibleScopes(orgId) {
-		return scopedClient().listAccessibleScopes!(orgId);
+	// reflects the deployment's configuration rather than import order. A getter
+	// because the absence of the method is itself the answer when nothing is
+	// declared: re-wrapping it would turn "there is no question to ask" back into
+	// a verdict of no access.
+	get listAccessibleScopes() {
+		return scopedClient().listAccessibleScopes;
 	},
 	async listCollections(orgId) {
 		const collections: CollectionAccessView[] = [];
