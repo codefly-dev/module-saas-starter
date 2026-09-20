@@ -149,21 +149,65 @@ export function topGroups(
 }
 
 /**
- * Event types that mean a person joined the tenant. Registered names, read
- * from the server's registry rather than guessed: the page filters the
- * registry to these and counts them, so a rename there is a visible failure
- * here (an empty tile), not a silently wrong number.
+ * Event types that mean a person joined the tenant, by their registered names.
+ * The server's registry is the authority; this list is checked against it, not
+ * trusted over it: `newUserEventTypes` keeps only the names the registry
+ * actually advertises, so a rename on the server empties the tile visibly
+ * ("not registered") instead of counting nothing and calling it zero.
  */
 export const NEW_USER_EVENT_TYPES: readonly string[] = [
 	"saas.user.created",
 	"saas.user.registered",
 ];
 
-/** Count of new-user events in a by-event-type aggregate. */
-export function newUserCount(byType: readonly AuditAggregateBucket[]): number {
+/** The new-user names the loaded registry still knows. */
+export function newUserEventTypes(
+	registry: readonly { name: string }[],
+): string[] {
+	const known = new Set(registry.map((t) => t.name));
+	return NEW_USER_EVENT_TYPES.filter((name) => known.has(name));
+}
+
+/** Count of the given event types in a by-event-type aggregate. */
+export function countEventTypes(
+	byType: readonly AuditAggregateBucket[],
+	names: readonly string[],
+): number {
 	return byType
-		.filter((b) => NEW_USER_EVENT_TYPES.includes(b.key))
+		.filter((b) => names.includes(b.key))
 		.reduce((sum, b) => sum + b.count, 0);
+}
+
+/**
+ * The page's headline aggregate is ONE request per window, grouped by
+ * category then event type and never filtered by category on the server. Every
+ * tile slices that result here: the category is a group dimension, so slicing
+ * client-side is exact, and the security tile can read its own category while
+ * the viewer drills into another. Four aggregates per window became one.
+ */
+export function sliceCategory(
+	byCategoryAndType: readonly AuditAggregateBucket[],
+	category: string | undefined,
+): AuditAggregateBucket[] {
+	if (category === undefined) return byCategoryAndType.slice();
+	return byCategoryAndType.filter((b) => b.keys[0] === category);
+}
+
+/** Fold a category × event-type aggregate down to one bucket per event type. */
+export function byEventType(
+	byCategoryAndType: readonly AuditAggregateBucket[],
+): AuditAggregateBucket[] {
+	const totals = new Map<string, number>();
+	for (const b of byCategoryAndType) {
+		const type = b.keys[1] ?? b.key;
+		totals.set(type, (totals.get(type) ?? 0) + b.count);
+	}
+	return Array.from(totals, ([key, count]) => ({
+		key,
+		count,
+		keys: [key],
+		metrics: { count },
+	}));
 }
 
 /**

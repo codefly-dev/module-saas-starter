@@ -5,7 +5,10 @@ import {
 	auditWindows,
 	defaultBucketFor,
 	distinctCount,
-	newUserCount,
+	byEventType,
+	countEventTypes,
+	newUserEventTypes,
+	sliceCategory,
 	pivotByTime,
 	relativeChange,
 	topGroups,
@@ -127,15 +130,61 @@ describe("topGroups", () => {
 	});
 });
 
-describe("newUserCount", () => {
-	it("counts only the registered new-user event types", () => {
+describe("new users come from the registry, not from a guess", () => {
+	it("keeps only the new-user names the registry advertises", () => {
 		expect(
-			newUserCount([
-				bucket(["saas.user.created"], 3),
-				bucket(["saas.user.registered"], 4),
-				bucket(["saas.user.updated"], 100),
+			newUserEventTypes([
+				{ name: "saas.user.registered" },
+				{ name: "saas.user.updated" },
 			]),
+		).toEqual(["saas.user.registered"]);
+		// A registry that renamed both is an empty list, which the tile shows.
+		expect(newUserEventTypes([{ name: "saas.person.joined" }])).toEqual([]);
+	});
+
+	it("counts only the named event types", () => {
+		const byType = [
+			bucket(["saas.user.created"], 3),
+			bucket(["saas.user.registered"], 4),
+			bucket(["saas.user.updated"], 100),
+		];
+		expect(
+			countEventTypes(byType, ["saas.user.created", "saas.user.registered"]),
 		).toBe(7);
-		expect(newUserCount([])).toBe(0);
+		expect(countEventTypes(byType, [])).toBe(0);
+		expect(countEventTypes([], ["saas.user.created"])).toBe(0);
+	});
+});
+
+// The headline aggregate is one request grouped by category then event type;
+// every tile slices it here. Slicing on a group dimension is exact, so the
+// numbers equal what a server-side category filter would have returned.
+describe("slicing the category × event-type aggregate", () => {
+	const headline = [
+		bucket(["identity", "saas.user.created"], 3),
+		bucket(["identity", "saas.user.updated"], 5),
+		bucket(["security", "saas.session.revoked"], 2),
+		bucket(["security", "saas.user.updated"], 1),
+	];
+
+	it("keeps every bucket when no category is chosen", () => {
+		expect(sliceCategory(headline, undefined)).toHaveLength(4);
+	});
+
+	it("keeps one category's buckets", () => {
+		expect(sliceCategory(headline, "security").map((b) => b.count)).toEqual([
+			2, 1,
+		]);
+		expect(sliceCategory(headline, "billing")).toEqual([]);
+	});
+
+	it("folds to one bucket per event type across categories", () => {
+		const folded = byEventType(headline);
+		expect(folded.map((b) => [b.key, b.count])).toEqual([
+			["saas.user.created", 3],
+			["saas.user.updated", 6],
+			["saas.session.revoked", 2],
+		]);
+		expect(folded[1].keys).toEqual(["saas.user.updated"]);
 	});
 });

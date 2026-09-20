@@ -26,6 +26,9 @@ export interface AuditLogFilters {
 	category?: string;
 	namespace?: string;
 	actorId?: string;
+	// from/to bound the window; omit for all-time.
+	from?: Date;
+	to?: Date;
 	pageSize?: number;
 }
 

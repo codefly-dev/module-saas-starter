@@ -23,19 +23,22 @@ import {
 	type AuditBucket,
 	type AuditRangePreset,
 	auditWindows,
+	byEventType,
+	countEventTypes,
 	defaultBucketFor,
 	distinctCount,
-	NEW_USER_EVENT_TYPES,
-	newUserCount,
+	newUserEventTypes,
 	pivotByTime,
 	relativeChange,
 	SECURITY_CATEGORY,
+	sliceCategory,
 	topGroups,
 	totalCount,
 } from "../model/analytics";
 import { formatAuditAction } from "../model/transforms";
 import { useExportAuditLog } from "../service/mutations";
 import {
+	type AuditGroupDimension,
 	useAuditAggregate,
 	useAuditEventTypes,
 	useAuditLog,
@@ -64,10 +67,13 @@ export function AuditPage() {
 	const { organizationId } = useAuth();
 
 	const { data: eventTypes } = useAuditEventTypes();
+	// The table shows the same window the tiles and the series describe.
 	const { data, isLoading } = useAuditLog({
 		eventType,
 		category,
 		namespace,
+		from: windows.current.from,
+		to: windows.current.to,
 		pageSize: 100,
 	});
 	const events = useMemo(() => data?.events ?? [], [data]);
@@ -77,18 +83,19 @@ export function AuditPage() {
 	const current = { from: windows.current.from, to: windows.current.to };
 	const previous = { from: windows.previous.from, to: windows.previous.to };
 
-	// Headline: total events now and in the equal window before, for a delta.
-	const eventsNow = useAuditAggregate({
-		...scope,
-		...current,
-		groupBy: "category",
-	});
-	const eventsBefore = useAuditAggregate({
-		...scope,
-		...previous,
-		groupBy: "category",
-	});
-	// Distinct actors seen in the window.
+	// One headline aggregate per window, grouped by category then event type
+	// and NOT filtered by category: every tile slices it client-side (exact,
+	// since category is a group dimension), and the security tile reads its
+	// own category whatever the viewer is drilling into.
+	const headline = {
+		eventType,
+		namespace,
+		groupBys: ["category", "event_type"] as AuditGroupDimension[],
+	};
+	const headlineNow = useAuditAggregate({ ...headline, ...current });
+	const headlineBefore = useAuditAggregate({ ...headline, ...previous });
+	// Distinct actors cannot be read off a grouped count, so they keep their
+	// own aggregate; the top-actors list reads the same one.
 	const actorsNow = useAuditAggregate({
 		...scope,
 		...current,
@@ -98,36 +105,6 @@ export function AuditPage() {
 		...scope,
 		...previous,
 		groupBy: "actor",
-	});
-	// Security-category events. Not filtered by the page's category control:
-	// the tile answers "how much security activity" regardless of what the
-	// viewer is drilling into, and reads zero only when there is none.
-	const securityNow = useAuditAggregate({
-		...current,
-		eventType,
-		namespace,
-		category: SECURITY_CATEGORY,
-		groupBy: "event_type",
-	});
-	const securityBefore = useAuditAggregate({
-		...previous,
-		eventType,
-		namespace,
-		category: SECURITY_CATEGORY,
-		groupBy: "event_type",
-	});
-	// New users: the registered event types that mean a person joined, counted
-	// from a by-type aggregate so a renamed type shows as an empty tile rather
-	// than a wrong number.
-	const byTypeNow = useAuditAggregate({
-		...scope,
-		...current,
-		groupBy: "event_type",
-	});
-	const byTypeBefore = useAuditAggregate({
-		...scope,
-		...previous,
-		groupBy: "event_type",
 	});
 
 	const {
@@ -140,6 +117,25 @@ export function AuditPage() {
 		groupBys: ["time", "category"],
 		bucket,
 	});
+
+	const inScopeNow = useMemo(
+		() => sliceCategory(headlineNow.data ?? [], category),
+		[headlineNow.data, category],
+	);
+	const inScopeBefore = useMemo(
+		() => sliceCategory(headlineBefore.data ?? [], category),
+		[headlineBefore.data, category],
+	);
+	const byTypeNow = useMemo(() => byEventType(inScopeNow), [inScopeNow]);
+	const byTypeBefore = useMemo(
+		() => byEventType(inScopeBefore),
+		[inScopeBefore],
+	);
+	// The registry decides which names still mean "a person joined".
+	const newUserTypes = useMemo(
+		() => newUserEventTypes(eventTypes ?? []),
+		[eventTypes],
+	);
 
 	const tiles = useMemo(() => {
 		const tile = (
@@ -157,19 +153,24 @@ export function AuditPage() {
 			deltaLabel: `vs previous ${range}`,
 			...extra,
 		});
+		const newUsers = tile(
+			"new-users",
+			"New users",
+			countEventTypes(byTypeNow, newUserTypes),
+			countEventTypes(byTypeBefore, newUserTypes),
+		);
+		// Say so when the registry no longer knows the names this tile counts:
+		// a zero here would otherwise read as "nobody joined".
+		if (eventTypes !== undefined && newUserTypes.length === 0)
+			newUsers.deltaLabel = "no registered new-user event type";
 		return [
 			tile(
 				"events",
 				"Events",
-				totalCount(eventsNow.data ?? []),
-				totalCount(eventsBefore.data ?? []),
+				totalCount(inScopeNow),
+				totalCount(inScopeBefore),
 			),
-			tile(
-				"new-users",
-				"New users",
-				newUserCount(byTypeNow.data ?? []),
-				newUserCount(byTypeBefore.data ?? []),
-			),
+			newUsers,
 			tile(
 				"actors",
 				"Active actors",
@@ -180,8 +181,8 @@ export function AuditPage() {
 			tile(
 				"security",
 				"Security events",
-				totalCount(securityNow.data ?? []),
-				totalCount(securityBefore.data ?? []),
+				totalCount(sliceCategory(headlineNow.data ?? [], SECURITY_CATEGORY)),
+				totalCount(sliceCategory(headlineBefore.data ?? [], SECURITY_CATEGORY)),
 				{
 					higherIsBetter: false,
 				},
@@ -189,22 +190,19 @@ export function AuditPage() {
 		];
 	}, [
 		range,
-		eventsNow.data,
-		eventsBefore.data,
-		byTypeNow.data,
-		byTypeBefore.data,
+		eventTypes,
+		newUserTypes,
+		inScopeNow,
+		inScopeBefore,
+		byTypeNow,
+		byTypeBefore,
+		headlineNow.data,
+		headlineBefore.data,
 		actorsNow.data,
 		actorsBefore.data,
-		securityNow.data,
-		securityBefore.data,
 	]);
-	const tilesLoading =
-		eventsNow.isLoading ||
-		byTypeNow.isLoading ||
-		actorsNow.isLoading ||
-		securityNow.isLoading;
-	const tilesError =
-		eventsNow.error ?? byTypeNow.error ?? actorsNow.error ?? securityNow.error;
+	const tilesLoading = headlineNow.isLoading || actorsNow.isLoading;
+	const tilesError = headlineNow.error ?? actorsNow.error;
 
 	const { directory: actorNames, failed: actorNamesFailed } =
 		usePrincipalDirectory(organizationId ?? "", [
@@ -215,10 +213,7 @@ export function AuditPage() {
 		() => pivotByTime(byTimeAndCategory ?? []),
 		[byTimeAndCategory],
 	);
-	const topTypes = useMemo(
-		() => topGroups(byTypeNow.data ?? [], 6),
-		[byTypeNow.data],
-	);
+	const topTypes = useMemo(() => topGroups(byTypeNow, 6), [byTypeNow]);
 	const topActors = useMemo(
 		() => topGroups(actorsNow.data ?? [], 6),
 		[actorsNow.data],
@@ -390,8 +385,8 @@ export function AuditPage() {
 					label: formatAuditAction(b.key),
 					value: b.count,
 				})),
-				isLoading: byTypeNow.isLoading,
-				error: byTypeNow.error,
+				isLoading: headlineNow.isLoading,
+				error: headlineNow.error,
 				emptyMessage: "No events in range.",
 			},
 			{
