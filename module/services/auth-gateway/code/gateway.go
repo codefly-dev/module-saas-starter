@@ -45,7 +45,10 @@ type Gateway struct {
 	// solutions is this replica's view of the durable solution registry: the
 	// authority is accounts, and the cache converges on it (#534).
 	solutions *solutionRegistryCache
-	modules   *upstreamRegistry // runtime-registered composed-module REST upstreams
+	// clients is this replica's view of the registered-client registry: which
+	// browser origins each first-party client speaks from (track 0016).
+	clients *clientRegistryCache
+	modules *upstreamRegistry // runtime-registered composed-module REST upstreams
 	// registeredTransport re-validates a runtime-registered upstream's resolved
 	// address at dial time (SSRF / DNS-rebinding defense). Both federated module
 	// and solution routes use it: a solution upstream is durable now (#534) but
@@ -63,12 +66,16 @@ type Gateway struct {
 // rateLimiter may be nil to disable rate limiting. solutionRegistry is the
 // durable registry client; a nil one leaves the solution surface answering
 // "registry unavailable" rather than silently serving an empty registry.
+// clientRegistry is the registered-client registry; a nil one grants no
+// cross-origin access, which is how the gateway behaved before clients were
+// registrable.
 func NewGateway(
 	authz *ExtAuthz,
 	matcher *RouteMatcher,
 	upstreams map[string]*url.URL,
 	rateLimiter *RateLimiter,
 	solutionRegistry solutionRegistryClient,
+	clientRegistry clientRegistryClient,
 ) *Gateway {
 	g := &Gateway{
 		authz:               authz,
@@ -77,6 +84,7 @@ func NewGateway(
 		rateLimiter:         rateLimiter,
 		requiredUpstreams:   matcher.RequiredServices(),
 		solutions:           newSolutionRegistryCache(solutionRegistry),
+		clients:             newClientRegistryCache(clientRegistry),
 		modules:             newUpstreamRegistry(),
 		registeredTransport: newModuleUpstreamTransport(net.DefaultResolver),
 		registrationReplay:  newRegistrationReplayGuard(),
@@ -166,6 +174,13 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// expired, or unattenuated capability is rejected at the edge rather than
 	// forwarded to a callee. Absent header: nothing to verify, carry on.
 	if g.rejectInvalidWorkContext(w, r) {
+		return
+	}
+
+	// A registered client's browser asks permission before it may call at all.
+	// Answered from the registry alone and before routing, because a preflight
+	// carries no credential and names a path nothing has authorized yet.
+	if g.handleCORSPreflight(w, r) {
 		return
 	}
 
@@ -343,6 +358,15 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // rateLimitThenProxy applies rate limiting (if configured) then proxies.
 func (g *Gateway) rateLimitThenProxy(w http.ResponseWriter, r *http.Request, upstream *url.URL, entry *RouteEntry) {
+	// Every forwarded request passes through here, whichever route matched it,
+	// so this is where a request is bound to the origins its client registered.
+	// Ahead of the limiter, not inside proxyTo: a refusal must not spend the
+	// org's budget, and a 429 has to carry the grant or the caller sees an
+	// opaque CORS failure instead of the reason it was throttled.
+	w, ok := g.authorizeCrossOrigin(w, r)
+	if !ok {
+		return
+	}
 	if g.rateLimiter != nil {
 		g.rateLimiter.Middleware(limiterFailureModeFor(entry), entry.AuthenticationFactorAttempt, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			g.proxyTo(w, r, upstream, entry)
@@ -372,7 +396,7 @@ func (g *Gateway) proxyTo(w http.ResponseWriter, r *http.Request, upstream *url.
 	r.Header.Del("X-Codefly-Public-Origin")
 	if isAccountsRoute(entry) && g.authz != nil && g.authz.gatewayToken != "" {
 		r.Header.Set("X-Codefly-Gateway-Token", g.authz.gatewayToken)
-		if publicOrigin, ok := trustedFrontendOrigin(r.Context()); ok {
+		if publicOrigin, ok := publicOriginFor(r); ok {
 			r.Header.Set("X-Codefly-Public-Origin", publicOrigin)
 		}
 	}
@@ -411,6 +435,29 @@ func (g *Gateway) withTrustedFrontendOrigin(r *http.Request) *http.Request {
 	}
 	ctx := context.WithValue(r.Context(), trustedFrontendOriginContextKey{}, origin)
 	return r.WithContext(ctx)
+}
+
+// publicOriginFor is the browser origin accounts may treat as verified: the
+// WebAuthn relying party a credential is bound to, and the origin an OAuth
+// redirect is validated against.
+//
+// Two callers can establish one. The frontend proves it by presenting the
+// cluster-internal token alongside the origin it resolved server-side. A
+// registered client proves it by arriving from an origin its own registration
+// declares, which authorizeCrossOrigin has already checked — a stronger claim,
+// since it names the client rather than only the process that forwarded it.
+func publicOriginFor(r *http.Request) (string, bool) {
+	if origin, ok := trustedFrontendOrigin(r.Context()); ok {
+		return origin, true
+	}
+	if r.Header.Get(clientIDHeader) == "" {
+		return "", false
+	}
+	origin, err := canonicalPublicOrigin(r.Header.Get("Origin"))
+	if err != nil {
+		return "", false
+	}
+	return origin, true
 }
 
 func trustedFrontendOrigin(ctx context.Context) (string, bool) {
@@ -509,6 +556,7 @@ var untrustedAuthHeaders = []string{
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
 	"x-codefly-gateway-token", "x-codefly-internal-token", "x-codefly-public-origin",
 	"x-codefly-module-secret", "x-codefly-solution-secret", "x-codefly-solution-registration",
+	clientIDHeader,
 }
 
 // httpError writes a plain-text error response. Bodies are short,

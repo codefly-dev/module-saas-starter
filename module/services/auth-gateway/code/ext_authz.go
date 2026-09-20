@@ -40,6 +40,9 @@ type accessClaims struct {
 	AssuranceLevel        string              `json:"acr,omitempty"`
 	MFAVerifiedAt         *jwt.NumericDate    `json:"mfa_at,omitempty"`
 	Act                   *actorClaim         `json:"act,omitempty"`
+	// AuthorizedParty is the registered client the token was issued to (OIDC
+	// `azp`). Absent on the host's own web sessions, which belong to no client.
+	AuthorizedParty string `json:"azp,omitempty"`
 }
 
 // actorClaim is the RFC 8693 `act` on-behalf-of chain (see pkg/auth Actor). The
@@ -310,6 +313,12 @@ func (s *ExtAuthz) checkJWT(ctx context.Context, tokenString, path string) (*aut
 	if claims.ActingAsUserID != "" {
 		hdrs = append(hdrs, hdr("x-acting-as-user-id", claims.ActingAsUserID))
 	}
+	if claims.AuthorizedParty != "" {
+		// Which registered client the person came through. Audit reads it to
+		// attribute the call to both, and the CORS pass binds the request to
+		// the origins that client registered.
+		hdrs = append(hdrs, hdr(clientIDHeader, claims.AuthorizedParty))
+	}
 	if claims.Act != nil {
 		if encoded, err := json.Marshal(claims.Act); err == nil {
 			hdrs = append(hdrs, hdr("x-act", string(encoded)))
@@ -406,7 +415,14 @@ var canonicalUpstreamAuthHeaders = []string{
 	"x-scoped-roles", "x-scoped-roles-truncated", "x-auth-id", "x-user-email", "x-user-name", "x-session-id",
 	"x-acting-as-user-id", "x-act", "x-scopes", "x-credential-kind", "x-mfa-satisfied",
 	"x-authentication-methods", "x-auth-time", "x-assurance-level", "x-mfa-verified-at",
+	clientIDHeader,
 }
+
+// clientIDHeader carries the registered client a request was made through, as
+// resolved from the bearer's `azp`. Like every other canonical identity header
+// it is stripped from caller input first, so it states what the perimeter
+// verified rather than what the caller claimed.
+const clientIDHeader = "x-client-id"
 
 // The credential kinds x-credential-kind carries. They name what the perimeter
 // authenticated, which is a fact only the perimeter holds: upstream sees the
