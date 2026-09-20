@@ -1,19 +1,19 @@
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import type { ComponentProps } from "react";
 import {
-	MetricProvenance,
-	type MetricState,
-	MetricStateBadge,
-} from "./metric-state.js";
-import { Sparkline } from "./sparkline.js";
-import {
 	CardRoot as Card,
 	CardContent,
 	CardFooter,
 	CardHeader,
 } from "../layout/card-root.js";
-import { Skeleton } from "../layout/skeleton.js";
 import { cn } from "../layout/cn.js";
+import { Skeleton } from "../layout/skeleton.js";
+import {
+	MetricProvenance,
+	type MetricState,
+	MetricStateBadge,
+} from "./metric-state.js";
+import { Sparkline } from "./sparkline.js";
 
 export type MetricFormat = "number" | "compact" | "currency" | "percent";
 
@@ -119,7 +119,17 @@ function MetricDelta({
 	deltaLabel,
 	higherIsBetter = true,
 }: Pick<Metric, "delta" | "deltaLabel" | "higherIsBetter">) {
-	if (delta === undefined) return null;
+	// No delta with a named comparison period means the period had nothing to
+	// compare against — a change from zero is not a percentage. Say which
+	// period rather than leaving a blank where a viewer expects an arrow.
+	if (delta === undefined) {
+		if (!deltaLabel) return null;
+		return (
+			<span className="type-metric-delta text-muted-foreground">
+				no data {deltaLabel}
+			</span>
+		);
+	}
 
 	const magnitude = new Intl.NumberFormat("en-US", {
 		style: "percent",
@@ -134,7 +144,9 @@ function MetricDelta({
 			<span className="inline-flex items-center gap-0.5 type-metric-delta text-muted-foreground">
 				<Minus className="size-3" aria-hidden />
 				{magnitude}
-				{deltaLabel && <span className="type-metric-delta-label">{deltaLabel}</span>}
+				{deltaLabel && (
+					<span className="type-metric-delta-label">{deltaLabel}</span>
+				)}
 			</span>
 		);
 	}
@@ -153,7 +165,9 @@ function MetricDelta({
 			{up ? "+" : "−"}
 			{magnitude}
 			{deltaLabel && (
-				<span className="type-metric-delta-label text-muted-foreground">{deltaLabel}</span>
+				<span className="type-metric-delta-label text-muted-foreground">
+					{deltaLabel}
+				</span>
 			)}
 		</span>
 	);
@@ -178,7 +192,9 @@ export function StatTile({
 	return (
 		<Card className={cn("gap-1.5 p-4", className)}>
 			<div className="flex items-center justify-between gap-2">
-				<span className="type-metric-label text-muted-foreground">{metric.label}</span>
+				<span className="type-metric-label text-muted-foreground">
+					{metric.label}
+				</span>
 				{metric.state && <MetricStateBadge state={metric.state} />}
 			</div>
 			<div className="flex items-end justify-between gap-3">

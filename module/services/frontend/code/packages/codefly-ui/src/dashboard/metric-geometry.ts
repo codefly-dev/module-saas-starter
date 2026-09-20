@@ -188,3 +188,42 @@ export function areaPath(points: Point[], baselineY: number): string {
 	const last = points[points.length - 1];
 	return `${linePath(points)} L${last.x.toFixed(2)},${baselineY.toFixed(2)} L${first.x.toFixed(2)},${baselineY.toFixed(2)} Z`;
 }
+
+/**
+ * A series after stacking: its own values plus the running total beneath it,
+ * so a band is drawn from `base` to `top` rather than from zero.
+ */
+export interface StackedSeries extends ResolvedSeries {
+	/** The sum of every series below this one at each label; the band's floor. */
+	base: number[];
+	/** `base + value` at each label; the band's ceiling and the next base. */
+	top: number[];
+}
+
+/**
+ * Stack series cumulatively in the order given: the first is drawn on the
+ * bottom, each next one on top of the running total.
+ *
+ * A gap (`null`) contributes nothing and keeps the band flat at the base there
+ * rather than dropping to zero, which is what a viewer reads as "no data" and
+ * not "fell to nothing". `values` is kept as the series' OWN values, so the
+ * tooltip and the accessible table still report what each series contributed,
+ * never the cumulative height it happens to be drawn at.
+ */
+export function stackSeries(series: ResolvedSeries[]): StackedSeries[] {
+	const length = series[0]?.values.length ?? 0;
+	const running = new Array<number>(length).fill(0);
+	return series.map((s) => {
+		const base = running.slice();
+		const top = base.map((b, i) => b + (s.values[i] ?? 0));
+		for (let i = 0; i < length; i += 1) running[i] = top[i];
+		return { ...s, base, top };
+	});
+}
+
+/** The y extent a stacked chart must fit: zero to the tallest column. */
+export function stackedExtent(stacked: StackedSeries[]): [number, number] {
+	let max = 0;
+	for (const s of stacked) for (const t of s.top) if (t > max) max = t;
+	return [0, max];
+}

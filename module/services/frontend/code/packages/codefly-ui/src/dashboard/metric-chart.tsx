@@ -24,6 +24,7 @@
 
 import { type ReactNode, useState } from "react";
 import { cn } from "../layout/cn.js";
+import { formatAxisKey } from "./format.js";
 import {
 	areaPath,
 	axisPositions,
@@ -33,6 +34,8 @@ import {
 	niceTicks,
 	type ResolvedSeries,
 	resolveSeries,
+	stackedExtent,
+	stackSeries,
 	unionLabels,
 	valuesExtent,
 } from "./metric-geometry.js";
@@ -57,6 +60,12 @@ export function chartSeriesColor(index: number): string {
 
 export interface MetricChartProps {
 	series: ChartSeries[];
+	/**
+	 * Draw series cumulatively, each band on top of the ones before it, so the
+	 * outline is the total and every band is legible. Off, series overlay and
+	 * the smaller ones hide behind the larger. Area charts only.
+	 */
+	stacked?: boolean;
 	/** Names the chart for the accessible label; also shown by consumers' card. */
 	title: string;
 	className?: string;
@@ -84,6 +93,7 @@ function computeGeometry(
 	series: ChartSeries[],
 	height: number,
 	band: boolean,
+	stacked = false,
 ): FrameGeometry {
 	const plotLeft = MARGIN.left;
 	const plotRight = VIEW_W - MARGIN.right;
@@ -91,7 +101,10 @@ function computeGeometry(
 	const plotBottom = height - MARGIN.bottom;
 	const labels = unionLabels(series);
 	const resolved = resolveSeries(series, labels);
-	const [min, max] = valuesExtent(resolved);
+	// A stacked chart scales to its tallest column, not its tallest series.
+	const [min, max] = stacked
+		? stackedExtent(stackSeries(resolved))
+		: valuesExtent(resolved);
 	const ticks = niceTicks(min, max);
 	const scaleY = linearScale(
 		ticks[0],
@@ -303,11 +316,14 @@ function Tooltip({
 			aria-hidden
 		>
 			<div className="mb-1 type-chart-label text-muted-foreground">
-				{geo.labels[index]}
+				{formatAxisKey(geo.labels[index])}
 			</div>
 			<ul className="space-y-0.5">
 				{geo.resolved.map((s, i) => (
-					<li key={s.name} className="flex items-center gap-2 type-caption-plain">
+					<li
+						key={s.name}
+						className="flex items-center gap-2 type-caption-plain"
+					>
 						<span
 							className="inline-block h-0.5 w-3 rounded-full"
 							style={{ backgroundColor: chartSeriesColor(i) }}
@@ -361,6 +377,7 @@ function ChartFrame({
 	formatValue = (value) => fullFormat.format(value),
 	legendMarker,
 	band = false,
+	stacked = false,
 	marks,
 	overlay,
 }: MetricChartProps & {
@@ -370,7 +387,7 @@ function ChartFrame({
 	overlay: (geo: FrameGeometry, index: number) => ReactNode;
 }) {
 	const [active, setActive] = useState<number | null>(null);
-	const geo = computeGeometry(series, height, band);
+	const geo = computeGeometry(series, height, band, stacked);
 
 	if (geo.labels.length === 0) {
 		return <EmptyChart title={title} height={height} className={className} />;
@@ -491,12 +508,43 @@ export function LineChart(props: MetricChartProps) {
 }
 
 export function AreaChart(props: MetricChartProps) {
+	const { stacked = false } = props;
 	return (
 		<ChartFrame
 			{...props}
 			legendMarker="line"
-			marks={(geo) =>
-				geo.resolved.map((s, i) => {
+			marks={(geo) => {
+				if (stacked) {
+					// Bands are drawn bottom-up, each between its own floor (the
+					// bands beneath it) and its ceiling. The line traces the
+					// ceiling so the topmost line is the total.
+					return stackSeries(geo.resolved).map((s, i) => {
+						const tops = seriesPoints(s.top, geo);
+						const bases = seriesPoints(s.base, geo);
+						if (tops.length === 0) return <g key={s.name} />;
+						const color = chartSeriesColor(i);
+						const last = tops[tops.length - 1];
+						return (
+							<g key={s.name}>
+								<path
+									d={bandPath(tops, bases)}
+									fill={color}
+									fillOpacity={0.28}
+								/>
+								<path
+									d={linePath(tops)}
+									fill="none"
+									stroke={color}
+									strokeWidth={1.5}
+									strokeLinejoin="round"
+									vectorEffect="non-scaling-stroke"
+								/>
+								<EndMarker x={last.x} y={last.y} color={color} />
+							</g>
+						);
+					});
+				}
+				return geo.resolved.map((s, i) => {
 					const points = seriesPoints(s.values, geo);
 					if (points.length === 0) return <g key={s.name} />;
 					const color = chartSeriesColor(i);
@@ -520,11 +568,27 @@ export function AreaChart(props: MetricChartProps) {
 							<EndMarker x={last.x} y={last.y} color={color} />
 						</g>
 					);
-				})
-			}
+				});
+			}}
 			overlay={LineOverlay}
 		/>
 	);
+}
+
+/** A closed region between a ceiling polyline and a floor polyline. */
+function bandPath(
+	tops: { x: number; y: number }[],
+	bases: { x: number; y: number }[],
+): string {
+	const up = tops
+		.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`)
+		.join(" ");
+	const down = bases
+		.slice()
+		.reverse()
+		.map((p) => `L${p.x},${p.y}`)
+		.join(" ");
+	return `${up} ${down} Z`;
 }
 
 /** Rounds the data-end (top for positive, bottom for negative) of a column. */

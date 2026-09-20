@@ -25,6 +25,10 @@ export { Avatar, AvatarFallback, AvatarImage } from "@codefly-dev/ui/layout";
 export { Badge, badgeVariants } from "@codefly-dev/ui/layout";
 export { Button, buttonVariants } from "@codefly-dev/ui/layout";
 export {
+	SegmentedControl,
+	type SegmentedControlOption,
+} from "@codefly-dev/ui/layout";
+export {
 	CardRoot as Card,
 	CardContent,
 	CardDescription,
