@@ -253,7 +253,7 @@ function Axes({
 						textAnchor="middle"
 						className="fill-muted-foreground type-chart-label"
 					>
-						{label}
+						{formatAxisKey(label)}
 					</text>
 				) : null,
 			)}
