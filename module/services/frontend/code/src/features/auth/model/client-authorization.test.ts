@@ -120,4 +120,25 @@ describe("completePendingClientAuthorization", () => {
 		);
 		expect(replace).not.toHaveBeenCalled();
 	});
+
+	// A request consumed before the code is in hand is unrecoverable: nothing
+	// can retry it, and the client waits on a redirect that never comes.
+	it("leaves the request pending when the call fails", async () => {
+		rememberClientAuthorization(request);
+		vi.mocked(fetch).mockRejectedValue(new Error("network down"));
+
+		await expect(completePendingClientAuthorization("token")).rejects.toThrow();
+		expect(takeClientAuthorization()).toEqual(request);
+	});
+
+	it("clears the request once the code is in hand", async () => {
+		rememberClientAuthorization(request);
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({ code: "one-time-code" }),
+		} as Response);
+
+		await completePendingClientAuthorization("token");
+		expect(takeClientAuthorization()).toBeNull();
+	});
 });

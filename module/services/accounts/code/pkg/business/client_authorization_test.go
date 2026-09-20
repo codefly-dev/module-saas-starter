@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"accounts/pkg/auth"
+
 	gen "accounts/pkg/gen/saas/accounts/v1"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/stretchr/testify/require"
 )
@@ -59,8 +62,11 @@ func authorizationRequest() *gen.ClientAuthorizationRequest {
 // the verified identity the login page would be calling with.
 func signInAsClientUser(t *testing.T, providerID, email string) (context.Context, *gen.AuthenticateResponse) {
 	t.Helper()
+	// Sign up with an organization: an orgless session is a real state, but the
+	// audit row's organization is only observable when there is one.
 	resp, err := authenticateFixture(testCtx, &gen.AuthenticateRequest{
 		Provider: "google", ProviderId: providerID, ProviderEmail: email,
+		Profile: map[string]string{"org_name": "Acme"},
 	})
 	require.NoError(t, err)
 	identity, err := testService.JWTMinter().VerifyAccess(resp.AccessToken)
@@ -265,4 +271,58 @@ func TestRegisteredClientsAreReadableForTheGateway(t *testing.T) {
 	require.Equal(t, "example-addin", declared[0].ClientID)
 	require.Equal(t, []string{"https://addin.example.com"}, declared[0].Origins)
 	require.Empty(t, declared[1].Origins, "a client with no browser context grants no origin")
+}
+
+// auditLoginRow reads the one saas.auth.login row written for this user, under
+// the control plane so the read itself is not subject to the tenant policy the
+// assertion is about.
+func auditLoginRow(t *testing.T, userID string) (resourceID string, orgID *string) {
+	t.Helper()
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared "tx" key
+		return tx.QueryRow(ctx, `
+			SELECT resource_id, org_id::text
+			FROM audit_events
+			WHERE actor_id = $1 AND event_type = 'saas.auth.login'
+			ORDER BY created_at DESC
+			LIMIT 1`, userID).Scan(&resourceID, &orgID)
+	}))
+	return resourceID, orgID
+}
+
+// audit_events' tenant policy is USING (org_id IS NOT NULL AND org_id =
+// app.current_org_id), so a login row emitted without an organization is
+// readable by no tenant at all — an org admin reviewing their audit trail would
+// never see that this person signed in through a client. The row must also name
+// the session the exchange created, not the host session that authorized it.
+func TestClientSignInIsVisibleInTheTenantAuditTrail(t *testing.T) {
+	clearData(t)
+	registerTestClients(t)
+	signedIn, hostSession := signInAsClientUser(t, "google-client-audit", "client-audit@test.com")
+
+	issued, err := testService.IssueClientAuthorizationCode(signedIn,
+		&gen.IssueClientAuthorizationCodeRequest{Authorization: authorizationRequest()})
+	require.NoError(t, err)
+	exchanged, err := testService.ExchangeClientToken(testCtx, &gen.ExchangeClientTokenRequest{
+		ClientId: testClientID,
+		Grant: &gen.ExchangeClientTokenRequest_AuthorizationCode{
+			AuthorizationCode: &gen.AuthorizationCodeGrant{
+				Code: issued.Code, RedirectUri: testRedirectURI, CodeVerifier: testCodeVerifier,
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	minted, err := testService.JWTMinter().VerifyAccess(exchanged.AccessToken)
+	require.NoError(t, err)
+	hostIdentity, err := testService.JWTMinter().VerifyAccess(hostSession.AccessToken)
+	require.NoError(t, err)
+
+	resourceID, orgID := auditLoginRow(t, hostSession.User.Uuid)
+	require.NotNil(t, orgID, "a login row with no organization is readable by no tenant")
+	require.Equal(t, minted.OrgID.String(), *orgID)
+	require.Equal(t, minted.SessionID.String(), resourceID,
+		"the login row must name the session the exchange created")
+	require.NotEqual(t, hostIdentity.SessionID.String(), resourceID,
+		"not the host session that authorized it")
 }

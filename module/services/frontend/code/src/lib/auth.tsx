@@ -406,9 +406,12 @@ const AuthContext = createContext<AuthContextType | null>(null);
 // destination: the person started on the client's behalf, and the host's own
 // session — just established above — is what authorizes the code it receives.
 async function finishSignIn(accessToken: string | null) {
-	const handedOff = await completePendingClientAuthorization(accessToken).catch(
-		() => false,
-	);
+	// Deliberately not caught: a client that asked for this sign-in and did not
+	// get its code has to be told. Swallowing the failure navigates the person
+	// into the product as though nothing happened while the client waits on a
+	// redirect that never arrives. The session is already established, so the
+	// caller surfaces the error and the request stays pending.
+	const handedOff = await completePendingClientAuthorization(accessToken);
 	const dest = safePostLoginDestination(
 		sessionStorage.getItem("post_login_destination") ?? "/",
 	);

@@ -24,6 +24,13 @@ import (
 // The new session starts its own family with no relationship to the host
 // session's: revoking the client revokes only the client, and the person
 // signing out of the browser does not sign out of their add-in.
+//
+// Redemption consumes a one-use code in a transaction the caller owns, so this
+// reuses that transaction when the caller marks it — exactly as Insert does for
+// CompleteMFAChallenge. Opening a second transaction here would commit the
+// session independently of the code's consumption, and a caller that then
+// failed to commit would leave a live session behind a code that is still
+// redeemable.
 func (s *SessionStore) AuthorizeClientSession(
 	ctx context.Context,
 	userID uuid.UUID,
@@ -38,8 +45,7 @@ func (s *SessionStore) AuthorizeClientSession(
 	}
 
 	var outcome error
-	err := s.rls.WithControlPlane(ctx, func(ctx context.Context) error {
-		tx := txFromCtx(ctx)
+	authorize := func(ctx context.Context, tx pgx.Tx) error {
 		current, err := scanSession(tx.QueryRow(ctx, `
 			SELECT
 				id, user_id, family_id,
@@ -103,6 +109,16 @@ func (s *SessionStore) AuthorizeClientSession(
 
 		next, err := issue(current, authorization)
 		if err != nil {
+			// A terminal rejection means the host session may no longer project
+			// what it is being asked to project — a stale second factor, most
+			// often. It refuses this one authorization and is deliberately NOT
+			// escalated into family revocation the way a refresh rotation is:
+			// the browser session is untouched and still faces that gate on its
+			// own next rotation, so trying to authorize an add-in never signs
+			// the person out of the tab they are sitting in.
+			if _, terminal := auth.RefreshRejectionReason(err); terminal {
+				return auth.ErrSessionUnavailable
+			}
 			return err
 		}
 		if err := prepareSessionRecord(next); err != nil {
@@ -117,8 +133,29 @@ func (s *SessionStore) AuthorizeClientSession(
 		if next.ClientID == "" {
 			return errors.New("pgauth: client session names no client")
 		}
+		// Admission bounds the client's families and re-checks the account under
+		// the user row's lock. Without it a client that re-authorizes on every
+		// launch grows without limit, and those families then rank inside the
+		// device ceiling that the person's next browser login evicts against.
+		if err := s.admitSession(ctx, tx, next); err != nil {
+			if errors.Is(err, auth.ErrAccountInactive) {
+				return auth.ErrSessionUnavailable
+			}
+			return err
+		}
 		return insertSession(ctx, tx, next)
-	})
+	}
+
+	// Reuse the redemption's transaction when the caller owns one, so the code's
+	// consumption and this session commit together or not at all.
+	var err error
+	if tx := txFromCtx(ctx); tx != nil && auth.HasAtomicSessionTransaction(ctx) {
+		err = authorize(ctx, tx)
+	} else {
+		err = s.rls.WithControlPlane(ctx, func(ctx context.Context) error {
+			return authorize(ctx, txFromCtx(ctx))
+		})
+	}
 	if err != nil {
 		return err
 	}

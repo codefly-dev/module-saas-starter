@@ -9,7 +9,7 @@ import (
 )
 
 type authenticationCeremonyRetentionStore interface {
-	DeleteExpiredAuthenticationCeremonies(ctx context.Context, before time.Time) (webauthn, mfaLogin int64, err error)
+	DeleteExpiredAuthenticationCeremonies(ctx context.Context, before time.Time) (webauthn, mfaLogin, clientCodes int64, err error)
 }
 
 type githubAppSetupRetentionStore interface {
@@ -80,9 +80,10 @@ func (s *Service) RunRetention(ctx context.Context) (map[string]int64, error) {
 	// when an operator has not configured a generic retention policy.
 	if ceremonyStore, ok := s.store.(authenticationCeremonyRetentionStore); ok {
 		bypassErr := s.store.WithControlPlane(ctx, func(ctx context.Context) error {
-			webauthn, mfaLogin, err := ceremonyStore.DeleteExpiredAuthenticationCeremonies(ctx, time.Now().Add(-24*time.Hour))
+			webauthn, mfaLogin, clientCodes, err := ceremonyStore.DeleteExpiredAuthenticationCeremonies(ctx, time.Now().Add(-24*time.Hour))
 			deleted["webauthn_ceremonies"] = webauthn
 			deleted["mfa_login_transactions"] = mfaLogin
+			deleted["client_authorization_codes"] = clientCodes
 			return err
 		})
 		if bypassErr != nil {

@@ -86,10 +86,9 @@ export function forgetClientAuthorization(): void {
 	sessionStorage.removeItem(PENDING_KEY);
 }
 
-/** Returns the pending request and clears it, so one sign-in yields one code. */
-export function takeClientAuthorization(): ClientAuthorizationRequest | null {
+/** Returns the pending request without consuming it. */
+export function pendingClientAuthorization(): ClientAuthorizationRequest | null {
 	const raw = sessionStorage.getItem(PENDING_KEY);
-	sessionStorage.removeItem(PENDING_KEY);
 	if (!raw) return null;
 	try {
 		const parsed = JSON.parse(raw) as ClientAuthorizationRequest;
@@ -101,6 +100,13 @@ export function takeClientAuthorization(): ClientAuthorizationRequest | null {
 	}
 }
 
+/** Returns the pending request and clears it, so one sign-in yields one code. */
+export function takeClientAuthorization(): ClientAuthorizationRequest | null {
+	const pending = pendingClientAuthorization();
+	sessionStorage.removeItem(PENDING_KEY);
+	return pending;
+}
+
 /**
  * Completes a pending handoff, if there is one, and reports whether it took the
  * browser away. Called wherever a sign-in has just produced a session — the
@@ -109,7 +115,11 @@ export function takeClientAuthorization(): ClientAuthorizationRequest | null {
 export async function completePendingClientAuthorization(
 	accessToken: string | null,
 ): Promise<boolean> {
-	const request = takeClientAuthorization();
+	// Read without consuming. A request dropped before the host has actually
+	// issued a code cannot be retried by anything — the client is left waiting
+	// on a redirect that will never come — so it is cleared only once the code
+	// is in hand.
+	const request = pendingClientAuthorization();
 	if (!request) return false;
 	const response = await fetch("/v1/auth/clients/authorize", {
 		method: "POST",
@@ -134,6 +144,7 @@ export async function completePendingClientAuthorization(
 	// The redirect target is the one the host validated against its registry, so
 	// it is used verbatim; a URL assembled from anything the page still holds
 	// would be assembling it from the caller's own input again.
+	forgetClientAuthorization();
 	const target = new URL(request.redirectUri);
 	target.searchParams.set("code", data.code);
 	if (request.state) target.searchParams.set("state", request.state);

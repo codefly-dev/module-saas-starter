@@ -142,3 +142,31 @@ func TestClientRefreshRefusesTheHostsOwnWebSession(t *testing.T) {
 	_, err = m.VerifyClientRefresh(ctx, hostPair.RefreshToken, "")
 	require.Error(t, err, "a client refresh must name a client")
 }
+
+// A host session whose second factor is no longer good enough to project is a
+// refusal, not an internal error, and it must not take the browser session down
+// with it. Before the fix the terminal rejection escaped as a raw error from a
+// public endpoint, after the one-use code had already been spent.
+func TestClientAuthorizationRefusesStaleMFAEvidenceWithoutRevokingTheHost(t *testing.T) {
+	ctx := context.Background()
+	m, store := newMinter(t)
+	host := mintHostSession(t, m, store)
+
+	// The person enrolled MFA after this session was minted: authorization now
+	// reports an enrolled factor the session carries no evidence of.
+	store.refreshAuthorization = &auth.RefreshAuthorization{
+		OrgID:       host.OrgID,
+		OrgRole:     host.OrgRole,
+		MFAEnrolled: true,
+	}
+
+	_, err := m.MintForClient(ctx, host.UserID, host.ID, "example-addin")
+	require.ErrorIs(t, err, auth.ErrSessionUnavailable)
+
+	for i := range store.records {
+		if store.records[i].ID == host.ID {
+			require.Nil(t, store.records[i].RevokedAt,
+				"authorizing a client must not sign the person out of their browser")
+		}
+	}
+}

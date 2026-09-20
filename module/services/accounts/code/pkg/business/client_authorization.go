@@ -130,7 +130,7 @@ func (s *Service) IssueClientAuthorizationCode(
 	}
 
 	s.emit(ctx, record.UserID, "user", EventAuthClientAuthorized,
-		"session", record.SessionID, caller.OrgID.String(),
+		"session", record.SessionID, renderOrgID(caller.OrgID),
 		map[string]any{"client_id": client.ClientID})
 
 	return &gen.IssueClientAuthorizationCodeResponse{
@@ -198,7 +198,12 @@ func (s *Service) redeemClientAuthorizationCode(
 			if err != nil {
 				return auth.ErrClientAuthorizationRejected
 			}
-			pair, err = s.minter.MintForClient(txCtx, userID, sessionID, client.ClientID)
+			// The code's consumption and the client's session must commit
+			// together: the marker is what lets the session store reuse this
+			// transaction instead of opening its own, which would commit the
+			// session while the code stayed redeemable.
+			pair, err = s.minter.MintForClient(
+				auth.WithAtomicSessionTransaction(txCtx), userID, sessionID, client.ClientID)
 			if err != nil {
 				return err
 			}
@@ -216,8 +221,17 @@ func (s *Service) redeemClientAuthorizationCode(
 		return nil, auth.ErrClientAuthorizationRejected
 	}
 
+	// The audit row describes the session this exchange created, not the host
+	// session that authorized it, and it must carry that session's organization:
+	// audit_events' tenant policy matches on a non-null org_id, so a row emitted
+	// without one is readable by no tenant at all. The minted token is the
+	// authoritative record of both.
+	minted, err := s.minter.VerifyAccess(pair.AccessToken)
+	if err != nil {
+		return nil, w.Wrapf(err, "verify freshly minted client access token")
+	}
 	s.emit(ctx, redeemed.UserID, "user", EventAuthLogin,
-		"session", redeemed.SessionID, "",
+		"session", minted.SessionID.String(), renderOrgID(minted.OrgID),
 		map[string]any{"client_id": client.ClientID})
 
 	return clientTokenResponse(pair), nil
@@ -307,4 +321,16 @@ func verifyCodeChallenge(challenge, verifier string) bool {
 // cannot fail; an unconfigured registry simply has nothing to report.
 func (s *Service) RegisteredClients(_ context.Context) []auth.RegisteredClient {
 	return s.clientRegistry.All()
+}
+
+// renderOrgID renders an organization for the audit trail, leaving an orgless
+// session's zero id empty rather than spelling it as the nil UUID. A nil-UUID
+// org_id is a tenant that does not exist: the row would be attributed to it,
+// and readable by nobody. Mirrors RequestIdentity.RealActorID's handling of a
+// zero actor.
+func renderOrgID(orgID uuid.UUID) string {
+	if orgID == uuid.Nil {
+		return ""
+	}
+	return orgID.String()
 }

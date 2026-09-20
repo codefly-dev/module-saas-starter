@@ -156,6 +156,9 @@ func (s *memoryStore) AuthorizeClientSession(
 		}
 		next, err := issue(&current, authorization)
 		if err != nil {
+			if _, terminal := auth.RefreshRejectionReason(err); terminal {
+				return auth.ErrSessionUnavailable
+			}
 			return err
 		}
 		if next == nil || next.UserID != current.UserID || next.FamilyID == current.FamilyID || next.ClientID == "" {

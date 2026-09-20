@@ -147,6 +147,37 @@ func (s *SessionStore) admitSession(ctx context.Context, tx pgx.Tx, rec *auth.Se
 		return err
 	}
 
+	// A registered client's session is not a browser device: it lives on a
+	// machine the person did not sign in on, and it is revoked per client. It
+	// therefore takes no device slot — but, like an impersonation window, it
+	// must not be unbounded either, or a client that re-authorizes on every
+	// launch accumulates families without limit. Bound it by the same ceiling,
+	// scoped to that one client, so neither a login nor another client is ever
+	// the row evicted.
+	if rec.ClientID != "" {
+		_, err := tx.Exec(ctx, `
+			WITH client_sessions AS (
+				SELECT family_id,
+				       ROW_NUMBER() OVER (
+				           ORDER BY MAX(last_active_at) DESC, family_id DESC
+				       ) AS recency
+				FROM sessions
+				WHERE user_id = $1 AND revoked_at IS NULL AND client_id = $3
+				GROUP BY family_id
+			), evicted AS (
+				SELECT family_id FROM client_sessions WHERE recency >= $2
+			)
+			UPDATE sessions
+			   SET revoked_at = CURRENT_TIMESTAMP,
+			       revoked_reason = 'client_session_limit_exceeded'
+			 WHERE user_id = $1
+			   AND revoked_at IS NULL
+			   AND family_id IN (SELECT family_id FROM evicted)`,
+			userID, s.policy.MaxActiveDevices, rec.ClientID,
+		)
+		return err
+	}
+
 	if rec.ActingAsUserID != uuid.Nil {
 		// A window takes no device slot, but it must not be unbounded either:
 		// the edge budget for this call is the ordinary per-minute allowance, so
@@ -179,7 +210,10 @@ func (s *SessionStore) admitSession(ctx context.Context, tx pgx.Tx, rec *auth.Se
 			           ORDER BY MAX(last_active_at) DESC, family_id DESC
 			       ) AS recency
 			FROM sessions
-			WHERE user_id = $1 AND revoked_at IS NULL AND acting_as_user_id IS NULL
+			WHERE user_id = $1
+			  AND revoked_at IS NULL
+			  AND acting_as_user_id IS NULL
+			  AND client_id IS NULL
 			GROUP BY family_id
 		), evicted AS (
 			SELECT family_id
