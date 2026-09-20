@@ -24,6 +24,7 @@ import (
 // handshake can disagree while both compile.
 var sharedProtoCopies = map[string]string{
 	"services/auth-gateway/proto/saas/accounts/v1/module_registration.proto": "services/accounts/proto/saas/accounts/v1/module_registration.proto",
+	"services/auth-gateway/proto/saas/accounts/v1/clients.proto":             "services/accounts/proto/saas/accounts/v1/clients.proto",
 }
 
 func TestSharedProtoCopiesMatchTheirSource(t *testing.T) {

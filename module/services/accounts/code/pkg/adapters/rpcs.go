@@ -1109,6 +1109,41 @@ func bearerFromContext(ctx context.Context) string {
 	return ""
 }
 
+// ValidateClientAuthorization, IssueClientAuthorizationCode and
+// ExchangeClientToken share one refusal. The first and third are public, so a
+// distinguishable error would let anyone enumerate which client ids exist and
+// which redirect URIs each registered.
+func (s *AuthServer) ValidateClientAuthorization(ctx context.Context, req *gen.ValidateClientAuthorizationRequest) (*gen.ValidateClientAuthorizationResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.ValidateClientAuthorization(ctx, req)
+	return resp, clientAuthorizationError(err)
+}
+
+func (s *AuthServer) IssueClientAuthorizationCode(ctx context.Context, req *gen.IssueClientAuthorizationCodeRequest) (*gen.IssueClientAuthorizationCodeResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.IssueClientAuthorizationCode(ctx, req)
+	return resp, clientAuthorizationError(err)
+}
+
+func (s *AuthServer) ExchangeClientToken(ctx context.Context, req *gen.ExchangeClientTokenRequest) (*gen.ExchangeClientTokenResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	resp, err := service.ExchangeClientToken(ctx, req)
+	return resp, clientAuthorizationError(err)
+}
+
+func clientAuthorizationError(err error) error {
+	if errors.Is(err, auth.ErrClientAuthorizationRejected) {
+		return status.Error(codes.PermissionDenied, "client authorization rejected")
+	}
+	return err
+}
+
 func (s *AuthServer) GetJWKS(ctx context.Context, _ *emptypb.Empty) (*gen.JWKSResponse, error) {
 	jwks, err := service.GetJWKS(ctx)
 	if err != nil {

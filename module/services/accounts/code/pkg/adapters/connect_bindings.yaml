@@ -24,6 +24,11 @@ services:
     handler: billingConnectHandler
     source:
       kind: business
+  ClientRegistryService:
+    handler: clientRegistryConnectHandler
+    source:
+      kind: singleton
+      name: ClientRegistrySingleton
   ConsentService:
     handler: consentConnectHandler
     source:

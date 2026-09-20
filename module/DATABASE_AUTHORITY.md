@@ -130,7 +130,7 @@ All tenant/user rows remain constrained by their forced RLS policies.
 | select, insert, update | `onboarding_progress`, `resource_follows`, `sessions`, `users`, `webauthn_ceremonies`, `webauthn_credentials` |
 | select, insert | `gdpr_requests` (accepted by request traffic, transitioned only by the leased privacy worker under the control plane) |
 | select, insert, update, delete | `mfa_backup_codes`, `mfa_devices`, `notifications`, `user_identities` |
-| insert only | `mfa_login_transactions` |
+| insert only | `client_authorization_codes`, `mfa_login_transactions` |
 | no tenant relation authority | `job_attempts`, `job_messages`, `job_state_transitions`, `magic_links`, `membership_integrity_findings` |
 
 Retention deletes and token-based pre-auth reads/updates use the audited
@@ -156,7 +156,7 @@ executable inventory and this table in the same change.
 |---|---|---|
 | `global` | `audit_event_types`, `bootstrap_state`, `data_retention_policies`, `email_templates`, `feature_flags`, `identity_providers`, `plan_entitlements`, `plans`, `platform_admins`, `solution_registrations` | No RLS; exact grants |
 | `tenant` | `actor_chain_journal`, `actor_chain_revocations`, `api_keys`, `approval_decisions`, `approval_requests`, `audit_event_idempotency`, `audit_events`, `connector_credentials`, `dashboards`, `datasource_sources`, `delegation_grants`, `domain_events`, `entitlement_overrides`, `github_app_installations`, `github_app_setups`, `installations`, `invitations`, `membership_integrity_findings`, `org_generic_settings`, `org_identity_providers`, `org_settings`, `organization_activations`, `organization_authorization_revisions`, `organization_members`, `organizations`, `principal_authorization_revisions`, `principals`, `record_shares`, `role_assignments`, `role_permissions`, `roles`, `scope_grants`, `scope_nodes`, `source_read_revisions`, `subscriptions`, `team_members`, `team_membership_quarantine`, `teams`, `usage_events`, `usage_totals`, `webhook_deliveries`, `webhook_subscriptions`, `work_context_replay` | Enabled and forced RLS with at least one policy |
-| `user` | `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
+| `user` | `client_authorization_codes`, `gdpr_requests`, `mfa_backup_codes`, `mfa_devices`, `mfa_login_transactions`, `notifications`, `onboarding_progress`, `resource_follows`, `sessions`, `user_consent_events`, `user_consent_preferences`, `user_identities`, `users`, `webauthn_ceremonies`, `webauthn_credentials` | Enabled and forced RLS with at least one policy |
 | `pre_auth` | `magic_links`, `waitlist_entries` | Enabled and forced RLS; fail-closed request policy, accessed only by the control-plane role |
 | `job` | `job_messages` | Enabled and forced RLS with at least one policy; no request relation grant — function-only scoped enqueue plus exact job-worker grants |
 | `worker` | `analytics_deliveries`, `email_delivery_events`, `event_subscriptions`, `job_attempts`, `job_state_transitions` | No RLS; no request relation grant, exact grants to one named worker role |

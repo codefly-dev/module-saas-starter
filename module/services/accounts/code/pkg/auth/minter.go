@@ -65,6 +65,18 @@ type JWTMinter interface {
 	// ErrRefreshRevoked without being misclassified as an attacker replay.
 	VerifyRefresh(ctx context.Context, refreshToken string) (*TokenPair, error)
 
+	// VerifyClientRefresh rotates a refresh token that must belong to clientID.
+	// The owning client is read from the locked session row rather than from the
+	// caller, so one client presenting another's token is refused exactly as a
+	// token that never existed is.
+	VerifyClientRefresh(ctx context.Context, refreshToken, clientID string) (*TokenPair, error)
+
+	// MintForClient issues the first token pair for a registered client, from
+	// the host session that authorized it. The client's session is independent:
+	// its own family, its own refresh token, and an `azp` claim naming clientID
+	// so audit and downstream services read "this person, via this client".
+	MintForClient(ctx context.Context, userID, authorizingSessionID uuid.UUID, clientID string) (*TokenPair, error)
+
 	// SwitchOrganization issues a fresh access token for a current membership
 	// while preserving the refresh token, session row, device family, and both
 	// lifetime boundaries. userID and sessionID must come from verified request

@@ -7,6 +7,7 @@ import { AuditService } from "./audit_pb";
 import { AuthService } from "./authentication_pb";
 import { PermissionService, PrincipalService } from "./authorization_pb";
 import { BillingService } from "./billing_pb";
+import { ClientRegistryService } from "./clients_service_pb";
 import { ConsentService } from "./consent_pb";
 import { DashboardService } from "./dashboards_pb";
 import { DatasourceService } from "./datasource_pb";
@@ -171,6 +172,7 @@ export const ACCOUNT_SERVICE_DESCRIPTORS = {
   AuditService,
   AuthService,
   BillingService,
+  ClientRegistryService,
   ConsentService,
   DashboardService,
   DatasourceService,
@@ -208,6 +210,7 @@ export interface AccountsClients {
   readonly AuditService: Client<typeof AuditService>;
   readonly AuthService: Client<typeof AuthService>;
   readonly BillingService: Client<typeof BillingService>;
+  readonly ClientRegistryService: Client<typeof ClientRegistryService>;
   readonly ConsentService: Client<typeof ConsentService>;
   readonly DashboardService: Client<typeof DashboardService>;
   readonly DatasourceService: Client<typeof DatasourceService>;
@@ -244,6 +247,7 @@ export function createAccountsClients(transport: Transport): AccountsClients {
     AuditService: createClient(AuditService, transport),
     AuthService: createClient(AuthService, transport),
     BillingService: createClient(BillingService, transport),
+    ClientRegistryService: createClient(ClientRegistryService, transport),
     ConsentService: createClient(ConsentService, transport),
     DashboardService: createClient(DashboardService, transport),
     DatasourceService: createClient(DatasourceService, transport),

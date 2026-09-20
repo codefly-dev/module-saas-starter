@@ -24,7 +24,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 			publicCount++
 		}
 	}
-	require.Equal(t, 16, publicCount)
+	require.Equal(t, 18, publicCount)
 	require.NotNil(t, paths["GET /v1/.well-known/service-info"])
 	require.NotNil(t, paths["GET /v1/public/plans"])
 	require.False(t, paths["GET /v1/public/plans"].Protected)

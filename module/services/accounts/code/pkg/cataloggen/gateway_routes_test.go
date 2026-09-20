@@ -34,7 +34,7 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 		}
 		require.NotEqual(t, policyv1.Exposure_EXPOSURE_INTERNAL, route.GetExposure())
 	}
-	require.Equal(t, 48, publicCount)
+	require.Equal(t, 54, publicCount)
 
 	require.Nil(t, byMatch["POST /saas.accounts.v1.APIKeyService/ValidateAPIKey"])
 	require.Equal(t, policyv1.Exposure_EXPOSURE_PUBLIC, byMatch["POST /saas.accounts.v1.AuthService/BeginOAuth"].GetExposure())

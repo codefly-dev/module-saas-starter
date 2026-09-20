@@ -12,6 +12,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { completePendingClientAuthorization } from "@/features/auth/model/client-authorization";
 import { AuthService } from "@/gen/saas/accounts/v1/authentication_pb";
 import { PlatformAdminService } from "@/gen/saas/accounts/v1/platform_admin_pb";
 import { authErrorFromResponse } from "@/lib/auth-errors";
@@ -347,8 +348,10 @@ interface AuthContextType extends AuthState {
 	// Dev / fixture path — caller supplies an already-trusted identity.
 	// Used by the dev-admin fixture and local-only tooling. In production
 	// the OAuth redirect flow (signInWith) is the only path.
-	// Resolves true when a normal session was issued, false when the browser was
-	// moved into the MFA challenge continuation.
+	// Resolves true when a normal session was issued and the caller should
+	// navigate, false when the browser has been moved elsewhere instead — into
+	// the MFA challenge continuation, or back to a registered client waiting on
+	// an authorization code.
 	login: (
 		provider: string,
 		providerId: string,
@@ -356,8 +359,9 @@ interface AuthContextType extends AuthState {
 	) => Promise<boolean>;
 	// Header-injected identity path. POSTs to /v1/auth/authenticate with no
 	// credential in the body — the accounts login route reads the gateway-injected
-	// JWT header server-side. Resolves true when a session was issued, false when
-	// the browser was moved into the MFA challenge continuation.
+	// JWT header server-side. Resolves true when a session was issued and the
+	// caller should navigate, false when the browser has been moved elsewhere
+	// instead — the MFA challenge, or a registered client's redirect.
 	loginWithHeaderInjected: () => Promise<boolean>;
 	// Kicks off the OAuth authorization-code flow by redirecting the
 	// browser to the provider's hosted login. The callback page completes
@@ -396,6 +400,25 @@ interface AuthContextType extends AuthState {
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+
+// finishSignIn sends the browser wherever this sign-in was for. A registered
+// client waiting on an authorization code takes precedence over the in-app
+// destination: the person started on the client's behalf, and the host's own
+// session — just established above — is what authorizes the code it receives.
+async function finishSignIn(accessToken: string | null) {
+	// Deliberately not caught: a client that asked for this sign-in and did not
+	// get its code has to be told. Swallowing the failure navigates the person
+	// into the product as though nothing happened while the client waits on a
+	// redirect that never arrives. The session is already established, so the
+	// caller surfaces the error and the request stays pending.
+	const handedOff = await completePendingClientAuthorization(accessToken);
+	const dest = safePostLoginDestination(
+		sessionStorage.getItem("post_login_destination") ?? "/",
+	);
+	sessionStorage.removeItem("post_login_destination");
+	if (handedOff || typeof window === "undefined") return;
+	window.location.replace(dest);
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
 	const [state, setState] = useState<AuthState>({
@@ -538,7 +561,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.uuid,
 				data.user?.primaryEmail ?? email,
 			);
-			return true;
+			return !(await completePendingClientAuthorization(
+				data.accessToken ?? null,
+			));
 		},
 		[beginMFA, setTokens],
 	);
@@ -575,7 +600,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			data.user?.uuid,
 			data.user?.primaryEmail,
 		);
-		return true;
+		return !(await completePendingClientAuthorization(
+			data.accessToken ?? null,
+		));
 	}, [beginMFA, setTokens]);
 
 	// OAuth redirect kickoff. Asks the backend for a server-signed state,
@@ -693,13 +720,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.primaryEmail,
 			);
 
-			const dest = safePostLoginDestination(
-				sessionStorage.getItem("post_login_destination") ?? "/",
-			);
-			sessionStorage.removeItem("post_login_destination");
-			if (typeof window !== "undefined") {
-				window.location.replace(dest);
-			}
+			await finishSignIn(data.accessToken ?? null);
 		},
 		[beginMFA, setTokens],
 	);
@@ -726,11 +747,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				data.user?.primaryEmail,
 			);
 
-			const dest = safePostLoginDestination(
-				sessionStorage.getItem("post_login_destination") ?? "/",
-			);
-			sessionStorage.removeItem("post_login_destination");
-			window.location.replace(dest);
+			await finishSignIn(data.accessToken ?? null);
 		},
 		[setTokens],
 	);
@@ -792,11 +809,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			data.user?.primaryEmail,
 		);
 
-		const dest = safePostLoginDestination(
-			sessionStorage.getItem("post_login_destination") ?? "/",
-		);
-		sessionStorage.removeItem("post_login_destination");
-		window.location.replace(dest);
+		await finishSignIn(data.accessToken ?? null);
 	}, [setTokens]);
 
 	const cancelMFA = useCallback(() => {

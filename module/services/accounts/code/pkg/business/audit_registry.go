@@ -223,6 +223,7 @@ const (
 	EventAuthOrgSwitched            EventType = "saas.auth.organization_switched"
 	EventAuthMFAChallengeStart      EventType = "saas.auth.mfa_challenge_started"
 	EventAuthMFAChallengeDone       EventType = "saas.auth.mfa_challenge_completed"
+	EventAuthClientAuthorized       EventType = "saas.auth.client_authorized"
 	EventMFATOTPSetupStarted        EventType = "saas.mfa.totp_setup_started"
 	EventMFATOTPVerified            EventType = "saas.mfa.totp_verified"
 	EventMFAWebAuthnRegStarted      EventType = "saas.mfa.webauthn_registration_started"
@@ -399,12 +400,13 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventWorkContextAudienceExch, CategoryAccess, "A Work Context task and session lineage was reissued for another audience."),
 	mutation(EventWorkContextRenewed, CategoryAccess, "A delegated actor renewed its Work Context past the signing TTL cap."),
 
-	observation(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method")),
+	observation(EventAuthLogin, CategorySecurity, "A user authenticated.", str("method"), str("client_id")),
 	observation(EventAuthMagicLinkLogin, CategorySecurity, "A user authenticated via magic link."),
 	mutation(EventAuthSSOJitProvisioned, CategorySecurity, "A user was just-in-time provisioned via SSO.", str("provider")),
 	observation(EventAuthOrgSwitched, CategorySecurity, "A user switched active organization."),
 	observation(EventAuthMFAChallengeStart, CategorySecurity, "An MFA challenge was started."),
 	observation(EventAuthMFAChallengeDone, CategorySecurity, "An MFA challenge was completed.", enum("factor", "totp", "webauthn", "backup_code")),
+	observation(EventAuthClientAuthorized, CategorySecurity, "A person authorized a registered client to act for them.", str("client_id")),
 	mutation(EventMFATOTPSetupStarted, CategorySecurity, "TOTP enrollment was started."),
 	mutation(EventMFATOTPVerified, CategorySecurity, "A TOTP device was verified."),
 	mutation(EventMFAWebAuthnRegStarted, CategorySecurity, "WebAuthn registration was started."),

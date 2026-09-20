@@ -497,6 +497,15 @@ func (h *authConnectHandler) SwitchOrganization(ctx context.Context, req *connec
 func (h *authConnectHandler) Logout(ctx context.Context, req *connect.Request[gen.LogoutRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.Logout)
 }
+func (h *authConnectHandler) ValidateClientAuthorization(ctx context.Context, req *connect.Request[gen.ValidateClientAuthorizationRequest]) (*connect.Response[gen.ValidateClientAuthorizationResponse], error) {
+	return unary(ctx, req, h.inner.ValidateClientAuthorization)
+}
+func (h *authConnectHandler) IssueClientAuthorizationCode(ctx context.Context, req *connect.Request[gen.IssueClientAuthorizationCodeRequest]) (*connect.Response[gen.IssueClientAuthorizationCodeResponse], error) {
+	return unary(ctx, req, h.inner.IssueClientAuthorizationCode)
+}
+func (h *authConnectHandler) ExchangeClientToken(ctx context.Context, req *connect.Request[gen.ExchangeClientTokenRequest]) (*connect.Response[gen.ExchangeClientTokenResponse], error) {
+	return unary(ctx, req, h.inner.ExchangeClientToken)
+}
 func (h *authConnectHandler) GetJWKS(ctx context.Context, req *connect.Request[emptypb.Empty]) (*connect.Response[gen.JWKSResponse], error) {
 	return unary(ctx, req, h.inner.GetJWKS)
 }

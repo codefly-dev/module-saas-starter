@@ -101,16 +101,17 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	// User-scoped and pre-auth relations.
 	// A privacy request is accepted and read by request traffic; only the leased
 	// worker transitions it, under the control plane.
-	"gdpr_requests":          {selectRows: true, insertRows: true},
-	"magic_links":            {},
-	"mfa_backup_codes":       {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
-	"mfa_devices":            {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
-	"mfa_login_transactions": {insertRows: true},
-	"notifications":          {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
-	"onboarding_progress":    {selectRows: true, insertRows: true, updateRows: true},
-	"resource_follows":       {selectRows: true, insertRows: true, updateRows: true},
-	"sessions":               {selectRows: true, insertRows: true, updateRows: true},
-	"user_consent_events":    {selectRows: true, insertRows: true},
+	"gdpr_requests":              {selectRows: true, insertRows: true},
+	"magic_links":                {},
+	"mfa_backup_codes":           {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"mfa_devices":                {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"client_authorization_codes": {insertRows: true},
+	"mfa_login_transactions":     {insertRows: true},
+	"notifications":              {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
+	"onboarding_progress":        {selectRows: true, insertRows: true, updateRows: true},
+	"resource_follows":           {selectRows: true, insertRows: true, updateRows: true},
+	"sessions":                   {selectRows: true, insertRows: true, updateRows: true},
+	"user_consent_events":        {selectRows: true, insertRows: true},
 	"user_consent_preferences": {
 		selectRows: true, insertRows: true, updateRows: true,
 	},

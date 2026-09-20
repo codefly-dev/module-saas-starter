@@ -455,6 +455,17 @@ func doWork(ctx context.Context) (Clean, error) {
 	}
 	service.SetOAuthStateSigner(stateSigner)
 
+	// Registered first-party clients (issue #853). Wired regardless of the
+	// configured identity provider: a client signs in on the host's login page
+	// whatever authenticates the person behind it, so the registry is not part
+	// of any one provider's stack. An unset declaration registers no client,
+	// which refuses the flow rather than disabling a check.
+	clientRegistry, err := auth.NewClientRegistry(identityEnv("IDENTITY_REGISTERED_CLIENTS"))
+	if err != nil {
+		return nil, fmt.Errorf("configure registered clients: %w", err)
+	}
+	service.SetClientRegistry(clientRegistry)
+
 	// Authentication mode is explicit in the Codefly identity configuration.
 	// A selected fixture is an optional data seed and cannot replace the
 	// configured provider. Fixture authentication must itself be selected and

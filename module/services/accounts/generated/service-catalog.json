@@ -43,10 +43,13 @@
         "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
         "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
         "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+        "/saas.accounts.v1.AuthService/ExchangeClientToken",
         "/saas.accounts.v1.AuthService/GetJWKS",
+        "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
         "/saas.accounts.v1.AuthService/Logout",
         "/saas.accounts.v1.AuthService/RefreshToken",
-        "/saas.accounts.v1.AuthService/SwitchOrganization"
+        "/saas.accounts.v1.AuthService/SwitchOrganization",
+        "/saas.accounts.v1.AuthService/ValidateClientAuthorization"
       ]
     },
     {
@@ -56,6 +59,13 @@
         "/saas.accounts.v1.BillingService/ListInvoices",
         "/saas.accounts.v1.BillingService/ListPublicPlans",
         "/saas.accounts.v1.BillingService/OpenPortal"
+      ]
+    },
+    {
+      "name": "ClientRegistryService",
+      "full_name": "saas.accounts.v1.ClientRegistryService",
+      "procedures": [
+        "/saas.accounts.v1.ClientRegistryService/ListRegisteredClients"
       ]
     },
     {
@@ -1203,6 +1213,59 @@
       }
     },
     {
+      "procedure": "/saas.accounts.v1.AuthService/ExchangeClientToken",
+      "service": "AuthService",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "ExchangeClientToken",
+      "input_type": "saas.accounts.v1.ExchangeClientTokenRequest",
+      "output_type": "saas.accounts.v1.ExchangeClientTokenResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/auth/token",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.auth.login"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_SECRET",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Exchange a registered client's authorization code or rotating refresh token for tokens.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
       "procedure": "/saas.accounts.v1.AuthService/GetJWKS",
       "service": "AuthService",
       "full_service": "saas.accounts.v1.AuthService",
@@ -1248,6 +1311,59 @@
       },
       "policy_tier": "public",
       "description": "Public JWKS for JWT signature verification.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
+      "service": "AuthService",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "IssueClientAuthorizationCode",
+      "input_type": "saas.accounts.v1.IssueClientAuthorizationCodeRequest",
+      "output_type": "saas.accounts.v1.IssueClientAuthorizationCodeResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/auth/clients/authorize",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.auth.client_authorized"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_SENSITIVE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_SECRET",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "auth",
+      "description": "Issue the one-time code the host redirects back to a registered client with.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1403,6 +1519,57 @@
       },
       "policy_tier": "auth",
       "description": "Exchange the active device session for an access token scoped to another current membership.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.AuthService/ValidateClientAuthorization",
+      "service": "AuthService",
+      "full_service": "saas.accounts.v1.AuthService",
+      "method": "ValidateClientAuthorization",
+      "input_type": "saas.accounts.v1.ValidateClientAuthorizationRequest",
+      "output_type": "saas.accounts.v1.ValidateClientAuthorizationResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authentication.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "POST",
+          "path": "/v1/auth/clients/validate",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_PUBLIC",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_AUTHENTICATION",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "public",
+      "description": "Check a registered client's authorization request before any sign-in UI is shown.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"
@@ -1578,6 +1745,49 @@
       },
       "policy_tier": "mfa",
       "description": "Stripe billing-portal session; requires billing:write and recent MFA.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ClientRegistryService/ListRegisteredClients",
+      "service": "ClientRegistryService",
+      "full_service": "saas.accounts.v1.ClientRegistryService",
+      "method": "ListRegisteredClients",
+      "input_type": "saas.accounts.v1.ListRegisteredClientsRequest",
+      "output_type": "saas.accounts.v1.ListRegisteredClientsResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/clients_service.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_INTERNAL",
+        "tenant": "TENANT_REQUIREMENT_NONE",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_INTERNAL",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "internal",
+      "description": "Read the declared first-party clients the gateway resolves origins from.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

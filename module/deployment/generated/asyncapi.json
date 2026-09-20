@@ -141,6 +141,17 @@
       "x-visibility": "external",
       "x-retention": "30d"
     },
+    "saas.auth.client_authorized": {
+      "address": "saas.auth.client_authorized",
+      "title": "saas.auth.client_authorized",
+      "messages": {
+        "envelope": {
+          "$ref": "#/components/messages/saas.auth.client_authorized"
+        }
+      },
+      "x-visibility": "external",
+      "x-retention": "30d"
+    },
     "saas.auth.login": {
       "address": "saas.auth.login",
       "title": "saas.auth.login",
@@ -1722,6 +1733,13 @@
       },
       "title": "saas publishes saas.approval.timeout"
     },
+    "send:saas.auth.client_authorized": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/saas.auth.client_authorized"
+      },
+      "title": "saas publishes saas.auth.client_authorized"
+    },
     "send:saas.auth.login": {
       "action": "send",
       "channel": {
@@ -2750,6 +2768,13 @@
       "saas.approval.timeout": {
         "name": "saas.approval.timeout",
         "title": "saas.approval.timeout",
+        "payload": {
+          "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
+        }
+      },
+      "saas.auth.client_authorized": {
+        "name": "saas.auth.client_authorized",
+        "title": "saas.auth.client_authorized",
         "payload": {
           "$ref": "#/components/schemas/saas_events_v1_events.proto_EventEnvelope"
         }

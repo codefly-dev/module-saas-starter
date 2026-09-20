@@ -214,6 +214,10 @@ var authorities = map[string]Authority{
 	// User-scoped relations. Owned by one user and reachable in any of that
 	// user's organizations, so the policy compares the session's user rather
 	// than its organization.
+	"client_authorization_codes": {
+		Scope: ScopeUser, PolicyShape: ShapeDirect, ScopeColumn: "user_id",
+		Notes: "Request traffic may only insert; redemption arrives with the opaque code alone and resolves the row by exact hash under the control-plane role.",
+	},
 	"gdpr_requests":    {Scope: ScopeUser, PolicyShape: ShapeDirect, ScopeColumn: "user_id"},
 	"mfa_backup_codes": {Scope: ScopeUser, PolicyShape: ShapeDirect, ScopeColumn: "user_id"},
 	"mfa_devices":      {Scope: ScopeUser, PolicyShape: ShapeDirect, ScopeColumn: "user_id"},
