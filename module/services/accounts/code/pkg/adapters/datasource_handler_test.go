@@ -210,6 +210,17 @@ func TestDatasourceSourceToProto_ProjectsFileExtensions(t *testing.T) {
 		Status:   business.DatasourceStatusActive,
 		Repo:     "acme/docs",
 	})
+	// Assert the config block is present before reading through it. The generated
+	// getters are nil-safe, so GetGithub().GetFileExtensions() reads as an empty
+	// allowlist whether the projection carries an unfiltered source or drops its
+	// GitHub config entirely — and dropping it would take repo, paths and branch
+	// with it, which is what the source table renders.
+	if legacy.GetGithub() == nil {
+		t.Fatal("an unfiltered source must still project its github config")
+	}
+	if got := legacy.GetGithub().GetRepo(); got != "acme/docs" {
+		t.Errorf("legacy repo = %q", got)
+	}
 	if got := legacy.GetGithub().GetFileExtensions(); len(got) != 0 {
 		t.Errorf("legacy file_extensions = %v, want empty", got)
 	}
