@@ -11,6 +11,12 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { BrandMark } from "@/components/brand-mark";
+import {
+	forgetClientAuthorization,
+	readClientAuthorizationRequest,
+	rememberClientAuthorization,
+	validateClientAuthorization,
+} from "@/features/auth/model/client-authorization";
 import { useAppearance } from "@/lib/appearance-provider";
 import {
 	availableProviders,
@@ -40,24 +46,64 @@ export function LoginPage() {
 	const [fixtureUsers, setFixtureUsers] = useState<FixtureUser[]>([]);
 	const [loading, setLoading] = useState<string | null>(null);
 
+	// A registered client sent the person here to sign in on its behalf. The
+	// host decides whether that request is allowed before anything else renders:
+	// until it does, no sign-in method is offered, and a refusal offers none at
+	// all. `pending` is that gap, and it is why the checks below read three ways
+	// rather than two.
+	const clientRequest = useMemo(
+		() => readClientAuthorizationRequest(searchParams),
+		[searchParams],
+	);
+	const [clientName, setClientName] = useState<string | null>(null);
+	const [clientRefusal, setClientRefusal] = useState<string | null>(null);
+	const clientPending =
+		clientRequest !== null && clientName === null && clientRefusal === null;
+
+	useEffect(() => {
+		if (!clientRequest) {
+			forgetClientAuthorization();
+			return;
+		}
+		let cancelled = false;
+		validateClientAuthorization(clientRequest)
+			.then((name) => {
+				if (cancelled) return;
+				rememberClientAuthorization(clientRequest);
+				setClientName(name);
+			})
+			.catch((err) => {
+				if (cancelled) return;
+				forgetClientAuthorization();
+				setClientRefusal(
+					err instanceof Error
+						? err.message
+						: "This application cannot sign in here.",
+				);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [clientRequest]);
+
 	// Header-injected mode has no providers to render but is not dev mode; the
 	// fixture list must stay hidden.
 	const devMode = providers.length === 0 && !headerInjected;
 
 	useEffect(() => {
-		if (!devMode) return;
+		if (!devMode || clientRefusal) return;
 		fetch("/api/fixtures")
 			.then((res) => (res.ok ? (res.json() as Promise<FixtureResponse>) : null))
 			.then((data) => {
 				if (data?.users) setFixtureUsers(data.users);
 			})
 			.catch(() => {});
-	}, [devMode]);
+	}, [devMode, clientRefusal]);
 
 	// Header-injected identity: no button. The gateway already authenticated the
 	// user upstream, so exchange the injected header for a session on load.
 	useEffect(() => {
-		if (!headerInjected) return;
+		if (!headerInjected || clientPending || clientRefusal) return;
 		let cancelled = false;
 		loginWithHeaderInjected()
 			.then((authenticated) => {
@@ -71,7 +117,14 @@ export function LoginPage() {
 		return () => {
 			cancelled = true;
 		};
-	}, [headerInjected, loginWithHeaderInjected, router, destination]);
+	}, [
+		headerInjected,
+		loginWithHeaderInjected,
+		router,
+		destination,
+		clientPending,
+		clientRefusal,
+	]);
 
 	async function handleFixtureLogin(user: FixtureUser) {
 		setError(null);
@@ -164,9 +217,8 @@ export function LoginPage() {
 							<li className="flex items-start gap-3">
 								<Building2 className="h-5 w-5 mt-0.5 text-primary-foreground/90 shrink-0" />
 								<span className="text-primary-foreground/90">
-									<span className="font-medium">Tenant-aware navigation</span>{" "}
-									— organization context and permissions shape the product
-									shell.
+									<span className="font-medium">Tenant-aware navigation</span> —
+									organization context and permissions shape the product shell.
 								</span>
 							</li>
 							<li className="flex items-start gap-3">
@@ -211,9 +263,26 @@ export function LoginPage() {
 									Sign in
 								</h1>
 								<p className="text-sm text-muted-foreground">
-									Choose a method to continue.
+									{clientName
+										? `to continue to ${clientName}`
+										: "Choose a method to continue."}
 								</p>
 							</div>
+							{/* A client the host does not recognise is refused here, before
+							    any sign-in method is offered. */}
+							{clientRefusal && (
+								<div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+									<AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+									<span>{clientRefusal}</span>
+								</div>
+							)}
+
+							{clientPending && (
+								<div className="flex items-center gap-3 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
+									<Loader2 className="h-5 w-5 animate-spin shrink-0" />
+									<span>Checking the application…</span>
+								</div>
+							)}
 
 							{error && (
 								<div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
@@ -223,7 +292,7 @@ export function LoginPage() {
 							)}
 
 							{/* Header-injected identity — no button, exchange in progress */}
-							{headerInjected && !error && (
+							{headerInjected && !error && !clientPending && !clientRefusal && (
 								<div className="flex items-center gap-3 rounded-lg border bg-background p-4 text-sm text-muted-foreground">
 									<Loader2 className="h-5 w-5 animate-spin shrink-0" />
 									<span>Signing you in…</span>
@@ -231,7 +300,7 @@ export function LoginPage() {
 							)}
 
 							{/* OAuth providers */}
-							{providers.length > 0 && (
+							{providers.length > 0 && !clientPending && !clientRefusal && (
 								<div className="space-y-2.5">
 									{providers.map((p) => (
 										<button
@@ -261,46 +330,51 @@ export function LoginPage() {
 							)}
 
 							{/* Fixture users — dev mode */}
-							{devMode && fixtureUsers.length > 0 && (
-								<div className="space-y-2.5">
-									<p className="text-xs font-medium text-muted-foreground text-center uppercase tracking-wider">
-										Dev — select a user
-									</p>
-									{fixtureUsers.map((u) => (
-										<button
-											type="button"
-											key={u.fixture_token ?? u.provider_id}
-											onClick={() => handleFixtureLogin(u)}
-											disabled={loading === (u.fixture_token ?? u.provider_id)}
-											className="w-full flex items-center gap-3 h-14 px-4 rounded-lg border bg-background hover:bg-accent/50 text-left transition-colors disabled:opacity-50"
-										>
-											{loading === (u.fixture_token ?? u.provider_id) ? (
-												<Loader2 className="h-5 w-5 animate-spin text-muted-foreground shrink-0" />
-											) : (
-												<div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shrink-0">
-													<span className="text-xs font-bold text-white">
-														{u.name
-															.split(" ")
-															.map((n) => n[0])
-															.join("")}
-													</span>
+							{devMode &&
+								fixtureUsers.length > 0 &&
+								!clientPending &&
+								!clientRefusal && (
+									<div className="space-y-2.5">
+										<p className="text-xs font-medium text-muted-foreground text-center uppercase tracking-wider">
+											Dev — select a user
+										</p>
+										{fixtureUsers.map((u) => (
+											<button
+												type="button"
+												key={u.fixture_token ?? u.provider_id}
+												onClick={() => handleFixtureLogin(u)}
+												disabled={
+													loading === (u.fixture_token ?? u.provider_id)
+												}
+												className="w-full flex items-center gap-3 h-14 px-4 rounded-lg border bg-background hover:bg-accent/50 text-left transition-colors disabled:opacity-50"
+											>
+												{loading === (u.fixture_token ?? u.provider_id) ? (
+													<Loader2 className="h-5 w-5 animate-spin text-muted-foreground shrink-0" />
+												) : (
+													<div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center shrink-0">
+														<span className="text-xs font-bold text-white">
+															{u.name
+																.split(" ")
+																.map((n) => n[0])
+																.join("")}
+														</span>
+													</div>
+												)}
+												<div className="min-w-0">
+													<div className="text-sm font-medium truncate">
+														{u.name}
+													</div>
+													<div className="text-xs text-muted-foreground truncate">
+														{u.email}
+														<span className="ml-1.5 inline-flex items-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium">
+															{u.role}
+														</span>
+													</div>
 												</div>
-											)}
-											<div className="min-w-0">
-												<div className="text-sm font-medium truncate">
-													{u.name}
-												</div>
-												<div className="text-xs text-muted-foreground truncate">
-													{u.email}
-													<span className="ml-1.5 inline-flex items-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-medium">
-														{u.role}
-													</span>
-												</div>
-											</div>
-										</button>
-									))}
-								</div>
-							)}
+											</button>
+										))}
+									</div>
+								)}
 						</div>
 					</div>
 

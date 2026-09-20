@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file saas/accounts/v1/authentication.proto.
  */
 export const file_saas_accounts_v1_authentication: GenFile = /*@__PURE__*/
-  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL2F1dGhlbnRpY2F0aW9uLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqcBChdPQXV0aENvZGVBdXRoZW50aWNhdGlvbhIYCgRjb2RlGAEgASgJQgq6SAdyBRABGIAgEiAKDHJlZGlyZWN0X3VyaRgCIAEoCUIKukgHcgUQARiAEBIZCgVzdGF0ZRgDIAEoCUIKukgHcgUQARiAIBI1Cg1jb2RlX3ZlcmlmaWVyGAQgASgJQh66SBtyGRArGIABMhJeW0EtWmEtejAtOS5ffi1dKyQiMgoVRml4dHVyZUF1dGhlbnRpY2F0aW9uEhkKBXRva2VuGAEgASgJQgq6SAdyBRABGP8BIjQKF0hlYWRlckpXVEF1dGhlbnRpY2F0aW9uEhkKBXRva2VuGAEgASgJQgq6SAdyBRABGIBAIoAEChNBdXRoZW50aWNhdGVSZXF1ZXN0Ei0KCHByb3ZpZGVyGAEgASgJQhu6SBhyFhABGDIyEF5bYS16QS1aMC05Xy1dKyQSFwoLcHJvdmlkZXJfaWQYAiABKAlCAhgBEhoKDnByb3ZpZGVyX2VtYWlsGAMgASgJQgIYARIaCg5lbWFpbF92ZXJpZmllZBgEIAEoCEICGAESQwoHcHJvZmlsZRgFIAMoCzIyLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdC5Qcm9maWxlRW50cnkSHQoLZGV2aWNlX2luZm8YBiABKAlCCLpIBXIDGIAEEj8KCm9hdXRoX2NvZGUYByABKAsyKS5zYWFzLmFjY291bnRzLnYxLk9BdXRoQ29kZUF1dGhlbnRpY2F0aW9uSAASOgoHZml4dHVyZRgIIAEoCzInLnNhYXMuYWNjb3VudHMudjEuRml4dHVyZUF1dGhlbnRpY2F0aW9uSAASPwoKaGVhZGVyX2p3dBgJIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuSGVhZGVySldUQXV0aGVudGljYXRpb25IABouCgxQcm9maWxlRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUIXCg5hdXRoZW50aWNhdGlvbhIFukgCCAEipgEKFEF1dGhlbnRpY2F0ZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlchIUCgxtZmFfcmVxdWlyZWQYBSABKAgSEQoJbWZhX3Rva2VuGAYgASgJIlUKG0NvbXBsZXRlTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wESFwoEY29kZRgCIAEoCUIJukgGcgQQBhhAIoUBChxDb21wbGV0ZU1GQUNoYWxsZW5nZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlciJBCiBCZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wEiXAohQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZVJlc3BvbnNlEhYKDmNlcmVtb255X3Rva2VuGAEgASgJEh8KF3B1YmxpY19rZXlfb3B0aW9uc19qc29uGAIgASgJIpcBCiNDb21wbGV0ZVdlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wESIgoOY2VyZW1vbnlfdG9rZW4YAiABKAlCCrpIB3IFECAY/wESLQoYY3JlZGVudGlhbF9yZXNwb25zZV9qc29uGAMgASgJQgu6SAhyBhACGICACCI1ChNSZWZyZXNoVG9rZW5SZXF1ZXN0Eh4KDXJlZnJlc2hfdG9rZW4YASABKAlCB7pIBHICEAEiVwoUUmVmcmVzaFRva2VuUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkSEgoKZXhwaXJlc19pbhgDIAEoAyI+ChlTd2l0Y2hPcmdhbml6YXRpb25SZXF1ZXN0EiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQEiRgoaU3dpdGNoT3JnYW5pemF0aW9uUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKAMiLwoNTG9nb3V0UmVxdWVzdBIeCg1yZWZyZXNoX3Rva2VuGAEgASgJQge6SARyAhABIiEKDEpXS1NSZXNwb25zZRIRCglrZXlzX2pzb24YASABKAkiTQoRQmVnaW5PQXV0aFJlcXVlc3QSGQoIcHJvdmlkZXIYASABKAlCB7pIBHICEAESHQoMcmVkaXJlY3RfdXJpGAIgASgJQge6SARyAhABIiMKEkJlZ2luT0F1dGhSZXNwb25zZRINCgVzdGF0ZRgBIAEoCTK1DQoLQXV0aFNlcnZpY2USkAEKCkJlZ2luT0F1dGgSIy5zYWFzLmFjY291bnRzLnYxLkJlZ2luT0F1dGhSZXF1ZXN0GiQuc2Fhcy5hY2NvdW50cy52MS5CZWdpbk9BdXRoUmVzcG9uc2UiN8LzGBQIARABMAE6AhABQAFIAlADWARgAYLT5JMCGToBKiIUL3YxL2F1dGgvb2F1dGgvYmVnaW4SyQEKDEF1dGhlbnRpY2F0ZRIlLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVzcG9uc2UiasLzGEYIARABMAE6NAoPc2Fhcy5hdXRoLmxvZ2luCh9zYWFzLmF1dGgubWZhX2NoYWxsZW5nZV9zdGFydGVkEAJAAUgCUARYBGABgtPkkwIaOgEqIhUvdjEvYXV0aC9hdXRoZW50aWNhdGUSgQIKFENvbXBsZXRlTUZBQ2hhbGxlbmdlEi0uc2Fhcy5hY2NvdW50cy52MS5Db21wbGV0ZU1GQUNoYWxsZW5nZVJlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlTUZBQ2hhbGxlbmdlUmVzcG9uc2UiiQHC8xhlCAEQATABOlEKD3NhYXMuYXV0aC5sb2dpbgohc2Fhcy5hdXRoLm1mYV9jaGFsbGVuZ2VfY29tcGxldGVkChlzYWFzLm1mYS5iYWNrdXBfY29kZV91c2VkEAJAAUgCUARYBGABaAGC0+STAho6ASoiFS92MS9hdXRoL21mYS9jb21wbGV0ZRLEAQoZQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZRIyLnNhYXMuYWNjb3VudHMudjEuQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZVJlcXVlc3QaMy5zYWFzLmFjY291bnRzLnYxLkJlZ2luV2ViQXV0aG5NRkFDaGFsbGVuZ2VSZXNwb25zZSI+wvMYFAgBEAEwAToCEAFAAUgCUANYBGABgtPkkwIgOgEqIhsvdjEvYXV0aC9tZmEvd2ViYXV0aG4vYmVnaW4SlwIKHENvbXBsZXRlV2ViQXV0aG5NRkFDaGFsbGVuZ2USNS5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlV2ViQXV0aG5NRkFDaGFsbGVuZ2VSZXF1ZXN0Gi4uc2Fhcy5hY2NvdW50cy52MS5Db21wbGV0ZU1GQUNoYWxsZW5nZVJlc3BvbnNlIo8BwvMYYggBEAEwATpOCg9zYWFzLmF1dGgubG9naW4KIXNhYXMuYXV0aC5tZmFfY2hhbGxlbmdlX2NvbXBsZXRlZAoWc2Fhcy5tZmEud2ViYXV0aG5fdXNlZBACQAFIAlAEWARgAWgBgtPkkwIjOgEqIh4vdjEvYXV0aC9tZmEvd2ViYXV0aG4vY29tcGxldGUSkgEKDFJlZnJlc2hUb2tlbhIlLnNhYXMuYWNjb3VudHMudjEuUmVmcmVzaFRva2VuUmVxdWVzdBomLnNhYXMuYWNjb3VudHMudjEuUmVmcmVzaFRva2VuUmVzcG9uc2UiM8LzGBQIARABMAE6AhABQAFIAlAEWARgAYLT5JMCFToBKiIQL3YxL2F1dGgvcmVmcmVzaBLRAQoSU3dpdGNoT3JnYW5pemF0aW9uEisuc2Fhcy5hY2NvdW50cy52MS5Td2l0Y2hPcmdhbml6YXRpb25SZXF1ZXN0Giwuc2Fhcy5hY2NvdW50cy52MS5Td2l0Y2hPcmdhbml6YXRpb25SZXNwb25zZSJgwvMYNQgCEAEwATojCh9zYWFzLmF1dGgub3JnYW5pemF0aW9uX3N3aXRjaGVkEAJAAUgFUANYBGABgtPkkwIhOgEqIhwvdjEvYXV0aC9zd2l0Y2gtb3JnYW5pemF0aW9uEnUKBkxvZ291dBIfLnNhYXMuYWNjb3VudHMudjEuTG9nb3V0UmVxdWVzdBoWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eSIywvMYFAgBEAEwAToCEAFAAUgCUARYA2ABgtPkkwIUOgEqIg8vdjEvYXV0aC9sb2dvdXQSgQEKB0dldEpXS1MSFi5nb29nbGUucHJvdG9idWYuRW1wdHkaHi5zYWFzLmFjY291bnRzLnYxLkpXS1NSZXNwb25zZSI+wvMYFAgBEAEwAToCEAFAAUgBUAFYAWABgtPkkwIgEh4vdjEvYXV0aC8ud2VsbC1rbm93bi9qd2tzLmpzb25CuwEKFGNvbS5zYWFzLmFjY291bnRzLnYxQhNBdXRoZW50aWNhdGlvblByb3RvUAFaLGFjY291bnRzL3BrZy9nZW4vc2Fhcy9hY2NvdW50cy92MTthY2NvdW50c3YxogIDU0FYqgIQU2Fhcy5BY2NvdW50cy5WMcoCEFNhYXNcQWNjb3VudHNcVjHiAhxTYWFzXEFjY291bnRzXFYxXEdQQk1ldGFkYXRh6gISU2Fhczo6QWNjb3VudHM6OlYxYgZwcm90bzM", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
+  fileDesc("CiVzYWFzL2FjY291bnRzL3YxL2F1dGhlbnRpY2F0aW9uLnByb3RvEhBzYWFzLmFjY291bnRzLnYxIqcBChdPQXV0aENvZGVBdXRoZW50aWNhdGlvbhIYCgRjb2RlGAEgASgJQgq6SAdyBRABGIAgEiAKDHJlZGlyZWN0X3VyaRgCIAEoCUIKukgHcgUQARiAEBIZCgVzdGF0ZRgDIAEoCUIKukgHcgUQARiAIBI1Cg1jb2RlX3ZlcmlmaWVyGAQgASgJQh66SBtyGRArGIABMhJeW0EtWmEtejAtOS5ffi1dKyQiMgoVRml4dHVyZUF1dGhlbnRpY2F0aW9uEhkKBXRva2VuGAEgASgJQgq6SAdyBRABGP8BIjQKF0hlYWRlckpXVEF1dGhlbnRpY2F0aW9uEhkKBXRva2VuGAEgASgJQgq6SAdyBRABGIBAIoAEChNBdXRoZW50aWNhdGVSZXF1ZXN0Ei0KCHByb3ZpZGVyGAEgASgJQhu6SBhyFhABGDIyEF5bYS16QS1aMC05Xy1dKyQSFwoLcHJvdmlkZXJfaWQYAiABKAlCAhgBEhoKDnByb3ZpZGVyX2VtYWlsGAMgASgJQgIYARIaCg5lbWFpbF92ZXJpZmllZBgEIAEoCEICGAESQwoHcHJvZmlsZRgFIAMoCzIyLnNhYXMuYWNjb3VudHMudjEuQXV0aGVudGljYXRlUmVxdWVzdC5Qcm9maWxlRW50cnkSHQoLZGV2aWNlX2luZm8YBiABKAlCCLpIBXIDGIAEEj8KCm9hdXRoX2NvZGUYByABKAsyKS5zYWFzLmFjY291bnRzLnYxLk9BdXRoQ29kZUF1dGhlbnRpY2F0aW9uSAASOgoHZml4dHVyZRgIIAEoCzInLnNhYXMuYWNjb3VudHMudjEuRml4dHVyZUF1dGhlbnRpY2F0aW9uSAASPwoKaGVhZGVyX2p3dBgJIAEoCzIpLnNhYXMuYWNjb3VudHMudjEuSGVhZGVySldUQXV0aGVudGljYXRpb25IABouCgxQcm9maWxlRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4AUIXCg5hdXRoZW50aWNhdGlvbhIFukgCCAEipgEKFEF1dGhlbnRpY2F0ZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlchIUCgxtZmFfcmVxdWlyZWQYBSABKAgSEQoJbWZhX3Rva2VuGAYgASgJIlUKG0NvbXBsZXRlTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wESFwoEY29kZRgCIAEoCUIJukgGcgQQBhhAIoUBChxDb21wbGV0ZU1GQUNoYWxsZW5nZVJlc3BvbnNlEhQKDGFjY2Vzc190b2tlbhgBIAEoCRIVCg1yZWZyZXNoX3Rva2VuGAIgASgJEhIKCmV4cGlyZXNfaW4YAyABKAMSJAoEdXNlchgEIAEoCzIWLnNhYXMuYWNjb3VudHMudjEuVXNlciJBCiBCZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wEiXAohQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZVJlc3BvbnNlEhYKDmNlcmVtb255X3Rva2VuGAEgASgJEh8KF3B1YmxpY19rZXlfb3B0aW9uc19qc29uGAIgASgJIpcBCiNDb21wbGV0ZVdlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBIdCgltZmFfdG9rZW4YASABKAlCCrpIB3IFECAY/wESIgoOY2VyZW1vbnlfdG9rZW4YAiABKAlCCrpIB3IFECAY/wESLQoYY3JlZGVudGlhbF9yZXNwb25zZV9qc29uGAMgASgJQgu6SAhyBhACGICACCI1ChNSZWZyZXNoVG9rZW5SZXF1ZXN0Eh4KDXJlZnJlc2hfdG9rZW4YASABKAlCB7pIBHICEAEiVwoUUmVmcmVzaFRva2VuUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhUKDXJlZnJlc2hfdG9rZW4YAiABKAkSEgoKZXhwaXJlc19pbhgDIAEoAyI+ChlTd2l0Y2hPcmdhbml6YXRpb25SZXF1ZXN0EiEKD29yZ2FuaXphdGlvbl9pZBgBIAEoCUIIukgFcgOwAQEiRgoaU3dpdGNoT3JnYW5pemF0aW9uUmVzcG9uc2USFAoMYWNjZXNzX3Rva2VuGAEgASgJEhIKCmV4cGlyZXNfaW4YAiABKAMiLwoNTG9nb3V0UmVxdWVzdBIeCg1yZWZyZXNoX3Rva2VuGAEgASgJQge6SARyAhABIiEKDEpXS1NSZXNwb25zZRIRCglrZXlzX2pzb24YASABKAkiTQoRQmVnaW5PQXV0aFJlcXVlc3QSGQoIcHJvdmlkZXIYASABKAlCB7pIBHICEAESHQoMcmVkaXJlY3RfdXJpGAIgASgJQge6SARyAhABIiMKEkJlZ2luT0F1dGhSZXNwb25zZRINCgVzdGF0ZRgBIAEoCSLVAQoaQ2xpZW50QXV0aG9yaXphdGlvblJlcXVlc3QSMwoJY2xpZW50X2lkGAEgASgJQiC6SB1yGxACGEAyFV5bYS16MC05XVthLXowLTlfLV0qJBIgCgxyZWRpcmVjdF91cmkYAiABKAlCCrpIB3IFEAEYgBASNgoOY29kZV9jaGFsbGVuZ2UYAyABKAlCHrpIG3IZECsYgAEyEl5bQS1aYS16MC05Ll9+LV0rJBIoChVjb2RlX2NoYWxsZW5nZV9tZXRob2QYBCABKAlCCbpIBnIEEAEYECJxCiJWYWxpZGF0ZUNsaWVudEF1dGhvcml6YXRpb25SZXF1ZXN0EksKDWF1dGhvcml6YXRpb24YASABKAsyLC5zYWFzLmFjY291bnRzLnYxLkNsaWVudEF1dGhvcml6YXRpb25SZXF1ZXN0Qga6SAPIAQEiOgojVmFsaWRhdGVDbGllbnRBdXRob3JpemF0aW9uUmVzcG9uc2USEwoLY2xpZW50X25hbWUYASABKAkicgojSXNzdWVDbGllbnRBdXRob3JpemF0aW9uQ29kZVJlcXVlc3QSSwoNYXV0aG9yaXphdGlvbhgBIAEoCzIsLnNhYXMuYWNjb3VudHMudjEuQ2xpZW50QXV0aG9yaXphdGlvblJlcXVlc3RCBrpIA8gBASJICiRJc3N1ZUNsaWVudEF1dGhvcml6YXRpb25Db2RlUmVzcG9uc2USDAoEY29kZRgBIAEoCRISCgpleHBpcmVzX2luGAIgASgDIosBChZBdXRob3JpemF0aW9uQ29kZUdyYW50EhgKBGNvZGUYASABKAlCCrpIB3IFEAEYgAQSIAoMcmVkaXJlY3RfdXJpGAIgASgJQgq6SAdyBRABGIAQEjUKDWNvZGVfdmVyaWZpZXIYAyABKAlCHrpIG3IZECsYgAEyEl5bQS1aYS16MC05Ll9+LV0rJCI5ChdDbGllbnRSZWZyZXNoVG9rZW5HcmFudBIeCg1yZWZyZXNoX3Rva2VuGAEgASgJQge6SARyAhABIu0BChpFeGNoYW5nZUNsaWVudFRva2VuUmVxdWVzdBIzCgljbGllbnRfaWQYASABKAlCILpIHXIbEAIYQDIVXlthLXowLTldW2EtejAtOV8tXSokEkYKEmF1dGhvcml6YXRpb25fY29kZRgCIAEoCzIoLnNhYXMuYWNjb3VudHMudjEuQXV0aG9yaXphdGlvbkNvZGVHcmFudEgAEkIKDXJlZnJlc2hfdG9rZW4YAyABKAsyKS5zYWFzLmFjY291bnRzLnYxLkNsaWVudFJlZnJlc2hUb2tlbkdyYW50SABCDgoFZ3JhbnQSBbpIAggBIl4KG0V4Y2hhbmdlQ2xpZW50VG9rZW5SZXNwb25zZRIUCgxhY2Nlc3NfdG9rZW4YASABKAkSFQoNcmVmcmVzaF90b2tlbhgCIAEoCRISCgpleHBpcmVzX2luGAMgASgDMqUSCgtBdXRoU2VydmljZRKQAQoKQmVnaW5PQXV0aBIjLnNhYXMuYWNjb3VudHMudjEuQmVnaW5PQXV0aFJlcXVlc3QaJC5zYWFzLmFjY291bnRzLnYxLkJlZ2luT0F1dGhSZXNwb25zZSI3wvMYFAgBEAEwAToCEAFAAUgCUANYBGABgtPkkwIZOgEqIhQvdjEvYXV0aC9vYXV0aC9iZWdpbhLJAQoMQXV0aGVudGljYXRlEiUuc2Fhcy5hY2NvdW50cy52MS5BdXRoZW50aWNhdGVSZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5BdXRoZW50aWNhdGVSZXNwb25zZSJqwvMYRggBEAEwATo0Cg9zYWFzLmF1dGgubG9naW4KH3NhYXMuYXV0aC5tZmFfY2hhbGxlbmdlX3N0YXJ0ZWQQAkABSAJQBFgEYAGC0+STAho6ASoiFS92MS9hdXRoL2F1dGhlbnRpY2F0ZRKBAgoUQ29tcGxldGVNRkFDaGFsbGVuZ2USLS5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlTUZBQ2hhbGxlbmdlUmVxdWVzdBouLnNhYXMuYWNjb3VudHMudjEuQ29tcGxldGVNRkFDaGFsbGVuZ2VSZXNwb25zZSKJAcLzGGUIARABMAE6UQoPc2Fhcy5hdXRoLmxvZ2luCiFzYWFzLmF1dGgubWZhX2NoYWxsZW5nZV9jb21wbGV0ZWQKGXNhYXMubWZhLmJhY2t1cF9jb2RlX3VzZWQQAkABSAJQBFgEYAFoAYLT5JMCGjoBKiIVL3YxL2F1dGgvbWZhL2NvbXBsZXRlEsQBChlCZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlEjIuc2Fhcy5hY2NvdW50cy52MS5CZWdpbldlYkF1dGhuTUZBQ2hhbGxlbmdlUmVxdWVzdBozLnNhYXMuYWNjb3VudHMudjEuQmVnaW5XZWJBdXRobk1GQUNoYWxsZW5nZVJlc3BvbnNlIj7C8xgUCAEQATABOgIQAUABSAJQA1gEYAGC0+STAiA6ASoiGy92MS9hdXRoL21mYS93ZWJhdXRobi9iZWdpbhKXAgocQ29tcGxldGVXZWJBdXRobk1GQUNoYWxsZW5nZRI1LnNhYXMuYWNjb3VudHMudjEuQ29tcGxldGVXZWJBdXRobk1GQUNoYWxsZW5nZVJlcXVlc3QaLi5zYWFzLmFjY291bnRzLnYxLkNvbXBsZXRlTUZBQ2hhbGxlbmdlUmVzcG9uc2UijwHC8xhiCAEQATABOk4KD3NhYXMuYXV0aC5sb2dpbgohc2Fhcy5hdXRoLm1mYV9jaGFsbGVuZ2VfY29tcGxldGVkChZzYWFzLm1mYS53ZWJhdXRobl91c2VkEAJAAUgCUARYBGABaAGC0+STAiM6ASoiHi92MS9hdXRoL21mYS93ZWJhdXRobi9jb21wbGV0ZRKSAQoMUmVmcmVzaFRva2VuEiUuc2Fhcy5hY2NvdW50cy52MS5SZWZyZXNoVG9rZW5SZXF1ZXN0GiYuc2Fhcy5hY2NvdW50cy52MS5SZWZyZXNoVG9rZW5SZXNwb25zZSIzwvMYFAgBEAEwAToCEAFAAUgCUARYBGABgtPkkwIVOgEqIhAvdjEvYXV0aC9yZWZyZXNoEtEBChJTd2l0Y2hPcmdhbml6YXRpb24SKy5zYWFzLmFjY291bnRzLnYxLlN3aXRjaE9yZ2FuaXphdGlvblJlcXVlc3QaLC5zYWFzLmFjY291bnRzLnYxLlN3aXRjaE9yZ2FuaXphdGlvblJlc3BvbnNlImDC8xg1CAIQATABOiMKH3NhYXMuYXV0aC5vcmdhbml6YXRpb25fc3dpdGNoZWQQAkABSAVQA1gEYAGC0+STAiE6ASoiHC92MS9hdXRoL3N3aXRjaC1vcmdhbml6YXRpb24SdQoGTG9nb3V0Eh8uc2Fhcy5hY2NvdW50cy52MS5Mb2dvdXRSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5IjLC8xgUCAEQATABOgIQAUABSAJQBFgDYAGC0+STAhQ6ASoiDy92MS9hdXRoL2xvZ291dBKBAQoHR2V0SldLUxIWLmdvb2dsZS5wcm90b2J1Zi5FbXB0eRoeLnNhYXMuYWNjb3VudHMudjEuSldLU1Jlc3BvbnNlIj7C8xgUCAEQATABOgIQAUABSAFQAVgBYAGC0+STAiASHi92MS9hdXRoLy53ZWxsLWtub3duL2p3a3MuanNvbhLIAQobVmFsaWRhdGVDbGllbnRBdXRob3JpemF0aW9uEjQuc2Fhcy5hY2NvdW50cy52MS5WYWxpZGF0ZUNsaWVudEF1dGhvcml6YXRpb25SZXF1ZXN0GjUuc2Fhcy5hY2NvdW50cy52MS5WYWxpZGF0ZUNsaWVudEF1dGhvcml6YXRpb25SZXNwb25zZSI8wvMYFAgBEAEwAToCEAFAAUgCUANYA2ABgtPkkwIeOgEqIhkvdjEvYXV0aC9jbGllbnRzL3ZhbGlkYXRlEukBChxJc3N1ZUNsaWVudEF1dGhvcml6YXRpb25Db2RlEjUuc2Fhcy5hY2NvdW50cy52MS5Jc3N1ZUNsaWVudEF1dGhvcml6YXRpb25Db2RlUmVxdWVzdBo2LnNhYXMuYWNjb3VudHMudjEuSXNzdWVDbGllbnRBdXRob3JpemF0aW9uQ29kZVJlc3BvbnNlIlrC8xgxCAIQATABOh8KG3NhYXMuYXV0aC5jbGllbnRfYXV0aG9yaXplZBACQAFIBVADWARgAYLT5JMCHzoBKiIaL3YxL2F1dGgvY2xpZW50cy9hdXRob3JpemUStgEKE0V4Y2hhbmdlQ2xpZW50VG9rZW4SLC5zYWFzLmFjY291bnRzLnYxLkV4Y2hhbmdlQ2xpZW50VG9rZW5SZXF1ZXN0Gi0uc2Fhcy5hY2NvdW50cy52MS5FeGNoYW5nZUNsaWVudFRva2VuUmVzcG9uc2UiQsLzGCUIARABMAE6EwoPc2Fhcy5hdXRoLmxvZ2luEAJAAUgCUARYBGABgtPkkwITOgEqIg4vdjEvYXV0aC90b2tlbkK7AQoUY29tLnNhYXMuYWNjb3VudHMudjFCE0F1dGhlbnRpY2F0aW9uUHJvdG9QAVosYWNjb3VudHMvcGtnL2dlbi9zYWFzL2FjY291bnRzL3YxO2FjY291bnRzdjGiAgNTQViqAhBTYWFzLkFjY291bnRzLlYxygIQU2Fhc1xBY2NvdW50c1xWMeICHFNhYXNcQWNjb3VudHNcVjFcR1BCTWV0YWRhdGHqAhJTYWFzOjpBY2NvdW50czo6VjFiBnByb3RvMw", [file_buf_validate_validate, file_google_api_annotations, file_google_protobuf_empty, file_saas_accounts_v1_common, file_saas_policy_v1_options]);
 
 /**
  * @generated from message saas.accounts.v1.OAuthCodeAuthentication
@@ -524,6 +524,244 @@ export const BeginOAuthResponseSchema: GenMessage<BeginOAuthResponse> = /*@__PUR
   messageDesc(file_saas_accounts_v1_authentication, 17);
 
 /**
+ * ClientAuthorizationRequest is the authorization request a client encodes into
+ * the host's login-page URL. code_challenge is the S256 hash of a verifier the
+ * client keeps, so an intercepted code cannot be redeemed by anyone else.
+ *
+ * @generated from message saas.accounts.v1.ClientAuthorizationRequest
+ */
+export type ClientAuthorizationRequest = Message<"saas.accounts.v1.ClientAuthorizationRequest"> & {
+  /**
+   * @generated from field: string client_id = 1;
+   */
+  clientId: string;
+
+  /**
+   * @generated from field: string redirect_uri = 2;
+   */
+  redirectUri: string;
+
+  /**
+   * Base64url-encoded SHA-256 of the client's code verifier (RFC 7636 S256).
+   *
+   * @generated from field: string code_challenge = 3;
+   */
+  codeChallenge: string;
+
+  /**
+   * S256 is the only accepted method. It is carried explicitly so a client
+   * sending "plain" is refused rather than silently upgraded.
+   *
+   * @generated from field: string code_challenge_method = 4;
+   */
+  codeChallengeMethod: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ClientAuthorizationRequest.
+ * Use `create(ClientAuthorizationRequestSchema)` to create a new message.
+ */
+export const ClientAuthorizationRequestSchema: GenMessage<ClientAuthorizationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 18);
+
+/**
+ * @generated from message saas.accounts.v1.ValidateClientAuthorizationRequest
+ */
+export type ValidateClientAuthorizationRequest = Message<"saas.accounts.v1.ValidateClientAuthorizationRequest"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ClientAuthorizationRequest authorization = 1;
+   */
+  authorization?: ClientAuthorizationRequest;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ValidateClientAuthorizationRequest.
+ * Use `create(ValidateClientAuthorizationRequestSchema)` to create a new message.
+ */
+export const ValidateClientAuthorizationRequestSchema: GenMessage<ValidateClientAuthorizationRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 19);
+
+/**
+ * ValidateClientAuthorizationResponse carries only what the login page needs to
+ * name the client to the person. The registry itself — other redirect URIs, the
+ * client's origins — is never served to a browser.
+ *
+ * @generated from message saas.accounts.v1.ValidateClientAuthorizationResponse
+ */
+export type ValidateClientAuthorizationResponse = Message<"saas.accounts.v1.ValidateClientAuthorizationResponse"> & {
+  /**
+   * @generated from field: string client_name = 1;
+   */
+  clientName: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ValidateClientAuthorizationResponse.
+ * Use `create(ValidateClientAuthorizationResponseSchema)` to create a new message.
+ */
+export const ValidateClientAuthorizationResponseSchema: GenMessage<ValidateClientAuthorizationResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 20);
+
+/**
+ * @generated from message saas.accounts.v1.IssueClientAuthorizationCodeRequest
+ */
+export type IssueClientAuthorizationCodeRequest = Message<"saas.accounts.v1.IssueClientAuthorizationCodeRequest"> & {
+  /**
+   * @generated from field: saas.accounts.v1.ClientAuthorizationRequest authorization = 1;
+   */
+  authorization?: ClientAuthorizationRequest;
+};
+
+/**
+ * Describes the message saas.accounts.v1.IssueClientAuthorizationCodeRequest.
+ * Use `create(IssueClientAuthorizationCodeRequestSchema)` to create a new message.
+ */
+export const IssueClientAuthorizationCodeRequestSchema: GenMessage<IssueClientAuthorizationCodeRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 21);
+
+/**
+ * @generated from message saas.accounts.v1.IssueClientAuthorizationCodeResponse
+ */
+export type IssueClientAuthorizationCodeResponse = Message<"saas.accounts.v1.IssueClientAuthorizationCodeResponse"> & {
+  /**
+   * One-time authorization code, valid for expires_in seconds and bound to the
+   * client, redirect URI, and code challenge it was issued against.
+   *
+   * @generated from field: string code = 1;
+   */
+  code: string;
+
+  /**
+   * @generated from field: int64 expires_in = 2;
+   */
+  expiresIn: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.IssueClientAuthorizationCodeResponse.
+ * Use `create(IssueClientAuthorizationCodeResponseSchema)` to create a new message.
+ */
+export const IssueClientAuthorizationCodeResponseSchema: GenMessage<IssueClientAuthorizationCodeResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 22);
+
+/**
+ * AuthorizationCodeGrant redeems a code issued by IssueClientAuthorizationCode.
+ * redirect_uri must be the one the code was issued for, and code_verifier the
+ * preimage of its challenge.
+ *
+ * @generated from message saas.accounts.v1.AuthorizationCodeGrant
+ */
+export type AuthorizationCodeGrant = Message<"saas.accounts.v1.AuthorizationCodeGrant"> & {
+  /**
+   * @generated from field: string code = 1;
+   */
+  code: string;
+
+  /**
+   * @generated from field: string redirect_uri = 2;
+   */
+  redirectUri: string;
+
+  /**
+   * @generated from field: string code_verifier = 3;
+   */
+  codeVerifier: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.AuthorizationCodeGrant.
+ * Use `create(AuthorizationCodeGrantSchema)` to create a new message.
+ */
+export const AuthorizationCodeGrantSchema: GenMessage<AuthorizationCodeGrant> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 23);
+
+/**
+ * ClientRefreshTokenGrant rotates a client's own refresh token. The presented
+ * token must belong to the named client: one client can never refresh another's
+ * session, and the host's own web session is not refreshable here at all.
+ *
+ * @generated from message saas.accounts.v1.ClientRefreshTokenGrant
+ */
+export type ClientRefreshTokenGrant = Message<"saas.accounts.v1.ClientRefreshTokenGrant"> & {
+  /**
+   * @generated from field: string refresh_token = 1;
+   */
+  refreshToken: string;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ClientRefreshTokenGrant.
+ * Use `create(ClientRefreshTokenGrantSchema)` to create a new message.
+ */
+export const ClientRefreshTokenGrantSchema: GenMessage<ClientRefreshTokenGrant> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 24);
+
+/**
+ * @generated from message saas.accounts.v1.ExchangeClientTokenRequest
+ */
+export type ExchangeClientTokenRequest = Message<"saas.accounts.v1.ExchangeClientTokenRequest"> & {
+  /**
+   * @generated from field: string client_id = 1;
+   */
+  clientId: string;
+
+  /**
+   * @generated from oneof saas.accounts.v1.ExchangeClientTokenRequest.grant
+   */
+  grant: {
+    /**
+     * @generated from field: saas.accounts.v1.AuthorizationCodeGrant authorization_code = 2;
+     */
+    value: AuthorizationCodeGrant;
+    case: "authorizationCode";
+  } | {
+    /**
+     * @generated from field: saas.accounts.v1.ClientRefreshTokenGrant refresh_token = 3;
+     */
+    value: ClientRefreshTokenGrant;
+    case: "refreshToken";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message saas.accounts.v1.ExchangeClientTokenRequest.
+ * Use `create(ExchangeClientTokenRequestSchema)` to create a new message.
+ */
+export const ExchangeClientTokenRequestSchema: GenMessage<ExchangeClientTokenRequest> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 25);
+
+/**
+ * ExchangeClientTokenResponse returns both halves in the body. A public client
+ * has no cookie jar the host controls and no place to keep a client secret, so
+ * the tokens are the whole credential and the refresh half rotates on every use.
+ *
+ * @generated from message saas.accounts.v1.ExchangeClientTokenResponse
+ */
+export type ExchangeClientTokenResponse = Message<"saas.accounts.v1.ExchangeClientTokenResponse"> & {
+  /**
+   * @generated from field: string access_token = 1;
+   */
+  accessToken: string;
+
+  /**
+   * @generated from field: string refresh_token = 2;
+   */
+  refreshToken: string;
+
+  /**
+   * @generated from field: int64 expires_in = 3;
+   */
+  expiresIn: bigint;
+};
+
+/**
+ * Describes the message saas.accounts.v1.ExchangeClientTokenResponse.
+ * Use `create(ExchangeClientTokenResponseSchema)` to create a new message.
+ */
+export const ExchangeClientTokenResponseSchema: GenMessage<ExchangeClientTokenResponse> = /*@__PURE__*/
+  messageDesc(file_saas_accounts_v1_authentication, 26);
+
+/**
  * AuthService — JWT token issuance and session management
  *
  * @generated from service saas.accounts.v1.AuthService
@@ -615,6 +853,47 @@ export const AuthService: GenService<{
     methodKind: "unary";
     input: typeof EmptySchema;
     output: typeof JWKSResponseSchema;
+  },
+  /**
+   * ValidateClientAuthorization checks a client's authorization request before
+   * any sign-in UI is rendered. Public RPC: this runs before the person has
+   * authenticated, which is the point — an unregistered client id or a redirect
+   * URI that client did not register is refused while the browser is still on
+   * the host, never after credentials have been entered.
+   *
+   * @generated from rpc saas.accounts.v1.AuthService.ValidateClientAuthorization
+   */
+  validateClientAuthorization: {
+    methodKind: "unary";
+    input: typeof ValidateClientAuthorizationRequestSchema;
+    output: typeof ValidateClientAuthorizationResponseSchema;
+  },
+  /**
+   * IssueClientAuthorizationCode mints the one-time code the host redirects
+   * back to the client with. The caller is the signed-in person's own host
+   * session, so the code is bound to an identity the client never saw
+   * authenticate.
+   *
+   * @generated from rpc saas.accounts.v1.AuthService.IssueClientAuthorizationCode
+   */
+  issueClientAuthorizationCode: {
+    methodKind: "unary";
+    input: typeof IssueClientAuthorizationCodeRequestSchema;
+    output: typeof IssueClientAuthorizationCodeResponseSchema;
+  },
+  /**
+   * ExchangeClientToken is the registered client's token endpoint. Public RPC:
+   * possession of the authorization code plus its PKCE verifier, or of the
+   * client's own rotating refresh token, is the credential. Both grants mint a
+   * session bound to the client, separate from any host web session the person
+   * holds.
+   *
+   * @generated from rpc saas.accounts.v1.AuthService.ExchangeClientToken
+   */
+  exchangeClientToken: {
+    methodKind: "unary";
+    input: typeof ExchangeClientTokenRequestSchema;
+    output: typeof ExchangeClientTokenResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_saas_accounts_v1_authentication, 0);

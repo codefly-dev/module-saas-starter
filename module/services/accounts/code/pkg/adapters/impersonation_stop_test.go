@@ -88,6 +88,11 @@ func (s *stopSessionStore) ExchangeOrganization(context.Context, uuid.UUID, uuid
 	return nil
 }
 
+func (s *stopSessionStore) AuthorizeClientSession(context.Context, uuid.UUID, uuid.UUID,
+	func(*auth.SessionRecord, auth.RefreshAuthorization) (*auth.SessionRecord, error)) error {
+	return auth.ErrSessionUnavailable
+}
+
 func (s *stopSessionStore) RevokeFamily(context.Context, uuid.UUID, string) error { return nil }
 
 // close mirrors the production statement: it matches only a row that is still

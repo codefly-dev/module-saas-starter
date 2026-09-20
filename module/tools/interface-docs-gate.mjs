@@ -54,6 +54,7 @@ const SERVICE_CONTEXTS = {
   APIKeyService: "identity",
   AuditService: "audit",
   AuthService: "identity",
+  ClientRegistryService: "identity",
   BillingService: "billing",
   ConsentService: "privacy",
   DashboardService: "dashboards",

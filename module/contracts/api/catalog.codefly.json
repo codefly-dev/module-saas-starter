@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:893cb35e2ad2b8aa3e973a8fe76d49cc2648a42a5a6ce0dc47486f20befd1166",
+      "digest": "sha256:55a44a53dfea8163e1d58a30868b367be63f816e85480f532b96238728c06cee",
       "services": [
         {
           "name": "APIKeyService",
@@ -48,10 +48,13 @@
             "/saas.accounts.v1.AuthService/BeginWebAuthnMFAChallenge",
             "/saas.accounts.v1.AuthService/CompleteMFAChallenge",
             "/saas.accounts.v1.AuthService/CompleteWebAuthnMFAChallenge",
+            "/saas.accounts.v1.AuthService/ExchangeClientToken",
             "/saas.accounts.v1.AuthService/GetJWKS",
+            "/saas.accounts.v1.AuthService/IssueClientAuthorizationCode",
             "/saas.accounts.v1.AuthService/Logout",
             "/saas.accounts.v1.AuthService/RefreshToken",
-            "/saas.accounts.v1.AuthService/SwitchOrganization"
+            "/saas.accounts.v1.AuthService/SwitchOrganization",
+            "/saas.accounts.v1.AuthService/ValidateClientAuthorization"
           ]
         },
         {
@@ -61,6 +64,13 @@
             "/saas.accounts.v1.BillingService/ListInvoices",
             "/saas.accounts.v1.BillingService/ListPublicPlans",
             "/saas.accounts.v1.BillingService/OpenPortal"
+          ]
+        },
+        {
+          "name": "ClientRegistryService",
+          "fullName": "saas.accounts.v1.ClientRegistryService",
+          "procedures": [
+            "/saas.accounts.v1.ClientRegistryService/ListRegisteredClients"
           ]
         },
         {

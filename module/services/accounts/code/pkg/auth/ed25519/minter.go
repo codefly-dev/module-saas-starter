@@ -116,6 +116,10 @@ type accessClaims struct {
 	ScopedRoles          map[string][]string `json:"sr,omitempty"`
 	ScopedRolesTruncated bool                `json:"srt,omitempty"`
 	SessionID            string              `json:"sid"`
+	// AuthorizedParty is the registered client the token was issued to (OIDC
+	// `azp`). Absent on the host's own web session, so a consumer reads "no azp"
+	// as a first-party web session rather than as a missing value.
+	AuthorizedParty string `json:"azp,omitempty"`
 	// Email and Name are presentational identity for the client to render the
 	// signed-in person. They are never consulted for authorization; the sidecar
 	// authorizes on sub/org/roles alone.
@@ -422,6 +426,7 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 		DeviceInfo:            maps.Clone(identity.DeviceInfo),
 		IPAddress:             identity.IPAddress,
 		FamilyID:              familyID,
+		ClientID:              identity.ClientID,
 		ActingAsUserID:        identity.ActingAsUserID,
 		RefreshHash:           hash,
 		IssuedAt:              now,
@@ -449,6 +454,23 @@ func (m *Minter) prepareMint(identity *auth.Identity, familyID uuid.UUID) (*auth
 //     unknown tokens return the same ErrRefreshRevoked sentinel to avoid an
 //     existence oracle.
 func (m *Minter) VerifyRefresh(ctx context.Context, refreshToken string) (*auth.TokenPair, error) {
+	return m.rotateRefresh(ctx, refreshToken, "")
+}
+
+// VerifyClientRefresh implements auth.JWTMinter.VerifyClientRefresh. The client
+// check happens inside the locked rotation, on the stored row, so it cannot be
+// raced by a concurrent rotation that changes which session the hash resolves
+// to. A mismatch is not a terminal rejection: the token is a legitimate one
+// held by its own client, and revoking its family because a different client
+// named it would make one client able to sign another out.
+func (m *Minter) VerifyClientRefresh(ctx context.Context, refreshToken, clientID string) (*auth.TokenPair, error) {
+	if clientID == "" {
+		return nil, errors.New("ed25519minter: client refresh names no client")
+	}
+	return m.rotateRefresh(ctx, refreshToken, clientID)
+}
+
+func (m *Minter) rotateRefresh(ctx context.Context, refreshToken, requiredClientID string) (*auth.TokenPair, error) {
 	if m.configErr != nil {
 		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
 	}
@@ -462,6 +484,9 @@ func (m *Minter) VerifyRefresh(ctx context.Context, refreshToken string) (*auth.
 		// whose lookup implementation is not the indexed Postgres operation.
 		if subtle.ConstantTimeCompare(rec.RefreshHash, hash) != 1 {
 			return nil, auth.RejectRefresh(auth.RefreshRejectionHashMismatch)
+		}
+		if requiredClientID != "" && rec.ClientID != requiredClientID {
+			return nil, auth.ErrRefreshRevoked
 		}
 		now := m.now()
 		if !now.Before(rec.ExpiresAt) {
@@ -588,6 +613,7 @@ func identityFromCurrentAuthorization(
 		ScopedRoles:           authorization.ScopedRoles,
 		ScopedRolesTruncated:  authorization.ScopedRolesTruncated,
 		SessionID:             sessionID,
+		ClientID:              rec.ClientID,
 		Email:                 rec.Email,
 		DisplayName:           rec.DisplayName,
 		MFASatisfied:          mfaSatisfied,
@@ -739,6 +765,7 @@ func (m *Minter) VerifyAccess(tokenString string) (*auth.Identity, error) {
 		ScopedRoles:           claims.ScopedRoles,
 		ScopedRolesTruncated:  claims.ScopedRolesTruncated,
 		SessionID:             sessionID,
+		ClientID:              claims.AuthorizedParty,
 		Email:                 claims.Email,
 		DisplayName:           claims.Name,
 		ActingAsUserID:        actingAs,
@@ -843,9 +870,10 @@ func (m *Minter) signAccess(
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			ID:        jti,
 		},
-		SessionID: sessionID.String(),
-		Email:     identity.Email,
-		Name:      identity.DisplayName,
+		SessionID:       sessionID.String(),
+		AuthorizedParty: identity.ClientID,
+		Email:           identity.Email,
+		Name:            identity.DisplayName,
 	}
 	if identity.OrgID != uuid.Nil {
 		claims.OrgID = identity.OrgID.String()
@@ -972,4 +1000,48 @@ func (m *Minter) MintSolutionRegistration(solutionID string) (string, time.Time,
 		return "", time.Time{}, err
 	}
 	return signed, expiresAt, nil
+}
+
+// MintForClient implements auth.JWTMinter.MintForClient. The authorizing host
+// session is resolved and locked by the store, which also decides whether it is
+// still entitled to hand a client anything; this method owns only the
+// cryptographic half and the shape of the session the client gets.
+func (m *Minter) MintForClient(
+	ctx context.Context,
+	userID, authorizingSessionID uuid.UUID,
+	clientID string,
+) (*auth.TokenPair, error) {
+	if m.configErr != nil {
+		return nil, fmt.Errorf("ed25519minter: invalid session policy: %w", m.configErr)
+	}
+	if clientID == "" {
+		return nil, errors.New("ed25519minter: client session names no client")
+	}
+	var pair *auth.TokenPair
+	err := m.store.AuthorizeClientSession(ctx, userID, authorizingSessionID, func(
+		current *auth.SessionRecord,
+		authorization auth.RefreshAuthorization,
+	) (*auth.SessionRecord, error) {
+		identity, err := identityFromCurrentAuthorization(current, authorization, m.now(), business.NewID())
+		if err != nil {
+			return nil, err
+		}
+		identity.ClientID = clientID
+		// The browser's device description belongs to the browser. A client runs
+		// somewhere else entirely, so carrying it over would label the new
+		// session with a device that is not the one holding its token.
+		identity.DeviceInfo = nil
+		identity.IPAddress = ""
+
+		var next *auth.SessionRecord
+		pair, next, err = m.prepareMint(identity, uuid.UUID{} /* new family */)
+		return next, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if pair == nil {
+		return nil, errors.New("ed25519minter: client authorization returned no token pair")
+	}
+	return pair, nil
 }

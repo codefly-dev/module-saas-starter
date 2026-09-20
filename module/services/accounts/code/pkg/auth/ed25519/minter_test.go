@@ -130,6 +130,43 @@ func (s *memoryStore) RotateRefresh(
 	return auth.ErrRefreshRevoked
 }
 
+func (s *memoryStore) AuthorizeClientSession(
+	_ context.Context,
+	userID uuid.UUID,
+	authorizingSessionID uuid.UUID,
+	issue func(current *auth.SessionRecord, authorization auth.RefreshAuthorization) (*auth.SessionRecord, error),
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.records {
+		if s.records[i].ID != authorizingSessionID || s.records[i].UserID != userID {
+			continue
+		}
+		if s.records[i].RevokedAt != nil || s.records[i].ActingAsUserID != uuid.Nil || s.records[i].ClientID != "" {
+			return auth.ErrSessionUnavailable
+		}
+		current := s.records[i]
+		authorization := auth.RefreshAuthorization{
+			OrgID:        current.OrgID,
+			OrgRole:      current.OrgRole,
+			PlatformRole: current.PlatformRole,
+		}
+		if s.refreshAuthorization != nil {
+			authorization = *s.refreshAuthorization
+		}
+		next, err := issue(&current, authorization)
+		if err != nil {
+			return err
+		}
+		if next == nil || next.UserID != current.UserID || next.FamilyID == current.FamilyID || next.ClientID == "" {
+			return errors.New("memory session store: invalid client session")
+		}
+		s.records = append(s.records, *next)
+		return nil
+	}
+	return auth.ErrSessionUnavailable
+}
+
 func (s *memoryStore) ExchangeOrganization(
 	_ context.Context,
 	userID uuid.UUID,

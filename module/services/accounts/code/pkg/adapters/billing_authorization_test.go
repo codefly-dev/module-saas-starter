@@ -121,6 +121,16 @@ func (*fixedAccessMinter) VerifyRefresh(context.Context, string) (*auth.TokenPai
 	return nil, nil
 }
 
+func (*fixedAccessMinter) VerifyClientRefresh(context.Context, string, string) (*auth.TokenPair, error) {
+	return nil, nil
+}
+
+func (*fixedAccessMinter) MintForClient(
+	context.Context, uuid.UUID, uuid.UUID, string,
+) (*auth.TokenPair, error) {
+	return nil, nil
+}
+
 func (*fixedAccessMinter) SwitchOrganization(
 	context.Context, uuid.UUID, uuid.UUID, uuid.UUID,
 ) (string, time.Time, error) {

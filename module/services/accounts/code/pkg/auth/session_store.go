@@ -28,6 +28,11 @@ type SessionRecord struct {
 	DeviceInfo            map[string]string
 	IPAddress             string
 	FamilyID              uuid.UUID
+	// ClientID is the registered client this session was minted for, persisted
+	// so a rotation reissues the same `azp` claim and a client's sessions can be
+	// revoked without touching the person's other sessions. Empty for the host's
+	// own web session.
+	ClientID string
 	// ActingAsUserID is non-zero only on an impersonation window, where UserID
 	// is the admin and this is the user being viewed. Such a row carries no
 	// RefreshHash: an impersonation session is never rotatable, and its
@@ -114,6 +119,22 @@ type SessionStore interface {
 		sessionID uuid.UUID,
 		targetOrgID uuid.UUID,
 		issue func(current *SessionRecord, authorization RefreshAuthorization) error,
+	) error
+
+	// AuthorizeClientSession mints a registered client's own session from the
+	// host session that authorized it. The store must lock that session, refuse
+	// one that is revoked, timed out, impersonating, or already a client's, and
+	// resolve the user's current authorization before calling issue — so a code
+	// redeemed after a sign-out yields nothing and a role change since the
+	// redirect is reflected in the client's first token.
+	//
+	// The record issue returns starts its own family: a client's credential is
+	// revocable, and expires, independently of the browser session behind it.
+	AuthorizeClientSession(
+		ctx context.Context,
+		userID uuid.UUID,
+		authorizingSessionID uuid.UUID,
+		issue func(current *SessionRecord, authorization RefreshAuthorization) (*SessionRecord, error),
 	) error
 
 	// RevokeFamily marks every session sharing a family_id as revoked.

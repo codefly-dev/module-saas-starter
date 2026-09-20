@@ -192,6 +192,114 @@ message BeginOAuthResponse {
   string state = 1;
 }
 
+// ============================================================================
+// First-party client authorization (issue #853)
+//
+// A registered client (see clients.proto) sends the person to the host's login
+// page rather than to an identity provider. The three RPCs below are the whole
+// of the client's side of that flow: validate the request before any sign-in UI
+// is shown, issue a one-time code once the person is signed in, and exchange
+// that code — or a previously issued refresh token — for tokens in the response
+// body. A public client never receives the host's session cookie.
+// ============================================================================
+
+// ClientAuthorizationRequest is the authorization request a client encodes into
+// the host's login-page URL. code_challenge is the S256 hash of a verifier the
+// client keeps, so an intercepted code cannot be redeemed by anyone else.
+message ClientAuthorizationRequest {
+  string client_id = 1 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 64
+    pattern: "^[a-z0-9][a-z0-9_-]*$"
+  }];
+  string redirect_uri = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 2048
+  }];
+  // Base64url-encoded SHA-256 of the client's code verifier (RFC 7636 S256).
+  string code_challenge = 3 [(buf.validate.field).string = {
+    min_len: 43
+    max_len: 128
+    pattern: "^[A-Za-z0-9._~-]+$"
+  }];
+  // S256 is the only accepted method. It is carried explicitly so a client
+  // sending "plain" is refused rather than silently upgraded.
+  string code_challenge_method = 4 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 16
+  }];
+}
+
+message ValidateClientAuthorizationRequest {
+  ClientAuthorizationRequest authorization = 1 [(buf.validate.field).required = true];
+}
+
+// ValidateClientAuthorizationResponse carries only what the login page needs to
+// name the client to the person. The registry itself — other redirect URIs, the
+// client's origins — is never served to a browser.
+message ValidateClientAuthorizationResponse {
+  string client_name = 1;
+}
+
+message IssueClientAuthorizationCodeRequest {
+  ClientAuthorizationRequest authorization = 1 [(buf.validate.field).required = true];
+}
+
+message IssueClientAuthorizationCodeResponse {
+  // One-time authorization code, valid for expires_in seconds and bound to the
+  // client, redirect URI, and code challenge it was issued against.
+  string code = 1;
+  int64 expires_in = 2;
+}
+
+// AuthorizationCodeGrant redeems a code issued by IssueClientAuthorizationCode.
+// redirect_uri must be the one the code was issued for, and code_verifier the
+// preimage of its challenge.
+message AuthorizationCodeGrant {
+  string code = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 512
+  }];
+  string redirect_uri = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 2048
+  }];
+  string code_verifier = 3 [(buf.validate.field).string = {
+    min_len: 43
+    max_len: 128
+    pattern: "^[A-Za-z0-9._~-]+$"
+  }];
+}
+
+// ClientRefreshTokenGrant rotates a client's own refresh token. The presented
+// token must belong to the named client: one client can never refresh another's
+// session, and the host's own web session is not refreshable here at all.
+message ClientRefreshTokenGrant {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ExchangeClientTokenRequest {
+  string client_id = 1 [(buf.validate.field).string = {
+    min_len: 2
+    max_len: 64
+    pattern: "^[a-z0-9][a-z0-9_-]*$"
+  }];
+  oneof grant {
+    option (buf.validate.oneof).required = true;
+    AuthorizationCodeGrant authorization_code = 2;
+    ClientRefreshTokenGrant refresh_token = 3;
+  }
+}
+
+// ExchangeClientTokenResponse returns both halves in the body. A public client
+// has no cookie jar the host controls and no place to keep a client secret, so
+// the tokens are the whole credential and the refresh half rotates on every use.
+message ExchangeClientTokenResponse {
+  string access_token = 1;
+  string refresh_token = 2;
+  int64 expires_in = 3;
+}
+
 // AuthService — JWT token issuance and session management
 service AuthService {
   // BeginOAuth issues a server-signed `state` for the OAuth code flow.
@@ -381,5 +489,79 @@ service AuthService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {get: "/v1/auth/.well-known/jwks.json"};
+  }
+
+  // ValidateClientAuthorization checks a client's authorization request before
+  // any sign-in UI is rendered. Public RPC: this runs before the person has
+  // authenticated, which is the point — an unregistered client id or a redirect
+  // URI that client did not register is refused while the browser is still on
+  // the host, never after credentials have been entered.
+  rpc ValidateClientAuthorization(ValidateClientAuthorizationRequest) returns (ValidateClientAuthorizationResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/clients/validate"
+      body: "*"
+    };
+  }
+
+  // IssueClientAuthorizationCode mints the one-time code the host redirects
+  // back to the client with. The caller is the signed-in person's own host
+  // session, so the code is bound to an identity the client never saw
+  // authenticate.
+  rpc IssueClientAuthorizationCode(IssueClientAuthorizationCodeRequest) returns (IssueClientAuthorizationCodeResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.auth.client_authorized"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_SENSITIVE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/clients/authorize"
+      body: "*"
+    };
+  }
+
+  // ExchangeClientToken is the registered client's token endpoint. Public RPC:
+  // possession of the authorization code plus its PKCE verifier, or of the
+  // client's own rotating refresh token, is the credential. Both grants mint a
+  // session bound to the client, separate from any host web session the person
+  // holds.
+  rpc ExchangeClientToken(ExchangeClientTokenRequest) returns (ExchangeClientTokenResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_PUBLIC
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.auth.login"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_AUTHENTICATION
+      request_sensitivity: SENSITIVITY_SECRET
+      response_sensitivity: SENSITIVITY_SECRET
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+    option (google.api.http) = {
+      post: "/v1/auth/token"
+      body: "*"
+    };
   }
 }
