@@ -102,7 +102,7 @@ other, so neither the configuration nor the token is shared.
 | Same publisher may move its own endpoint | yes | yes |
 | Delete is owner-bound, and a non-owner's delete is indistinguishable from an unknown id | yes | yes |
 | `jti` burned on use, so a captured credential cannot be replayed | yes | yes |
-| Request body bounded before parsing | yes (4 KiB) | yes (64 KiB) |
+| Request body bounded before parsing | yes (256 KiB; the separate token exchange bounds at 4 KiB) | no bound of its own — the manifest is bounded where the gateway accepts it |
 | Id is one catalog-identity segment, so reserved `_…` sub-paths cannot be shadowed | yes | n/a (id comes from the manifest and must equal the claim) |
 | Upstream host must be composition-local; resolved address re-checked at dial time | yes | n/a |
 
@@ -166,9 +166,14 @@ boundary is deliberate:
 - **Per-org installation** (`InstallationService/InstallSolution`) governs
   **agent authority only**. Installing composes an agent principal, a
   `kind='solution'` scope node, a least-privilege standing grant with an
-  audience/scope ceiling, an accountable owner of record, an installation row,
-  and the durable event subscriptions the solution declared. Uninstalling
-  reverses exactly that composition.
+  audience/scope ceiling, an accountable owner of record, and an installation
+  row. The solution's declared consumes are materialized into durable
+  subscriptions *after* that transaction commits — idempotent and best-effort,
+  so a failure is logged and recovered by a reinstall or a runtime `Subscribe`
+  rather than failing the install. Uninstalling removes the standing grant and
+  revokes the agent principal, which is what withdraws the authority; it does
+  **not** reverse the whole composition, because the scope node is retained for
+  a reinstall to reuse and the subscriptions are not deleted.
 - **Entitlement** (plans and grants, `BillingService`) governs feature
   availability within the product and is independent of both.
 
