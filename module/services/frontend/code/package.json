@@ -10,7 +10,7 @@
 		"build:plugin-react": "npm run build --workspace @codefly/saas-plugin-react",
 		"build:plugin-packages": "node scripts/build-plugin-workspaces.mjs",
 		"generate:plugin-capability-proto": "cd packages/saas-plugin-contract && codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml",
-		"prepare:frontend": "npm run build:plugin-packages && node scripts/generate-type-utilities.mjs && tsx scripts/generate-plugin-service-allowlist.ts && tsx scripts/check-plugin-service-dependencies.ts",
+		"prepare:frontend": "npm run build:plugin-packages && npm run generate:type-utilities && tsx scripts/generate-plugin-service-allowlist.ts && tsx scripts/check-plugin-service-dependencies.ts",
 		"generate:plugin-allowlist": "npm run build:plugin-packages && tsx scripts/generate-plugin-service-allowlist.ts",
 		"check:plugin-allowlist": "npm run build:plugin-packages && tsx scripts/generate-plugin-service-allowlist.ts --check",
 		"generate:plugin-codefly-dependencies": "npm run generate:plugin-allowlist && cd ../../accounts/code && go run ./cmd/frontend-service-manifest -catalog ../generated/service-catalog.json -topology ../../../deployment/topology.bindings.codefly.yaml -allowlist ../../frontend/code/server/plugin-service-allowlist.generated.json -output ../../frontend/service.codefly.yaml",
@@ -32,7 +32,7 @@
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:published-ui": "npm run build:plugin-packages && node scripts/test-published-ui.mjs",
-		"generate:type-utilities": "node scripts/generate-type-utilities.mjs"
+		"generate:type-utilities": "node packages/codefly-ui/scripts/generate-type-utilities.mjs"
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",

@@ -51,6 +51,7 @@ and the v1 subset — is [CATALOG.md](./CATALOG.md).
 | `@codefly-dev/ui/layout`          | `Card`/`Section`/`Tabs` + shadcn primitives (React-only) |
 | `@codefly-dev/ui/dashboard`       | `Dashboard`, charts, `fromDashboardData` (React-only) |
 | `@codefly-dev/ui/chat`            | `Chat` (React-only)                                 |
+| `@codefly-dev/ui/type-slots.css`  | The generated type-slot and control-rung utilities  |
 
 `react`, `@codefly/saas-plugin-react`, and `@codefly/saas-plugin-contract` are
 **peer** dependencies — the host provides them so it and its Module-Federation
@@ -82,6 +83,24 @@ plugin peers are optional, the solution only needs an `.npmrc` pointing the
 
 `npm ci` then resolves `@codefly-dev/ui` with no reference to the unpublished
 `@codefly/saas-plugin-*` packages.
+
+**Styling.** The kit's components name their type slots and control rungs as
+classes (`type-card-title`, `control-sm`) that the kit defines, not Tailwind. A
+consumer that compiles the kit's source with its own Tailwind build imports the
+generated stylesheet into its entry alongside its `@source` for the kit:
+
+```css
+@import "tailwindcss";
+@import "@codefly-dev/ui/type-slots.css";
+@source "../node_modules/@codefly-dev/ui/src";
+```
+
+Those utilities read custom properties (`--type-card-title-size`, …) that the
+host projects onto `<html>` from the resolved skin. A remote renders inside the
+host's document, so it inherits them; nothing else has to be set up. Every
+utility sits at zero specificity, so a raw Tailwind class on the same element
+(`text-lg`, `h-11`) overrides that one property and leaves the rest of the slot
+standing — see [TOKENS.md](./TOKENS.md).
 
 **Sealed downward.** A solution composes the kit but must not shadow it: the
 host shares each layer package (React + kit + each module UI) as a

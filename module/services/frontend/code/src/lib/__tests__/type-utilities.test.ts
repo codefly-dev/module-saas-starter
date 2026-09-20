@@ -11,25 +11,26 @@ import { describe, expect, it } from "vitest";
 
 import { appearanceStyleProperties } from "../appearance";
 
-// The stylesheet that turns the skin's slots into class names is generated. A
-// slot added to the vocabulary and forgotten there would be a name that silently
-// styles nothing, so the generator's own --check runs here.
+const KIT = join(process.cwd(), "packages/codefly-ui");
+const GENERATED = join(KIT, "src/skin/type-slots.generated.css");
+
+// The stylesheet that turns the skin's slots into class names is generated in
+// the kit and shipped with it. A slot added to the vocabulary and forgotten
+// there would be a name that silently styles nothing, so the generator's own
+// --check runs here, where the host compiles the result.
 describe("the generated type utilities stay in step with the contract", () => {
 	it("is not stale", () => {
 		expect(() =>
 			execFileSync(
 				process.execPath,
 				["scripts/generate-type-utilities.mjs", "--check"],
-				{ cwd: process.cwd(), stdio: "pipe" },
+				{ cwd: KIT, stdio: "pipe" },
 			),
 		).not.toThrow();
 	});
 
 	it("declares one utility per slot and four per control rung", () => {
-		const css = readFileSync(
-			join(process.cwd(), "src/app/type-slots.generated.css"),
-			"utf8",
-		);
+		const css = readFileSync(GENERATED, "utf8");
 		for (const slot of FRONTEND_TYPE_SLOT_NAMES)
 			expect(css, `no utility for slot '${slot}'`).toContain(
 				`@utility type-${slot} {`,
@@ -46,12 +47,22 @@ describe("the generated type utilities stay in step with the contract", () => {
 				);
 	});
 
-	it("is imported by the stylesheet the host compiles", () => {
+	// The kit exports the file so every consumer compiles the same classes; the
+	// host is one such consumer and must take it through the export, not a
+	// relative path that a published package would not have.
+	it("is exported by the kit and imported by the stylesheet the host compiles", () => {
+		const kitPackage = JSON.parse(
+			readFileSync(join(KIT, "package.json"), "utf8"),
+		) as { exports: Record<string, unknown>; files: string[] };
+		expect(kitPackage.exports["./type-slots.css"]).toBe(
+			"./src/skin/type-slots.generated.css",
+		);
+		expect(kitPackage.files).toContain("src");
 		const globals = readFileSync(
 			join(process.cwd(), "src/app/globals.css"),
 			"utf8",
 		);
-		expect(globals).toContain('@import "./type-slots.generated.css";');
+		expect(globals).toContain('@import "@codefly-dev/ui/type-slots.css";');
 	});
 });
 
@@ -67,8 +78,9 @@ describe("the resolved skin reaches those utilities as custom properties", () =>
 	});
 
 	// The load-bearing half: a property the role does NOT decide must stay unset,
-	// so the utility's `var()` is invalid at computed-value time and the element
-	// inherits — which is what the tree does today where nothing sets a size.
+	// and the generated utility must not declare it either — the two are derived
+	// from the same contract, and the contract refuses a skin that changes which
+	// properties a slot decides, so the projection and the stylesheet agree.
 	it("leaves a property the role does not decide unset", () => {
 		expect(properties["--type-table-head-weight"]).toBe("500");
 		expect(properties).not.toHaveProperty("--type-table-head-size");
@@ -94,14 +106,14 @@ describe("the resolved skin reaches those utilities as custom properties", () =>
 		expect(properties["--control-default-text-weight"]).toBe("500");
 	});
 
-	it("follows a skin that re-points a slot or moves a step", () => {
+	it("follows a skin that re-points a slot at a role of the same shape", () => {
 		const skinned = appearanceStyleProperties({
 			...DEFAULT_FRONTEND_APPEARANCE,
 			typeSlots: {
 				...DEFAULT_FRONTEND_APPEARANCE.typeSlots,
-				"card-title": "page-title",
+				"card-title": "surface-title-compact",
 			},
 		});
-		expect(skinned["--type-card-title-size"]).toBe("1.5rem");
+		expect(skinned["--type-card-title-size"]).toBe("0.875rem");
 	});
 });

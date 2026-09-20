@@ -1,16 +1,19 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "./shadcn.css";
-/* Generated from the contract's type slots and control rungs; see
-   scripts/generate-type-utilities.mjs. */
-@import "./type-slots.generated.css";
+/* The kit's type slots and control rungs (`type-card-title`, `control-sm`): one
+   utility per slot and rung, generated in the kit from the contract's vocabulary
+   and shipped with it, so the classes its components name are defined wherever
+   the kit is compiled. The variables they read are projected onto <html> by
+   src/lib/appearance.ts from the resolved skin. */
+@import "@codefly-dev/ui/type-slots.css";
 
 /* The host owns the single compiled stylesheet (CSS ownership: host authority,
    host CSS authority). Its Tailwind build only scans files it can see, so it must
-   scan the kit's source too — the kit ships no CSS and the promoted primitives'
-   Tailwind classes (issue #451) live in the kit source, not under ./src. This
-   generalizes to every consumer the host renders (module UI, solution remotes) as
-   they move into the kit. */
+   scan the kit's source too — the kit ships no other CSS and the promoted
+   primitives' Tailwind classes (issue #451) live in the kit source, not under
+   ./src. This generalizes to every consumer the host renders (module UI, solution
+   remotes) as they move into the kit. */
 @source "../../packages/codefly-ui/src";
 @source "../../packages/saas-ui/src";
 
