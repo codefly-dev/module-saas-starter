@@ -66,7 +66,15 @@ export function OrgSelector() {
 								? "Switching…"
 								: "Select organization…"
 					}
-				/>
+				>
+					{/* Resolve the label from the list rather than trusting item
+					    registration: the selected id is known before the items
+					    have mounted, and the primitive then shows the raw value —
+					    a UUID where the organization's name belongs. */}
+					{(value: string | null) =>
+						orgs.find((org) => org.id === value)?.name ?? null
+					}
+				</SelectValue>
 			</SelectTrigger>
 			<SelectContent>
 				{orgs.map((org) => (
