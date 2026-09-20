@@ -336,10 +336,11 @@ and a bad or missing value can never break a render.
 }
 ```
 
-Two complete example skins — one light, one sharp-cornered dark — live in
-[`examples/skins/`](../../examples/skins) and are exercised end to end (real
-mounted-file source → resolver → contract validator) in
-`src/lib/skin/__tests__/example-skins.test.ts`.
+A skin descriptor is owned by the product that deploys it and mounted at
+runtime (`FRONTEND_SKIN_DIR`, see `module/deployment/README.md`); this module
+ships none. The path such a file takes — real mounted-file source → resolver →
+contract validator — is exercised end to end, with a generic fixture that sets
+every layer, in `src/lib/skin/__tests__/mounted-skin.test.ts`.
 
 ## Proving a skin survives
 
