@@ -115,9 +115,12 @@ everywhere.
   bundle, cannot reach a current host. Requiring TLS here is not a safe
   default — it is an unsatisfiable one, and it hides the fact that the mesh is
   what is actually protecting the hop.
-- **Send both credentials on every call**, and treat the Work Context as
-  short-lived: capabilities cap at fifteen minutes, so a long-running worker
-  re-runs its exchange rather than holding one open.
+- **Send both credentials on every call**, and re-run the exchange rather than
+  holding a capability open. The two lifetimes differ by more than an order of
+  magnitude: a module identity context caps at fifteen minutes, an *exchanged*
+  audience child at 60 seconds — less, when the parent expires sooner. A worker
+  that caches an exchanged child for the identity context's lifetime is refused
+  on every call after the first minute.
 - **Never log either credential**, and never persist a Work Context.
 - **Fail closed on refusal.** `PERMISSION_DENIED` from this tier means the
   perimeter credential, the tier, or the caller's declared authority did not

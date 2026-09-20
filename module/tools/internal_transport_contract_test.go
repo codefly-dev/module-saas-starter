@@ -35,6 +35,14 @@ const (
 
 var jwksPathDeclaration = regexp.MustCompile(`jwksPath\s*=\s*"([^"]+)"`)
 
+// delegatedAudienceTTLSource caps the lifetime of an exchanged audience child.
+// Both delegated exchanges funnel through it, so it is the one bound a consumer
+// has to size its cache against — and the one the contract previously
+// contradicted by quoting the module identity context's fifteen minutes.
+const delegatedAudienceTTLSource = "services/accounts/code/pkg/adapters/delegated_read_audience.go"
+
+var delegatedAudienceTTLBound = regexp.MustCompile(`ttl := min\(int64\((\d+)\)`)
+
 func readModuleFile(t *testing.T, relative string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(findModuleDir(t), filepath.FromSlash(relative)))
@@ -54,12 +62,11 @@ func collapsed(text string) string { return strings.Join(strings.Fields(text), "
 // leaves a consumer no better off than no contract at all.
 func TestInternalTransportContractStatesTheDecision(t *testing.T) {
 	document := collapsed(readModuleFile(t, internalTransportDoc))
+	// One pin per distinct conclusion. Pinning every paragraph that restates a
+	// conclusion buys no coverage and breaks the build on an honest rewrite.
 	for _, claim := range []string{
 		"In-cluster transport security is the mesh's, not the service's.",
-		"The accounts service holds no server certificate, terminates no TLS of its own",
-		"The origin is **resolved, never configured as a URL**",
 		"A library that requires an explicit `https://` origin",
-		"**This document is the only producer.**",
 		"**Mounting a hand-authored copy is outside the contract.**",
 	} {
 		if !strings.Contains(document, collapsed(claim)) {
@@ -144,7 +151,13 @@ type authorizationPolicy struct {
 		Rules  []struct {
 			From []struct {
 				Source struct {
-					Principals []string `yaml:"principals"`
+					// Both fields are read because only reading one of them is
+					// how this check failed open: an ALLOW whose source moved to
+					// notPrincipals admits every principal EXCEPT the named one,
+					// and a decoder that never looks leaves Principals empty and
+					// every assertion below vacuously true.
+					Principals    []string `yaml:"principals"`
+					NotPrincipals []string `yaml:"notPrincipals"`
 				} `yaml:"source"`
 			} `yaml:"from"`
 		} `yaml:"rules"`
@@ -174,7 +187,12 @@ func TestInternalAuthorityAllowlistNamesOnlyThisModulesServices(t *testing.T) {
 	if err := yaml.Unmarshal([]byte(readModuleFile(t, topologyBindingFile)), &bindings); err != nil {
 		t.Fatalf("parse %s: %v", topologyBindingFile, err)
 	}
-	admissible := map[string]bool{"default": true}
+	// Only explicitly declared service accounts. The renderer falls back to
+	// `default` for a service that declares none, but six of this module's
+	// services run as `default`, so admitting it here would admit all of them to
+	// the authority surface at once — a widening, never a caller the topology
+	// meant to name.
+	admissible := map[string]bool{}
 	for _, service := range bindings.Services {
 		if name := service.Spec.ServiceAccount.Name; name != "" {
 			admissible[name] = true
@@ -200,12 +218,41 @@ func TestInternalAuthorityAllowlistNamesOnlyThisModulesServices(t *testing.T) {
 		if document.Spec.Action != "ALLOW" {
 			t.Errorf("%s is %s, not ALLOW: the internal surface is allowlisted, never denied by exception", document.Metadata.Name, document.Spec.Action)
 		}
+		if len(document.Spec.Rules) == 0 {
+			t.Errorf("%s carries no rule: an ALLOW that names no source admits nothing legible", document.Metadata.Name)
+		}
+		prefix := fmt.Sprintf("cluster.local/ns/%s/sa/", bindings.Module.Namespace)
 		for _, rule := range document.Spec.Rules {
+			if len(rule.From) == 0 {
+				t.Errorf("%s has a rule with no source: it would admit every principal", document.Metadata.Name)
+			}
 			for _, from := range rule.From {
+				if len(from.Source.NotPrincipals) > 0 {
+					t.Errorf(
+						"%s is an ALLOW keyed on notPrincipals %v: that admits every principal EXCEPT those, inverting the allowlist",
+						document.Metadata.Name, from.Source.NotPrincipals,
+					)
+				}
+				if len(from.Source.Principals) == 0 {
+					t.Errorf(
+						"%s has a source naming no principal: an ALLOW rule that names none restricts nobody",
+						document.Metadata.Name,
+					)
+				}
 				for _, principal := range from.Source.Principals {
-					prefix := fmt.Sprintf("cluster.local/ns/%s/sa/", bindings.Module.Namespace)
 					account, inNamespace := strings.CutPrefix(principal, prefix)
-					if !inNamespace || !admissible[account] {
+					switch {
+					case !inNamespace:
+						t.Errorf(
+							"%s admits %q from outside this module's namespace: the host would be naming a consumer",
+							document.Metadata.Name, principal,
+						)
+					case account == "default":
+						t.Errorf(
+							"%s admits the namespace default service account: every service that declares none runs as it, so this admits them all — declare a service account for the caller instead",
+							document.Metadata.Name,
+						)
+					case !admissible[account]:
 						t.Errorf(
 							"%s admits %q, which is not a service account this module's own topology declares",
 							document.Metadata.Name, principal,
@@ -217,5 +264,63 @@ func TestInternalAuthorityAllowlistNamesOnlyThisModulesServices(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no accounts internal-authority AuthorizationPolicy in %s", meshPolicyGolden)
+	}
+}
+
+// TestInternalTransportContractNamesTheExchangedChildLifetime holds the number a
+// consumer sizes its credential cache against to the number the exchange
+// actually signs. The contract first shipped the module identity context's
+// fifteen minutes as if it governed every capability; an exchanged child lives
+// 60 seconds, so a worker that believed the document was refused on every call
+// after the first minute.
+func TestInternalTransportContractNamesTheExchangedChildLifetime(t *testing.T) {
+	match := delegatedAudienceTTLBound.FindStringSubmatch(readModuleFile(t, delegatedAudienceTTLSource))
+	if match == nil {
+		t.Fatalf("no delegated-audience TTL bound in %s", delegatedAudienceTTLSource)
+	}
+	bound := collapsed(fmt.Sprintf("audience child at %s seconds", match[1]))
+	if !strings.Contains(collapsed(readModuleFile(t, internalTransportDoc)), bound) {
+		t.Errorf(
+			"%s does not state that an exchanged audience child caps at %s seconds, which is what %s signs",
+			internalTransportDoc, match[1], delegatedAudienceTTLSource,
+		)
+	}
+}
+
+// TestInternalTransportContractNamesEveryExportedEndpoint keeps an enumerating
+// sentence from going stale in silence. The contract lists what the module
+// interface publishes so a consumer knows none of it carries the internal tier;
+// a fourth export added without touching that sentence leaves the reader an
+// inventory that is quietly short.
+func TestInternalTransportContractNamesEveryExportedEndpoint(t *testing.T) {
+	var module struct {
+		Interface struct {
+			Endpoints []struct {
+				Service    string `yaml:"service"`
+				Endpoint   string `yaml:"endpoint"`
+				Visibility string `yaml:"visibility"`
+			} `yaml:"endpoints"`
+		} `yaml:"interface"`
+	}
+	if err := yaml.Unmarshal([]byte(readModuleFile(t, moduleManifest)), &module); err != nil {
+		t.Fatalf("parse %s: %v", moduleManifest, err)
+	}
+	document := readModuleFile(t, internalTransportDoc)
+	named := 0
+	for _, exported := range module.Interface.Endpoints {
+		if exported.Visibility != "module" {
+			continue
+		}
+		named++
+		reference := fmt.Sprintf("`%s/%s`", exported.Service, exported.Endpoint)
+		if !strings.Contains(document, reference) {
+			t.Errorf(
+				"%s exports %s with module visibility and %s never names it",
+				moduleManifest, reference, internalTransportDoc,
+			)
+		}
+	}
+	if named == 0 {
+		t.Fatalf("%s publishes no module-visible endpoint; the contract's inventory has nothing to describe", moduleManifest)
 	}
 }
