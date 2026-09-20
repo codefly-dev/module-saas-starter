@@ -630,6 +630,22 @@ type Store interface {
 	// resurrecting a removed follow.
 	ResourceFollowIsLive(ctx context.Context, orgID, userID, resourceType, resourceID string) (bool, error)
 
+	// The tenant's committed journal. domain_events carries SELECT for app_tenant
+	// under an org-keyed RLS policy, so both run under WithOrgTx and the tenant
+	// floor is the first gate on what a reader can reach at all.
+	//
+	// ListTenantJournal returns one page of entries strictly after afterSeq, in
+	// seq order, at most limit rows. seq is unique and ascending, so the keyset
+	// cursor cannot skip or repeat a row the way an OFFSET over a concurrently
+	// written table can.
+	ListTenantJournal(ctx context.Context, afterSeq int64, limit int) ([]JournalEntry, error)
+	// ResolveTenantJournalCursor answers which seq a reader resumes after. An
+	// empty, unknown or foreign eventID resolves to the tenant's current head, so
+	// a reader with no usable cursor starts live: under the tenant floor an id
+	// belonging to another organization and an id that never existed are the same
+	// answer, which is what keeps the cursor from being an existence oracle.
+	ResolveTenantJournalCursor(ctx context.Context, eventID string) (int64, error)
+
 	// MFA — exposed on the main Store interface so the auth layer's
 	// requireMFA gate can check enrollment without casting to MFAStore.
 	HasVerifiedMFA(ctx context.Context, userID string) (bool, error)

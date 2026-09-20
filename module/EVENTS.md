@@ -308,6 +308,60 @@ The properties a consumer may rely on:
 | Size | `data` <= 960 KiB; larger payloads use a claim-check reference |
 | Latency | relay tick <= 1 s p50 on Postgres; not a hard real-time channel |
 
+## The subscriptions stream
+
+`GET /v1/subscriptions/stream` is the signed-in person's live view of their
+tenant's journal, as Server-Sent Events. It is the same declaration, the same
+target and the same access oracle the follow bridge uses
+([FOLLOWS.md](./FOLLOWS.md)), read forward by a connected client instead of
+fanned out into the inbox — so a client shows a change within seconds and never
+polls for it. It asks for no follow row: a follow is a durable intent to be told
+later, this is a cursor a client holds now.
+
+It does not fit the proto model — one request answers with an open-ended
+sequence of frames — so it is mounted beside the grpc-gateway mux
+(`pkg/adapters/subscription_stream_http.go`) and declared in the gateway's
+non-protobuf REST extensions. Authentication is the private request identity
+every other transport establishes; a raw `X-User-Id` is never authority.
+
+What reaches a reader, and what never does:
+
+- **Declared changes only.** An entry is on the stream when the composed
+  catalog's `follows:` binds its `type` to a `resource_type` and the envelope
+  carries a `subject`. An entry the host cannot resolve to a resource is an entry
+  it cannot authorize, so it is never guessed onto the stream. A composition that
+  declares no followable resource leaves the stream open and silent.
+- **Visible entries only.** Every page is filtered through
+  `ListAccessibleResourceIDs` — the same grant-and-share union `CheckAccess`
+  resolves — under `WithOrgTx`, so the tenant RLS floor on `domain_events` is the
+  first gate and per-resource visibility the second. An entry the reader may not
+  see produces no frame of any kind: hidden is indistinguishable from an entry
+  that never concerned them.
+- **The entry, and the producer's payload unread.** A frame names the declared
+  `type`, the `resourceType` and the `resourceId`. `data` travels verbatim when
+  the producer declared JSON, re-encoded so a newline inside it cannot split the
+  frame, and is dropped otherwise — the host never decodes another module's
+  payload, and a removal is simply another declared type over the same resource
+  rather than a host concept.
+
+The cursor is the envelope `id`, carried in the frame's `id:` field and presented
+back as `Last-Event-ID`. Resolution runs under the tenant floor, so an id from
+another organization, an id that never existed and a cursor that is not a UUID
+are one answer — the tenant's own head — and the cursor can never become an
+existence oracle. A reader with no cursor starts live. Filtering advances the
+cursor over entries it dropped: leaving one pending would re-run the same denial
+on every poll and stall everything behind it.
+
+A connection is bounded. The bearer is re-verified on every poll, so a revoked or
+expired session stops receiving within the poll interval rather than holding a
+stream open past the credential that opened it; a forwarded gateway identity
+carries no expiry this process can re-check, so every connection also ends at a
+fixed lifetime and the client reconnects with its last event id, which costs no
+events. The journal has no change signal of its own, so the reader reads forward
+on a timer — one bounded page per tick per connected client. That is what
+"within seconds" costs today, and it is the piece a `LISTEN`/`NOTIFY` or broker
+transport would replace without changing anything above it.
+
 ## Commands, events, and audit
 
 Three notions of "event" now have one stated relationship:

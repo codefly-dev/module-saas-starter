@@ -51,7 +51,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 
 	extensions, err := LoadRESTExtensionsFromDir(context.Background(), DefaultRoutingDir())
 	require.NoError(t, err)
-	require.Len(t, extensions, 7)
+	require.Len(t, extensions, 8)
 	wantExtensions := map[string]bool{
 		"POST /v1/auth/magic-link":        false,
 		"POST /v1/auth/magic-link/verify": false,
@@ -60,6 +60,7 @@ func TestGeneratedRESTSurfaceAndExtensions(t *testing.T) {
 		"POST /v1/billing/checkout":       true,
 		"POST /v1/billing/free-plan":      true,
 		"POST /v1/billing/portal":         true,
+		"GET /v1/subscriptions/stream":    true,
 	}
 	for _, entry := range extensions {
 		require.Empty(t, entry.Procedure)
