@@ -101,6 +101,7 @@ const METHOD_CONTEXTS = {
   "ModuleCapabilitiesService/ListReadableSourceCollections": "authorization",
   "ModuleCapabilitiesService/ExchangeDelegatedReadAudience": "authorization",
   "ModuleCapabilitiesService/ExchangeDelegatedOperationAudience": "authorization",
+  "ModuleCapabilitiesService/ListSubjectVisibility": "authorization",
   "ModuleCapabilitiesService/ListSubscriptions": "events",
   "ModuleCapabilitiesService/MintModuleRegistration": "authorization",
   "ModuleCapabilitiesService/MintModuleWorkContext": "authorization",

@@ -729,6 +729,83 @@ func (s *Service) ModuleEmitAuditEvent(ctx context.Context, caller ModuleCaller,
 }
 
 // ---------------------------------------------------------------------------
+// Subject visibility
+// ---------------------------------------------------------------------------
+
+// ModuleSubjectVisibilityMaxSet bounds a viewer's whole set. The set is read and
+// returned as one value on purpose (see ModuleListSubjectVisibility), so the cap
+// is what keeps one response bounded in memory and under the transport's message
+// limit; at a uuid per entry this is well inside it. It is exported because it
+// is a bound on the surface's contract, not a private tuning knob: a tenant past
+// it gets a refusal a consumer has to handle.
+const ModuleSubjectVisibilityMaxSet = 10000
+
+// ModuleSubjectVisibilityGrant is one entry of a viewer's visible-subject set.
+// ExpiresAt zero is an open-ended grant: the host's hierarchy is team
+// membership, which carries no end of its own, so today every entry is
+// open-ended. The consuming module evaluates the instant at the moment of the
+// read, which is why the host writes it rather than expiring entries on a timer.
+type ModuleSubjectVisibilityGrant struct {
+	VisibleSubjectID string
+	ExpiresAt        time.Time
+}
+
+// ModuleListSubjectVisibility reports the other subjects whose rows a viewer may
+// read in a tenant — the tenant's team tree projected onto that viewer. A module
+// enforcing row visibility by owner composes the set into its read predicate; it
+// never derives the set itself, because a module that grew a subject hierarchy
+// would be holding a permission vocabulary.
+//
+// The WHOLE set comes back from ONE transaction, and that is the contract rather
+// than an implementation detail. The consuming operation is a bulk replace of a
+// viewer's whole set, so a set assembled from pages read in separate
+// transactions could carry an entry revoked between two of them: the module
+// would reinstate an authority an administrator had already withdrawn, and with
+// no invalidation signal to correct it the stale grant would stand until the
+// consumer's next refresh. A tenant whose hierarchy puts more than
+// ModuleSubjectVisibilityMaxSet subjects under one viewer is therefore refused
+// outright — a legible failure an operator can act on — rather than answered
+// with a set that was never true at any instant.
+//
+// Authority is the caller's registered principal and its bound tenant, plus the
+// viewer's membership of that tenant: without the membership check a module
+// bound to one tenant could name a subject in another and learn whether that
+// subject has colleagues.
+func (s *Service) ModuleListSubjectVisibility(ctx context.Context, caller ModuleCaller, tenant, viewer string) ([]ModuleSubjectVisibilityGrant, error) {
+	grant, err := s.moduleGrant(caller)
+	if err != nil {
+		return nil, err
+	}
+	if err := authorizeTenant(caller, grant, tenant); err != nil {
+		return nil, err
+	}
+	if err := s.requireTenantMember(ctx, tenant, viewer); err != nil {
+		return nil, err
+	}
+
+	var subjects []string
+	// One entry over the cap distinguishes a set that fits from one that does not.
+	if err := s.store.WithOrgTx(ctx, tenant, func(ctx context.Context) error {
+		out, e := s.store.ListVisibleSubjects(ctx, tenant, viewer, ModuleSubjectVisibilityMaxSet+1)
+		subjects = out
+		return e
+	}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if len(subjects) > ModuleSubjectVisibilityMaxSet {
+		return nil, status.Errorf(codes.FailedPrecondition,
+			"viewer %s sees more than %d subjects in tenant %s; the per-viewer visibility set cannot be served whole",
+			viewer, ModuleSubjectVisibilityMaxSet, tenant)
+	}
+
+	grants := make([]ModuleSubjectVisibilityGrant, 0, len(subjects))
+	for _, subject := range subjects {
+		grants = append(grants, ModuleSubjectVisibilityGrant{VisibleSubjectID: subject})
+	}
+	return grants, nil
+}
+
+// ---------------------------------------------------------------------------
 // Record placement
 // ---------------------------------------------------------------------------
 

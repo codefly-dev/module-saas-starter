@@ -81,6 +81,9 @@ const (
 	// ModuleCapabilitiesServiceEmitAuditEventProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's EmitAuditEvent RPC.
 	ModuleCapabilitiesServiceEmitAuditEventProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	// ModuleCapabilitiesServiceListSubjectVisibilityProcedure is the fully-qualified name of the
+	// ModuleCapabilitiesService's ListSubjectVisibility RPC.
+	ModuleCapabilitiesServiceListSubjectVisibilityProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	// ModuleCapabilitiesServiceFetchDatasourceBlobProcedure is the fully-qualified name of the
 	// ModuleCapabilitiesService's FetchDatasourceBlob RPC.
 	ModuleCapabilitiesServiceFetchDatasourceBlobProcedure = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
@@ -152,6 +155,9 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
@@ -285,6 +291,12 @@ func NewModuleCapabilitiesServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 			connect.WithClientOptions(opts...),
 		),
+		listSubjectVisibility: connect.NewClient[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse](
+			httpClient,
+			baseURL+ModuleCapabilitiesServiceListSubjectVisibilityProcedure,
+			connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubjectVisibility")),
+			connect.WithClientOptions(opts...),
+		),
 		fetchDatasourceBlob: connect.NewClient[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk](
 			httpClient,
 			baseURL+ModuleCapabilitiesServiceFetchDatasourceBlobProcedure,
@@ -359,6 +371,7 @@ type moduleCapabilitiesServiceClient struct {
 	getApproval                        *connect.Client[v1.ModuleGetApprovalRequest, v1.ModuleApproval]
 	cancelApproval                     *connect.Client[v1.ModuleCancelApprovalRequest, emptypb.Empty]
 	emitAuditEvent                     *connect.Client[v1.ModuleEmitAuditEventRequest, emptypb.Empty]
+	listSubjectVisibility              *connect.Client[v1.ModuleListSubjectVisibilityRequest, v1.ModuleListSubjectVisibilityResponse]
 	fetchDatasourceBlob                *connect.Client[v1.FetchDatasourceBlobRequest, v1.FetchDatasourceBlobChunk]
 	mintModuleRegistration             *connect.Client[v1.ModuleMintRegistrationRequest, v1.ModuleMintRegistrationResponse]
 	mintSolutionRegistration           *connect.Client[v1.SolutionMintRegistrationRequest, v1.SolutionMintRegistrationResponse]
@@ -449,6 +462,11 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, re
 	return c.emitAuditEvent.CallUnary(ctx, req)
 }
 
+// ListSubjectVisibility calls saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility.
+func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Context, req *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error) {
+	return c.listSubjectVisibility.CallUnary(ctx, req)
+}
+
 // FetchDatasourceBlob calls saas.accounts.v1.ModuleCapabilitiesService.FetchDatasourceBlob.
 func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, req *connect.Request[v1.FetchDatasourceBlobRequest]) (*connect.ServerStreamForClient[v1.FetchDatasourceBlobChunk], error) {
 	return c.fetchDatasourceBlob.CallServerStream(ctx, req)
@@ -537,6 +555,9 @@ type ModuleCapabilitiesServiceHandler interface {
 	CancelApproval(context.Context, *connect.Request[v1.ModuleCancelApprovalRequest]) (*connect.Response[emptypb.Empty], error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
@@ -666,6 +687,12 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("EmitAuditEvent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	moduleCapabilitiesServiceListSubjectVisibilityHandler := connect.NewUnaryHandler(
+		ModuleCapabilitiesServiceListSubjectVisibilityProcedure,
+		svc.ListSubjectVisibility,
+		connect.WithSchema(moduleCapabilitiesServiceMethods.ByName("ListSubjectVisibility")),
+		connect.WithHandlerOptions(opts...),
+	)
 	moduleCapabilitiesServiceFetchDatasourceBlobHandler := connect.NewServerStreamHandler(
 		ModuleCapabilitiesServiceFetchDatasourceBlobProcedure,
 		svc.FetchDatasourceBlob,
@@ -752,6 +779,8 @@ func NewModuleCapabilitiesServiceHandler(svc ModuleCapabilitiesServiceHandler, o
 			moduleCapabilitiesServiceCancelApprovalHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceEmitAuditEventProcedure:
 			moduleCapabilitiesServiceEmitAuditEventHandler.ServeHTTP(w, r)
+		case ModuleCapabilitiesServiceListSubjectVisibilityProcedure:
+			moduleCapabilitiesServiceListSubjectVisibilityHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceFetchDatasourceBlobProcedure:
 			moduleCapabilitiesServiceFetchDatasourceBlobHandler.ServeHTTP(w, r)
 		case ModuleCapabilitiesServiceMintModuleRegistrationProcedure:
@@ -837,6 +866,10 @@ func (UnimplementedModuleCapabilitiesServiceHandler) CancelApproval(context.Cont
 
 func (UnimplementedModuleCapabilitiesServiceHandler) EmitAuditEvent(context.Context, *connect.Request[v1.ModuleEmitAuditEventRequest]) (*connect.Response[emptypb.Empty], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.EmitAuditEvent is not implemented"))
+}
+
+func (UnimplementedModuleCapabilitiesServiceHandler) ListSubjectVisibility(context.Context, *connect.Request[v1.ModuleListSubjectVisibilityRequest]) (*connect.Response[v1.ModuleListSubjectVisibilityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.ModuleCapabilitiesService.ListSubjectVisibility is not implemented"))
 }
 
 func (UnimplementedModuleCapabilitiesServiceHandler) FetchDatasourceBlob(context.Context, *connect.Request[v1.FetchDatasourceBlobRequest], *connect.ServerStream[v1.FetchDatasourceBlobChunk]) error {
