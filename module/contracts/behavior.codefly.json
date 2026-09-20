@@ -1,0 +1,356 @@
+{
+  "schemaVersion": 1,
+  "complete": true,
+  "contracts": [
+    {
+      "id": "configuration.federation-secrets",
+      "requiredByAll": true,
+      "documentation": "SOLUTION_REGISTRATION.md",
+      "contract": {
+        "group": "federation",
+        "purpose": "Declares which publishers may federate a REST prefix, obtain a module Work Context, or register a solution. The group is declared on its own so a composition can override it without restating unrelated keys.",
+        "keys": [
+          {
+            "name": "MODULE_REGISTRATION_SECRETS",
+            "form": "comma-separated prefix:sha256hex",
+            "digestOf": "the module's own registration secret",
+            "empty": "no composed module may federate a REST prefix",
+            "reread": "startup"
+          },
+          {
+            "name": "MODULE_IDENTITY_SECRETS",
+            "form": "comma-separated prefix:sha256hex",
+            "digestOf": "the module's service-principal identity secret",
+            "empty": "no composed module may obtain a Work Context",
+            "reread": "startup"
+          },
+          {
+            "name": "SOLUTION_REGISTRATION_SECRETS",
+            "form": "comma-separated id:sha256hex",
+            "digestOf": "the solution's own registration secret",
+            "empty": "no solution may register",
+            "reread": "every exchange"
+          }
+        ],
+        "rules": [
+          "Only digests are declared on this side; each plaintext is provisioned to the registrant.",
+          "A declaration that stops parsing denies every registrant with the same refusal a wrong secret receives.",
+          "Registration credentials never substitute for an absent identity declaration, and holding one credential never confers the other.",
+          "An unset key fails closed. Absence is never read as permission."
+        ],
+        "limitation": "No runtime component updates the process environment or the injected carrier under a running process (codefly-dev/cli#740), so where a deployment delivers these keys as container environment, withdrawing a publisher takes effect on restart rather than on edit."
+      }
+    },
+    {
+      "id": "authorization.gateway.identity-headers",
+      "requiredByAll": true,
+      "documentation": "services/auth-gateway/AGENTS.md",
+      "contract": {
+        "scope": "Every request proxied to a catalog route, a registered solution upstream, or a federated module prefix.",
+        "check": "The gateway runs an ext_authz Check and proxies only on success. A registered target never changes which check runs.",
+        "inboundHeaders": "Every canonical identity header is stripped from the inbound request before the verified principal is stamped, so a caller cannot present one on a route that stamps a subset.",
+        "stampedHeaders": [
+          "x-user-id",
+          "x-org-id",
+          "x-org-role",
+          "x-platform-role",
+          "x-roles",
+          "x-scoped-roles",
+          "x-scoped-roles-truncated",
+          "x-auth-id",
+          "x-user-email",
+          "x-user-name",
+          "x-session-id",
+          "x-acting-as-user-id",
+          "x-act",
+          "x-scopes",
+          "x-credential-kind",
+          "x-mfa-satisfied",
+          "x-authentication-methods",
+          "x-auth-time",
+          "x-assurance-level",
+          "x-mfa-verified-at"
+        ],
+        "credentialKinds": ["session", "api_key"],
+        "rules": [
+          "An upstream reads identity only from these headers; it never re-derives identity from a forwarded bearer.",
+          "x-credential-kind names what the perimeter authenticated, a fact only the perimeter holds.",
+          "An upstream that trusts an unstamped header trusts caller-supplied input."
+        ]
+      }
+    },
+    {
+      "id": "registration.solution.credential",
+      "requiredByAll": true,
+      "documentation": "SOLUTION_REGISTRATION.md",
+      "dependencies": [
+        "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
+        "behavior/configuration.federation-secrets"
+      ],
+      "contract": {
+        "exchange": {
+          "method": "POST",
+          "path": "/solutions/_registration-token",
+          "on": "auth-gateway",
+          "body": {"id": "<solution-id>"},
+          "headers": {
+            "X-Codefly-Internal-Token": "cluster-internal perimeter check, not the authorization",
+            "X-Codefly-Solution-Secret": "the solution's own registration secret"
+          }
+        },
+        "broker": {
+          "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration",
+          "exposure": "EXPOSURE_INTERNAL",
+          "authorizedAgainst": "SOLUTION_REGISTRATION_SECRETS entry for that exact id",
+          "audit": "saas.solution.registration_minted"
+        },
+        "token": {
+          "algorithm": "EdDSA",
+          "key": "Ed25519, published through JWKS",
+          "audience": "solution-registration",
+          "subject": "solution:<id>",
+          "claims": ["solution", "jti"],
+          "ttlSeconds": 300
+        },
+        "rules": [
+          "The credential names one solution id and one publisher, so a holder can neither claim nor re-point another solution.",
+          "The declaration is read on every exchange: authorizing a publisher takes effect on its next exchange, and withdrawing one stops its next renewal.",
+          "The token is fetched per registration attempt and not cached across a restart.",
+          "The gateway mints nothing itself and adds no authority of its own."
+        ]
+      }
+    },
+    {
+      "id": "registration.solution.gateway-upstream",
+      "requiredByAll": true,
+      "documentation": "SOLUTION_REGISTRATION.md",
+      "dependencies": ["behavior/registration.solution.credential"],
+      "contract": {
+        "register": {
+          "method": "POST",
+          "path": "/solutions/_register",
+          "body": {"id": "<solution-id>", "upstream": "<host:port>"},
+          "credentialHeader": "X-Codefly-Solution-Registration",
+          "withdraw": "DELETE on the same path"
+        },
+        "verification": [
+          "Ed25519 signature against the published JWKS, alg-locked to EdDSA",
+          "issuer, solution-registration audience, and expiry with skew leeway",
+          "the solution claim equals the id in the request, or 403",
+          "jti burned on use, so a captured credential cannot be replayed"
+        ],
+        "publisherBinding": {
+          "rule": "The first registration binds the id to the credential's subject. A write from a different subject is refused with 409.",
+          "move": "The same publisher may move its own upstream endpoint.",
+          "delete": "Owner-bound. A non-owner's delete is indistinguishable from an unknown id.",
+          "preContract": "A registration stored before publisher binding carried the bare id as its publisher. The upgrade rewrites that one pre-contract default to solution:<id>, so the solution's own credential keeps renewing its record. A row whose publisher was self-asserted as anything else was never authenticated and is left as it is. Every registration now carries a non-empty verified publisher."
+        },
+        "revision": "The gateway supplies the compare-and-swap revision it last saw. A registrant never supplies one.",
+        "requestBodyLimitBytes": 4096,
+        "identity": "The id is one catalog-identity segment, so reserved underscore-prefixed sub-paths cannot be shadowed.",
+        "upstream": {
+          "allowed": "composition-local only: loopback and private ranges, mesh short names and cluster suffixes",
+          "refused": "globally routable, link-local, and cloud-metadata addresses",
+          "dialTime": "The resolved address is re-checked at dial time, so a mesh-looking name whose answer later points off-mesh never receives a forwarded bearer.",
+          "loopback": "an explicit development exception"
+        },
+        "proxy": {
+          "path": "/solutions/{id}/...",
+          "check": "the same ext_authz Check and identity-header discipline as catalog routes",
+          "unauthenticated": {"subPaths": ["/assets", "/.well-known"], "methods": ["GET", "HEAD"]}
+        },
+        "registry": {
+          "method": "GET",
+          "path": "/solutions/_registry",
+          "returns": ["id", "publisher", "revision", "status"],
+          "statuses": ["active", "pending", "expired", "incompatible", "tombstoned"],
+          "neverReturns": "an upstream"
+        }
+      }
+    },
+    {
+      "id": "registration.solution.frontend-remote",
+      "documentation": "SOLUTION_REGISTRATION.md",
+      "dependencies": [
+        "behavior/registration.solution.credential",
+        "behavior/federation.solution.runtime-compatibility"
+      ],
+      "contract": {
+        "register": {
+          "method": "POST",
+          "path": "/api/solutions/register",
+          "body": "the solution manifest",
+          "credentialHeader": "X-Codefly-Solution-Registration",
+          "withdraw": "DELETE on the same path"
+        },
+        "independence": "The frontend verifies the same credential independently of the gateway. Neither half trusts the other's decision, and neither holds a secret every registrant shares.",
+        "verification": [
+          "Ed25519 signature against the published JWKS, alg-locked to EdDSA",
+          "issuer, solution-registration audience, and expiry with skew leeway",
+          "the id comes from the manifest and must equal the solution claim, or 403",
+          "the first registration binds the id to the credential's subject; a different subject is refused with 409",
+          "jti burned on use"
+        ],
+        "requestBodyLimitBytes": 65536,
+        "trustTier": "A registered remote is loaded as a Module-Federation remote and executes as JavaScript in the host origin, receiving the viewer's capabilities. Registering a solution is approximately equivalent to deploying first-party code. Module-Federation singleton sharing, CSP origin inclusion, and row-level security are not sandboxes.",
+        "page": "/s/{id}"
+      }
+    },
+    {
+      "id": "federation.solution.runtime-compatibility",
+      "documentation": "SOLUTION_REGISTRATION.md",
+      "contract": {
+        "principle": "Every declared requirement is checked before activation, so an incompatible remote is never handed to a browser. A declared requirement the host does not check is not a compatibility contract.",
+        "manifestFields": [
+          {"field": "schemaVersion", "checkedAgainst": "SOLUTION_MANIFEST_SCHEMA_MAJOR", "defaultWhenAbsent": "1"},
+          {"field": "frontend.hostContract", "checkedAgainst": "SOLUTION_HOST_CONTRACT_MAJOR", "defaultWhenAbsent": "1"},
+          {"field": "frontend.reactRange", "checkedAgainst": "the host's real React version", "defaultWhenAbsent": "unconstrained"},
+          {"field": "frontend.shared", "checkedAgainst": "the versions the host publishes into the sealed scope", "defaultWhenAbsent": "unconstrained"},
+          {"field": "frontend.exposedModule", "checkedAgainst": "must be a ./Name key", "defaultWhenAbsent": "none"}
+        ],
+        "hostMajors": {
+          "SOLUTION_MANIFEST_SCHEMA_MAJOR": 1,
+          "SOLUTION_HOST_CONTRACT_MAJOR": 1
+        },
+        "absentMajorDefault": "An undeclared major defaults to 1, the major in force when the field was introduced, and never to the host's current major, which would make every silent manifest compatible by definition at exactly the upgrade this check exists for.",
+        "rangeGrammar": "A deliberately small semver subset: || alternatives of space-separated ^ ~ >= > <= < =, a bare version, or *. A range outside the grammar is refused, never approximated.",
+        "sharedScope": {
+          "ownedByHost": "The host owns the single React instance and publishes exact versions into the Module-Federation shared scope; a remote declares the range it needs of each.",
+          "keys": [
+            "react",
+            "react-dom",
+            "react/jsx-runtime",
+            "@codefly-dev/ui",
+            "@codefly-dev/ui/layout",
+            "@codefly-dev/ui/dashboard",
+            "@codefly-dev/ui/chat",
+            "@codefly-dev/ui/skin",
+            "@codefly-dev/ui/table",
+            "@codefly-dev/ui/plugin-host",
+            "@codefly-dev/ui/plugin-host/runtime",
+            "@codefly-dev/ui/plugin-host/ui",
+            "@codefly-dev/saas-ui",
+            "@codefly-dev/saas-sdk"
+          ],
+          "versions": "The exact published version of each key is a release fact of the host build, carried by the module package rather than restated here."
+        },
+        "refusal": {
+          "whole": "A refused registration is refused whole.",
+          "fallback": "If the id already had a valid registration, that registration keeps serving. The last known valid one is never replaced by a rejected update.",
+          "response": {"status": 409, "body": {"error": "incompatible_runtime", "reasons": ["..."]}},
+          "noFallback": "If the id has no valid registration to fall back on, its page renders a temporarily-unavailable panel rather than a 404, and the technical cause stays in the server log."
+        }
+      }
+    },
+    {
+      "id": "registration.module.rest-federation",
+      "documentation": "services/auth-gateway/AGENTS.md",
+      "dependencies": [
+        "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
+        "behavior/configuration.federation-secrets"
+      ],
+      "contract": {
+        "purpose": "A composed module that serves its own /v1/<module>/* surface registers it, and the gateway proxies that prefix once the generated catalog has no match.",
+        "handshake": [
+          {
+            "step": 1,
+            "method": "POST",
+            "path": "/modules/_registration-token",
+            "headers": {
+              "X-Codefly-Internal-Token": "cluster-internal perimeter check",
+              "X-Codefly-Module-Secret": "the module's own registration secret"
+            },
+            "body": {"prefix": "<module-prefix>"}
+          },
+          {
+            "step": 2,
+            "broker": {
+              "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration",
+              "exposure": "EXPOSURE_INTERNAL",
+              "authorizedAgainst": "MODULE_REGISTRATION_SECRETS entry for that exact prefix",
+              "audit": "module.registration_minted"
+            },
+            "token": {
+              "algorithm": "EdDSA",
+              "audience": "module-registration",
+              "subject": "module:<prefix>",
+              "ttlSeconds": 300
+            }
+          },
+          {
+            "step": 3,
+            "method": "POST",
+            "path": "/modules/_register",
+            "credentialHeader": "X-Codefly-Module-Registration",
+            "body": {"prefix": "<module-prefix>", "upstream": "<host:port>"}
+          }
+        ],
+        "rules": [
+          "The credential is prefix-bound, so a module holding the credential for one prefix cannot claim another.",
+          "The shared cluster-internal token alone does not authorize registration.",
+          "The token is short-lived and fetched per registration attempt, not cached across a gateway restart.",
+          "Registration only adds a proxy target. Every proxied /v1/<module>/* request still runs the full ext_authz check.",
+          "The prefix declaration is not re-read per exchange: a composed module cannot change its declaration without a new deployment."
+        ]
+      }
+    },
+    {
+      "id": "registration.module.work-context",
+      "documentation": "services/accounts/AGENTS.md",
+      "dependencies": [
+        "api/accounts/connect#/saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
+        "behavior/configuration.federation-secrets"
+      ],
+      "contract": {
+        "exchange": {
+          "method": "POST",
+          "path": "/modules/_work-context",
+          "headers": {
+            "X-Codefly-Internal-Token": "cluster-internal perimeter check",
+            "X-Codefly-Module-Secret": "the module's identity secret"
+          },
+          "body": {"prefix": "<module-prefix>"}
+        },
+        "broker": {
+          "procedure": "saas.accounts.v1.ModuleCapabilitiesService/MintModuleWorkContext",
+          "exposure": "EXPOSURE_INTERNAL",
+          "authorizedAgainst": "MODULE_IDENTITY_SECRETS entry for that exact prefix"
+        },
+        "rules": [
+          "The identity declaration is independent of the route-registration declaration, and a registration credential never substitutes for an absent identity declaration.",
+          "accounts owns every rule about what the resulting capability may do. The gateway mints nothing and adds no authority of its own."
+        ]
+      }
+    },
+    {
+      "id": "authorization.solution.installation-authority",
+      "documentation": "SOLUTION_REGISTRATION.md",
+      "contract": {
+        "separation": "Deployment registration, per-organization installation, and entitlement are three different things.",
+        "registration": {
+          "scope": "cluster-wide, per-deployment",
+          "governs": "whether /s/{id} renders a remote and whether /solutions/{id}/... proxies"
+        },
+        "installation": {
+          "procedure": "InstallationService/InstallSolution",
+          "scope": "per-organization",
+          "governs": "agent authority only",
+          "composes": [
+            "an agent principal",
+            "a kind='solution' scope node",
+            "a least-privilege standing grant with an audience and scope ceiling",
+            "an accountable owner of record",
+            "an installation row",
+            "the durable event subscriptions the solution declared"
+          ],
+          "uninstall": "reverses exactly that composition"
+        },
+        "entitlement": {
+          "procedure": "BillingService",
+          "governs": "feature availability within the product, independently of the other two"
+        },
+        "limitation": "Uninstalling in one organization revokes that organization's agent authority and does not remove the solution's nav entry, page, or gateway route, for that organization or any other. A registered solution's UI and API surface is visible to every tenant of the deployment. Per-tenant admission before route or page exposure is an additional gate that is not implemented here."
+      }
+    }
+  ]
+}
