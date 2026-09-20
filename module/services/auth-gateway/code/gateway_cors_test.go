@@ -14,6 +14,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 )
 
 const (
@@ -381,4 +383,43 @@ func TestCORS_StreamedResponseCarriesTheGrantWithItsFirstChunk(t *testing.T) {
 	_, err = io.ReadFull(resp.Body, chunk)
 	require.NoError(t, err)
 	require.Equal(t, "data: one\n\n", string(chunk))
+}
+
+// A replica whose registry has never loaded — accounts down at boot, or not yet
+// serving the registry at all — cannot tell a registered origin from any other,
+// and must say no. Asserted end to end rather than only on the cache, because
+// fail-closed here is what stops a registry outage from becoming an open door,
+// and because the same state is what a gateway runs in before accounts ships
+// the registry at all: existing traffic unchanged, client traffic refused.
+func TestCORS_UnreadableRegistryFailsClosedWithoutDisturbingEveryoneElse(t *testing.T) {
+	gw, api, _, priv := newGatewayHarness(t)
+	clientRegistryFake(t, gw).listErr = grpcstatus.Error(
+		codes.Unimplemented, "unknown service saas.accounts.v1.ClientRegistryService")
+	require.Error(t, gw.clients.refresh(context.Background()))
+
+	session := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+	session.Header.Set("Authorization", "Bearer "+signValidToken(t, priv))
+	session.Header.Set("Origin", "https://host.example")
+	served := httptest.NewRecorder()
+	gw.ServeHTTP(served, session)
+	require.Equal(t, http.StatusOK, served.Code,
+		"a token naming no client must be unaffected by the registry being unreadable")
+	require.Empty(t, served.Header().Get("Access-Control-Allow-Origin"))
+	require.NotNil(t, api.lastHeaders)
+
+	api.lastHeaders = nil
+	client := httptest.NewRequest(http.MethodGet, "/v1/users", nil)
+	client.Header.Set("Authorization", "Bearer "+signClientToken(t, priv, addinClient))
+	client.Header.Set("Origin", addinOrigin)
+	refused := httptest.NewRecorder()
+	gw.ServeHTTP(refused, client)
+	require.Equal(t, http.StatusForbidden, refused.Code)
+	require.Nil(t, api.lastHeaders)
+
+	preflight := httptest.NewRequest(http.MethodOptions, "/v1/users", nil)
+	preflight.Header.Set("Origin", addinOrigin)
+	preflight.Header.Set("Access-Control-Request-Method", "GET")
+	unanswered := httptest.NewRecorder()
+	gw.ServeHTTP(unanswered, preflight)
+	require.Equal(t, http.StatusNotFound, unanswered.Code)
 }
