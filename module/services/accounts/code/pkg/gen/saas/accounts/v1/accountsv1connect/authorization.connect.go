@@ -43,6 +43,9 @@ const (
 	// PermissionServiceListRolesProcedure is the fully-qualified name of the PermissionService's
 	// ListRoles RPC.
 	PermissionServiceListRolesProcedure = "/saas.accounts.v1.PermissionService/ListRoles"
+	// PermissionServiceUpdateRoleProcedure is the fully-qualified name of the PermissionService's
+	// UpdateRole RPC.
+	PermissionServiceUpdateRoleProcedure = "/saas.accounts.v1.PermissionService/UpdateRole"
 	// PermissionServiceDeleteRoleProcedure is the fully-qualified name of the PermissionService's
 	// DeleteRole RPC.
 	PermissionServiceDeleteRoleProcedure = "/saas.accounts.v1.PermissionService/DeleteRole"
@@ -115,6 +118,7 @@ const (
 type PermissionServiceClient interface {
 	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
+	UpdateRole(context.Context, *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error)
 	DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	AssignRole(context.Context, *connect.Request[v1.AssignRoleRequest]) (*connect.Response[v1.AssignRoleResponse], error)
 	RevokeRole(context.Context, *connect.Request[v1.RevokeRoleRequest]) (*connect.Response[emptypb.Empty], error)
@@ -177,6 +181,12 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			httpClient,
 			baseURL+PermissionServiceListRolesProcedure,
 			connect.WithSchema(permissionServiceMethods.ByName("ListRoles")),
+			connect.WithClientOptions(opts...),
+		),
+		updateRole: connect.NewClient[v1.UpdateRoleRequest, v1.UpdateRoleResponse](
+			httpClient,
+			baseURL+PermissionServiceUpdateRoleProcedure,
+			connect.WithSchema(permissionServiceMethods.ByName("UpdateRole")),
 			connect.WithClientOptions(opts...),
 		),
 		deleteRole: connect.NewClient[v1.DeleteRoleRequest, emptypb.Empty](
@@ -276,6 +286,7 @@ func NewPermissionServiceClient(httpClient connect.HTTPClient, baseURL string, o
 type permissionServiceClient struct {
 	createRole           *connect.Client[v1.CreateRoleRequest, v1.CreateRoleResponse]
 	listRoles            *connect.Client[v1.ListRolesRequest, v1.ListRolesResponse]
+	updateRole           *connect.Client[v1.UpdateRoleRequest, v1.UpdateRoleResponse]
 	deleteRole           *connect.Client[v1.DeleteRoleRequest, emptypb.Empty]
 	assignRole           *connect.Client[v1.AssignRoleRequest, v1.AssignRoleResponse]
 	revokeRole           *connect.Client[v1.RevokeRoleRequest, emptypb.Empty]
@@ -301,6 +312,11 @@ func (c *permissionServiceClient) CreateRole(ctx context.Context, req *connect.R
 // ListRoles calls saas.accounts.v1.PermissionService.ListRoles.
 func (c *permissionServiceClient) ListRoles(ctx context.Context, req *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error) {
 	return c.listRoles.CallUnary(ctx, req)
+}
+
+// UpdateRole calls saas.accounts.v1.PermissionService.UpdateRole.
+func (c *permissionServiceClient) UpdateRole(ctx context.Context, req *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error) {
+	return c.updateRole.CallUnary(ctx, req)
 }
 
 // DeleteRole calls saas.accounts.v1.PermissionService.DeleteRole.
@@ -382,6 +398,7 @@ func (c *permissionServiceClient) ListShares(ctx context.Context, req *connect.R
 type PermissionServiceHandler interface {
 	CreateRole(context.Context, *connect.Request[v1.CreateRoleRequest]) (*connect.Response[v1.CreateRoleResponse], error)
 	ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error)
+	UpdateRole(context.Context, *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error)
 	DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error)
 	AssignRole(context.Context, *connect.Request[v1.AssignRoleRequest]) (*connect.Response[v1.AssignRoleResponse], error)
 	RevokeRole(context.Context, *connect.Request[v1.RevokeRoleRequest]) (*connect.Response[emptypb.Empty], error)
@@ -440,6 +457,12 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 		PermissionServiceListRolesProcedure,
 		svc.ListRoles,
 		connect.WithSchema(permissionServiceMethods.ByName("ListRoles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	permissionServiceUpdateRoleHandler := connect.NewUnaryHandler(
+		PermissionServiceUpdateRoleProcedure,
+		svc.UpdateRole,
+		connect.WithSchema(permissionServiceMethods.ByName("UpdateRole")),
 		connect.WithHandlerOptions(opts...),
 	)
 	permissionServiceDeleteRoleHandler := connect.NewUnaryHandler(
@@ -538,6 +561,8 @@ func NewPermissionServiceHandler(svc PermissionServiceHandler, opts ...connect.H
 			permissionServiceCreateRoleHandler.ServeHTTP(w, r)
 		case PermissionServiceListRolesProcedure:
 			permissionServiceListRolesHandler.ServeHTTP(w, r)
+		case PermissionServiceUpdateRoleProcedure:
+			permissionServiceUpdateRoleHandler.ServeHTTP(w, r)
 		case PermissionServiceDeleteRoleProcedure:
 			permissionServiceDeleteRoleHandler.ServeHTTP(w, r)
 		case PermissionServiceAssignRoleProcedure:
@@ -583,6 +608,10 @@ func (UnimplementedPermissionServiceHandler) CreateRole(context.Context, *connec
 
 func (UnimplementedPermissionServiceHandler) ListRoles(context.Context, *connect.Request[v1.ListRolesRequest]) (*connect.Response[v1.ListRolesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.ListRoles is not implemented"))
+}
+
+func (UnimplementedPermissionServiceHandler) UpdateRole(context.Context, *connect.Request[v1.UpdateRoleRequest]) (*connect.Response[v1.UpdateRoleResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("saas.accounts.v1.PermissionService.UpdateRole is not implemented"))
 }
 
 func (UnimplementedPermissionServiceHandler) DeleteRole(context.Context, *connect.Request[v1.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error) {

@@ -84,6 +84,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
+      "path": "/admin/permissions",
+      "source_path": "src/app/admin/permissions/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
       "path": "/admin/platform",
       "source_path": "src/app/admin/platform/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -126,6 +132,12 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
+      "path": "/admin/roles/{roleId}",
+      "source_path": "src/app/admin/roles/[roleId]/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
       "path": "/admin/sessions",
       "source_path": "src/app/admin/sessions/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
@@ -144,9 +156,21 @@
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
+      "path": "/admin/teams/{teamId}",
+      "source_path": "src/app/admin/teams/[teamId]/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
       "path": "/admin/users",
       "source_path": "src/app/admin/users/page.tsx",
       "match": "FRONTEND_ROUTE_MATCH_EXACT",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
+    },
+    {
+      "path": "/admin/users/{userId}",
+      "source_path": "src/app/admin/users/[userId]/page.tsx",
+      "match": "FRONTEND_ROUTE_MATCH_PARAMETER",
       "access": "FRONTEND_ROUTE_ACCESS_ADMIN"
     },
     {
@@ -382,6 +406,22 @@
         "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
       ],
       "order": 130
+    },
+    {
+      "id": "admin-permissions",
+      "plugin": "core-users",
+      "label": "Permissions",
+      "path": "/admin/permissions",
+      "icon": "KeyRound",
+      "group": "Users & Access",
+      "access": "FRONTEND_ROUTE_ACCESS_ADMIN",
+      "permission": "roles:read",
+      "surfaces": [
+        "FRONTEND_NAVIGATION_SURFACE_COMMAND_PALETTE",
+        "FRONTEND_NAVIGATION_SURFACE_PLUGIN_REGISTRY",
+        "FRONTEND_NAVIGATION_SURFACE_SIDEBAR"
+      ],
+      "order": 135
     },
     {
       "id": "admin-invitations",

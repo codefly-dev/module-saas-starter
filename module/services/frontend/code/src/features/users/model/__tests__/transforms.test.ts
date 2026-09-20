@@ -86,10 +86,7 @@ describe("toDisplayName", () => {
 describe("withDisplayName", () => {
 	it("trims the name and preserves unrelated profile attributes", () => {
 		expect(
-			withDisplayName(
-				{ locale: "fr", first_name: "Antoine" },
-				"  Jane Doe  ",
-			),
+			withDisplayName({ locale: "fr", first_name: "Antoine" }, "  Jane Doe  "),
 		).toEqual({
 			locale: "fr",
 			first_name: "Antoine",

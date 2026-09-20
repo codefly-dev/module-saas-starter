@@ -321,7 +321,9 @@ type Store interface {
 
 	// Teams
 	CreateTeam(ctx context.Context, team *gen.Team) error
-	ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error)
+	// ListTeams returns the org's teams; a non-empty memberID narrows them
+	// to the teams that principal belongs to.
+	ListTeams(ctx context.Context, orgID string, memberID string) ([]*gen.Team, error)
 	UpdateTeam(ctx context.Context, teamID, name, description string) (*gen.Team, error)
 	DeleteTeam(ctx context.Context, teamID string) error
 	AddTeamMember(ctx context.Context, teamID string, userID string, role string) error
@@ -358,6 +360,10 @@ type Store interface {
 	// Roles
 	CreateRole(ctx context.Context, role *gen.Role) error
 	ListRoles(ctx context.Context, orgID string) ([]*gen.Role, error)
+	// UpdateRole replaces a custom role's description and permission set,
+	// and returns the role as it now stands. orgID names the scope the role
+	// must belong to; a role in another scope, or a built-in one, is refused.
+	UpdateRole(ctx context.Context, roleID, orgID, description string, permissions []*gen.Permission) (*gen.Role, error)
 	DeleteRole(ctx context.Context, roleID string) error
 
 	// Role assignments

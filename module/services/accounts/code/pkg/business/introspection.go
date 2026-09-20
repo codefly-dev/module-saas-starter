@@ -202,6 +202,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PermissionService/ListShares":                                 "List the shares on a specific record.",
 	"PermissionService/RegisterScopeNode":                          "Register a scope node or place a record at one.",
 	"PermissionService/RevokeRole":                                 "Revoke a role assignment.",
+	"PermissionService/UpdateRole":                                 "Replace a custom role's description and permission set.",
 	"PermissionService/RevokeScope":                                "Revoke a hierarchical scope grant.",
 	"PermissionService/RevokeShare":                                "Revoke a per-record share.",
 	"PermissionService/ShareRecord":                                "Share a record with a principal/team.",

@@ -9,13 +9,14 @@ import (
 	gen "accounts/pkg/gen/saas/accounts/v1"
 )
 
-// ListTeams returns all teams in an organization.
+// ListTeams returns an organization's teams, or — when req.MemberId is set —
+// only the ones that principal belongs to.
 func (s *Service) ListTeams(ctx context.Context, req *gen.ListTeamsRequest) (*gen.ListTeamsResponse, error) {
 	w := wool.Get(ctx).In("ListTeams")
 
 	var teams []*gen.Team
 	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
-		ts, err := s.store.ListTeams(ctx, req.OrgId)
+		ts, err := s.store.ListTeams(ctx, req.OrgId, req.MemberId)
 		teams = ts
 		return err
 	}); err != nil {

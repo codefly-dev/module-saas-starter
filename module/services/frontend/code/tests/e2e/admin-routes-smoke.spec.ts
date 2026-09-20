@@ -29,6 +29,7 @@ interface AdminRoute {
 const ROUTES: AdminRoute[] = [
 	{ path: "/admin/roles", heading: /^Roles$/ },
 	{ path: "/admin/teams", heading: /^Teams$/ },
+	{ path: "/admin/permissions", heading: /^Permissions$/ },
 	{ path: "/admin/organizations", heading: /^Organizations$/ },
 	{ path: "/admin/invitations", heading: /^Invitations$/ },
 	{ path: "/admin/api-keys", heading: /^API Keys$/ },

@@ -93,6 +93,26 @@
       },
       "type": "object"
     },
+    "PermissionServiceUpdateRoleBody": {
+      "description": "UpdateRoleRequest replaces a custom role's description and permission\nset wholesale: the permissions given become the role's entire grant\nset, and an empty list clears it. org_id must name the role's own\nscope (empty = a global role); a role whose scope differs is not\nfound. Built-in roles cannot be updated.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "orgId": {
+          "title": "empty = global",
+          "type": "string"
+        },
+        "permissions": {
+          "items": {
+            "$ref": "#/definitions/v1Permission",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
     "PlatformAdminServiceImpersonateUserBody": {
       "properties": {
         "reason": {
@@ -4390,6 +4410,14 @@
       },
       "type": "object"
     },
+    "v1UpdateRoleResponse": {
+      "properties": {
+        "role": {
+          "$ref": "#/definitions/v1Role"
+        }
+      },
+      "type": "object"
+    },
     "v1UpdateTeamResponse": {
       "properties": {
         "team": {
@@ -7437,6 +7465,13 @@
             "name": "orgId",
             "required": true,
             "type": "string"
+          },
+          {
+            "description": "member_id (optional) narrows the list to the teams this principal\nbelongs to; empty returns every team in the org. The uuid rule applies\nonly to a non-empty value — without it the filter reaches the query as a\nuuid cast and a malformed id fails in the database as an internal error\nrather than at the boundary as an invalid argument.",
+            "in": "query",
+            "name": "memberId",
+            "required": false,
+            "type": "string"
           }
         ],
         "responses": {
@@ -9177,6 +9212,42 @@
             "schema": {
               "properties": {},
               "type": "object"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "tags": [
+          "PermissionService"
+        ]
+      },
+      "patch": {
+        "operationId": "PermissionService_UpdateRole",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "in": "body",
+            "name": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PermissionServiceUpdateRoleBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateRoleResponse"
             }
           },
           "default": {

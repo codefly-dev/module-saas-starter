@@ -84,7 +84,7 @@ var appTenantRelationPrivileges = map[string]relationPrivileges{
 	"principals":                           {selectRows: true, insertRows: true, updateRows: true},
 	"record_shares":                        {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"role_assignments":                     {selectRows: true, insertRows: true, deleteRows: true},
-	"role_permissions":                     {selectRows: true, insertRows: true},
+	"role_permissions":                     {selectRows: true, insertRows: true, deleteRows: true},
 	"roles":                                {selectRows: true, insertRows: true, deleteRows: true},
 	"scope_grants":                         {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
 	"scope_nodes":                          {selectRows: true, insertRows: true, updateRows: true, deleteRows: true},
@@ -269,6 +269,60 @@ func TestTenantRoleRelationGrantsAreExact(t *testing.T) {
 		}
 		return nil
 	}))
+}
+
+// The tenant's UPDATE on roles is granted per column, which has_table_privilege
+// deliberately does not see — so the table-level expectation above stays false
+// and the reachable columns are pinned here instead.
+//
+// A table-wide grant would be enough to re-parent a role: roles_polymorphic
+// admits a global row through USING and only constrains the resulting row
+// through WITH CHECK, so `SET org_id = <my org>` on a platform built-in
+// satisfies both halves. org_id being unwritable is what refuses that
+// statement, and it is refused at the privilege layer rather than by a policy
+// that happens to allow it.
+func TestTenantRoleColumnGrantsAreLimitedToDescription(t *testing.T) {
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		for column, want := range map[string]bool{
+			"description": true,
+			"org_id":      false,
+			"name":        false,
+			"built_in":    false,
+			"id":          false,
+		} {
+			var granted bool
+			require.NoError(t, tx.QueryRow(ctx,
+				`SELECT has_column_privilege('app_tenant', 'roles', $1, 'UPDATE')`, column,
+			).Scan(&granted), column)
+			require.Equalf(t, want, granted, "app_tenant UPDATE on roles.%s", column)
+		}
+		return nil
+	}))
+}
+
+// The statement the column grant exists to refuse, executed as the tenant runs
+// it. roles_polymorphic admits a global row through USING and only constrains
+// the resulting row through WITH CHECK, so with a table-wide UPDATE this
+// succeeds and a platform built-in role leaves every other organization.
+// Measured: with `GRANT UPDATE ON TABLE public.roles` this UPDATE commits.
+func TestTenantCannotReparentAGlobalRole(t *testing.T) {
+	userID := seedUser(t)
+	orgID := seedOrg(t, userID)
+
+	var globalRoleID string
+	require.NoError(t, testStore.WithControlPlane(testCtx, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		return tx.QueryRow(ctx, `SELECT id FROM roles WHERE org_id IS NULL LIMIT 1`).Scan(&globalRoleID)
+	}))
+	require.NotEmpty(t, globalRoleID, "the role catalog must seed at least one global role")
+
+	err := testStore.WithOrgTx(testCtx, orgID, func(ctx context.Context) error {
+		tx := ctx.Value("tx").(pgx.Tx) //nolint:staticcheck // shared transaction context key
+		_, err := tx.Exec(ctx, `UPDATE roles SET org_id = $1 WHERE id = $2`, orgID, globalRoleID)
+		return err
+	})
+	require.Error(t, err, "a tenant must not be able to move a global role into its own organization")
 }
 
 func TestControlPlaneRelationGrantsAreExact(t *testing.T) {

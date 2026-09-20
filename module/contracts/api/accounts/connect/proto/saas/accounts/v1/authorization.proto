@@ -36,6 +36,22 @@ message DeleteRoleRequest {
   string id = 1 [(buf.validate.field).string.uuid = true];
 }
 
+// UpdateRoleRequest replaces a custom role's description and permission
+// set wholesale: the permissions given become the role's entire grant
+// set, and an empty list clears it. org_id must name the role's own
+// scope (empty = a global role); a role whose scope differs is not
+// found. Built-in roles cannot be updated.
+message UpdateRoleRequest {
+  string id = 1 [(buf.validate.field).string.uuid = true];
+  string description = 2;
+  repeated Permission permissions = 3;
+  string org_id = 4; // empty = global
+}
+
+message UpdateRoleResponse {
+  Role role = 1;
+}
+
 message AssignRoleRequest {
   string subject_id = 1 [(buf.validate.field).string.uuid = true];
   SubjectKind subject_kind = 2;
@@ -438,6 +454,28 @@ service PermissionService {
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
     };
     option (google.api.http) = {get: "/v1/roles"};
+  }
+
+  rpc UpdateRole(UpdateRoleRequest) returns (UpdateRoleResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_USER
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {
+        events: "saas.role.updated"
+        emission: AUDIT_EMISSION_SUCCESS
+      }
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_WRITE
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+      impersonation: IMPERSONATION_REQUIREMENT_FORBIDDEN
+    };
+    option (google.api.http) = {
+      patch: "/v1/roles/{id}"
+      body: "*"
+    };
   }
 
   rpc DeleteRole(DeleteRoleRequest) returns (google.protobuf.Empty) {

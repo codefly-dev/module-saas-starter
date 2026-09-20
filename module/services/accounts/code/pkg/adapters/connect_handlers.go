@@ -349,6 +349,9 @@ func (h *permConnectHandler) CreateRole(ctx context.Context, req *connect.Reques
 func (h *permConnectHandler) ListRoles(ctx context.Context, req *connect.Request[gen.ListRolesRequest]) (*connect.Response[gen.ListRolesResponse], error) {
 	return unary(ctx, req, h.inner.ListRoles)
 }
+func (h *permConnectHandler) UpdateRole(ctx context.Context, req *connect.Request[gen.UpdateRoleRequest]) (*connect.Response[gen.UpdateRoleResponse], error) {
+	return unary(ctx, req, h.inner.UpdateRole)
+}
 func (h *permConnectHandler) DeleteRole(ctx context.Context, req *connect.Request[gen.DeleteRoleRequest]) (*connect.Response[emptypb.Empty], error) {
 	return unary(ctx, req, h.inner.DeleteRole)
 }

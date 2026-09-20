@@ -578,6 +578,20 @@ func (s *PermServer) ListRoles(ctx context.Context, req *gen.ListRolesRequest) (
 	return service.ListRoles(ctx, req)
 }
 
+func (s *PermServer) UpdateRole(ctx context.Context, req *gen.UpdateRoleRequest) (*gen.UpdateRoleResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireRoleScope(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	return service.UpdateRole(ctx, actorID, req)
+}
+
 func (s *PermServer) DeleteRole(ctx context.Context, req *gen.DeleteRoleRequest) (*emptypb.Empty, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

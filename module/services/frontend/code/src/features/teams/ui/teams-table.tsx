@@ -9,6 +9,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatDate, truncateUUID } from "@/shared/lib/utils";
 import {
@@ -47,7 +48,14 @@ export function TeamsTable({
 		() => [
 			col.accessor("name", {
 				header: "Name",
-				cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+				cell: (info) => (
+					<Link
+						href={`/admin/teams/${info.row.original.id}`}
+						className="font-medium text-primary hover:underline"
+					>
+						{info.getValue()}
+					</Link>
+				),
 			}),
 			col.accessor("description", {
 				header: "Description",

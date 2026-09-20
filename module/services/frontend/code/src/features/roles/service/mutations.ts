@@ -33,6 +33,38 @@ export function useCreateRole() {
 	});
 }
 
+// useUpdateRole — the permission set and description are replaced wholesale,
+// so the caller sends the set it wants the role to end up with, not a delta.
+// orgId names the role's own scope; the backend refuses a role that is not in
+// it, which is what keeps one org's admin off another's roles.
+export function useUpdateRole() {
+	const svc = usePermissionService();
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: ({
+			id,
+			description,
+			permissions,
+			orgId,
+		}: {
+			id: string;
+			description?: string;
+			permissions: { resource: string; action: string }[];
+			orgId?: string;
+		}) =>
+			svc.updateRole({
+				id,
+				description: description ?? "",
+				permissions,
+				orgId: orgId ?? "",
+			}),
+		onSuccess: (_data, vars) => {
+			qc.invalidateQueries({ queryKey: ["roles", vars.orgId ?? ""] });
+			qc.invalidateQueries({ queryKey: ["roles", ""] });
+		},
+	});
+}
+
 export function useDeleteRole() {
 	const svc = usePermissionService();
 	const qc = useQueryClient();

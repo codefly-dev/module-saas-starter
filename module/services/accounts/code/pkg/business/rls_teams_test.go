@@ -46,14 +46,14 @@ func TestRLS_Teams_CrossTenantBlocked(t *testing.T) {
 
 	// Probe: from A's tx, ask for B's teams via the Store directly.
 	require.NoError(t, testStore.WithOrgTx(ctx, orgA, func(ctx context.Context) error {
-		stolen, err := testStore.ListTeams(ctx, orgB)
+		stolen, err := testStore.ListTeams(ctx, orgB, "")
 		require.NoError(t, err)
 		require.Len(t, stolen, 0, "RLS must hide B's teams from A's tx")
 		return nil
 	}))
 
 	// Un-wrapped: zero rows.
-	noWrap, err := testStore.ListTeams(context.Background(), orgA)
+	noWrap, err := testStore.ListTeams(context.Background(), orgA, "")
 	require.NoError(t, err)
 	require.Len(t, noWrap, 0,
 		"un-wrapped ListTeams must return ZERO rows (RLS fail-closed)")

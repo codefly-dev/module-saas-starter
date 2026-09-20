@@ -360,7 +360,7 @@ var auditEventCatalog = []AuditEventDefinition{
 	mutation(EventSolutionRegistrationDeleted, CategoryAccess, "A solution registration was removed and tombstoned.", str("solution_id"), str("publisher"), PayloadField{Name: "revision", Kind: FieldInt}),
 	mutation(EventAPIKeyRevoked, CategoryAccess, "An API key was revoked.", uid("key_id")),
 	mutation(EventRoleCreated, CategoryAccess, "A role was created.", str("name")),
-	mutation(EventRoleUpdated, CategoryAccess, "A role was updated."),
+	mutation(EventRoleUpdated, CategoryAccess, "A role's description and permission set were replaced.", str("name"), strs("permissions")),
 	mutation(EventRoleDeleted, CategoryAccess, "A role was deleted."),
 	mutation(EventRoleAssigned, CategoryAccess, "A role was assigned to a principal.", uid("role_id"), uid("subject_id")),
 	mutation(EventRoleRevoked, CategoryAccess, "A role assignment was revoked.", uid("role_id")),

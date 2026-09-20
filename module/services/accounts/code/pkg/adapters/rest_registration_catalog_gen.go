@@ -240,6 +240,7 @@ var catalogRESTTemplateRoutes = []catalogRESTTemplateRoute{
 	{method: "GET", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/webhooks/deliveries/[^/]+$")},
 	{method: "GET", path: regexp.MustCompile("^/v1/webhooks/[^/]+/deliveries$")},
+	{method: "PATCH", path: regexp.MustCompile("^/v1/roles/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/teams/[^/]+$")},
 	{method: "PATCH", path: regexp.MustCompile("^/v1/users/[^/]+$")},
 	{method: "POST", path: regexp.MustCompile("^/v1/delegations/[^/]+:decide$")},

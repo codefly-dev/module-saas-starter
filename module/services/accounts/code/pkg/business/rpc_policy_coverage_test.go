@@ -128,6 +128,7 @@ func TestGlobalScopeEscapeMethodsClassifyGapAndAreNotEnforced(t *testing.T) {
 		"/saas.accounts.v1.PermissionService/RevokeScope",
 		"/saas.accounts.v1.PermissionService/RevokeShare",
 		"/saas.accounts.v1.PermissionService/ShareRecord",
+		"/saas.accounts.v1.PermissionService/UpdateRole",
 	}
 	require.Len(t, globalScopeEscapeMethods, len(want), "escape set size drifted from the pinned list")
 	for _, method := range want {
