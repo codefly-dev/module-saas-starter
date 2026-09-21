@@ -154,6 +154,7 @@ export {
 	CommandList,
 	CommandSeparator,
 	CommandShortcut,
+	useCommandFilter,
 } from "./command.js";
 
 export {

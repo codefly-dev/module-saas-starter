@@ -17,7 +17,6 @@ import {
 	CommandInput,
 	CommandList,
 	CommandItem,
-	CommandEmpty,
 	CommandGroup,
 	InputGroup,
 	InputGroupInput,
@@ -133,7 +132,8 @@ export const SearchCommands = {
 		<Command>
 			<CommandInput placeholder="Search actions" aria-label="Search actions" />
 			<CommandList>
-				<CommandEmpty>No matching actions.</CommandEmpty>
+				{/* CommandEmpty is mounted by the caller when its own filtering
+				    yields nothing. This story lists fixed items, so it never is. */}
 				<CommandGroup heading="Workspace">
 					<CommandItem onSelect={() => toast.success("Selected settings")}>
 						Settings

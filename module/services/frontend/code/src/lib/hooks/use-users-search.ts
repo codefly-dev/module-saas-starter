@@ -10,7 +10,7 @@ interface UserHit {
 /**
  * useUsersSearch — debounced user-search hook for the command palette.
  *
- * - 200ms debounce: cmdk fires onValueChange on every keystroke; we
+ * - 200ms debounce: the palette fires onValueChange on every keystroke; we
  *   don't want to fire one searchUsers RPC per character.
  * - `enabled=false` short-circuits the underlying useQuery, so we
  *   don't waste a network round trip when the palette is closed or
