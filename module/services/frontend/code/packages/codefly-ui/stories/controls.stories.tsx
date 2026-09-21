@@ -14,6 +14,7 @@ import {
 	TabsContent,
 	Tabs,
 	Command,
+	DateField,
 	CommandInput,
 	CommandList,
 	CommandItem,
@@ -143,6 +144,47 @@ export const SearchCommands = {
 			</CommandList>
 		</Command>
 	),
+};
+export const DateEntryParts = {
+	render: function DateEntryPartsStory() {
+		const [value, setValue] = useState("");
+		return (
+			<DateField
+				label="What is the document date?"
+				description="For example, 27 3 2007"
+				value={value}
+				onValueChange={setValue}
+			/>
+		);
+	},
+};
+export const DateEntryCompact = {
+	render: function DateEntryCompactStory() {
+		const [value, setValue] = useState("");
+		return (
+			<DateField
+				variant="compact"
+				label="Document date"
+				description="Enter the date shown on your document."
+				value={value}
+				onValueChange={setValue}
+			/>
+		);
+	},
+};
+export const DateEntryPartError = {
+	render: function DateEntryPartErrorStory() {
+		const [value, setValue] = useState("");
+		return (
+			<DateField
+				label="What is the document date?"
+				value={value}
+				onValueChange={setValue}
+				error="The month must be between 1 and 12."
+				errorParts={["month"]}
+			/>
+		);
+	},
 };
 export const InputWithAction = {
 	render: () => (
