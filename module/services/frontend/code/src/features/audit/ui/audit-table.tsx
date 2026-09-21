@@ -84,6 +84,14 @@ export function AuditTable({
 									{formatActorType(info.row.original.actorType)}
 								</span>
 							) : null}
+							{info.row.original.clientId ? (
+								<span className="text-[10px] text-muted-foreground">
+									via{" "}
+									<span className="font-mono">
+										{info.row.original.clientId}
+									</span>
+								</span>
+							) : null}
 						</div>
 					);
 				},

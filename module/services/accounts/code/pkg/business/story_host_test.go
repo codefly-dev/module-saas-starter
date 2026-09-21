@@ -31,6 +31,10 @@ import (
 // The authority facts come from the tenant's own rows, and the audience is
 // bound into the signature, so a context minted for one module cannot be
 // presented to another.
+// storyClientID stands in for a registered client's id. This repository names
+// no real consumer, so the value only has to be a well-formed one.
+const storyClientID = "example-console"
+
 func TestStory_HOST_ID_001(t *testing.T) {
 	clearData(t)
 	ctx := testCtx
@@ -214,4 +218,85 @@ func TestStory_HOST_AUD_001(t *testing.T) {
 		require.True(t, present, "an event visible to a solution query must be in the tenant view")
 		require.Equal(t, "alpha", solution)
 	}
+}
+
+// TestStory_HOST_CLIENT_003 — "An audited call names the client it came through".
+//
+// As someone reviewing the audit trail, I want a call made through a registered
+// client to record that client, so that "who did this" and "what did they do it
+// through" are separate, answerable questions.
+//
+// The two calls below differ in exactly one thing — whether the verified
+// identity names a client — so the recorded difference can only be that.
+func TestStory_HOST_CLIENT_003(t *testing.T) {
+	clearData(t)
+	ctx := testCtx
+
+	personID, tenant := mustUserAndOrg(t, ctx, "client-call@example.com", "clientcall", "Client Call Co")
+
+	// Given a person signed in through a registered client. The gateway
+	// resolves the client from the access token's `azp` and forwards it beside
+	// the identity, which is the projection these two calls reproduce.
+	throughClient, err := accountsauth.ParseRequestIdentity(personID, "", tenant, "")
+	require.NoError(t, err)
+	throughClient.ClientID, err = accountsauth.ParseClientID(storyClientID)
+	require.NoError(t, err)
+
+	webSession, err := accountsauth.ParseRequestIdentity(personID, "", tenant, "")
+	require.NoError(t, err)
+	require.Empty(t, webSession.ClientID, "the host's own session names no client")
+
+	// When that client makes an audited call on their behalf.
+	_, err = testService.CreateTeam(
+		accountsauth.WithVerifiedRequestIdentity(ctx, throughClient), personID,
+		&gen.CreateTeamRequest{Name: "Through The Client", OrgId: tenant},
+	)
+	require.NoError(t, err)
+
+	// And the same person makes the same call from the host's own web session.
+	_, err = testService.CreateTeam(
+		accountsauth.WithVerifiedRequestIdentity(ctx, webSession), personID,
+		&gen.CreateTeamRequest{Name: "From The Web", OrgId: tenant},
+	)
+	require.NoError(t, err)
+
+	entries, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
+		OrgID:     tenant,
+		EventType: string(business.EventTeamCreated),
+		PageSize:  10,
+	})
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+
+	byClient := make(map[string]business.AuditEntry, len(entries))
+	for _, entry := range entries {
+		// Then the audit record names the person as the actor, whichever way
+		// the call arrived.
+		require.Equal(t, personID, entry.ActorID)
+		byClient[entry.ClientID] = entry
+	}
+
+	// And it names the client the call was made through.
+	viaClient, recorded := byClient[storyClientID]
+	require.True(t, recorded, "the client-made call must name its client")
+	require.Equal(t, storyClientID, infra.AuditEntryToProto(viaClient).ClientId,
+		"a reviewer reads the client off the exported audit event, not only off the row")
+
+	// And the same person's call from the host's own web session names no
+	// client, so the field discriminates rather than merely existing.
+	_, fromWeb := byClient[""]
+	require.True(t, fromWeb, "the web-session call must name none")
+
+	// "What did they do it through" is a question, not just a column: narrowing
+	// the trail to one client returns that client's call and only that call.
+	viaClientOnly, _, _, err := testService.QueryAuditLog(ctx, business.AuditQuery{
+		OrgID:     tenant,
+		EventType: string(business.EventTeamCreated),
+		ClientID:  storyClientID,
+		PageSize:  10,
+	})
+	require.NoError(t, err)
+	require.Len(t, viaClientOnly, 1)
+	require.Equal(t, viaClient.ID, viaClientOnly[0].ID)
+	require.Equal(t, storyClientID, viaClientOnly[0].ClientID)
 }

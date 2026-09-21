@@ -70,13 +70,14 @@ func (s *PostgresStore) InsertAuditEvent(ctx context.Context, entry business.Aud
 		INSERT INTO audit_events (
 			id, event_type, schema_version, actor_id, actor_type,
 			resource, resource_id, org_id, payload, ip_address, created_at,
-			impersonated_by, is_impersonated
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+			impersonated_by, is_impersonated, client_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		entry.ID, string(entry.EventType), entry.SchemaVersion,
 		nilIfNotUUID(entry.ActorID), entry.ActorType,
 		entry.Resource, nilIfNotUUID(entry.ResourceID), nilIfNotUUID(entry.OrgID),
 		payload, nilIfEmpty(entry.IPAddress), entry.CreatedAt,
-		nilIfNotUUID(entry.ImpersonatedBy), entry.IsImpersonated)
+		nilIfNotUUID(entry.ImpersonatedBy), entry.IsImpersonated,
+		nilIfEmpty(entry.ClientID))
 	return err
 }
 
@@ -135,6 +136,9 @@ func auditWhere(q business.AuditQuery, startArg int) (string, []any, error) {
 	}
 	if q.ResourceID != "" {
 		add("resource_id = $%d", q.ResourceID)
+	}
+	if q.ClientID != "" {
+		add("client_id = $%d", q.ClientID)
 	}
 	if len(q.PayloadContains) > 0 {
 		raw, err := json.Marshal(q.PayloadContains)
@@ -197,7 +201,7 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 	}
 
 	// Fetch one extra row to detect whether a further page exists.
-	query := fmt.Sprintf(`SELECT id, event_type, schema_version, actor_id, actor_type, resource, resource_id, org_id, payload, ip_address, created_at, impersonated_by, is_impersonated
+	query := fmt.Sprintf(`SELECT id, event_type, schema_version, actor_id, actor_type, resource, resource_id, org_id, payload, ip_address, created_at, impersonated_by, is_impersonated, client_id
 		FROM audit_events %s ORDER BY created_at DESC, id DESC LIMIT $%d`, where, argN)
 	args = append(args, pageSize+1)
 
@@ -212,16 +216,19 @@ func (s *PostgresStore) QueryAuditLog(ctx context.Context, q business.AuditQuery
 		var e business.AuditEntry
 		var eventType string
 		var payloadJSON []byte
-		var actorID, resourceID, orgID, ipAddress, impersonatedBy *string
+		var actorID, resourceID, orgID, ipAddress, impersonatedBy, clientID *string
 
 		err := rows.Scan(&e.ID, &eventType, &e.SchemaVersion, &actorID, &e.ActorType, &e.Resource,
 			&resourceID, &orgID, &payloadJSON, &ipAddress, &e.CreatedAt,
-			&impersonatedBy, &e.IsImpersonated)
+			&impersonatedBy, &e.IsImpersonated, &clientID)
 		if err != nil {
 			return nil, "", 0, err
 		}
 		if impersonatedBy != nil {
 			e.ImpersonatedBy = *impersonatedBy
+		}
+		if clientID != nil {
+			e.ClientID = *clientID
 		}
 		e.EventType = business.EventType(eventType)
 		if actorID != nil {

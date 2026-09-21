@@ -52,6 +52,12 @@ membership lookup resolves for the target, not for them.
 acting *on behalf of* the subject and can nest; impersonation names one user an
 admin is *viewing as* and cannot. Neither is an authorization grant on its own.
 
+`ClientID` is a fourth: the registered client the call was made **through**,
+from the access token's `azp` claim, empty for the host's own web session. It
+answers "what did they do it through", which neither id answers, and it grants
+nothing either — `audit_events.client_id` records it, and `QueryAuditLog`
+returns and filters on it, so the two questions stay separately answerable.
+
 ### One projection, every transport
 
 The identity is installed only by an authentication interceptor that either
@@ -61,9 +67,9 @@ request — never from caller-controlled headers, which are stripped
 
 | Path | Source of the pair |
 |---|---|
-| Direct Connect / gRPC bearer | `Identity.UserID` + `Identity.ActingAsUserID` from the verified JWT |
-| Gateway → Connect | `X-User-Id` + `X-Acting-As-User-Id` |
-| Gateway → gRPC | `x-user-id` + `x-acting-as-user-id` |
+| Direct Connect / gRPC bearer | `Identity.UserID` + `Identity.ActingAsUserID` from the verified JWT, and `Identity.ClientID` from its `azp` |
+| Gateway → Connect | `X-User-Id` + `X-Acting-As-User-Id`, and `X-Client-Id` for the client |
+| Gateway → gRPC | `x-user-id` + `x-acting-as-user-id`, and `x-client-id` for the client |
 | Gateway → REST | the same headers, carried across the grpc-gateway transcoding hop by `restIdentityHeaderMatcher`, then projected by the Connect interceptor |
 | Billing HTTP extensions | the same two paths as Connect |
 
@@ -73,7 +79,9 @@ subject** the wool principal and the verified database scope. `requireAuth` and
 the real actor off the same typed identity. A forwarded acting-as value that
 does not parse is refused (`PermissionDenied`) rather than admitted as "not
 impersonating", which would silently run the request with the admin's own
-authority.
+authority. A forwarded client id that is not a registered client's is refused
+the same way, rather than dropped: dropping it would record a client's call as
+one made from the host's own session.
 
 ### What impersonation deliberately does not grant
 

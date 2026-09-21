@@ -12,6 +12,10 @@ export interface AuditEvent {
 	orgId: string;
 	payload?: Record<string, unknown>;
 	ipAddress: string;
+	// The registered client the call was made through, empty for a call made
+	// from the host's own web session. Separate from actorId: one answers who
+	// acted, the other what they acted through.
+	clientId: string;
 	createdAt?: string;
 }
 

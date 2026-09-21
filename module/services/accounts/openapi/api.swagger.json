@@ -528,6 +528,10 @@
         "category": {
           "type": "string"
         },
+        "clientId": {
+          "description": "client_id names the registered client the call was made through, empty for\na call made from the host's own web session. It answers \"what did they do\nit through\", which actor_id does not.",
+          "type": "string"
+        },
         "createdAt": {
           "format": "date-time",
           "type": "string"
@@ -5317,6 +5321,13 @@
             "name": "namespace",
             "required": false,
             "type": "string"
+          },
+          {
+            "description": "client_id narrows the search to calls made through one registered client.\nIt is the companion to reading the client off each record: without it\n\"what did this client do\" can only be answered by paging the whole trail.",
+            "in": "query",
+            "name": "clientId",
+            "required": false,
+            "type": "string"
           }
         ],
         "responses": {
@@ -5436,6 +5447,13 @@
             "description": "Document event collection: current documents/read authorization plus an\nexact payload.boundary predicate. Requires a registered saas.document.*\nevent with a boundary field; never a caller-supplied grant.",
             "in": "query",
             "name": "collectionId",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "description": "client_id narrows the aggregation to calls made through one registered\nclient, matching QueryAuditLogRequest.client_id.",
+            "in": "query",
+            "name": "clientId",
             "required": false,
             "type": "string"
           }

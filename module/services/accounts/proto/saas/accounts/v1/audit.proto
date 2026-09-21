@@ -30,6 +30,10 @@ message AuditEvent {
   int32 schema_version = 12;
   google.protobuf.Struct payload = 13;
   string category = 14;
+  // client_id names the registered client the call was made through, empty for
+  // a call made from the host's own web session. It answers "what did they do
+  // it through", which actor_id does not.
+  string client_id = 15;
 }
 
 message QueryAuditLogRequest {
@@ -53,6 +57,10 @@ message QueryAuditLogRequest {
   // namespace scopes the search to the module that minted the event types, e.g.
   // "saas". A composed workspace carries one namespace per emitting module.
   string namespace = 13;
+  // client_id narrows the search to calls made through one registered client.
+  // It is the companion to reading the client off each record: without it
+  // "what did this client do" can only be answered by paging the whole trail.
+  string client_id = 14;
 }
 
 message QueryAuditLogResponse {
@@ -140,6 +148,9 @@ message AggregateAuditLogRequest {
   // exact payload.boundary predicate. Requires a registered saas.document.*
   // event with a boundary field; never a caller-supplied grant.
   string collection_id = 16;
+  // client_id narrows the aggregation to calls made through one registered
+  // client, matching QueryAuditLogRequest.client_id.
+  string client_id = 17;
 }
 
 message AuditAggregateBucket {

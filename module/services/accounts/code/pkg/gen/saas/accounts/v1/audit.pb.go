@@ -48,6 +48,10 @@ type AuditEvent struct {
 	SchemaVersion int32            `protobuf:"varint,12,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	Payload       *structpb.Struct `protobuf:"bytes,13,opt,name=payload,proto3" json:"payload,omitempty"`
 	Category      string           `protobuf:"bytes,14,opt,name=category,proto3" json:"category,omitempty"`
+	// client_id names the registered client the call was made through, empty for
+	// a call made from the host's own web session. It answers "what did they do
+	// it through", which actor_id does not.
+	ClientId      string `protobuf:"bytes,15,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -182,6 +186,13 @@ func (x *AuditEvent) GetCategory() string {
 	return ""
 }
 
+func (x *AuditEvent) GetClientId() string {
+	if x != nil {
+		return x.ClientId
+	}
+	return ""
+}
+
 type QueryAuditLogRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	OrgId   string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
@@ -201,7 +212,11 @@ type QueryAuditLogRequest struct {
 	PayloadContains map[string]string `protobuf:"bytes,12,rep,name=payload_contains,json=payloadContains,proto3" json:"payload_contains,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// namespace scopes the search to the module that minted the event types, e.g.
 	// "saas". A composed workspace carries one namespace per emitting module.
-	Namespace     string `protobuf:"bytes,13,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Namespace string `protobuf:"bytes,13,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	// client_id narrows the search to calls made through one registered client.
+	// It is the companion to reading the client off each record: without it
+	// "what did this client do" can only be answered by paging the whole trail.
+	ClientId      string `protobuf:"bytes,14,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -324,6 +339,13 @@ func (x *QueryAuditLogRequest) GetPayloadContains() map[string]string {
 func (x *QueryAuditLogRequest) GetNamespace() string {
 	if x != nil {
 		return x.Namespace
+	}
+	return ""
+}
+
+func (x *QueryAuditLogRequest) GetClientId() string {
+	if x != nil {
+		return x.ClientId
 	}
 	return ""
 }
@@ -706,7 +728,10 @@ type AggregateAuditLogRequest struct {
 	// Document event collection: current documents/read authorization plus an
 	// exact payload.boundary predicate. Requires a registered saas.document.*
 	// event with a boundary field; never a caller-supplied grant.
-	CollectionId  string `protobuf:"bytes,16,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
+	CollectionId string `protobuf:"bytes,16,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
+	// client_id narrows the aggregation to calls made through one registered
+	// client, matching QueryAuditLogRequest.client_id.
+	ClientId      string `protobuf:"bytes,17,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -849,6 +874,13 @@ func (x *AggregateAuditLogRequest) GetPayloadContains() map[string]string {
 func (x *AggregateAuditLogRequest) GetCollectionId() string {
 	if x != nil {
 		return x.CollectionId
+	}
+	return ""
+}
+
+func (x *AggregateAuditLogRequest) GetClientId() string {
+	if x != nil {
+		return x.ClientId
 	}
 	return ""
 }
@@ -1170,7 +1202,7 @@ var File_saas_accounts_v1_audit_proto protoreflect.FileDescriptor
 
 const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\n" +
-	"\x1csaas/accounts/v1/audit.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xbe\x04\n" +
+	"\x1csaas/accounts/v1/audit.proto\x12\x10saas.accounts.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1cgoogle/protobuf/struct.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x1csaas/policy/v1/options.proto\"\xdb\x04\n" +
 	"\n" +
 	"AuditEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
@@ -1192,10 +1224,11 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"event_type\x18\v \x01(\tR\teventType\x12%\n" +
 	"\x0eschema_version\x18\f \x01(\x05R\rschemaVersion\x121\n" +
 	"\apayload\x18\r \x01(\v2\x17.google.protobuf.StructR\apayload\x12\x1a\n" +
-	"\bcategory\x18\x0e \x01(\tR\bcategory\x1a;\n" +
+	"\bcategory\x18\x0e \x01(\tR\bcategory\x12\x1b\n" +
+	"\tclient_id\x18\x0f \x01(\tR\bclientId\x1a;\n" +
 	"\rMetadataEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xc9\x04\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe6\x04\n" +
 	"\x14QueryAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1a\n" +
@@ -1213,7 +1246,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	" \x01(\tR\teventType\x12\x1a\n" +
 	"\bcategory\x18\v \x01(\tR\bcategory\x12f\n" +
 	"\x10payload_contains\x18\f \x03(\v2;.saas.accounts.v1.QueryAuditLogRequest.PayloadContainsEntryR\x0fpayloadContains\x12\x1c\n" +
-	"\tnamespace\x18\r \x01(\tR\tnamespace\x1aB\n" +
+	"\tnamespace\x18\r \x01(\tR\tnamespace\x12\x1b\n" +
+	"\tclient_id\x18\x0e \x01(\tR\bclientId\x1aB\n" +
 	"\x14PayloadContainsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x96\x01\n" +
@@ -1243,7 +1277,7 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\x12AuditDerivedMetric\x12\x14\n" +
 	"\x05alias\x18\x01 \x01(\tR\x05alias\x12\x1c\n" +
 	"\tnumerator\x18\x02 \x01(\tR\tnumerator\x12 \n" +
-	"\vdenominator\x18\x03 \x01(\tR\vdenominator\"\xdc\x05\n" +
+	"\vdenominator\x18\x03 \x01(\tR\vdenominator\"\xf9\x05\n" +
 	"\x18AggregateAuditLogRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x19\n" +
 	"\bactor_id\x18\x02 \x01(\tR\aactorId\x12\x1d\n" +
@@ -1263,7 +1297,8 @@ const file_saas_accounts_v1_audit_proto_rawDesc = "" +
 	"\vresource_id\x18\x0e \x01(\tR\n" +
 	"resourceId\x12j\n" +
 	"\x10payload_contains\x18\x0f \x03(\v2?.saas.accounts.v1.AggregateAuditLogRequest.PayloadContainsEntryR\x0fpayloadContains\x12#\n" +
-	"\rcollection_id\x18\x10 \x01(\tR\fcollectionId\x1aB\n" +
+	"\rcollection_id\x18\x10 \x01(\tR\fcollectionId\x12\x1b\n" +
+	"\tclient_id\x18\x11 \x01(\tR\bclientId\x1aB\n" +
 	"\x14PayloadContainsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe8\x02\n" +

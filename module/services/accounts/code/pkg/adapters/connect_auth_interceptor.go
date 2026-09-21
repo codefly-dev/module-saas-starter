@@ -23,6 +23,7 @@ var forwardedIdentityHeaders = []string{
 	"X-Scoped-Roles", "X-Scoped-Roles-Truncated", "X-Auth-Id", "X-User-Email", "X-User-Name", "X-Session-Id",
 	"X-Acting-As-User-Id", "X-Act", "X-Scopes", "X-Credential-Kind", "X-MFA-Satisfied",
 	"X-Authentication-Methods", "X-Auth-Time", "X-Assurance-Level", "X-MFA-Verified-At",
+	"X-Client-Id",
 }
 
 const publicOriginHeader = "X-Codefly-Public-Origin"
@@ -181,6 +182,10 @@ func stampForwardedHTTPIdentity(ctx context.Context, headers http.Header) (conte
 		return ctx, err
 	}
 	identity.Delegation = auth.ParseActor(headers.Get("X-Act"))
+	identity.ClientID, err = auth.ParseClientID(headers.Get("X-Client-Id"))
+	if err != nil {
+		return ctx, err
+	}
 	ctx = stampRequestIdentity(ctx, identity, assuranceFromTransport(
 		headers.Get("X-Authentication-Methods"),
 		headers.Get("X-Auth-Time"),
