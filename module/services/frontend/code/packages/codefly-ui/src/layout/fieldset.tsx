@@ -33,7 +33,7 @@ function FieldsetLegend({
 	return (
 		<FieldsetPrimitive.Legend
 			data-slot="fieldset-legend"
-			className={cn("type-field-label text-foreground", className)}
+			className={cn("type-label text-foreground", className)}
 			{...props}
 		/>
 	);

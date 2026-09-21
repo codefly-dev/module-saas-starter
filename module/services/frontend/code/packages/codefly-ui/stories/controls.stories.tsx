@@ -145,42 +145,38 @@ export const SearchCommands = {
 		</Command>
 	),
 };
-export const DateEntryParts = {
-	render: function DateEntryPartsStory() {
+// One component, one `variant`. The story is a single entry: flip `variant`
+// in the controls panel to see the shape change, or leave it on "skin" and
+// flip the SKIN in the toolbar — that is the case the product actually ships,
+// where the call site names no variant and each deployment's
+// `appearance.datePattern` picks the shape.
+export const DateEntry = {
+	args: { variant: "skin", error: false },
+	argTypes: {
+		variant: {
+			control: "radio",
+			options: ["skin", "parts", "compact"],
+			description:
+				'"skin" leaves the choice to appearance.datePattern, as a real call site does.',
+		},
+		error: { control: "boolean" },
+	},
+	render: function DateEntryStory({
+		variant = "skin",
+		error = false,
+	}: {
+		variant?: "skin" | "parts" | "compact";
+		error?: boolean;
+	}) {
 		const [value, setValue] = useState("");
 		return (
 			<DateField
+				variant={variant === "skin" ? undefined : variant}
 				label="What is the document date?"
 				description="For example, 27 3 2007"
 				value={value}
 				onValueChange={setValue}
-			/>
-		);
-	},
-};
-export const DateEntryCompact = {
-	render: function DateEntryCompactStory() {
-		const [value, setValue] = useState("");
-		return (
-			<DateField
-				variant="compact"
-				label="Document date"
-				description="Enter the date shown on your document."
-				value={value}
-				onValueChange={setValue}
-			/>
-		);
-	},
-};
-export const DateEntryPartError = {
-	render: function DateEntryPartErrorStory() {
-		const [value, setValue] = useState("");
-		return (
-			<DateField
-				label="What is the document date?"
-				value={value}
-				onValueChange={setValue}
-				error="The month must be between 1 and 12."
+				error={error ? "The month must be between 1 and 12." : undefined}
 				errorParts={["month"]}
 			/>
 		);

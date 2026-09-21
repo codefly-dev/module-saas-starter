@@ -36,12 +36,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/dashboard/atoms.tsx",
-			"imports": [
-				"react",
-				"./cn.js",
-				"./format.js",
-				"./geometry.js"
-			],
+			"imports": ["react", "./cn.js", "./format.js", "./geometry.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -106,11 +101,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"react",
-				"../layout/cn.js",
-				"./metric-geometry.js"
-			],
+			"imports": ["react", "../layout/cn.js", "./metric-geometry.js"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/metrics.stories.tsx",
@@ -137,9 +128,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"../layout/badge.js"
-			],
+			"imports": ["../layout/badge.js"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/metrics.stories.tsx",
@@ -189,10 +178,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"react",
-				"./geometry.js"
-			],
+			"imports": ["react", "./geometry.js"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/metrics.stories.tsx",
@@ -207,10 +193,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"react",
-				"./geometry.js"
-			],
+			"imports": ["react", "./geometry.js"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/metrics.stories.tsx",
@@ -242,11 +225,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/avatar.tsx",
-			"imports": [
-				"@base-ui/react/avatar",
-				"react",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/avatar", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -281,12 +260,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/banner.tsx",
-			"imports": [
-				"lucide-react",
-				"react",
-				"./button.js",
-				"./cn.js"
-			],
+			"imports": ["lucide-react", "react", "./button.js", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Reusable banner presentation; host owns notification queries and read lifecycle.",
@@ -323,10 +297,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"react",
-				"./cn.js"
-			],
+			"imports": ["react", "./cn.js"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/controls.stories.tsx",
@@ -342,11 +313,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/card.tsx",
-			"imports": [
-				"react",
-				"./cn.js",
-				"./card-root.js"
-			],
+			"imports": ["react", "./cn.js", "./card-root.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -365,11 +332,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/checkbox.tsx",
-			"imports": [
-				"@base-ui/react/checkbox",
-				"lucide-react",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/checkbox", "lucide-react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -427,12 +390,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/dropdown-menu.tsx",
-			"imports": [
-				"@base-ui/react/menu",
-				"lucide-react",
-				"react",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/menu", "lucide-react", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -447,11 +405,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/empty-state.tsx",
-			"imports": [
-				"lucide-react",
-				"react",
-				"./cn.js"
-			],
+			"imports": ["lucide-react", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -466,11 +420,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/error-state.tsx",
-			"imports": [
-				"lucide-react",
-				"react",
-				"./cn.js"
-			],
+			"imports": ["lucide-react", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -488,15 +438,47 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Label, hint, error and the aria wiring between them; the control arrives through a render prop.",
-			"imports": [
-				"./cn.js",
-				"./label.js",
-				"react"
-			],
+			"imports": ["./cn.js", "./label.js", "react"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/foundations.stories.tsx",
 					"export": "Fields"
+				}
+			],
+			"coverage": "owner stories and unit tests; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
+		},
+		{
+			"source": "packages/codefly-ui/src/layout/fieldset.tsx",
+			"reason": "A group of controls under one legend; what Field cannot express, since one htmlFor names one control.",
+			"imports": ["@base-ui/react/fieldset", "./cn.js", "react"],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/controls.stories.tsx",
+					"export": "DateEntry"
+				}
+			],
+			"coverage": "owner stories and unit tests; browser/skin verification pending",
+			"remaining": "Verify explorer rendering, interactive accessibility and visual baseline."
+		},
+		{
+			"source": "packages/codefly-ui/src/layout/date-field.tsx",
+			"reason": "Date entry with two shapes behind one ISO value; the skin's appearance.datePattern picks the shape when a call site names none.",
+			"imports": [
+				"./cn.js",
+				"./fieldset.js",
+				"./input.js",
+				"./label.js",
+				"react"
+			],
+			"owner": "@codefly-dev/ui",
+			"disposition": "already canonical",
+			"stories": [
+				{
+					"file": "packages/codefly-ui/stories/controls.stories.tsx",
+					"export": "DateEntry"
 				}
 			],
 			"coverage": "owner stories and unit tests; browser/skin verification pending",
@@ -534,11 +516,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/input.tsx",
-			"imports": [
-				"@base-ui/react/input",
-				"react",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/input", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -553,10 +531,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/label.tsx",
-			"imports": [
-				"react",
-				"./cn.js"
-			],
+			"imports": ["react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -574,10 +549,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"react",
-				"./cn.js"
-			],
+			"imports": ["react", "./cn.js"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/controls.stories.tsx",
@@ -638,12 +610,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/select.tsx",
-			"imports": [
-				"@base-ui/react/select",
-				"lucide-react",
-				"react",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/select", "lucide-react", "react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -658,10 +625,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/separator.tsx",
-			"imports": [
-				"@base-ui/react/separator",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/separator", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -726,9 +690,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/skeleton.tsx",
-			"imports": [
-				"./cn.js"
-			],
+			"imports": ["./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -746,10 +708,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"lucide-react",
-				"sonner"
-			],
+			"imports": ["lucide-react", "sonner"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/controls.stories.tsx",
@@ -761,10 +720,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/switch.tsx",
-			"imports": [
-				"@base-ui/react/switch",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/switch", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -779,10 +735,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/table.tsx",
-			"imports": [
-				"react",
-				"./cn.js"
-			],
+			"imports": ["react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -804,11 +757,7 @@
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Shared owner implementation.",
-			"imports": [
-				"@base-ui/react/tabs",
-				"class-variance-authority",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/tabs", "class-variance-authority", "./cn.js"],
 			"stories": [
 				{
 					"file": "packages/codefly-ui/stories/controls.stories.tsx",
@@ -824,10 +773,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/tabs.tsx",
-			"imports": [
-				"react",
-				"./tabs-root.js"
-			],
+			"imports": ["react", "./tabs-root.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -842,10 +788,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/textarea.tsx",
-			"imports": [
-				"react",
-				"./cn.js"
-			],
+			"imports": ["react", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -860,10 +803,7 @@
 		},
 		{
 			"source": "packages/codefly-ui/src/layout/tooltip.tsx",
-			"imports": [
-				"@base-ui/react/tooltip",
-				"./cn.js"
-			],
+			"imports": ["@base-ui/react/tooltip", "./cn.js"],
 			"owner": "@codefly-dev/ui",
 			"disposition": "already canonical",
 			"reason": "Owner package implementation.",
@@ -986,9 +926,7 @@
 		},
 		{
 			"source": "src/app/(auth)/auth/callback/page.tsx",
-			"imports": [
-				"@/features/auth/ui/callback-page"
-			],
+			"imports": ["@/features/auth/ui/callback-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -998,10 +936,7 @@
 		},
 		{
 			"source": "src/app/(auth)/auth/login/page.tsx",
-			"imports": [
-				"react",
-				"@/features/auth/ui/login-page"
-			],
+			"imports": ["react", "@/features/auth/ui/login-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1028,9 +963,7 @@
 		},
 		{
 			"source": "src/app/(auth)/auth/magic-link/page.tsx",
-			"imports": [
-				"./magic-link-client"
-			],
+			"imports": ["./magic-link-client"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1056,9 +989,7 @@
 		},
 		{
 			"source": "src/app/(auth)/auth/mfa/page.tsx",
-			"imports": [
-				"./mfa-client"
-			],
+			"imports": ["./mfa-client"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1092,10 +1023,7 @@
 		},
 		{
 			"source": "src/app/(auth)/legal/privacy/page.tsx",
-			"imports": [
-				"next",
-				"@/components/legal-document"
-			],
+			"imports": ["next", "@/components/legal-document"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1105,10 +1033,7 @@
 		},
 		{
 			"source": "src/app/(auth)/legal/terms/page.tsx",
-			"imports": [
-				"next",
-				"@/components/legal-document"
-			],
+			"imports": ["next", "@/components/legal-document"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1118,9 +1043,7 @@
 		},
 		{
 			"source": "src/app/(auth)/status/page.tsx",
-			"imports": [
-				"./status-client"
-			],
+			"imports": ["./status-client"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1145,11 +1068,7 @@
 		},
 		{
 			"source": "src/app/(auth)/waitlist/page.tsx",
-			"imports": [
-				"next",
-				"react",
-				"@/features/waitlist/ui/waitlist-page"
-			],
+			"imports": ["next", "react", "@/features/waitlist/ui/waitlist-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1159,10 +1078,7 @@
 		},
 		{
 			"source": "src/app/(auth)/waitlist/verify/page.tsx",
-			"imports": [
-				"next",
-				"@/features/waitlist/ui/waitlist-verification"
-			],
+			"imports": ["next", "@/features/waitlist/ui/waitlist-verification"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1190,9 +1106,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/dashboards/page.tsx",
-			"imports": [
-				"@/features/dashboard"
-			],
+			"imports": ["@/features/dashboard"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1202,9 +1116,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/docs/api-docs-frame.tsx",
-			"imports": [
-				"swagger-ui-react"
-			],
+			"imports": ["swagger-ui-react"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1214,11 +1126,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/docs/compliance/compliance-section.tsx",
-			"imports": [
-				"lucide-react",
-				"react",
-				"@/shared/ui"
-			],
+			"imports": ["lucide-react", "react", "@/shared/ui"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1242,9 +1150,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/docs/page.tsx",
-			"imports": [
-				"./api-docs-frame"
-			],
+			"imports": ["./api-docs-frame"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1271,9 +1177,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/insights/page.tsx",
-			"imports": [
-				"@/features/dashboard"
-			],
+			"imports": ["@/features/dashboard"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1283,9 +1187,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/layout.tsx",
-			"imports": [
-				"@/components/dashboard-route-shell"
-			],
+			"imports": ["@/components/dashboard-route-shell"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1295,9 +1197,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/notifications/page.tsx",
-			"imports": [
-				"@/features/notifications/ui/notifications-page"
-			],
+			"imports": ["@/features/notifications/ui/notifications-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1307,9 +1207,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/onboarding/page.tsx",
-			"imports": [
-				"@/features/onboarding/ui/onboarding-wizard"
-			],
+			"imports": ["@/features/onboarding/ui/onboarding-wizard"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1319,10 +1217,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/page.tsx",
-			"imports": [
-				"@/solutions/SolutionsMenu",
-				"./dashboard-client"
-			],
+			"imports": ["@/solutions/SolutionsMenu", "./dashboard-client"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1347,9 +1242,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/security/page.tsx",
-			"imports": [
-				"@/features/dashboard"
-			],
+			"imports": ["@/features/dashboard"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1373,9 +1266,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/settings/mfa/page.tsx",
-			"imports": [
-				"@/features/mfa/ui/mfa-settings-page"
-			],
+			"imports": ["@/features/mfa/ui/mfa-settings-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1385,9 +1276,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/settings/notifications/page.tsx",
-			"imports": [
-				"@/features/notifications/ui/notification-settings"
-			],
+			"imports": ["@/features/notifications/ui/notification-settings"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1397,9 +1286,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/settings/page.tsx",
-			"imports": [
-				"@/features/user-settings/ui/general-settings-page"
-			],
+			"imports": ["@/features/user-settings/ui/general-settings-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1409,9 +1296,7 @@
 		},
 		{
 			"source": "src/app/(dashboard)/settings/privacy/page.tsx",
-			"imports": [
-				"@/features/consent/ui/consent-settings-page"
-			],
+			"imports": ["@/features/consent/ui/consent-settings-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1421,9 +1306,7 @@
 		},
 		{
 			"source": "src/app/admin/[...slug]/page.tsx",
-			"imports": [
-				"./plugin-route-client"
-			],
+			"imports": ["./plugin-route-client"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1466,9 +1349,7 @@
 		},
 		{
 			"source": "src/app/admin/api-keys/page.tsx",
-			"imports": [
-				"@/features/api-keys/ui/api-keys-page"
-			],
+			"imports": ["@/features/api-keys/ui/api-keys-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1478,9 +1359,7 @@
 		},
 		{
 			"source": "src/app/admin/audit-log/page.tsx",
-			"imports": [
-				"@/features/audit/ui/audit-page"
-			],
+			"imports": ["@/features/audit/ui/audit-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1490,9 +1369,7 @@
 		},
 		{
 			"source": "src/app/admin/billing/page.tsx",
-			"imports": [
-				"@/features/billing/ui/billing-admin-page"
-			],
+			"imports": ["@/features/billing/ui/billing-admin-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1502,11 +1379,7 @@
 		},
 		{
 			"source": "src/app/admin/billing/success/billing-success-client.tsx",
-			"imports": [
-				"next/link",
-				"next/navigation",
-				"react"
-			],
+			"imports": ["next/link", "next/navigation", "react"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1516,9 +1389,7 @@
 		},
 		{
 			"source": "src/app/admin/billing/success/page.tsx",
-			"imports": [
-				"./billing-success-client"
-			],
+			"imports": ["./billing-success-client"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1528,9 +1399,7 @@
 		},
 		{
 			"source": "src/app/admin/datasources/page.tsx",
-			"imports": [
-				"@/features/datasources/datasources-admin"
-			],
+			"imports": ["@/features/datasources/datasources-admin"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1540,9 +1409,7 @@
 		},
 		{
 			"source": "src/app/admin/entitlements/page.tsx",
-			"imports": [
-				"@/features/platform/ui/entitlements-page"
-			],
+			"imports": ["@/features/platform/ui/entitlements-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1552,9 +1419,7 @@
 		},
 		{
 			"source": "src/app/admin/invitations/page.tsx",
-			"imports": [
-				"@/features/invitations/ui/invitations-page"
-			],
+			"imports": ["@/features/invitations/ui/invitations-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1564,9 +1429,7 @@
 		},
 		{
 			"source": "src/app/admin/layout.tsx",
-			"imports": [
-				"@/components/admin-route-shell"
-			],
+			"imports": ["@/components/admin-route-shell"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1576,9 +1439,7 @@
 		},
 		{
 			"source": "src/app/admin/organizations/page.tsx",
-			"imports": [
-				"@/features/organizations/ui/organizations-page"
-			],
+			"imports": ["@/features/organizations/ui/organizations-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1588,9 +1449,7 @@
 		},
 		{
 			"source": "src/app/admin/organizations/settings/page.tsx",
-			"imports": [
-				"@/features/organizations/ui/org-settings-page"
-			],
+			"imports": ["@/features/organizations/ui/org-settings-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1600,9 +1459,7 @@
 		},
 		{
 			"source": "src/app/admin/page.tsx",
-			"imports": [
-				"./admin-overview-client"
-			],
+			"imports": ["./admin-overview-client"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1612,9 +1469,7 @@
 		},
 		{
 			"source": "src/app/admin/permissions/page.tsx",
-			"imports": [
-				"@/features/permissions/ui/permissions-page"
-			],
+			"imports": ["@/features/permissions/ui/permissions-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1624,9 +1479,7 @@
 		},
 		{
 			"source": "src/app/admin/platform/admins/page.tsx",
-			"imports": [
-				"@/features/platform/ui/admins-page"
-			],
+			"imports": ["@/features/platform/ui/admins-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1636,10 +1489,7 @@
 		},
 		{
 			"source": "src/app/admin/platform/events/page.tsx",
-			"imports": [
-				"@/components/auth/role-gate",
-				"@/features/event-operations"
-			],
+			"imports": ["@/components/auth/role-gate", "@/features/event-operations"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1649,9 +1499,7 @@
 		},
 		{
 			"source": "src/app/admin/platform/feature-flags/page.tsx",
-			"imports": [
-				"@/features/platform/ui/flags-page"
-			],
+			"imports": ["@/features/platform/ui/flags-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1661,10 +1509,7 @@
 		},
 		{
 			"source": "src/app/admin/platform/jobs/page.tsx",
-			"imports": [
-				"@/components/auth/role-gate",
-				"@/features/job-operations"
-			],
+			"imports": ["@/components/auth/role-gate", "@/features/job-operations"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1674,11 +1519,7 @@
 		},
 		{
 			"source": "src/app/admin/platform/page.tsx",
-			"imports": [
-				"lucide-react",
-				"next/link",
-				"@/shared/ui"
-			],
+			"imports": ["lucide-react", "next/link", "@/shared/ui"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1688,9 +1529,7 @@
 		},
 		{
 			"source": "src/app/admin/platform/waitlist/page.tsx",
-			"imports": [
-				"@/features/waitlist/ui/waitlist-admin-page"
-			],
+			"imports": ["@/features/waitlist/ui/waitlist-admin-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1700,9 +1539,7 @@
 		},
 		{
 			"source": "src/app/admin/roles/[roleId]/page.tsx",
-			"imports": [
-				"@/features/roles/ui/role-detail-page"
-			],
+			"imports": ["@/features/roles/ui/role-detail-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1712,9 +1549,7 @@
 		},
 		{
 			"source": "src/app/admin/roles/page.tsx",
-			"imports": [
-				"@/features/roles/ui/roles-page"
-			],
+			"imports": ["@/features/roles/ui/roles-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1724,9 +1559,7 @@
 		},
 		{
 			"source": "src/app/admin/sessions/page.tsx",
-			"imports": [
-				"@/features/platform/ui/sessions-page"
-			],
+			"imports": ["@/features/platform/ui/sessions-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1736,9 +1569,7 @@
 		},
 		{
 			"source": "src/app/admin/sso/page.tsx",
-			"imports": [
-				"@/features/sso-admin/ui/sso-admin-page"
-			],
+			"imports": ["@/features/sso-admin/ui/sso-admin-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1748,9 +1579,7 @@
 		},
 		{
 			"source": "src/app/admin/teams/[teamId]/page.tsx",
-			"imports": [
-				"@/features/teams/ui/team-detail-page"
-			],
+			"imports": ["@/features/teams/ui/team-detail-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1760,9 +1589,7 @@
 		},
 		{
 			"source": "src/app/admin/teams/page.tsx",
-			"imports": [
-				"@/features/teams/ui/teams-page"
-			],
+			"imports": ["@/features/teams/ui/teams-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1772,9 +1599,7 @@
 		},
 		{
 			"source": "src/app/admin/users/[userId]/page.tsx",
-			"imports": [
-				"@/features/users/ui/user-detail-page"
-			],
+			"imports": ["@/features/users/ui/user-detail-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1784,9 +1609,7 @@
 		},
 		{
 			"source": "src/app/admin/users/page.tsx",
-			"imports": [
-				"@/features/users/ui/users-page"
-			],
+			"imports": ["@/features/users/ui/users-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1796,9 +1619,7 @@
 		},
 		{
 			"source": "src/app/admin/webhooks/page.tsx",
-			"imports": [
-				"@/features/webhooks/ui/webhooks-page"
-			],
+			"imports": ["@/features/webhooks/ui/webhooks-page"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1808,11 +1629,7 @@
 		},
 		{
 			"source": "src/app/global-error.tsx",
-			"imports": [
-				"@sentry/nextjs",
-				"next/error",
-				"react"
-			],
+			"imports": ["@sentry/nextjs", "next/error", "react"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1822,10 +1639,7 @@
 		},
 		{
 			"source": "src/app/icon.tsx",
-			"imports": [
-				"next/og",
-				"@/generated/public-site-config"
-			],
+			"imports": ["next/og", "@/generated/public-site-config"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
@@ -1938,11 +1752,7 @@
 		},
 		{
 			"source": "src/components/brand-mark.tsx",
-			"imports": [
-				"next/image",
-				"@/lib/appearance-provider",
-				"@/lib/utils"
-			],
+			"imports": ["next/image", "@/lib/appearance-provider", "@/lib/utils"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
@@ -1952,9 +1762,7 @@
 		},
 		{
 			"source": "src/components/charts/chart.tsx",
-			"imports": [
-				"@codefly-dev/ui/dashboard"
-			],
+			"imports": ["@codefly-dev/ui/dashboard"],
 			"owner": "@codefly-dev/ui/dashboard",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2058,10 +1866,7 @@
 		},
 		{
 			"source": "src/components/empty-state.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout",
-				"react"
-			],
+			"imports": ["@codefly-dev/ui/layout", "react"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Host adapter injects persistence, theme or the legacy prop names into kit presentation.",
@@ -2076,11 +1881,7 @@
 		},
 		{
 			"source": "src/components/impersonation-banner.tsx",
-			"imports": [
-				"react",
-				"sonner",
-				"@/lib/auth"
-			],
+			"imports": ["react", "sonner", "@/lib/auth"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
@@ -2090,10 +1891,7 @@
 		},
 		{
 			"source": "src/components/legal-document.tsx",
-			"imports": [
-				"next/link",
-				"@/lib/legal-config"
-			],
+			"imports": ["next/link", "@/lib/legal-config"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
@@ -2103,9 +1901,7 @@
 		},
 		{
 			"source": "src/components/metric-state.tsx",
-			"imports": [
-				"@codefly-dev/ui/dashboard"
-			],
+			"imports": ["@codefly-dev/ui/dashboard"],
 			"owner": "@codefly-dev/ui/dashboard",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2159,11 +1955,7 @@
 		},
 		{
 			"source": "src/components/rate-limit-banner.tsx",
-			"imports": [
-				"lucide-react",
-				"react",
-				"@/lib/connect/rate-limit-tracker"
-			],
+			"imports": ["lucide-react", "react", "@/lib/connect/rate-limit-tracker"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
@@ -2188,9 +1980,7 @@
 		},
 		{
 			"source": "src/components/sparkline.tsx",
-			"imports": [
-				"@codefly-dev/ui/dashboard"
-			],
+			"imports": ["@codefly-dev/ui/dashboard"],
 			"owner": "@codefly-dev/ui/dashboard",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2223,10 +2013,7 @@
 		},
 		{
 			"source": "src/components/turnstile-widget.tsx",
-			"imports": [
-				"react",
-				"@/lib/abuse-protection"
-			],
+			"imports": ["react", "@/lib/abuse-protection"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Route, provider, domain workflow or host orchestration; reusable presentation must compose the kit.",
@@ -2236,9 +2023,7 @@
 		},
 		{
 			"source": "src/components/ui/alert-dialog.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2253,9 +2038,7 @@
 		},
 		{
 			"source": "src/components/ui/avatar.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2270,9 +2053,7 @@
 		},
 		{
 			"source": "src/components/ui/badge.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2287,9 +2068,7 @@
 		},
 		{
 			"source": "src/components/ui/button.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2304,9 +2083,7 @@
 		},
 		{
 			"source": "src/components/ui/card.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2325,9 +2102,7 @@
 		},
 		{
 			"source": "src/components/ui/checkbox.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2342,9 +2117,7 @@
 		},
 		{
 			"source": "src/components/ui/command.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2359,9 +2132,7 @@
 		},
 		{
 			"source": "src/components/ui/dialog.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2376,9 +2147,7 @@
 		},
 		{
 			"source": "src/components/ui/dropdown-menu.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2393,9 +2162,7 @@
 		},
 		{
 			"source": "src/components/ui/input-group.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2418,9 +2185,7 @@
 		},
 		{
 			"source": "src/components/ui/input.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2435,9 +2200,7 @@
 		},
 		{
 			"source": "src/components/ui/label.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2452,9 +2215,7 @@
 		},
 		{
 			"source": "src/components/ui/select.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2469,9 +2230,7 @@
 		},
 		{
 			"source": "src/components/ui/separator.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2486,9 +2245,7 @@
 		},
 		{
 			"source": "src/components/ui/sheet.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2503,11 +2260,7 @@
 		},
 		{
 			"source": "src/components/ui/sidebar.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout",
-				"react",
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout", "react", "@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Host adapter injects persistence, theme or the legacy prop names into kit presentation.",
@@ -2522,9 +2275,7 @@
 		},
 		{
 			"source": "src/components/ui/skeleton.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2539,11 +2290,7 @@
 		},
 		{
 			"source": "src/components/ui/sonner.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout",
-				"react",
-				"@/lib/theme-provider"
-			],
+			"imports": ["@codefly-dev/ui/layout", "react", "@/lib/theme-provider"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Host adapter injects persistence, theme or the legacy prop names into kit presentation.",
@@ -2558,9 +2305,7 @@
 		},
 		{
 			"source": "src/components/ui/switch.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2575,9 +2320,7 @@
 		},
 		{
 			"source": "src/components/ui/table.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2596,9 +2339,7 @@
 		},
 		{
 			"source": "src/components/ui/tabs.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2613,9 +2354,7 @@
 		},
 		{
 			"source": "src/components/ui/textarea.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2630,9 +2369,7 @@
 		},
 		{
 			"source": "src/components/ui/tooltip.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2824,9 +2561,7 @@
 		},
 		{
 			"source": "src/features/dashboard/ui/charts/bar-list.tsx",
-			"imports": [
-				"@codefly-dev/ui/dashboard"
-			],
+			"imports": ["@codefly-dev/ui/dashboard"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
@@ -2836,9 +2571,7 @@
 		},
 		{
 			"source": "src/features/dashboard/ui/charts/line-chart.tsx",
-			"imports": [
-				"@codefly-dev/ui/dashboard"
-			],
+			"imports": ["@codefly-dev/ui/dashboard"],
 			"owner": "@codefly-dev/ui/dashboard",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -2887,9 +2620,7 @@
 		},
 		{
 			"source": "src/features/dashboard/ui/layout.tsx",
-			"imports": [
-				"react"
-			],
+			"imports": ["react"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Owns the dashboard workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
@@ -3416,10 +3147,7 @@
 		},
 		{
 			"source": "src/features/permissions/ui/grant-source.tsx",
-			"imports": [
-				"@/shared/ui",
-				"../model/effective"
-			],
+			"imports": ["@/shared/ui", "../model/effective"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Owns the permissions workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
@@ -3813,9 +3541,7 @@
 		},
 		{
 			"source": "src/features/users/ui/delete-user-dialog.tsx",
-			"imports": [
-				"@/shared/ui"
-			],
+			"imports": ["@/shared/ui"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Owns the users workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
@@ -3985,12 +3711,7 @@
 		},
 		{
 			"source": "src/features/waitlist/ui/waitlist-verification.tsx",
-			"imports": [
-				"lucide-react",
-				"next/link",
-				"react",
-				"@/shared/ui"
-			],
+			"imports": ["lucide-react", "next/link", "react", "@/shared/ui"],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Owns the waitlist workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
@@ -4084,9 +3805,7 @@
 		},
 		{
 			"source": "src/shared/ui/data-table.tsx",
-			"imports": [
-				"@codefly-dev/ui/table"
-			],
+			"imports": ["@codefly-dev/ui/table"],
 			"owner": "@codefly-dev/ui/table",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -4109,9 +3828,7 @@
 		},
 		{
 			"source": "src/shared/ui/layout.tsx",
-			"imports": [
-				"@codefly-dev/ui/layout"
-			],
+			"imports": ["@codefly-dev/ui/layout"],
 			"owner": "@codefly-dev/ui/layout",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",
@@ -4126,9 +3843,7 @@
 		},
 		{
 			"source": "src/shared/ui/metric-tiles.tsx",
-			"imports": [
-				"@codefly-dev/ui/dashboard"
-			],
+			"imports": ["@codefly-dev/ui/dashboard"],
 			"owner": "@codefly-dev/ui/dashboard",
 			"disposition": "already canonical",
 			"reason": "Compatibility re-export; no host presentation implementation.",

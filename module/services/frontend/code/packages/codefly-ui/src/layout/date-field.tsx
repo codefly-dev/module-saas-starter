@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useState, useSyncExternalStore } from "react";
 import type * as React from "react";
 
 import { cn } from "./cn.js";
@@ -40,6 +40,11 @@ export interface DateFieldProps {
 	/** ISO `yyyy-mm-dd`, or "" when incomplete. */
 	value: string;
 	onValueChange: (value: string) => void;
+	/**
+	 * Which shape to render. Left unset, the skin decides through its
+	 * `appearance.datePattern`, so one call site renders differently per
+	 * deployment. Set it only when a screen must pin one shape regardless.
+	 */
 	variant?: DateFieldVariant;
 	description?: React.ReactNode;
 	/** Present means invalid. Sets `aria-invalid` as well as rendering. */
@@ -77,17 +82,55 @@ function joinIso(parts: Record<DateFieldPart, string>): string {
 	return `${year}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
+/**
+ * The skin's date pattern, read from the `--appearance-date-pattern` custom
+ * property the appearance projection sets on <html>. That property is the
+ * same channel every token travels, so the explorer and SSR agree without a
+ * second context.
+ *
+ * Subscribed rather than read once: the product fixes it for a page's life,
+ * but the explorer swaps skins in place, and a control that ignored the swap
+ * would show the wrong shape until a reload. `useSyncExternalStore` also
+ * gives SSR its own snapshot, so the server never touches `document`.
+ */
+function readDatePattern(): DateFieldVariant {
+	const raw = getComputedStyle(document.documentElement)
+		.getPropertyValue("--appearance-date-pattern")
+		.trim();
+	return raw === "compact" ? "compact" : "parts";
+}
+
+function subscribeDatePattern(onChange: () => void): () => void {
+	// The projection writes inline `style` on <html>; watch that attribute.
+	const observer = new MutationObserver(onChange);
+	observer.observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ["style"],
+	});
+	return () => observer.disconnect();
+}
+
+function useSkinDatePattern(): DateFieldVariant {
+	return useSyncExternalStore(
+		subscribeDatePattern,
+		readDatePattern,
+		() => "parts",
+	);
+}
+
 function DateField({
 	label,
 	value,
 	onValueChange,
-	variant = "parts",
+	variant: variantProp,
 	description,
 	error,
 	errorParts,
 	required,
 	className,
 }: DateFieldProps) {
+	const skinVariant = useSkinDatePattern();
+	const variant = variantProp ?? skinVariant;
 	const id = useId();
 	const descriptionId = `${id}-description`;
 	const errorId = `${id}-error`;
