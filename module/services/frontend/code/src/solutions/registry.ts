@@ -66,22 +66,79 @@ export interface SolutionManifest {
 	 * no dashboard.
 	 */
 	dashboard?: DataGraph;
+	/**
+	 * What this solution offers inside a client that is not this host's own web
+	 * app — a word processor, a spreadsheet. Absent for a solution that
+	 * offers nothing outside the host.
+	 */
+	surfaces?: SolutionSurface[];
+}
+
+/**
+ * One thing a solution offers inside one kind of client. The host stores the
+ * declaration and projects it to the client that asked; what a surface means,
+ * and when to show it, is settled between the solution and that client.
+ */
+export interface SolutionSurface {
+	id: string;
+	/**
+	 * The kind of client this surface is for. Deliberately an opaque slug: the
+	 * set of kinds is deployment configuration (the registered-client registry),
+	 * so a new kind must not need a host release to become addressable.
+	 */
+	client: string;
+	title: string;
+	description?: string;
+	/** Path, on the solution's own origin, to a self-contained ES module. */
+	module: string;
+	/** Major of the surface contract the client owns. The host never reads it. */
+	contract: number;
+	/** Which documents the surface applies to, as the client understands them. */
+	applies?: "always" | { tagged: string[] };
+	/** Journal namespaces the client reconciles this surface on. */
+	events?: string[];
 }
 
 /** The public navigation projection (see navProjection). */
 export type SolutionNav = Pick<SolutionManifest, "id" | "nav">;
 
 /** The internal detail projection (see detailProjection). */
-export type SolutionDetail = Omit<SolutionManifest, "dashboard">;
+export type SolutionDetail = Omit<SolutionManifest, "dashboard" | "surfaces">;
+
+/** The per-client surface projection (see surfacesProjection). */
+export interface SolutionClientSurfaces {
+	id: string;
+	title: string;
+	/** Origin a surface's `module` path is resolved against. */
+	origin: string;
+	surfaces: SolutionSurface[];
+}
+
+/**
+ * An id a consumer keys on, and the shape both a client kind and a surface id
+ * take. Narrow on purpose: these are addressed in URLs and object keys.
+ */
+const SAFE_SLUG = /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/;
+
+/**
+ * Whether a value is shaped like a client kind. Registration and the read side
+ * share this one rule: a kind the registry would refuse to store must not read
+ * back as "nothing is offered for you", which is indistinguishable from a
+ * correctly-spelled kind that nobody serves.
+ */
+export function isClientKind(value: string): boolean {
+	return SAFE_SLUG.test(value);
+}
 
 /**
  * A nav path is rendered directly as an <a href> in the sidebar and home
- * cards. It must be a same-origin, absolute in-app path so a manifest can never
- * turn it into an open redirect or a `javascript:`/`data:` URI. Registration is
- * authenticated (see the register route), but the host still refuses to store
- * an unsafe value.
+ * cards, and a surface module is fetched by a client against the solution's own
+ * origin. Both must be absolute, path-only values so a manifest can never turn
+ * one into an open redirect, a cross-origin fetch, or a `javascript:`/`data:`
+ * URI. Registration is authenticated (see the register route), but the host
+ * still refuses to store an unsafe value.
  */
-function isSafeNavPath(path: string): boolean {
+function isSafeAbsolutePath(path: string): boolean {
 	if (!path.startsWith("/") || path.startsWith("//")) {
 		return false;
 	}
@@ -370,10 +427,7 @@ async function snapshot(): Promise<RegistrySnapshot | null> {
 					return fresh;
 				}
 				const stale = globalForRegistry.__solutionSnapshot ?? null;
-				if (
-					stale !== null &&
-					Date.now() - stale.fetchedAt >= stale.maxAgeMs
-				) {
+				if (stale !== null && Date.now() - stale.fetchedAt >= stale.maxAgeMs) {
 					globalForRegistry.__solutionSnapshot = null;
 					return null;
 				}
@@ -529,6 +583,53 @@ export function navProjection(manifest: SolutionManifest): SolutionNav {
 }
 
 /**
+ * What one kind of client may read: the surfaces declared for that kind, named
+ * by the solution offering them. A client asks for its own kind and gets
+ * exactly what applies to it, so learning what is on offer no longer means
+ * shipping a table of who offers what inside every client.
+ *
+ * Solutions are registered deployment-wide, not per tenant, so every caller
+ * sees the same set today. When per-tenant enablement exists it narrows this
+ * projection, and every client inherits the narrowing without changing.
+ *
+ * Returns null when this solution declares nothing for that client, which is
+ * how the listing leaves it out rather than listing it empty.
+ */
+export function surfacesProjection(
+	manifest: SolutionManifest,
+	client: string,
+): SolutionClientSurfaces | null {
+	const surfaces = (manifest.surfaces ?? []).filter(
+		(surface) => surface.client === client,
+	);
+	if (surfaces.length === 0) {
+		return null;
+	}
+	return {
+		id: manifest.id,
+		title: manifest.nav.title,
+		// A declared module is a path on the solution's origin, so without the
+		// origin no caller can fetch one. The origin is not withheld topology
+		// here the way the manifest path is: the client fetches the module from
+		// it directly, and every signed-in document already carries it in the
+		// CSP that admits the same origin's code.
+		origin: new URL(manifest.frontend.manifestUrl).origin,
+		// A shallow copy would share `applies.tagged` and `events` with the
+		// cached snapshot, which outlives this response and is read by every
+		// later caller — including other client kinds, which read the same
+		// manifest objects.
+		surfaces: surfaces.map((surface) => ({
+			...surface,
+			applies:
+				typeof surface.applies === "object"
+					? { tagged: [...surface.applies.tagged] }
+					: surface.applies,
+			events: surface.events === undefined ? undefined : [...surface.events],
+		})),
+	};
+}
+
+/**
  * What a caller holding the cluster-internal token may read: everything needed
  * to resolve the remote and its backend. The dashboard graph is left out — it
  * is read in-process by the solution page (findSolution), never over HTTP, so
@@ -577,6 +678,110 @@ function parseSharedRanges(
 	return shared;
 }
 
+/**
+ * Which documents a surface applies to, or null when the value is neither of
+ * the two shapes. The host does not evaluate it — the client does — but it
+ * must not hand a client a third shape it has no branch for.
+ */
+function parseApplies(
+	value: unknown,
+): SolutionSurface["applies"] | null | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (value === "always") {
+		return "always";
+	}
+	if (typeof value !== "object" || value === null) {
+		return null;
+	}
+	const { tagged } = value as { tagged?: unknown };
+	if (
+		!Array.isArray(tagged) ||
+		tagged.some((tag) => typeof tag !== "string" || tag === "")
+	) {
+		return null;
+	}
+	return { tagged: [...(tagged as string[])] };
+}
+
+/**
+ * The declared client surfaces, or null when any one of them is malformed —
+ * the whole registration then fails closed, as it does for a dashboard. A
+ * solution that meant to offer a surface should learn its declaration is
+ * invalid, not silently lose it and look like it offers nothing.
+ */
+function parseSurfaces(value: unknown): SolutionSurface[] | null | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (!Array.isArray(value)) {
+		return null;
+	}
+	const surfaces: SolutionSurface[] = [];
+	const seen = new Set<string>();
+	for (const entry of value) {
+		if (typeof entry !== "object" || entry === null) {
+			return null;
+		}
+		const candidate = entry as Record<string, unknown>;
+		if (
+			typeof candidate.id !== "string" ||
+			!SAFE_SLUG.test(candidate.id) ||
+			typeof candidate.client !== "string" ||
+			!SAFE_SLUG.test(candidate.client) ||
+			typeof candidate.title !== "string" ||
+			candidate.title === "" ||
+			typeof candidate.module !== "string" ||
+			!isSafeAbsolutePath(candidate.module) ||
+			!Number.isInteger(candidate.contract) ||
+			(candidate.contract as number) < 1
+		) {
+			return null;
+		}
+		if (
+			candidate.description !== undefined &&
+			typeof candidate.description !== "string"
+		) {
+			return null;
+		}
+		if (
+			candidate.events !== undefined &&
+			(!Array.isArray(candidate.events) ||
+				candidate.events.some(
+					(event) => typeof event !== "string" || event === "",
+				))
+		) {
+			return null;
+		}
+		const applies = parseApplies(candidate.applies);
+		if (applies === null) {
+			return null;
+		}
+		// A client keys on (solution id, surface id), so two surfaces sharing an
+		// id inside one solution make that key ambiguous rather than redundant.
+		const key = `${candidate.client}/${candidate.id}`;
+		if (seen.has(key)) {
+			return null;
+		}
+		seen.add(key);
+		surfaces.push({
+			id: candidate.id,
+			client: candidate.client,
+			title: candidate.title,
+			description: candidate.description as string | undefined,
+			module: candidate.module,
+			contract: candidate.contract as number,
+			applies,
+			events:
+				candidate.events === undefined
+					? undefined
+					: [...(candidate.events as string[])],
+		});
+	}
+	return surfaces;
+}
+
 /** Minimal structural validation of a self-registration payload. */
 export function parseManifest(value: unknown): SolutionManifest | null {
 	if (typeof value !== "object" || value === null) {
@@ -592,7 +797,7 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 		!nav ||
 		typeof nav.title !== "string" ||
 		typeof nav.path !== "string" ||
-		!isSafeNavPath(nav.path) ||
+		!isSafeAbsolutePath(nav.path) ||
 		!frontend ||
 		frontend.type !== "module-federation" ||
 		typeof frontend.manifestUrl !== "string" ||
@@ -622,6 +827,10 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 		} catch {
 			return null;
 		}
+	}
+	const surfaces = parseSurfaces(candidate.surfaces);
+	if (surfaces === null) {
+		return null;
 	}
 	// A declared major must be a real major; an ABSENT one means "built against
 	// the contract that existed when the field appeared", which is the only claim
@@ -671,5 +880,6 @@ export function parseManifest(value: unknown): SolutionManifest | null {
 					: undefined,
 		},
 		dashboard,
+		surfaces,
 	};
 }

@@ -77,6 +77,7 @@ must not be inferred from a row here. See
 | Claim | Source | Executable evidence | Status | Owner |
 | --- | --- | --- | --- | --- |
 | The public solutions `GET` carries only `{id, nav}` | AGENTS.md; `app/api/solutions/register/route.ts` | `route.test.ts` asserts the exact key set | implemented | #541 |
+| The client-surface `GET` carries only `{id, title, origin, surfaces}` for the asked-for kind | AGENTS.md; `app/api/solutions/surfaces/route.ts` | `surfaces/__tests__/route.test.ts` asserts the exact key set, and that the origin rides along while the manifest path and backend service do not | implemented | #874 |
 | ~~"nav-only … no upstreams", while the handler spread the whole manifest minus `dashboard`~~ | `route.ts` comment, before this change | the response carried `frontend.manifestUrl`, `exposedModule` and `backend` | **corrected** | #541 |
 | Remote and backend detail is served only to a caller holding the cluster-internal token | `app/api/internal/solutions/route.ts` | `internal/solutions/__tests__/route.test.ts` | implemented | #541 |
 | A freshly registered cross-origin remote loads with no rebuild | `src/proxy.ts` | `proxy-solution-csp.test.ts` — admitted origin, and self-only on an absent, malformed, unreachable, or token-rejected lookup | implemented | #541 |

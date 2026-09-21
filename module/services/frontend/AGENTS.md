@@ -21,17 +21,31 @@ a deregistered solution requires an explicit `reactivate: true`. The frontend
 additionally enforces the declared runtime compatibility requirements before
 activating a remote.
 
-## Two projections, deliberately separate
+## Three projections, deliberately separate
 
 - `GET /api/solutions/register` is **unauthenticated** and returns exactly the
   public navigation projection — `{id, nav}` per solution and nothing else. It is
   what the sidebar polls, and it answers `503` — **never an empty list** — when
   this replica cannot read the registry.
+- `GET /api/solutions/surfaces?client=<kind>`
+  (`src/app/api/solutions/surfaces/route.ts`) is the same class of public
+  projection for a client that is **not** this host's web app: per solution, its
+  `id`, its title, its `origin`, and the declared `surfaces` whose `client`
+  matches. The kind is required and must be slug-shaped — absent is `400`,
+  malformed is `400`, never the unfiltered set and never a misleading empty
+  list — and an unreadable registry is again `503`. The host does not enumerate
+  client kinds: which ones exist is deployment configuration (the
+  registered-client registry), so a new kind needs no host release.
+  The `origin` is the one piece of topology this projection does carry, and
+  deliberately: a surface's `module` is a path the client fetches against that
+  origin, so withholding it would not keep the origin from anyone who can use a
+  surface — it would only make the answer unusable. The manifest path and the
+  backend service are still withheld.
 - Everything else a manifest carries (`frontend`, `backend`) is deployment
   topology, served instead by `GET /api/internal/solutions`
   (`src/app/api/internal/solutions/route.ts`), gated on the cluster-internal
   token.
-- The dashboard graph is on neither: the solution page reads it in-process
+- The dashboard graph is on none of them: the solution page reads it in-process
   through `findSolution`.
 
 ## Loading a remote, and its CSP
