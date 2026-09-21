@@ -68,6 +68,10 @@ func (h *moduleCapabilitiesConnectHandler) EmitAuditEvent(ctx context.Context, r
 	return unary(ctx, req, h.inner.EmitAuditEvent)
 }
 
+func (h *moduleCapabilitiesConnectHandler) ListSubjectVisibility(ctx context.Context, req *connect.Request[gen.ModuleListSubjectVisibilityRequest]) (*connect.Response[gen.ModuleListSubjectVisibilityResponse], error) {
+	return unary(ctx, req, h.inner.ListSubjectVisibility)
+}
+
 func (h *moduleCapabilitiesConnectHandler) FetchDatasourceBlob(ctx context.Context, req *connect.Request[gen.FetchDatasourceBlobRequest], stream *connect.ServerStream[gen.FetchDatasourceBlobChunk]) error {
 	return streamDatasourceBlob(ctx, req.Msg, stream)
 }

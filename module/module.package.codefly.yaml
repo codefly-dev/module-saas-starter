@@ -18,7 +18,7 @@ services:
         kind: protobuf
         package: saas.accounts.v1
         path: contracts/api/accounts/connect/contract.binpb
-        digest: sha256:f49be8750cc8f7d13b53843e5d40a53de539186847f713b32631ca16b4b96c0c
+        digest: sha256:669afbd8b93ba7c6bbfc1381e948d1eb7fe8ca01980c07bc096eb96dcec4544f
   - name: auth-gateway
     endpoints: [grpc, rest]
     api-contracts:

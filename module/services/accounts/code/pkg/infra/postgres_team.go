@@ -327,3 +327,58 @@ func parseTeamRole(role string) gen.TeamRole {
 		return gen.TeamRole_TEAM_ROLE_UNSPECIFIED
 	}
 }
+
+// ListVisibleSubjects projects the org's team tree onto one viewer: the OTHER
+// users who belong to a team at or below a team the viewer belongs to. A viewer
+// in no team sees nobody, which is the fail-closed answer.
+//
+// The viewer is excluded: seeing one's own rows is ownership, not a grant from
+// the hierarchy. Including it would also make the set's size depend on whether
+// the viewer happens to be in a team at all, since an unplaced viewer's set is
+// empty either way.
+//
+// Subtree membership is read off the materialized path rather than walked
+// through parent_team_id: teams.path is derived at creation and a team is never
+// re-parented, so a prefix match is the tree. Slugs are [a-z0-9-] by CHECK
+// constraint, so a path can carry no LIKE metacharacter.
+//
+// The caller reads the whole set in one statement and passes limit as its cap
+// plus one, so a set past the cap is detectable rather than silently truncated.
+// No ORDER BY: the result is a set, and leaving it unordered lets the planner
+// satisfy DISTINCT by hash aggregate instead of a sort. RLS on teams and
+// team_members is org-GUC'd, so this runs inside the caller's WithOrgTx.
+func (s *PostgresStore) ListVisibleSubjects(ctx context.Context, orgID, viewerID string, limit int) ([]string, error) {
+	w := wool.Get(ctx).In("ListVisibleSubjects")
+	executor := s.getQueryExecutor(ctx)
+
+	rows, err := executor.Query(ctx, `
+		SELECT DISTINCT visible_member.user_id
+		FROM team_members viewer_member
+		JOIN teams viewer_team ON viewer_team.id = viewer_member.team_id
+		JOIN teams visible_team
+		  ON visible_team.org_id = viewer_team.org_id
+		 AND (visible_team.id = viewer_team.id OR visible_team.path LIKE viewer_team.path || '/%')
+		JOIN team_members visible_member ON visible_member.team_id = visible_team.id
+		WHERE viewer_member.user_id = $1
+		  AND viewer_team.org_id = $2
+		  AND visible_member.user_id <> $1
+		LIMIT $3`, viewerID, orgID, limit,
+	)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list visible subjects")
+	}
+	defer rows.Close()
+
+	var subjects []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, w.Wrapf(err, "failed to scan visible subject")
+		}
+		subjects = append(subjects, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "failed iterating visible subjects")
+	}
+	return subjects, nil
+}

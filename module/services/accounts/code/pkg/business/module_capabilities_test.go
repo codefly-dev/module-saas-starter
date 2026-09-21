@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -606,5 +607,158 @@ func TestParseModulePrincipalRegistry_RejectsUnusableDeclarations(t *testing.T) 
 				t.Fatal("expected an unusable module principal declaration to be rejected")
 			}
 		})
+	}
+}
+
+// fakeVisibilityStore answers the visible-subject read without a database,
+// recording the limit the surface asked for so the one-over-the-cap read that
+// distinguishes a servable set from an oversized one is pinned rather than
+// inferred from the returned value.
+type fakeVisibilityStore struct {
+	fakeTxStore
+	subjects   []string
+	gotLimit   int
+	gotOrg     string
+	gotViewer  string
+	orgTxCount int
+}
+
+func (f *fakeVisibilityStore) ListVisibleSubjects(_ context.Context, orgID, viewerID string, limit int) ([]string, error) {
+	f.gotOrg, f.gotViewer, f.gotLimit = orgID, viewerID, limit
+	out := f.subjects
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// WithOrgTx overrides the embedded no-op so a test can count the transactions
+// one call opens.
+func (f *fakeVisibilityStore) WithOrgTx(ctx context.Context, _ string, fn func(context.Context) error) error {
+	f.orgTxCount++
+	return fn(ctx)
+}
+
+func newVisibilityService(t *testing.T, store business.Store, crossTenant bool) *business.Service {
+	t.Helper()
+	svc, err := business.NewService(store)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	svc.SetModuleCapabilities(nil, nil, business.ModulePrincipalRegistry{
+		modulePrincSvc: {Prefix: "content", CrossTenant: crossTenant},
+	})
+	return svc
+}
+
+func TestModuleListSubjectVisibility_UnknownPrincipalRejected(t *testing.T) {
+	svc := newVisibilityService(t, &fakeVisibilityStore{}, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(),
+		business.ModuleCaller{PrincipalID: "someone-else", BoundOrg: moduleTenantA},
+		moduleTenantA, moduleUserA)
+	requireCode(t, err, codes.PermissionDenied)
+}
+
+func TestModuleListSubjectVisibility_CrossTenantRejected(t *testing.T) {
+	svc := newVisibilityService(t, &fakeVisibilityStore{}, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantB, moduleUserA)
+	requireCode(t, err, codes.PermissionDenied)
+}
+
+// A module bound to one tenant must not learn anything about a subject in
+// another: the tenant guard alone does not settle that, because a cross-tenant
+// principal may legitimately name tenant B while the viewer belongs to neither.
+func TestModuleListSubjectVisibility_ViewerOutsideTenantRejected(t *testing.T) {
+	store := &fakeVisibilityStore{fakeTxStore: fakeTxStore{members: map[string]bool{}}}
+	svc := newVisibilityService(t, store, true)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantB, moduleUserA)
+	requireCode(t, err, codes.PermissionDenied)
+	if store.gotViewer != "" {
+		t.Fatal("membership must be settled before the visibility read runs")
+	}
+}
+
+// The whole set comes back in one value, and the read asks for one entry more
+// than the cap so an oversized set is detectable rather than silently truncated.
+func TestModuleListSubjectVisibility_ReturnsTheWholeSet(t *testing.T) {
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    []string{"s1", "s2", "s3"},
+	}
+	svc := newVisibilityService(t, store, false)
+	grants, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
+	if err != nil {
+		t.Fatalf("ModuleListSubjectVisibility: %v", err)
+	}
+	if store.gotLimit != business.ModuleSubjectVisibilityMaxSet+1 {
+		t.Fatalf("store limit = %d, want the cap plus one", store.gotLimit)
+	}
+	if len(grants) != 3 {
+		t.Fatalf("grants = %+v, want every subject in one value", grants)
+	}
+	if store.gotOrg != moduleTenantA || store.gotViewer != moduleUserA {
+		t.Fatalf("store read (%q, %q), want the requested tenant and viewer", store.gotOrg, store.gotViewer)
+	}
+	for _, grant := range grants {
+		if !grant.ExpiresAt.IsZero() {
+			t.Fatalf("grant %q carries an expiry the team tree cannot produce", grant.VisibleSubjectID)
+		}
+	}
+}
+
+// The whole set is read in exactly ONE transaction. This is the invariant the
+// surface exists to hold: when the set was paginated, a consumer reassembling it
+// read each page in its own transaction, and a membership revoked between two
+// pages still reached the bulk replace — reinstating an authority an
+// administrator had withdrawn. A second transaction here is that bug returning.
+func TestModuleListSubjectVisibility_ReadsInOneTransaction(t *testing.T) {
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    []string{"s1", "s2", "s3"},
+	}
+	svc := newVisibilityService(t, store, false)
+	if _, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA); err != nil {
+		t.Fatalf("ModuleListSubjectVisibility: %v", err)
+	}
+	if store.orgTxCount != 1 {
+		t.Fatalf("opened %d org transactions, want exactly one: the set must be one snapshot", store.orgTxCount)
+	}
+}
+
+// A set past the cap is refused, not truncated: a bulk replace fed a truncated
+// set would withdraw grants that are still live, and one fed a torn set would
+// reinstate grants that are not. FailedPrecondition says the tenant's hierarchy
+// is the thing to change, which no retry or backoff can fix.
+func TestModuleListSubjectVisibility_OversizedSetRefused(t *testing.T) {
+	oversized := make([]string, business.ModuleSubjectVisibilityMaxSet+1)
+	for i := range oversized {
+		oversized[i] = fmt.Sprintf("s%d", i)
+	}
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    oversized,
+	}
+	svc := newVisibilityService(t, store, false)
+	_, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
+	requireCode(t, err, codes.FailedPrecondition)
+}
+
+// A set exactly at the cap is servable — the boundary is not off by one.
+func TestModuleListSubjectVisibility_SetAtTheCapIsServed(t *testing.T) {
+	atCap := make([]string, business.ModuleSubjectVisibilityMaxSet)
+	for i := range atCap {
+		atCap[i] = fmt.Sprintf("s%d", i)
+	}
+	store := &fakeVisibilityStore{
+		fakeTxStore: fakeTxStore{members: map[string]bool{moduleTenantA + "|" + moduleUserA: true}},
+		subjects:    atCap,
+	}
+	svc := newVisibilityService(t, store, false)
+	grants, err := svc.ModuleListSubjectVisibility(context.Background(), moduleCaller(), moduleTenantA, moduleUserA)
+	if err != nil {
+		t.Fatalf("ModuleListSubjectVisibility: %v", err)
+	}
+	if len(grants) != business.ModuleSubjectVisibilityMaxSet {
+		t.Fatalf("grants = %d, want the whole set at the cap", len(grants))
 	}
 }

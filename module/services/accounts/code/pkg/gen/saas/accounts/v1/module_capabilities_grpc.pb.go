@@ -36,6 +36,7 @@ const (
 	ModuleCapabilitiesService_GetApproval_FullMethodName                        = "/saas.accounts.v1.ModuleCapabilitiesService/GetApproval"
 	ModuleCapabilitiesService_CancelApproval_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/CancelApproval"
 	ModuleCapabilitiesService_EmitAuditEvent_FullMethodName                     = "/saas.accounts.v1.ModuleCapabilitiesService/EmitAuditEvent"
+	ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName              = "/saas.accounts.v1.ModuleCapabilitiesService/ListSubjectVisibility"
 	ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName                = "/saas.accounts.v1.ModuleCapabilitiesService/FetchDatasourceBlob"
 	ModuleCapabilitiesService_MintModuleRegistration_FullMethodName             = "/saas.accounts.v1.ModuleCapabilitiesService/MintModuleRegistration"
 	ModuleCapabilitiesService_MintSolutionRegistration_FullMethodName           = "/saas.accounts.v1.ModuleCapabilitiesService/MintSolutionRegistration"
@@ -90,6 +91,9 @@ type ModuleCapabilitiesServiceClient interface {
 	CancelApproval(ctx context.Context, in *ModuleCancelApprovalRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(ctx context.Context, in *ModuleEmitAuditEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
@@ -280,6 +284,16 @@ func (c *moduleCapabilitiesServiceClient) EmitAuditEvent(ctx context.Context, in
 	return out, nil
 }
 
+func (c *moduleCapabilitiesServiceClient) ListSubjectVisibility(ctx context.Context, in *ModuleListSubjectVisibilityRequest, opts ...grpc.CallOption) (*ModuleListSubjectVisibilityResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ModuleListSubjectVisibilityResponse)
+	err := c.cc.Invoke(ctx, ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *moduleCapabilitiesServiceClient) FetchDatasourceBlob(ctx context.Context, in *FetchDatasourceBlobRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FetchDatasourceBlobChunk], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &ModuleCapabilitiesService_ServiceDesc.Streams[0], ModuleCapabilitiesService_FetchDatasourceBlob_FullMethodName, cOpts...)
@@ -422,6 +436,9 @@ type ModuleCapabilitiesServiceServer interface {
 	CancelApproval(context.Context, *ModuleCancelApprovalRequest) (*emptypb.Empty, error)
 	// EmitAuditEvent records a registered audit event on the tenant's spine.
 	EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error)
+	// ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+	// whole set of other subjects whose rows that viewer may read.
+	ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error)
 	// FetchDatasourceBlob streams one datasource file blob, re-fetched from the
 	// upstream provider, to the module that resolves a change set's blob sha.
 	// Authorized by the caller principal's datasource-queue grant and the source
@@ -506,6 +523,9 @@ func (UnimplementedModuleCapabilitiesServiceServer) CancelApproval(context.Conte
 }
 func (UnimplementedModuleCapabilitiesServiceServer) EmitAuditEvent(context.Context, *ModuleEmitAuditEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmitAuditEvent not implemented")
+}
+func (UnimplementedModuleCapabilitiesServiceServer) ListSubjectVisibility(context.Context, *ModuleListSubjectVisibilityRequest) (*ModuleListSubjectVisibilityResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSubjectVisibility not implemented")
 }
 func (UnimplementedModuleCapabilitiesServiceServer) FetchDatasourceBlob(*FetchDatasourceBlobRequest, grpc.ServerStreamingServer[FetchDatasourceBlobChunk]) error {
 	return status.Error(codes.Unimplemented, "method FetchDatasourceBlob not implemented")
@@ -826,6 +846,24 @@ func _ModuleCapabilitiesService_EmitAuditEvent_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ModuleCapabilitiesService_ListSubjectVisibility_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ModuleListSubjectVisibilityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubjectVisibility(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ModuleCapabilitiesService_ListSubjectVisibility_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ModuleCapabilitiesServiceServer).ListSubjectVisibility(ctx, req.(*ModuleListSubjectVisibilityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ModuleCapabilitiesService_FetchDatasourceBlob_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(FetchDatasourceBlobRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -1047,6 +1085,10 @@ var ModuleCapabilitiesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EmitAuditEvent",
 			Handler:    _ModuleCapabilitiesService_EmitAuditEvent_Handler,
+		},
+		{
+			MethodName: "ListSubjectVisibility",
+			Handler:    _ModuleCapabilitiesService_ListSubjectVisibility_Handler,
 		},
 		{
 			MethodName: "MintModuleRegistration",

@@ -281,6 +281,55 @@ message ModuleEmitAuditEventRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Subject visibility
+// ---------------------------------------------------------------------------
+
+// SubjectVisibilityGrant is one entry of a viewer's visible-subject set: another
+// subject whose rows the viewer may read, and the instant that permission ends.
+//
+// expires_at unset is an open-ended grant. A consuming module evaluates it at
+// the moment of the read — an as-of read travels in data time and never
+// restores the authority that held then — so the host writes the instant and
+// never expires an entry on a timer.
+message SubjectVisibilityGrant {
+  string visible_subject_id = 1 [(buf.validate.field).string.min_len = 1];
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// ModuleListSubjectVisibilityRequest asks for one viewer's whole visible-subject
+// set in a tenant: the projection of that tenant's team tree onto the viewer.
+//
+// A module that enforces row visibility by owner holds no subject vocabulary and
+// no hierarchy of its own — why one subject may see another's rows is a question
+// about a hierarchy, and the hierarchy is the host's. viewer_subject_id is a
+// host subject id, opaque to the module, which reads it and never interprets it.
+//
+// Authorization is the caller's registered module principal plus the tenant
+// bound to it (or its cross-tenant grant), and the viewer must be a member of
+// that tenant — the same guard NotifyUser and subject-scoped enqueue take.
+message ModuleListSubjectVisibilityRequest {
+  string tenant = 1 [(buf.validate.field).string.uuid = true];
+  string viewer_subject_id = 2 [(buf.validate.field).string.uuid = true];
+}
+
+// ModuleListSubjectVisibilityResponse carries the viewer's WHOLE set, read in
+// one transaction. It is deliberately not paginated: the consuming operation is
+// a bulk replace of a viewer's whole set, so a set assembled from pages read in
+// separate transactions could carry a grant that was revoked between two of
+// them, and the module would then reinstate an authority an administrator had
+// already withdrawn. A tenant whose hierarchy makes one viewer's set exceed the
+// server cap is refused with FailedPrecondition rather than answered with a
+// torn set.
+//
+// The set never contains the viewer: seeing one's own rows is ownership, not a
+// grant from the hierarchy, and it is the consuming module's own read predicate
+// that admits it. Order is unspecified — this is a set, and the consumer
+// replaces with all of it.
+message ModuleListSubjectVisibilityResponse {
+  repeated SubjectVisibilityGrant grants = 1;
+}
+
+// ---------------------------------------------------------------------------
 // Datasource blobs
 // ---------------------------------------------------------------------------
 
@@ -805,6 +854,21 @@ service ModuleCapabilitiesService {
   }
   // EmitAuditEvent records a registered audit event on the tenant's spine.
   rpc EmitAuditEvent(ModuleEmitAuditEventRequest) returns (google.protobuf.Empty) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_INTERNAL
+      tenant: TENANT_REQUIREMENT_NONE
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+  // ListSubjectVisibility projects the tenant's team tree onto one viewer: the
+  // whole set of other subjects whose rows that viewer may read.
+  rpc ListSubjectVisibility(ModuleListSubjectVisibilityRequest) returns (ModuleListSubjectVisibilityResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_INTERNAL
       tenant: TENANT_REQUIREMENT_NONE

@@ -34,7 +34,8 @@ survives a restart and reaches every replica, and is only served when it is
 
 A module consuming the module-facing capability surface
 (`ModuleCapabilitiesService`: job enqueue/claim, notify, approvals, audit,
-events) calls it as its own **service principal**, whose id is derived from the
+events, subject visibility) calls it as its own **service principal**, whose id
+is derived from the
 same registration prefix (`business.ModulePrincipalID`) — nothing is
 hand-authored as an opaque id.
 
@@ -81,6 +82,55 @@ once the capability exists. The response carries
 See [../../WORK_CONTEXTS.md](../../WORK_CONTEXTS.md) and
 [../../MODULE_INSTALLATION.md](../../MODULE_INSTALLATION.md) for the other
 exchanges that produce one.
+
+## Subject visibility is a projection, not a module's own vocabulary
+
+A module that enforces row visibility by owner — one row belongs to one subject,
+and a viewer reads it only when some relationship says they may — has no subject
+vocabulary and no hierarchy of its own. *Why* one subject may see another's rows
+is a question about a hierarchy, and the hierarchy is the host's. A module that
+grew one would be holding a permission vocabulary; two modules would hold two,
+and a tenant would then have two answers with no way to tell which is
+authoritative.
+
+`ModuleCapabilitiesService/ListSubjectVisibility` is the host's answer:
+`(tenant, viewer_subject_id)` in, the whole set of other subjects whose rows that
+viewer may read out.
+
+- **The projection is the team tree.** `teams` is the one strict tree the host
+  keeps (`parent_team_id`, materialized `path`, unique per org, never
+  re-parented). A viewer may see the rows of every subject in a team at or below
+  a team the viewer belongs to. Visibility runs **down** the tree only, and a
+  viewer in no team is granted nothing — fail-closed.
+- **The whole set comes back from one transaction, and that is the contract.**
+  It is deliberately not paginated. The consuming operation is a bulk replace of
+  a viewer's whole set, so a set assembled from pages read in separate
+  transactions can carry an entry revoked between two of them: the module would
+  reinstate an authority an administrator had already withdrawn, and with no
+  invalidation signal (below) the stale grant would stand until the consumer's
+  next refresh. A tenant whose hierarchy puts more than
+  `business.ModuleSubjectVisibilityMaxSet` subjects under one viewer is refused
+  with `FailedPrecondition` — a legible failure an operator can act on — rather
+  than answered with a set that was never true at any instant.
+- **The viewer is never in their own set.** Seeing one's own rows is ownership,
+  not a grant from the hierarchy, and the consuming module's own read predicate
+  is what admits it. Including the viewer would also make the set's size depend
+  on whether they happen to be in a team at all.
+- **`expires_at` is the grant's own end, and today it is always unset.** Team
+  membership carries no end of its own, so every entry is open-ended. The field
+  is the contract, not a placeholder: a consumer evaluates the instant at the
+  moment of the read — an as-of read travels in data time and never restores the
+  authority that held then — so the host writes an instant rather than expiring
+  entries on a timer.
+- **Authority is the caller's principal, its bound tenant, and the viewer's
+  membership of that tenant.** There is no `MODULE_PRINCIPALS` key for it: like
+  notify, approvals and audit, it is a capability any declared module holds on
+  the tenant it is bound to. The membership check is what stops a module bound to
+  one tenant from using another tenant's subject as a probe.
+- **The host publishes no subscribable hierarchy-change signal.** `saas.team.*`
+  is in the event catalog but sits in the reserved platform audit namespace,
+  which `Subscribe` refuses to a module principal, so a consumer chooses its own
+  refresh — per read, or cached against a TTL it accepts.
 
 ## Mesh reachability is the composition's to grant
 

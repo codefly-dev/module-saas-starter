@@ -321,6 +321,29 @@ func (s *ModuleCapabilitiesServer) EmitAuditEvent(ctx context.Context, req *gen.
 	return &emptypb.Empty{}, nil
 }
 
+func (s *ModuleCapabilitiesServer) ListSubjectVisibility(ctx context.Context, req *gen.ModuleListSubjectVisibilityRequest) (*gen.ModuleListSubjectVisibilityResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	caller, err := moduleCaller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	grants, err := service.ModuleListSubjectVisibility(ctx, caller, req.GetTenant(), req.GetViewerSubjectId())
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*gen.SubjectVisibilityGrant, 0, len(grants))
+	for _, grant := range grants {
+		entry := &gen.SubjectVisibilityGrant{VisibleSubjectId: grant.VisibleSubjectID}
+		if !grant.ExpiresAt.IsZero() {
+			entry.ExpiresAt = timestamppb.New(grant.ExpiresAt)
+		}
+		out = append(out, entry)
+	}
+	return &gen.ModuleListSubjectVisibilityResponse{Grants: out}, nil
+}
+
 // FetchDatasourceBlob streams one datasource blob to the module. The blob is
 // buffered whole in the business layer (it is already capped there), so this
 // handler's only job is to slice it into bounded wire frames.

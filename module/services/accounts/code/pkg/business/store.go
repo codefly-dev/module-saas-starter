@@ -347,6 +347,10 @@ type Store interface {
 	// GetTeamPath returns (orgID, path) — the parent lookup CreateTeam uses
 	// to derive a child team's path. ("", "") with no error when not found.
 	GetTeamPath(ctx context.Context, teamID string) (string, string, error)
+	// ListVisibleSubjects projects the team tree onto one viewer: the other
+	// users in a team at or below a team the viewer belongs to, in one
+	// statement bounded by limit. Org-scoped, so it runs under WithOrgTx.
+	ListVisibleSubjects(ctx context.Context, orgID, viewerID string, limit int) ([]string, error)
 
 	// Identity Claims v1 (the validate-key read surface — see postgres_claims.go)
 	ListTeamPathsForUser(ctx context.Context, userID string, orgID string) ([]string, error)
