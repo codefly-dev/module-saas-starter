@@ -507,6 +507,11 @@ test("flags a note that drifts even when every hash is current", { skip: NO_GIT 
 // both rewrite such a scalar, and git merges the pair cleanly to one of the two
 // values — wrong, with no conflict marker, rejecting a tree whose every hash
 // merged correctly. Only fields a merge cannot silently corrupt belong here.
+//
+// What keeps it gone is comparing the field set `gen` writes. The branches in
+// flight when it was removed carry it, and their rebase is a modify/delete
+// conflict on that very line: resolved the wrong way, every hash is still
+// correct, so nothing else in the tree or in CI would notice.
 test("the manifest records no field derived from the file set", { skip: NO_GIT }, (t) => {
   const root = scratchModule("saas-manifest-shape-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -516,10 +521,24 @@ test("the manifest records no field derived from the file set", { skip: NO_GIT }
 
   assert.deepEqual(Object.keys(computeBaseManifest(root)), ["note", "files"]);
 
-  // A manifest that merged to a stale count is still a manifest of the tree: the
-  // hashes are what the gate reads, so the tree must verify clean regardless.
   const manifestPath = join(root, "tools/base-manifest.json");
-  writeJSON(manifestPath, { ...computeBaseManifest(root), fileCount: 999 });
+  const fresh = computeBaseManifest(root);
+
+  writeJSON(manifestPath, { ...fresh, fileCount: 999 });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["unexpected field: fileCount"]);
+
+  writeJSON(manifestPath, { note: fresh.note });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["missing field: files"]);
+
+  // Present but not an object: the key check passes and the hash comparison then
+  // throws instead of reporting, so the kind is part of the shape.
+  writeJSON(manifestPath, { note: fresh.note, files: null });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["files is not the object of hashes gen writes"]);
+
+  writeJSON(manifestPath, null);
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["tools/base-manifest.json is not a JSON object"]);
+
+  writeManifest(root);
   assert.deepEqual(baseManifestFreshnessErrors(root), []);
 });
 

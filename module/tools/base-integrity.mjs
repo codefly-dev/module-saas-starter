@@ -887,7 +887,7 @@ export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
 // re-hashes only the paths already in the manifest, so a base file changed without a `gen`
 // (v0.0.32: deployment_topology.go / network-policy.golden.yaml) sails through it — the stale
 // digest is exactly what `check` trusts. Comparing against a fresh recomputation catches changed,
-// unrecorded, and removed base files, plus a note that drifted from the tree.
+// unrecorded, and removed base files, plus a note or a field set that drifted from the tree.
 // Canonical-only: a consumer legitimately adds files, so this must never run against a consumer tree.
 export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   const manifestPath = join(moduleRoot, "tools", "base-manifest.json");
@@ -900,9 +900,31 @@ export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   } catch (error) {
     return [`tools/base-manifest.json is not valid JSON: ${error.message}`];
   }
+  if (typeof committed !== "object" || committed === null) {
+    return ["tools/base-manifest.json is not a JSON object"];
+  }
   const fresh = computeBaseManifest(moduleRoot);
-  const committedFiles = committed.files ?? {};
   const errors = [];
+  // Compare the SHAPE `gen` writes, not a list of field names this function happens to know:
+  // that equality is what makes a passing `verify` proof that `gen` is a no-op. A field `gen`
+  // no longer writes otherwise survives a mis-resolved conflict with every hash correct, and
+  // no other step runs `gen` to notice — the manifest then ships carrying it. Reported alone,
+  // because a wrong shape would otherwise arrive buried under one line per base file.
+  const freshKeys = Object.keys(fresh);
+  for (const key of Object.keys(committed)) {
+    if (!freshKeys.includes(key)) errors.push(`unexpected field: ${key}`);
+  }
+  for (const key of freshKeys) {
+    if (!(key in committed)) errors.push(`missing field: ${key}`);
+  }
+  if (errors.length) return errors;
+
+  // Presence is not kind: `files: null` satisfies the key check and then throws in the comparison
+  // below rather than reporting anything. The manifest is read off disk, so this is the boundary.
+  const committedFiles = committed.files;
+  if (typeof committedFiles !== "object" || committedFiles === null) {
+    return ["files is not the object of hashes gen writes"];
+  }
   for (const [rel, want] of Object.entries(fresh.files)) {
     if (!(rel in committedFiles)) errors.push(`unrecorded base file: ${rel}`);
     else if (committedFiles[rel] !== want) errors.push(`stale hash: ${rel}`);
