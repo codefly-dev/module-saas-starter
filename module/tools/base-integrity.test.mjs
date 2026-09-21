@@ -485,24 +485,61 @@ test("flags changed, unrecorded, and removed base files against a fresh regenera
   ]);
 });
 
-test("flags a fileCount or note that drifts even when every hash is current", { skip: NO_GIT }, (t) => {
+test("flags a note that drifts even when every hash is current", { skip: NO_GIT }, (t) => {
   const root = scratchModule("saas-manifest-metadata-");
   t.after(() => rmSync(root, { recursive: true, force: true }));
   writeFileSync(join(root, "a.txt"), "alpha\n");
   track(root);
   const manifestPath = join(root, "tools/base-manifest.json");
 
-  // Correct hashes, but the recorded fileCount and note no longer match what
-  // `gen` would write — the artifact is stale even though `check` would pass.
+  // Correct hashes, but the recorded note no longer matches what `gen` would
+  // write — the artifact is stale even though `check` would pass.
   const drifted = computeBaseManifest(root);
-  drifted.fileCount = 999;
   drifted.note = "hand-edited note";
   writeJSON(manifestPath, drifted);
 
   const errors = baseManifestFreshnessErrors(root);
-  assert.ok(errors.some((error) => error === "fileCount 999 does not match 1 base files"));
   assert.ok(errors.some((error) => error === "note does not match the canonical manifest note"));
   assert.ok(!errors.some((error) => error.startsWith("stale hash")));
+});
+
+// The manifest carries no derived file count. Two branches that each add a file
+// both rewrite such a scalar, and git merges the pair cleanly to one of the two
+// values — wrong, with no conflict marker, rejecting a tree whose every hash
+// merged correctly. Only fields a merge cannot silently corrupt belong here.
+//
+// What keeps it gone is comparing the field set `gen` writes. The branches in
+// flight when it was removed carry it, and their rebase is a modify/delete
+// conflict on that very line: resolved the wrong way, every hash is still
+// correct, so nothing else in the tree or in CI would notice.
+test("the manifest records no field derived from the file set", { skip: NO_GIT }, (t) => {
+  const root = scratchModule("saas-manifest-shape-");
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(join(root, "a.txt"), "alpha\n");
+  writeFileSync(join(root, "b.txt"), "bravo\n");
+  track(root);
+
+  assert.deepEqual(Object.keys(computeBaseManifest(root)), ["note", "files"]);
+
+  const manifestPath = join(root, "tools/base-manifest.json");
+  const fresh = computeBaseManifest(root);
+
+  writeJSON(manifestPath, { ...fresh, fileCount: 999 });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["unexpected field: fileCount"]);
+
+  writeJSON(manifestPath, { note: fresh.note });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["missing field: files"]);
+
+  // Present but not an object: the key check passes and the hash comparison then
+  // throws instead of reporting, so the kind is part of the shape.
+  writeJSON(manifestPath, { note: fresh.note, files: null });
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["files is not the object of hashes gen writes"]);
+
+  writeJSON(manifestPath, null);
+  assert.deepEqual(baseManifestFreshnessErrors(root), ["tools/base-manifest.json is not a JSON object"]);
+
+  writeManifest(root);
+  assert.deepEqual(baseManifestFreshnessErrors(root), []);
 });
 
 test("does not require the frontend capability manifest when frontend is omitted", (t) => {
@@ -578,7 +615,7 @@ test("a decomposed filename is recorded under the path git tracks", { skip: NO_G
   assert.equal(recorded.length, 1);
 
   const manifest = computeBaseManifest(root);
-  assert.equal(manifest.fileCount, 2);
+  assert.equal(Object.keys(manifest.files).length, 2);
   assert.ok(
     recorded[0] in manifest.files,
     `manifest keys ${JSON.stringify(Object.keys(manifest.files))} omit ${JSON.stringify(recorded[0])}`,
