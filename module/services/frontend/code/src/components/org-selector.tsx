@@ -16,7 +16,7 @@ import { useOrganizations } from "@/lib/hooks";
 // OrgSelector changes the authenticated tenant for every admin surface. The
 // selected value comes from the signed access token, never page-local state.
 //
-// Built on the shadcn Select primitive (Radix under the hood) instead
+// Built on the kit's Select primitive (Base UI under the hood) instead
 // of a native <select>. Native selects open the OS-level dropdown,
 // which:
 //   - styles inconsistently with the rest of the design system,
