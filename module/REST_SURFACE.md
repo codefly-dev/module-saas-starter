@@ -63,9 +63,10 @@ descriptor route, so the file cannot become a shadow descriptor inventory.
 
 Codefly emits the unfiltered grpc-gateway OpenAPI document to the tracked,
 generator-owned `generated/openapi-raw/api.swagger.json`. The proto companion
-image is its sole generator: its well-known types come from the buf it carries,
-which no template here can pin, so a local run emits a different
-`google.protobuf.NullValue` description and drifts the file. The REST compiler
+image is its sole generator. The `google.protobuf` well-known types are embedded
+in the `buf` binary rather than pinned by `buf.lock`, and no template here
+reaches a contributor's `buf`, so a workstation on a different one emits a
+different `google.protobuf.NullValue` description and drifts the file. The REST compiler
 verifies every operation against `rest-surface.json`, rejects missing or
 unexpected routes, normalizes path-parameter spelling, adds
 `x-codefly-rest-schema` and `x-codefly-owner`, prunes unreachable definitions,

@@ -15,10 +15,11 @@ plugins:
   # keeping Codefly's local path independent of anonymous BSR plugin quotas.
   #
   # protoc-gen-openapiv2 is deliberately absent: generated/openapi-raw is
-  # regenerated and byte-compared by the proto companion image, whose
-  # well-known types come from its own buf rather than from any pin here, so a
-  # local run emits a different google.protobuf.NullValue description and
-  # drifts a file the change never touched. The companion owns that document.
+  # regenerated and byte-compared by the proto companion image, which owns it.
+  # The google.protobuf well-known types are embedded in the buf binary, not
+  # pinned by buf.lock, so a workstation whose buf is not the companion's emits
+  # a different NullValue description and drifts a file the change never
+  # touched. Nothing here can pin a contributor's buf.
   - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11]
     out: code/pkg/gen
     opt: paths=source_relative
