@@ -109,6 +109,8 @@ export type SolutionDetail = Omit<SolutionManifest, "dashboard" | "surfaces">;
 export interface SolutionClientSurfaces {
 	id: string;
 	title: string;
+	/** Origin a surface's `module` path is resolved against. */
+	origin: string;
 	surfaces: SolutionSurface[];
 }
 
@@ -117,6 +119,16 @@ export interface SolutionClientSurfaces {
  * take. Narrow on purpose: these are addressed in URLs and object keys.
  */
 const SAFE_SLUG = /^[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?$/;
+
+/**
+ * Whether a value is shaped like a client kind. Registration and the read side
+ * share this one rule: a kind the registry would refuse to store must not read
+ * back as "nothing is offered for you", which is indistinguishable from a
+ * correctly-spelled kind that nobody serves.
+ */
+export function isClientKind(value: string): boolean {
+	return SAFE_SLUG.test(value);
+}
 
 /**
  * A nav path is rendered directly as an <a href> in the sidebar and home
@@ -596,7 +608,24 @@ export function surfacesProjection(
 	return {
 		id: manifest.id,
 		title: manifest.nav.title,
-		surfaces: surfaces.map((surface) => ({ ...surface })),
+		// A declared module is a path on the solution's origin, so without the
+		// origin no caller can fetch one. The origin is not withheld topology
+		// here the way the manifest path is: the client fetches the module from
+		// it directly, and every signed-in document already carries it in the
+		// CSP that admits the same origin's code.
+		origin: new URL(manifest.frontend.manifestUrl).origin,
+		// A shallow copy would share `applies.tagged` and `events` with the
+		// cached snapshot, which outlives this response and is read by every
+		// later caller — including other client kinds, which read the same
+		// manifest objects.
+		surfaces: surfaces.map((surface) => ({
+			...surface,
+			applies:
+				typeof surface.applies === "object"
+					? { tagged: [...surface.applies.tagged] }
+					: surface.applies,
+			events: surface.events === undefined ? undefined : [...surface.events],
+		})),
 	};
 }
 
@@ -744,7 +773,10 @@ function parseSurfaces(value: unknown): SolutionSurface[] | null | undefined {
 			module: candidate.module,
 			contract: candidate.contract as number,
 			applies,
-			events: candidate.events as string[] | undefined,
+			events:
+				candidate.events === undefined
+					? undefined
+					: [...(candidate.events as string[])],
 		});
 	}
 	return surfaces;

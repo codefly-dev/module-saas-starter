@@ -30,11 +30,17 @@ activating a remote.
 - `GET /api/solutions/surfaces?client=<kind>`
   (`src/app/api/solutions/surfaces/route.ts`) is the same class of public
   projection for a client that is **not** this host's web app: per solution, its
-  `id`, its title, and the declared `surfaces` whose `client` matches. The kind
-  is required — an absent one is `400`, never the unfiltered set — and an
-  unreadable registry is again `503`. The host does not enumerate client kinds:
-  which ones exist is deployment configuration (the registered-client registry),
-  so a new kind needs no host release.
+  `id`, its title, its `origin`, and the declared `surfaces` whose `client`
+  matches. The kind is required and must be slug-shaped — absent is `400`,
+  malformed is `400`, never the unfiltered set and never a misleading empty
+  list — and an unreadable registry is again `503`. The host does not enumerate
+  client kinds: which ones exist is deployment configuration (the
+  registered-client registry), so a new kind needs no host release.
+  The `origin` is the one piece of topology this projection does carry, and
+  deliberately: a surface's `module` is a path the client fetches against that
+  origin, so withholding it would not keep the origin from anyone who can use a
+  surface — it would only make the answer unusable. The manifest path and the
+  backend service are still withheld.
 - Everything else a manifest carries (`frontend`, `backend`) is deployment
   topology, served instead by `GET /api/internal/solutions`
   (`src/app/api/internal/solutions/route.ts`), gated on the cluster-internal

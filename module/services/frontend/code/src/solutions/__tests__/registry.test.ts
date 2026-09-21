@@ -165,9 +165,12 @@ describe("parseManifest client surfaces", () => {
     // identity. A slot materialised as [] rather than left absent would move
     // every existing registrant's bytes, turning every heartbeat into a
     // content change and churning every replica's cache.
-    expect(JSON.stringify(parseManifest(baseManifest()))).not.toContain(
-      "surfaces",
-    );
+    const parsed = parseManifest(baseManifest());
+    // Assert the parse SUCCEEDED first: JSON.stringify(null) is "null", which
+    // contains no "surfaces" either, so a parser that rejected every manifest
+    // would satisfy the absence check while proving nothing.
+    expect(parsed).not.toBeNull();
+    expect(JSON.stringify(parsed)).not.toContain("surfaces");
   });
 
   it("carries a well-formed declaration through whole", () => {
@@ -194,6 +197,21 @@ describe("parseManifest client surfaces", () => {
         events: ["documents.entry.*"],
       },
     ]);
+  });
+
+  it("copies the declared arrays out of the caller's payload", () => {
+    // The parsed manifest is what lands in the process-wide snapshot. Holding
+    // the caller's own arrays would let whoever still has the request body
+    // change what every later reader sees.
+    const tagged = ["policy"];
+    const events = ["a.*"];
+    const parsed = parseManifest(
+      baseManifest({ surfaces: [surface({ applies: { tagged }, events })] }),
+    );
+    events.push("injected");
+    tagged.push("injected");
+    expect(parsed?.surfaces?.[0]?.events).toEqual(["a.*"]);
+    expect(parsed?.surfaces?.[0]?.applies).toEqual({ tagged: ["policy"] });
   });
 
   it("does not constrain which client kinds exist", () => {
@@ -253,8 +271,11 @@ describe("parseManifest client surfaces", () => {
   });
 
   it("rejects two surfaces of one kind sharing an id", () => {
-    // A client keys on (solution id, surface id); a duplicate makes that key
-    // ambiguous, and which one wins would be an accident of ordering.
+    // A client sees one kind, so it keys on (solution id, surface id); the
+    // stored record is deduplicated per (client, id) to match. A duplicate
+    // makes that key ambiguous, and which one wins would be an accident of
+    // ordering — while the same id under a different kind is a distinct
+    // surface no single client ever sees twice.
     expect(
       parseManifest(baseManifest({ surfaces: [surface(), surface()] })),
     ).toBeNull();
@@ -296,6 +317,8 @@ describe("surfacesProjection", () => {
     expect(surfacesProjection(manifest, "word")).toEqual({
       id: "audit",
       title: "Audit",
+      // Without this the declared module path resolves against nothing.
+      origin: "https://audit.internal",
       surfaces: [
         {
           id: "footnote",
@@ -311,19 +334,43 @@ describe("surfacesProjection", () => {
     });
   });
 
+  it("carries the origin without the manifest path it came from", () => {
+    const projected = surfacesProjection(manifest, "word");
+    expect(projected?.origin).toBe("https://audit.internal");
+    expect(JSON.stringify(projected)).not.toContain("mf-manifest.json");
+  });
+
   it("reports nothing for a kind the solution does not serve", () => {
     expect(surfacesProjection(manifest, "excel")).toBeNull();
     expect(surfacesProjection(withSurfaces([]), "word")).toBeNull();
   });
 
   it("does not hand out a reference into the cached snapshot", () => {
-    // The snapshot outlives the response; a caller mutating what it was given
-    // would corrupt what every later reader sees.
-    const projected = surfacesProjection(manifest, "word");
-    const surface = projected?.surfaces[0];
+    // The snapshot outlives the response and is read by every later caller,
+    // including other client kinds reading the same manifest objects. A
+    // shallow copy protects the top-level strings and silently shares the two
+    // fields that are not strings, so this mutates those.
+    const cached = withSurfaces([
+      {
+        id: "footnote",
+        client: "word",
+        title: "Footnote",
+        module: "/surfaces/word/footnote.js",
+        contract: 1,
+        applies: { tagged: ["policy"] },
+        events: ["documents.entry.*"],
+      },
+    ]);
+    const surface = surfacesProjection(cached, "word")?.surfaces[0];
     if (surface === undefined) throw new Error("expected one surface");
     surface.title = "Rewritten";
-    expect(manifest.surfaces?.[0]?.title).toBe("Footnote");
+    surface.events?.push("injected");
+    if (typeof surface.applies === "object") {
+      surface.applies.tagged.push("injected");
+    }
+    expect(cached.surfaces?.[0]?.title).toBe("Footnote");
+    expect(cached.surfaces?.[0]?.events).toEqual(["documents.entry.*"]);
+    expect(cached.surfaces?.[0]?.applies).toEqual({ tagged: ["policy"] });
   });
 });
 // The registry is no longer a map in this process: it is a cached projection of

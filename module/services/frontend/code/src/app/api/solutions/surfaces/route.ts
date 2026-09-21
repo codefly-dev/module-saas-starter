@@ -1,4 +1,8 @@
-import { loadSolutions, surfacesProjection } from "@/solutions/registry";
+import {
+	isClientKind,
+	loadSolutions,
+	surfacesProjection,
+} from "@/solutions/registry";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,11 +17,11 @@ export const runtime = "nodejs";
  * changes what it offers. Asking for its own kind gets it exactly what applies
  * and nothing else.
  *
- * Like the navigation projection beside it, this is deliberately ungated: it
- * carries only what a solution publishes about itself to the clients it wants
- * to be used from, and none of the deployment topology the internal detail
- * lookup holds. The `module` path is resolved against the solution's own
- * origin, which the caller already holds — this host does not hand one out.
+ * Like the navigation projection beside it, this is deliberately ungated, and
+ * like it this carries no manifest path and no backend service. It does carry
+ * each solution's origin, because a surface module is a path the client fetches
+ * against that origin: withholding it would not keep the origin from a caller
+ * that can use a surface at all, only make the answer unusable.
  */
 export async function GET(request: Request): Promise<Response> {
 	// The kind is required, never defaulted to "all": a projection that widens
@@ -26,6 +30,13 @@ export async function GET(request: Request): Promise<Response> {
 	const client = new URL(request.url).searchParams.get("client");
 	if (!client) {
 		return Response.json({ error: "missing_client" }, { status: 400 });
+	}
+	// A kind the registry would refuse to store cannot be served by anyone, so
+	// it is a malformed request rather than an empty result. Answering [] would
+	// read as "nothing is offered for you" and send the caller looking at its
+	// registration instead of its spelling.
+	if (!isClientKind(client)) {
+		return Response.json({ error: "invalid_client" }, { status: 400 });
 	}
 	const registered = await loadSolutions();
 	// An empty registry and an unreadable one must not render the same: the

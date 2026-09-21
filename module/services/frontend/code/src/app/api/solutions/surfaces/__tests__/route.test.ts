@@ -109,7 +109,14 @@ describe("solutions surfaces route", () => {
 		const res = await GET(request("?client=word"));
 		expect(res.status).toBe(200);
 		expect(await res.json()).toEqual({
-			solutions: [{ id: "audit", title: "AUDIT", surfaces: [WORD_SURFACE] }],
+			solutions: [
+				{
+					id: "audit",
+					title: "AUDIT",
+					origin: "https://audit.internal",
+					surfaces: [WORD_SURFACE],
+				},
+			],
 		});
 	});
 
@@ -156,6 +163,26 @@ describe("solutions surfaces route", () => {
 		}
 	});
 
+	it("refuses a client kind the registry could never have stored", async () => {
+		// Answering [] would read as "nothing is offered for you" and send the
+		// caller auditing its registration instead of its spelling.
+		vi.stubGlobal(
+			"fetch",
+			gatewayServing([
+				{
+					id: "audit",
+					status: "active",
+					manifest: manifest("audit", [WORD_SURFACE]),
+				},
+			]),
+		);
+		for (const kind of ["Word", "%20", "wo rd", "-word", "word."]) {
+			const res = await GET(request(`?client=${kind}`));
+			expect(res.status, `kind ${JSON.stringify(kind)}`).toBe(400);
+			expect(await res.json()).toEqual({ error: "invalid_client" });
+		}
+	});
+
 	it("carries no deployment topology", async () => {
 		// The nav projection beside this one is ungated for the same reason and
 		// under the same rule: a public projection ships what a caller renders,
@@ -171,6 +198,8 @@ describe("solutions surfaces route", () => {
 			]),
 		);
 		const body = await (await GET(request("?client=word"))).text();
+		// The origin is carried; the manifest path and backend service are not.
+		expect(body).toContain("https://audit.internal");
 		expect(body).not.toContain("mf-manifest.json");
 		expect(body).not.toContain("serviceAlias");
 		const parsed = JSON.parse(body) as {
@@ -178,6 +207,7 @@ describe("solutions surfaces route", () => {
 		};
 		expect(Object.keys(parsed.solutions[0] ?? {}).sort()).toEqual([
 			"id",
+			"origin",
 			"surfaces",
 			"title",
 		]);
