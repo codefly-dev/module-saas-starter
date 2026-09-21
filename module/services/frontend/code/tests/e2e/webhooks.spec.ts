@@ -57,7 +57,7 @@ test.describe("Webhooks admin page", () => {
 	test("picking an org reveals the table + Create button", async ({ page }) => {
 		await page.goto("/admin/webhooks");
 
-		// OrgSelector is a Radix Select (shadcn primitive) — opens an
+		// OrgSelector is the kit's Select (Base UI primitive) — opens an
 		// in-page popover, options arrive once useOrganizations resolves.
 		const trigger = page.getByRole("combobox").first();
 		await trigger.click();
