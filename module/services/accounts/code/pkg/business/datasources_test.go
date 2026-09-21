@@ -517,6 +517,9 @@ type fakeGitHub struct {
 	compareFn     func(base, head string) (*github.Comparison, error)
 	blobs         map[string][]byte
 	blobErrs      map[string]error
+
+	mu      sync.Mutex
+	fetched []string
 }
 
 func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
@@ -525,10 +528,42 @@ func (f *fakeGitHub) DefaultBranch(context.Context, string) (string, error) {
 func (f *fakeGitHub) ResolveCommit(context.Context, string, string) (string, error) {
 	return f.commit, nil
 }
-func (f *fakeGitHub) ListFiles(context.Context, string, string, []string) ([]github.File, error) {
-	return f.files, nil
+
+// ListFiles applies the same prefix rule the real client applies server-side
+// (github.pathMatches): a tree entry is in scope when it equals a prefix or sits
+// under one at a segment boundary. A fake that returned every file regardless
+// would make any test that sets Paths and reaches a snapshot assert a behavior
+// the real client does not have.
+func (f *fakeGitHub) ListFiles(_ context.Context, _, _ string, prefixes []string) ([]github.File, error) {
+	if len(prefixes) == 0 {
+		return f.files, nil
+	}
+	var out []github.File
+	for _, file := range f.files {
+		for _, prefix := range prefixes {
+			prefix = strings.Trim(prefix, "/")
+			if prefix == "" || file.Path == prefix || strings.HasPrefix(file.Path, prefix+"/") {
+				out = append(out, file)
+				break
+			}
+		}
+	}
+	return out, nil
 }
+
+// fetchedPaths reports every path a compiler asked for content for, so a test
+// can assert that a filtered-out file was never fetched — the proto documents
+// the suffix filter as applied *before* content is fetched.
+func (f *fakeGitHub) fetchedPaths() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.fetched)
+}
+
 func (f *fakeGitHub) GetFileContent(_ context.Context, _, _, path string) ([]byte, error) {
+	f.mu.Lock()
+	f.fetched = append(f.fetched, path)
+	f.mu.Unlock()
 	if err, ok := f.errs[path]; ok {
 		return nil, err
 	}
@@ -1571,5 +1606,28 @@ func TestAddSource_BoundaryNodeIDMustExist(t *testing.T) {
 	})
 	if src.BoundaryNodeID != nodeID {
 		t.Fatalf("boundary node id = %q, want %q", src.BoundaryNodeID, nodeID)
+	}
+}
+
+// The provider-agnostic create path normalizes the file-suffix allowlist the
+// same way the GitHub-specific one does; a source connected through it must not
+// reach the compiler carrying raw operator input.
+func TestAddSourceNormalizesFileExtensions(t *testing.T) {
+	svc, _ := newDatasourceService(newDatasourceFakeStore(), &recordingProducer{}, nil)
+	source, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, Repo: "acme/docs",
+		CollectionLabel: "guides", Credential: "t", FileExtensions: []string{" .MD ", ".md", ".mdx"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(source.FileExtensions, []string{".md", ".mdx"}) {
+		t.Fatalf("file extensions = %v", source.FileExtensions)
+	}
+	if _, err := svc.AddSource(context.Background(), "actor-1", business.AddSourceInput{
+		OrgID: testOrg, Provider: business.DatasourceProviderGitHub, Repo: "acme/docs",
+		CollectionLabel: "guides", Credential: "t", FileExtensions: []string{"**/*.md"},
+	}); err == nil {
+		t.Fatal("accepted a glob as a file extension")
 	}
 }
