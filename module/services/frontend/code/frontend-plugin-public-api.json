@@ -4,7 +4,7 @@
 	"packages": {
 		"@codefly/saas-plugin-contract": {
 			"status": "active",
-			"packageVersion": "2.2.0",
+			"packageVersion": "2.3.0",
 			"entrypoints": [".", "./capabilities"],
 			"entrypointExports": {
 				".": [
