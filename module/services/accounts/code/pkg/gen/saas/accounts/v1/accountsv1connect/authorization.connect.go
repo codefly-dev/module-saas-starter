@@ -134,6 +134,15 @@ type PermissionServiceClient interface {
 	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
 	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
 	// have no administrator to supply them.
+	//
+	// The answer includes what a role assigned globally (with no organization)
+	// grants the subject, because that grant is effective in this organization
+	// and an administrator verifying access has to see it — ListRoleAssignments,
+	// which filters to the organization's own rows, does not show it.
+	//
+	// One question per call, resolved live against the tenant: it is a control an
+	// administrator points at a case, not a primitive for filling a matrix of
+	// every subject against every permission.
 	ExplainPermission(context.Context, *connect.Request[v1.ExplainPermissionRequest]) (*connect.Response[v1.ExplainPermissionResponse], error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward
@@ -434,6 +443,15 @@ type PermissionServiceHandler interface {
 	// CheckPermission evaluates — a record-addressed question is CheckAccess's,
 	// and Decide's caller-manifest inputs (delegation proof, declared ceiling)
 	// have no administrator to supply them.
+	//
+	// The answer includes what a role assigned globally (with no organization)
+	// grants the subject, because that grant is effective in this organization
+	// and an administrator verifying access has to see it — ListRoleAssignments,
+	// which filters to the organization's own rows, does not show it.
+	//
+	// One question per call, resolved live against the tenant: it is a control an
+	// administrator points at a case, not a primitive for filling a matrix of
+	// every subject against every permission.
 	ExplainPermission(context.Context, *connect.Request[v1.ExplainPermissionRequest]) (*connect.Response[v1.ExplainPermissionResponse], error)
 	// Decide is the principal-aware permission check (M2). New
 	// callers should use Decide; CheckPermission is kept for backward

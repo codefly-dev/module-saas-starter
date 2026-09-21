@@ -1863,18 +1863,7 @@ func (s *PermServer) ExplainPermission(ctx context.Context, req *gen.ExplainPerm
 	if err := requireSubjectInOrg(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
 		return nil, err
 	}
-	decision, err := service.CheckPermission(ctx, &gen.CheckPermissionRequest{
-		SubjectId:   req.SubjectId,
-		SubjectKind: req.SubjectKind,
-		Resource:    req.Resource,
-		Action:      req.Action,
-		OrgId:       req.OrgId,
-		Scope:       req.Scope,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &gen.ExplainPermissionResponse{Allowed: decision.Allowed, Reason: decision.Reason}, nil
+	return service.ExplainPermission(ctx, req)
 }
 
 func (s *PermServer) ListCollectionAccess(ctx context.Context, req *gen.ListCollectionAccessRequest) (*gen.ListCollectionAccessResponse, error) {

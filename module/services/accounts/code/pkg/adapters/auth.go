@@ -255,6 +255,13 @@ const subjectOutsideOrg = "subject does not belong to this organization"
 // principal is not a member but carries its organization on its own row
 // (principals_org_scope); a team belongs through the organization that owns it.
 //
+// It screens tenancy and nothing else. A revoked principal that still holds a
+// membership row passes here, because the decision point it guards also ignores
+// revocation — role_assignments outlive it — and an explanation that refused to
+// answer would disagree with the access the subject actually has. The principal
+// branch denies a revoked non-member only because there is no other way to
+// learn which organization that row belonged to.
+//
 // The membership read runs under the control plane for the same reason
 // Service.requireTenantMember's does: organization_members is RLS-scoped and
 // the pair being checked is not the caller's own, which is exactly what

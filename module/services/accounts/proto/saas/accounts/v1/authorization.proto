@@ -118,6 +118,11 @@ message CheckPermissionResponse {
 message ExplainPermissionRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
   string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  // subject_kind must name a principal or a team. Unlike
+  // ListRoleAssignments, where the unspecified value means "both kinds", a
+  // decision about "whichever of the two happens to carry this id" is not a
+  // question the decision point can answer, so the unspecified value is
+  // rejected rather than guessed.
   SubjectKind subject_kind = 3 [(buf.validate.field).enum = {
     defined_only: true
     not_in: [0]
@@ -125,15 +130,30 @@ message ExplainPermissionRequest {
   string resource = 4 [(buf.validate.field).string.min_len = 1];
   string action = 5 [(buf.validate.field).string.min_len = 1];
   // scope matches an assignment's scope exactly: empty asks the organization-
-  // wide question and only an organization-wide assignment answers it.
+  // wide question and only an organization-wide assignment answers it. Read
+  // granting_scopes before presenting a denial: a subject entitled only at a
+  // scope answers this question with a plain "no".
   string scope = 6;
 }
 
 message ExplainPermissionResponse {
   bool allowed = 1;
   // reason is the decision point's own wording, e.g. "granted via role: admin"
-  // or "no matching permission found".
+  // or "no matching permission found". It reports why THIS question was
+  // answered as it was and never mentions another scope, which is what
+  // granting_scopes is for.
   string reason = 2;
+  // granting_scopes lists every scoped assignment that grants this
+  // (resource, action) to this subject in this organization, whatever scope was
+  // asked about and whatever the verdict was. An organization-wide assignment
+  // is never listed: it has no scope, and it already answers every question
+  // through allowed.
+  //
+  // A denial beside a non-empty list is the shape this field exists for — the
+  // subject cannot act at the scope that was asked about, and can at these. A
+  // surface that presents allowed without it will tell an administrator a
+  // scoped entitlement does not exist.
+  repeated string granting_scopes = 3;
 }
 
 // --- Decide (the new permission-check primitive) ---
@@ -611,6 +631,15 @@ service PermissionService {
   // CheckPermission evaluates — a record-addressed question is CheckAccess's,
   // and Decide's caller-manifest inputs (delegation proof, declared ceiling)
   // have no administrator to supply them.
+  //
+  // The answer includes what a role assigned globally (with no organization)
+  // grants the subject, because that grant is effective in this organization
+  // and an administrator verifying access has to see it — ListRoleAssignments,
+  // which filters to the organization's own rows, does not show it.
+  //
+  // One question per call, resolved live against the tenant: it is a control an
+  // administrator points at a case, not a primitive for filling a matrix of
+  // every subject against every permission.
   rpc ExplainPermission(ExplainPermissionRequest) returns (ExplainPermissionResponse) {
     option (saas.policy.v1.method_policy) = {
       exposure: EXPOSURE_AUTHENTICATED

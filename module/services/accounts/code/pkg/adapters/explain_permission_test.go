@@ -39,6 +39,10 @@ type explainStore struct {
 	checkedKind    gen.SubjectKind
 	checkedOrg     string
 	checkedScope   string
+
+	allowed        bool
+	grantingScopes []string
+	surveyedScope  bool
 }
 
 type explainScope struct {
@@ -96,7 +100,20 @@ func (s *explainStore) CheckPermission(
 ) (bool, string, error) {
 	s.checked = true
 	s.checkedSubject, s.checkedKind, s.checkedOrg, s.checkedScope = subjectID, kind, orgID, scope
+	if !s.allowed {
+		return false, "no matching permission found", nil
+	}
 	return true, "granted via role: admin", nil
+}
+
+func (s *explainStore) ScopesGrantingPermission(
+	_ context.Context,
+	_ string,
+	_ gen.SubjectKind,
+	_, _, _ string,
+) ([]string, error) {
+	s.surveyedScope = true
+	return s.grantingScopes, nil
 }
 
 func installExplainService(t *testing.T, store *explainStore) *explainStore {
@@ -114,6 +131,7 @@ func explainAdminStore() *explainStore {
 		actorRole: gen.OrgRole_ORG_ROLE_ADMIN,
 		members:   map[string]bool{explainActorID: true, explainMemberID: true},
 		teamOrgs:  map[string]string{explainTeamID: explainOrgID},
+		allowed:   true,
 	}
 }
 
@@ -143,6 +161,7 @@ func TestExplainPermissionReturnsTheDecisionPointsAnswer(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, resp.GetAllowed())
 	require.Equal(t, "granted via role: admin", resp.GetReason())
+	require.True(t, store.surveyedScope, "the scope survey runs beside every decision")
 	require.Equal(t, explainMemberID, store.checkedSubject)
 	require.Equal(t, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL, store.checkedKind)
 	require.Equal(t, explainOrgID, store.checkedOrg)
@@ -242,15 +261,72 @@ func TestExplainPermissionPassesScopeThrough(t *testing.T) {
 	require.Equal(t, "project-7", store.checkedScope)
 }
 
-// An unspecified subject kind never reaches the store: the enum's zero value
-// names neither a principal nor a team.
-func TestExplainPermissionRejectsUnspecifiedSubjectKind(t *testing.T) {
+// The request contract rejects the unspecified subject kind before the handler
+// runs at all — ListRoleAssignments reads it as "both kinds", and a decision
+// about whichever of the two carries this id is not a question the decision
+// point can answer.
+func TestExplainPermissionRequestRejectsUnspecifiedSubjectKind(t *testing.T) {
 	store := installExplainService(t, explainAdminStore())
 
-	_, err := (&PermServer{}).ExplainPermission(
+	err := Validate(explainRequest(explainMemberID, gen.SubjectKind_SUBJECT_KIND_UNSPECIFIED))
+	require.Equal(t, codes.InvalidArgument, status.Code(err),
+		"protovalidate must refuse the zero enum, not the handler")
+
+	_, err = (&PermServer{}).ExplainPermission(
 		explainCtx(),
 		explainRequest(explainMemberID, gen.SubjectKind_SUBJECT_KIND_UNSPECIFIED),
 	)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	require.False(t, store.checked)
+}
+
+// The subject gate's own refusal of a kind it cannot resolve, exercised
+// directly: validation is what rejects this through the RPC, so nothing else
+// holds this branch, and a handler added later that skipped Validate would
+// otherwise reach the decision point with an unresolvable subject.
+func TestRequireSubjectInOrgRejectsAKindItCannotResolve(t *testing.T) {
+	store := installExplainService(t, explainAdminStore())
+
+	err := requireSubjectInOrg(
+		explainCtx(), explainOrgID, explainMemberID,
+		gen.SubjectKind_SUBJECT_KIND_UNSPECIFIED,
+	)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.False(t, store.checked, "no decision may be read for an unresolvable subject")
+}
+
+// The denial a scoped entitlement produces for an organization-wide question is
+// word-for-word the denial for no entitlement at all, so the scopes travel back
+// beside it. Without them an administrator reads this response as "this subject
+// cannot do this" and revokes, or grants, against a fact that is not true.
+func TestExplainPermissionReportsScopesBesideAnOrganizationWideDenial(t *testing.T) {
+	store := explainAdminStore()
+	store.allowed = false
+	store.grantingScopes = []string{"module-a", "module-b"}
+	installExplainService(t, store)
+
+	resp, err := (&PermServer{}).ExplainPermission(
+		explainCtx(),
+		explainRequest(explainMemberID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL),
+	)
+	require.NoError(t, err)
+	require.False(t, resp.GetAllowed())
+	require.Equal(t, "no matching permission found", resp.GetReason())
+	require.Equal(t, []string{"module-a", "module-b"}, resp.GetGrantingScopes())
+}
+
+// Nothing to report stays nothing: an empty list is the answer a surface can
+// present as "held at no scope either".
+func TestExplainPermissionReportsNoScopesWhenThereAreNone(t *testing.T) {
+	store := explainAdminStore()
+	store.allowed = false
+	installExplainService(t, store)
+
+	resp, err := (&PermServer{}).ExplainPermission(
+		explainCtx(),
+		explainRequest(explainMemberID, gen.SubjectKind_SUBJECT_KIND_PRINCIPAL),
+	)
+	require.NoError(t, err)
+	require.False(t, resp.GetAllowed())
+	require.Empty(t, resp.GetGrantingScopes())
 }
