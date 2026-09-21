@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **217 RPCs** across **33 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **219 RPCs** across **34 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -13,6 +13,8 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.APIKeyService/RevokeAPIKey` | unary | `DELETE /v1/api-keys/{id}` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | perm=api_keys:write; scope=api_keys:write | organization_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.api_key.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke an API key in an administered organization. |
 | `/saas.accounts.v1.APIKeyService/ValidateAPIKey` | unary | `—` | `internal` | exposure=INTERNAL; tenant=NONE | — | — | — | FORBIDDEN / INTERNAL | SECRET → CONFIDENTIAL | Internal: plaintext key → key + org id. |
 | `/saas.accounts.v1.AccessibleScopeService/ListMyAccessibleScopes` | unary | `GET /v1/accessible-scopes` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | List the scope nodes the authenticated caller may act on (bearer-derived subject). |
+| `/saas.accounts.v1.ApprovalReviewService/DecideApprovalReview` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Record an assigned approver decision bound to the exact subject reviewed. |
+| `/saas.accounts.v1.ApprovalReviewService/GetApprovalReview` | unary | `—` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | — | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Read the immutable subject, assigned approvers and decisions for a request visible to the caller. |
 | `/saas.accounts.v1.AuditService/AggregateAuditLog` | unary | `GET /v1/audit-log:aggregate` | `org_member` | exposure=AUTHENTICATED; tenant=ORG_MEMBER | perm=audit:read; scope=audit:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Aggregate audit events (counts, time buckets, group-by) for analytics. |
 | `/saas.accounts.v1.AuditService/ExportAuditLog` | unary | `POST /v1/audit-log:export` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN | perm=audit:read; scope=audit:read | org_id → ORGANIZATION/DIRECT_ID | — | FORBIDDEN / STANDARD_READ | CONFIDENTIAL → CONFIDENTIAL | Download audit log as CSV/JSON. |
 | `/saas.accounts.v1.AuditService/ListAuditEventTypes` | unary | `GET /v1/audit-event-types` | `auth` | exposure=AUTHENTICATED; tenant=NONE | perm=audit:read; scope=audit:read | — | — | FORBIDDEN / STANDARD_READ | INTERNAL → INTERNAL | List the registered audit event-type catalog for search facets. |
@@ -232,6 +234,6 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 - `internal`: 44
 - `mfa`: 3
 - `org_admin`: 46
-- `org_member`: 39
+- `org_member`: 41
 - `platform_admin`: 24
 - `public`: 18

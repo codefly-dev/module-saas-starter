@@ -38,6 +38,7 @@ endpoints:
       visibility: module
     - name: grpc
     - name: rest
+      visibility: module
 spec:
     connect-endpoint: true
     hot-reload: true

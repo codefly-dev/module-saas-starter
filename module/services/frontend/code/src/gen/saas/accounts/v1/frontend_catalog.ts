@@ -3,6 +3,7 @@
 import { createClient, type Client, type Transport } from "@connectrpc/connect";
 import { AccessibleScopeService } from "./accessible_scopes_pb";
 import { APIKeyService } from "./api_keys_pb";
+import { ApprovalReviewService } from "./approvals_pb";
 import { AuditService } from "./audit_pb";
 import { AuthService } from "./authentication_pb";
 import { PermissionService, PrincipalService } from "./authorization_pb";
@@ -169,6 +170,7 @@ export function isEntitlement(value: string): value is Entitlement {
 export const ACCOUNT_SERVICE_DESCRIPTORS = {
   APIKeyService,
   AccessibleScopeService,
+  ApprovalReviewService,
   AuditService,
   AuthService,
   BillingService,
@@ -207,6 +209,7 @@ export type AccountServiceName = keyof typeof ACCOUNT_SERVICE_DESCRIPTORS;
 export interface AccountsClients {
   readonly APIKeyService: Client<typeof APIKeyService>;
   readonly AccessibleScopeService: Client<typeof AccessibleScopeService>;
+  readonly ApprovalReviewService: Client<typeof ApprovalReviewService>;
   readonly AuditService: Client<typeof AuditService>;
   readonly AuthService: Client<typeof AuthService>;
   readonly BillingService: Client<typeof BillingService>;
@@ -244,6 +247,7 @@ export function createAccountsClients(transport: Transport): AccountsClients {
   return {
     APIKeyService: createClient(APIKeyService, transport),
     AccessibleScopeService: createClient(AccessibleScopeService, transport),
+    ApprovalReviewService: createClient(ApprovalReviewService, transport),
     AuditService: createClient(AuditService, transport),
     AuthService: createClient(AuthService, transport),
     BillingService: createClient(BillingService, transport),

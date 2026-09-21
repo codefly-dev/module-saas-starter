@@ -22,6 +22,9 @@ package business
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -195,10 +198,12 @@ func (in *CreateApprovalRequestInput) validate() error {
 
 // DecideInput records one approver's decision.
 type DecideInput struct {
-	Decider           string
-	Decision          ApprovalDecisionKind
-	Reason            string
-	DelegationGrantID string // optional actor-chain link
+	// ExpectedSubjectHash binds public decisions to the exact subject shown.
+	ExpectedSubjectHash string
+	Decider             string
+	Decision            ApprovalDecisionKind
+	Reason              string
+	DelegationGrantID   string // optional actor-chain link
 }
 
 // DecideOutcome reports the request state after a decision, so callers know
@@ -335,6 +340,9 @@ func (s *Service) Decide(ctx context.Context, orgID, id string, in DecideInput) 
 		req, err := s.approvalStore().LockApprovalRequest(ctx, id, orgID)
 		if err != nil {
 			return err
+		}
+		if in.ExpectedSubjectHash != "" && in.ExpectedSubjectHash != ApprovalSubjectHash(req.Subject) {
+			return NewStoreError(errors.New("reviewed subject does not match"), ErrTypeConflict)
 		}
 		if !req.IsDecidable() {
 			return NewStoreError(
@@ -537,4 +545,31 @@ func containsString(xs []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// ApprovalSubjectHash is stable across JSON object key order.
+func ApprovalSubjectHash(subject map[string]any) string {
+	raw, err := json.Marshal(subject)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// ApprovalDecisions reads the durable per-person decisions within the tenant.
+func (s *Service) ApprovalDecisions(ctx context.Context, orgID, id string) ([]ApprovalDecision, error) {
+	var out []ApprovalDecision
+	err := s.store.As(Identity{OrgID: orgID}).Within(ctx, func(ctx context.Context) error {
+		reader, ok := s.store.(interface {
+			ListApprovalDecisions(context.Context, string, string) ([]ApprovalDecision, error)
+		})
+		if !ok {
+			return errors.New("approval decision reader unavailable")
+		}
+		var err error
+		out, err = reader.ListApprovalDecisions(ctx, orgID, id)
+		return err
+	})
+	return out, err
 }

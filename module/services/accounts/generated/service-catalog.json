@@ -25,6 +25,14 @@
       ]
     },
     {
+      "name": "ApprovalReviewService",
+      "full_name": "saas.accounts.v1.ApprovalReviewService",
+      "procedures": [
+        "/saas.accounts.v1.ApprovalReviewService/DecideApprovalReview",
+        "/saas.accounts.v1.ApprovalReviewService/GetApprovalReview"
+      ]
+    },
+    {
       "name": "AuditService",
       "full_name": "saas.accounts.v1.AuditService",
       "procedures": [
@@ -706,6 +714,104 @@
       },
       "policy_tier": "org_member",
       "description": "List the scope nodes the authenticated caller may act on (bearer-derived subject).",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ApprovalReviewService/DecideApprovalReview",
+      "service": "ApprovalReviewService",
+      "full_service": "saas.accounts.v1.ApprovalReviewService",
+      "method": "DecideApprovalReview",
+      "input_type": "saas.accounts.v1.DecideApprovalReviewRequest",
+      "output_type": "saas.accounts.v1.ApprovalReview",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/approvals.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Record an assigned approver decision bound to the exact subject reviewed.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.ApprovalReviewService/GetApprovalReview",
+      "service": "ApprovalReviewService",
+      "full_service": "saas.accounts.v1.ApprovalReviewService",
+      "method": "GetApprovalReview",
+      "input_type": "saas.accounts.v1.GetApprovalReviewRequest",
+      "output_type": "saas.accounts.v1.ApprovalReview",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/approvals.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT"
+      ],
+      "http_bindings": [],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_ORG_MEMBER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [
+          {
+            "request_field": "org_id",
+            "target": "RESOURCE_TARGET_ORGANIZATION",
+            "lookup": "RESOURCE_LOOKUP_DIRECT_ID"
+          }
+        ],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [],
+          "emission": "AUDIT_EMISSION_NONE"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_READ",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_UNSPECIFIED"
+      },
+      "policy_tier": "org_member",
+      "description": "Read the immutable subject, assigned approvers and decisions for a request visible to the caller.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

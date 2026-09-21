@@ -498,3 +498,16 @@ func TestApprovalEngine_Decide_RejectsEmptyOrg(t *testing.T) {
 	})
 	require.Error(t, err)
 }
+
+func TestApprovalEngine_ReviewedSubjectMismatchCannotRecordDecision(t *testing.T) {
+	svc, store := newApprovalService(t)
+	subject := map[string]any{"reference": "urn:example:revision:1", "binding": "immutable-binding"}
+	id := mustCreate(t, svc, &business.CreateApprovalRequestInput{OrgID: "org-a", Resource: "example", Action: "advance", RequestedBy: "requester", Subject: subject, Policy: business.ApprovalPolicy{ApproverSet: []string{"reviewer"}}})
+	_, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{Decider: "reviewer", Decision: business.DecisionApprove, ExpectedSubjectHash: "wrong"})
+	require.Error(t, err)
+	require.Equal(t, business.ErrTypeConflict, storeErrType(t, err))
+	require.Empty(t, store.decisions)
+	out, err := svc.Decide(context.Background(), "org-a", id, business.DecideInput{Decider: "reviewer", Decision: business.DecisionApprove, ExpectedSubjectHash: business.ApprovalSubjectHash(subject)})
+	require.NoError(t, err)
+	require.True(t, out.Approved)
+}

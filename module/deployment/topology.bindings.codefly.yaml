@@ -8,8 +8,14 @@ interface:
   - service: accounts
     endpoint: connect
     visibility: module
+  - service: accounts
+    endpoint: rest
+    visibility: module
   - service: auth-gateway
     endpoint: grpc
+    visibility: module
+  - service: auth-gateway
+    endpoint: rest
     visibility: module
   - service: frontend
     endpoint: http
@@ -51,7 +57,7 @@ services:
         port: 9090
       - name: rest
         api: rest
-        visibility: private
+        visibility: module
         port: 8080
     dependencies:
       - service: cache
@@ -103,7 +109,7 @@ services:
         port: 9090
       - name: rest
         api: rest
-        visibility: private
+        visibility: module
         port: 8080
     dependencies:
       - service: accounts

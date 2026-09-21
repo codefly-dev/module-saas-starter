@@ -73,6 +73,8 @@ var serviceInfo = &gen.ServiceInfo{
 // options; descriptions remain editorial prose until source comments are
 // compiled into the service catalog.
 var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
+ "ApprovalReviewService/GetApprovalReview": "Read the immutable subject, assigned approvers and decisions for a request visible to the caller.",
+ "ApprovalReviewService/DecideApprovalReview": "Record an assigned approver decision bound to the exact subject reviewed.",
 	"AccessibleScopeService/ListMyAccessibleScopes":                "List the scope nodes the authenticated caller may act on (bearer-derived subject).",
 	"APIKeyService/CreateAPIKey":                                   "Mint an API key for an administered organization.",
 	"APIKeyService/ListAPIKeys":                                    "List org's API keys.",
