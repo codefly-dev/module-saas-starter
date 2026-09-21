@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 
 /**
  * The client-facing projection of what registered solutions offer inside one
- * kind of client — a word processor, a chat workspace — rather than inside
+ * kind of client — a word processor, a spreadsheet — rather than inside
  * this host's own pages.
  *
  * A client that cannot ask this has to ship a table of which solution offers

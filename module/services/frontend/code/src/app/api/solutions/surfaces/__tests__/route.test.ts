@@ -124,9 +124,9 @@ describe("solutions surfaces route", () => {
 				},
 				{ id: "billing", status: "active", manifest: manifest("billing") },
 				{
-					id: "chat",
+					id: "briefing",
 					status: "active",
-					manifest: manifest("chat", [SLACK_SURFACE]),
+					manifest: manifest("briefing", [SLACK_SURFACE]),
 				},
 			]),
 		);

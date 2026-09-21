@@ -68,7 +68,7 @@ export interface SolutionManifest {
 	dashboard?: DataGraph;
 	/**
 	 * What this solution offers inside a client that is not this host's own web
-	 * app — a word processor, a chat workspace. Absent for a solution that
+	 * app — a word processor, a spreadsheet. Absent for a solution that
 	 * offers nothing outside the host.
 	 */
 	surfaces?: SolutionSurface[];
