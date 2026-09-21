@@ -66,7 +66,9 @@ generator-owned `generated/openapi-raw/api.swagger.json`. The proto companion
 image is its sole generator. The `google.protobuf` well-known types are embedded
 in the `buf` binary rather than pinned by `buf.lock`, and no template here
 reaches a contributor's `buf`, so a workstation on a different one emits a
-different `google.protobuf.NullValue` description and drifts the file. The REST compiler
+different `google.protobuf.NullValue` description and drifts the file.
+
+The REST compiler
 verifies every operation against `rest-surface.json`, rejects missing or
 unexpected routes, normalizes path-parameter spelling, adds
 `x-codefly-rest-schema` and `x-codefly-owner`, prunes unreachable definitions,
@@ -79,15 +81,25 @@ from 195 to 194.
 Run from `module/services/accounts`:
 
 ```sh
-codefly generate proto --proto ./proto --output .                                        # companion: generated/openapi-raw
-codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml  # everything else
+codefly generate proto --proto ./proto --output .                                        # companion, only for a REST change
+codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml
 cd code
 go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 ```
 
-The companion run is needed only when the change adds, removes, or re-annotates
-a REST route; it requires Docker. Codefly generation must run first because the
-REST compiler deliberately reads the checked raw generator output instead of
-trusting a previous public artifact. CI repeats this pipeline and rejects drift
-in the typed catalog, accounts runtime, auth-gateway runtime, and filtered
-OpenAPI document.
+Run the companion line whenever the change reaches the REST surface — a route
+added, removed or re-annotated, and equally a field added to a message an
+existing route carries, since the document embeds the definitions. It needs
+Docker.
+
+**The companion line is never run alone.** It regenerates far more than the
+OpenAPI document: it rewrites `code/pkg/gen` and the frontend `src/gen` as raw
+plugin output, which `generated-pins-gate` rejects because the image runs no
+`goimports` pass (codefly-dev/core#579). The local line that follows restores
+those trees from the pinned plugins, so the two run in this order or not at
+all.
+
+Codefly generation must run first because the REST compiler deliberately reads
+the checked raw generator output instead of trusting a previous public
+artifact. CI repeats this pipeline and rejects drift in the typed catalog,
+accounts runtime, auth-gateway runtime, and filtered OpenAPI document.

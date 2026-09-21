@@ -61,7 +61,7 @@ func TestOpenAPIDocumentHasOneGenerator(t *testing.T) {
 	}
 	for _, relative := range localTemplates(t, moduleRoot) {
 		if declaresOpenAPI(t, moduleRoot, relative) {
-			t.Errorf("%s: declares protoc-gen-openapiv2; only %s may generate the OpenAPI document", relative, companion)
+			t.Errorf("%s: declares protoc-gen-openapiv2; only %s may generate this service's OpenAPI document", relative, companion)
 		}
 	}
 }
