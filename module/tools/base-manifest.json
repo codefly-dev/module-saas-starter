@@ -1,6 +1,5 @@
 {
   "note": "Base-file integrity manifest for the saas-starter module. Generated FROM canonical by `node tools/base-integrity.mjs gen`. Consumers MUST NOT hand-edit base files — only add files on the side. Regenerated on every codefly sync from canonical.",
-  "fileCount": 2387,
   "files": {
     "AGENTS.md": "49602a810f81c9ad0030f9dae4fbea424af96b4fb2bdb15f6f87bf32ab0ef3fc",
     "AUDIT_METRICS.md": "ad6279f6e9519075e2cb9174beb680423387bc33f4fada58b2d42f1b61be8b79",
@@ -2334,8 +2333,8 @@
     "tools/authz-coverage-allowlist.json": "2b8805301de3f6abc8771a1bb7156afd73cb0eb1b293f0d518e7e1e571b2a76c",
     "tools/authz-coverage-gate.mjs": "5b54c6f1c75a9f3371fc600a8884945c59e7dce61075a13dbf21ae8800a8c7a8",
     "tools/authz-coverage-gate.test.mjs": "3c1acdd363fff1adfefcd593984d859745a472c3f056397a3d8f0b38c02157d9",
-    "tools/base-integrity.mjs": "3d1d8e7e90483253a828a3da43f3d61fce29b385f4d76a248b2460db12cfe0da",
-    "tools/base-integrity.test.mjs": "3a0cfdbf2d5ba1502b95225156b869f2b567e0f6e3b95cba7b141764db7ed9b3",
+    "tools/base-integrity.mjs": "5c787743d27a3bd0adfef8863b7bf07553f99cc6482d61523c0f471c79c20084",
+    "tools/base-integrity.test.mjs": "e6260e16b53e24c707323eb8911b028ba00e18286792485856e8a6ac94a7d2ce",
     "tools/cmd/module-compose/main.go": "8d9058b42854a6ded9c3f09b718ecafa2684b13dfc0089db8d1aa3d1b952af69",
     "tools/cmd/module-format-generated/main.go": "4a4dd601e23316dde675074aef15af0ba5259546e0d03d5508b8fc762b012bc5",
     "tools/cmd/module-package/main.go": "d4d12554eda0c22d881cb23c9e7f5e196989da92d5b93fb8eb1376f3e519b75f",

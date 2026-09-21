@@ -870,11 +870,16 @@ const serviceOf = (rel) => {
 
 // Re-derive the manifest a fresh `gen` would write for `moduleRoot`, without touching disk.
 // `gen` persists this; the release gate compares it against the committed manifest.
+//
+// The manifest deliberately records no file count. Derived from `files`, it could disagree with
+// the tree only by being written outside `gen` — and a lone scalar is exactly what a three-way
+// merge corrupts in silence: two branches that each add a base file write the same new value,
+// git merges it without a conflict, and the count is then one short of the tree it describes,
+// rejecting a manifest whose every hash merged correctly. Derive it at print time instead.
 export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
-  const base = baseFiles(moduleRoot);
   const hashes = {};
-  for (const [rel, onDisk] of base) hashes[rel] = sha(join(moduleRoot, onDisk));
-  return { note: MANIFEST_NOTE, fileCount: base.size, files: hashes };
+  for (const [rel, onDisk] of baseFiles(moduleRoot)) hashes[rel] = sha(join(moduleRoot, onDisk));
+  return { note: MANIFEST_NOTE, files: hashes };
 }
 
 // The canonical release gate: the committed manifest must equal a fresh regeneration of the
@@ -882,7 +887,7 @@ export function computeBaseManifest(moduleRoot = MODULE_ROOT) {
 // re-hashes only the paths already in the manifest, so a base file changed without a `gen`
 // (v0.0.32: deployment_topology.go / network-policy.golden.yaml) sails through it — the stale
 // digest is exactly what `check` trusts. Comparing against a fresh recomputation catches changed,
-// unrecorded, and removed base files, plus a fileCount or note that drifted from the tree.
+// unrecorded, and removed base files, plus a note that drifted from the tree.
 // Canonical-only: a consumer legitimately adds files, so this must never run against a consumer tree.
 export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   const manifestPath = join(moduleRoot, "tools", "base-manifest.json");
@@ -904,9 +909,6 @@ export function baseManifestFreshnessErrors(moduleRoot = MODULE_ROOT) {
   }
   for (const rel of Object.keys(committedFiles)) {
     if (!(rel in fresh.files)) errors.push(`manifest lists a removed file: ${rel}`);
-  }
-  if (committed.fileCount !== fresh.fileCount) {
-    errors.push(`fileCount ${committed.fileCount} does not match ${fresh.fileCount} base files`);
   }
   if (committed.note !== fresh.note) {
     errors.push("note does not match the canonical manifest note");
@@ -946,7 +948,10 @@ function gen() {
   }
   const manifest = computeBaseManifest();
   writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2) + "\n");
-  console.log(`base-integrity: wrote ${manifest.fileCount} base-file hashes to tools/base-manifest.json`);
+  console.log(
+    `base-integrity: wrote ${Object.keys(manifest.files).length} base-file hashes `
+    + "to tools/base-manifest.json",
+  );
 }
 
 // verify is the canonical release gate (Base manifest integrity CI job, on
@@ -991,9 +996,9 @@ function verify() {
     }
     process.exit(1);
   }
-  const { fileCount } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
+  const { files } = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
   console.log(
-    `✓ base-manifest.json matches the canonical tree (${fileCount} base files); `
+    `✓ base-manifest.json matches the canonical tree (${Object.keys(files).length} base files); `
     + "frontend workspace install graph is in sync.",
   );
 }
