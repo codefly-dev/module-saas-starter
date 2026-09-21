@@ -18,6 +18,7 @@ import {
   loadSolutions,
   parseManifest,
   registerSolution,
+  surfacesProjection,
   unregisterSolution,
 } from "@/solutions/registry";
 
@@ -143,6 +144,188 @@ describe("parseManifest dashboard slot", () => {
   });
 });
 
+describe("parseManifest client surfaces", () => {
+  function surface(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "footnote",
+      client: "word",
+      title: "Footnote",
+      module: "/surfaces/word/footnote.js",
+      contract: 1,
+      ...overrides,
+    };
+  }
+
+  it("omits surfaces when the manifest declares none", () => {
+    expect(parseManifest(baseManifest())?.surfaces).toBeUndefined();
+  });
+
+  it("adds no key to the stored bytes of a manifest that declares none", () => {
+    // The registry recognises a re-registration as a lease renewal by byte
+    // identity. A slot materialised as [] rather than left absent would move
+    // every existing registrant's bytes, turning every heartbeat into a
+    // content change and churning every replica's cache.
+    expect(JSON.stringify(parseManifest(baseManifest()))).not.toContain(
+      "surfaces",
+    );
+  });
+
+  it("carries a well-formed declaration through whole", () => {
+    const parsed = parseManifest(
+      baseManifest({
+        surfaces: [
+          surface({
+            description: "Cite a claim.",
+            applies: { tagged: ["policy"] },
+            events: ["documents.entry.*"],
+          }),
+        ],
+      }),
+    );
+    expect(parsed?.surfaces).toEqual([
+      {
+        id: "footnote",
+        client: "word",
+        title: "Footnote",
+        description: "Cite a claim.",
+        module: "/surfaces/word/footnote.js",
+        contract: 1,
+        applies: { tagged: ["policy"] },
+        events: ["documents.entry.*"],
+      },
+    ]);
+  });
+
+  it("does not constrain which client kinds exist", () => {
+    // The set of kinds is deployment configuration. A host that enumerated them
+    // would need a release before a new kind could be addressed at all.
+    const parsed = parseManifest(
+      baseManifest({
+        surfaces: [surface({ client: "some-kind-the-host-never-heard-of" })],
+      }),
+    );
+    expect(parsed?.surfaces?.[0]?.client).toBe(
+      "some-kind-the-host-never-heard-of",
+    );
+  });
+
+  it("rejects a module that is not a path on the solution's own origin", () => {
+    for (const path of [
+      "https://evil.example/surface.js",
+      "//evil.example/surface.js",
+      "javascript:alert(1)",
+      "data:text/javascript,alert(1)",
+      "surfaces/word/footnote.js",
+      "/surfaces/word/foot note.js",
+      "/surfaces\\word.js",
+    ]) {
+      expect(
+        parseManifest(baseManifest({ surfaces: [surface({ module: path })] })),
+        `module ${JSON.stringify(path)} must be rejected`,
+      ).toBeNull();
+    }
+  });
+
+  it("rejects a malformed surface rather than dropping it", () => {
+    // Dropping one would leave the solution registered and looking like it
+    // offers nothing, which is indistinguishable from offering nothing.
+    for (const broken of [
+      surface({ id: "" }),
+      surface({ id: "Foot Note" }),
+      surface({ client: "" }),
+      surface({ client: "Word" }),
+      surface({ title: "" }),
+      surface({ contract: 0 }),
+      surface({ contract: "1" }),
+      surface({ description: 7 }),
+      surface({ applies: "sometimes" }),
+      surface({ applies: { tagged: ["ok", 3] } }),
+      surface({ events: "documents.entry.*" }),
+      surface({ events: [""] }),
+    ]) {
+      expect(
+        parseManifest(baseManifest({ surfaces: [broken] })),
+        `${JSON.stringify(broken)} must be rejected`,
+      ).toBeNull();
+    }
+    expect(parseManifest(baseManifest({ surfaces: {} }))).toBeNull();
+    expect(parseManifest(baseManifest({ surfaces: [null] }))).toBeNull();
+  });
+
+  it("rejects two surfaces of one kind sharing an id", () => {
+    // A client keys on (solution id, surface id); a duplicate makes that key
+    // ambiguous, and which one wins would be an accident of ordering.
+    expect(
+      parseManifest(baseManifest({ surfaces: [surface(), surface()] })),
+    ).toBeNull();
+    expect(
+      parseManifest(
+        baseManifest({
+          surfaces: [surface(), surface({ client: "slack" })],
+        }),
+      ),
+    ).not.toBeNull();
+  });
+});
+
+describe("surfacesProjection", () => {
+  function withSurfaces(surfaces: unknown[]) {
+    const parsed = parseManifest(baseManifest({ surfaces }));
+    if (parsed === null) throw new Error("fixture manifest must parse");
+    return parsed;
+  }
+
+  const manifest = withSurfaces([
+    {
+      id: "footnote",
+      client: "word",
+      title: "Footnote",
+      module: "/surfaces/word/footnote.js",
+      contract: 1,
+    },
+    {
+      id: "ask",
+      client: "slack",
+      title: "Ask",
+      module: "/surfaces/slack/ask.js",
+      contract: 2,
+    },
+  ]);
+
+  it("projects only the asked-for kind, named by the solution", () => {
+    expect(surfacesProjection(manifest, "word")).toEqual({
+      id: "audit",
+      title: "Audit",
+      surfaces: [
+        {
+          id: "footnote",
+          client: "word",
+          title: "Footnote",
+          description: undefined,
+          module: "/surfaces/word/footnote.js",
+          contract: 1,
+          applies: undefined,
+          events: undefined,
+        },
+      ],
+    });
+  });
+
+  it("reports nothing for a kind the solution does not serve", () => {
+    expect(surfacesProjection(manifest, "excel")).toBeNull();
+    expect(surfacesProjection(withSurfaces([]), "word")).toBeNull();
+  });
+
+  it("does not hand out a reference into the cached snapshot", () => {
+    // The snapshot outlives the response; a caller mutating what it was given
+    // would corrupt what every later reader sees.
+    const projected = surfacesProjection(manifest, "word");
+    const surface = projected?.surfaces[0];
+    if (surface === undefined) throw new Error("expected one surface");
+    surface.title = "Rewritten";
+    expect(manifest.surfaces?.[0]?.title).toBe("Footnote");
+  });
+});
 // The registry is no longer a map in this process: it is a cached projection of
 // the durable record, read through the gateway. These cover what that shift put
 // at risk — an outage must degrade rather than empty the navigation, and a

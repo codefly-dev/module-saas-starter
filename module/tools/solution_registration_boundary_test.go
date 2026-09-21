@@ -25,6 +25,7 @@ import (
 // move with it.
 var registrationSurfaces = []string{
 	"services/frontend/code/src/app/api/solutions/register/route.ts",
+	"services/frontend/code/src/app/api/solutions/surfaces/route.ts",
 	"services/frontend/code/src/solutions/registry.ts",
 	"services/frontend/code/src/app/(dashboard)/s/[solutionId]/page.tsx",
 	"services/auth-gateway/code/gateway_solutions.go",
