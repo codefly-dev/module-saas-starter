@@ -8,4 +8,5 @@ export {
 	CommandList,
 	CommandSeparator,
 	CommandShortcut,
+	useCommandFilter,
 } from "@codefly-dev/ui/layout";

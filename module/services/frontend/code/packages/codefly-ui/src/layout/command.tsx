@@ -1,8 +1,9 @@
 "use client";
 
-import { Command as CommandPrimitive } from "cmdk";
-import { CheckIcon, SearchIcon } from "lucide-react";
+import { Autocomplete as CommandPrimitive } from "@base-ui/react/autocomplete";
+import { SearchIcon } from "lucide-react";
 import type * as React from "react";
+import { cn } from "./cn.js";
 import {
 	Dialog,
 	DialogContent,
@@ -11,21 +12,54 @@ import {
 	DialogTitle,
 } from "./dialog.js";
 import { InputGroup, InputGroupAddon } from "./input-group.js";
-import { cn } from "./cn.js";
+
+// Built on Base UI's Autocomplete, the primitive its docs point to for search
+// widgets (Combobox does not accept free-form text, Select renders no input).
+//
+// `inline open` is what makes it usable here: it renders the list without Base
+// UI's own popup and positioner, because the palette already supplies its own
+// surface — either CommandDialog or a host-owned Dialog.
+//
+// `mode="none"` leaves the items static and hands filtering to the caller.
+// Base UI's built-in filter only applies to an `items` array passed to the
+// root, which would force every caller onto render props; keeping the
+// compositional children API matters more, and callers like a command palette
+// are already filtering server-side for part of their list anyway.
+// `CommandPrimitive.useFilter` is re-exported below as `useCommandFilter` so
+// callers get the same matcher Base UI would have used.
 
 function Command({
 	className,
+	value,
+	onValueChange,
+	children,
 	...props
-}: React.ComponentProps<typeof CommandPrimitive>) {
+}: Omit<
+	React.ComponentProps<typeof CommandPrimitive.Root>,
+	"inline" | "open" | "mode" | "children"
+> & {
+	className?: string;
+	children: React.ReactNode;
+}) {
 	return (
-		<CommandPrimitive
-			data-slot="command"
-			className={cn(
-				"flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
-				className,
-			)}
+		<CommandPrimitive.Root
+			inline
+			open
+			mode="none"
+			value={value}
+			onValueChange={onValueChange}
 			{...props}
-		/>
+		>
+			<div
+				data-slot="command"
+				className={cn(
+					"flex size-full flex-col overflow-hidden rounded-xl! bg-popover p-1 text-popover-foreground",
+					className,
+				)}
+			>
+				{children}
+			</div>
+		</CommandPrimitive.Root>
 	);
 }
 
@@ -101,12 +135,12 @@ function CommandList({
 	);
 }
 
-function CommandEmpty({
-	className,
-	...props
-}: React.ComponentProps<typeof CommandPrimitive.Empty>) {
+// Base UI's own Empty only knows the list is empty when the root is filtering
+// its own `items`. Under `mode="none"` the caller owns that decision, so this
+// renders whenever it is mounted — mount it conditionally.
+function CommandEmpty({ className, ...props }: React.ComponentProps<"div">) {
 	return (
-		<CommandPrimitive.Empty
+		<div
 			data-slot="command-empty"
 			className={cn("py-6 text-center type-command-empty", className)}
 			{...props}
@@ -116,17 +150,29 @@ function CommandEmpty({
 
 function CommandGroup({
 	className,
+	heading,
+	children,
 	...props
-}: React.ComponentProps<typeof CommandPrimitive.Group>) {
+}: Omit<React.ComponentProps<typeof CommandPrimitive.Group>, "children"> & {
+	heading?: React.ReactNode;
+	children: React.ReactNode;
+}) {
 	return (
 		<CommandPrimitive.Group
 			data-slot="command-group"
-			className={cn(
-				"overflow-hidden p-1 text-foreground **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:type-command-group **:[[cmdk-group-heading]]:text-muted-foreground",
-				className,
-			)}
+			className={cn("overflow-hidden p-1 text-foreground", className)}
 			{...props}
-		/>
+		>
+			{heading ? (
+				<CommandPrimitive.GroupLabel
+					data-slot="command-group-heading"
+					className="px-2 py-1.5 type-command-group text-muted-foreground"
+				>
+					{heading}
+				</CommandPrimitive.GroupLabel>
+			) : null}
+			{children}
+		</CommandPrimitive.Group>
 	);
 }
 
@@ -143,22 +189,34 @@ function CommandSeparator({
 	);
 }
 
+// `onSelect` is kept as the kit's prop name and mapped onto Base UI's item
+// `onClick`, which fires for a pointer press and for Enter on the highlighted
+// item alike — the same two gestures the previous `onSelect` covered.
 function CommandItem({
 	className,
 	children,
+	onSelect,
+	value,
 	...props
-}: React.ComponentProps<typeof CommandPrimitive.Item>) {
+}: Omit<
+	React.ComponentProps<typeof CommandPrimitive.Item>,
+	"onClick" | "children"
+> & {
+	onSelect?: (value: string) => void;
+	children: React.ReactNode;
+}) {
 	return (
 		<CommandPrimitive.Item
 			data-slot="command-item"
+			value={value}
+			onClick={() => onSelect?.(typeof value === "string" ? value : "")}
 			className={cn(
-				"group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 type-command-item outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-selected:bg-muted data-selected:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-selected:*:[svg]:text-foreground",
+				"group/command-item relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 type-command-item outline-hidden select-none in-data-[slot=dialog-content]:rounded-lg! data-disabled:pointer-events-none data-disabled:opacity-50 data-highlighted:bg-muted data-highlighted:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-highlighted:*:[svg]:text-foreground",
 				className,
 			)}
 			{...props}
 		>
 			{children}
-			<CheckIcon className="ml-auto opacity-0 group-has-data-[slot=command-shortcut]/command-item:hidden group-data-[checked=true]/command-item:opacity-100" />
 		</CommandPrimitive.Item>
 	);
 }
@@ -171,13 +229,15 @@ function CommandShortcut({
 		<span
 			data-slot="command-shortcut"
 			className={cn(
-				"ml-auto type-command-shortcut text-muted-foreground group-data-selected/command-item:text-foreground",
+				"ml-auto type-command-shortcut text-muted-foreground group-data-highlighted/command-item:text-foreground",
 				className,
 			)}
 			{...props}
 		/>
 	);
 }
+
+const useCommandFilter = CommandPrimitive.useFilter;
 
 export {
 	Command,
@@ -189,4 +249,5 @@ export {
 	CommandList,
 	CommandSeparator,
 	CommandShortcut,
+	useCommandFilter,
 };
