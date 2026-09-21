@@ -23,7 +23,7 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1", catalog.GetApiPackage())
 	require.Equal(t, business.ServiceVersion, catalog.GetApiVersion())
 	require.Len(t, catalog.GetServices(), 33)
-	require.Len(t, catalog.GetMethods(), 215)
+	require.Len(t, catalog.GetMethods(), 216)
 	require.Len(t, catalog.GetPermissions(), 24)
 	require.Len(t, catalog.GetEntitlements(), 5)
 	require.Equal(t, "*:*", catalog.GetPermissions()[0].GetPermission())
@@ -56,6 +56,13 @@ func TestServiceCatalogCompilation(t *testing.T) {
 	require.Equal(t, "saas.accounts.v1.ModuleExchangeDelegatedOperationAudienceRequest", operationExchange.GetInputType())
 	require.Equal(t, "saas.accounts.v1.IssuedWorkContext", operationExchange.GetOutputType())
 	require.Equal(t, []string{"saas.module.delegated_audience_exchange"}, operationExchange.GetPolicy().GetAudit().GetEvents())
+
+	explain := methods["/saas.accounts.v1.PermissionService/ExplainPermission"]
+	require.NotNil(t, explain)
+	require.Equal(t, policyv1.Exposure_EXPOSURE_AUTHENTICATED, explain.GetPolicy().GetExposure())
+	require.Equal(t, policyv1.TenantRequirement_TENANT_REQUIREMENT_ORG_ADMIN, explain.GetPolicy().GetTenant())
+	require.Equal(t, "org_id", explain.GetPolicy().GetResourceBindings()[0].GetRequestField())
+	require.Empty(t, explain.GetHttpBindings(), "the decision read is Connect-only; it adds no REST surface")
 
 	collectionAccess := methods["/saas.accounts.v1.PermissionService/ListCollectionAccess"]
 	require.NotNil(t, collectionAccess)

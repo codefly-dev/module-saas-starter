@@ -588,6 +588,47 @@ func (s *Service) CheckPermission(ctx context.Context, req *gen.CheckPermissionR
 	return &gen.CheckPermissionResponse{Allowed: allowed, Reason: reason}, nil
 }
 
+// ExplainPermission is the administrative form of CheckPermission: the same
+// decision, plus the scoped assignments that would have answered a different
+// question.
+//
+// It calls the store's CheckPermission — the one the internal RPC reaches
+// through the method above — so the verdict an administrator reads is the
+// decision point's own. The wrapper above only chooses between the tenant and
+// control-plane transaction on an empty org, and this path always has one, so
+// nothing else of it applies here.
+//
+// Both reads share a single tenant transaction: a role revoked between them
+// would otherwise produce a denial beside a list of scopes that no longer
+// grant anything, which is the contradiction the explanation exists to avoid.
+func (s *Service) ExplainPermission(ctx context.Context, req *gen.ExplainPermissionRequest) (*gen.ExplainPermissionResponse, error) {
+	var allowed bool
+	var reason string
+	var scopes []string
+	if err := s.store.WithOrgTx(ctx, req.OrgId, func(ctx context.Context) error {
+		a, r, err := s.store.CheckPermission(
+			ctx, req.SubjectId, req.SubjectKind,
+			req.Resource, req.Action, req.OrgId, req.Scope,
+		)
+		if err != nil {
+			return err
+		}
+		allowed, reason = a, r
+		scopes, err = s.store.ScopesGrantingPermission(
+			ctx, req.SubjectId, req.SubjectKind,
+			req.Resource, req.Action, req.OrgId,
+		)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return &gen.ExplainPermissionResponse{
+		Allowed:        allowed,
+		Reason:         reason,
+		GrantingScopes: scopes,
+	}, nil
+}
+
 // ResolveIdentity maps an auth provider ID to internal user/org/roles.
 //
 // Auth-flow read: at login we don't yet know the user's tenant. The

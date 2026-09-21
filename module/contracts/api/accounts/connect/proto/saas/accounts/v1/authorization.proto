@@ -99,6 +99,63 @@ message CheckPermissionResponse {
   string reason = 2;
 }
 
+// --- ExplainPermission (the administrator's view of a decision) ---
+//
+// ExplainPermission answers the question CheckPermission answers, for an
+// administrator rather than for a service: may this subject perform this
+// action on this resource in this organization? It funnels into the same
+// decision the internal RPC returns, so an administration surface never has
+// to reconstruct one from role rows it read itself.
+//
+// CheckPermission stays internal. It accepts any subject in any tenant and
+// trusts its caller because only the mesh reaches it, and the auth-gateway
+// calls it on that footing; widening it would widen the gateway's path too.
+// This companion narrows the same question to one organization: org_id is
+// required and bound to the organization resource, the caller must administer
+// it, and the handler requires the subject to belong to it as well — so the
+// RPC can never be an oracle about a principal or a tenant the caller cannot
+// already see.
+message ExplainPermissionRequest {
+  string org_id = 1 [(buf.validate.field).string.uuid = true];
+  string subject_id = 2 [(buf.validate.field).string.uuid = true];
+  // subject_kind must name a principal or a team. Unlike
+  // ListRoleAssignments, where the unspecified value means "both kinds", a
+  // decision about "whichever of the two happens to carry this id" is not a
+  // question the decision point can answer, so the unspecified value is
+  // rejected rather than guessed.
+  SubjectKind subject_kind = 3 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: [0]
+  }];
+  string resource = 4 [(buf.validate.field).string.min_len = 1];
+  string action = 5 [(buf.validate.field).string.min_len = 1];
+  // scope matches an assignment's scope exactly: empty asks the organization-
+  // wide question and only an organization-wide assignment answers it. Read
+  // granting_scopes before presenting a denial: a subject entitled only at a
+  // scope answers this question with a plain "no".
+  string scope = 6;
+}
+
+message ExplainPermissionResponse {
+  bool allowed = 1;
+  // reason is the decision point's own wording, e.g. "granted via role: admin"
+  // or "no matching permission found". It reports why THIS question was
+  // answered as it was and never mentions another scope, which is what
+  // granting_scopes is for.
+  string reason = 2;
+  // granting_scopes lists every scoped assignment that grants this
+  // (resource, action) to this subject in this organization, whatever scope was
+  // asked about and whatever the verdict was. An organization-wide assignment
+  // is never listed: it has no scope, and it already answers every question
+  // through allowed.
+  //
+  // A denial beside a non-empty list is the shape this field exists for — the
+  // subject cannot act at the scope that was asked about, and can at these. A
+  // surface that presents allowed without it will tell an administrator a
+  // scoped entitlement does not exist.
+  repeated string granting_scopes = 3;
+}
+
 // --- Decide (the new permission-check primitive) ---
 //
 // Decide is the principal-aware successor to CheckPermission. It
@@ -561,6 +618,41 @@ service PermissionService {
       audit: {emission: AUDIT_EMISSION_NONE}
       idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
       rate_limit: RATE_LIMIT_CLASS_INTERNAL
+      request_sensitivity: SENSITIVITY_CONFIDENTIAL
+      response_sensitivity: SENSITIVITY_CONFIDENTIAL
+      platform_role: PLATFORM_ROLE_REQUIREMENT_NONE
+    };
+  }
+
+  // ExplainPermission is the authenticated, organization-scoped companion to
+  // CheckPermission: an administrator asks the decision point whether a
+  // subject in their own organization may act, and reads the same answer the
+  // decision returns to a service. Read-only, and it evaluates the RBAC layer
+  // CheckPermission evaluates — a record-addressed question is CheckAccess's,
+  // and Decide's caller-manifest inputs (delegation proof, declared ceiling)
+  // have no administrator to supply them.
+  //
+  // The answer includes what a role assigned globally (with no organization)
+  // grants the subject, because that grant is effective in this organization
+  // and an administrator verifying access has to see it — ListRoleAssignments,
+  // which filters to the organization's own rows, does not show it.
+  //
+  // One question per call, resolved live against the tenant: it is a control an
+  // administrator points at a case, not a primitive for filling a matrix of
+  // every subject against every permission.
+  rpc ExplainPermission(ExplainPermissionRequest) returns (ExplainPermissionResponse) {
+    option (saas.policy.v1.method_policy) = {
+      exposure: EXPOSURE_AUTHENTICATED
+      tenant: TENANT_REQUIREMENT_ORG_ADMIN
+      resource_bindings: {
+        request_field: "org_id"
+        target: RESOURCE_TARGET_ORGANIZATION
+        lookup: RESOURCE_LOOKUP_DIRECT_ID
+      }
+      mfa: MFA_REQUIREMENT_NONE
+      audit: {emission: AUDIT_EMISSION_NONE}
+      idempotency: IDEMPOTENCY_REQUIREMENT_FORBIDDEN
+      rate_limit: RATE_LIMIT_CLASS_STANDARD_READ
       request_sensitivity: SENSITIVITY_CONFIDENTIAL
       response_sensitivity: SENSITIVITY_CONFIDENTIAL
       platform_role: PLATFORM_ROLE_REQUIREMENT_NONE

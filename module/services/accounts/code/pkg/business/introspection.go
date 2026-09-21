@@ -195,6 +195,7 @@ var rpcDescriptions = withWorkContextConsumerDescriptions(map[string]string{
 	"PermissionService/CreateRole":                                 "Create a role (org-scoped or platform).",
 	"PermissionService/Decide":                                     "Internal principal-aware authz decision (successor to CheckPermission).",
 	"PermissionService/DeleteRole":                                 "Delete a custom role.",
+	"PermissionService/ExplainPermission":                          "Ask the authorization service whether a subject may act in this organization.",
 	"PermissionService/GrantScope":                                 "Grant a role at a scope node (inherits to subtree).",
 	"PermissionService/ListRoleAssignments":                        "List assignments in an org.",
 	"PermissionService/ListRoles":                                  "List built-in + org-scoped roles.",

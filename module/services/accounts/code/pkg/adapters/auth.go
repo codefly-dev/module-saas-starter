@@ -243,6 +243,73 @@ func requireOrgAdmin(ctx context.Context, actorID, orgID string) error {
 	return status.Error(codes.PermissionDenied, "requires org admin or owner role")
 }
 
+// subjectOutsideOrg is the one answer every way a subject can fail to belong
+// to the organization gets: an administrator learns their own tenant's roster
+// from the surfaces that list it, never by probing this one.
+const subjectOutsideOrg = "subject does not belong to this organization"
+
+// requireSubjectInOrg verifies that the subject an administrator is asking
+// about belongs to orgID, so an organization-scoped read about another subject
+// can never become an oracle about a principal or a team in another tenant. A
+// human principal belongs through organization_members; a service or agent
+// principal is not a member but carries its organization on its own row
+// (principals_org_scope); a team belongs through the organization that owns it.
+//
+// It screens tenancy and nothing else. A revoked principal that still holds a
+// membership row passes here, because the decision point it guards also ignores
+// revocation — role_assignments outlive it — and an explanation that refused to
+// answer would disagree with the access the subject actually has. The principal
+// branch denies a revoked non-member only because there is no other way to
+// learn which organization that row belonged to.
+//
+// The membership read runs under the control plane for the same reason
+// Service.requireTenantMember's does: organization_members is RLS-scoped and
+// the pair being checked is not the caller's own, which is exactly what
+// lookupMembership refuses to answer.
+func requireSubjectInOrg(ctx context.Context, orgID, subjectID string, kind gen.SubjectKind) error {
+	switch kind {
+	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
+		var member bool
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			var e error
+			member, e = service.Store().OrgMemberExists(ctx, orgID, subjectID)
+			return e
+		}); err != nil {
+			return status.Errorf(codes.Internal, "cannot verify subject membership: %v", err)
+		}
+		if member {
+			return nil
+		}
+		principal, err := service.GetPrincipal(ctx, subjectID)
+		if err != nil {
+			var storeErr *business.StoreError
+			if errors.As(err, &storeErr) && storeErr.StoreErrorType == business.ErrTypeNotFound {
+				return status.Error(codes.PermissionDenied, subjectOutsideOrg)
+			}
+			return status.Errorf(codes.Internal, "cannot resolve subject principal: %v", err)
+		}
+		if principal.OrgID != orgID {
+			return status.Error(codes.PermissionDenied, subjectOutsideOrg)
+		}
+		return nil
+	case gen.SubjectKind_SUBJECT_KIND_TEAM:
+		var teamOrgID string
+		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
+			o, err := service.Store().GetTeamOrgID(ctx, subjectID)
+			teamOrgID = o
+			return err
+		}); err != nil {
+			return status.Errorf(codes.Internal, "cannot verify subject team organization: %v", err)
+		}
+		if teamOrgID != orgID {
+			return status.Error(codes.PermissionDenied, subjectOutsideOrg)
+		}
+		return nil
+	default:
+		return status.Error(codes.InvalidArgument, "subject_kind must name a principal or a team")
+	}
+}
+
 // requireBillingAdmin authorizes money-moving organization operations. Owners
 // and organization admins retain their expected access; a member can also be
 // delegated the narrower billing:write permission through a custom role.

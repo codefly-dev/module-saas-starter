@@ -1844,6 +1844,28 @@ func (s *PlatformAdminServer) ListEventSubscriptions(ctx context.Context, req *e
 	return response, eventOperationStatusError(err)
 }
 
+// ExplainPermission answers an administrator the question CheckPermission
+// answers a service, for one organization: the verdict is the decision point's
+// own, not a reading an administration surface assembled for itself out of role
+// rows. The caller must administer the organization and the subject must belong
+// to it, so the internal oracle stays internal.
+func (s *PermServer) ExplainPermission(ctx context.Context, req *gen.ExplainPermissionRequest) (*gen.ExplainPermissionResponse, error) {
+	if err := Validate(req); err != nil {
+		return nil, err
+	}
+	actorID, err := requireAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireOrgAdmin(ctx, actorID, req.OrgId); err != nil {
+		return nil, err
+	}
+	if err := requireSubjectInOrg(ctx, req.OrgId, req.SubjectId, req.SubjectKind); err != nil {
+		return nil, err
+	}
+	return service.ExplainPermission(ctx, req)
+}
+
 func (s *PermServer) ListCollectionAccess(ctx context.Context, req *gen.ListCollectionAccessRequest) (*gen.ListCollectionAccessResponse, error) {
 	if err := Validate(req); err != nil {
 		return nil, err

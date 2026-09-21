@@ -376,6 +376,12 @@ type Store interface {
 
 	// Permission checking
 	CheckPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string, scope string) (bool, string, error)
+	// ScopesGrantingPermission lists the scoped assignments that grant
+	// (resource, action) to this subject in this organization. CheckPermission's
+	// unscoped question is answered only by NULL-scope assignments, so without
+	// this an administrator cannot tell "no entitlement" from "entitled at a
+	// scope I did not name".
+	ScopesGrantingPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string) ([]string, error)
 
 	// Layered access — hierarchical scope grants + per-record shares (#178).
 	// CheckAccess resolves the record's scope from resource_id itself, never a

@@ -419,6 +419,81 @@ func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID
 	return nil
 }
 
+// assignmentSubjectPredicate is the one definition of "which role_assignments
+// rows belong to this subject": a principal's own rows plus the rows of every
+// team it belongs to, or a team's own rows. Both the decision and the scope
+// survey below read it, so the survey can never report a scope the decision
+// would not have honoured.
+func assignmentSubjectPredicate(subjectKind gen.SubjectKind) (string, error) {
+	switch subjectKind {
+	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
+		return `(
+			(ra.subject_kind = 'principal' AND ra.subject_id = $1)
+			OR
+			(ra.subject_kind = 'team' AND ra.subject_id IN (
+				SELECT team_id FROM team_members WHERE user_id = $1
+			))
+		)`, nil
+	case gen.SubjectKind_SUBJECT_KIND_TEAM:
+		return `(ra.subject_kind = 'team' AND ra.subject_id = $1)`, nil
+	default:
+		return "", fmt.Errorf("unsupported subject kind %s", subjectKind)
+	}
+}
+
+// ScopesGrantingPermission lists the assignment scopes at which a subject holds
+// (resource, action) in one organization, for the administrative explanation of
+// a decision.
+//
+// It exists because CheckPermission's scope rule is strict in a way no caller
+// can see in its answer: an unscoped question is satisfied only by a NULL-scope
+// assignment, so a subject entitled solely at scope "project-7" is reported
+// exactly like a subject with no entitlement at all. Both return
+// "no matching permission found". Reporting the scopes alongside the decision is
+// what keeps an administrator from reading that denial as "this subject cannot
+// do this".
+//
+// Only scoped rows are listed: a NULL-scope assignment is organization-wide and
+// already answers every question, scoped or not, through the decision itself.
+func (s *PostgresStore) ScopesGrantingPermission(ctx context.Context, subjectID string, subjectKind gen.SubjectKind, resource string, action string, orgID string) ([]string, error) {
+	w := wool.Get(ctx).In("ScopesGrantingPermission")
+	subjectPredicate, err := assignmentSubjectPredicate(subjectKind)
+	if err != nil {
+		return nil, fmt.Errorf("scopes granting permission: %w", err)
+	}
+
+	query := `
+		SELECT DISTINCT ra.scope
+		FROM role_assignments ra
+		JOIN roles r ON ra.role_id = r.id
+		JOIN role_permissions rp ON r.id = rp.role_id
+		WHERE ` + subjectPredicate + `
+		AND (rp.resource = '*' OR rp.resource = $2)
+		AND (rp.action = '*' OR rp.action = $3)
+		AND ra.scope IS NOT NULL
+		AND (ra.org_id IS NULL OR ra.org_id = $4)
+		ORDER BY ra.scope`
+
+	rows, err := s.getQueryExecutor(ctx).Query(ctx, query, subjectID, resource, action, orgID)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to list scopes granting permission")
+	}
+	defer rows.Close()
+
+	var scopes []string
+	for rows.Next() {
+		var scope string
+		if err := rows.Scan(&scope); err != nil {
+			return nil, w.Wrapf(err, "failed to scan granting scope")
+		}
+		scopes = append(scopes, scope)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "failed to read granting scopes")
+	}
+	return scopes, nil
+}
+
 // CheckPermission checks whether a subject (direct principal or team) has a
 // given permission.
 // It supports:
@@ -445,20 +520,9 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	//    assignments; scoped checks match the same scope or a NULL (org-wide) scope
 	// 5. Org scoping (NULL org = global role, specific org = org role)
 	// Build query dynamically to avoid passing empty strings as UUID parameters
-	var subjectPredicate string
-	switch subjectKind {
-	case gen.SubjectKind_SUBJECT_KIND_PRINCIPAL:
-		subjectPredicate = `(
-			(ra.subject_kind = 'principal' AND ra.subject_id = $1)
-			OR
-			(ra.subject_kind = 'team' AND ra.subject_id IN (
-				SELECT team_id FROM team_members WHERE user_id = $1
-			))
-		)`
-	case gen.SubjectKind_SUBJECT_KIND_TEAM:
-		subjectPredicate = `(ra.subject_kind = 'team' AND ra.subject_id = $1)`
-	default:
-		return false, "", fmt.Errorf("check permission: unsupported subject kind %s", subjectKind)
+	subjectPredicate, err := assignmentSubjectPredicate(subjectKind)
+	if err != nil {
+		return false, "", fmt.Errorf("check permission: %w", err)
 	}
 
 	query := `
@@ -489,7 +553,7 @@ func (s *PostgresStore) CheckPermission(ctx context.Context, subjectID string, s
 	query += ` LIMIT 1`
 
 	var matchedResource, matchedAction, roleName string
-	err := executor.QueryRow(ctx, query, args...).Scan(&matchedResource, &matchedAction, &roleName)
+	err = executor.QueryRow(ctx, query, args...).Scan(&matchedResource, &matchedAction, &roleName)
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
