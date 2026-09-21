@@ -123,7 +123,7 @@
     "contracts/reference/fixtures.codefly.yaml": "fcbf601c86131239b28e3dffb9cf7353f5205690b2bb96de0b9f52d3304728e4",
     "contracts/reference/fixtures/reference-local.yaml": "880a3ef0a90ee85aabe765c3f6f30611abeba77a504a5f11e8fa49b29b418a6a",
     "contracts/reference/frontend.codefly.yaml": "1bfb9d49c6efd19298597e672507a7c04aafa53e1ce3e092b57f7a7525365cbd",
-    "contracts/reference/frontend/package.json": "fc4ab1780a85edca26c5c57fc7944efb248dd1997a4e2c194c6cc000a4c41b94",
+    "contracts/reference/frontend/package.json": "43da407fdb5684309622dbee975d0049d6725316b0d41d93f207e5177072fa3a",
     "contracts/reference/frontend/src/controller.ts": "cae4d5442f76da27ac3704cada1241238ce0a2a4a5f3f993f8466e6b79857e1f",
     "contracts/reference/frontend/src/index.tsx": "2f8896a15dcee5548f145bc399cd3a4db8c10dfae27c2d9d742dec41bf4a904c",
     "contracts/reference/frontend/src/model.ts": "ae925fe8a13646cd7f178cbdc46b681184c810cd8447c7394d7955b939fb54c2",
