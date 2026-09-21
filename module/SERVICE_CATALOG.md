@@ -43,8 +43,12 @@ go generate ./pkg/cataloggen
 ```
 
 The first command makes Codefly generate the Go, gRPC, Connect, grpc-gateway,
-OpenAPI, and TypeScript bindings using exact local plugin versions. This also
-generates the `saas.catalog.v1` types. The second command compiles the loaded
+and TypeScript bindings using exact local plugin versions. This also
+generates the `saas.catalog.v1` types. The raw OpenAPI document is not in that
+set — the proto companion owns it, and a change reaching the REST surface
+refreshes it by running the companion immediately *before* the first command,
+never alone ([REST_SURFACE.md](./REST_SURFACE.md#regeneration) has the order and
+why). The second command compiles the loaded
 descriptor graph into `generated/service-catalog.json` and refreshes
 `AUTHZ_MATRIX.md`. The third joins the catalog with strict Connect
 implementation bindings and emits registration plus interface assertions. The
