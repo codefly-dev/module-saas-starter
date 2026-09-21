@@ -197,6 +197,7 @@ export const FRONTEND_OPTIONAL_APPEARANCE_TOKEN_NAMES = [
 export type FrontendOptionalAppearanceTokenName =
 	(typeof FRONTEND_OPTIONAL_APPEARANCE_TOKEN_NAMES)[number];
 export type FrontendThemePreference = "light" | "dark" | "system";
+export type FrontendDatePattern = "compact" | "parts";
 export type FrontendThemeTokens = Readonly<
 	Record<
 		Exclude<FrontendAppearanceTokenName, FrontendOptionalAppearanceTokenName>,
@@ -211,6 +212,14 @@ export type FrontendThemeTokenOverrides = Readonly<
 /** Application-owned appearance input. Omitted values inherit the neutral preset. */
 export interface FrontendAppearanceDefinition {
 	defaultTheme?: FrontendThemePreference;
+	/**
+	 * Which date-entry control the product presents: one native date input
+	 * ("compact") or day/month/year under a legend ("parts"). Like
+	 * `defaultTheme`, this is a behaviour a component branches on rather than a
+	 * token that reaches CSS — the two shapes differ in DOM, in what the person
+	 * is asked to type and in what an error can point at.
+	 */
+	datePattern?: FrontendDatePattern;
 	radius?: string;
 	/**
 	 * The corner of an ACTION (buttons), separate from `radius` so a design can
@@ -258,6 +267,7 @@ export interface FrontendAppearanceDefinition {
  */
 export const FRONTEND_APPEARANCE_FIELD_NAMES = [
 	"defaultTheme",
+	"datePattern",
 	"radius",
 	"buttonRadius",
 	"fontSans",
@@ -290,6 +300,7 @@ export type FrontendOptionalAppearanceFieldName =
 /** Fully resolved immutable appearance consumed by the host runtime. */
 export interface FrontendAppearance {
 	defaultTheme: FrontendThemePreference;
+	datePattern: FrontendDatePattern;
 	radius: string;
 	/** Absent when the skin left it to `radius`; the stylesheet then derives it. */
 	buttonRadius?: string;

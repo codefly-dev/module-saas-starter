@@ -28,6 +28,7 @@ export type {
 	FrontendServiceProtocol,
 	FrontendServiceRequirement,
 	FrontendServiceTarget,
+	FrontendDatePattern,
 	FrontendThemePreference,
 	FrontendThemeTokenOverrides,
 	FrontendThemeTokens,

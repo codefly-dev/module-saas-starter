@@ -40,6 +40,9 @@ export function appearanceStyleProperties(
 	appearance: FrontendAppearance,
 ): AppearanceStyleProperties {
 	const properties: Record<string, string> = {
+		// A behaviour, not a token: DateField reads it to choose its shape. It
+		// rides the same channel as the tokens so the explorer and SSR agree.
+		"--appearance-date-pattern": appearance.datePattern,
 		"--appearance-radius": appearance.radius,
 		"--appearance-font-sans": appearance.fontSans,
 		"--appearance-font-heading": appearance.fontHeading,

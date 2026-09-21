@@ -35,6 +35,13 @@ export {
 	SelectValue,
 } from "./select.js";
 export { Field, type FieldControlProps, type FieldProps } from "./field.js";
+export { Fieldset, FieldsetLegend } from "./fieldset.js";
+export {
+	DateField,
+	type DateFieldPart,
+	type DateFieldProps,
+	type DateFieldVariant,
+} from "./date-field.js";
 export {
 	SegmentedControl,
 	type SegmentedControlOption,

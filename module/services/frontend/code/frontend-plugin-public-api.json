@@ -4,11 +4,8 @@
 	"packages": {
 		"@codefly/saas-plugin-contract": {
 			"status": "active",
-			"packageVersion": "2.2.0",
-			"entrypoints": [
-				".",
-				"./capabilities"
-			],
+			"packageVersion": "2.3.0",
+			"entrypoints": [".", "./capabilities"],
 			"entrypointExports": {
 				".": [
 					"DEFAULT_CONTROL_SIZES",
@@ -39,6 +36,7 @@
 					"FrontendControlSizeName",
 					"FrontendControlSizeOverrides",
 					"FrontendControlSizes",
+					"FrontendDatePattern",
 					"FrontendDefinition",
 					"FrontendHeadingOrderRule",
 					"FrontendLogo",
@@ -116,11 +114,7 @@
 		"@codefly/saas-plugin-react": {
 			"status": "active",
 			"packageVersion": "0.4.1",
-			"entrypoints": [
-				".",
-				"./runtime",
-				"./ui"
-			],
+			"entrypoints": [".", "./runtime", "./ui"],
 			"entrypointExports": {
 				".": [
 					"FrontendPluginComponent",
@@ -171,9 +165,7 @@
 		"@codefly/saas-settings": {
 			"status": "active",
 			"packageVersion": "0.1.0",
-			"entrypoints": [
-				"."
-			],
+			"entrypoints": ["."],
 			"entrypointExports": {
 				".": [
 					"SettingsField",
@@ -188,9 +180,7 @@
 		},
 		"@codefly/saas-plugin-testkit": {
 			"status": "planned",
-			"entrypoints": [
-				"."
-			],
+			"entrypoints": ["."],
 			"entrypointExports": {
 				".": []
 			}

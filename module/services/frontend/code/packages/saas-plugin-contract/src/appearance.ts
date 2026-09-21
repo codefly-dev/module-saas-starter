@@ -83,6 +83,7 @@ const dark: FrontendThemeTokens = {
 
 export const DEFAULT_FRONTEND_APPEARANCE: FrontendAppearance = deepFreeze({
 	defaultTheme: "system",
+	datePattern: "parts",
 	radius: "0.625rem",
 	// Preserve the original SaaS Starter typography as the application
 	// default. Applications may opt into a bundled/web font explicitly, but
@@ -179,6 +180,12 @@ export function resolveFrontendAppearance(
 			defaultTheme === "system",
 		`appearance defaultTheme '${String(defaultTheme)}' is unsupported`,
 	);
+	const datePattern =
+		definition.datePattern ?? DEFAULT_FRONTEND_APPEARANCE.datePattern;
+	assertAppearance(
+		datePattern === "compact" || datePattern === "parts",
+		`appearance datePattern '${String(datePattern)}' is unsupported`,
+	);
 	const radius = definition.radius ?? DEFAULT_FRONTEND_APPEARANCE.radius;
 	assertAppearance(
 		typeof radius === "string" && SAFE_RADIUS.test(radius),
@@ -208,6 +215,7 @@ export function resolveFrontendAppearance(
 	const layers = resolveTypographyLayers(definition);
 	return deepFreeze({
 		defaultTheme,
+		datePattern,
 		radius,
 		...(buttonRadius === undefined ? {} : { buttonRadius }),
 		fontSans,

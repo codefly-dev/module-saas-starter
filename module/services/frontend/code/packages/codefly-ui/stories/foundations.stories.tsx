@@ -33,6 +33,11 @@ import {
 // hand-written foundations page is the first thing to drift, and a drifted one
 // is worse than none: it is what a design reviewer reads.
 
+// CSF meta. Story files are discovered by glob, but each one still has to
+// declare a default export: the indexer reads it before the preview builds, so
+// a file without one is not skipped — it fails the whole build.
+export default { title: "Shared UI/Foundations" };
+
 export const TypeScale = {
 	render: () => (
 		<div className="flex flex-col gap-3">
