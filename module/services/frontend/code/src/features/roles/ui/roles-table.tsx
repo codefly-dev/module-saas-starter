@@ -8,6 +8,7 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useMemo } from "react";
 import { toast } from "sonner";
 import {
@@ -40,7 +41,17 @@ export function RolesTable({
 
 	const columns = useMemo(
 		() => [
-			col.accessor("name", { header: "Name" }),
+			col.accessor("name", {
+				header: "Name",
+				cell: (info) => (
+					<Link
+						href={`/admin/roles/${info.row.original.id}`}
+						className="font-medium text-primary hover:underline"
+					>
+						{info.getValue()}
+					</Link>
+				),
+			}),
 			col.accessor("description", {
 				header: "Description",
 				cell: (info) => (

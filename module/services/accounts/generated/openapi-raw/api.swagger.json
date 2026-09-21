@@ -2596,6 +2596,13 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "memberId",
+            "description": "member_id (optional) narrows the list to the teams this principal\nbelongs to; empty returns every team in the org. The uuid rule applies\nonly to a non-empty value — without it the filter reaches the query as a\nuuid cast and a malformed id fails in the database as an internal error\nrather than at the boundary as an invalid argument.",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [
@@ -4334,6 +4341,42 @@
         "tags": [
           "PermissionService"
         ]
+      },
+      "patch": {
+        "operationId": "PermissionService_UpdateRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateRoleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/rpcStatus"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PermissionServiceUpdateRoleBody"
+            }
+          }
+        ],
+        "tags": [
+          "PermissionService"
+        ]
       }
     },
     "/v1/scope-grants": {
@@ -5764,6 +5807,26 @@
           "description": "Paths whose explicit overrides should be removed before applying patch.\nA cleared field resolves to its catalog default on the returned document."
         }
       }
+    },
+    "PermissionServiceUpdateRoleBody": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Permission"
+          }
+        },
+        "orgId": {
+          "type": "string",
+          "title": "empty = global"
+        }
+      },
+      "description": "UpdateRoleRequest replaces a custom role's description and permission\nset wholesale: the permissions given become the role's entire grant\nset, and an empty list clears it. org_id must name the role's own\nscope (empty = a global role); a role whose scope differs is not\nfound. Built-in roles cannot be updated."
     },
     "PlatformAdminServiceImpersonateUserBody": {
       "type": "object",
@@ -10105,6 +10168,14 @@
         },
         "context": {
           "type": "string"
+        }
+      }
+    },
+    "v1UpdateRoleResponse": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "$ref": "#/definitions/v1Role"
         }
       }
     },

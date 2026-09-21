@@ -34,13 +34,26 @@ func (s *PostgresStore) CreateTeam(ctx context.Context, team *gen.Team) error {
 	return nil
 }
 
-func (s *PostgresStore) ListTeams(ctx context.Context, orgID string) ([]*gen.Team, error) {
+// ListTeams returns the org's teams, narrowed to the ones memberID belongs to
+// when it is set. The membership test rides in the same statement rather than
+// filtering a fetched page, so a caller who may not see a team never learns of
+// it from a shortened list.
+func (s *PostgresStore) ListTeams(ctx context.Context, orgID string, memberID string) ([]*gen.Team, error) {
 	w := wool.Get(ctx).In("ListTeams")
 	executor := s.getQueryExecutor(ctx)
 
+	var member any
+	if memberID != "" {
+		member = memberID
+	}
 	rows, err := executor.Query(ctx, `
 		SELECT id, org_id, name, description, parent_team_id, slug, path, created_at
-		FROM teams WHERE org_id = $1 ORDER BY path`, orgID,
+		FROM teams t
+		WHERE t.org_id = $1
+		  AND ($2::uuid IS NULL OR EXISTS (
+		        SELECT 1 FROM team_members m
+		        WHERE m.team_id = t.id AND m.user_id = $2::uuid))
+		ORDER BY t.path`, orgID, member,
 	)
 	if err != nil {
 		return nil, w.Wrapf(err, "failed to list teams")

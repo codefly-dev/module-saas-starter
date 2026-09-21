@@ -132,6 +132,103 @@ func (s *PostgresStore) ListRoles(ctx context.Context, orgID string) ([]*gen.Rol
 	return roles, nil
 }
 
+// UpdateRole replaces a custom role's description and permission set. orgID
+// names the scope the caller was authorized for, and it is part of the row
+// lookup rather than a check beside it: a role in another scope reads as
+// not found, so an org admin cannot reach a global role or another tenant's
+// by passing its id. Built-in roles are refused for the same reason
+// DeleteRole refuses them — they are the platform's standard vocabulary.
+func (s *PostgresStore) UpdateRole(ctx context.Context, roleID, orgID, description string, permissions []*gen.Permission) (*gen.Role, error) {
+	w := wool.Get(ctx).In("UpdateRole")
+	executor := s.getQueryExecutor(ctx)
+
+	var scope any
+	if orgID != "" {
+		scope = orgID
+	}
+
+	var (
+		name    string
+		builtIn bool
+	)
+	// FOR UPDATE states the serialization this replace depends on rather than
+	// inheriting it. Two concurrent saves must not interleave: under READ
+	// COMMITTED a second editor whose DELETE runs before the first commits
+	// cannot see the rows the first inserted, so each removes what it read and
+	// adds its own set and the role ends up holding the UNION of two sets
+	// neither administrator asked for. Today the unconditional `UPDATE roles
+	// SET description` below already takes the row lock that prevents it, so
+	// the lock here is not what makes it correct — it is what keeps it correct
+	// if that write ever becomes conditional on the description having changed.
+	err := executor.QueryRow(ctx, `
+		SELECT name, built_in FROM roles
+		WHERE id = $1 AND org_id IS NOT DISTINCT FROM $2::uuid
+		FOR UPDATE`,
+		roleID, scope,
+	).Scan(&name, &builtIn)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "role %q not found", roleID)
+		}
+		return nil, w.Wrapf(err, "failed to read role")
+	}
+	if builtIn {
+		return nil, status.Error(codes.FailedPrecondition, "cannot update built-in role")
+	}
+
+	if _, err := executor.Exec(ctx, `
+		UPDATE roles SET description = $2 WHERE id = $1`, roleID, description,
+	); err != nil {
+		return nil, w.Wrapf(err, "failed to update role")
+	}
+	if _, err := executor.Exec(ctx, `
+		DELETE FROM role_permissions WHERE role_id = $1`, roleID,
+	); err != nil {
+		return nil, w.Wrapf(err, "failed to clear role permissions")
+	}
+	for _, perm := range permissions {
+		if _, err := executor.Exec(ctx, `
+			INSERT INTO role_permissions (role_id, resource, action)
+			VALUES ($1, $2, $3)
+			ON CONFLICT DO NOTHING`,
+			roleID, perm.Resource, perm.Action,
+		); err != nil {
+			return nil, w.Wrapf(err, "failed to insert permission")
+		}
+	}
+
+	// Read the grants back rather than echoing the request: ON CONFLICT DO
+	// NOTHING collapses a duplicate the caller sent, so the argument is the
+	// set that was asked for, not the set the role now holds.
+	rows, err := executor.Query(ctx, `
+		SELECT resource, action FROM role_permissions
+		WHERE role_id = $1 ORDER BY resource, action`, roleID,
+	)
+	if err != nil {
+		return nil, w.Wrapf(err, "failed to read back role permissions")
+	}
+	defer rows.Close()
+	stored := make([]*gen.Permission, 0, len(permissions))
+	for rows.Next() {
+		var resource, action string
+		if err := rows.Scan(&resource, &action); err != nil {
+			return nil, w.Wrapf(err, "failed to scan role permission")
+		}
+		stored = append(stored, &gen.Permission{Resource: resource, Action: action})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, w.Wrapf(err, "failed iterating role permissions")
+	}
+
+	return &gen.Role{
+		Id:          roleID,
+		Name:        name,
+		Description: description,
+		Permissions: stored,
+		OrgId:       orgID,
+	}, nil
+}
+
 func (s *PostgresStore) DeleteRole(ctx context.Context, roleID string) error {
 	w := wool.Get(ctx).In("DeleteRole")
 	executor := s.getQueryExecutor(ctx)
@@ -302,7 +399,7 @@ func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID
 
 	// IS NOT DISTINCT FROM treats NULL = NULL as true; works with both
 	// NULL rows and concrete values, and keeps the query parameterized.
-	_, err := executor.Exec(ctx, `
+	tag, err := executor.Exec(ctx, `
 		DELETE FROM role_assignments
 		WHERE subject_id = $1 AND role_id = $2
 		  AND org_id IS NOT DISTINCT FROM $3
@@ -311,6 +408,13 @@ func (s *PostgresStore) RevokeRole(ctx context.Context, subjectID string, roleID
 	)
 	if err != nil {
 		return w.Wrapf(err, "failed to revoke role")
+	}
+	// Every column of the predicate is part of the assignment's identity, so a
+	// caller that omits the scope of a scope-qualified grant matches nothing.
+	// Reporting that as success tells an administrator authority was removed
+	// when it is still held, which is the one answer this must never give.
+	if tag.RowsAffected() == 0 {
+		return status.Errorf(codes.NotFound, "no role assignment for subject %q and role %q in this scope", subjectID, roleID)
 	}
 	return nil
 }

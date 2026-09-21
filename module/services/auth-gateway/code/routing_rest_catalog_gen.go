@@ -78,6 +78,7 @@ func generatedCatalogRESTRoutes() []*RouteEntry {
 		{Service: "accounts", Method: "GET", Path: "/v1/webhooks", Procedure: "/saas.accounts.v1.WebhookService/ListSubscriptions"},
 		{Service: "accounts", Method: "GET", Path: "/v1/webhooks/deliveries/{id}", Procedure: "/saas.accounts.v1.WebhookService/GetDelivery"},
 		{Service: "accounts", Method: "GET", Path: "/v1/webhooks/{subscription_id}/deliveries", Procedure: "/saas.accounts.v1.WebhookService/ListDeliveries"},
+		{Service: "accounts", Method: "PATCH", Path: "/v1/roles/{id}", Procedure: "/saas.accounts.v1.PermissionService/UpdateRole"},
 		{Service: "accounts", Method: "PATCH", Path: "/v1/teams/{team_id}", Procedure: "/saas.accounts.v1.TeamService/UpdateTeam"},
 		{Service: "accounts", Method: "PATCH", Path: "/v1/users/{uuid}", Procedure: "/saas.accounts.v1.UserService/UpdateUser"},
 		{Service: "accounts", Method: "POST", Path: "/v1/api-keys", Procedure: "/saas.accounts.v1.APIKeyService/CreateAPIKey"},

@@ -23,6 +23,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	PermissionService_CreateRole_FullMethodName           = "/saas.accounts.v1.PermissionService/CreateRole"
 	PermissionService_ListRoles_FullMethodName            = "/saas.accounts.v1.PermissionService/ListRoles"
+	PermissionService_UpdateRole_FullMethodName           = "/saas.accounts.v1.PermissionService/UpdateRole"
 	PermissionService_DeleteRole_FullMethodName           = "/saas.accounts.v1.PermissionService/DeleteRole"
 	PermissionService_AssignRole_FullMethodName           = "/saas.accounts.v1.PermissionService/AssignRole"
 	PermissionService_RevokeRole_FullMethodName           = "/saas.accounts.v1.PermissionService/RevokeRole"
@@ -48,6 +49,7 @@ const (
 type PermissionServiceClient interface {
 	CreateRole(ctx context.Context, in *CreateRoleRequest, opts ...grpc.CallOption) (*CreateRoleResponse, error)
 	ListRoles(ctx context.Context, in *ListRolesRequest, opts ...grpc.CallOption) (*ListRolesResponse, error)
+	UpdateRole(ctx context.Context, in *UpdateRoleRequest, opts ...grpc.CallOption) (*UpdateRoleResponse, error)
 	DeleteRole(ctx context.Context, in *DeleteRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	AssignRole(ctx context.Context, in *AssignRoleRequest, opts ...grpc.CallOption) (*AssignRoleResponse, error)
 	RevokeRole(ctx context.Context, in *RevokeRoleRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
@@ -111,6 +113,16 @@ func (c *permissionServiceClient) ListRoles(ctx context.Context, in *ListRolesRe
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListRolesResponse)
 	err := c.cc.Invoke(ctx, PermissionService_ListRoles_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *permissionServiceClient) UpdateRole(ctx context.Context, in *UpdateRoleRequest, opts ...grpc.CallOption) (*UpdateRoleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRoleResponse)
+	err := c.cc.Invoke(ctx, PermissionService_UpdateRole_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -275,6 +287,7 @@ func (c *permissionServiceClient) ListShares(ctx context.Context, in *ListShares
 type PermissionServiceServer interface {
 	CreateRole(context.Context, *CreateRoleRequest) (*CreateRoleResponse, error)
 	ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error)
+	UpdateRole(context.Context, *UpdateRoleRequest) (*UpdateRoleResponse, error)
 	DeleteRole(context.Context, *DeleteRoleRequest) (*emptypb.Empty, error)
 	AssignRole(context.Context, *AssignRoleRequest) (*AssignRoleResponse, error)
 	RevokeRole(context.Context, *RevokeRoleRequest) (*emptypb.Empty, error)
@@ -329,6 +342,9 @@ func (UnimplementedPermissionServiceServer) CreateRole(context.Context, *CreateR
 }
 func (UnimplementedPermissionServiceServer) ListRoles(context.Context, *ListRolesRequest) (*ListRolesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRoles not implemented")
+}
+func (UnimplementedPermissionServiceServer) UpdateRole(context.Context, *UpdateRoleRequest) (*UpdateRoleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRole not implemented")
 }
 func (UnimplementedPermissionServiceServer) DeleteRole(context.Context, *DeleteRoleRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteRole not implemented")
@@ -428,6 +444,24 @@ func _PermissionService_ListRoles_Handler(srv interface{}, ctx context.Context, 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(PermissionServiceServer).ListRoles(ctx, req.(*ListRolesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PermissionService_UpdateRole_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRoleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PermissionServiceServer).UpdateRole(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PermissionService_UpdateRole_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PermissionServiceServer).UpdateRole(ctx, req.(*UpdateRoleRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -716,6 +750,10 @@ var PermissionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRoles",
 			Handler:    _PermissionService_ListRoles_Handler,
+		},
+		{
+			MethodName: "UpdateRole",
+			Handler:    _PermissionService_UpdateRole_Handler,
 		},
 		{
 			MethodName: "DeleteRole",

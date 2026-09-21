@@ -39,7 +39,7 @@ func teamMembershipCount(t *testing.T, ctx context.Context, orgID, userID string
 	t.Helper()
 	var count int
 	require.NoError(t, testStore.WithOrgTx(ctx, orgID, func(ctx context.Context) error {
-		teams, err := testStore.ListTeams(ctx, orgID)
+		teams, err := testStore.ListTeams(ctx, orgID, "")
 		if err != nil {
 			return err
 		}

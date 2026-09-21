@@ -71,6 +71,19 @@ navigation:
       - plugin_registry
       - sidebar
     order: 130
+  - id: admin-permissions
+    plugin: core-users
+    label: Permissions
+    path: /admin/permissions
+    icon: KeyRound
+    group: Users & Access
+    access: admin
+    permission: roles:read
+    surfaces:
+      - command_palette
+      - plugin_registry
+      - sidebar
+    order: 135
   - id: admin-invitations
     plugin: core-users
     label: Invitations

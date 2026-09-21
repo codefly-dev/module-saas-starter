@@ -782,7 +782,7 @@ func seedTeams(ctx context.Context, w *wool.Wool, service *business.Service, tea
 		var existingTeams []*gen.Team
 		if err := service.Store().WithControlPlane(ctx, func(ctx context.Context) error {
 			var listErr error
-			existingTeams, listErr = service.Store().ListTeams(ctx, orgID)
+			existingTeams, listErr = service.Store().ListTeams(ctx, orgID, "")
 			return listErr
 		}); err != nil {
 			w.Warn("cannot list fixture teams", wool.Field("name", team.Name), wool.Field("error", err.Error()))

@@ -1611,6 +1611,18 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/app/admin/permissions/page.tsx",
+			"imports": [
+				"@/features/permissions/ui/permissions-page"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/app/admin/platform/admins/page.tsx",
 			"imports": [
 				"@/features/platform/ui/admins-page"
@@ -1687,6 +1699,18 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/app/admin/roles/[roleId]/page.tsx",
+			"imports": [
+				"@/features/roles/ui/role-detail-page"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/app/admin/roles/page.tsx",
 			"imports": [
 				"@/features/roles/ui/roles-page"
@@ -1723,9 +1747,33 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/app/admin/teams/[teamId]/page.tsx",
+			"imports": [
+				"@/features/teams/ui/team-detail-page"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/app/admin/teams/page.tsx",
 			"imports": [
 				"@/features/teams/ui/teams-page"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Next.js route or layout entry; owns host routing and server/provider composition. Full-page preview coverage is still pending.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
+			"source": "src/app/admin/users/[userId]/page.tsx",
+			"imports": [
+				"@/features/users/ui/user-detail-page"
 			],
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
@@ -3367,6 +3415,42 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/features/permissions/ui/grant-source.tsx",
+			"imports": [
+				"@/shared/ui",
+				"../model/effective"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Owns the permissions workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
+			"source": "src/features/permissions/ui/permissions-page.tsx",
+			"imports": [
+				"@tanstack/react-query",
+				"react",
+				"@/components/org-selector",
+				"@/features/organizations/service/queries",
+				"@/features/roles/service/queries",
+				"@/features/users/ui/user-detail-page",
+				"@/lib/auth",
+				"@/shared/lib/utils",
+				"@/shared/ui",
+				"../model/effective",
+				"../service/effective",
+				"../service/queries"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Owns the permissions workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/features/platform/ui/admins-page.tsx",
 			"imports": [
 				"@tanstack/react-table",
@@ -3468,6 +3552,35 @@
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
 		},
 		{
+			"source": "src/features/roles/ui/role-detail-page.tsx",
+			"imports": [
+				"@tanstack/react-query",
+				"lucide-react",
+				"next/link",
+				"react",
+				"sonner",
+				"@/components/org-selector",
+				"@/features/permissions/model/effective",
+				"@/features/permissions/service/queries",
+				"@/features/teams/service/queries",
+				"@/gen/saas/accounts/v1/common_pb",
+				"@/gen/saas/accounts/v1/frontend_catalog",
+				"@/lib/auth",
+				"@/lib/permissions",
+				"@/shared/lib/utils",
+				"@/shared/ui",
+				"../model/types",
+				"../service/mutations",
+				"../service/queries"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Owns the roles workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
 			"source": "src/features/roles/ui/role-form.tsx",
 			"imports": [
 				"lucide-react",
@@ -3536,6 +3649,33 @@
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Owns the sso-admin workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
+			"source": "src/features/teams/ui/team-detail-page.tsx",
+			"imports": [
+				"@tanstack/react-query",
+				"lucide-react",
+				"next/link",
+				"react",
+				"sonner",
+				"@/components/org-selector",
+				"@/features/roles/service/mutations",
+				"@/features/roles/service/queries",
+				"@/gen/saas/accounts/v1/common_pb",
+				"@/gen/saas/accounts/v1/frontend_catalog",
+				"@/lib/auth",
+				"@/lib/permissions",
+				"@/shared/lib/utils",
+				"@/shared/ui",
+				"../service/mutations",
+				"../service/queries"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Owns the teams workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
 			"stories": [],
 			"coverage": "missing",
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
@@ -3727,6 +3867,33 @@
 			"owner": "SaaS application",
 			"disposition": "keep feature-local",
 			"reason": "Defines users validation and submission for the owning workflow; shared controls own fields and dialogs.",
+			"stories": [],
+			"coverage": "missing",
+			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."
+		},
+		{
+			"source": "src/features/users/ui/user-detail-page.tsx",
+			"imports": [
+				"@tanstack/react-query",
+				"lucide-react",
+				"next/link",
+				"sonner",
+				"@/components/org-selector",
+				"@/features/permissions/model/effective",
+				"@/features/permissions/service/effective",
+				"@/features/roles/service/mutations",
+				"@/features/roles/ui/manage-member-roles-dialog",
+				"@/gen/saas/accounts/v1/common_pb",
+				"@/gen/saas/accounts/v1/frontend_catalog",
+				"@/lib/auth",
+				"@/lib/permissions",
+				"@/shared/lib/utils",
+				"@/shared/ui",
+				"../service/queries"
+			],
+			"owner": "SaaS application",
+			"disposition": "keep feature-local",
+			"reason": "Owns the users workflow, data binding or route composition. Lower-level presentation consumes the shared kit.",
 			"stories": [],
 			"coverage": "missing",
 			"remaining": "Owner stories or a reviewed nonvisual exclusion still required."

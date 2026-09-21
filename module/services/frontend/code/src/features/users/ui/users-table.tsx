@@ -16,6 +16,7 @@ import {
 	Trash2,
 	UserCog,
 } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { formatDate } from "@/shared/lib/utils";
 import {
@@ -64,7 +65,14 @@ export function UsersTable({
 		() => [
 			col.accessor("primaryEmail", {
 				header: "Email",
-				cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+				cell: (info) => (
+					<Link
+						href={`/admin/users/${info.row.original.uuid}`}
+						className="font-medium text-primary hover:underline"
+					>
+						{info.getValue()}
+					</Link>
+				),
 			}),
 			col.display({
 				id: "name",

@@ -10,7 +10,7 @@
       "kind": "protobuf",
       "package": "saas.accounts.v1",
       "path": "contracts/api/accounts/connect/contract.binpb",
-      "digest": "sha256:55a44a53dfea8163e1d58a30868b367be63f816e85480f532b96238728c06cee",
+      "digest": "sha256:5c3d49a535fdd492dfdba8a9d83ea45d383a156a4b923fc3f04524ce479ab139",
       "services": [
         {
           "name": "APIKeyService",
@@ -268,7 +268,8 @@
             "/saas.accounts.v1.PermissionService/RevokeRole",
             "/saas.accounts.v1.PermissionService/RevokeScope",
             "/saas.accounts.v1.PermissionService/RevokeShare",
-            "/saas.accounts.v1.PermissionService/ShareRecord"
+            "/saas.accounts.v1.PermissionService/ShareRecord",
+            "/saas.accounts.v1.PermissionService/UpdateRole"
           ]
         },
         {

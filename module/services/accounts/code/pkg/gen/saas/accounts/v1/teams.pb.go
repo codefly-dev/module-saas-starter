@@ -149,8 +149,14 @@ func (x *CreateTeamResponse) GetTeam() *Team {
 }
 
 type ListTeamsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	OrgId string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	// member_id (optional) narrows the list to the teams this principal
+	// belongs to; empty returns every team in the org. The uuid rule applies
+	// only to a non-empty value — without it the filter reaches the query as a
+	// uuid cast and a malformed id fails in the database as an internal error
+	// rather than at the boundary as an invalid argument.
+	MemberId      string `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -188,6 +194,13 @@ func (*ListTeamsRequest) Descriptor() ([]byte, []int) {
 func (x *ListTeamsRequest) GetOrgId() string {
 	if x != nil {
 		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListTeamsRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
 	}
 	return ""
 }
@@ -596,9 +609,10 @@ const file_saas_accounts_v1_teams_proto_rawDesc = "" +
 	"\x0eparent_team_id\x18\x04 \x01(\tR\fparentTeamId\x12\x12\n" +
 	"\x04slug\x18\x05 \x01(\tR\x04slug\"@\n" +
 	"\x12CreateTeamResponse\x12*\n" +
-	"\x04team\x18\x01 \x01(\v2\x16.saas.accounts.v1.TeamR\x04team\"3\n" +
+	"\x04team\x18\x01 \x01(\v2\x16.saas.accounts.v1.TeamR\x04team\"]\n" +
 	"\x10ListTeamsRequest\x12\x1f\n" +
-	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\"A\n" +
+	"\x06org_id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12(\n" +
+	"\tmember_id\x18\x02 \x01(\tB\v\xbaH\b\xd8\x01\x01r\x03\xb0\x01\x01R\bmemberId\"A\n" +
 	"\x11ListTeamsResponse\x12,\n" +
 	"\x05teams\x18\x01 \x03(\v2\x16.saas.accounts.v1.TeamR\x05teams\"\x8c\x01\n" +
 	"\x14AddTeamMemberRequest\x12!\n" +

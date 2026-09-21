@@ -263,7 +263,8 @@
         "/saas.accounts.v1.PermissionService/RevokeRole",
         "/saas.accounts.v1.PermissionService/RevokeScope",
         "/saas.accounts.v1.PermissionService/RevokeShare",
-        "/saas.accounts.v1.PermissionService/ShareRecord"
+        "/saas.accounts.v1.PermissionService/ShareRecord",
+        "/saas.accounts.v1.PermissionService/UpdateRole"
       ]
     },
     {
@@ -7328,6 +7329,59 @@
       },
       "policy_tier": "org_admin",
       "description": "Share a record with a principal/team.",
+      "owner": {
+        "module": "saas-starter",
+        "service": "accounts"
+      }
+    },
+    {
+      "procedure": "/saas.accounts.v1.PermissionService/UpdateRole",
+      "service": "PermissionService",
+      "full_service": "saas.accounts.v1.PermissionService",
+      "method": "UpdateRole",
+      "input_type": "saas.accounts.v1.UpdateRoleRequest",
+      "output_type": "saas.accounts.v1.UpdateRoleResponse",
+      "client_streaming": false,
+      "server_streaming": false,
+      "deprecated": false,
+      "source_proto": "saas/accounts/v1/authorization.proto",
+      "protocols": [
+        "PROTOCOL_GRPC",
+        "PROTOCOL_CONNECT",
+        "PROTOCOL_REST"
+      ],
+      "http_bindings": [
+        {
+          "method": "PATCH",
+          "path": "/v1/roles/{id}",
+          "body": "*",
+          "response_body": ""
+        }
+      ],
+      "policy": {
+        "exposure": "EXPOSURE_AUTHENTICATED",
+        "tenant": "TENANT_REQUIREMENT_USER",
+        "permissions": [],
+        "scopes": [],
+        "resource_bindings": [],
+        "mfa": "MFA_REQUIREMENT_NONE",
+        "audit": {
+          "events": [
+            "saas.role.updated"
+          ],
+          "emission": "AUDIT_EMISSION_SUCCESS"
+        },
+        "idempotency": "IDEMPOTENCY_REQUIREMENT_FORBIDDEN",
+        "rate_limit": "RATE_LIMIT_CLASS_STANDARD_WRITE",
+        "request_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "response_sensitivity": "SENSITIVITY_CONFIDENTIAL",
+        "platform_role": "PLATFORM_ROLE_REQUIREMENT_NONE",
+        "authentication_factor_attempt": false,
+        "conditions": [],
+        "impersonation": "IMPERSONATION_REQUIREMENT_FORBIDDEN"
+      },
+      "policy_tier": "auth",
+      "description": "Replace a custom role's description and permission set.",
       "owner": {
         "module": "saas-starter",
         "service": "accounts"

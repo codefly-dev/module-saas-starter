@@ -26,6 +26,15 @@ message CreateTeamResponse {
 
 message ListTeamsRequest {
   string org_id = 1 [(buf.validate.field).string.uuid = true];
+  // member_id (optional) narrows the list to the teams this principal
+  // belongs to; empty returns every team in the org. The uuid rule applies
+  // only to a non-empty value — without it the filter reaches the query as a
+  // uuid cast and a malformed id fails in the database as an internal error
+  // rather than at the boundary as an invalid argument.
+  string member_id = 2 [
+    (buf.validate.field).ignore = IGNORE_IF_ZERO_VALUE,
+    (buf.validate.field).string.uuid = true
+  ];
 }
 
 message ListTeamsResponse {

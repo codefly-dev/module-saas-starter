@@ -2,7 +2,7 @@
 
 > Generated from protobuf service descriptors and `saas.policy.v1.method_policy`; only the prose description is joined from `pkg/business/introspection.go`. Do not edit by hand. Run `go generate ./pkg/business` from `module/services/accounts/code`.
 
-Inventory: **214 RPCs** across **33 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
+Inventory: **215 RPCs** across **33 services**. Missing, invalid, or unclassified procedures are denied by both Connect and gRPC interceptors.
 
 The compact tier is retained for compatibility. Guards, resource bindings, audit events, limiter class, and data sensitivity are descriptor-authoritative. Domain handlers may enforce stronger state-dependent rules but may not weaken this floor.
 
@@ -141,6 +141,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 | `/saas.accounts.v1.PermissionService/RevokeScope` | unary | `DELETE /v1/scope-grants` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.scope.revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a hierarchical scope grant. |
 | `/saas.accounts.v1.PermissionService/RevokeShare` | unary | `DELETE /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.record.share_revoked | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Revoke a per-record share. |
 | `/saas.accounts.v1.PermissionService/ShareRecord` | unary | `POST /v1/record-shares` | `org_admin` | exposure=AUTHENTICATED; tenant=ORG_ADMIN; impersonation=FORBIDDEN | — | org_id → ORGANIZATION/DIRECT_ID | SUCCESS: saas.record.shared | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Share a record with a principal/team. |
+| `/saas.accounts.v1.PermissionService/UpdateRole` | unary | `PATCH /v1/roles/{id}` | `auth` | exposure=AUTHENTICATED; tenant=USER; impersonation=FORBIDDEN | — | — | SUCCESS: saas.role.updated | FORBIDDEN / STANDARD_WRITE | CONFIDENTIAL → CONFIDENTIAL | Replace a custom role's description and permission set. |
 | `/saas.accounts.v1.PlatformAdminService/GetEventOperations` | unary | `GET /v1/platform/events/operations` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Domain-event type counters, outbox relay lag, and dead-letter snapshots. |
 | `/saas.accounts.v1.PlatformAdminService/GetJob` | unary | `GET /v1/platform/jobs/{job_id}` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Payload-free job metadata, attempts, and state history. |
 | `/saas.accounts.v1.PlatformAdminService/GetJobOperations` | unary | `GET /v1/platform/jobs/operations` | `platform_admin` | exposure=AUTHENTICATED; tenant=NONE; platform=SUPER_ADMIN | — | — | — | FORBIDDEN / SENSITIVE | CONFIDENTIAL → CONFIDENTIAL | Durable queue depth, readiness, and lease-health snapshots. |
@@ -225,7 +226,7 @@ The compact tier is retained for compatibility. Guards, resource bindings, audit
 
 ## Tier totals
 
-- `auth`: 42
+- `auth`: 43
 - `internal`: 43
 - `mfa`: 3
 - `org_admin`: 45

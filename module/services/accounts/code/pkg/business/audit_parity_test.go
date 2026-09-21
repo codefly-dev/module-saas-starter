@@ -60,7 +60,6 @@ var eventsEmittedOutsideRPC = []EventType{
 	EventEventSubscriptionCreated,
 	EventEventSubscriptionRevoked,
 	EventGDPRDeletionDone,
-	EventRoleUpdated,
 	EventUserCreated,
 	EventWaitlistApproved,
 	EventWaitlistConverted,
