@@ -67,7 +67,7 @@ func auditToCSV(entries []AuditEntry) ([]byte, error) {
 	writer := csv.NewWriter(&buf)
 
 	// Header
-	if err := writer.Write([]string{"id", "event_type", "schema_version", "category", "actor_id", "actor_type", "resource", "resource_id", "org_id", "ip_address", "created_at"}); err != nil {
+	if err := writer.Write([]string{"id", "event_type", "schema_version", "category", "actor_id", "actor_type", "resource", "resource_id", "org_id", "ip_address", "client_id", "created_at"}); err != nil {
 		return nil, err
 	}
 
@@ -87,6 +87,7 @@ func auditToCSV(entries []AuditEntry) ([]byte, error) {
 			e.ResourceID,
 			e.OrgID,
 			e.IPAddress,
+			e.ClientID,
 			e.CreatedAt.Format(time.RFC3339),
 		}); err != nil {
 			return nil, err
@@ -111,6 +112,7 @@ type auditExportEntry struct {
 	ResourceID    string         `json:"resource_id"`
 	OrgID         string         `json:"org_id"`
 	IPAddress     string         `json:"ip_address"`
+	ClientID      string         `json:"client_id,omitempty"`
 	Payload       map[string]any `json:"payload,omitempty"`
 	CreatedAt     string         `json:"created_at"`
 }
@@ -142,6 +144,7 @@ func auditEntryToExport(e AuditEntry) auditExportEntry {
 		ResourceID:    e.ResourceID,
 		OrgID:         e.OrgID,
 		IPAddress:     e.IPAddress,
+		ClientID:      e.ClientID,
 		Payload:       RedactPayload(e.EventType, e.Payload),
 		CreatedAt:     e.CreatedAt.Format(time.RFC3339),
 	}

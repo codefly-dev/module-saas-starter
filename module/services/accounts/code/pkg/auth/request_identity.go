@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"regexp"
 
 	"github.com/google/uuid"
 )
@@ -31,12 +32,17 @@ var ErrRequestIdentityMalformed = errors.New("verified request identity is malfo
 // Delegation is a different relationship and stays a separate field: the RFC
 // 8693 `act` chain names a service acting on behalf of the subject, never a
 // user an admin is viewing as.
+//
+// ClientID answers a third question neither id answers: not who the request
+// runs as or is attributable to, but what the person made it through. It is a
+// registered client's id, empty for the host's own web session.
 type RequestIdentity struct {
 	RealActor        uuid.UUID
 	EffectiveSubject uuid.UUID
 	OrgID            uuid.UUID
 	SessionID        uuid.UUID
 	Delegation       *Actor
+	ClientID         string
 }
 
 // Impersonated reports whether this request runs under someone else's subject.
@@ -59,7 +65,8 @@ func renderID(id uuid.UUID) string {
 
 // RequestIdentityOf projects a locally verified access token onto the request
 // contract. `sub` is the real actor throughout, including on an impersonation
-// token; the `acting` claim, when present, names the effective subject.
+// token; the `acting` claim, when present, names the effective subject, and
+// `azp` the registered client the token was minted for.
 func RequestIdentityOf(identity *Identity) RequestIdentity {
 	projected := RequestIdentity{
 		RealActor:        identity.UserID,
@@ -67,6 +74,7 @@ func RequestIdentityOf(identity *Identity) RequestIdentity {
 		OrgID:            identity.OrgID,
 		SessionID:        identity.SessionID,
 		Delegation:       identity.Actor,
+		ClientID:         identity.ClientID,
 	}
 	if identity.ActingAsUserID != uuid.Nil {
 		projected.EffectiveSubject = identity.ActingAsUserID
@@ -109,6 +117,30 @@ func ParseRequestIdentity(userID, actingAsUserID, orgID, sessionID string) (Requ
 		projected.EffectiveSubject = actingAs
 	}
 	return projected, nil
+}
+
+// clientIDPattern is the shape of a registered client's id, the same one the
+// registry admits and the `azp` claim carries.
+var clientIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,63}$`)
+
+// ParseClientID projects the registered client a trusted gateway named on the
+// request. Empty is the ordinary case — the host's own web session names no
+// client — and never an error.
+//
+// A value that is not a client id is refused rather than dropped the way a
+// malformed delegation chain is. The chain is an annotation on a request that
+// is authorized either way, whereas this value is written into an append-only
+// compliance table and read back as evidence that a call was not first-party;
+// admitting an arbitrary string there would make that evidence unreliable in
+// the one direction nobody can correct afterwards.
+func ParseClientID(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	if !clientIDPattern.MatchString(raw) {
+		return "", ErrRequestIdentityMalformed
+	}
+	return raw, nil
 }
 
 func parseIDOrNil(raw string) uuid.UUID {

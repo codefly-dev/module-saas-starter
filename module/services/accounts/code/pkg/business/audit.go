@@ -37,7 +37,11 @@ type AuditEntry struct {
 	IPAddress      string
 	ImpersonatedBy string // admin user ID if this action was performed during impersonation
 	IsImpersonated bool
-	CreatedAt      time.Time
+	// ClientID names the registered client the call was made through. Empty
+	// means the host's own web session, so "who did this" and "what did they do
+	// it through" stay separate questions.
+	ClientID  string
+	CreatedAt time.Time
 	// IdempotencyKey, when set, deduplicates retried emits: the emitter reserves
 	// (OrgID, EventType, IdempotencyKey) in a guard table inside the same
 	// transaction as the audit write, and a duplicate emit is a no-op success (no
@@ -273,6 +277,7 @@ type AuditQuery struct {
 	Namespace       string
 	Resource        string
 	ResourceID      string
+	ClientID        string
 	CollectionID    string
 	PayloadContains map[string]any
 	From            *time.Time
@@ -582,7 +587,8 @@ func (s *Service) AggregateAuditLog(ctx context.Context, q AuditQuery, spec Audi
 // buildAuditEntry assembles an AuditEntry. actorID is the effective subject the
 // action ran as; when that subject is not the person behind the request, the
 // entry additionally records the real actor, so an impersonated action is
-// attributable to both. Both ids come from the typed request identity the
+// attributable to both, and the registered client the call came through when
+// there was one. All of them come from the typed request identity the
 // authentication interceptors project — never from a separate metadata
 // convention, which is how the two representations drifted apart before.
 func (s *Service) buildAuditEntry(ctx context.Context, actorID, actorType string, eventType EventType, resource, resourceID, orgID string, payload ...map[string]any) AuditEntry {
@@ -597,9 +603,12 @@ func (s *Service) buildAuditEntry(ctx context.Context, actorID, actorType string
 	if len(payload) > 0 {
 		entry.Payload = payload[0]
 	}
-	if identity, ok := auth.VerifiedRequestIdentity(ctx); ok && identity.Impersonated() {
-		entry.IsImpersonated = true
-		entry.ImpersonatedBy = identity.RealActorID()
+	if identity, ok := auth.VerifiedRequestIdentity(ctx); ok {
+		if identity.Impersonated() {
+			entry.IsImpersonated = true
+			entry.ImpersonatedBy = identity.RealActorID()
+		}
+		entry.ClientID = identity.ClientID
 	}
 	return entry
 }

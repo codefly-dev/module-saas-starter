@@ -2,6 +2,8 @@ package auth
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -125,4 +127,58 @@ func TestWithVerifiedRequestIdentityRefusesHalfFormedIdentity(t *testing.T) {
 		require.False(t, ok, "half-formed identity must not install: %+v", identity)
 		require.False(t, ImpersonatedRequest(ctx))
 	}
+}
+
+// A registered client's id is carried as given. Empty is the host's own web
+// session and is not an error, so the ordinary case needs no special handling
+// downstream.
+func TestParseClientIDCarriesARegisteredClient(t *testing.T) {
+	client, err := ParseClientID("acme-console")
+	require.NoError(t, err)
+	require.Equal(t, "acme-console", client)
+
+	absent, err := ParseClientID("")
+	require.NoError(t, err)
+	require.Empty(t, absent)
+}
+
+// A value that is not a client id is refused rather than dropped: dropping it
+// would write "made from the host's own web session" into an append-only
+// compliance record of a call that was not.
+func TestParseClientIDRefusesAValueThatIsNotAClientID(t *testing.T) {
+	for _, raw := range []string{
+		"Acme-Console",  // the registry admits lowercase only
+		"-leading-dash", // must start alphanumeric
+		"a",             // shorter than the registry's minimum
+		"acme console",  // no whitespace
+		"acme/console",  // no path separators
+		strings.Repeat("a", 65),
+	} {
+		_, err := ParseClientID(raw)
+		require.ErrorIs(t, err, ErrRequestIdentityMalformed, "raw=%q", raw)
+	}
+}
+
+// The in-process projection's client is the one line of this contract that
+// could not be written when RequestIdentity.ClientID landed: it reads
+// Identity.ClientID, which arrives with the registered-client sign-in on a
+// different change. A compile-time reference would not build until then, so
+// there was no way to guard the join — and a seam that two changes each half
+// satisfy is exactly the kind that stays half-done silently.
+//
+// This guards it by reflection instead. It asserts nothing while Identity has
+// no client, and fails the moment one exists without RequestIdentityOf
+// projecting it.
+func TestRequestIdentityOfProjectsTheTokensClientOnceIdentityCarriesOne(t *testing.T) {
+	identity := &Identity{UserID: identityActor, OrgID: identityOrg}
+	field := reflect.ValueOf(identity).Elem().FieldByName("ClientID")
+	if !field.IsValid() {
+		t.Skip("Identity carries no client yet; this guard arms when it does")
+	}
+	require.Equal(t, reflect.String, field.Kind(), "Identity.ClientID must stay a plain client id")
+	field.SetString("example-console")
+
+	require.Equal(t, "example-console", RequestIdentityOf(identity).ClientID,
+		"Identity now carries a client but RequestIdentityOf drops it: a token presented "+
+			"directly to accounts would record no client. Add `projected.ClientID = identity.ClientID`.")
 }

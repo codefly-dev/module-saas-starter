@@ -343,6 +343,10 @@ func stampForwardedGRPCIdentity(ctx context.Context, md metadata.MD) (context.Co
 		return ctx, err
 	}
 	identity.Delegation = auth.ParseActor(firstMetadataValue(md, "x-act"))
+	identity.ClientID, err = auth.ParseClientID(firstMetadataValue(md, "x-client-id"))
+	if err != nil {
+		return ctx, err
+	}
 	ctx = stampRequestIdentity(ctx, identity, assuranceFromTransport(
 		firstMetadataValue(md, "x-authentication-methods"),
 		firstMetadataValue(md, "x-auth-time"),

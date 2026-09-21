@@ -1211,6 +1211,7 @@ func (s *AuditServer) QueryAuditLog(ctx context.Context, req *gen.QueryAuditLogR
 		Namespace:  req.Namespace,
 		Resource:   req.Resource,
 		ResourceID: req.ResourceId,
+		ClientID:   req.ClientId,
 		PageSize:   req.PageSize,
 		PageToken:  req.PageToken,
 	}
@@ -1278,6 +1279,7 @@ func (s *AuditServer) AggregateAuditLog(ctx context.Context, req *gen.AggregateA
 		Namespace:    req.Namespace,
 		Resource:     req.Resource,
 		ResourceID:   req.ResourceId,
+		ClientID:     req.ClientId,
 		CollectionID: req.CollectionId,
 	}
 	q.PayloadContains = make(map[string]any, len(req.PayloadContains))

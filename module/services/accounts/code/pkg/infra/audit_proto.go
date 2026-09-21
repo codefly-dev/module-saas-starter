@@ -24,6 +24,7 @@ func AuditEntryToProto(e business.AuditEntry) *gen.AuditEvent {
 		OrgId:         e.OrgID,
 		IpAddress:     e.IPAddress,
 		CreatedAt:     timestamppb.New(e.CreatedAt),
+		ClientId:      e.ClientID,
 	}
 	if def, ok := business.LookupAuditEvent(e.EventType); ok {
 		event.Category = string(def.Category)

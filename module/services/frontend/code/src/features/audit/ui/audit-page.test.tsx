@@ -45,6 +45,26 @@ describe("AuditPage admin container", () => {
 		expect(screen.queryByText("Saas Auth Login")).toBeNull();
 	});
 
+	// "Who did this" and "what did they do it through" are separate questions,
+	// so the client rides beside the actor rather than replacing it, and a call
+	// from the host's own session must show no client at all.
+	it("names the client a call was made through, and none for a web session", async () => {
+		server.use(
+			http.post(rpc("AuditService", "QueryAuditLog"), () =>
+				HttpResponse.json({
+					events: [
+						auditEvent({ id: "evt-client", clientId: "example-console" }),
+						auditEvent({ id: "evt-web" }),
+					],
+					totalCount: 2,
+				}),
+			),
+		);
+		renderInApp(<AuditPage />);
+		expect(await screen.findByText("example-console")).toBeTruthy();
+		expect(screen.getAllByText(/^via/)).toHaveLength(1);
+	});
+
 	it("renders an actor by display name rather than by truncated id", async () => {
 		server.use(
 			http.post(rpc("AuditService", "QueryAuditLog"), () =>

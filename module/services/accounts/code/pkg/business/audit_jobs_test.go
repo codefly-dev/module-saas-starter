@@ -380,6 +380,44 @@ func TestExportHandlerRedactsAtEgress(t *testing.T) {
 	}
 }
 
+// The client a call was made through is part of the record, so it has to
+// survive the tee to an external sink the way the actor does — a SIEM reading
+// the feed answers "what did they do it through" from this field alone.
+func TestExportCarriesTheClientTheCallCameThrough(t *testing.T) {
+	id := NewIDString()
+	raw, err := json.Marshal(newAuditExportPayload(AuditEntry{
+		ID: id, OrgID: teeOrgID, EventType: EventUserCreated, ClientID: "example-console",
+	}))
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	sink := &capturingSink{}
+	handler, err := NewAuditExportJobHandler(sink)
+	if err != nil {
+		t.Fatalf("NewAuditExportJobHandler: %v", err)
+	}
+	envelope := &jobsv1.JobEnvelope{
+		Id:             NewIDString(),
+		Direction:      jobsv1.JobDirection_JOB_DIRECTION_OUTBOX,
+		Scope:          &jobsv1.JobScope{Value: &jobsv1.JobScope_OrganizationId{OrganizationId: teeOrgID}},
+		Queue:          AuditExportQueue,
+		Topic:          AuditExportTopic,
+		Source:         AuditExportSource,
+		IdempotencyKey: id,
+		SchemaVersion:  AuditExportSchemaVersion,
+		Payload:        raw,
+		ContentType:    AuditExportContentType,
+		State:          jobsv1.JobState_JOB_STATE_PENDING,
+		MaxAttempts:    AuditExportMaxAttempts,
+	}
+	if err := handler(t.Context(), envelope); err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+	if sink.last.ClientID != "example-console" {
+		t.Fatalf("sink lost the client: %q", sink.last.ClientID)
+	}
+}
+
 func TestExportHandlerRejectsMalformedJob(t *testing.T) {
 	handler, err := NewAuditExportJobHandler(&flakySink{})
 	if err != nil {

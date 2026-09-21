@@ -127,6 +127,7 @@ function makeEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
 		orgId: "org-1",
 		payload: {},
 		ipAddress: "127.0.0.1",
+		clientId: "",
 		...overrides,
 	};
 }
@@ -201,5 +202,21 @@ describe("toAuditEvent", () => {
 	it("leaves created_at undefined when the Timestamp is absent", () => {
 		const proto = create(AuditEventSchema, { id: "evt-2" });
 		expect(toAuditEvent(proto).createdAt).toBeUndefined();
+	});
+
+	// The mapper is explicit field by field, so a field the server starts
+	// sending is dropped here silently and typecheck stays green — which is
+	// exactly how the client reached the wire without reaching the table.
+	it("carries the client the call was made through", () => {
+		const proto = create(AuditEventSchema, {
+			id: "evt-3",
+			clientId: "example-console",
+		});
+		expect(toAuditEvent(proto).clientId).toBe("example-console");
+	});
+
+	it("leaves the client empty for a call from the host's own session", () => {
+		const proto = create(AuditEventSchema, { id: "evt-4" });
+		expect(toAuditEvent(proto).clientId).toBe("");
 	});
 });

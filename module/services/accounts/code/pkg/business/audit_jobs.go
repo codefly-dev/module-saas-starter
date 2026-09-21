@@ -60,6 +60,7 @@ type auditExportPayload struct {
 	IPAddress      string         `json:"ip_address,omitempty"`
 	ImpersonatedBy string         `json:"impersonated_by,omitempty"`
 	IsImpersonated bool           `json:"is_impersonated,omitempty"`
+	ClientID       string         `json:"client_id,omitempty"`
 	CreatedAt      time.Time      `json:"created_at"`
 }
 
@@ -77,6 +78,7 @@ func newAuditExportPayload(entry AuditEntry) auditExportPayload {
 		IPAddress:      entry.IPAddress,
 		ImpersonatedBy: entry.ImpersonatedBy,
 		IsImpersonated: entry.IsImpersonated,
+		ClientID:       entry.ClientID,
 		CreatedAt:      entry.CreatedAt.UTC(),
 	}
 }
@@ -95,6 +97,7 @@ func (p auditExportPayload) toEntry() AuditEntry {
 		IPAddress:      p.IPAddress,
 		ImpersonatedBy: p.ImpersonatedBy,
 		IsImpersonated: p.IsImpersonated,
+		ClientID:       p.ClientID,
 		CreatedAt:      p.CreatedAt,
 	}
 }

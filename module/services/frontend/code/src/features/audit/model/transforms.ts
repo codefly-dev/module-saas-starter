@@ -24,6 +24,7 @@ export function toAuditEvent(e: ProtoAuditEvent): AuditEvent {
 		orgId: e.orgId,
 		payload: e.payload,
 		ipAddress: e.ipAddress,
+		clientId: e.clientId,
 		createdAt: e.createdAt
 			? timestampDate(e.createdAt).toISOString()
 			: undefined,
