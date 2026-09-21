@@ -13,6 +13,12 @@ managed:
 plugins:
   # Exact go-run module versions avoid ambient workstation binaries while
   # keeping Codefly's local path independent of anonymous BSR plugin quotas.
+  #
+  # protoc-gen-openapiv2 is deliberately absent: generated/openapi-raw is
+  # regenerated and byte-compared by the proto companion image, whose
+  # well-known types come from its own buf rather than from any pin here, so a
+  # local run emits a different google.protobuf.NullValue description and
+  # drifts a file the change never touched. The companion owns that document.
   - local: [go, run, google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11]
     out: code/pkg/gen
     opt: paths=source_relative
@@ -25,15 +31,6 @@ plugins:
   - local: [go, run, connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0]
     out: code/pkg/gen
     opt: paths=source_relative
-  - local: [go, run, github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.29.0]
-    # The REST catalog consumes this merged document as a checked generated
-    # input. Keep it in the tracked generator-owned tree so clean checkouts,
-    # Codefly sync, and local generation all validate the same bytes.
-    out: generated/openapi-raw
-    strategy: all
-    opt:
-      - allow_merge=true
-      - merge_file_name=api
   - local: [npx, --prefix, ../frontend/code, --no-install, protoc-gen-es]
     out: ../frontend/code/src/gen
     strategy: all

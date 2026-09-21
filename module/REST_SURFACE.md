@@ -62,7 +62,10 @@ descriptor route, so the file cannot become a shadow descriptor inventory.
 ## OpenAPI publication
 
 Codefly emits the unfiltered grpc-gateway OpenAPI document to the tracked,
-generator-owned `generated/openapi-raw/api.swagger.json`. The REST compiler
+generator-owned `generated/openapi-raw/api.swagger.json`. The proto companion
+image is its sole generator: its well-known types come from the buf it carries,
+which no template here can pin, so a local run emits a different
+`google.protobuf.NullValue` description and drifts the file. The REST compiler
 verifies every operation against `rest-surface.json`, rejects missing or
 unexpected routes, normalizes path-parameter spelling, adds
 `x-codefly-rest-schema` and `x-codefly-owner`, prunes unreachable definitions,
@@ -75,12 +78,15 @@ from 195 to 194.
 Run from `module/services/accounts`:
 
 ```sh
-codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml
+codefly generate proto --proto ./proto --output .                                        # companion: generated/openapi-raw
+codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml  # everything else
 cd code
 go generate ./pkg/business ./pkg/adapters ./pkg/cataloggen
 ```
 
-Codefly generation must run first because the REST compiler deliberately reads
-the checked raw generator output instead of trusting a previous public
-artifact. CI repeats this pipeline and rejects drift in the typed catalog,
-accounts runtime, auth-gateway runtime, and filtered OpenAPI document.
+The companion run is needed only when the change adds, removes, or re-annotates
+a REST route; it requires Docker. Codefly generation must run first because the
+REST compiler deliberately reads the checked raw generator output instead of
+trusting a previous public artifact. CI repeats this pipeline and rejects drift
+in the typed catalog, accounts runtime, auth-gateway runtime, and filtered
+OpenAPI document.

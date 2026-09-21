@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,83 @@ func TestMergedProtocolGeneratorsUseOneInvocation(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestOpenAPIDocumentHasOneGenerator keeps `generated/openapi-raw` a
+// companion-only output. Codefly regenerates it through the versioned proto
+// companion image and compares bytes; the companion's well-known types come
+// from the buf it carries, not from anything pinnable in a template here, so a
+// local run emits a different google.protobuf.NullValue description and drifts
+// a file the contributor's change never touched (#872). A local template that
+// declares the plugin makes the documented local path produce bytes CI rejects.
+func TestOpenAPIDocumentHasOneGenerator(t *testing.T) {
+	moduleRoot := findModuleRoot(t)
+	const companion = "services/accounts/proto/buf.gen.yaml"
+	if !declaresOpenAPI(t, moduleRoot, companion) {
+		t.Errorf("%s: no protoc-gen-openapiv2 plugin; the OpenAPI document has lost its generator", companion)
+	}
+	for _, relative := range localTemplates(t, moduleRoot) {
+		if declaresOpenAPI(t, moduleRoot, relative) {
+			t.Errorf("%s: declares protoc-gen-openapiv2; only %s may generate the OpenAPI document", relative, companion)
+		}
+	}
+}
+
+// Every local generation template shipped by a service, module-root-relative.
+func localTemplates(t *testing.T, moduleRoot string) []string {
+	t.Helper()
+	var templates []string
+	servicesRoot := filepath.Join(moduleRoot, "services")
+	err := filepath.WalkDir(servicesRoot, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			if entry.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		matched, err := filepath.Match("buf.gen.local*.yaml", entry.Name())
+		if err != nil || !matched {
+			return err
+		}
+		relative, err := filepath.Rel(moduleRoot, path)
+		if err != nil {
+			return err
+		}
+		templates = append(templates, relative)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(templates) == 0 {
+		t.Fatal("no local generation template found")
+	}
+	return templates
+}
+
+func declaresOpenAPI(t *testing.T, moduleRoot, relative string) bool {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(moduleRoot, relative))
+	if err != nil {
+		t.Fatalf("read %s: %v", relative, err)
+	}
+	var config struct {
+		Plugins []struct {
+			Local any `yaml:"local"`
+		} `yaml:"plugins"`
+	}
+	if err := yaml.Unmarshal(body, &config); err != nil {
+		t.Fatalf("parse %s: %v", relative, err)
+	}
+	for _, plugin := range config.Plugins {
+		if localPluginName(plugin.Local) == "protoc-gen-openapiv2" {
+			return true
+		}
+	}
+	return false
 }
 
 func findModuleRoot(t *testing.T) string {
