@@ -1,8 +1,27 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+} from "@testing-library/react";
 import { useState } from "react";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DateField, type DateFieldVariant } from "../date-field.js";
+
+const DATE_PATTERN_PROPERTY = "--appearance-date-pattern";
+
+/**
+ * Set the pattern the way the appearance projection does — an inline custom
+ * property on <html> — rather than by reaching into the component. That is the
+ * channel `appearanceStyleProperties` writes, so a test that stopped matching
+ * it would stop testing the skin.
+ */
+function setSkinDatePattern(pattern: DateFieldVariant): void {
+	document.documentElement.style.setProperty(DATE_PATTERN_PROPERTY, pattern);
+}
 
 function Harness({
 	variant,
@@ -26,7 +45,12 @@ function Harness({
 }
 
 describe("DateField", () => {
-	afterEach(cleanup);
+	afterEach(() => {
+		cleanup();
+		// Every test that asserts the default shape depends on no skin having
+		// been left behind on <html>.
+		document.documentElement.style.removeProperty(DATE_PATTERN_PROPERTY);
+	});
 
 	it("captions the parts variant with a legend, not a label", () => {
 		render(<Harness />);
@@ -138,5 +162,59 @@ describe("DateField", () => {
 		const control = screen.getByLabelText(/document date/i);
 		fireEvent.change(control, { target: { value: "2007-03-27" } });
 		expect(screen.getByTestId("value").textContent).toBe("2007-03-27");
+	});
+
+	// The point of the feature: one call site, and the deployment's skin decides
+	// the shape. Without these the mechanism could regress to always-parts and
+	// every other test here would still pass.
+	it("takes the skin's pattern when the call site names no variant", () => {
+		setSkinDatePattern("compact");
+		render(<Harness />);
+		expect(screen.getByLabelText(/document date/i).getAttribute("type")).toBe(
+			"date",
+		);
+		expect(screen.queryByLabelText("Day")).toBeNull();
+	});
+
+	it("lets an explicit variant outrank the skin", () => {
+		// A screen that must pin one shape keeps it even under the other skin.
+		setSkinDatePattern("compact");
+		const { container } = render(<Harness variant="parts" />);
+		expect(screen.getByLabelText("Day")).toBeTruthy();
+		// The legend names the fieldset, so the group answers to the label too;
+		// the native control's absence is what distinguishes the shapes.
+		expect(container.querySelector('input[type="date"]')).toBeNull();
+	});
+
+	it("follows the skin when it is swapped in place", async () => {
+		// Why this control subscribes rather than reading once: the explorer
+		// swaps skins live, and a control that read at mount would keep the old
+		// shape until a reload.
+		render(<Harness />);
+		expect(screen.getByLabelText("Day")).toBeTruthy();
+
+		setSkinDatePattern("compact");
+
+		await waitFor(() => {
+			expect(screen.queryByLabelText("Day")).toBeNull();
+		});
+		expect(screen.getByLabelText(/document date/i).getAttribute("type")).toBe(
+			"date",
+		);
+	});
+
+	it("renders the parts shape on the server, whatever the skin says", () => {
+		// The server snapshot cannot consult the skin: the pattern travels as a
+		// CSS custom property on <html>, and there is no computed style without
+		// a DOM. So SSR emits the parts shape and a `compact` deployment flips
+		// to its real shape on hydration. Pinned because it is a real edge of
+		// the current design, not because it is desirable — the PR's follow-up
+		// covers giving the server the resolved pattern directly.
+		setSkinDatePattern("compact");
+		const html = renderToString(
+			<DateField label="Document date" value="" onValueChange={() => {}} />,
+		);
+		expect(html).toContain('data-variant="parts"');
+		expect(html).not.toContain('type="date"');
 	});
 });

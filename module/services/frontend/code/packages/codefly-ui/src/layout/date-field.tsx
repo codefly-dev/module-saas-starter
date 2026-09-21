@@ -85,13 +85,22 @@ function joinIso(parts: Record<DateFieldPart, string>): string {
 /**
  * The skin's date pattern, read from the `--appearance-date-pattern` custom
  * property the appearance projection sets on <html>. That property is the
- * same channel every token travels, so the explorer and SSR agree without a
- * second context.
+ * same channel every token travels, so no second context is needed to reach
+ * the browser.
  *
  * Subscribed rather than read once: the product fixes it for a page's life,
  * but the explorer swaps skins in place, and a control that ignored the swap
  * would show the wrong shape until a reload. `useSyncExternalStore` also
  * gives SSR its own snapshot, so the server never touches `document`.
+ *
+ * The server does not share that channel, and cannot: a custom property needs
+ * a computed style, so there is nothing to read without a DOM. The server
+ * snapshot is therefore the parts shape unconditionally, and a deployment
+ * whose skin asks for `compact` serves parts and settles into compact on
+ * hydration. Giving the server the resolved pattern directly means handing it
+ * down from where the appearance is already resolved — a provider, not this
+ * property — which is a larger change than this control; it is pinned by a
+ * test in `__tests__/date-field.test.tsx` so the edge cannot move silently.
  */
 function readDatePattern(): DateFieldVariant {
 	const raw = getComputedStyle(document.documentElement)
