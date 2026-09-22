@@ -32,7 +32,9 @@ Changed source/grant or authorization revisions invalidate existing cursors;
 standing-grant expiration also requires a restart. Source pages are joined and
 limited in the database, under the same snapshot as authority verification. Current owner and
 all delegated actor grants are intersected in the authenticated tenant.
-Unsupported providers fail explicitly; the initial projection supports GitHub.
+Every provider the host connects is projected. `container` is what the
+consuming module's ingest keys the source's entries under: the repository for
+a GitHub source, the source id for every other provider.
 
 A server adapter deriving the active session organization from authenticated
 identity and exchanging a bearer for a viewer Work Context remains a separate

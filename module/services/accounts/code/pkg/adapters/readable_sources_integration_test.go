@@ -78,6 +78,58 @@ func TestSourceReadPostgresSignedRPC(t *testing.T) {
 	require.Equal(t, gen.MetadataDisclosure_METADATA_DISCLOSURE_WITHHELD, result.Msg.Collections[0].GrantDisclosure)
 	require.Equal(t, gen.MetadataDisclosure_METADATA_DISCLOSURE_WITHHELD, result.Msg.Collections[0].Sync.RequesterDisclosure)
 
+	// Every provider the host connects projects, on the same page as a GitHub
+	// source, each under the container its ingest deliveries are keyed by: the
+	// repository for GitHub, the source id for every other provider (AddSource
+	// writes repo for GitHub alone). The set below is the provider CHECK
+	// constraint's whole set, so a provider added there without a projection
+	// rule fails this test rather than the first consumer that lists it.
+	uploadSource, apiSource, crawlerSource := uuid.NewString(), uuid.NewString(), uuid.NewString()
+	exec(`INSERT INTO datasource_sources(id,org_id,provider,credential_secret_ref,boundary_node_id) VALUES($1,$2,'upload','fixture-unused',$3)`, uploadSource, readOrg, boundary)
+	exec(`INSERT INTO datasource_sources(id,org_id,provider,credential_secret_ref,boundary_node_id) VALUES($1,$2,'api','fixture-unused',$3)`, apiSource, readOrg, boundary)
+	exec(`INSERT INTO datasource_sources(id,org_id,provider,credential_secret_ref,boundary_node_id) VALUES($1,$2,'crawler','fixture-unused',$3)`, crawlerSource, readOrg, boundary)
+	// The fixture's page holds one source, so the whole projection is what a
+	// consumer sees only after draining next_page_token.
+	drain := func() ([]*gen.ReadableSourceCollection, error) {
+		var collections []*gen.ReadableSourceCollection
+		request := sourceReadRequest(token)
+		for pages := 0; pages < 10; pages++ {
+			page, err := client.ListReadableSourceCollections(ctx, request)
+			if err != nil {
+				return nil, err
+			}
+			collections = append(collections, page.Msg.Collections...)
+			if page.Msg.NextPageToken == "" {
+				return collections, nil
+			}
+			request = sourceReadRequest(token)
+			request.Msg.PageToken = page.Msg.NextPageToken
+		}
+		t.Fatal("source enumeration did not end")
+		return nil, nil
+	}
+	collections, err := drain()
+	require.NoError(t, err)
+	require.Len(t, collections, 4)
+	attribution := map[string][3]string{}
+	for _, collection := range collections {
+		require.Equal(t, boundary, collection.BoundaryId)
+		attribution[collection.SourceId] = [3]string{collection.Origin, collection.Container, collection.Ref}
+	}
+	require.Equal(t, map[string][3]string{
+		source:        {"github", "acme/handbook", "refs/heads/main"},
+		uploadSource:  {"upload", uploadSource, ""},
+		apiSource:     {"api", apiSource, ""},
+		crawlerSource: {"crawler", crawlerSource, ""},
+	}, attribution)
+	// A GitHub row that lost its repository still cannot be attributed, and the
+	// refusal is the enumeration's, not a silent gap in it.
+	exec(`UPDATE datasource_sources SET repo=NULL WHERE id=$1`, source)
+	_, err = drain()
+	require.Equal(t, connect.CodeFailedPrecondition, connect.CodeOf(err))
+	exec(`UPDATE datasource_sources SET repo='acme/handbook' WHERE id=$1`, source)
+	exec(`DELETE FROM datasource_sources WHERE id=ANY($1::uuid[])`, []string{uploadSource, apiSource, crawlerSource})
+
 	// Widening the viewer's own authority — still no organization-admin tenancy —
 	// is what discloses them.
 	exec(`UPDATE datasource_sources SET last_ingested_at=now(), last_ingested_commit='0e57a1c', last_delivery_id='delivery-1' WHERE id=$1`, source)
