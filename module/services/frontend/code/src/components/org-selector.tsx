@@ -52,6 +52,7 @@ export function OrgSelector() {
 
 	return (
 		<Select
+			items={orgs.map((org) => ({ value: org.id, label: org.name }))}
 			value={organizationId ?? ""}
 			onValueChange={handleChange}
 			disabled={isLoading || isSwitching}
@@ -66,7 +67,12 @@ export function OrgSelector() {
 								? "Switching…"
 								: "Select organization…"
 					}
-				/>
+				>
+					{organizationId
+						? orgs.find((org) => org.id === organizationId)?.name ||
+							(isLoading ? "Loading organization…" : "Organization unavailable")
+						: undefined}
+				</SelectValue>
 			</SelectTrigger>
 			<SelectContent>
 				{orgs.map((org) => (

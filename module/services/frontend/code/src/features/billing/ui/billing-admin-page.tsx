@@ -29,7 +29,6 @@ import {
 } from "@/gen/saas/accounts/v1/usage_pb";
 import { useAuth } from "@/lib/auth";
 import { apiTransport } from "@/lib/connect/transport";
-import { billingMutations } from "../service/mutations";
 import {
 	Badge,
 	Button,
@@ -40,6 +39,7 @@ import {
 	CardTitle,
 	Skeleton,
 } from "@/shared/ui";
+import { billingMutations } from "../service/mutations";
 
 const billingClient = createClient(BillingService, apiTransport);
 
@@ -301,10 +301,10 @@ export function BillingAdminPage() {
 																target="_blank"
 																className="underline underline-offset-2 hover:text-foreground"
 															>
-																{inv.number || inv.id.slice(0, 12)}
+																{inv.number || "View invoice"}
 															</Link>
 														) : (
-															<span>{inv.number || inv.id.slice(0, 12)}</span>
+															<span>{inv.number || "Invoice"}</span>
 														)}
 													</td>
 													<td className="py-2.5 text-muted-foreground">

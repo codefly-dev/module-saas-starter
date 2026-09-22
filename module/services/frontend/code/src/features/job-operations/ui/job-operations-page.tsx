@@ -4,9 +4,10 @@ import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { AlertTriangle, ListChecks, RefreshCw, RotateCcw } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ResourceLabel } from "@/components/resource-label";
 import type { JobSummary } from "@/gen/saas/jobs/v1/jobs_pb";
 import { JobState } from "@/gen/saas/jobs/v1/jobs_pb";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { formatDate } from "@/shared/lib/utils";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -80,12 +81,14 @@ function timestamp(value: JobSummary["createdAt"]): string | undefined {
 	return value ? timestampDate(value).toISOString() : undefined;
 }
 
-function scopeLabel(job: JobSummary): string {
+function scopeLabel(job: JobSummary) {
 	switch (job.scope?.value.case) {
 		case "organizationId":
-			return `org:${truncateUUID(job.scope.value.value)}`;
+			return (
+				<ResourceLabel resource="organization" id={job.scope.value.value} />
+			);
 		case "subjectId":
-			return `subject:${truncateUUID(job.scope.value.value)}`;
+			return <ResourceLabel resource="user" id={job.scope.value.value} />;
 		case "global":
 			return "global";
 		default:
@@ -257,6 +260,13 @@ export function JobOperationsPage() {
 						</Button>
 						<Select
 							value={state === undefined ? "all" : String(state)}
+							items={[
+								{ value: "all", label: "All states" },
+								...stateOptions.map((option) => ({
+									value: String(option),
+									label: jobStateLabel(option),
+								})),
+							]}
 							onValueChange={selectState}
 						>
 							<SelectTrigger className="w-44">
@@ -472,9 +482,9 @@ export function JobOperationsPage() {
 							onClick={() =>
 								replayTarget &&
 								replay.mutate(replayTarget.id, {
-									onSuccess: (response) => {
+									onSuccess: () => {
 										toast.success("Job replayed", {
-											description: `New job ${truncateUUID(response.jobId)}`,
+											description: "A new job has been queued.",
 										});
 										setReplayTarget(null);
 										setSelectedJobID(null);
@@ -525,8 +535,13 @@ function JobDetail({ job }: { job: JobSummary }) {
 	return (
 		<dl className="grid gap-3 rounded-md border p-4 text-sm sm:grid-cols-2">
 			<div>
-				<dt className="text-muted-foreground">ID</dt>
-				<dd className="break-all font-mono text-xs">{job.id}</dd>
+				<dt className="text-muted-foreground">Reference</dt>
+				<dd>
+					<details>
+						<summary className="cursor-pointer">Technical details</summary>
+						<code className="break-all text-xs">{job.id}</code>
+					</details>
+				</dd>
 			</div>
 			<div>
 				<dt className="text-muted-foreground">State</dt>

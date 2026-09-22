@@ -8,7 +8,9 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { useMemo } from "react";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { ResourceLabel } from "@/components/resource-label";
+import { UserLabel } from "@/components/user-label";
+import { formatDate } from "@/shared/lib/utils";
 import { Badge } from "@/shared/ui";
 import { DataTable } from "@/shared/ui/data-table";
 import { formatAuditAction } from "../model/transforms";
@@ -53,11 +55,18 @@ export function AuditTable({
 			}),
 			col.accessor("actorId", {
 				header: "Actor",
-				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
+				cell: (info) =>
+					info.row.original.actorType === "user" ? (
+						<UserLabel userId={info.getValue()} />
+					) : (
+						<span>
+							{info.row.original.actorType === "api_key"
+								? "API key"
+								: info.row.original.actorType === "system"
+									? "System"
+									: "Service account"}
+						</span>
+					),
 			}),
 			col.accessor("resource", {
 				header: "Resource",
@@ -65,7 +74,11 @@ export function AuditTable({
 					const event = info.row.original;
 					return (
 						<span className="text-muted-foreground">
-							{event.resource}/{truncateUUID(event.resourceId)}
+							<ResourceLabel
+								resource={event.resource}
+								id={event.resourceId}
+								orgId={event.orgId}
+							/>
 						</span>
 					);
 				},
@@ -80,18 +93,22 @@ export function AuditTable({
 			}),
 			col.display({
 				id: "payload",
-				header: "Payload",
+				header: "Details",
 				cell: (info) => {
-					const { payload } = info.row.original;
-					if (!payload || Object.keys(payload).length === 0) {
-						return <span className="text-muted-foreground">-</span>;
-					}
+					const { payload, id, actorId, resourceId } = info.row.original;
 					return (
-						<code className="block max-w-[280px] truncate font-mono text-xs text-muted-foreground">
-							{Object.entries(payload)
-								.map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`)
-								.join(" ")}
-						</code>
+						<details>
+							<summary className="cursor-pointer text-sm">
+								Technical details
+							</summary>
+							<pre className="max-w-sm overflow-auto whitespace-pre-wrap break-all text-xs">
+								{JSON.stringify(
+									{ eventId: id, actorId, resourceId, payload },
+									null,
+									2,
+								)}
+							</pre>
+						</details>
 					);
 				},
 			}),

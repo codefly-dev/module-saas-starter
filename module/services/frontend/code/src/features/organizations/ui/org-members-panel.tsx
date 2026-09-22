@@ -8,15 +8,16 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { Shield, Trash2, UserPlus, X } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { RoleGate } from "@/components/auth/role-gate";
+import { UserPicker } from "@/components/user-picker";
 import { ManageMemberRolesDialog } from "@/features/roles/ui/manage-member-roles-dialog";
-import { truncateUUID } from "@/shared/lib/utils";
+import { useAuth } from "@/lib/auth";
 import {
 	Badge,
 	Button,
-	Input,
 	Select,
 	SelectContent,
 	SelectItem,
@@ -43,6 +44,7 @@ export function OrgMembersPanel({
 	onClose,
 }: OrgMembersPanelProps) {
 	const queryClient = useQueryClient();
+	const { platformRole } = useAuth();
 	const [newUserId, setNewUserId] = useState("");
 	const [newRole, setNewRole] = useState<"member" | "admin">("member");
 
@@ -50,6 +52,7 @@ export function OrgMembersPanel({
 	const members: OrgMembership[] = (raw?.members ?? []).map((m) => ({
 		orgId: m.orgId,
 		userId: m.userId,
+		userEmail: m.userEmail,
 		role: toOrgRole(m.role as unknown as number),
 		joinedAt: m.joinedAt ? timestampDate(m.joinedAt).toISOString() : undefined,
 	}));
@@ -76,13 +79,9 @@ export function OrgMembersPanel({
 
 	const columns = useMemo(
 		() => [
-			col.accessor("userId", {
-				header: "User ID",
-				cell: (info) => (
-					<span className="font-mono text-xs">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
+			col.accessor("userEmail", {
+				header: "User",
+				cell: (info) => info.getValue() || "User unavailable",
 			}),
 			col.accessor("role", {
 				header: "Role",
@@ -114,7 +113,7 @@ export function OrgMembersPanel({
 							<ManageMemberRolesDialog
 								orgId={orgId}
 								userId={row.original.userId}
-								userLabel={truncateUUID(row.original.userId)}
+								userLabel={row.original.userEmail || "this member"}
 								trigger={
 									<Button
 										variant="ghost"
@@ -160,37 +159,40 @@ export function OrgMembersPanel({
 				</Button>
 			</div>
 
-			<div className="flex items-center gap-2">
-				<Input
-					placeholder="User ID to add..."
-					value={newUserId}
-					onChange={(e) => setNewUserId(e.target.value)}
-					onKeyDown={(e) =>
-						e.key === "Enter" && newUserId.trim() && addMutation.mutate()
-					}
-					className="max-w-xs"
-				/>
-				<Select
-					value={newRole}
-					onValueChange={(v) => setNewRole(v as "member" | "admin")}
-				>
-					<SelectTrigger className="w-32">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						<SelectItem value="member">Member</SelectItem>
-						<SelectItem value="admin">Admin</SelectItem>
-					</SelectContent>
-				</Select>
-				<Button
-					size="sm"
-					disabled={addMutation.isPending || !newUserId.trim()}
-					onClick={() => addMutation.mutate()}
-				>
-					<UserPlus className="mr-2 h-4 w-4" />
-					{addMutation.isPending ? "Adding..." : "Add"}
-				</Button>
-			</div>
+			{platformRole ? (
+				<div className="flex items-center gap-2">
+					<UserPicker
+						value={newUserId}
+						onChange={setNewUserId}
+						exclude={members.map((member) => member.userId)}
+					/>
+					<Select
+						items={{ member: "Member", admin: "Admin" }}
+						value={newRole}
+						onValueChange={(v) => setNewRole(v as "member" | "admin")}
+					>
+						<SelectTrigger className="w-32">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="member">Member</SelectItem>
+							<SelectItem value="admin">Admin</SelectItem>
+						</SelectContent>
+					</Select>
+					<Button
+						size="sm"
+						disabled={addMutation.isPending || !newUserId.trim()}
+						onClick={() => addMutation.mutate()}
+					>
+						<UserPlus className="mr-2 h-4 w-4" />
+						{addMutation.isPending ? "Adding..." : "Add"}
+					</Button>
+				</div>
+			) : (
+				<Link href="/admin/invitations" className="text-sm underline">
+					Invite a member by email
+				</Link>
+			)}
 
 			<DataTable
 				table={table}

@@ -1,8 +1,10 @@
 "use client";
 
+import { ConnectError } from "@connectrpc/connect";
 import { Check, Copy, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { OrgSelector } from "@/components/org-selector";
 import {
 	Button,
 	Dialog,
@@ -75,6 +77,7 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 	// State for showing the plaintext key after creation
 	const [plaintextKey, setPlaintextKey] = useState<string | null>(null);
 	const [copied, setCopied] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
 	const createKey = useCreateAPIKey();
 
@@ -84,10 +87,20 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 		setScopePreset("read_only");
 		setPlaintextKey(null);
 		setCopied(false);
+		setError(null);
 	}
 
 	function handleSubmit() {
-		if (!keyName.trim() || !orgId) return;
+		if (createKey.isPending) return;
+		if (!orgId) {
+			setError("Select an organization before creating a key.");
+			return;
+		}
+		if (!keyName.trim()) {
+			setError("Enter a name for your API key.");
+			return;
+		}
+		setError(null);
 		const preset = SCOPE_PRESETS.find((p) => p.id === scopePreset);
 		createKey.mutate(
 			{
@@ -98,27 +111,39 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 			},
 			{
 				onSuccess: (data) => {
+					if (!data.plaintextKey) {
+						setError(
+							"The server did not return the key secret. Check the key list and revoke this key before trying again.",
+						);
+						return;
+					}
 					toast.success(`Key "${keyName.trim()}" created`);
 					setPlaintextKey(data.plaintextKey);
 				},
-				onError: () => toast.error("Failed to create API key"),
+				onError: (cause) =>
+					setError(
+						ConnectError.from(cause).rawMessage ||
+							"Couldn't create the key. Please try again.",
+					),
 			},
 		);
 	}
 
-	function handleCopy() {
+	async function handleCopy() {
 		if (!plaintextKey) return;
-		navigator.clipboard
-			.writeText(plaintextKey)
-			.then(() => {
-				// Stays true once set — gates the Done button below. Resetting
-				// it on a timeout (the old behaviour) would re-disable Done a
-				// few seconds later, which is the wrong UX: once the operator
-				// has the secret, that's done forever.
-				setCopied(true);
-				toast.success("Key copied to clipboard");
-			})
-			.catch(() => toast.error("Copy failed — copy it manually"));
+		try {
+			await navigator.clipboard.writeText(plaintextKey);
+			// Stays true once set — gates the Done button below. Resetting
+			// it on a timeout (the old behaviour) would re-disable Done a
+			// few seconds later, which is the wrong UX: once the operator
+			// has the secret, that's done forever.
+			setCopied(true);
+			toast.success("Key copied to clipboard");
+		} catch {
+			toast.error(
+				"Copy failed — select and save the key manually, then confirm below.",
+			);
+		}
 	}
 
 	function handleClose() {
@@ -130,15 +155,19 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 		<Dialog
 			open={open}
 			onOpenChange={(v) => {
+				if (!v && (createKey.isPending || (plaintextKey && !copied))) return;
 				if (!v) handleClose();
 				else setOpen(true);
 			}}
 		>
-			<DialogTrigger render={<Button disabled={!orgId} />}>
+			<DialogTrigger render={<Button />}>
 				<Plus className="mr-2 h-4 w-4" />
 				Create Key
 			</DialogTrigger>
-			<DialogContent className="sm:max-w-md">
+			<DialogContent
+				className="sm:max-w-md"
+				showCloseButton={!createKey.isPending && (!plaintextKey || copied)}
+			>
 				{plaintextKey ? (
 					<>
 						<DialogHeader>
@@ -152,7 +181,12 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 								<code className="flex-1 break-all text-sm font-mono">
 									{plaintextKey}
 								</code>
-								<Button variant="ghost" size="sm" onClick={handleCopy}>
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={handleCopy}
+									aria-label="Copy API key"
+								>
 									{copied ? (
 										<Check className="h-4 w-4 text-green-500" />
 									) : (
@@ -163,6 +197,14 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 							<p className="text-sm text-destructive font-medium">
 								This key will not be shown again. Make sure to copy it.
 							</p>
+							<label className="flex items-center gap-2 text-sm">
+								<input
+									type="checkbox"
+									checked={copied}
+									onChange={(event) => setCopied(event.target.checked)}
+								/>
+								I have saved this key securely
+							</label>
 						</div>
 						<DialogFooter>
 							<Button onClick={handleClose} disabled={!copied}>
@@ -171,18 +213,38 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 						</DialogFooter>
 					</>
 				) : (
-					<>
+					<form
+						aria-label="Create API key"
+						onSubmit={(event) => {
+							event.preventDefault();
+							handleSubmit();
+						}}
+						className="space-y-4"
+					>
 						<DialogHeader>
 							<DialogTitle>Create API Key</DialogTitle>
 							<DialogDescription>
 								Generate a new API key for programmatic access.
 							</DialogDescription>
 						</DialogHeader>
+						{!orgId && (
+							<div className="space-y-2">
+								<p>Select an organization to create its API key.</p>
+								<OrgSelector />
+							</div>
+						)}
+						{error && (
+							<p role="alert" className="text-sm text-destructive">
+								{error}
+							</p>
+						)}
 						<div className="space-y-4 py-4">
 							<div className="space-y-2">
 								<Label htmlFor="key-name">Name</Label>
 								<Input
 									id="key-name"
+									required
+									disabled={createKey.isPending}
 									placeholder="e.g. production-backend"
 									value={keyName}
 									onChange={(e) => setKeyName(e.target.value)}
@@ -192,6 +254,10 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 							<div className="space-y-2">
 								<Label>Environment</Label>
 								<Select
+									items={[
+										{ value: "1", label: "Live" },
+										{ value: "2", label: "Test" },
+									]}
 									value={environment}
 									onValueChange={(v) => {
 										if (v) setEnvironment(v);
@@ -235,24 +301,27 @@ export function APIKeyForm({ orgId }: { orgId: string }) {
 									))}
 								</div>
 								<p className="text-xs text-muted-foreground">
-									Wildcard scopes (<code>*:read</code> / <code>*:*</code>) cover
-									whole categories. Backend handlers gate via
-									<code className="ml-1">requireScope</code>.
+									Choose the minimum access your integration needs.
 								</p>
 							</div>
 						</div>
 						<DialogFooter>
-							<Button variant="outline" onClick={handleClose}>
+							<Button
+								type="button"
+								variant="outline"
+								onClick={handleClose}
+								disabled={createKey.isPending}
+							>
 								Cancel
 							</Button>
 							<Button
-								onClick={handleSubmit}
-								disabled={createKey.isPending || !keyName.trim()}
+								type="submit"
+								disabled={createKey.isPending || !keyName.trim() || !orgId}
 							>
 								{createKey.isPending ? "Creating..." : "Create Key"}
 							</Button>
 						</DialogFooter>
-					</>
+					</form>
 				)}
 			</DialogContent>
 		</Dialog>

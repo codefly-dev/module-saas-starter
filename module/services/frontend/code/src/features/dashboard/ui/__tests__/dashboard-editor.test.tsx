@@ -74,6 +74,18 @@ describe("DashboardEditor", () => {
 		);
 
 		expect(screen.getByText(/No widgets yet/)).toBeTruthy();
+		expect(
+			screen.getByRole("combobox", { name: "Event" }).textContent,
+		).toContain("All events");
+		expect(
+			screen.getByRole("combobox", { name: "Group by" }).textContent,
+		).toContain("Over time");
+		expect(
+			screen.getByRole("combobox", { name: "Interval" }).textContent,
+		).toContain("Daily");
+		expect(
+			screen.getByRole("combobox", { name: "Chart" }).textContent,
+		).toContain("Line");
 		fireEvent.click(screen.getByRole("button", { name: "Add widget" }));
 
 		// The default form is an all-events time-series line, so the added widget

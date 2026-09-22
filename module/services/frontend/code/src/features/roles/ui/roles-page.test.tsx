@@ -1,9 +1,18 @@
 import { cleanup, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { RolesPage } from "./roles-page";
+
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({
+		organizationId: "org-1",
+		isAuthenticated: true,
+		platformRole: "super_admin",
+		orgRole: "owner",
+	}),
+}));
 
 afterEach(cleanup);
 

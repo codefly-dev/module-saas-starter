@@ -126,6 +126,15 @@ export function WaitlistAdminPage() {
 						</div>
 						<Select
 							value={String(state)}
+							items={Object.values(WaitlistState)
+								.filter((value): value is number => typeof value === "number")
+								.map((value) => ({
+									value: String(value),
+									label:
+										value === WaitlistState.UNSPECIFIED
+											? "All states"
+											: stateLabel(value),
+								}))}
 							onValueChange={(value) =>
 								setState(Number(value) as WaitlistState)
 							}
@@ -187,8 +196,7 @@ export function WaitlistAdminPage() {
 										</TableCell>
 									</TableRow>
 								)}
-								{!entries.isLoading &&
-									entries.data?.entries.length === 0 && (
+								{!entries.isLoading && entries.data?.entries.length === 0 && (
 									<TableRow>
 										<TableCell colSpan={5}>
 											No matching access requests.

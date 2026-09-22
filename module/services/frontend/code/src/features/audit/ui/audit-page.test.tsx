@@ -1,15 +1,25 @@
 import { cleanup, screen } from "@testing-library/react";
 import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderInApp, rpc } from "@/test/container";
 import { server } from "@/test/setup";
 import { AuditPage } from "./audit-page";
+
+vi.mock("@/lib/auth", () => ({
+	useAuth: () => ({ platformRole: "super_admin", organizationId: "org-1" }),
+}));
 
 afterEach(cleanup);
 
 describe("AuditPage admin container", () => {
 	it("renders the audit events the service returns", async () => {
 		server.use(
+			http.post(rpc("AuditService", "ListAuditEventTypes"), () =>
+				HttpResponse.json({ eventTypes: [] }),
+			),
+			http.post(rpc("AuditService", "AggregateAuditLog"), () =>
+				HttpResponse.json({ buckets: [] }),
+			),
 			http.post(rpc("AuditService", "QueryAuditLog"), () =>
 				HttpResponse.json({
 					events: [

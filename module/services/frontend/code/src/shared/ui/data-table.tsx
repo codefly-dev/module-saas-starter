@@ -26,6 +26,8 @@ export function DataTable<T>({
 	emptyMessage = "No results.",
 	onRowClick,
 }: DataTableProps<T>) {
+	"use no memo";
+	// The table instance is stable, but its rows and sorting state are mutable.
 	if (isLoading) {
 		return (
 			<div className="rounded-md border">

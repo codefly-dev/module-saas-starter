@@ -32,7 +32,11 @@ export function AuditPage() {
 	const category = categoryFilter === "all" ? undefined : categoryFilter;
 
 	const { data: eventTypes } = useAuditEventTypes();
-	const { data, isLoading } = useAuditLog({ eventType, category, pageSize: 100 });
+	const { data, isLoading } = useAuditLog({
+		eventType,
+		category,
+		pageSize: 100,
+	});
 	const exportMutation = useExportAuditLog();
 
 	const {
@@ -64,10 +68,7 @@ export function AuditPage() {
 			.sort((a, b) => a.name.localeCompare(b.name));
 	}, [eventTypes, category]);
 
-	const topTypes = useMemo(
-		() => (byType ?? []).slice(0, 6),
-		[byType],
-	);
+	const topTypes = useMemo(() => (byType ?? []).slice(0, 6), [byType]);
 	const dayPoints = useMemo(
 		() =>
 			(byDay ?? [])
@@ -107,6 +108,13 @@ export function AuditPage() {
 			</DropdownMenu>
 			<Select
 				value={categoryFilter}
+				items={[
+					{ value: "all", label: "All categories" },
+					...categories.map((value) => ({
+						value,
+						label: formatAuditAction(value),
+					})),
+				]}
 				onValueChange={(v) => {
 					if (v) {
 						setCategoryFilter(v);
@@ -121,13 +129,20 @@ export function AuditPage() {
 					<SelectItem value="all">All categories</SelectItem>
 					{categories.map((c) => (
 						<SelectItem key={c} value={c}>
-							{c}
+							{formatAuditAction(c)}
 						</SelectItem>
 					))}
 				</SelectContent>
 			</Select>
 			<Select
 				value={eventTypeFilter}
+				items={[
+					{ value: "all", label: "All event types" },
+					...visibleEventTypes.map((t) => ({
+						value: t.name,
+						label: formatAuditAction(t.name),
+					})),
+				]}
 				onValueChange={(v) => {
 					if (v) setEventTypeFilter(v);
 				}}
@@ -139,7 +154,7 @@ export function AuditPage() {
 					<SelectItem value="all">All event types</SelectItem>
 					{visibleEventTypes.map((t) => (
 						<SelectItem key={t.name} value={t.name}>
-							{t.name}
+							{formatAuditAction(t.name)}
 						</SelectItem>
 					))}
 				</SelectContent>

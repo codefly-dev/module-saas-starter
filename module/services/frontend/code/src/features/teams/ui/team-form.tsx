@@ -24,6 +24,7 @@ interface TeamFormProps {
 	onSubmit: (values: CreateTeamValues) => void;
 	onCancel: () => void;
 	isPending: boolean;
+	error?: string;
 }
 
 export function TeamForm({
@@ -33,6 +34,7 @@ export function TeamForm({
 	onSubmit,
 	onCancel,
 	isPending,
+	error,
 }: TeamFormProps) {
 	const editing = mode === "edit";
 	const form = useForm<CreateTeamValues>({
@@ -44,7 +46,7 @@ export function TeamForm({
 	});
 
 	return (
-		<Dialog open={open} onOpenChange={(o) => !o && onCancel()}>
+		<Dialog open={open} onOpenChange={(o) => !o && !isPending && onCancel()}>
 			<DialogContent className="sm:max-w-[425px]">
 				<DialogHeader>
 					<DialogTitle>{editing ? "Rename team" : "Create Team"}</DialogTitle>
@@ -55,6 +57,11 @@ export function TeamForm({
 					</DialogDescription>
 				</DialogHeader>
 				<form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+					{error && (
+						<p role="alert" className="text-sm text-destructive">
+							{error}
+						</p>
+					)}
 					<div className="space-y-2">
 						<Label htmlFor="team-name">Name</Label>
 						<Input
@@ -82,7 +89,12 @@ export function TeamForm({
 						)}
 					</div>
 					<DialogFooter>
-						<Button type="button" variant="outline" onClick={onCancel}>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={isPending}
+							onClick={onCancel}
+						>
 							Cancel
 						</Button>
 						<Button type="submit" disabled={isPending}>

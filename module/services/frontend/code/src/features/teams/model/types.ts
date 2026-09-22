@@ -11,6 +11,7 @@ export interface Team {
 }
 
 export interface TeamMembership {
+	userEmail?: string;
 	teamId: string;
 	userId: string;
 	role: TeamRole;

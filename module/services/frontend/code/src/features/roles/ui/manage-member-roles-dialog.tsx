@@ -121,7 +121,7 @@ export function ManageMemberRolesDialog({
 										variant="secondary"
 										className="font-mono text-xs gap-1"
 									>
-										{roleNameById.get(a.roleId) ?? a.roleId.slice(0, 8)}
+										{roleNameById.get(a.roleId) ?? "Role unavailable"}
 										<button
 											type="button"
 											onClick={() => handleRevoke(a.roleId)}
@@ -142,7 +142,11 @@ export function ManageMemberRolesDialog({
 						<div className="flex items-center gap-2">
 							<Select value={picked} onValueChange={(v) => setPicked(v ?? "")}>
 								<SelectTrigger className="flex-1">
-									<SelectValue placeholder="Pick a role…" />
+									<SelectValue placeholder="Pick a role…">
+										{picked
+											? roleNameById.get(picked) || "Role unavailable"
+											: undefined}
+									</SelectValue>
 								</SelectTrigger>
 								<SelectContent>
 									{availableRoles.length === 0 ? (

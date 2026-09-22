@@ -10,7 +10,6 @@ import {
 import { Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { toast } from "sonner";
-import { truncateUUID } from "@/shared/lib/utils";
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -59,9 +58,9 @@ export function RolesTable({
 					}
 					return (
 						<div className="flex flex-wrap gap-1">
-							{perms.map((p, i) => (
+							{perms.map((p) => (
 								<Badge
-									key={i}
+									key={`${p.resource}:${p.action}`}
 									variant="secondary"
 									className="font-mono text-xs"
 								>
@@ -80,14 +79,6 @@ export function RolesTable({
 					) : (
 						<Badge variant="secondary">Custom</Badge>
 					),
-			}),
-			col.accessor("id", {
-				header: "ID",
-				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
 			}),
 			col.display({
 				id: "actions",

@@ -38,6 +38,9 @@ export function APIKeysTable({
 	keys: APIKey[];
 	isLoading: boolean;
 }) {
+	"use no memo";
+	// TanStack Table mutates a stable table instance when its data changes.
+	// Compiler-cached JSX would otherwise keep rendering the previous key list.
 	const revokeKey = useRevokeAPIKey();
 
 	const columns = useMemo(
@@ -126,11 +129,14 @@ export function APIKeysTable({
 									<AlertDialogCancel>Cancel</AlertDialogCancel>
 									<AlertDialogAction
 										onClick={() =>
-											revokeKey.mutate(key.id, {
-												onSuccess: () =>
-													toast.success(`Key "${key.name}" revoked`),
-												onError: () => toast.error("Failed to revoke key"),
-											})
+											revokeKey.mutate(
+												{ id: key.id, organizationId: key.organizationId },
+												{
+													onSuccess: () =>
+														toast.success(`Key "${key.name}" revoked`),
+													onError: () => toast.error("Failed to revoke key"),
+												},
+											)
 										}
 									>
 										Revoke

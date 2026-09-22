@@ -198,7 +198,8 @@ func (s *PostgresStore) ListOrgMembers(ctx context.Context, orgID string) ([]*ge
 	executor := s.getQueryExecutor(ctx)
 
 	rows, err := executor.Query(ctx, `
-		SELECT org_id, user_id, role, joined_at
+		SELECT org_id, user_id, role, joined_at,
+		       COALESCE(public.organization_member_primary_email(user_id), '')
 		FROM organization_members WHERE org_id = $1
 		ORDER BY joined_at`, orgID,
 	)
@@ -212,7 +213,7 @@ func (s *PostgresStore) ListOrgMembers(ctx context.Context, orgID string) ([]*ge
 		var m gen.OrgMembership
 		var role string
 		var joinedAt time.Time
-		if err := rows.Scan(&m.OrgId, &m.UserId, &role, &joinedAt); err != nil {
+		if err := rows.Scan(&m.OrgId, &m.UserId, &role, &joinedAt, &m.UserEmail); err != nil {
 			return nil, w.Wrapf(err, "failed to scan org member")
 		}
 		m.Role = parseOrgRole(role)

@@ -337,6 +337,7 @@ func (s *Service) ListPlatformAdmins(ctx context.Context, actorID string) (*gen.
 			UserId:       a.UserID,
 			PlatformRole: a.PlatformRole,
 			GrantedBy:    a.GrantedBy,
+			GrantedAt:    timestamppb.New(a.GrantedAt),
 		})
 	}
 

@@ -66,9 +66,19 @@ test.describe("Dashboard navigation", () => {
 		await page.waitForURL(/\/settings\/mfa/);
 	});
 
-	test("can navigate to subscription management", async ({ page }) => {
-		await page.getByRole("link", { name: "Subscription" }).click();
-		await page.waitForURL(/\/admin\/billing/);
+	test("keeps optional subscription and SSO screens hidden by default", async ({
+		page,
+	}) => {
+		await expect(
+			page.getByRole("link", { name: "Subscription", exact: true }),
+		).toHaveCount(0);
+		await expect(
+			page.getByRole("link", { name: "Single Sign-On", exact: true }),
+		).toHaveCount(0);
+		await page.goto("/admin/billing");
+		await expect(
+			page.getByRole("heading", { name: "Subscriptions is not enabled" }),
+		).toBeVisible();
 	});
 
 	test("logout returns to login page", async ({ page }) => {

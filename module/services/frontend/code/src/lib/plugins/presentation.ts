@@ -11,6 +11,7 @@ import type {
 import { isPermission } from "@/gen/saas/accounts/v1/frontend_catalog";
 import type { OrgRole, PlatformRole } from "@/lib/auth-session";
 import { hasPermission, isAdmin, isSuperAdmin } from "@/lib/permissions";
+import { isProductRouteEnabled } from "@/lib/product-features";
 
 export interface PresentationPrincipal {
 	isAuthenticated: boolean;
@@ -74,7 +75,9 @@ export function selectNavigation(
 		(item) =>
 			(
 				item.surfaces ?? ["sidebar", "command_palette", "plugin_registry"]
-			).includes(surface) && canPresent(item, principal),
+			).includes(surface) &&
+			isProductRouteEnabled(item.href) &&
+			canPresent(item, principal),
 	);
 }
 

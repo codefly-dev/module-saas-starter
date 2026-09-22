@@ -123,8 +123,8 @@ export function WebhookDeliveriesPanel({
 				<CardContent>
 					{isLoading ? (
 						<div className="space-y-2">
-							{Array.from({ length: 3 }).map((_, i) => (
-								<Skeleton key={i} className="h-12 w-full" />
+							{["first", "second", "third"].map((key) => (
+								<Skeleton key={key} className="h-12 w-full" />
 							))}
 						</div>
 					) : deliveries.length === 0 ? (
@@ -188,8 +188,9 @@ function DeliveryRow({
 	const { label, variant } = formatDeliveryStatus(status);
 	return (
 		<button
+			type="button"
 			onClick={onClick}
-			aria-label={`Delivery ${delivery.id}: ${formatEventType(delivery.eventType)}`}
+			aria-label={`Delivery: ${formatEventType(delivery.eventType)}`}
 			className={`w-full text-left rounded-md border p-2.5 text-xs transition-colors ${
 				selected ? "border-primary/60 bg-accent/40" : "hover:bg-accent/20"
 			}`}
@@ -242,10 +243,18 @@ function DeliveryDetail({
 			{/* Header — id + replay */}
 			<div className="flex items-center justify-between">
 				<div>
-					<div className="text-xs text-muted-foreground">Delivery ID</div>
-					<div className="font-mono text-xs">{delivery.id}</div>
-					<div className="mt-1 text-xs text-muted-foreground">Event ID</div>
-					<div className="font-mono text-xs">{delivery.eventId}</div>
+					<div className="font-medium">
+						{formatEventType(delivery.eventType)}
+					</div>
+					<details className="text-xs text-muted-foreground">
+						<summary className="cursor-pointer">Technical details</summary>
+						<div>
+							Delivery: <code>{delivery.id}</code>
+						</div>
+						<div>
+							Event: <code>{delivery.eventId}</code>
+						</div>
+					</details>
 				</div>
 				<Button
 					size="sm"
@@ -299,7 +308,6 @@ function DeliveryDetail({
 				body={delivery.responseBody || ""}
 				emptyHint="Endpoint returned no body, or no attempt has been made yet."
 			/>
-
 		</div>
 	);
 }
@@ -362,9 +370,7 @@ function Section({
 
 // ─────────────────────────────────────────────────────────────
 
-function statusFromProto(
-	s: number,
-): "pending" | "success" | "failed" {
+function statusFromProto(s: number): "pending" | "success" | "failed" {
 	// WebhookDeliveryStatus enum (webhooks.proto):
 	//   0 UNSPECIFIED, 1 PENDING, 2 SUCCESS, 3 FAILED.
 	switch (s) {

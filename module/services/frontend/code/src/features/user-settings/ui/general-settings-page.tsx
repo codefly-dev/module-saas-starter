@@ -333,6 +333,7 @@ function GeneralSettingsForm({
 							<Label htmlFor="theme">Theme</Label>
 							<Select
 								value={theme}
+								items={{ system: "System", light: "Light", dark: "Dark" }}
 								onValueChange={(value) => {
 									if (
 										value === "system" ||
@@ -354,7 +355,17 @@ function GeneralSettingsForm({
 						</div>
 						<div className="space-y-2">
 							<Label htmlFor="locale">Language</Label>
-							<Select value={locale} onValueChange={(v) => v && setLocale(v)}>
+							<Select
+								items={{
+									en: "English",
+									es: "Español",
+									fr: "Français",
+									de: "Deutsch",
+									ja: "日本語",
+								}}
+								value={locale}
+								onValueChange={(v) => v && setLocale(v)}
+							>
 								<SelectTrigger id="locale">
 									<SelectValue />
 								</SelectTrigger>
@@ -403,6 +414,7 @@ function GeneralSettingsForm({
 							<Label htmlFor="time-format">Time format</Label>
 							<Select
 								value={timeFormat}
+								items={{ "24h": "24-hour", "12h": "12-hour" }}
 								onValueChange={(v) => v && setTimeFormat(v)}
 							>
 								<SelectTrigger id="time-format">
@@ -419,6 +431,11 @@ function GeneralSettingsForm({
 						<Label htmlFor="date-format">Date format</Label>
 						<Select
 							value={dateFormat}
+							items={{
+								iso: "ISO (2026-04-25)",
+								us: "US (04/25/2026)",
+								eu: "EU (25/04/2026)",
+							}}
 							onValueChange={(v) => v && setDateFormat(v)}
 						>
 							<SelectTrigger id="date-format">

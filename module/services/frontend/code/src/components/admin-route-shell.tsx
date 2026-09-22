@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 import { AdminLayout } from "@/components/admin-layout";
 import { ImpersonationBanner } from "@/components/impersonation-banner";
@@ -11,7 +11,12 @@ import { isAdmin } from "@/lib/permissions";
 export function AdminRouteShell({ children }: { children: ReactNode }) {
 	const { isAuthenticated, isLoading, platformRole, orgRole } = useAuth();
 	const router = useRouter();
+	const pathname = usePathname();
 	const admin = isAdmin(platformRole, orgRole);
+	// Team rosters are tenant-visible; team administrators need not be org admins.
+	const teamRoute =
+		pathname === "/admin/teams" || pathname.startsWith("/admin/teams/");
+	const allowed = admin || (teamRoute && !!orgRole);
 
 	useEffect(() => {
 		if (isLoading) return;
@@ -19,8 +24,8 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 			router.replace("/auth/login");
 			return;
 		}
-		if (!admin) router.replace("/");
-	}, [isLoading, isAuthenticated, admin, router]);
+		if (!allowed) router.replace("/");
+	}, [isLoading, isAuthenticated, allowed, router]);
 
 	if (isLoading) {
 		return (
@@ -29,7 +34,7 @@ export function AdminRouteShell({ children }: { children: ReactNode }) {
 			</div>
 		);
 	}
-	if (!isAuthenticated || !admin) return null;
+	if (!isAuthenticated || !allowed) return null;
 
 	return (
 		<>

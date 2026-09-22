@@ -723,11 +723,13 @@ func (x *Organization) GetCreatedAt() *timestamppb.Timestamp {
 }
 
 type OrgMembership struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Role          OrgRole                `protobuf:"varint,3,opt,name=role,proto3,enum=saas.accounts.v1.OrgRole" json:"role,omitempty"`
-	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OrgId    string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	UserId   string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Role     OrgRole                `protobuf:"varint,3,opt,name=role,proto3,enum=saas.accounts.v1.OrgRole" json:"role,omitempty"`
+	JoinedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
+	// Tenant-scoped directory label. Empty for deleted or unavailable accounts.
+	UserEmail     string `protobuf:"bytes,5,opt,name=user_email,json=userEmail,proto3" json:"user_email,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -788,6 +790,13 @@ func (x *OrgMembership) GetJoinedAt() *timestamppb.Timestamp {
 		return x.JoinedAt
 	}
 	return nil
+}
+
+func (x *OrgMembership) GetUserEmail() string {
+	if x != nil {
+		return x.UserEmail
+	}
+	return ""
 }
 
 // Teams form a strict tree within an org: parent_team_id is the authoritative
@@ -899,11 +908,13 @@ func (x *Team) GetPath() string {
 }
 
 type TeamMembership struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	TeamId        string                 `protobuf:"bytes,1,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
-	UserId        string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
-	Role          TeamRole               `protobuf:"varint,3,opt,name=role,proto3,enum=saas.accounts.v1.TeamRole" json:"role,omitempty"`
-	JoinedAt      *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	TeamId   string                 `protobuf:"bytes,1,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	UserId   string                 `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Role     TeamRole               `protobuf:"varint,3,opt,name=role,proto3,enum=saas.accounts.v1.TeamRole" json:"role,omitempty"`
+	JoinedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=joined_at,json=joinedAt,proto3" json:"joined_at,omitempty"`
+	// Tenant-scoped directory label. Empty for deleted or unavailable accounts.
+	UserEmail     string `protobuf:"bytes,5,opt,name=user_email,json=userEmail,proto3" json:"user_email,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -964,6 +975,13 @@ func (x *TeamMembership) GetJoinedAt() *timestamppb.Timestamp {
 		return x.JoinedAt
 	}
 	return nil
+}
+
+func (x *TeamMembership) GetUserEmail() string {
+	if x != nil {
+		return x.UserEmail
+	}
+	return ""
 }
 
 type Permission struct {
@@ -1399,12 +1417,14 @@ const file_saas_accounts_v1_common_proto_rawDesc = "" +
 	"\x04slug\x18\x03 \x01(\tB'\xbaH$r\"\x10\x01\x18?2\x1c^[a-z0-9][a-z0-9-]*[a-z0-9]$R\x04slug\x12#\n" +
 	"\bowner_id\x18\x04 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\aownerId\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa7\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc6\x01\n" +
 	"\rOrgMembership\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12-\n" +
 	"\x04role\x18\x03 \x01(\x0e2\x19.saas.accounts.v1.OrgRoleR\x04role\x127\n" +
-	"\tjoined_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\"\x89\x02\n" +
+	"\tjoined_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12\x1d\n" +
+	"\n" +
+	"user_email\x18\x05 \x01(\tR\tuserEmail\"\x89\x02\n" +
 	"\x04Team\x12\x18\n" +
 	"\x02id\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x02id\x12\x1f\n" +
 	"\x06org_id\x18\x02 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x05orgId\x12\x1b\n" +
@@ -1414,12 +1434,14 @@ const file_saas_accounts_v1_common_proto_rawDesc = "" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12$\n" +
 	"\x0eparent_team_id\x18\x06 \x01(\tR\fparentTeamId\x12\x12\n" +
 	"\x04slug\x18\a \x01(\tR\x04slug\x12\x12\n" +
-	"\x04path\x18\b \x01(\tR\x04path\"\xab\x01\n" +
+	"\x04path\x18\b \x01(\tR\x04path\"\xca\x01\n" +
 	"\x0eTeamMembership\x12\x17\n" +
 	"\ateam_id\x18\x01 \x01(\tR\x06teamId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12.\n" +
 	"\x04role\x18\x03 \x01(\x0e2\x1a.saas.accounts.v1.TeamRoleR\x04role\x127\n" +
-	"\tjoined_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\"R\n" +
+	"\tjoined_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\bjoinedAt\x12\x1d\n" +
+	"\n" +
+	"user_email\x18\x05 \x01(\tR\tuserEmail\"R\n" +
 	"\n" +
 	"Permission\x12#\n" +
 	"\bresource\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bresource\x12\x1f\n" +

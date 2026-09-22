@@ -9,8 +9,9 @@ import {
 	useReactTable,
 } from "@tanstack/react-table";
 import { MoreHorizontal, Pencil, Trash2, Users } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { formatDate } from "@/shared/lib/utils";
 import {
 	Button,
 	DropdownMenu,
@@ -29,6 +30,7 @@ const col = createColumnHelper<Team>();
 interface TeamsTableProps {
 	data: Team[];
 	isLoading: boolean;
+	canManage?: boolean;
 	onViewMembers: (team: Team) => void;
 	onRename: (team: Team) => void;
 	onDelete: (team: Team) => void;
@@ -37,6 +39,7 @@ interface TeamsTableProps {
 export function TeamsTable({
 	data,
 	isLoading,
+	canManage = false,
 	onViewMembers,
 	onRename,
 	onDelete,
@@ -47,7 +50,15 @@ export function TeamsTable({
 		() => [
 			col.accessor("name", {
 				header: "Name",
-				cell: (info) => <span className="font-medium">{info.getValue()}</span>,
+				cell: (info) => (
+					<Link
+						className="font-medium text-primary hover:underline"
+						href={`/admin/teams/${encodeURIComponent(info.row.original.id)}`}
+						onClick={(event) => event.stopPropagation()}
+					>
+						{info.getValue()}
+					</Link>
+				),
 			}),
 			col.accessor("description", {
 				header: "Description",
@@ -56,15 +67,6 @@ export function TeamsTable({
 						{info.getValue() || "-"}
 					</span>
 				),
-			}),
-			col.accessor("id", {
-				header: "ID",
-				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
-				enableSorting: false,
 			}),
 			col.accessor("createdAt", {
 				header: "Created",
@@ -82,7 +84,13 @@ export function TeamsTable({
 						<DropdownMenu>
 							<DropdownMenuTrigger
 								render={
-									<Button variant="ghost" size="sm" className="h-8 w-8 p-0" />
+									<Button
+										variant="ghost"
+										size="sm"
+										className="h-8 w-8 p-0"
+										aria-label={`Actions for ${team.name}`}
+										onClick={(event) => event.stopPropagation()}
+									/>
 								}
 							>
 								<MoreHorizontal className="h-4 w-4" />
@@ -91,22 +99,39 @@ export function TeamsTable({
 								<DropdownMenuGroup>
 									<DropdownMenuLabel>Actions</DropdownMenuLabel>
 									<DropdownMenuSeparator />
-									<DropdownMenuItem onClick={() => onViewMembers(team)}>
-										<Users className="mr-2 h-4 w-4" />
-										View Members
-									</DropdownMenuItem>
-									<DropdownMenuItem onClick={() => onRename(team)}>
-										<Pencil className="mr-2 h-4 w-4" />
-										Rename
-									</DropdownMenuItem>
-									<DropdownMenuSeparator />
 									<DropdownMenuItem
-										onClick={() => onDelete(team)}
-										className="text-destructive focus:text-destructive"
+										onClick={(event) => {
+											event.stopPropagation();
+											onViewMembers(team);
+										}}
 									>
-										<Trash2 className="mr-2 h-4 w-4" />
-										Delete
+										<Users className="mr-2 h-4 w-4" />
+										View team
 									</DropdownMenuItem>
+									{canManage && (
+										<DropdownMenuItem
+											onClick={(event) => {
+												event.stopPropagation();
+												onRename(team);
+											}}
+										>
+											<Pencil className="mr-2 h-4 w-4" />
+											Rename
+										</DropdownMenuItem>
+									)}
+									{canManage && <DropdownMenuSeparator />}
+									{canManage && (
+										<DropdownMenuItem
+											onClick={(event) => {
+												event.stopPropagation();
+												onDelete(team);
+											}}
+											className="text-destructive focus:text-destructive"
+										>
+											<Trash2 className="mr-2 h-4 w-4" />
+											Delete
+										</DropdownMenuItem>
+									)}
 								</DropdownMenuGroup>
 							</DropdownMenuContent>
 						</DropdownMenu>
@@ -114,7 +139,7 @@ export function TeamsTable({
 				},
 			}),
 		],
-		[onViewMembers, onRename, onDelete],
+		[onViewMembers, onRename, onDelete, canManage],
 	);
 
 	const table = useReactTable({
@@ -131,6 +156,7 @@ export function TeamsTable({
 		<DataTable
 			table={table}
 			isLoading={isLoading}
+			onRowClick={onViewMembers}
 			emptyMessage="No teams yet."
 		/>
 	);

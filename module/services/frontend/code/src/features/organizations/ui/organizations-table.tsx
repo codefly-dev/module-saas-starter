@@ -10,7 +10,7 @@ import {
 } from "@tanstack/react-table";
 import { MoreHorizontal, Users } from "lucide-react";
 import { useMemo, useState } from "react";
-import { formatDate, truncateUUID } from "@/shared/lib/utils";
+import { formatDate } from "@/shared/lib/utils";
 import {
 	Button,
 	DropdownMenu,
@@ -52,15 +52,6 @@ export function OrganizationsTable({
 						{info.getValue()}
 					</span>
 				),
-			}),
-			col.accessor("id", {
-				header: "ID",
-				cell: (info) => (
-					<span className="font-mono text-xs text-muted-foreground">
-						{truncateUUID(info.getValue())}
-					</span>
-				),
-				enableSorting: false,
 			}),
 			col.accessor("createdAt", {
 				header: "Created",

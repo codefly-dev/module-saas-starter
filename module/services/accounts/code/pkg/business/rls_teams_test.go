@@ -92,6 +92,7 @@ func TestRLS_TeamMembers_PolicyJoinsToParent(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, listA.Members, 1)
 	require.Equal(t, ownerA, listA.Members[0].UserId)
+	require.Equal(t, "alice-tm@rls-test.com", listA.Members[0].UserEmail)
 
 	// Cross-tenant probe via Store: from A's tx, query B's team's
 	// members. RLS JOIN policy must hide them.

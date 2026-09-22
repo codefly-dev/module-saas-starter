@@ -3,6 +3,7 @@
 import { timestampDate } from "@bufbuild/protobuf/wkt";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import { OrgSelector } from "@/components/org-selector";
@@ -22,7 +23,6 @@ import type { Team } from "../model/types";
 import { teamMutations } from "../service/mutations";
 import { teamQueries } from "../service/queries";
 import { TeamForm } from "./team-form";
-import { TeamMembersPanel } from "./team-members-panel";
 import { TeamsTable } from "./teams-table";
 
 export function TeamsPage() {
@@ -31,14 +31,24 @@ export function TeamsPage() {
 }
 
 function TeamsPageForOrganization({ orgId }: { orgId: string }) {
+	const router = useRouter();
+	const { orgRole, platformRole } = useAuth();
+	const canManage =
+		orgRole === "owner" ||
+		orgRole === "admin" ||
+		platformRole === "super_admin";
 	const queryClient = useQueryClient();
 	const [showCreate, setShowCreate] = useState(false);
-	const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
 	const [renameTarget, setRenameTarget] = useState<Team | null>(null);
 	const [deleteTarget, setDeleteTarget] = useState<Team | null>(null);
 
 	// --- queries ---
-	const { data: raw, isLoading } = useQuery({
+	const {
+		data: raw,
+		isLoading,
+		isError,
+		refetch,
+	} = useQuery({
 		...teamQueries.list(orgId),
 		enabled: !!orgId,
 	});
@@ -97,9 +107,12 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 		onError: () => toast.error("Failed to delete team"),
 	});
 
-	const handleViewMembers = useCallback((team: Team) => {
-		setSelectedTeam(team);
-	}, []);
+	const handleViewMembers = useCallback(
+		(team: Team) => {
+			router.push(`/admin/teams/${encodeURIComponent(team.id)}`);
+		},
+		[router],
+	);
 	const handleRename = useCallback((team: Team) => setRenameTarget(team), []);
 	const handleDelete = useCallback((team: Team) => setDeleteTarget(team), []);
 
@@ -109,7 +122,7 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 				<h2 className="text-2xl font-bold tracking-tight">Teams</h2>
 				<div className="flex items-center gap-3">
 					<OrgSelector />
-					{orgId && (
+					{orgId && canManage && (
 						<Button onClick={() => setShowCreate(true)}>
 							<Plus className="mr-2 h-4 w-4" />
 							Create Team
@@ -124,21 +137,19 @@ function TeamsPageForOrganization({ orgId }: { orgId: string }) {
 						Select an organization to view teams.
 					</p>
 				</div>
+			) : isError ? (
+				<div role="alert">
+					Couldn&apos;t load teams.{" "}
+					<Button onClick={() => void refetch()}>Retry</Button>
+				</div>
 			) : (
 				<TeamsTable
 					data={teams}
 					isLoading={isLoading}
+					canManage={canManage}
 					onViewMembers={handleViewMembers}
 					onRename={handleRename}
 					onDelete={handleDelete}
-				/>
-			)}
-
-			{selectedTeam && (
-				<TeamMembersPanel
-					teamId={selectedTeam.id}
-					teamName={selectedTeam.name}
-					onClose={() => setSelectedTeam(null)}
 				/>
 			)}
 
