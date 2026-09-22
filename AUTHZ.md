@@ -917,8 +917,8 @@ empty-catalog guard is deliberate, not incidental:
   confirm.
 
 The module declares this step so the driver need not know the module's internals.
-`deployment/topology.bindings.codefly.yaml` carries a top-level `deploy_jobs`
-entry for `role-catalog-import`: it runs the `accounts` image (which ships the
+`deployment/jobs.codefly.yaml` carries a `deploy_jobs` entry for
+`role-catalog-import`: it runs the `accounts` image (which ships the
 importer binary and connects under the `app_control_plane` migration authority)
 but *writes* to the `store` dependency and runs `after` the store — the boundary
 a self-serving `bootstrap_job_endpoints` Job cannot express, since that models a

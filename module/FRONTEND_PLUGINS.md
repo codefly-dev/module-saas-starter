@@ -20,9 +20,8 @@ runtime-loaded JavaScript or make UI visibility an authorization boundary.
 | `services/frontend/code/packages/saas-plugin-contract/proto/saas/frontend/plugin/v1/capabilities.proto` | Published runtime backend capability handshake source of truth. |
 | `services/frontend/code/packages/saas-plugin-react` | Exact lazy-component registration, injected runtime, service transport, provider, and hooks. |
 | `services/frontend/code/server/plugin-service-allowlist.generated.json` | Deterministic server-only convergence of installed requirements and logical application bindings. |
-| `services/frontend/service.codefly.yaml` | Generated base topology plus application-installed external plugin dependencies. |
-| `services/accounts/code/pkg/cataloggen/frontend_plugin_service_dependencies.go` | Strict allowlist-to-Codefly dependency compiler. |
-| `services/frontend/code/server/plugin-service-dependency-policy.ts` | Node-only build drift gate for the generated frontend service manifest. |
+| `services/frontend/service.codefly.yaml` | Authored frontend manifest; a consumer composition appends the external plugin dependencies its allowlist names. |
+| `services/frontend/code/server/plugin-service-dependency-policy.ts` | Node-only drift gate holding a manifest's external dependencies to the allowlist. |
 | `services/frontend/code/server/plugin-service-bindings.ts` | Exact server-only Codefly endpoint resolution for installed aliases. |
 | `services/frontend/code/server/plugin-bff.ts` | Product-neutral same-origin proxy policy, limits, header filtering, and stable failures. |
 | `services/frontend/code/src/app/api/plugins/[plugin]/[alias]/[...path]/route.ts` | The one browser-visible plugin backend route. |
@@ -121,7 +120,7 @@ From `services/accounts/code`, after protobuf and service-catalog generation:
 go generate ./pkg/cataloggen
 ```
 
-Generation joins the validated service catalog, deployment topology, frontend
+Generation joins the validated service catalog, the manifests, frontend
 binding, plugin files, and page tree. It rejects unknown YAML fields, owner or
 plugin drift, duplicate IDs/orders/surface paths, unknown pages, weaker link
 access, unknown permissions/icons/surfaces, dynamic navigation targets, and
@@ -136,15 +135,16 @@ regenerates checked-in catalog outputs and rejects drift.
 From `services/frontend/code`, installation uses:
 
 ```sh
-npm run generate:plugin-codefly-dependencies
+npm run generate:plugin-allowlist
 npm run check:plugin-codefly-dependencies
 ```
 
-The first command builds every package workspace, writes the application
-allowlist, and invokes the strict Go compiler for the frontend service manifest.
-The second checks both outputs without writing. `prepare:frontend` regenerates
-the allowlist and runs a Node-only dependency check before development, tests,
-and production builds, so the frontend container does not require Go. See the
+The first command builds every package workspace and writes the application
+allowlist; the module agent appends the external dependencies it names to the
+consumer's copy of the frontend manifest at compose time. The second checks the
+allowlist and the manifest without writing. `prepare:frontend` regenerates the
+allowlist and runs a Node-only dependency check before development, tests, and
+production builds, so the frontend container does not require Go. See the
 [canonical install/uninstall procedure](docs/frontend-plugin-installation.md).
 
 The route inventory is the page/catch-all input for `P1-NET-003`. Static Next.js

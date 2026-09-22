@@ -7,11 +7,9 @@
 # `codefly publish clients` remains available but is optional and is not part of
 # cutting a release here. See "Cutting a release" in AGENTS.md.
 #
-# The file is deliberately kept OUT of module.codefly.yaml: that file is
-# generated from deployment/topology.bindings.codefly.yaml, so a module sync
-# would replace an inline block there on the next regeneration. The CLI reads
+# The file is deliberately kept OUT of module.codefly.yaml: the CLI reads
 # this path only (generators.LoadModuleClientsConfig), with strict field
-# checking.
+# checking, and would silently ignore an inline block there.
 #
 # An endpoint that exports a contract and is NOT listed here gets a client in
 # every default language with its FULL service surface — and if it is ever

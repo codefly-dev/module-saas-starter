@@ -157,7 +157,7 @@ export function coverageErrors({ entries, manifests, hasWorkflows }) {
       }
       for (const manifest of here) {
         if (isGeneratedRecipe(manifest)) {
-          errors.push(`${manifest.path} is agent-generated; update the owning service agent, then topology bindings (see RELEASE_GATES.md)`);
+          errors.push(`${manifest.path} is agent-generated; update the owning service agent in its service.codefly.yaml (see RELEASE_GATES.md)`);
           continue;
         }
         if (!isModuleOwned(manifest)) continue;

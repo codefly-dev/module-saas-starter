@@ -273,19 +273,16 @@ configurations/
 ### Wiring a group to a service
 
 A service receives a group's vars only if it lists that group under
-`workspace_configuration_dependencies` in
-[`topology.bindings.codefly.yaml`](./topology.bindings.codefly.yaml) — the source
-of truth for the service graph. That list is rendered into the generated
+`workspace-configuration-dependencies` in its own
 `services/<svc>/service.codefly.yaml`. The frontend, for example:
 
 ```yaml
-  - name: frontend
-    workspace_configuration_dependencies:
-      - abuse-protection
-      - error-tracking
-      - identity
-      - internal-auth
-      - product-analytics
+workspace-configuration-dependencies:
+    - abuse-protection
+    - error-tracking
+    - identity
+    - internal-auth
+    - product-analytics
 ```
 
 which is why `NEXT_PUBLIC_SENTRY_DSN` (from `error-tracking.env`) reaches it.
@@ -314,15 +311,10 @@ a mounted skin descriptor) as a committed value for local runs:
    ```
 
 2. **Wire the group** — only needed for a *new* group — by adding its name under
-   the frontend's `workspace_configuration_dependencies` in
-   `topology.bindings.codefly.yaml`. Do **not** hand-edit
-   `services/frontend/service.codefly.yaml`; it is generated.
+   `workspace-configuration-dependencies` in
+   `services/frontend/service.codefly.yaml`.
 
-3. **Regenerate** the per-service manifests from the bindings so
-   `service.codefly.yaml` picks up the new dependency (the same module render
-   described in [AGENTS.md](./AGENTS.md#agent-version-pins)).
-
-Steps 2–3 are only for the committed path. For a throwaway local value, skip them
+Step 2 is only for the committed path. For a throwaway local value, skip them
 and use `--set` or — frontend only — a gitignored `.env*.local` under
 `module/services/frontend/code/`.
 

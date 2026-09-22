@@ -118,7 +118,7 @@ job, which spent 39s and 57s resolving agents in the two runs, and 22s for the
 single agent the SDK-boundary job loads.
 
 The four jobs that run an agent now restore `~/.codefly/agents` from one cache
-keyed on `topology.bindings.codefly.yaml`, the source of truth for every pin.
+keyed on the service manifests, which carry every agent pin.
 The planner is not one of them: it resolves the selection and spawns nothing.
 Two properties make a stale restore harmless rather than dangerous. An agent
 lives at a path carrying its version, so an entry restored from an older key can

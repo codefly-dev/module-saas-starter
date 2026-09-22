@@ -36,20 +36,22 @@ Before changing any proto or generator input, run the generator with no change
 at all and require a clean tree. That is what separates "my change churned the
 tree" from "my toolchain does not match CI".
 
-## Generated files, and their source
+## The manifests are the model
 
-`deployment/topology.bindings.codefly.yaml` is **the source of truth** for the
-service graph and the agent version each service pins.
+`module.codefly.yaml` and every `services/<svc>/service.codefly.yaml` are
+**authored**. A service manifest is the only place its agent is named, and the
+deployment facts no Codefly field carries — endpoint ports, public egress,
+cluster-internal HTTP routes, bootstrap Jobs, Kubernetes identity — sit in the
+same manifest under `spec.deployment`. Nothing renders these files and no second
+document restates them. `codefly update workspace` is the one command that
+moves an agent version; [deployment/AGENTS.md](./deployment/AGENTS.md) covers
+what to check before trusting a newer one.
 
-`services/<svc>/service.codefly.yaml` is **generated** from it — the header says
-`DO NOT EDIT`. Edit the bindings file and regenerate; a hand-edit is lost on the
-next composition and silently drifts the two apart. Changing a pinned agent
-version is [deployment/AGENTS.md § Agent version
-pins](./deployment/AGENTS.md#agent-version-pins).
-
-The same rule holds wherever a header declares `DO NOT EDIT`: generated Go,
-generated contracts under `contracts/`, and the generated mesh policies under
-`deployment/generated/`. Regenerate rather than patch the output.
+The rule for everything else is the header: wherever a file declares `DO NOT
+EDIT` — generated Go, the contracts under `contracts/`, the projections under
+`deployment/generated/` and the policy goldens that `go generate
+./pkg/cataloggen` renders from the manifests — regenerate rather than patch the
+output.
 
 Docs that *describe* a generated surface are a different thing and are
 hand-maintained — [REST_SURFACE.md](./REST_SURFACE.md) is written, not emitted, so

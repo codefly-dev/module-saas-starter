@@ -143,8 +143,9 @@ here. Its baseline shrinks and never grows: clean a file, delete its line.
 - `modules/saas-starter` — a symlink to `module/` (the workspace-composed view
   Codefly expects under `modules/<name>/`).
 - `main.go` / `gitops.go` — this repo is itself the `saas-starter` **module agent**
-  binary; composing the module runs this code to regenerate the per-service
-  manifests. `agent.codefly.yaml` carries its name, publisher and version.
+  binary; composing the module runs this code to copy the manifests into the
+  consumer and render its GitOps bundle from them. `agent.codefly.yaml` carries
+  its name, publisher and version.
 
 ## Where the depth lives
 
@@ -156,7 +157,7 @@ Depth sits with the code that owns it:
 | File | Covers |
 | --- | --- |
 | [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the six Go modules and how to test each, configuration groups |
-| [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the bindings file and the per-service manifests rendered from it |
+| [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the manifests as the model, `spec.deployment`, and moving an agent version |
 | [module/services/auth-gateway/AGENTS.md](./module/services/auth-gateway/AGENTS.md) | upstream registration, the composed-module REST prefix, the credentials both take |
 | [module/services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md) | the durable registry record, module principals, minting a module Work Context, mesh reachability |
 | [module/services/frontend/AGENTS.md](./module/services/frontend/AGENTS.md) | the registration route, public vs internal projections, remote loading and CSP, the published kit |
@@ -216,7 +217,7 @@ under a workspace root in dependency order, and moves no pins. In **this** repo
 `codefly publish` bumps the module agent's own version in `agent.codefly.yaml`,
 not the `v0.0.N` deploy counter — that tag is cut by hand on the merged `main`
 commit. `codefly update workspace` is the one command that moves this repo's
-service-agent versions once the manifests are authored. When you meet a
+service-agent versions. When you meet a
 `codefly` verb this file does not name, add it here or to the CLI's
 `docs/commands.md` in the same change.
 

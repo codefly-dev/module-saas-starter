@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -124,6 +123,11 @@ func Create(ctx context.Context, dir, name string) error {
 	if err := copyModuleSource(src, stage, name, existing, hasConsumerInventory); err != nil {
 		return w.Wrapf(err, "cannot stage module source")
 	}
+	if hasConsumerInventory {
+		if err := refreshModuleInterface(src, stage); err != nil {
+			return w.Wrapf(err, "cannot refresh module interface")
+		}
+	}
 	if err := normalizeDeploymentMetadata(stage); err != nil {
 		return w.Wrapf(err, "cannot normalize module deployment metadata")
 	}
@@ -217,7 +221,6 @@ func copyModuleSource(
 		if preserveInventory {
 			skip = skip ||
 				slashRelative == moduleYamlPath ||
-				slashRelative == "deployment/topology.bindings.codefly.yaml" ||
 				slashRelative == "deployment/generated" ||
 				strings.HasPrefix(slashRelative, "deployment/generated/")
 			parts := strings.Split(slashRelative, "/")
@@ -261,49 +264,25 @@ func normalizeDeploymentMetadata(moduleDir string) error {
 	if err != nil {
 		return err
 	}
-	topologyPath := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
-	data, err := os.ReadFile(topologyPath)
-	if err != nil {
-		return fmt.Errorf("read deployment topology: %w", err)
-	}
-	var topology deploymentTopology
-	if err := yaml.Unmarshal(data, &topology); err != nil {
-		return fmt.Errorf("parse deployment topology: %w", err)
-	}
 	declared := make(map[string]struct{}, len(manifest.Services))
 	for _, service := range manifest.Services {
 		declared[service.Name] = struct{}{}
 	}
-	topology.Module.Name = manifest.Name
-	topology.Module.Namespace = manifest.Name
-	if manifest.ServiceEntry != "" {
-		topology.Module.ServiceEntry = manifest.ServiceEntry
-	}
-	topology.Services = slices.DeleteFunc(topology.Services, func(service topologyService) bool {
-		return !containsService(declared, service.Name)
-	})
-	for index := range topology.Services {
-		topology.Services[index].Dependencies = slices.DeleteFunc(
-			topology.Services[index].Dependencies,
-			func(dependency topologyDependency) bool {
-				return !containsService(declared, dependency.Service)
-			},
-		)
-	}
-	topology.Interface = slices.DeleteFunc(topology.Interface, func(exposed topologyInterface) bool {
-		return !containsService(declared, exposed.Service)
-	})
-	if _, exists := declared[topology.Module.ServiceEntry]; !exists {
-		return fmt.Errorf("deployment service entry %q is not declared by module %q", topology.Module.ServiceEntry, manifest.Name)
-	}
-	encoded, err := yaml.Marshal(topology)
-	if err != nil {
-		return fmt.Errorf("render deployment topology: %w", err)
-	}
-	if err := os.WriteFile(topologyPath, encoded, 0o644); err != nil {
+	if err := pruneModuleInterface(moduleDir, declared); err != nil {
 		return err
 	}
-	if err := regenerateServiceManifests(moduleDir, manifest, topology); err != nil {
+	if manifest.ServiceEntry != "" && !containsService(declared, manifest.ServiceEntry) {
+		return fmt.Errorf("service entry %q is not declared by module %q", manifest.ServiceEntry, manifest.Name)
+	}
+	if err := regenerateServiceManifests(moduleDir, manifest); err != nil {
+		return err
+	}
+	services, err := validateServiceInventory(moduleDir, manifest.Services)
+	if err != nil {
+		return err
+	}
+	topology, err := loadDeploymentTopology(moduleDir, manifest.Name, services)
+	if err != nil {
 		return err
 	}
 	return normalizeGeneratedDeploymentMetadata(moduleDir, topology)
@@ -314,16 +293,107 @@ func containsService(services map[string]struct{}, name string) bool {
 	return exists
 }
 
-type generatedServiceManifest struct {
-	Name                               string                               `yaml:"name"`
-	Version                            string                               `yaml:"version"`
-	Description                        string                               `yaml:"description,omitempty"`
-	Agent                              map[string]any                       `yaml:"agent"`
-	ServiceDependencies                []generatedServiceDependency         `yaml:"service-dependencies,omitempty"`
-	WorkspaceConfigurationDependencies []string                             `yaml:"workspace-configuration-dependencies,omitempty"`
-	SecretServiceConfigurations        []topologySecretServiceConfiguration `yaml:"secret-service-configurations,omitempty"`
-	Endpoints                          []generatedServiceEndpoint           `yaml:"endpoints"`
-	Spec                               map[string]any                       `yaml:"spec,omitempty"`
+// refreshModuleInterface carries the base's contract into a consumer that keeps
+// its own module.codefly.yaml: the `interface` block is the base's to declare,
+// so the consumer's copy takes the source's, and pruneModuleInterface then
+// drops the endpoints of services the consumer did not compose. A source that
+// declares no interface leaves the consumer's untouched.
+func refreshModuleInterface(src, moduleDir string) error {
+	sourceData, err := os.ReadFile(filepath.Join(src, moduleYamlPath))
+	if err != nil {
+		return err
+	}
+	var source yaml.Node
+	if err := yaml.Unmarshal(sourceData, &source); err != nil {
+		return fmt.Errorf("parse source %s: %w", moduleYamlPath, err)
+	}
+	if len(source.Content) != 1 || source.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("source %s must contain one mapping", moduleYamlPath)
+	}
+	contract := mappingValue(source.Content[0], "interface")
+	if contract == nil {
+		return nil
+	}
+	path := filepath.Join(moduleDir, moduleYamlPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("parse %s: %w", moduleYamlPath, err)
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("%s must contain one mapping", moduleYamlPath)
+	}
+	root := document.Content[0]
+	replaced := false
+	for index := 0; index+1 < len(root.Content); index += 2 {
+		if root.Content[index].Value == "interface" {
+			root.Content[index+1] = contract
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		root.Content = append(root.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: "interface"}, contract)
+	}
+	rendered, err := yaml.Marshal(&document)
+	if err != nil {
+		return fmt.Errorf("render %s: %w", moduleYamlPath, err)
+	}
+	return os.WriteFile(path, rendered, 0o644)
+}
+
+// pruneModuleInterface keeps the composed module's contract consistent with
+// the services the consumer declares: an interface endpoint of a service the
+// consumer did not compose is dropped from its module.codefly.yaml. Nothing
+// else in that file is touched.
+func pruneModuleInterface(moduleDir string, declared map[string]struct{}) error {
+	path := filepath.Join(moduleDir, moduleYamlPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var document yaml.Node
+	if err := yaml.Unmarshal(data, &document); err != nil {
+		return fmt.Errorf("parse %s: %w", moduleYamlPath, err)
+	}
+	if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+		return fmt.Errorf("%s must contain one mapping", moduleYamlPath)
+	}
+	endpoints := mappingValue(mappingValue(document.Content[0], "interface"), "endpoints")
+	if endpoints == nil || endpoints.Kind != yaml.SequenceNode {
+		return nil
+	}
+	kept := endpoints.Content[:0]
+	for _, endpoint := range endpoints.Content {
+		if service := mappingValue(endpoint, "service"); service == nil || containsService(declared, service.Value) {
+			kept = append(kept, endpoint)
+		}
+	}
+	if len(kept) == len(endpoints.Content) {
+		return nil
+	}
+	endpoints.Content = kept
+	rendered, err := yaml.Marshal(&document)
+	if err != nil {
+		return fmt.Errorf("render %s: %w", moduleYamlPath, err)
+	}
+	return os.WriteFile(path, rendered, 0o644)
+}
+
+// mappingValue returns the value node of key in a mapping node, or nil.
+func mappingValue(mapping *yaml.Node, key string) *yaml.Node {
+	if mapping == nil || mapping.Kind != yaml.MappingNode {
+		return nil
+	}
+	for index := 0; index+1 < len(mapping.Content); index += 2 {
+		if mapping.Content[index].Value == key {
+			return mapping.Content[index+1]
+		}
+	}
+	return nil
 }
 
 type generatedServiceDependency struct {
@@ -336,69 +406,88 @@ type generatedServiceEndpointReference struct {
 	Name string `yaml:"name"`
 }
 
-type generatedServiceEndpoint struct {
-	Name       string `yaml:"name"`
-	Visibility string `yaml:"visibility,omitempty"`
-	API        string `yaml:"api,omitempty"`
-}
-
-func regenerateServiceManifests(moduleDir string, manifest moduleManifest, topology deploymentTopology) error {
-	references := make(map[string]serviceReference, len(manifest.Services))
+// regenerateServiceManifests derives what a consumer composition changes about
+// a copied service manifest and nothing more: a dependency on a service the
+// consumer did not compose is dropped, and the frontend gains the cross-module
+// services its installed plugins reach. A manifest that needs neither stays
+// the authored bytes the base ships.
+func regenerateServiceManifests(moduleDir string, manifest moduleManifest) error {
+	declared := make(map[string]struct{}, len(manifest.Services))
 	for _, reference := range manifest.Services {
-		references[reference.Name] = reference
+		declared[reference.Name] = struct{}{}
 	}
-	for _, service := range topology.Services {
-		reference := references[service.Name]
+	for _, reference := range manifest.Services {
 		if reference.Path != nil && filepath.IsAbs(*reference.Path) {
 			continue
 		}
-		serviceDir := service.Name
+		serviceDir := reference.Name
 		if reference.Path != nil {
 			serviceDir = *reference.Path
 		}
-		generated := generatedServiceManifest{
-			Name:                               service.Name,
-			Version:                            service.Version,
-			Description:                        service.Description,
-			Agent:                              service.Agent,
-			WorkspaceConfigurationDependencies: service.WorkspaceConfigurationDependencies,
-			SecretServiceConfigurations:        service.SecretServiceConfigurations,
-			Spec:                               service.Spec,
+		path := filepath.Join(moduleDir, "services", serviceDir, "service.codefly.yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read service %q manifest: %w", reference.Name, err)
 		}
-		for _, dependency := range service.Dependencies {
-			entry := generatedServiceDependency{Name: dependency.Service}
-			for _, endpoint := range dependency.Endpoints {
-				entry.Endpoints = append(entry.Endpoints, generatedServiceEndpointReference{Name: endpoint})
+		var document yaml.Node
+		if err := yaml.Unmarshal(data, &document); err != nil {
+			return fmt.Errorf("parse service %q manifest: %w", reference.Name, err)
+		}
+		if len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
+			return fmt.Errorf("service %q manifest must contain one mapping", reference.Name)
+		}
+		root := document.Content[0]
+		changed := false
+		sources := "services/" + serviceDir + "/service.codefly.yaml"
+		if dependencies := mappingValue(root, "service-dependencies"); dependencies != nil && dependencies.Kind == yaml.SequenceNode {
+			kept := dependencies.Content[:0]
+			for _, dependency := range dependencies.Content {
+				name := mappingValue(dependency, "name")
+				module := mappingValue(dependency, "module")
+				external := module != nil && module.Value != "" && module.Value != manifest.Name
+				if external || name == nil || containsService(declared, name.Value) {
+					kept = append(kept, dependency)
+				}
 			}
-			generated.ServiceDependencies = append(generated.ServiceDependencies, entry)
+			if len(kept) != len(dependencies.Content) {
+				dependencies.Content = kept
+				changed = true
+			}
 		}
-		source := "deployment/topology.bindings.codefly.yaml"
-		if service.Name == "frontend" {
-			external, err := frontendPluginServiceDependencies(moduleDir, serviceDir, topology.Module.Name)
+		if reference.Name == "frontend" {
+			external, err := frontendPluginServiceDependencies(moduleDir, serviceDir, manifest.Name)
 			if err != nil {
 				return err
 			}
-			generated.ServiceDependencies = append(generated.ServiceDependencies, external...)
-			source += " and services/frontend/code/server/plugin-service-allowlist.generated.json"
-		}
-		for _, endpoint := range service.Endpoints {
-			entry := generatedServiceEndpoint{Name: endpoint.Name}
-			if endpoint.Visibility != "private" {
-				entry.Visibility = endpoint.Visibility
+			if len(external) > 0 {
+				dependencies := mappingValue(root, "service-dependencies")
+				if dependencies == nil {
+					root.Content = append(root.Content,
+						&yaml.Node{Kind: yaml.ScalarNode, Value: "service-dependencies"},
+						&yaml.Node{Kind: yaml.SequenceNode})
+					dependencies = root.Content[len(root.Content)-1]
+				}
+				for _, dependency := range external {
+					var node yaml.Node
+					if err := node.Encode(dependency); err != nil {
+						return fmt.Errorf("render frontend plugin dependency %q: %w", dependency.Name, err)
+					}
+					dependencies.Content = append(dependencies.Content, &node)
+				}
+				changed = true
+				sources += " and services/frontend/code/server/plugin-service-allowlist.generated.json"
 			}
-			if endpoint.API != endpoint.Name {
-				entry.API = endpoint.API
-			}
-			generated.Endpoints = append(generated.Endpoints, entry)
 		}
-		data, err := yaml.Marshal(generated)
+		if !changed {
+			continue
+		}
+		rendered, err := yaml.Marshal(&document)
 		if err != nil {
-			return fmt.Errorf("render service manifest %q: %w", service.Name, err)
+			return fmt.Errorf("render service manifest %q: %w", reference.Name, err)
 		}
-		header := []byte("# Code generated from " + source + ". DO NOT EDIT.\n")
-		path := filepath.Join(moduleDir, "services", serviceDir, "service.codefly.yaml")
-		if err := os.WriteFile(path, append(header, data...), 0o644); err != nil {
-			return fmt.Errorf("write service manifest %q: %w", service.Name, err)
+		header := []byte("# Composed by the module agent from " + sources + ".\n")
+		if err := os.WriteFile(path, append(header, rendered...), 0o644); err != nil {
+			return fmt.Errorf("write service manifest %q: %w", reference.Name, err)
 		}
 	}
 	return nil

@@ -48,7 +48,6 @@
       "setup_budget_seconds": 30,
       "input_roots": [
         ".github/workflows/ci.yml",
-        "module/deployment/topology.bindings.codefly.yaml",
         "module/services/store/baseline.provenance.json",
         "module/services/store/builder/",
         "module/services/store/code/",

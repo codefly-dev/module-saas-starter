@@ -75,7 +75,7 @@ test('an export line carrying its elapsed time names the same image as one witho
     ['example/app:0.0.0']);
 });
 
-test('every topology agent needs coverage even before it emits a Dockerfile', () => {
+test('every service agent needs coverage even before it emits a Dockerfile', () => {
   const services = [{ name: 'example', agent: { name: 'example' } }];
   assert.equal(coverageErrors({}, services, []).length, 1);
   assert.deepEqual(coverageErrors({ example: { images: [image] } }, services, []), []);
@@ -131,8 +131,9 @@ test('Git proposal checks allow deleting obsolete recipes and removing services 
   const check = base => spawnSync(process.execPath, ['scripts/ci/build-images.mjs', 'check'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CODEFLY_BASE: base } });
   try {
     for (const file of ['build-images.mjs', 'dependabot-coverage.mjs', 'workflow-yaml.mjs']) put(`scripts/ci/${file}`, readFileSync(new URL(file, import.meta.url), 'utf8'));
-    const bindings = 'module/deployment/topology.bindings.codefly.yaml';
-    put(bindings, 'services:\n  - name: example\n    agent:\n      name: example\n      version: 1.0.0\n');
+    put('module/module.codefly.yaml', 'kind: module\nname: example\nservices:\n  - name: example\n');
+    const manifest = 'module/services/example/service.codefly.yaml';
+    put(manifest, 'name: example\nagent:\n  name: example\n  version: 1.0.0\n');
     const recipe = 'module/services/example/builder/Dockerfile';
     put(recipe, `FROM ${image}\n`);
     put('scripts/ci/build-images.json', JSON.stringify({ example: { images: [image] } }));
@@ -142,7 +143,7 @@ test('Git proposal checks allow deleting obsolete recipes and removing services 
     assert.match(check(base).stderr, /generated recipes are not upgrade inputs/);
     rmSync(join(dir, recipe)); commit();
     assert.equal(check(base).status, 0, check(base).stderr);
-    put(bindings, 'services: []\n'); commit();
+    put('module/module.codefly.yaml', 'kind: module\nname: example\nservices: []\n'); rmSync(join(dir, manifest)); commit();
     assert.equal(check(base).status, 0, check(base).stderr);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
@@ -155,7 +156,8 @@ test('evidence refuses missing coverage and excludes records from before this bu
   };
   try {
     for (const file of ['build-images.mjs', 'dependabot-coverage.mjs', 'workflow-yaml.mjs']) put(`scripts/ci/${file}`, readFileSync(new URL(file, import.meta.url), 'utf8'));
-    put('module/deployment/topology.bindings.codefly.yaml', 'services:\n  - name: example\n    agent:\n      name: example\n      version: 1.0.0\n');
+    put('module/module.codefly.yaml', 'kind: module\nname: example\nservices:\n  - name: example\n');
+    put('module/services/example/service.codefly.yaml', 'name: example\nagent:\n  name: example\n  version: 1.0.0\n');
     put('scripts/ci/build-images.json', '{}');
     put('.codefly/ci/build-history-before.json', '["builder/node/old"]');
     const manifest = recipes => put('module/services/example/build-recipes/1.0.0/recipe.codefly.json',

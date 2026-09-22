@@ -267,8 +267,8 @@ type topologyInternalHTTPRoute struct {
 }
 
 type topologyKubernetesIdentity struct {
-	ServiceName string `yaml:"service_name"`
-	AppLabel    string `yaml:"app_label"`
+	ServiceName string `yaml:"service-name"`
+	AppLabel    string `yaml:"app-label"`
 }
 
 type topologySecretServiceConfiguration struct {
@@ -1657,25 +1657,9 @@ func topologyInternalAuthorityAllowPolicies(
 }
 
 func loadDeploymentTopology(moduleDir, moduleName string, services []serviceDefinition) (deploymentTopology, error) {
-	file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
-	data, err := os.ReadFile(file)
+	topology, err := assembleDeploymentTopology(moduleDir, moduleName, services)
 	if err != nil {
-		return deploymentTopology{}, fmt.Errorf("read deployment topology: %w", err)
-	}
-	var topology deploymentTopology
-	if err := yaml.Unmarshal(data, &topology); err != nil {
-		return deploymentTopology{}, fmt.Errorf("parse deployment topology: %w", err)
-	}
-	if topology.Version != "v1" {
-		return deploymentTopology{}, fmt.Errorf("deployment topology version %q is not supported", topology.Version)
-	}
-	if topology.Module.Name != moduleName || topology.Module.Namespace != moduleName {
-		return deploymentTopology{}, fmt.Errorf(
-			"deployment topology identity %q/%q does not match module %q",
-			topology.Module.Name,
-			topology.Module.Namespace,
-			moduleName,
-		)
+		return deploymentTopology{}, err
 	}
 	declared := make(map[string]struct{}, len(services))
 	for _, service := range services {

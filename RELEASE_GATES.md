@@ -208,9 +208,9 @@ access; it does not qualify or automatically adopt an upgrade.
 To upgrade an image:
 
 1. Update the owning service agent's template/constants and qualify its release.
-2. Adopt that release in `module/deployment/topology.bindings.codefly.yaml`,
-   regenerate service manifests, and update the expected images in
-   `scripts/ci/build-images.json` in the same PR.
+2. Adopt that release in the owning `services/<svc>/service.codefly.yaml`
+   (`codefly update workspace` moves every service at once) and update the
+   expected images in `scripts/ci/build-images.json` in the same PR.
 3. Run `codefly ci run --all` and boot the graph with `codefly run service`
    before adopting a runtime/compiler major. A successful build alone does not
    establish runtime compatibility. Do not bump Node or Go majors by editing a

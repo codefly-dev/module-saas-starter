@@ -1,0 +1,23 @@
+# Store-writing one-shot deploy steps the module bundle emits for the promotion
+# driver. A step runs a service's image once with a command and writes to a
+# dependency's endpoint; core's job.codefly.yaml describes a runnable job with an
+# agent and an execution, which this is not, so these keep a file of their own.
+version: v1
+deploy_jobs:
+  # Seeds the composed built-in role catalog into the store after its migration.
+  # Runs the accounts image (which carries the role-catalog-import binary and
+  # connects under the app_control_plane migration authority) but writes to the
+  # store dependency, so it is a module deploy Job, not a self-serving store
+  # bootstrap Job. force applies the authoritative generated catalog past the
+  # importer's empty-catalog truncation guard; re-runs of an unchanged catalog
+  # are an empty no-op.
+  - name: role-catalog-import
+    service: accounts
+    command: role-catalog-import
+    catalog: deployment/generated/contributed-roles.json
+    force: true
+    writes:
+      service: store
+      endpoint: tcp
+    after:
+      - store

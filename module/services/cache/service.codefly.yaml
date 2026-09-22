@@ -1,10 +1,9 @@
-# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
 name: cache
 version: 0.0.0
 agent:
     kind: codefly:service
     name: redis
-    version: 0.0.93
+    version: 0.0.94
     publisher: codefly.dev
 endpoints:
     - name: read
@@ -14,3 +13,7 @@ endpoints:
 spec:
     watch: false
     with-read-replicas: true
+    deployment:
+        endpoint-ports:
+            read: 6379
+            write: 6379

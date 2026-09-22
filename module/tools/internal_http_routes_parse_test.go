@@ -376,11 +376,11 @@ func TestNoServiceWithInternalRoutesCanBeComposedOut(t *testing.T) {
 		}
 		declaring++
 		if nonComposed[filepath.Join(moduleDir, "services", service.Name)] {
-			t.Errorf("service %q declares internal_http_routes but is out of this gate's scope; the correspondence would go unchecked", service.Name)
+			t.Errorf("service %q declares internal-http-routes but is out of this gate's scope; the correspondence would go unchecked", service.Name)
 		}
 	}
 	if declaring == 0 {
-		t.Fatal("no service declares internal_http_routes; this gate would assert nothing")
+		t.Fatal("no service declares internal-http-routes; this gate would assert nothing")
 	}
 }
 

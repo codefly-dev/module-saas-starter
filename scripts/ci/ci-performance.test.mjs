@@ -324,13 +324,13 @@ test('every job that runs a service agent restores them from one keyed cache', (
   assert.deepEqual(installs.filter(([, job]) => step(job)).map(([name]) => name).sort(),
     ['codefly-build', 'codefly-quality-phases', 'codefly-supply-chain', 'sdk-boundary']);
 
-  // The bindings file is the source of truth for every pin, so a bump earns a
-  // new entry and the fallback then restores the agents the bump did not touch
+  // The service manifests carry every agent pin, so a bump earns a new entry
+  // and the fallback then restores the agents the bump did not touch
   // — the difference between one download and a full cold resolution. Both
   // halves carry the runner's architecture: the cached path carries an agent's
   // version but not its platform, so a fallback that crossed architectures
   // would restore a binary the CLI finds, runs, and cannot execute.
-  const pins = "${{ hashFiles('module/deployment/topology.bindings.codefly.yaml') }}";
+  const pins = "${{ hashFiles('module/services/*/service.codefly.yaml') }}";
   const fallback = '${{ runner.os }}-${{ runner.arch }}-';
   for (const [name, job] of installs.filter(([, candidate]) => step(candidate))) {
     const cache = step(job);
