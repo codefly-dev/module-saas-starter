@@ -25,7 +25,7 @@ services:
       name: go-grpc
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.1.39
+      version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -89,7 +89,7 @@ services:
       name: go-grpc
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.1.39
+      version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -145,7 +145,7 @@ services:
       # only the generation it acquired (#54, #57). runtime-image.json is
       # byte-identical to 0.0.88 (same tag, same digest), so the public image
       # and the OpenSSL 3.5.8-r0 rebuild both survive the bump.
-      version: 0.0.89
+      version: 0.0.92
       publisher: codefly.dev
     endpoints:
       - name: read
@@ -166,7 +166,7 @@ services:
       name: nextjs
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.0.153
+      version: 0.0.157
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -238,7 +238,7 @@ services:
       name: nextjs
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.0.153
+      version: 0.0.157
       publisher: codefly.dev
     endpoints:
       - name: http
@@ -262,7 +262,7 @@ services:
       # codefly-dev/service-postgres#74 — resolved.
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.0.133
+      version: 0.0.137
       publisher: codefly.dev
     endpoints:
       - name: tcp
@@ -295,7 +295,7 @@ services:
       name: go-grpc
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.1.39
+      version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - observability
@@ -320,7 +320,7 @@ services:
       # codefly-dev/service-vault#42 — resolved.
       # Rebuilt against Core >= 0.3.28 so the agent acknowledges the CLI's
       # container-recovery scope; Codefly >= 0.1.151 refuses older agents.
-      version: 0.0.29
+      version: 0.0.33
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault

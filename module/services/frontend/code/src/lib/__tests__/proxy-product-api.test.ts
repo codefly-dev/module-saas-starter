@@ -1,6 +1,34 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// The product API destination is resolved through the Codefly SDK first —
+// the auth-gateway/rest endpoint the running composition injected — and only
+// then through PRODUCT_GATEWAY_INTERNAL. Under `codefly test service` the SDK
+// really does discover the gateway, so a test that stubs only the variable is
+// not hermetic: it passes without a runtime and fails inside one. Own the SDK
+// here so each test decides what the composition resolved. vi.mock is hoisted
+// above module init, so the stubs must be created with vi.hoisted.
+const {
+	getWorkspaceSecret,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+} = vi.hoisted(() => ({
+	getWorkspaceSecret:
+		vi.fn<(name: string, key: string) => string | undefined>(),
+	getCurrentModule: vi.fn<() => string>(),
+	getCurrentService: vi.fn<() => string>(),
+	getEndpoints: vi.fn<() => unknown[]>(),
+}));
+vi.mock("codefly", () => ({
+	getWorkspaceSecret,
+	getCurrentModule,
+	getCurrentService,
+	getEndpoints,
+}));
+
+const MODULE = "saas-starter";
+
 // The proxy keeps module-level state (the listing cache, the dedup flags for
 // failure logging), so each test imports a fresh module graph.
 let proxy: typeof import("@/proxy").proxy;
@@ -38,6 +66,11 @@ async function loadProxy(): Promise<void> {
 
 describe("proxy product API forwarding", () => {
 	beforeEach(async () => {
+		getCurrentModule.mockReturnValue(MODULE);
+		getCurrentService.mockReturnValue("frontend");
+		getWorkspaceSecret.mockReturnValue(undefined);
+		// No composition-injected gateway: the override is the only address.
+		getEndpoints.mockReturnValue([]);
 		vi.stubEnv("SOLUTION_CSP_INPUTS", SELF_ONLY_SNAPSHOT);
 		vi.stubEnv("PORT", "4711");
 		vi.stubEnv("PRODUCT_GATEWAY_INTERNAL", GATEWAY);
@@ -93,6 +126,28 @@ describe("proxy product API forwarding", () => {
 		);
 
 		expect(rewrittenTo(response)).toBe(`${relocated}/v1/users`);
+	});
+
+	it("prefers the auth-gateway/rest the composition injected over the override", async () => {
+		// Inside the module graph the SDK resolves the gateway; the variable is
+		// only for a frontend started outside it (the browser suite's own server).
+		getEndpoints.mockReturnValue([
+			{
+				module: MODULE,
+				service: "auth-gateway",
+				name: "rest",
+				protocol: "REST",
+				address: "http://127.0.0.1:50187",
+			},
+		]);
+		vi.stubEnv("PRODUCT_GATEWAY_INTERNAL", "http://auth-gateway.other:9090");
+		await loadProxy();
+
+		const response = await proxy(
+			productRequest("https://app.example/v1/users"),
+		);
+
+		expect(rewrittenTo(response)).toBe("http://127.0.0.1:50187/v1/users");
 	});
 
 	it("preserves a base path carried by the gateway address", async () => {
