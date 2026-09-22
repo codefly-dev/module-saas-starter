@@ -2090,7 +2090,7 @@
     "services/frontend/code/src/lib/__tests__/plugin-bff.test.ts": "c619f52e8fdaa9ad3ca9efec669c9a51e6e8d4d27b5a274937edbb1ebf9e976d",
     "services/frontend/code/src/lib/__tests__/plugin-service-bindings.test.ts": "bd5fec9c2c55b3e21151024f98cb4f1347da62e744c4703eaebe3f32dedd2178",
     "services/frontend/code/src/lib/__tests__/plugin-service-dependency-policy.test.ts": "4e6c7990d8680b6bd5221716c5e222cccbc7b931e3f83ce41173bafd3d58cbca",
-    "services/frontend/code/src/lib/__tests__/proxy-product-api.test.ts": "af546d15082a73b59e121cf458a8374b417d227d919e3e0febdd7112a12f7c5b",
+    "services/frontend/code/src/lib/__tests__/proxy-product-api.test.ts": "edea63f72db32f7d1fd290f9cc3ed1c49acd03bc4a17f10d4c1bc591e99bcb9e",
     "services/frontend/code/src/lib/__tests__/proxy-public-origin.test.ts": "d57ab1c1ce0dcff84612350740a9f428b6706eacc9179bf84f33c125ff9c288a",
     "services/frontend/code/src/lib/__tests__/proxy-secret-return.test.ts": "aa9faae1be04a70278aa38b8340a63f94ad86b5b0c7f8cda227312885e4d7003",
     "services/frontend/code/src/lib/__tests__/proxy-solution-csp.test.ts": "dae845ea13b455e5e7cb820d473cd26d1ab6fdbd22236fd1605cd4766463cfb1",

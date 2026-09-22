@@ -12,6 +12,16 @@ const SELF_ONLY_SNAPSHOT = JSON.stringify({
 	turnstile: false,
 });
 
+// The runtime hands a test its dependencies' accepted addresses, so a
+// composed auth-gateway/rest endpoint would win over PRODUCT_GATEWAY_INTERNAL
+// (server/accounts-bindings.mjs prefers the discovered endpoint). This suite is
+// about the explicitly named gateway and the no-gateway refusal, so it stands
+// outside any composition: no discovered endpoints, everything else real.
+vi.mock("codefly", async (importOriginal) => ({
+	...(await importOriginal<typeof import("codefly")>()),
+	getEndpoints: () => [],
+}));
+
 const GATEWAY = "http://auth-gateway.internal:8080";
 
 // Next signals a proxy rewrite with this response header — it is exactly what
