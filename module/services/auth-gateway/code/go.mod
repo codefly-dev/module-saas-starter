@@ -4,9 +4,9 @@ go 1.27.0
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2
-	github.com/codefly-dev/core v0.4.4-0.20260922090214-83b3904dd07e
-	github.com/codefly-dev/sdk-go v0.1.69-0.20260922100356-a647f16915d4
-	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260922100356-a647f16915d4
+	github.com/codefly-dev/core v0.5.0
+	github.com/codefly-dev/sdk-go v0.2.0
+	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260922121619-dbf75e59b6b2
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0

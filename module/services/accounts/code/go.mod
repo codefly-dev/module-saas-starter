@@ -7,9 +7,9 @@ require (
 	buf.build/go/protovalidate v1.4.0
 	connectrpc.com/connect v1.21.0
 	connectrpc.com/otelconnect v0.9.0
-	github.com/codefly-dev/core v0.4.4-0.20260922090214-83b3904dd07e
-	github.com/codefly-dev/sdk-go v0.1.69-0.20260922100356-a647f16915d4
-	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260922100356-a647f16915d4
+	github.com/codefly-dev/core v0.5.0
+	github.com/codefly-dev/sdk-go v0.2.0
+	github.com/codefly-dev/sdk-go/workcontext v0.0.0-20260922121619-dbf75e59b6b2
 	github.com/codefly-dev/service-postgres/libs/go v0.0.0-20260915032422-272301033aed
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/golang-jwt/jwt/v5 v5.3.1

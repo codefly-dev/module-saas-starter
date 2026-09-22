@@ -3,7 +3,7 @@ module store-migrator
 go 1.27.0
 
 require (
-	github.com/codefly-dev/sdk-go v0.1.69-0.20260922100356-a647f16915d4
+	github.com/codefly-dev/sdk-go v0.2.0
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/lib/pq v1.12.3
 )
@@ -16,7 +16,7 @@ require (
 	github.com/Masterminds/semver v1.5.0 // indirect
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
-	github.com/codefly-dev/core v0.4.4-0.20260922090214-83b3904dd07e // indirect
+	github.com/codefly-dev/core v0.5.0 // indirect
 	github.com/go-openapi/analysis v1.0.0 // indirect
 	github.com/go-openapi/errors v0.22.8 // indirect
 	github.com/go-openapi/jsonpointer v1.0.1 // indirect

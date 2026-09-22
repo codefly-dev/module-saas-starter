@@ -24,7 +24,7 @@ services:
       kind: codefly:service
       name: go-grpc
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.1.42
+      version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -87,7 +87,7 @@ services:
       kind: codefly:service
       name: go-grpc
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.1.42
+      version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - gateway
@@ -141,7 +141,7 @@ services:
       # only the generation it acquired (#54, #57). runtime-image.json is
       # byte-identical to 0.0.88 (same tag, same digest), so the public image
       # and the OpenSSL 3.5.8-r0 rebuild both survive the bump.
-      version: 0.0.91
+      version: 0.0.92
       publisher: codefly.dev
     endpoints:
       - name: read
@@ -161,7 +161,7 @@ services:
       kind: codefly:service
       name: nextjs
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.0.156
+      version: 0.0.157
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -232,7 +232,7 @@ services:
       kind: codefly:service
       name: nextjs
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.0.156
+      version: 0.0.157
       publisher: codefly.dev
     endpoints:
       - name: http
@@ -255,7 +255,7 @@ services:
       # 0.0.130: Alpine OpenSSL rebuild to 3.5.8-r0 (CVE-2026-14456),
       # codefly-dev/service-postgres#74 — resolved.
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.0.135
+      version: 0.0.137
       publisher: codefly.dev
     endpoints:
       - name: tcp
@@ -287,7 +287,7 @@ services:
       kind: codefly:service
       name: go-grpc
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.1.42
+      version: 0.1.43
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - observability
@@ -311,7 +311,7 @@ services:
       # auth-bypass, CRITICAL) + CVE-2026-84304 (google.golang.org/grpc),
       # codefly-dev/service-vault#42 — resolved.
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.0.31
+      version: 0.0.33
       publisher: codefly.dev
     secret_service_configurations:
       - name: vault
