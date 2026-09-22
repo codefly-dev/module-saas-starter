@@ -137,9 +137,9 @@ here. Its baseline shrinks and never grows: clean a file, delete its line.
 
 ## Repository layout
 
-- `module/` — the canonical module source that ships to consumers. **This is
-  the tree the base-integrity tooling and CI run against.** See
-  [module/AGENTS.md](./module/AGENTS.md) before editing anything under it.
+- `module/` — the canonical module source that ships to consumers, as an
+  immutable package. See [module/AGENTS.md](./module/AGENTS.md) before editing
+  anything under it.
 - `modules/saas-starter` — a symlink to `module/` (the workspace-composed view
   Codefly expects under `modules/<name>/`).
 - `main.go` / `gitops.go` — this repo is itself the `saas-starter` **module agent**
@@ -156,24 +156,23 @@ Depth sits with the code that owns it:
 | File | Covers |
 | --- | --- |
 | [module/AGENTS.md](./module/AGENTS.md) | the shipped tree: generated vs authored files, the six Go modules and how to test each, configuration groups |
-| [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the bindings file as source of truth, and changing an agent version pin |
+| [module/deployment/AGENTS.md](./module/deployment/AGENTS.md) | the bindings file and the per-service manifests rendered from it |
 | [module/services/auth-gateway/AGENTS.md](./module/services/auth-gateway/AGENTS.md) | upstream registration, the composed-module REST prefix, the credentials both take |
 | [module/services/accounts/AGENTS.md](./module/services/accounts/AGENTS.md) | the durable registry record, module principals, minting a module Work Context, mesh reachability |
 | [module/services/frontend/AGENTS.md](./module/services/frontend/AGENTS.md) | the registration route, public vs internal projections, remote loading and CSP, the published kit |
 
 Skills in `.claude/skills/`, loaded when the task calls for them:
-`run-the-starter-locally`, `land-a-pull-request`, `refresh-base-manifest`,
-`pin-a-service-agent`, `cut-a-release`.
+`run-the-starter-locally`, `land-a-pull-request`, `cut-a-release`.
 
 ## Building, testing, and CI
 
 - Canonical **service** gate: `codefly ci run`. It owns lint, compile/typecheck,
   tests, dependency/vuln audit, SBOM, and container build for every service in
   the graph. See [RELEASE_GATES.md](./RELEASE_GATES.md).
-- Beside it, CI runs nine repository-specific gates that no service owns — base-file
-  integrity, authorization coverage, the release-gate contract, interface docs and
-  story tests, the kit's version, provider shims, marketing isolation, the SDK
-  boundary, the immutable module package. [RELEASE_GATES.md § Repository-specific
+- Beside it, CI runs nine repository-specific gates that no service owns — the
+  module verification job, authorization coverage, the release-gate contract,
+  interface docs and story tests, the kit's version, provider shims, marketing
+  isolation, the SDK boundary, the immutable module package. [RELEASE_GATES.md § Repository-specific
   gates](./RELEASE_GATES.md#repository-specific-gates) says what each runs, and
   `release-gates.test.mjs` holds this prose to the enforced set.
 - More checks run as *steps* inside the `base-integrity` job than as gates of their
@@ -182,10 +181,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
   such a list with a count: nothing enforces one, so two changes that each add a
   step and each bump the same number merge cleanly into a total that is silently
   wrong.
-- Editing any base file means refreshing `module/tools/base-manifest.json` — the
-  easiest gate here to trip ([module/AGENTS.md § Base-file integrity
-  manifest](./module/AGENTS.md#base-file-integrity-manifest)). Go suites live in six
-  independent Go modules with no `go.work`
+- Go suites live in six independent Go modules with no `go.work`
   ([module/AGENTS.md](./module/AGENTS.md#go-suites)).
 - Vulnerability policy: the complete audit runs non-blocking so vendor-image
   findings stay in the evidence report, while a separate fail-closed step enforces
@@ -200,7 +196,7 @@ Skills in `.claude/skills/`, loaded when the task calls for them:
 ## Cutting a release
 
 Two tag tracks share this repository on separate version axes: the **`v0.0.N`
-deploy counter** consumers adopt via `codefly sync module`, and the **immutable
+deploy counter** consumers pin, and the **immutable
 module package** (`module-package/vX.Y.Z`, from
 `module/module.package.codefly.yaml`) — only the second triggers the
 module-package publication job. Cutting a tag here does **not** publish a Go or

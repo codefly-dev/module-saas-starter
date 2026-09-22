@@ -4,10 +4,6 @@ title = "SaaS Starter secret scanning"
 useDefault = true
 
 [[allowlists]]
-description = "Canonical integrity manifest contains only file paths and SHA-256 hashes"
-paths = ['''^module/tools/base-manifest\.json$''']
-
-[[allowlists]]
 description = """
 Synthetic provider credentials used by the setup-script and webhook tests. The
 `codeflyfixture` infix is reserved for values that are deliberately fake, so a

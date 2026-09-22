@@ -200,7 +200,7 @@ function runQualityPhase(phase, environment = {}) {
 // the plan the planner published, under bounds it supplies independently.
 test('every quality phase replays the plan published for its own invocation', () => {
   const job = workflow.jobs['codefly-quality-phases'];
-  assert.deepEqual(job.strategy.matrix.phase, ['verify,sync-drift', 'lint', 'compile', 'test']);
+  assert.deepEqual(job.strategy.matrix.phase, ['sync-drift', 'lint', 'compile', 'test']);
   assert.equal(job.strategy['fail-fast'], 'false');
   for (const phase of job.strategy.matrix.phase) {
     const id = phase.replaceAll(',', '-');
@@ -247,7 +247,7 @@ test('the planner publishes a replay plan for every phase that replays one', () 
     // other bounds, is refused at replay rather than silently narrowing the run.
     for (const id of replayed) {
       const emitted = readFileSync(join(temporary, 'ci-plan', id), 'utf8').trim();
-      assert.equal(emitted, `ci plan --head head --base base --format json --replay --phase ${id.replace('.json', '').replace('verify-sync-drift', 'verify,sync-drift')}`);
+      assert.equal(emitted, `ci plan --head head --base base --format json --replay --phase ${id.replace('.json', '')}`);
     }
   } finally {
     rmSync(temporary, { recursive: true, force: true });
@@ -292,7 +292,8 @@ test('results are reused only under a signing key, and only main is trusted to c
   // cancelled run, whose store is incomplete at an arbitrary point.
   assert.match(save.if, /!cancelled\(\)/);
   assert.ok(!/always\(\)/.test(save.if), save.if);
-  // actions/cache rejects a key containing a comma, which "verify,sync-drift" has.
+  // actions/cache rejects a key containing a comma; CI_PHASE_ID is the phase list with
+  // commas replaced, so a multi-phase matrix entry can never leak one into the key.
   const restore = workflow.jobs['codefly-quality-phases'].steps.find(step => step.name === 'Restore verified CI results');
   for (const step of [save, restore]) {
     assert.ok(!step.with.key.includes(','), step.with.key);
@@ -303,7 +304,7 @@ test('results are reused only under a signing key, and only main is trusted to c
 
 test('a failing quality command still fails its matrix job', () => {
   const script = workflow.jobs['codefly-quality-phases'].steps.find(step => step.name === 'Run quality phase').run;
-  for (const phase of ['verify,sync-drift', 'lint', 'compile', 'test']) {
+  for (const phase of ['sync-drift', 'lint', 'compile', 'test']) {
     const result = spawnSync('bash', ['-e', '-c', `codefly() { return 17; };\n${script}`], {
       env: { ...process.env, CI_PHASE: phase, SELECTION_ALL: 'true', GITHUB_SHA: 'head', AFFECTED_SERVICES: 'frontend' },
     });

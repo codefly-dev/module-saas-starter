@@ -63,12 +63,11 @@ claims until the named environment has current evidence.
 
 ## Release gate
 
-`node tools/base-integrity.mjs check` validates that the public manifest
-contains definitions only and scans repository documentation, nested module
+`node tools/module-verify.mjs` validates that the public manifest contains
+definitions only and scans repository documentation, nested module
 documentation, frontend source/public text, fixtures, SVGs, and manifest
-summaries for unsupported fixed claims. The same validation runs before
-regenerating the base manifest, so canonical and composed-module release paths
-fail together. Runtime context parsing rejects unknown capabilities, malformed
+summaries for unsupported fixed claims, in canonical and in a composed module
+alike. Runtime context parsing rejects unknown capabilities, malformed
 or duplicate evidence, and non-ISO timestamps.
 
 When adding a public claim:

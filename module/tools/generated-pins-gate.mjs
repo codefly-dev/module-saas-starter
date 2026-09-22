@@ -68,8 +68,7 @@ const THIRD_PARTY_IMPORT = /^\s*\w*\s*"[^"/]*\.[^"/]*\//;
 
 // Pinned plugin versions from one `buf.gen.local.yaml`, as
 // { plugin -> { version, out } }. The file is a fixed-shape template this repo
-// owns, so it is parsed line-wise rather than pulling in a YAML dependency —
-// the same approach base-integrity.mjs takes to module.codefly.yaml.
+// owns, so it is parsed line-wise rather than pulling in a YAML dependency.
 export function parsePins(template) {
   const pins = new Map();
   const lines = template.split("\n");
@@ -187,8 +186,7 @@ function check() {
     console.error(
       `\nFAIL: ${errors.length} generated file(s) drifted from the pinned toolchain. Regenerate ` +
         "with `codefly generate proto --proto ./proto --output . --local --template buf.gen.local.yaml` " +
-        "from the service directory (never `buf generate` directly — it skips the goimports pass), " +
-        "then refresh module/tools/base-manifest.json.",
+        "from the service directory (never `buf generate` directly — it skips the goimports pass).",
     );
     process.exit(1);
   }

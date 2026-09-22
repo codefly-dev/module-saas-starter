@@ -218,8 +218,7 @@ func secretDefaultProblems(data []byte) []string {
 // value that is empty or not an obvious placeholder. The immutable module
 // package archives the whole module/ tree (git archive commit:module), so a
 // module/configurations/local/*.secret.env file IS published to every consumer.
-// The base-integrity manifest deliberately excludes it from drift detection
-// (secrets are runtime-owned), which means nothing else stops a real credential
+// Secrets are runtime-owned and no gate hashes them, which means nothing else stops a real credential
 // pasted into this "default" from riding along into the published package. This
 // is that missing guard.
 func assertSecretDefaultIsPlaceholder(t *testing.T, name string) {

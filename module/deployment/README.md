@@ -322,12 +322,7 @@ a mounted skin descriptor) as a committed value for local runs:
    `service.codefly.yaml` picks up the new dependency (the same module render
    described in [AGENTS.md](./AGENTS.md#agent-version-pins)).
 
-4. **Refresh the base-integrity manifest.** `topology.bindings.codefly.yaml`,
-   this README, and the generated `service.codefly.yaml` are base-tracked;
-   editing them without regenerating `module/tools/base-manifest.json` fails CI.
-   See [AGENTS.md](../AGENTS.md#base-file-integrity-manifest).
-
-Steps 2–4 are only for the committed path. For a throwaway local value, skip them
+Steps 2–3 are only for the committed path. For a throwaway local value, skip them
 and use `--set` or — frontend only — a gitignored `.env*.local` under
 `module/services/frontend/code/`.
 

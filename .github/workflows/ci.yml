@@ -38,8 +38,8 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: Test the base-integrity guard
-        run: node --test module/tools/base-integrity.test.mjs
+      - name: Test the module verification gate
+        run: node --test module/tools/module-verify.test.mjs
       - name: Test the RLS migration gate
         run: node --test module/tools/rls-migration-gate.test.mjs
       - name: Verify the store baseline's provenance and staging
@@ -73,8 +73,8 @@ jobs:
         run: node --test module/tools/commit-identity-gate.test.mjs
       - name: Check every reference into an AGENTS.md resolves
         run: node --test module/tools/agent-docs-links.test.mjs
-      - name: Verify the shipped manifest matches the canonical tree
-        run: node module/tools/base-integrity.mjs verify
+      - name: Verify the frontend install graph and public claims
+        run: node module/tools/module-verify.mjs
       - name: Enforce tenant RLS coverage in store migrations
         run: node module/tools/rls-migration-gate.mjs check
       - name: Enforce up+down pairing across all migrations
@@ -236,11 +236,9 @@ jobs:
         run: node --test scripts/ci/dependabot-coverage.test.mjs scripts/ci/build-images.test.mjs
       - name: Require every artifact-writing job to depend on the release gates
         run: node scripts/ci/release-gates.mjs check
-      # A Dependabot entry over a base-tracked manifest opens a pull request that
-      # can never merge — the bump leaves base-manifest.json stale, base-integrity
-      # fails, and Dependabot cannot run `base-integrity.mjs gen` — which then
-      # consumes the ecosystem's open-pull-requests-limit indefinitely.
-      - name: Require dependabot to cover every updatable manifest and no base file
+      # A dependency manifest under module/ ships with the module release; its
+      # declared versions move with the module, not with this repository's bots.
+      - name: Require dependabot to cover every updatable manifest and no module file
         run: |
           node scripts/ci/dependabot-coverage.mjs check
           node scripts/ci/build-images.mjs check
@@ -518,16 +516,15 @@ jobs:
             fi
           else
             # A release tag or a first push has no delta to scope to, but the
-            # verify phase still needs change bounds to establish its integrity
-            # inputs, and `--all` supplies none — it only widens the selection.
-            # The commit's own parent is that bound.
+            # planner still needs change bounds, and `--all` supplies none — it
+            # only widens the selection. The commit's own parent is that bound.
             base="$(git rev-parse --verify --quiet "${GITHUB_SHA}^" || true)"
             selection_args+=(--all)
           fi
 
           # Independent of how wide the selection is: without a base (or
-          # --changed-file) the CLI records an integrity error and every phase
-          # behind a verify refuses. A root commit has no parent and none.
+          # --changed-file) the CLI records an integrity error in the plan.
+          # A root commit has no parent and none.
           if [[ -n "${base}" ]]; then
             selection_args+=(--base "${base}")
           fi
@@ -535,9 +532,9 @@ jobs:
           plan_json="$(codefly ci plan "${selection_args[@]}" --format json)"
 
           # The CLI reports an unestablished integrity baseline in the plan
-          # rather than failing, and only the later verify phase refuses. Catch
-          # it here: this is where the bounds are chosen, and a fan-out job that
-          # dies on it reads as a build failure rather than a planning one.
+          # rather than failing. Catch it here: this is where the bounds are
+          # chosen, and a fan-out job that dies on it reads as a build failure
+          # rather than a planning one.
           integrity_error="$(jq -r '.integrity_error // ""' <<<"${plan_json}")"
           if [[ -n "${integrity_error}" ]]; then
             echo "codefly-plan: ${integrity_error}" >&2
@@ -572,7 +569,7 @@ jobs:
           #
           # It is written outside the repository: the plan pins a digest of the
           # working tree, and the CLI exempts only `.codefly/ci` from it.
-          plan_phases=("verify,sync-drift" lint compile test build)
+          plan_phases=(sync-drift lint compile test build)
           mkdir -p "${RUNNER_TEMP}/ci-plan"
           for phase in "${plan_phases[@]}"; do
             codefly ci plan "${selection_args[@]}" --format json --replay \
@@ -598,7 +595,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        phase: ["verify,sync-drift", lint, compile, test]
+        phase: [sync-drift, lint, compile, test]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -713,9 +710,8 @@ jobs:
             selection_args+=(--all)
           fi
           # `--all` only widens the selection; `--base` is what establishes the
-          # integrity inputs, and every phase runs behind a verify that refuses
-          # without them. The two are independent, so a run that forces the full
-          # graph still supplies its change bounds. A release tag has no base.
+          # change bounds. The two are independent, so a run that forces the full
+          # graph still supplies its bounds. A release tag has no base.
           if [[ -n "${CODEFLY_BASE}" ]]; then
             selection_args+=(--base "${CODEFLY_BASE}")
           fi
@@ -864,9 +860,8 @@ jobs:
             selection_args+=(--all)
           fi
           # `--all` only widens the selection; `--base` is what establishes the
-          # integrity inputs, and every phase runs behind a verify that refuses
-          # without them. The two are independent, so a run that forces the full
-          # graph still supplies its change bounds. A release tag has no base.
+          # change bounds. The two are independent, so a run that forces the full
+          # graph still supplies its bounds. A release tag has no base.
           if [[ -n "${CODEFLY_BASE}" ]]; then
             selection_args+=(--base "${CODEFLY_BASE}")
           fi
@@ -953,9 +948,8 @@ jobs:
             selection_args+=(--all)
           fi
           # `--all` only widens the selection; `--base` is what establishes the
-          # integrity inputs, and every phase runs behind a verify that refuses
-          # without them. The two are independent, so a run that forces the full
-          # graph still supplies its change bounds. A release tag has no base.
+          # change bounds. The two are independent, so a run that forces the full
+          # graph still supplies its bounds. A release tag has no base.
           if [[ -n "${CODEFLY_BASE}" ]]; then
             selection_args+=(--base "${CODEFLY_BASE}")
           fi

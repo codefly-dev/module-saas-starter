@@ -473,7 +473,7 @@ func findProductionScanRoots(t *testing.T) (string, []string, map[string]bool) {
 }
 
 // TestComposedSubsetIsNarrowedAndDisclosed pins the contract a consuming
-// workspace depends on: `codefly sync module` lands every service of a base
+// workspace depends on: composing the module lands every service of a base
 // module on disk, only the composed ones are in this gate's reach, and the
 // narrowing is announced rather than silent.
 func TestComposedSubsetIsNarrowedAndDisclosed(t *testing.T) {
@@ -602,14 +602,13 @@ type compositionScan struct {
 
 // scanModuleComposition decides which `services/<name>/` subtrees sit outside
 // this gate. A consumer may compose a subset of a base module's services, but
-// `codefly sync module` copies the module whole, so the omitted services' code
+// composition copies the module whole, so the omitted services' code
 // is never built, run, or given a runtime endpoint to resolve.
 //
-// module.codefly.yaml carries no integrity protection — base-integrity.mjs
-// excludes it as consumer identity — so reading it unchecked would turn this
-// gate into a silent, self-service waiver. The narrowing is therefore bounded:
+// module.codefly.yaml is consumer identity, so reading it unchecked would turn
+// this gate into a silent, self-service waiver. The narrowing is therefore bounded:
 //
-//   - every skip is disclosed, the way base-integrity.mjs announces its own;
+//   - every skip is disclosed;
 //   - an owned module must compose exactly what it ships, so canonical cannot
 //     shrink the gate by editing generated YAML;
 //   - an inventory naming a service with no directory does not describe this

@@ -3,9 +3,8 @@
 This is the canonical module source that **ships to consumers**, composed into
 each one as a copy. Two consequences govern every edit here:
 
-- **Base-file integrity applies.** `tools/base-manifest.json` hashes every file in
-  this tree; editing one without refreshing the manifest fails CI. The procedure is
-  [below](#base-file-integrity-manifest).
+- **What ships is the tree.** The module is released as an immutable package of
+  this directory; there is no second record of its files to keep fresh.
 - **A consumer cannot edit what you write here** — it may only add files
   alongside. Anything a consumer must be able to vary belongs in a configuration
   group or an extension point, not in a file they would have to fork.
@@ -67,39 +66,6 @@ reference composition), for six in total; a consumer's root module is its own.
 
 To exercise a service, run its suite from its own directory — its DB-backed
 suites need Codefly and Docker — or let `codefly ci run` do it.
-
-## Base-file integrity manifest
-
-`tools/base-manifest.json` records the sha256 of every base file this tree ships.
-The two halves run in different places, and confusing them wastes a cycle:
-
-- **In a consumer**, `node tools/base-integrity.mjs check` fails on any base file
-  that was edited in place. The fix is to stop editing it and add a file alongside
-  instead, or take the change upstream.
-- **In the canonical repository**, `gen` regenerates the manifest after a
-  deliberate base-file edit. Editing a base file without it fails two CI checks
-  ("Base manifest integrity" and "Codefly CI").
-
-The base-file set is **what git tracks**: `gen` hashes `git ls-files`, so a
-gitignored artifact never enters the manifest, and a new file you have not
-`git add`ed yet is not a base file — `gen` refuses and lists it rather than
-record a manifest without it. Stage first, then regenerate, from a clean
-checkout:
-
-```bash
-git worktree add --detach /tmp/bm-clean HEAD
-cd /tmp/bm-clean/module && node tools/base-integrity.mjs gen && node tools/base-integrity.mjs verify
-# copy module/tools/base-manifest.json back, confirm the diff is only your files, commit
-git worktree remove /tmp/bm-clean --force
-```
-
-Two things that cost time:
-
-- **Regenerate last.** Any later edit to a base file — an amend, a review fixup, a
-  rebase that brings one in — re-stales the manifest you just refreshed.
-- **A branch behind `main` reds this check too**, because it runs against the merge
-  ref. If your diff looks clean and it is still red, rebase before suspecting the
-  manifest, and read the log: the same job also runs the commit-identity gate.
 
 ## Runtime composition seams
 

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1892,31 +1891,11 @@ endpoints:
 `)
 	writeTestFile(t, filepath.Join(source, "services", "README.md"), "canonical service documentation\n")
 	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
-	removedBase := "package accounts\n"
-	divergedBase := "package accounts\n\nconst Mode = \"canonical\"\n"
 	updatedBase := "package accounts\n\nconst Mode = \"updated\"\n"
 	divergedConsumer := "package accounts\n\nconst Mode = \"consumer\"\n"
-	removedDigest := sha256.Sum256([]byte(removedBase))
-	divergedDigest := sha256.Sum256([]byte(divergedBase))
-	writeTestFile(t, filepath.Join(target, "services", "accounts", "removed.go"), removedBase)
 	writeTestFile(t, filepath.Join(target, "services", "accounts", "diverged.go"), divergedConsumer)
 	writeTestFile(t, filepath.Join(target, "services", "accounts", "consumer.go"), "package accounts\n")
-	writeTestFile(
-		t,
-		filepath.Join(target, "tools", "base-manifest.json"),
-		fmt.Sprintf(`{"files":{
-  "deployment/topology.bindings.codefly.yaml":"previous-base-hash",
-  "services/accounts/diverged.go":"%x",
-  "services/accounts/removed.go":"%x"
-}}`, divergedDigest, removedDigest),
-	)
-	writeTestFile(
-		t,
-		filepath.Join(target, "tools", "base-integrity-allow.json"),
-		`{"services/accounts/diverged.go":"consumer-owned integration"}`,
-	)
 	writeTestFile(t, filepath.Join(source, "services", "accounts", "diverged.go"), updatedBase)
-	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
 	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
 	writeTestFile(t, topology, `version: v1
 module:
@@ -1978,12 +1957,12 @@ targetRevision: main
 		string(data) != "canonical service documentation\n" {
 		t.Fatalf("canonical service documentation was not refreshed: data=%q error=%v", data, err)
 	}
-	if _, err := os.Stat(filepath.Join(target, "services", "accounts", "removed.go")); !os.IsNotExist(err) {
-		t.Fatalf("file removed from the canonical base survived sync: %v", err)
-	}
+	// A base file the consumer edited in place is the base's again after a
+	// compose: nothing records what the consumer changed, and the base only
+	// moves via a new release. Consumers add files beside the base instead.
 	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "diverged.go")); err != nil ||
-		string(data) != divergedConsumer {
-		t.Fatalf("consumer-diverged base file was not preserved: data=%q error=%v", data, err)
+		string(data) != updatedBase {
+		t.Fatalf("base file edited in place was not replaced by the base: data=%q error=%v", data, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "consumer.go")); err != nil ||
 		string(data) != "package accounts\n" {
@@ -2030,14 +2009,6 @@ services:
   - name: accounts
     path: backend
 `)
-	removedBase := "package accounts\n"
-	removedDigest := sha256.Sum256([]byte(removedBase))
-	writeTestFile(t, filepath.Join(target, "services", "backend", "removed.go"), removedBase)
-	writeTestFile(
-		t,
-		filepath.Join(target, "tools", "base-manifest.json"),
-		fmt.Sprintf(`{"files":{"services/accounts/removed.go":"%x"}}`, removedDigest),
-	)
 
 	source := t.TempDir()
 	writeTestFile(t, filepath.Join(source, moduleYamlPath), `kind: module
@@ -2047,14 +2018,10 @@ services:
   - name: accounts
 `)
 	writeTestFile(t, filepath.Join(source, "services", "accounts", "current.go"), "package accounts\n")
-	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
 	t.Setenv(sourceEnvVar, source)
 
 	if err := Create(context.Background(), target, "identity"); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(target, "services", "backend", "removed.go")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("removed base file survived under the relative service path: %v", err)
 	}
 	if data, err := os.ReadFile(filepath.Join(target, "services", "backend", "current.go")); err != nil ||
 		string(data) != "package accounts\n" {
@@ -2569,9 +2536,9 @@ func writeTestFile(t *testing.T, file, content string) {
 	}
 }
 
-// service.codefly.yaml is generated from the topology binding but excluded from
-// the base-integrity manifest, so nothing hermetic catches a topology agent-pin
-// bump that forgets to regenerate a service manifest. Only the network- and
+// service.codefly.yaml is generated from the topology binding, and nothing
+// hermetic catches a topology agent-pin bump that forgets to regenerate a
+// service manifest. Only the network- and
 // agent-dependent codefly sync-drift gate would — too late and not in unit CI.
 // This proves every committed service manifest still pins the same agent
 // name@version its topology entry declares.

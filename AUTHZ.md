@@ -893,11 +893,10 @@ A consuming solution does not hand-write the catalog. It ships a
    (#415/#416) — this bridge lands the grants, it does not itself transform
    them. Finer-grained roles remain an org's own custom roles, which the
    importer never touches.
-3. Both generated files are **base** — base-manifest-tracked
-   (`module/tools/base-manifest.json`). A consumer cannot hand-edit them: a
+3. Both generated files are **base**. A consumer cannot hand-edit them: a
    permission or role reaches a deployment only through contribution →
    regeneration, and editing the generated file without regenerating fails the
-   base-integrity gate.
+   clean-diff regeneration gate.
 
 The composed `contributed-roles.json` is applied by `role-catalog-import` as a
 bring-up step that runs **after** the store migration Job, under the same

@@ -18,15 +18,12 @@ codefly agent versions <agent>
 ```
 
 To change a pin, **edit the version in `topology.bindings.codefly.yaml`**, then
-regenerate the per-service manifests and refresh the base manifest:
+regenerate the per-service manifests:
 
 - `services/<svc>/service.codefly.yaml` is generated. A hand-edit is lost on the
   next composition and silently drifts the two files apart.
 - `codefly update workspace` does **not** rewrite the bindings for this repo (it
   skips the generated manifests by design), so the bindings edit is manual.
-- The bindings file is base-tracked, so finish with [../AGENTS.md § Base-file
-  integrity manifest](../AGENTS.md#base-file-integrity-manifest) or CI reds on
-  integrity.
 
 **Latest is not always safe.** Agent releases can carry breaking changes to
 service manifests. Verify the newer agent actually boots the graph (`codefly run

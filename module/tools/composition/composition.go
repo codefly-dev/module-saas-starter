@@ -167,7 +167,7 @@ type permissionCatalog struct {
 // role-catalog-import step. Its shape is byte-compatible with the importer's
 // versioned document (rolecatalog.Catalog): a consumer never hand-edits it —
 // it is regenerated from the composed PermissionsContribution set, and the
-// generated file is base-manifest-tracked.
+// generated file is released with the module.
 type roleCatalog struct {
 	Version uint32            `json:"version"`
 	Roles   []roleCatalogRole `json:"roles"`
