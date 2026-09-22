@@ -6,6 +6,11 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { identityErrors, parseCommits, logArgs } from "./commit-identity-gate.mjs";
 
@@ -124,4 +129,65 @@ test("the tip defaults to HEAD, so a local run needs only a base", () => {
 test("an empty log yields no commits rather than one blank record", () => {
   assert.deepEqual(parseCommits(""), []);
   assert.deepEqual(parseCommits("\n"), []);
+});
+
+// The `report` mode is the post-merge half: it runs on `push` to main over the range the push
+// added and reports a squash-merge author the pull-request `check` cannot see. Exercised over a
+// real repository because the value is in the CLI's exit status, which the pure functions above
+// never reach. Fixtures use invented addresses, as the header requires.
+const GATE = fileURLToPath(new URL("./commit-identity-gate.mjs", import.meta.url));
+
+const git = (root, args, env = {}) =>
+  execFileSync("git", args, { cwd: root, encoding: "utf8", env: { ...process.env, ...env } });
+
+const commitAs = (root, message, email, committerEmail = "noreply@github.com") =>
+  git(root, ["commit", "-q", "--allow-empty", "-m", message], {
+    GIT_AUTHOR_NAME: "Author", GIT_AUTHOR_EMAIL: email,
+    GIT_COMMITTER_NAME: "GitHub", GIT_COMMITTER_EMAIL: committerEmail,
+  });
+
+const cli = (root, args) =>
+  spawnSync(process.execPath, [GATE, ...args], { cwd: root, encoding: "utf8" });
+
+function withRepo(run) {
+  const root = mkdtempSync(join(tmpdir(), "commit-identity-gate-"));
+  try {
+    git(root, ["init", "-q", "-b", "main", "."]);
+    commitAs(root, "chore: base", NOREPLY, NOREPLY);
+    return run(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("report passes when the pushed range carries only no-reply identities", () => {
+  withRepo((root) => {
+    const before = git(root, ["rev-parse", "HEAD"]).trim();
+    commitAs(root, "feat: clean", NOREPLY);
+    const out = cli(root, ["report", before, "HEAD"]);
+    assert.equal(out.status, 0, out.stdout + out.stderr);
+  });
+});
+
+test("report fails on a squash author that landed on main, without printing the address", () => {
+  // GitHub takes a squash commit's author from the merging account's profile email, so a personal
+  // address lands on main even when every branch commit the pull-request run saw was clean.
+  withRepo((root) => {
+    const before = git(root, ["rev-parse", "HEAD"]).trim();
+    commitAs(root, "feat: squashed", "jane@example.com");
+    const out = cli(root, ["report", before, "HEAD"]);
+    assert.equal(out.status, 1, out.stdout + out.stderr);
+    assert.doesNotMatch(out.stderr, /jane@example\.com/);
+    // Its remediation is the account setting, never a rewrite the landed commit can no longer take.
+    assert.match(out.stderr, /Keep my email address/i);
+    assert.doesNotMatch(out.stderr, /rebase/i);
+  });
+});
+
+test("an unknown subcommand is a usage error", () => {
+  withRepo((root) => {
+    const out = cli(root, ["audit", "HEAD"]);
+    assert.equal(out.status, 2, out.stdout + out.stderr);
+    assert.match(out.stderr, /usage: .*<check\|report>/);
+  });
 });

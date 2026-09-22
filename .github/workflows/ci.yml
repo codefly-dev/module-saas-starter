@@ -107,6 +107,20 @@ jobs:
           git rev-parse -q --verify HEAD^2 >/dev/null ||
             { echo "expected refs/pull/N/merge as HEAD; the checkout ref must not be overridden"; exit 1; }
           node module/tools/commit-identity-gate.mjs check "$(git rev-parse HEAD^1)" "$IDENTITY_HEAD"
+      # The step above cannot see the squash it produces. GitHub takes a squash commit's author from
+      # the merging account's profile email, not from the commit it squashes, so a branch that
+      # passed still lands a personal address on `main` when that account has not turned on "Keep my
+      # email address private" — and that object does not exist until the merge is performed, after
+      # every required check has reported. This push run over the range the push added is the
+      # post-merge tripwire: it cannot stop the commit, only report the growth instead of letting the
+      # count rise unseen. Scoped to before..sha, never history, so it never trips on what is already
+      # published; guarded to `main` so tag pushes (whose `before` is empty) do not run it.
+      - name: Report any non-no-reply identity that landed on main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          IDENTITY_BEFORE: ${{ github.event.before }}
+          IDENTITY_AFTER: ${{ github.sha }}
+        run: node module/tools/commit-identity-gate.mjs report "$IDENTITY_BEFORE" "$IDENTITY_AFTER"
       # Fails fast and by name on generated Go that no pinned run reproduces,
       # instead of letting Codefly's sync-drift phase report it late as an
       # opaque byte diff that blocks the gate on every open PR.
