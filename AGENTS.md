@@ -206,6 +206,20 @@ those under their own tags. It *does* publish the TypeScript client:
 contract change reaching that tree needs a `version:` bump in its `package.json`
 or the release fails. Recipes and traps: the `cut-a-release` skill.
 
+**Rolling a Core release through the fleet** is three CLI verbs, not a hand
+procedure, and this repo is the last stop: `codefly agent deps --dir <agent-repo>
+--pin vX.Y.Z` moves an agent's Core pin (every lock it owns, standalone build
+verified); `codefly publish patch` in a clean, synced `main` releases that repo
+(release PR, tag, and for a service agent the release-grade CI and loader
+assets); `codefly publish all` does the same over every manifest-bearing repo
+under a workspace root in dependency order, and moves no pins. In **this** repo
+`codefly publish` bumps the module agent's own version in `agent.codefly.yaml`,
+not the `v0.0.N` deploy counter — that tag is cut by hand on the merged `main`
+commit. `codefly update workspace` is the one command that moves this repo's
+service-agent versions once the manifests are authored. When you meet a
+`codefly` verb this file does not name, add it here or to the CLI's
+`docs/commands.md` in the same change.
+
 ## Doc index
 
 Start from [MODULE.md](./MODULE.md), whose "Quick links" indexes the full set, and
