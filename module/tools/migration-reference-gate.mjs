@@ -59,7 +59,7 @@ export function needsReplay(paths) {
     /^module\/services\/store\/(tools|builder)\//.test(path) ||
     path === 'module/services/store/baseline.provenance.json' ||
     /^module\/tools\/migration-/.test(path) ||
-    path === 'module/deployment/topology.bindings.codefly.yaml' || path === '.github/workflows/ci.yml');
+    path === '.github/workflows/ci.yml');
 }
 
 function main() {

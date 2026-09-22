@@ -69,7 +69,7 @@ test("each package is judged on its own", () => {
 // and it becomes the pathspecs `git diff` is asked to judge.
 test("the package's `files` list is what the diff judges", () => {
   assert.deepEqual(
-    publishedPathspecs("pkg/ui", ["dist", "src", "!src/**/__tests__/**", "!src/**/*.test.*", "README.md"]),
+    publishedPathspecs("pkg/ui", ["dist", "src", "!src/**/__tests__/**", "!src/**/*.test.*", "README.md"], { tracked: () => true }),
     [
       "pkg/ui/package.json",
       ":(glob)pkg/ui/dist",
@@ -83,11 +83,35 @@ test("the package's `files` list is what the diff judges", () => {
 
 // A whitelist that never names the tests keeps them out just as an exclusion does.
 test("a path outside the `files` list is not judged", () => {
-  assert.deepEqual(publishedPathspecs("pkg/sdk", ["dist", "README.md"]), [
+  assert.deepEqual(publishedPathspecs("pkg/sdk", ["dist", "README.md"], { tracked: () => true }), [
     "pkg/sdk/package.json",
     ":(glob)pkg/sdk/dist",
     ":(glob)pkg/sdk/README.md",
   ]);
+});
+
+// The v0.0.67 failure: `dist` is build output git never tracks, so a `files` list
+// naming it hides every change to the sources that build it. The judgment widens
+// to the package's tracked sources, minus tests; `!` entries still apply.
+test("a published entry git does not track widens the judgment to the package's sources", () => {
+  const tracked = (path) => !path.endsWith("/dist");
+  assert.deepEqual(publishedPathspecs("pkg/sdk", ["dist", "README.md"], { tracked }), [
+    "pkg/sdk/package.json",
+    ":(glob)pkg/sdk/**",
+    ":(exclude,glob)pkg/sdk/**/__tests__/**",
+    ":(exclude,glob)pkg/sdk/**/*.test.*",
+    ":(exclude,glob)pkg/sdk/**/*.spec.*",
+    ":(exclude,glob)pkg/sdk/test/**",
+  ]);
+});
+
+// Against the real tree: the SDK ships only `dist`, so its generated TypeScript
+// must be judged — the exact blind spot v0.0.67 hit.
+test("the SDK's generated TypeScript is judged although only dist ships", () => {
+  const sdk = PUBLISHED_KIT_PACKAGES.find((entry) => entry.name === "@codefly-dev/saas-sdk");
+  const manifest = JSON.parse(readFileSync(join(REPOSITORY_ROOT, sdk.directory, "package.json"), "utf8"));
+  const specs = publishedPathspecs(sdk.directory, manifest.files);
+  assert.ok(specs.includes(`:(glob)${sdk.directory}/**`), specs.join("\n"));
 });
 
 test("no `files` list publishes, and judges, the whole directory", () => {

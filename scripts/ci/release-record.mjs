@@ -24,27 +24,36 @@ import { parseWorkflowYaml } from "./workflow-yaml.mjs";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const REPOSITORY_ROOT = resolve(dirname(SCRIPT_PATH), "..", "..");
 
-// The source of truth for the service graph and the agent each service pins.
-const BINDINGS_PATH = "module/deployment/topology.bindings.codefly.yaml";
+// The manifests are the model: module.codefly.yaml lists the services and each
+// services/<name>/service.codefly.yaml names the agent that service runs.
+const MODULE_MANIFEST_PATH = "module/module.codefly.yaml";
+const serviceManifestPath = (name) => `module/services/${name}/service.codefly.yaml`;
 // The CI installer's default is the one CLI every Codefly job runs.
 const INSTALLER_PATH = "scripts/ci/install-codefly.sh";
 
 // One row per distinct agent: `go-grpc` backs three services and `nextjs` two,
 // and it is the agent version a consumer matches against, not the repetition.
-export function selectedAgents(bindingsText) {
-  const services = parseWorkflowYaml(bindingsText).services ?? [];
+// `manifests` maps a service name to its service.codefly.yaml text.
+export function selectedAgents(manifests) {
   const agents = new Map();
-  for (const service of services) {
-    const { name, version } = service.agent ?? {};
+  for (const [serviceName, text] of Object.entries(manifests)) {
+    const { name, version } = parseWorkflowYaml(text).agent ?? {};
     if (!name || !version) {
-      throw new Error(`${BINDINGS_PATH}: service ${service.name} pins no agent version`);
+      throw new Error(`${serviceManifestPath(serviceName)}: pins no agent version`);
     }
     const key = `${name}@${version}`;
     if (!agents.has(key)) agents.set(key, { name, version, services: [] });
-    agents.get(key).services.push(service.name);
+    agents.get(key).services.push(serviceName);
   }
-  if (agents.size === 0) throw new Error(`${BINDINGS_PATH}: no services to describe`);
+  if (agents.size === 0) throw new Error(`${MODULE_MANIFEST_PATH}: no services to describe`);
   return [...agents.values()].sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+}
+
+// The service manifests the module declares, read from the tree.
+export function serviceManifests(root = REPOSITORY_ROOT) {
+  const module = parseWorkflowYaml(readFileSync(join(root, MODULE_MANIFEST_PATH), "utf8"));
+  return Object.fromEntries((module.services ?? []).map(({ name }) =>
+    [name, readFileSync(join(root, serviceManifestPath(name)), "utf8")]));
 }
 
 export function selectedCodeflyVersion(installerText) {
@@ -53,8 +62,8 @@ export function selectedCodeflyVersion(installerText) {
   return pin[1];
 }
 
-export function releaseRecord(bindingsText, installerText) {
-  const rows = selectedAgents(bindingsText)
+export function releaseRecord(manifests, installerText) {
+  const rows = selectedAgents(manifests)
     .map((agent) => `| \`${agent.name}\` | \`${agent.version}\` | ${agent.services.join(", ")} |`)
     .join("\n");
   return [
@@ -71,7 +80,7 @@ export function releaseRecord(bindingsText, installerText) {
 
 function main() {
   const read = (path) => readFileSync(join(REPOSITORY_ROOT, path), "utf8");
-  process.stdout.write(releaseRecord(read(BINDINGS_PATH), read(INSTALLER_PATH)));
+  process.stdout.write(releaseRecord(serviceManifests(), read(INSTALLER_PATH)));
 }
 
 if (resolve(process.argv[1] ?? "") === resolve(SCRIPT_PATH)) main();

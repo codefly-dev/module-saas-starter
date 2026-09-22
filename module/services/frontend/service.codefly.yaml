@@ -1,10 +1,9 @@
-# Code generated from deployment/topology.bindings.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json. DO NOT EDIT.
 name: frontend
 version: 0.0.0
 agent:
     kind: codefly:service
     name: nextjs
-    version: 0.0.157
+    version: 0.0.158
     publisher: codefly.dev
 service-dependencies:
     - name: auth-gateway
@@ -36,3 +35,21 @@ spec:
         production: production
     hot-reload: false
     mode: ssr
+    deployment:
+        endpoint-ports:
+            http: 3000
+        public-egress-ports:
+            - 443
+        # Solution self-registration mutates what the nav renders and what the
+        # solution page loads as a Module-Federation remote, on the same port that
+        # serves every browser-facing page. Only a path match separates the two,
+        # and only in the mesh's L7 layer; /api/internal/solutions is read by the
+        # proxy over pod-local loopback, which the mesh never captures.
+        internal-http-routes:
+            - path: /api/internal/solutions
+              methods:
+                - GET
+            - path: /api/solutions/register
+              methods:
+                - DELETE
+                - POST

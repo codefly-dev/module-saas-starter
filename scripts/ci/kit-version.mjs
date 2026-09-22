@@ -100,18 +100,38 @@ function versionAt(ref, directory) {
 // forces a release of identical published bytes. Rendered as git pathspecs so
 // `diff` judges exactly the published set. No `files` list means npm publishes
 // the whole directory, and so does the gate.
-export function publishedPathspecs(directory, files) {
+//
+// A `files` entry git does not track — `dist`, a build output — cannot be
+// diffed, so judging only the list would let every change to the sources that
+// build it through: v0.0.67's kit publish refused `@codefly-dev/saas-sdk@0.3.3`
+// ("already published with different contents") after audit_pb moved in the
+// generated TypeScript while this gate saw an unchanged `dist`. For such an
+// entry the judgment widens to the package's tracked sources, minus its tests,
+// because anything tracked there can reach the tarball through the build.
+const BUILD_INPUT_EXCLUDES = ["**/__tests__/**", "**/*.test.*", "**/*.spec.*", "test/**"];
+
+export function publishedPathspecs(directory, files, { tracked = isTracked } = {}) {
   if (!Array.isArray(files) || files.length === 0) return [directory];
   const entries = files.filter((entry) => typeof entry === "string");
-  return [
-    `${directory}/package.json`,
-    ...entries
-      .filter((entry) => !entry.startsWith("!"))
-      .map((entry) => `:(glob)${directory}/${entry}`),
-    ...entries
-      .filter((entry) => entry.startsWith("!"))
-      .map((entry) => `:(exclude,glob)${directory}/${entry.slice(1)}`),
+  const shipped = entries.filter((entry) => !entry.startsWith("!"));
+  const excluded = entries.filter((entry) => entry.startsWith("!"));
+  const untracked = shipped.filter((entry) => !tracked(`${directory}/${entry}`));
+  const positive = untracked.length
+    ? [`:(glob)${directory}/**`]
+    : shipped.map((entry) => `:(glob)${directory}/${entry}`);
+  const negative = [
+    ...excluded.map((entry) => `:(exclude,glob)${directory}/${entry.slice(1)}`),
+    ...(untracked.length
+      ? BUILD_INPUT_EXCLUDES.map((pattern) => `:(exclude,glob)${directory}/${pattern}`)
+      : []),
   ];
+  return [`${directory}/package.json`, ...positive, ...negative];
+}
+
+// Whether git tracks anything at or under the path (a directory counts when any
+// file inside it is tracked). Build output is gitignored, so it never is.
+function isTracked(path) {
+  return lines(git("ls-files", "--", path)).length > 0;
 }
 
 function publishedFiles(directory) {

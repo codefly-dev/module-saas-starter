@@ -96,7 +96,7 @@ func TestCollectorRequiresExplicitExporter(t *testing.T) {
 // *.svc.cluster.local from the HTTPS requirement looks safe — those names
 // resolve only inside the cluster — but this module grants telemetry exactly one
 // egress path: public_egress_ports [443] in
-// deployment/topology.bindings.codefly.yaml, rendered as
+// services/telemetry/service.codefly.yaml (spec.deployment), rendered as
 // allow-telemetry-public-egress (TCP 443 to public IP space, private ranges
 // excepted) over a namespace-wide default-deny with no allow-intra-namespace
 // rule. A ClusterIP on 4318 is denied there no matter what this package accepts,

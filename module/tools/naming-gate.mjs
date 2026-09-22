@@ -51,9 +51,9 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
 const MODULE_ROOT = join(dirname(SCRIPT_PATH), "..");
 
-// Mirrors base-integrity's prune set: build output, dependencies, VCS. `test-results` is
-// deliberately NOT pruned even though base-integrity prunes it: it holds a tracked file here,
-// and pruning a directory that carries tracked content is a silent hole in the scan.
+// Build output, dependencies, VCS. `test-results` is deliberately NOT pruned: it holds a
+// tracked file here, and pruning a directory that carries tracked content is a silent hole in
+// the scan.
 const PRUNE_DIRS = new Set([
   "node_modules", ".next", ".turbo", "dist", "build", "coverage",
   ".git", "vendor", "__pycache__", ".codefly", ".cache", ".nix-cache", "playwright-report",
@@ -77,7 +77,6 @@ const PRUNE_DIRS = new Set([
 // clean proto plus an in-sync descriptor is a clean descriptor; drop either half and this skip
 // becomes a hole.
 const SKIP_FILE = (rel) =>
-  /(?:^|\/)tools\/base-manifest\.json$/.test(rel) ||
   /(?:^|\/)tools\/naming-terms\.json$/.test(rel) || // digests only, by construction
   /(?:^|\/)package-lock\.json$/.test(rel) ||
   /\.(?:png|jpe?g|gif|webp|avif|ico|icns|pdf|zip|gz|tgz|bz2|xz|woff2?|ttf|otf|eot|mp4|webm|wasm|so|dylib|dll|exe|bin|binpb|node)$/i.test(rel) ||
@@ -241,7 +240,7 @@ function walk(dir, out, base) {
 }
 
 // Widen to the repository root when running against canonical, so root *.md and .github/ are
-// covered; stay inside the module when running in a consumer copy. Same test base-integrity
+// covered; stay inside the module when running in a consumer copy. Same test module-verify
 // uses for its public-claim scan.
 export function canonicalScanRoot(moduleRoot = MODULE_ROOT) {
   const repositoryRoot = dirname(moduleRoot);

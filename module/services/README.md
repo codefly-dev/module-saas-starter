@@ -11,7 +11,7 @@ Run the complete local dependency graph from `module/`:
 codefly run service --fixture dev-admin
 ```
 
-Service manifests are generated from
-`deployment/topology.bindings.codefly.yaml`; do not edit them by hand. See
+Each `service.codefly.yaml` is authored and is the only place its agent and
+its deployment facts (`spec.deployment`) are named. See
 `../DEPLOYMENT_TOPOLOGY.md` for the service graph and
 `marketing/README.md` for the public runtime and extraction contract.

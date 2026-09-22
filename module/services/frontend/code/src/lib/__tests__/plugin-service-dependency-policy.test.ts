@@ -15,7 +15,7 @@ import {
 
 const codeDir = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 const header =
-	"# Code generated from deployment/topology.bindings.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json. DO NOT EDIT.\n";
+	"# Composed by the module agent from services/frontend/service.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json.\n";
 
 function entry(
 	plugin: string,
@@ -143,11 +143,5 @@ describe("frontend plugin Codefly dependency policy", () => {
 `),
 			),
 		).toThrow(/duplicated/);
-		expect(() =>
-			assertPluginServiceDependenciesCurrent(
-				allowlist([]),
-				manifest().replace(header, "# Hand-authored.\n"),
-			),
-		).toThrow(/was not generated/);
 	});
 });

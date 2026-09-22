@@ -17,23 +17,24 @@ import (
 
 // A cluster-internal HTTP route is authored rather than derived: no catalog
 // describes an HTTP route carrying cluster-internal authority, so
-// deployment/topology.bindings.codefly.yaml names the method/path pairs the
-// baseline renders `deny-<service>-internal-http` from. Nothing tied that list
+// Each service's manifest names, under spec.deployment.internal-http-routes,
+// the method/path pairs the baseline renders `deny-<service>-internal-http`
+// from. Nothing tied that list
 // to the handlers that actually check the cluster-internal token, and the drift
 // fails open in both directions — a newly gated route is simply ungated in the
 // mesh, and a declared path that no longer exists renders a policy matching
 // nothing while reading as protection. The correspondence spans a Go-authored
 // binding and TypeScript route modules, so it is checked at the text level.
 const (
-	topologyBindingFile = "deployment/topology.bindings.codefly.yaml"
+	moduleManifestFile  = "module.codefly.yaml"
 	internalCallGate    = "isTrustedInternalCall"
 	// internalRouteExemption is how an author says a gated route is
-	// deliberately not mesh-denied. Absence from internal_http_routes otherwise
+	// deliberately not mesh-denied. Absence from internal-http-routes otherwise
 	// means both "not internal" and "forgotten", which is the silence this gate
 	// exists to remove.
 	internalRouteExemption = "codefly:internal-http-route-exempt"
 	// internalHTTPMethodSource holds the method set the topology compiler will
-	// accept in internal_http_routes. It is read rather than restated: a second
+	// accept in internal-http-routes. It is read rather than restated: a second
 	// copy here is the same drift this gate exists to catch, one artifact over.
 	internalHTTPMethodSource = "services/accounts/code/pkg/cataloggen/deployment_topology.go"
 	internalHTTPMethodMap    = "internalHTTPMethods"
@@ -57,7 +58,7 @@ var internalRouteGates = map[string]string{
 
 // nextRouteHandlerMethods is the set of exported names Next.js serves as route
 // handlers from a route module. It is deliberately wider than what
-// internal_http_routes can express: Next serves HEAD and OPTIONS, the mesh
+// internal-http-routes can express: Next serves HEAD and OPTIONS, the mesh
 // binding cannot name them, and a gated handler on one of those is a conflict
 // to report rather than a declaration to demand.
 var nextRouteHandlerMethods = map[string]bool{
@@ -76,12 +77,21 @@ type internalHTTPRouteBinding struct {
 }
 
 type topologyServiceBinding struct {
-	Name               string                     `yaml:"name"`
-	InternalHTTPRoutes []internalHTTPRouteBinding `yaml:"internal_http_routes"`
+	Name               string
+	InternalHTTPRoutes []internalHTTPRouteBinding
 }
 
 type topologyBindings struct {
-	Services []topologyServiceBinding `yaml:"services"`
+	Services []topologyServiceBinding
+}
+
+type serviceManifestRoutes struct {
+	Name string `yaml:"name"`
+	Spec struct {
+		Deployment struct {
+			InternalHTTPRoutes []internalHTTPRouteBinding `yaml:"internal-http-routes"`
+		} `yaml:"deployment"`
+	} `yaml:"spec"`
 }
 
 // internalRouteKey is one method/path pair, the unit both the binding and the
@@ -113,7 +123,7 @@ func TestInternalHTTPRoutesMatchTokenGatedHandlers(t *testing.T) {
 		appDir := filepath.Join(moduleDir, "services", service.Name, "code", "src", "app")
 		if info, err := os.Stat(appDir); err != nil || !info.IsDir() {
 			if len(service.InternalHTTPRoutes) > 0 {
-				t.Errorf("service %q declares internal_http_routes but ships no route modules under services/%s/code/src/app to resolve them against", service.Name, service.Name)
+				t.Errorf("service %q declares internal-http-routes but ships no route modules under services/%s/code/src/app to resolve them against", service.Name, service.Name)
 			}
 			continue
 		}
@@ -162,7 +172,7 @@ func TestInternalCallGateIsReachedOnlyFromRouteModules(t *testing.T) {
 				if !strings.Contains(code, gate) || strings.HasSuffix(slashed, internalRouteGates[gate]) {
 					continue
 				}
-				t.Errorf("%s: %s is reached outside a route module; internal_http_routes is checked against the handler that reaches it inside its own module, so a route gated here would go undeclared", slashed, gate)
+				t.Errorf("%s: %s is reached outside a route module; internal-http-routes is checked against the handler that reaches it inside its own module, so a route gated here would go undeclared", slashed, gate)
 			}
 			return nil
 		})
@@ -179,10 +189,10 @@ func compareInternalHTTPRoutes(t *testing.T, service string, gated []gatedRouteH
 		resolved[handler.key] = true
 		switch {
 		case handler.exemptReason != "" && declared[handler.key]:
-			t.Errorf("%s: %s is declared in internal_http_routes and marked %s; it is one or the other", handler.file, handler.key, internalRouteExemption)
+			t.Errorf("%s: %s is declared in internal-http-routes and marked %s; it is one or the other", handler.file, handler.key, internalRouteExemption)
 		case handler.exemptReason != "" || declared[handler.key]:
 		default:
-			t.Errorf("%s: %s verifies a cluster-internal credential, but service %q does not declare it in internal_http_routes; declare it there, or mark the handler `%s %s: <why not>`", handler.file, handler.key, service, internalRouteExemption, handler.key.method)
+			t.Errorf("%s: %s verifies a cluster-internal credential, but service %q does not declare it in internal-http-routes; declare it there, or mark the handler `%s %s: <why not>`", handler.file, handler.key, service, internalRouteExemption, handler.key.method)
 		}
 	}
 	undeclared := make([]internalRouteKey, 0, len(declared))
@@ -193,7 +203,7 @@ func compareInternalHTTPRoutes(t *testing.T, service string, gated []gatedRouteH
 	}
 	sort.Slice(undeclared, func(i, j int) bool { return undeclared[i].String() < undeclared[j].String() })
 	for _, key := range undeclared {
-		t.Errorf("service %q declares internal_http_routes %s, which no route module gates with any of %s; the rendered deny matches nothing", service, key, strings.Join(sortedKeys(internalRouteGates), " / "))
+		t.Errorf("service %q declares internal-http-routes %s, which no route module gates with any of %s; the rendered deny matches nothing", service, key, strings.Join(sortedKeys(internalRouteGates), " / "))
 	}
 }
 
@@ -284,7 +294,7 @@ func gatedRouteHandlers(t *testing.T, moduleDir, appDir string, declarable map[s
 		}
 		gated, undeclarable := partitionGatedMethods(scan.gated, declarable)
 		for _, method := range undeclarable {
-			t.Errorf("%s: %s verifies a cluster-internal credential, but internal_http_routes admits only %s, so the route it serves cannot be denied in the mesh", relative, method, strings.Join(sortedSet(declarable), ", "))
+			t.Errorf("%s: %s verifies a cluster-internal credential, but internal-http-routes admits only %s, so the route it serves cannot be denied in the mesh", relative, method, strings.Join(sortedSet(declarable), ", "))
 		}
 		for _, method := range gated {
 			handlers = append(handlers, gatedRouteHandler{
@@ -302,7 +312,7 @@ func gatedRouteHandlers(t *testing.T, moduleDir, appDir string, declarable map[s
 }
 
 // partitionGatedMethods splits the methods a module gates into those
-// internal_http_routes can name and those it cannot. Next.js serves HEAD and
+// internal-http-routes can name and those it cannot. Next.js serves HEAD and
 // OPTIONS; the topology compiler rejects them. Demanding a declaration for one
 // would leave the author with a gate they cannot satisfy and an exemption
 // marker that would then misstate a route they do want denied.
@@ -727,17 +737,36 @@ func routeModulePath(appDir, routeFile string) (string, bool, error) {
 
 func loadTopologyBindings(t *testing.T, moduleDir string) topologyBindings {
 	t.Helper()
-	path := filepath.Join(moduleDir, filepath.FromSlash(topologyBindingFile))
-	body, err := os.ReadFile(path)
+	body, err := os.ReadFile(filepath.Join(moduleDir, moduleManifestFile))
 	if err != nil {
-		t.Fatalf("read %s: %v", topologyBindingFile, err)
+		t.Fatalf("read %s: %v", moduleManifestFile, err)
+	}
+	var module struct {
+		Services []struct {
+			Name string `yaml:"name"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(body, &module); err != nil {
+		t.Fatalf("parse %s: %v", moduleManifestFile, err)
+	}
+	if len(module.Services) == 0 {
+		t.Fatalf("%s declares no services", moduleManifestFile)
 	}
 	var bindings topologyBindings
-	if err := yaml.Unmarshal(body, &bindings); err != nil {
-		t.Fatalf("parse %s: %v", topologyBindingFile, err)
-	}
-	if len(bindings.Services) == 0 {
-		t.Fatalf("%s declares no services", topologyBindingFile)
+	for _, reference := range module.Services {
+		path := filepath.Join(moduleDir, "services", reference.Name, "service.codefly.yaml")
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var manifest serviceManifestRoutes
+		if err := yaml.Unmarshal(body, &manifest); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		bindings.Services = append(bindings.Services, topologyServiceBinding{
+			Name:               reference.Name,
+			InternalHTTPRoutes: manifest.Spec.Deployment.InternalHTTPRoutes,
+		})
 	}
 	return bindings
 }

@@ -9,7 +9,7 @@ contract.
 | Path | Role |
 | --- | --- |
 | `services/accounts/generated/service-catalog.json` | Descriptor, transport, policy, and owner source. |
-| `deployment/topology.bindings.codefly.yaml` | Named Codefly services, endpoints, dependencies, and visibility. |
+| `module.codefly.yaml` + `services/*/service.codefly.yaml` | Named Codefly services, endpoints, dependencies, and visibility. |
 | `services/accounts/gateway.bindings.codefly.yaml` | Dated compatibility aliases. |
 | `services/accounts/generated/gateway-routes.json` | Typed target-neutral `saas.gateway.routes.v1` inventory. |
 | `services/accounts/generated/rest-surface.json` | Strict descriptor REST projection. |

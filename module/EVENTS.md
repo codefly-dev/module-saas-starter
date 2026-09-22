@@ -34,10 +34,10 @@ above the [Transport port](#transport-port) changes.
 3. `events.codefly.yaml` (schema `codefly/saas/events-contribution/v1`) is the
    per-module declaration of published and consumed event types, a sibling of
    the `permissions-contribution` document under `contracts/`.
-4. `deployment/generated/event-catalog.json` is the base-manifest-tracked merge
-   of every contribution, produced by `module-compose` like
-   `contributed-permissions.json`. Editing it by hand fails the base-integrity
-   gate.
+4. `deployment/generated/event-catalog.json` is the committed merge of every
+   contribution, produced by `module-compose` like
+   `contributed-permissions.json`. Editing it by hand fails the clean-diff
+   regeneration gate.
 5. The durable Postgres representation reuses `job_messages` today; the
    `domain_events` and `event_subscriptions` relations ([Phasing](#phasing) P2)
    own the fan-out state and its tenant RLS boundary.
@@ -145,7 +145,7 @@ consumes:
 ```
 
 `module-compose` merges the contributions named by its `--events` arguments into
-`deployment/generated/event-catalog.json` (base-manifest-tracked) and validates:
+`deployment/generated/event-catalog.json` and validates:
 
 - **Namespace ownership** — a module publishes only `<its namespace>.*`.
 - **Schema resolvable** — every `publishes.schema` names a real proto message.

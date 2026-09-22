@@ -2,9 +2,7 @@ package cataloggen_test
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,30 +17,58 @@ import (
 	catalogv1 "accounts/pkg/gen/saas/catalog/v1"
 )
 
+const moduleRoot = "../../../../../"
+
+// readDeploymentDocuments loads the authored model — module.codefly.yaml and
+// every service manifest it declares — exactly as the generator does.
+func readDeploymentDocuments(t *testing.T) cataloggen.DeploymentDocuments {
+	t.Helper()
+	documents, err := cataloggen.LoadDeploymentDocuments(moduleRoot)
+	require.NoError(t, err)
+	return documents
+}
+
+// withService returns a copy of the documents with one service manifest
+// rewritten; the replacement must actually match, or the fixture has drifted
+// from the tree and the case would test nothing.
+func withService(t *testing.T, documents cataloggen.DeploymentDocuments, service, old, replacement string) cataloggen.DeploymentDocuments {
+	t.Helper()
+	current := string(documents.Services[service])
+	require.Contains(t, current, old, "service %s manifest no longer matches this fixture", service)
+	return withServiceDocument(documents, service, []byte(strings.Replace(current, old, replacement, 1)))
+}
+
+func withServiceDocument(documents cataloggen.DeploymentDocuments, service string, document []byte) cataloggen.DeploymentDocuments {
+	services := make(map[string][]byte, len(documents.Services)+1)
+	for name, existing := range documents.Services {
+		services[name] = existing
+	}
+	services[service] = document
+	return cataloggen.DeploymentDocuments{Module: documents.Module, Services: services, Jobs: documents.Jobs}
+}
+
+func withModule(t *testing.T, documents cataloggen.DeploymentDocuments, old, replacement string) cataloggen.DeploymentDocuments {
+	t.Helper()
+	current := string(documents.Module)
+	require.Contains(t, current, old, "module.codefly.yaml no longer matches this fixture")
+	return cataloggen.DeploymentDocuments{Module: []byte(strings.Replace(current, old, replacement, 1)), Services: documents.Services, Jobs: documents.Jobs}
+}
+
 func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-	allowlist := readFixture(t, "../../../../frontend/code/server/plugin-service-allowlist.generated.json")
-	application := readOptionalFixture(t, "../../../../../deployment/application.bindings.codefly.yaml")
+	documents := readDeploymentDocuments(t)
 
-	first, err := cataloggen.BuildDeploymentArtifactsWithApplicationBindings(serviceCatalog, bindings, allowlist, application)
+	first, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
 	require.NoError(t, err)
-	second, err := cataloggen.BuildDeploymentArtifactsWithApplicationBindings(serviceCatalog, bindings, allowlist, application)
+	second, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
 	require.NoError(t, err)
 	require.Equal(t, first.CatalogJSON, second.CatalogJSON)
-	require.Equal(t, first.ModuleManifest, second.ModuleManifest)
-	require.Equal(t, first.ServiceManifests, second.ServiceManifests)
 	require.Equal(t, first.NetworkPolicy, second.NetworkPolicy)
 	require.Equal(t, first.MeshPolicy, second.MeshPolicy)
 
-	require.Equal(t, string(readFixture(t, "../../../../../deployment/generated/service-topology.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
-	require.Equal(t, string(readFixture(t, "../../../../../module.codefly.yaml")), string(first.ModuleManifest), "run: go generate ./pkg/cataloggen")
+	require.Equal(t, string(readFixture(t, moduleRoot+"deployment/generated/service-topology.json")), string(first.CatalogJSON), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "testdata/network-policy.golden.yaml")), string(first.NetworkPolicy), "run: go generate ./pkg/cataloggen")
 	require.Equal(t, string(readFixture(t, "testdata/mesh-policy.golden.yaml")), string(first.MeshPolicy), "run: go generate ./pkg/cataloggen")
-	for service, document := range first.ServiceManifests {
-		checkedIn := readFixture(t, filepath.Join("../../../../../services", service, "service.codefly.yaml"))
-		require.Equal(t, string(checkedIn), string(document), "service %s: run go generate ./pkg/cataloggen", service)
-	}
 
 	require.Len(t, first.Catalog.GetServices(), 8)
 	require.Len(t, first.Catalog.GetInterfaceEndpoints(), 4)
@@ -88,244 +114,54 @@ func TestDeploymentTopologyIsDeterministicAndCurrent(t *testing.T) {
 		)
 	}
 	require.True(t, accountsConnectExposed)
-	require.Contains(t, string(first.ServiceManifests["accounts"]), "- observability")
-	authGatewayManifest := string(first.ServiceManifests["auth-gateway"])
-	require.Contains(t, authGatewayManifest, "- observability")
-	require.Contains(t, authGatewayManifest, "- name: telemetry")
-	frontendManifest := string(first.ServiceManifests["frontend"])
-	require.Contains(t, frontendManifest, "execution-profiles:")
-	require.Contains(t, frontendManifest, "local: development")
-	require.Contains(t, frontendManifest, "production: production")
 	require.Equal(t, 20, strings.Count(string(first.NetworkPolicy), "\nkind: NetworkPolicy\n"))
 	require.NotContains(t, string(first.NetworkPolicy), "allow-intra-namespace")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-accounts-from-dependents")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-gateway-from-dependents")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-auth-gateway-to-dependencies")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-to-dependencies")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-from-bootstrap")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-store-bootstrap-to-store")
-	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-frontend-public-egress")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-marketing-public-egress")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-from-dependents")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-telemetry-public-egress")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-marketing")
-	require.Contains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-frontend")
+	for _, name := range []string{
+		"allow-accounts-from-dependents", "allow-auth-gateway-from-dependents", "allow-auth-gateway-to-dependencies",
+		"allow-frontend-to-dependencies", "allow-store-from-bootstrap", "allow-store-bootstrap-to-store",
+		"allow-frontend-public-egress", "allow-marketing-public-egress", "allow-telemetry-from-dependents",
+		"allow-telemetry-public-egress", "allow-istio-ingress-to-marketing", "allow-istio-ingress-to-frontend",
+	} {
+		require.Contains(t, string(first.NetworkPolicy), "name: "+name)
+	}
 	require.NotContains(t, string(first.NetworkPolicy), "name: allow-istio-ingress-to-auth-gateway")
+	require.Equal(t, 2, strings.Count(string(first.NetworkPolicy), "codefly.dev/bootstrap-service: store"))
 	require.Contains(t, string(first.NetworkPolicy), "192.175.48.0/24")
 	require.Contains(t, string(first.NetworkPolicy), "64:ff9b::/96")
-
-	// Mesh policy: STRICT mTLS baseline, a positive ALLOW AuthorizationPolicy
-	// that gates the internal authority method paths to the target's declared
-	// callers by their per-service ServiceAccount — deny-by-default for everyone
-	// else — and a DENY subtracting the frontend's authored internal HTTP routes
-	// from the port-wide ingress allow. accounts' only caller is auth-gateway, so
-	// only sa/auth-gateway is allowed; the shared sa/default and the ingress
-	// gateway SA are not.
-	mesh := string(first.MeshPolicy)
-	require.Contains(t, mesh, "kind: PeerAuthentication")
-	require.Contains(t, mesh, "mode: STRICT")
-	require.Contains(t, mesh, "name: allow-accounts-internal-authority")
-	require.Contains(t, mesh, "action: ALLOW")
-	require.Contains(t, mesh, "name: deny-frontend-internal-http")
-	require.Contains(t, mesh, "action: DENY")
-	require.Contains(t, mesh, `- "/api/solutions/register"`)
-	require.Contains(t, mesh, "gatewayClassName: istio-waypoint")
-	require.Contains(t, mesh, "cluster.local/ns/saas-starter/sa/auth-gateway")
-	require.NotContains(t, mesh, "cluster.local/ns/saas-starter/sa/default")
-	// Neither L7 policy may carry a workload selector: ztunnel cannot evaluate an
-	// L7 rule and fails safe by denying everything to the workload it selects.
-	require.NotContains(t, mesh, "  selector:")
-	require.Contains(t, mesh, "  targetRefs:")
-	for _, procedure := range []string{
-		"/saas.accounts.v1.PermissionService/CheckPermission",
-		"/saas.accounts.v1.PermissionService/CheckAccess",
-		"/saas.accounts.v1.PermissionService/Decide",
-		"/saas.accounts.v1.IdentityService/ResolveIdentity",
-		"/saas.accounts.v1.APIKeyService/ValidateAPIKey",
-		"/saas.accounts.v1.PrincipalService/GetPrincipal",
-		"/saas.accounts.v1.PrincipalService/GetAgentPrincipal",
-		"/saas.accounts.v1.UsageService/ConsumeUsage",
-	} {
-		require.Contains(t, mesh, procedure)
-	}
 }
 
-func TestApplicationBindingsAddOnlyNamedPostgresMigrationSources(t *testing.T) {
+// The manifests are the model: a deployment fact lives in the service manifest
+// it belongs to, under spec.deployment, and nowhere else. The generator refuses
+// a manifest that omits it, names an endpoint it does not have, or carries a
+// key the schema does not know — a misspelt key would otherwise render nothing
+// and read as protection.
+func TestDeploymentSpecIsStrictAndComplete(t *testing.T) {
 	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-	allowlist := []byte(`{"schemaVersion":1,"contractVersion":2,"entries":[]}`)
-	application := []byte(`version: v1
-module_name: installed-saas
-postgres_migration_sources:
-  - service: store
-    name: acme
-    path: ../../../platform/services/acme/migrations
-  - service: store
-    name: eventlog
-    path: ../../../platform/services/eventlog/migrations
-`)
+	documents := readDeploymentDocuments(t)
 
-	artifacts, err := cataloggen.BuildDeploymentArtifactsWithApplicationBindings(
-		serviceCatalog,
-		bindings,
-		allowlist,
-		application,
-	)
-	require.NoError(t, err)
-	require.Contains(t, string(artifacts.ModuleManifest), "name: installed-saas")
-	store := string(artifacts.ServiceManifests["store"])
-	require.Contains(t, store, "migration-sources:")
-	require.Contains(t, store, "name: eventlog")
-	require.Contains(t, store, "name: acme")
-	require.Contains(t, store, "../../../platform/services/eventlog/migrations")
-	require.NotContains(t, string(artifacts.ServiceManifests["accounts"]), "migration-sources:")
+	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "accounts", "    deployment:\n        endpoint-ports:\n", "    deployment:\n        unknown: true\n        endpoint-ports:\n"))
+	require.ErrorContains(t, err, "field unknown not found")
 
-	unsafe := strings.Replace(string(application), "../../../platform/services/eventlog/migrations", "/tmp/eventlog", 1)
-	_, err = cataloggen.BuildDeploymentArtifactsWithApplicationBindings(serviceCatalog, bindings, allowlist, []byte(unsafe))
-	require.ErrorContains(t, err, "portable relative path")
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "accounts", "            rest: 8080\n", ""))
+	require.ErrorContains(t, err, `endpoint "rest" has no port`)
 
-	wrongService := strings.Replace(string(application), "service: store", "service: accounts", 1)
-	_, err = cataloggen.BuildDeploymentArtifactsWithApplicationBindings(serviceCatalog, bindings, allowlist, []byte(wrongService))
-	require.ErrorContains(t, err, "non-Postgres")
-}
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "accounts", "            rest: 8080\n", "            rest: 8080\n            ghost: 1\n"))
+	require.ErrorContains(t, err, `names unknown endpoint "ghost"`)
 
-func TestFrontendPluginAllowlistGeneratesExternalCodeflyDependencies(t *testing.T) {
-	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-	allowlist := []byte(`{
-  "schemaVersion": 1,
-  "contractVersion": 2,
-  "entries": [
-    {
-      "plugin": "example.analytics",
-      "alias": "connect-api",
-      "protocol": "connect",
-      "routePrefix": "/connect/example.analytics.v1.AnalyticsService",
-      "compatibility": { "contract": "example.analytics", "major": 1 },
-      "target": { "module": "products", "service": "telemetry", "endpoint": "connect" }
-    },
-    {
-      "plugin": "example.analytics",
-      "alias": "rest-api",
-      "protocol": "rest",
-      "routePrefix": "/api/v1/analytics",
-      "compatibility": {
-        "contract": "example.analytics",
-        "major": 1,
-        "probePath": "/api/v1/analytics/capabilities"
-      },
-      "target": { "module": "products", "service": "telemetry", "endpoint": "rest" }
-    }
-  ]
-}`)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "telemetry", "    deployment:\n", "    deployment-typo:\n"))
+	require.ErrorContains(t, err, "has no spec.deployment block")
 
-	withPlugins, err := cataloggen.BuildDeploymentArtifactsWithFrontendPluginAllowlist(
-		serviceCatalog,
-		bindings,
-		allowlist,
-	)
-	require.NoError(t, err)
-	withoutPlugins, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, bindings)
-	require.NoError(t, err)
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withServiceDocument(documents, "ghost", documents.Services["telemetry"]))
+	require.ErrorContains(t, err, "not declared by module.codefly.yaml")
 
-	frontend := string(withPlugins.ServiceManifests["frontend"])
-	require.Contains(t, frontend, "plugin-service-allowlist.generated.json")
-	require.Contains(t, frontend, `    - name: telemetry
-      module: products
-      endpoints:
-        - name: connect
-        - name: rest`)
-	require.Equal(t, 1, strings.Count(frontend, "- name: telemetry"))
-	var parsed resources.Service
-	require.NoError(t, yaml.Unmarshal(withPlugins.ServiceManifests["frontend"], &parsed))
-	require.Len(t, parsed.ServiceDependencies, 2)
-	require.Equal(t, "telemetry", parsed.ServiceDependencies[1].Name)
-	require.Equal(t, "products", parsed.ServiceDependencies[1].Module)
-	require.Equal(t, []string{"connect", "rest"}, []string{
-		parsed.ServiceDependencies[1].Endpoints[0].Name,
-		parsed.ServiceDependencies[1].Endpoints[1].Name,
-	})
-	for service, manifest := range withoutPlugins.ServiceManifests {
-		if service != "frontend" {
-			require.Equal(t, manifest, withPlugins.ServiceManifests[service], service)
-		}
-	}
-}
-
-func TestFrontendPluginAllowlistRejectsUnsafeDeploymentDrift(t *testing.T) {
-	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-	valid := `{
-  "schemaVersion": 1,
-  "contractVersion": 2,
-  "entries": [{
-    "plugin": "example",
-    "alias": "api",
-    "protocol": "rest",
-    "routePrefix": "/api/v1/example",
-    "compatibility": { "contract": "example", "major": 1 },
-    "target": { "module": "products", "service": "example", "endpoint": "rest" }
-  }]
-}`
-
-	tests := []struct {
-		name      string
-		document  string
-		wantError string
-	}{
-		{
-			name:      "unknown field",
-			document:  strings.Replace(valid, `"alias": "api",`, `"alias": "api", "hostname": "internal",`, 1),
-			wantError: "unknown field",
-		},
-		{
-			name:      "protocol endpoint mismatch",
-			document:  strings.Replace(valid, `"endpoint": "rest"`, `"endpoint": "connect"`, 1),
-			wantError: "disagrees with protocol",
-		},
-		{
-			name:      "unsafe route",
-			document:  strings.Replace(valid, `/api/v1/example`, `/api/../private`, 1),
-			wantError: "unsafe route prefix",
-		},
-		{
-			name:      "invalid compatibility",
-			document:  strings.Replace(valid, `"major": 1`, `"major": 0`, 1),
-			wantError: "invalid compatibility",
-		},
-		{
-			name:      "unsafe compatibility probe",
-			document:  strings.Replace(valid, `"major": 1`, `"major": 1, "probePath": "/api/../private"`, 1),
-			wantError: "unsafe compatibility probe path",
-		},
-		{
-			name:      "connect compatibility probe",
-			document:  strings.Replace(strings.Replace(valid, `"protocol": "rest"`, `"protocol": "connect"`, 1), `"major": 1`, `"major": 1, "probePath": "/connect/example"`, 1),
-			wantError: "unsafe compatibility probe path",
-		},
-		{
-			name:      "unsafe Codefly target",
-			document:  strings.Replace(valid, `"module": "products"`, `"module": "https://products"`, 1),
-			wantError: "unsafe Codefly target",
-		},
-		{
-			name:      "starter internal target",
-			document:  strings.Replace(valid, `"module": "products", "service": "example"`, `"module": "saas-starter", "service": "accounts"`, 1),
-			wantError: "external product module",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := cataloggen.BuildDeploymentArtifactsWithFrontendPluginAllowlist(
-				serviceCatalog,
-				bindings,
-				[]byte(test.document),
-			)
-			require.ErrorContains(t, err, test.wantError)
-		})
-	}
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withModule(t, documents, "    - name: vault\n", ""))
+	require.ErrorContains(t, err, "not declared by module.codefly.yaml")
 }
 
 func TestGeneratedCodeflyAndNetworkManifestsParseStrictly(t *testing.T) {
@@ -598,22 +434,14 @@ func TestMeshPolicyGatesInternalSurfacesByShape(t *testing.T) {
 // gateway the waypoint cannot see — is subtracted from the deny.
 func TestInternalHTTPDenyExemptsDeclaredCallers(t *testing.T) {
 	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := strings.NewReplacer(
-		`  - name: marketing
-    version: 0.0.0`,
-		`  - name: marketing
-    version: 0.0.0
-    dependencies:
-      - service: frontend
-        endpoints:
-          - http`,
-		"      mode: ssr\n  - name: store",
-		"      mode: ssr\n      service-account:\n        name: marketing\n  - name: store",
-	).Replace(string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")))
+	documents := withService(t, readDeploymentDocuments(t), "marketing",
+		"endpoints:\n    - name: http\n      visibility: public\n",
+		"service-dependencies:\n    - name: frontend\n      endpoints:\n        - name: http\nendpoints:\n    - name: http\n      visibility: public\n")
+	documents = withService(t, documents, "marketing",
+		"    mode: ssr\n",
+		"    mode: ssr\n    service-account:\n        name: marketing\n")
 
-	require.Contains(t, bindings, "        name: marketing", "the topology binding no longer matches this fixture")
-
-	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(bindings))
+	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, documents)
 	require.NoError(t, err)
 
 	// The same authored edge opens the L3 path the exemption is useless without.
@@ -655,156 +483,63 @@ func TestInternalHTTPDenyExemptsDeclaredCallers(t *testing.T) {
 	require.True(t, found, "the frontend still declares internal HTTP routes")
 }
 
-func TestDeploymentTopologyRejectsUnsafeOrIncompleteBindings(t *testing.T) {
+func TestDeploymentTopologyRejectsUnsafeOrIncompleteManifests(t *testing.T) {
 	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml"))
+	documents := readDeploymentDocuments(t)
 
-	unknownField := strings.Replace(bindings, "version: v1", "version: v1\nunknown: true", 1)
-	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownField))
-	require.ErrorContains(t, err, "field unknown not found")
-
-	unknownEndpoint := strings.Replace(bindings, "          - read\n          - write", "          - missing\n          - write", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownEndpoint))
+	_, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "accounts", "        - name: read\n        - name: write", "        - name: missing\n        - name: write"))
 	require.ErrorContains(t, err, "unknown endpoint")
 
-	unknownBootstrapEndpoint := strings.Replace(bindings, "    bootstrap_job_endpoints:\n      - tcp", "    bootstrap_job_endpoints:\n      - missing", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownBootstrapEndpoint))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "store", "        bootstrap-job-endpoints:\n            - tcp", "        bootstrap-job-endpoints:\n            - missing"))
 	require.ErrorContains(t, err, "bootstrap Job references unknown endpoint")
 
-	missingProtocol := strings.Replace(bindings, "        api: connect", "        api: http", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(missingProtocol))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "accounts", "    - name: connect\n      visibility: module", "    - name: connect\n      api: http\n      visibility: module"))
 	require.ErrorContains(t, err, "required API CODEFLY_API_CONNECT")
 
-	unknownServiceEntry := strings.Replace(bindings, "service_entry: frontend", "service_entry: missing", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unknownServiceEntry))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withModule(t, documents, "service-entry: frontend", "service-entry: missing"))
 	require.ErrorContains(t, err, "service entry references unknown service")
 
-	unsortedMethods := strings.Replace(bindings, "          - DELETE\n          - POST", "          - POST\n          - DELETE", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(unsortedMethods))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "frontend", "                - DELETE\n                - POST", "                - POST\n                - DELETE"))
 	require.ErrorContains(t, err, "internal HTTP route \"/api/solutions/register\" methods are invalid or unsorted")
 
-	relativeRoute := strings.Replace(bindings, "      - path: /api/solutions/register", "      - path: api/solutions/register", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(relativeRoute))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "frontend", "            - path: /api/solutions/register", "            - path: api/solutions/register"))
 	require.ErrorContains(t, err, "internal HTTP routes are invalid or unsorted")
 
-	methodlessRoute := strings.Replace(bindings, "        methods:\n          - DELETE\n          - POST", "        methods: []", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(methodlessRoute))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "frontend", "              methods:\n                - DELETE\n                - POST", "              methods: []"))
 	require.ErrorContains(t, err, "declares no methods")
 
 	// A path policy on a service that speaks TCP matches nothing that will ever
 	// be evaluated, so the route must belong to a service that serves HTTP.
-	routesOnTCPService := strings.Replace(bindings,
-		"    bootstrap_job_endpoints:\n      - tcp",
-		"    internal_http_routes:\n      - path: /internal\n        methods:\n          - POST\n    bootstrap_job_endpoints:\n      - tcp",
-		1,
-	)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(routesOnTCPService))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "store", "        bootstrap-job-endpoints:\n", "        internal-http-routes:\n            - path: /internal\n              methods:\n                - POST\n        bootstrap-job-endpoints:\n"))
 	require.ErrorContains(t, err, "internal HTTP routes without an HTTP endpoint")
 
-	cycle := strings.Replace(bindings, "    spec:\n      watch: false\n      with-read-replicas: true", `    dependencies:
-      - service: accounts
-        endpoints:
-          - connect
-    spec:
-      watch: false
-      with-read-replicas: true`, 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(cycle))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "cache", "endpoints:\n    - name: read\n", "service-dependencies:\n    - name: accounts\n      endpoints:\n        - name: connect\nendpoints:\n    - name: read\n"))
 	require.ErrorContains(t, err, "contains a cycle")
-}
 
-func TestDeploymentTopologyGeneratesValidatedSecretServiceConfigurations(t *testing.T) {
-	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml"))
-
-	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(bindings))
-	require.NoError(t, err)
-	require.Contains(t, string(artifacts.ServiceManifests["vault"]), `secret-service-configurations:
-    - name: vault
-      entries:
-        - key: vault_token`)
-
-	emptyEntries := strings.Replace(bindings,
-		"      - name: vault\n        entries:\n          - key: vault_token",
-		"      - name: vault\n        entries: []",
-		1,
-	)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(emptyEntries))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withService(t, documents, "vault", "      entries:\n        - key: vault_token", "      entries: []"))
 	require.ErrorContains(t, err, "secret service configurations are invalid or unsorted")
-}
 
-func TestDeploymentTopologyPreservesCompleteModuleAgentIdentity(t *testing.T) {
-	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := string(readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml"))
-	withAgent := strings.Replace(bindings,
-		`  description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"`,
-		`  description: "SaaS foundation — auth, multi-tenancy, generated RPC policy, RBAC, impersonation, audit"
-  agent:
-    kind: codefly:module
-    name: saas-starter
-    version: 0.0.28
-    publisher: codefly.dev`,
-		1,
-	)
-
-	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(withAgent))
-	require.NoError(t, err)
-	require.Contains(t, string(artifacts.ModuleManifest), `agent:
-    kind: codefly:module
-    name: saas-starter
-    version: 0.0.28
-    publisher: codefly.dev`)
-
-	incomplete := strings.Replace(withAgent, "    publisher: codefly.dev\n", "", 1)
-	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, []byte(incomplete))
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog,
+		withModule(t, documents, "service-entry: frontend\n", "service-entry: frontend\nagent:\n    kind: codefly:module\n    name: saas-starter\n    version: 0.0.28\n"))
 	require.ErrorContains(t, err, "module agent identity is incomplete")
-}
 
-// The generated service manifest's agent block is built by hand from the
-// binding's, so a field added to deploymentAgentBinding reaches the bindings
-// file and is then silently dropped from every generated manifest — sync-drift
-// cannot see it, because the module agent drops it too. Compare the two
-// authorities directly, and pin the rendered key order, so a reordering that
-// would drift the checked-in manifests fails here first.
-func TestServiceManifestAgentCarriesEveryBindingField(t *testing.T) {
-	serviceCatalog := readFixture(t, "../../../generated/service-catalog.json")
-	bindings := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-
-	var declared struct {
-		Services []struct {
-			Name  string            `yaml:"name"`
-			Agent map[string]string `yaml:"agent"`
-		} `yaml:"services"`
-	}
-	require.NoError(t, yaml.Unmarshal(bindings, &declared))
-	require.NotEmpty(t, declared.Services)
-
-	artifacts, err := cataloggen.BuildDeploymentArtifacts(serviceCatalog, bindings)
+	complete := withModule(t, documents, "service-entry: frontend\n", "service-entry: frontend\nagent:\n    kind: codefly:module\n    name: saas-starter\n    version: 0.0.28\n    publisher: codefly.dev\n")
+	_, err = cataloggen.BuildDeploymentArtifacts(serviceCatalog, complete)
 	require.NoError(t, err)
-
-	for _, service := range declared.Services {
-		manifest, ok := artifacts.ServiceManifests[service.Name]
-		require.True(t, ok, "no generated manifest for %s", service.Name)
-		require.NotEmpty(t, service.Agent, "%s declares no agent", service.Name)
-
-		var generated struct {
-			Agent map[string]string `yaml:"agent"`
-		}
-		require.NoError(t, yaml.Unmarshal(manifest, &generated))
-		require.Equal(t, service.Agent, generated.Agent,
-			"generated %s agent must carry every declared agent field", service.Name)
-
-		require.Contains(t, string(manifest), fmt.Sprintf(`agent:
-    kind: %s
-    name: %s
-    version: %s
-    publisher: %s
-`, service.Agent["kind"], service.Agent["name"], service.Agent["version"], service.Agent["publisher"]),
-			"%s agent must render in deploymentAgentBinding's field order", service.Name)
-	}
 }
 
 func TestDeploymentCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
-	document := readFixture(t, "../../../../../deployment/generated/service-topology.json")
+	document := readFixture(t, moduleRoot+"deployment/generated/service-topology.json")
 	catalog := &catalogv1.DeploymentCatalog{}
 	require.NoError(t, (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(document, catalog))
 	require.NoError(t, cataloggen.ValidateDeploymentCatalog(catalog))
@@ -820,14 +555,4 @@ func TestDeploymentCatalogValidationRejectsConsumerUnsafeDrift(t *testing.T) {
 	invalidEgress := proto.Clone(catalog).(*catalogv1.DeploymentCatalog)
 	invalidEgress.PublicEgress[0].Ports[0] = 0
 	require.ErrorContains(t, cataloggen.ValidateDeploymentCatalog(invalidEgress), "public egress")
-}
-
-func readOptionalFixture(t *testing.T, path string) []byte {
-	t.Helper()
-	document, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	require.NoError(t, err)
-	return document
 }

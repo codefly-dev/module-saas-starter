@@ -50,7 +50,7 @@ test('frontiers are independent per service', () => {
   assert.deepEqual(referenceErrors(tree(131), after), []);
 });
 test('replay covers migrations, runner, dependency pins, and the gate itself', () => {
-  for (const path of ['module/services/store/migrations/1_baseline.up.sql', 'module/services/store/code/main.go', 'module/services/store/code/go.mod', 'module/services/store/tools/generate_baseline.py', 'module/services/store/baseline.provenance.json', 'module/tools/migration-reference-gate.mjs', '.github/workflows/ci.yml', 'module/deployment/topology.bindings.codefly.yaml']) assert.equal(needsReplay([path]), true, path);
+  for (const path of ['module/services/store/migrations/1_baseline.up.sql', 'module/services/store/code/main.go', 'module/services/store/code/go.mod', 'module/services/store/tools/generate_baseline.py', 'module/services/store/baseline.provenance.json', 'module/tools/migration-reference-gate.mjs', '.github/workflows/ci.yml', 'module/services/store/service.codefly.yaml']) assert.equal(needsReplay([path]), true, path);
   assert.equal(needsReplay(['module/services/frontend/code/src/app/page.tsx', 'RELEASE_GATES.md']), false);
 });
 

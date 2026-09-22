@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -533,7 +532,7 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			name: "missing service path",
 			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
 				t.Helper()
-				if err := os.Remove(filepath.Join(moduleDir, "services", "frontend")); err != nil {
+				if err := os.RemoveAll(filepath.Join(moduleDir, "services", "frontend")); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -553,14 +552,8 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			name: "duplicate Kubernetes workload identity",
 			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
 				t.Helper()
-				file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
-				data, err := os.ReadFile(file)
-				if err != nil {
-					t.Fatal(err)
-				}
-				topology := strings.Replace(string(data), "  - name: accounts\n    version:", "  - name: accounts\n    kubernetes:\n      service_name: shared\n      app_label: accounts\n    version:", 1)
-				topology = strings.Replace(topology, "  - name: frontend\n    version:", "  - name: frontend\n    kubernetes:\n      service_name: shared\n      app_label: frontend\n    version:", 1)
-				writeTestFile(t, file, topology)
+				replaceInServiceManifest(t, moduleDir, "accounts", "  deployment:\n", "  deployment:\n    kubernetes:\n      service-name: shared\n      app-label: accounts\n")
+				replaceInServiceManifest(t, moduleDir, "frontend", "  deployment:\n", "  deployment:\n    kubernetes:\n      service-name: shared\n      app-label: frontend\n")
 			},
 			want: "share Kubernetes service name",
 		},
@@ -568,7 +561,7 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 			name: "symlinked service path",
 			mutate: func(t *testing.T, moduleDir string, _ *workspaceManifest) {
 				t.Helper()
-				if err := os.Remove(filepath.Join(moduleDir, "services", "accounts")); err != nil {
+				if err := os.RemoveAll(filepath.Join(moduleDir, "services", "accounts")); err != nil {
 					t.Fatal(err)
 				}
 				if err := os.Symlink(t.TempDir(), filepath.Join(moduleDir, "services", "accounts")); err != nil {
@@ -600,7 +593,7 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 				t.Helper()
 				writeCatalogArtifact(t, moduleDir)
 				appendDeployJob(t, moduleDir, "store", "http")
-				replaceInTopology(t, moduleDir, "    service: accounts\n", "    service: phantom\n")
+				replaceInDeployJobs(t, moduleDir, "    service: accounts\n", "    service: phantom\n")
 			},
 			want: "references undeclared service",
 		},
@@ -612,7 +605,7 @@ func TestGenerateBundleRejectsHostileContracts(t *testing.T) {
 				// store declares bootstrap_job_endpoints (a migration Job), so a
 				// deploy Job that writes to it but omits it from after would let the
 				// import race the migration and write against a missing schema.
-				appendToTopology(t, moduleDir,
+				writeDeployJobs(t, moduleDir,
 					"deploy_jobs:\n"+
 						"  - name: role-catalog-import\n"+
 						"    service: accounts\n"+
@@ -946,44 +939,13 @@ func TestGeneratedMeshPolicyGatesInternalAuthorityByCallerServiceAccount(t *test
 	// under a distinct SA; auth-gateway is its only declared caller and also
 	// runs under a distinct SA. This is what lets the policy gate by workload
 	// identity instead of the shared sa/default.
-	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
-module:
-  name: identity
-  namespace: identity
-  service_entry: auth-gateway
-  description: test
-interface:
-  - service: auth-gateway
-    endpoint: http
-    visibility: public
-services:
-  - name: accounts
-    version: 0.0.0
-    endpoints:
-      - name: http
-        api: http
-        visibility: private
-        port: 8080
-    spec:
-      service-account:
-        name: accounts
-  - name: auth-gateway
-    version: 0.0.0
-    endpoints:
-      - name: http
-        api: http
-        visibility: private
-        port: 8080
-    public_egress_ports:
-      - 443
-    spec:
-      service-account:
-        name: auth-gateway
-    dependencies:
-      - service: accounts
-        endpoints:
-          - http
-`)
+	writeTestFile(t, filepath.Join(moduleDir, "services", "accounts", "service.codefly.yaml"),
+		serviceManifestFixture("accounts", "http", "http", "private", 8080, "", "  service-account:\n    name: accounts\n", ""))
+	writeTestFile(t, filepath.Join(moduleDir, "services", "auth-gateway", "service.codefly.yaml"),
+		serviceManifestFixture("auth-gateway", "http", "http", "private", 8080,
+			"service-dependencies:\n  - name: accounts\n    endpoints:\n      - name: http\n",
+			"  service-account:\n    name: auth-gateway\n",
+			"    public-egress-ports:\n      - 443\n"))
 	writeTestFile(t, filepath.Join(moduleDir, "services", "accounts", "generated", "authz-methods.json"), `{
   "schema_version": "saas.authz.methods.v1",
   "methods": [
@@ -1131,46 +1093,13 @@ func TestGeneratedMeshPolicyDeniesInternalHTTPRoutesToUndeclaredCallers(t *testi
 	// its one declared in-mesh caller, so it is the only exempt principal. The
 	// fixture ships no authorization catalog, so the DENY is the only L7 policy
 	// and must pull in the waypoint on its own.
-	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
-module:
-  name: identity
-  namespace: identity
-  service_entry: frontend
-  description: test
-interface:
-  - service: frontend
-    endpoint: http
-    visibility: public
-services:
-  - name: frontend
-    version: 0.0.0
-    endpoints:
-      - name: http
-        api: http
-        visibility: public
-        port: 3000
-    internal_http_routes:
-      - path: /api/solutions/register
-        methods:
-          - DELETE
-          - POST
-    public_egress_ports:
-      - 443
-  - name: telemetry
-    version: 0.0.0
-    endpoints:
-      - name: http
-        api: http
-        visibility: private
-        port: 8080
-    dependencies:
-      - service: frontend
-        endpoints:
-          - http
-    spec:
-      service-account:
-        name: telemetry
-`)
+	writeTestFile(t, filepath.Join(moduleDir, "services", "frontend", "service.codefly.yaml"),
+		serviceManifestFixture("frontend", "http", "http", "public", 3000, "", "",
+			"    internal-http-routes:\n      - path: /api/solutions/register\n        methods:\n          - DELETE\n          - POST\n    public-egress-ports:\n      - 443\n"))
+	writeTestFile(t, filepath.Join(moduleDir, "services", "telemetry", "service.codefly.yaml"),
+		serviceManifestFixture("telemetry", "http", "http", "private", 8080,
+			"service-dependencies:\n  - name: frontend\n    endpoints:\n      - name: http\n",
+			"  service-account:\n    name: telemetry\n", ""))
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
@@ -1287,21 +1216,7 @@ func TestGenerateBundleRejectsDependencyWithoutEndpointAuthority(t *testing.T) {
 		"identity",
 		[]string{"accounts", "store"},
 	)
-	topologyFile := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
-	data, err := os.ReadFile(topologyFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	topology := strings.Replace(
-		string(data),
-		"        endpoints:\n          - http\n",
-		"        endpoints: []\n",
-		1,
-	)
-	if topology == string(data) {
-		t.Fatal("fixture topology has no dependency endpoint block")
-	}
-	writeTestFile(t, topologyFile, topology)
+	replaceInServiceManifest(t, moduleDir, "accounts", "    endpoints:\n      - name: http\n", "    endpoints: []\n")
 	workspace, err := loadWorkspaceManifest(root)
 	if err != nil {
 		t.Fatal(err)
@@ -1889,65 +1804,19 @@ agent:
   version: 0.1.0
 endpoints:
   - name: http
+    visibility: public
+spec:
+  deployment:
+    endpoint-ports:
+      http: 8080
 `)
 	writeTestFile(t, filepath.Join(source, "services", "README.md"), "canonical service documentation\n")
 	writeTestFile(t, filepath.Join(target, "services", "README.md"), "stale consumer copy\n")
-	removedBase := "package accounts\n"
-	divergedBase := "package accounts\n\nconst Mode = \"canonical\"\n"
 	updatedBase := "package accounts\n\nconst Mode = \"updated\"\n"
 	divergedConsumer := "package accounts\n\nconst Mode = \"consumer\"\n"
-	removedDigest := sha256.Sum256([]byte(removedBase))
-	divergedDigest := sha256.Sum256([]byte(divergedBase))
-	writeTestFile(t, filepath.Join(target, "services", "accounts", "removed.go"), removedBase)
 	writeTestFile(t, filepath.Join(target, "services", "accounts", "diverged.go"), divergedConsumer)
 	writeTestFile(t, filepath.Join(target, "services", "accounts", "consumer.go"), "package accounts\n")
-	writeTestFile(
-		t,
-		filepath.Join(target, "tools", "base-manifest.json"),
-		fmt.Sprintf(`{"files":{
-  "deployment/topology.bindings.codefly.yaml":"previous-base-hash",
-  "services/accounts/diverged.go":"%x",
-  "services/accounts/removed.go":"%x"
-}}`, divergedDigest, removedDigest),
-	)
-	writeTestFile(
-		t,
-		filepath.Join(target, "tools", "base-integrity-allow.json"),
-		`{"services/accounts/diverged.go":"consumer-owned integration"}`,
-	)
 	writeTestFile(t, filepath.Join(source, "services", "accounts", "diverged.go"), updatedBase)
-	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
-	topology := filepath.Join(target, "deployment", "topology.bindings.codefly.yaml")
-	writeTestFile(t, topology, `version: v1
-module:
-  name: saas-starter
-  namespace: saas-starter
-  service_entry: accounts
-  description: test
-interface:
-  - service: accounts
-    endpoint: http
-    visibility: public
-services:
-  - name: accounts
-    version: 0.0.0
-    agent:
-      kind: codefly:service
-      name: go-grpc
-      publisher: codefly.dev
-      version: 0.2.0
-    endpoints:
-      - name: http
-        api: http
-        visibility: public
-        port: 8080
-  - name: auth-gateway
-    endpoints:
-      - name: http
-        api: http
-        visibility: public
-        port: 8080
-`)
 	writeTestFile(t, filepath.Join(target, "deployment", "generated", "service-topology.json"), `{"module":"saas-starter"}`)
 	writeTestFile(t, filepath.Join(target, "deployment", "generated", "consumer-artifact.json"), `{"owner":"consumer"}`)
 	writeTestFile(t, filepath.Join(target, "deployment", "generated", "accounts-routes.virtualservice.yaml"), `stale`)
@@ -1978,25 +1847,23 @@ targetRevision: main
 		string(data) != "canonical service documentation\n" {
 		t.Fatalf("canonical service documentation was not refreshed: data=%q error=%v", data, err)
 	}
-	if _, err := os.Stat(filepath.Join(target, "services", "accounts", "removed.go")); !os.IsNotExist(err) {
-		t.Fatalf("file removed from the canonical base survived sync: %v", err)
-	}
+	// A base file the consumer edited in place is the base's again after a
+	// compose: nothing records what the consumer changed, and the base only
+	// moves via a new release. Consumers add files beside the base instead.
 	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "diverged.go")); err != nil ||
-		string(data) != divergedConsumer {
-		t.Fatalf("consumer-diverged base file was not preserved: data=%q error=%v", data, err)
+		string(data) != updatedBase {
+		t.Fatalf("base file edited in place was not replaced by the base: data=%q error=%v", data, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "consumer.go")); err != nil ||
 		string(data) != "package accounts\n" {
 		t.Fatalf("consumer addition was removed during base reconciliation: data=%q error=%v", data, err)
 	}
+	// The manifest is the model: the consumer runs the agent the base's
+	// service.codefly.yaml names, and nothing else carries a second version.
 	if data, err := os.ReadFile(filepath.Join(target, "services", "accounts", "service.codefly.yaml")); err != nil ||
-		!strings.Contains(string(data), "version: 0.2.0") ||
-		strings.Contains(string(data), "version: 0.1.0") {
-		t.Fatalf("service manifest was not regenerated from consumer topology: data=%q error=%v", data, err)
-	}
-	if topologyData, err := os.ReadFile(topology); err != nil ||
-		strings.Contains(string(topologyData), "saas-starter") {
-		t.Fatalf("deployment topology retained starter identity: data=%q error=%v", topologyData, err)
+		!strings.Contains(string(data), "version: 0.1.0") ||
+		strings.Contains(string(data), "# Composed by the module agent") {
+		t.Fatalf("service manifest is not the base's authored manifest: data=%q error=%v", data, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(target, "deployment", "generated", "consumer-artifact.json")); err != nil ||
 		string(data) != `{"owner":"consumer"}` {
@@ -2030,31 +1897,26 @@ services:
   - name: accounts
     path: backend
 `)
-	removedBase := "package accounts\n"
-	removedDigest := sha256.Sum256([]byte(removedBase))
-	writeTestFile(t, filepath.Join(target, "services", "backend", "removed.go"), removedBase)
-	writeTestFile(
-		t,
-		filepath.Join(target, "tools", "base-manifest.json"),
-		fmt.Sprintf(`{"files":{"services/accounts/removed.go":"%x"}}`, removedDigest),
-	)
 
 	source := t.TempDir()
 	writeTestFile(t, filepath.Join(source, moduleYamlPath), `kind: module
 name: saas-starter
 service-entry: accounts
+interface:
+  endpoints:
+    - service: accounts
+      endpoint: http
+      visibility: public
 services:
   - name: accounts
 `)
 	writeTestFile(t, filepath.Join(source, "services", "accounts", "current.go"), "package accounts\n")
-	writeTestFile(t, filepath.Join(source, "tools", "base-manifest.json"), `{"files":{}}`)
+	writeTestFile(t, filepath.Join(source, "services", "accounts", "service.codefly.yaml"),
+		serviceManifestFixture("accounts", "http", "http", "public", 8080, "", "", ""))
 	t.Setenv(sourceEnvVar, source)
 
 	if err := Create(context.Background(), target, "identity"); err != nil {
 		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(target, "services", "backend", "removed.go")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("removed base file survived under the relative service path: %v", err)
 	}
 	if data, err := os.ReadFile(filepath.Join(target, "services", "backend", "current.go")); err != nil ||
 		string(data) != "package accounts\n" {
@@ -2098,22 +1960,11 @@ func TestRegenerateServiceManifestsIncludesFrontendPluginDependencies(t *testing
 }
 `,
 	)
-	manifest := moduleManifest{Services: []serviceReference{{Name: "frontend"}}}
-	topology := deploymentTopology{
-		Module: topologyModule{Name: "users"},
-		Services: []topologyService{{
-			Name:    "frontend",
-			Version: "0.0.0",
-			Agent:   map[string]any{"version": "0.2.0"},
-			Endpoints: []topologyEndpoint{{
-				Name:       "http",
-				API:        "http",
-				Visibility: "module",
-			}},
-		}},
-	}
+	writeTestFile(t, filepath.Join(moduleDir, "services", "frontend", "service.codefly.yaml"),
+		serviceManifestFixture("frontend", "http", "http", "module", 3000, "", "", ""))
+	manifest := moduleManifest{Name: "users", Services: []serviceReference{{Name: "frontend"}}}
 
-	if err := regenerateServiceManifests(moduleDir, manifest, topology); err != nil {
+	if err := regenerateServiceManifests(moduleDir, manifest); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(moduleDir, "services", "frontend", "service.codefly.yaml"))
@@ -2121,7 +1972,7 @@ func TestRegenerateServiceManifestsIncludesFrontendPluginDependencies(t *testing
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"deployment/topology.bindings.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json",
+		"# Composed by the module agent from services/frontend/service.codefly.yaml and services/frontend/code/server/plugin-service-allowlist.generated.json.",
 		"name: subscriptions",
 		"module: billing",
 		"name: rest",
@@ -2152,6 +2003,8 @@ func TestCreatePreservesAbsoluteMonorepoServicePath(t *testing.T) {
 	root, target := writeModuleFixture(t, "monorepo-control", "identity", []string{"accounts"})
 	external := filepath.Join(t.TempDir(), "accounts")
 	writeTestFile(t, filepath.Join(external, "consumer.txt"), "consumer-owned\n")
+	writeTestFile(t, filepath.Join(external, "service.codefly.yaml"),
+		serviceManifestFixture("accounts", "http", "http", "public", 8080, "", "", ""))
 	if err := os.RemoveAll(filepath.Join(target, "services")); err != nil {
 		t.Fatal(err)
 	}
@@ -2166,6 +2019,11 @@ services:
 	writeTestFile(t, filepath.Join(source, moduleYamlPath), `kind: module
 name: saas-starter
 service-entry: accounts
+interface:
+  endpoints:
+    - service: accounts
+      endpoint: http
+      visibility: public
 services:
   - name: accounts
 `)
@@ -2232,41 +2090,32 @@ func writeModuleFixture(t *testing.T, workspaceName, moduleName string, services
 		}
 	}
 	var module strings.Builder
-	module.WriteString("kind: module\nname: " + moduleName + "\nservice-entry: " + entry + "\nservices:\n")
-	var topology strings.Builder
-	topology.WriteString("version: v1\nmodule:\n  name: " + moduleName + "\n  namespace: " + moduleName + "\n  service_entry: " + entry + "\n  description: test\n")
-	topology.WriteString("interface:\n  - service: " + entry + "\n    endpoint: http\n    visibility: public\n")
+	module.WriteString("kind: module\nname: " + moduleName + "\ndescription: test\nservice-entry: " + entry + "\n")
+	module.WriteString("interface:\n  endpoints:\n    - service: " + entry + "\n      endpoint: http\n      visibility: public\n")
 	if entry != "marketing" && slices.Contains(services, "marketing") {
-		topology.WriteString("  - service: marketing\n    endpoint: http\n    visibility: public\n")
+		module.WriteString("    - service: marketing\n      endpoint: http\n      visibility: public\n")
 	}
-	topology.WriteString("services:\n")
+	module.WriteString("services:\n")
 	for _, service := range services {
 		port := 8080
 		if service == "marketing" {
 			port = 3000
 		}
 		module.WriteString("  - name: " + service + "\n")
-		fmt.Fprintf(
-			&topology,
-			"  - name: %s\n    version: 0.0.0\n    endpoints:\n      - name: http\n        api: http\n        visibility: private\n        port: %d\n",
-			service,
-			port,
-		)
+		topLevel, deployment := "", ""
 		if service == "store" {
-			topology.WriteString("    bootstrap_job_endpoints:\n      - http\n")
+			deployment += "    bootstrap-job-endpoints:\n      - http\n"
 		}
 		if service == entry {
-			topology.WriteString("    public_egress_ports:\n      - 443\n")
+			deployment += "    public-egress-ports:\n      - 443\n"
 		}
 		if service == "accounts" && slices.Contains(services, "store") {
-			topology.WriteString("    dependencies:\n      - service: store\n        endpoints:\n          - http\n")
+			topLevel = "service-dependencies:\n  - name: store\n    endpoints:\n      - name: http\n"
 		}
-		if err := os.MkdirAll(filepath.Join(moduleDir, "services", service), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		writeTestFile(t, filepath.Join(moduleDir, "services", service, "service.codefly.yaml"),
+			serviceManifestFixture(service, "http", "http", "private", port, topLevel, "", deployment))
 	}
 	writeTestFile(t, filepath.Join(moduleDir, moduleYamlPath), module.String())
-	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), topology.String())
 	workspace := "name: " + workspaceName + `
 layout: modules
 environments:
@@ -2319,76 +2168,41 @@ func appendWorkspace(t *testing.T, root, extra string) {
 
 func writeExampleTopology(t *testing.T, moduleDir string) {
 	t.Helper()
-	writeTestFile(t, filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml"), `version: v1
-module:
-  name: users
-  namespace: users
-  service_entry: forge-edge
-  description: Example users boundary
+	writeTestFile(t, filepath.Join(moduleDir, moduleYamlPath), `kind: module
+name: users
+description: Example users boundary
+service-entry: forge-edge
 interface:
-  - service: forge-edge
-    endpoint: rest
-    visibility: public
+  endpoints:
+    - service: forge-edge
+      endpoint: rest
+      visibility: public
 services:
   - name: accounts
-    endpoints:
-      - name: grpc
-        api: grpc
-        visibility: private
-        port: 8080
-    dependencies:
-      - service: cache
-        endpoints: [redis]
-      - service: object-storage
-        endpoints: [http]
-      - service: store
-        endpoints: [postgres]
-      - service: vault
-        endpoints: [http]
   - name: cache
-    endpoints:
-      - name: redis
-        api: redis
-        visibility: private
-        port: 6379
   - name: forge-edge
-    endpoints:
-      - name: rest
-        api: http
-        visibility: public
-        port: 8080
-    dependencies:
-      - service: accounts
-        endpoints: [grpc]
-    public_egress_ports: [443]
   - name: frontend
-    endpoints:
-      - name: http
-        api: http
-        visibility: private
-        port: 3000
-    dependencies:
-      - service: forge-edge
-        endpoints: [rest]
   - name: object-storage
-    endpoints:
-      - name: http
-        api: http
-        visibility: private
-        port: 9000
   - name: store
-    endpoints:
-      - name: postgres
-        api: postgres
-        visibility: private
-        port: 5432
   - name: vault
-    endpoints:
-      - name: http
-        api: http
-        visibility: private
-        port: 8200
 `)
+	write := func(name, manifest string) {
+		writeTestFile(t, filepath.Join(moduleDir, "services", name, "service.codefly.yaml"), manifest)
+	}
+	write("accounts", serviceManifestFixture("accounts", "grpc", "grpc", "private", 8080,
+		"service-dependencies:\n"+
+			"  - name: cache\n    endpoints:\n      - name: redis\n"+
+			"  - name: object-storage\n    endpoints:\n      - name: http\n"+
+			"  - name: store\n    endpoints:\n      - name: postgres\n"+
+			"  - name: vault\n    endpoints:\n      - name: http\n", "", ""))
+	write("cache", serviceManifestFixture("cache", "redis", "redis", "private", 6379, "", "", ""))
+	write("forge-edge", serviceManifestFixture("forge-edge", "rest", "http", "public", 8080,
+		"service-dependencies:\n  - name: accounts\n    endpoints:\n      - name: grpc\n", "", "    public-egress-ports:\n      - 443\n"))
+	write("frontend", serviceManifestFixture("frontend", "http", "http", "private", 3000,
+		"service-dependencies:\n  - name: forge-edge\n    endpoints:\n      - name: rest\n", "", ""))
+	write("object-storage", serviceManifestFixture("object-storage", "http", "http", "private", 9000, "", "", ""))
+	write("store", serviceManifestFixture("store", "postgres", "postgres", "private", 5432, "", "", ""))
+	write("vault", serviceManifestFixture("vault", "http", "http", "private", 8200, "", "", ""))
 }
 
 func assertExampleRouteAndPolicies(
@@ -2517,7 +2331,7 @@ func writeCatalogArtifact(t *testing.T, moduleDir string) {
 
 func appendDeployJob(t *testing.T, moduleDir, writesService, writesEndpoint string) {
 	t.Helper()
-	appendToTopology(t, moduleDir,
+	writeDeployJobs(t, moduleDir,
 		"deploy_jobs:\n"+
 			"  - name: role-catalog-import\n"+
 			"    service: accounts\n"+
@@ -2531,28 +2345,59 @@ func appendDeployJob(t *testing.T, moduleDir, writesService, writesEndpoint stri
 			"      - store\n")
 }
 
-func appendToTopology(t *testing.T, moduleDir, block string) {
-	t.Helper()
-	file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
-	data, err := os.ReadFile(file)
-	if err != nil {
-		t.Fatal(err)
+// serviceManifestFixture renders an authored service.codefly.yaml: one endpoint,
+// its port under spec.deployment, and whatever a test needs beside them —
+// topLevel goes between the agent and the endpoints (service-dependencies),
+// spec under spec, deployment under spec.deployment.
+func serviceManifestFixture(name, endpoint, api, visibility string, port int, topLevel, spec, deployment string) string {
+	var manifest strings.Builder
+	manifest.WriteString("name: " + name + "\nversion: 0.0.0\nagent:\n  kind: codefly:service\n  name: test\n  version: 0.0.1\n  publisher: codefly.dev\n")
+	manifest.WriteString(topLevel)
+	manifest.WriteString("endpoints:\n  - name: " + endpoint + "\n")
+	if api != endpoint {
+		manifest.WriteString("    api: " + api + "\n")
 	}
-	if err := os.WriteFile(file, append(data, []byte(block)...), 0o644); err != nil {
-		t.Fatal(err)
+	if visibility != "private" {
+		manifest.WriteString("    visibility: " + visibility + "\n")
 	}
+	manifest.WriteString("spec:\n")
+	manifest.WriteString(spec)
+	fmt.Fprintf(&manifest, "  deployment:\n    endpoint-ports:\n      %s: %d\n", endpoint, port)
+	manifest.WriteString(deployment)
+	return manifest.String()
 }
 
-func replaceInTopology(t *testing.T, moduleDir, old, new string) {
+func writeDeployJobs(t *testing.T, moduleDir, block string) {
 	t.Helper()
-	file := filepath.Join(moduleDir, "deployment", "topology.bindings.codefly.yaml")
+	writeTestFile(t, filepath.Join(moduleDir, filepath.FromSlash(deployJobsManifestPath)), "version: v1\n"+block)
+}
+
+func replaceInServiceManifest(t *testing.T, moduleDir, service, old, new string) {
+	t.Helper()
+	file := filepath.Join(moduleDir, "services", service, "service.codefly.yaml")
 	data, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
 	replaced := strings.Replace(string(data), old, new, 1)
 	if replaced == string(data) {
-		t.Fatalf("topology substitution %q found nothing to replace", old)
+		t.Fatalf("service %s manifest substitution %q found nothing to replace", service, old)
+	}
+	if err := os.WriteFile(file, []byte(replaced), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func replaceInDeployJobs(t *testing.T, moduleDir, old, new string) {
+	t.Helper()
+	file := filepath.Join(moduleDir, filepath.FromSlash(deployJobsManifestPath))
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := strings.Replace(string(data), old, new, 1)
+	if replaced == string(data) {
+		t.Fatalf("deploy jobs substitution %q found nothing to replace", old)
 	}
 	if err := os.WriteFile(file, []byte(replaced), 0o644); err != nil {
 		t.Fatal(err)
@@ -2569,48 +2414,3 @@ func writeTestFile(t *testing.T, file, content string) {
 	}
 }
 
-// service.codefly.yaml is generated from the topology binding but excluded from
-// the base-integrity manifest, so nothing hermetic catches a topology agent-pin
-// bump that forgets to regenerate a service manifest. Only the network- and
-// agent-dependent codefly sync-drift gate would — too late and not in unit CI.
-// This proves every committed service manifest still pins the same agent
-// name@version its topology entry declares.
-func TestCanonicalServiceManifestsPinTopologyAgentVersions(t *testing.T) {
-	t.Parallel()
-	source := "module"
-	data, err := os.ReadFile(filepath.Join(source, "deployment", "topology.bindings.codefly.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var topology deploymentTopology
-	if err := yaml.Unmarshal(data, &topology); err != nil {
-		t.Fatal(err)
-	}
-	if len(topology.Services) == 0 {
-		t.Fatal("topology declares no services")
-	}
-	for _, service := range topology.Services {
-		wantName := fmt.Sprintf("%v", service.Agent["name"])
-		wantVersion := fmt.Sprintf("%v", service.Agent["version"])
-		if service.Agent["name"] == nil || service.Agent["version"] == nil {
-			t.Errorf("%s: topology agent missing name/version: %v", service.Name, service.Agent)
-			continue
-		}
-		manifestData, err := os.ReadFile(filepath.Join(source, "services", service.Name, "service.codefly.yaml"))
-		if err != nil {
-			t.Errorf("%s: read service manifest: %v", service.Name, err)
-			continue
-		}
-		var generated generatedServiceManifest
-		if err := yaml.Unmarshal(manifestData, &generated); err != nil {
-			t.Errorf("%s: parse service manifest: %v", service.Name, err)
-			continue
-		}
-		gotName := fmt.Sprintf("%v", generated.Agent["name"])
-		gotVersion := fmt.Sprintf("%v", generated.Agent["version"])
-		if gotName != wantName || gotVersion != wantVersion {
-			t.Errorf("%s: service manifest pins agent %s@%s but topology declares %s@%s — regenerate service.codefly.yaml",
-				service.Name, gotName, gotVersion, wantName, wantVersion)
-		}
-	}
-}

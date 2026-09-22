@@ -1,7 +1,6 @@
 package cataloggen_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,8 +15,8 @@ import (
 func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
 	bindingDocument := readFixture(t, "../../../gateway.bindings.codefly.yaml")
-	topologyDocument := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument)
+	topologyDocuments := readDeploymentDocuments(t)
+	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocuments)
 	require.NoError(t, err)
 	require.NoError(t, cataloggen.ValidateGatewayRouteCatalog(routes))
 
@@ -51,10 +50,11 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 	require.Equal(t, "accounts", legacy.GetOwner().GetService())
 	require.Equal(t, "connect", legacy.GetUpstreamEndpoint())
 
-	renamedTopology := strings.Replace(string(topologyDocument), "      - name: connect\n", "      - name: connect-api\n", 1)
-	renamedTopology = strings.ReplaceAll(renamedTopology, "          - connect\n", "          - connect-api\n")
-	renamedTopology = strings.ReplaceAll(renamedTopology, "    endpoint: connect\n", "    endpoint: connect-api\n")
-	renamedRoutes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, []byte(renamedTopology))
+	renamed := withService(t, topologyDocuments, "accounts", "    - name: connect\n      visibility: module\n", "    - name: connect-api\n      api: connect\n      visibility: module\n")
+	renamed = withService(t, renamed, "accounts", "            connect: 8080\n", "            connect-api: 8080\n")
+	renamed = withService(t, renamed, "auth-gateway", "        - name: connect\n", "        - name: connect-api\n")
+	renamed = withModule(t, renamed, "          endpoint: connect\n", "          endpoint: connect-api\n")
+	renamedRoutes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, renamed)
 	require.NoError(t, err)
 	require.Equal(t, "connect-api", renamedRoutes.GetRoutes()[0].GetUpstreamEndpoint())
 }
@@ -62,8 +62,8 @@ func TestGatewayRouteCatalogCompilationAndParity(t *testing.T) {
 func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {
 	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
 	bindingDocument := readFixture(t, "../../../gateway.bindings.codefly.yaml")
-	topologyDocument := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument)
+	topologyDocuments := readDeploymentDocuments(t)
+	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocuments)
 	require.NoError(t, err)
 
 	routeJSON, err := cataloggen.RenderGatewayRouteCatalogJSON(routes)
@@ -86,8 +86,8 @@ func TestGatewayArtifactsAreDeterministicAndCurrent(t *testing.T) {
 func TestGatewayRouteValidationRejectsUnsafeDrift(t *testing.T) {
 	serviceDocument := readFixture(t, "../../../generated/service-catalog.json")
 	bindingDocument := readFixture(t, "../../../gateway.bindings.codefly.yaml")
-	topologyDocument := readFixture(t, "../../../../../deployment/topology.bindings.codefly.yaml")
-	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocument)
+	topologyDocuments := readDeploymentDocuments(t)
+	routes, err := cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, topologyDocuments)
 	require.NoError(t, err)
 
 	internal := proto.Clone(routes).(*catalogv1.GatewayRouteCatalog)
@@ -102,11 +102,11 @@ func TestGatewayRouteValidationRejectsUnsafeDrift(t *testing.T) {
 	wrongSchema.SchemaVersion = "saas.gateway.routes.v2"
 	require.ErrorContains(t, cataloggen.ValidateGatewayRouteCatalog(wrongSchema), "unsupported")
 
-	badEndpoint := strings.Replace(string(topologyDocument), "api: connect", "api: connect;raw", 1)
-	_, err = cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, []byte(badEndpoint))
+	badEndpoint := withService(t, topologyDocuments, "accounts", "    - name: connect\n      visibility: module\n", "    - name: connect\n      api: connect;raw\n      visibility: module\n")
+	_, err = cataloggen.BuildGatewayRouteCatalog(serviceDocument, bindingDocument, badEndpoint)
 	require.ErrorContains(t, err, "Codefly API")
 
 	unknownField := string(bindingDocument) + "unknown: true\n"
-	_, err = cataloggen.BuildGatewayRouteCatalog(serviceDocument, []byte(unknownField), topologyDocument)
+	_, err = cataloggen.BuildGatewayRouteCatalog(serviceDocument, []byte(unknownField), topologyDocuments)
 	require.ErrorContains(t, err, "field unknown not found")
 }

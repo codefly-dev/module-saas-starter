@@ -62,7 +62,7 @@ func validatePartitionTemplate(eventType, template string) error {
 
 // EventsContribution is one module's declaration of the domain events it
 // publishes and consumes, a sibling of PermissionsContribution. It is discovered
-// and merged into the base-manifest-tracked event catalog exactly like a
+// and merged into the module-released event catalog exactly like a
 // permissions contribution.
 type EventsContribution struct {
 	Schema    string               `yaml:"schema"`
@@ -349,9 +349,9 @@ func buildEventCatalog(contributions []EventsContribution, manifest modulepackag
 	// Both comparators must be TOTAL over the values they can see, because
 	// sort.Slice is not stable: any pair it considers equal may come out in
 	// either order, and these slices are written straight into four
-	// base-manifest-tracked artifacts. A tie there would let an unchanged input
+	// module-released artifacts. A tie there would let an unchanged input
 	// regenerate to different bytes on a different toolchain and fail the
-	// base-integrity gate with nothing in the diff to explain it. Publishes ties
+	// clean-diff gate with nothing in the diff to explain it. Publishes ties
 	// on Type alone are impossible — a duplicate type is rejected above — but
 	// Consumes are only unique across the whole (Type, Subscriber, Queue) tuple,
 	// so all three sort, with Delivery last to leave no field outside the key.
@@ -619,7 +619,7 @@ func renderEventCatalogGo(catalog eventCatalog) string {
 // asyncAPIVersion pins the generated document's info.version. It is a constant
 // on purpose: the AsyncAPI projection is a deterministic view of the catalog,
 // so it must not couple to a release number that would churn the artifact (and
-// the base-integrity manifest) on every unrelated version bump.
+// the committed tree) on every unrelated version bump.
 const asyncAPIVersion = "1.0.0"
 
 var componentKeyUnsafe = regexp.MustCompile(`[^A-Za-z0-9._-]`)
@@ -685,7 +685,7 @@ type asyncAPIProp struct {
 // renderAsyncAPI projects the event catalog into an AsyncAPI 3.0.0 document:
 // one channel per published type, a `send` operation for its publisher, and a
 // `receive` operation for every consumer. All map keys and the sorted catalog
-// slices make the output deterministic, so it passes the base-integrity gate.
+// slices make the output deterministic, so a regeneration is a clean diff.
 func renderAsyncAPI(catalog eventCatalog) ([]byte, error) {
 	doc := asyncAPIDoc{
 		AsyncAPI: "3.0.0",

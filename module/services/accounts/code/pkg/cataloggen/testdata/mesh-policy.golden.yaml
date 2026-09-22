@@ -1,4 +1,4 @@
-# Code generated from deployment/topology.bindings.codefly.yaml. DO NOT EDIT.
+# Code generated from module.codefly.yaml and services/*/service.codefly.yaml. DO NOT EDIT.
 ---
 apiVersion: security.istio.io/v1
 kind: PeerAuthentication

@@ -20,8 +20,8 @@ const manifest = (ecosystem, directory, file) => ({
   path: directory ? `${directory}/${file}` : file,
 });
 
-const run = ({ entries = [], manifests = [], baseTracked = [], hasWorkflows = false }) =>
-  coverageErrors({ entries, manifests, baseTracked: new Set(baseTracked), hasWorkflows });
+const run = ({ entries = [], manifests = [], hasWorkflows = false }) =>
+  coverageErrors({ entries, manifests, hasWorkflows });
 
 // --------------------------------------------------------------------------
 // the shipped tree
@@ -32,40 +32,33 @@ test("the shipped dependabot configuration matches the tree", () => {
 });
 
 // --------------------------------------------------------------------------
-// a base-tracked manifest must never be configured
+// a module-owned manifest must never be configured
 // --------------------------------------------------------------------------
 
-// The defect this gate exists for. Configuring npm over
-// module/services/frontend/code bumps a package.json whose hash lives in
-// base-manifest.json; `base-integrity` then fails and Dependabot cannot
-// regenerate the manifest, so the pull request can never merge and the
-// ecosystem's open-pull-requests-limit stays consumed by it.
-test("configuring a base-tracked manifest is an error", () => {
+// A manifest under module/ is released with the module; its versions move with
+// a module tag, not with this repository's bots.
+test("configuring a module-owned manifest is an error", () => {
   const errors = run({
     entries: [entry("npm", "module/services/frontend/code")],
     manifests: [manifest("npm", "module/services/frontend/code", "package.json")],
-    baseTracked: ["module/services/frontend/code/package.json"],
   });
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /hashed in module\/tools\/base-manifest\.json/);
-  assert.match(errors[0], /can never merge/);
+  assert.match(errors[0], /released with the module/);
 });
 
-test("a base-tracked manifest left unconfigured is not an error", () => {
+test("a module-owned manifest left unconfigured is not an error", () => {
   assert.deepEqual(
     run({
       manifests: [manifest("pip", "module/services/accounts/code/python", "pyproject.toml")],
-      baseTracked: ["module/services/accounts/code/python/pyproject.toml"],
     }),
     [],
   );
 });
 
-test("every base-tracked manifest under one entry is reported, not just the first", () => {
+test("every module-owned manifest under one entry is reported, not just the first", () => {
   const errors = run({
-    entries: [entry("gomod", "a", "b")],
-    manifests: [manifest("gomod", "a", "go.mod"), manifest("gomod", "b", "go.mod")],
-    baseTracked: ["a/go.mod", "b/go.mod"],
+    entries: [entry("gomod", "module/a", "module/b")],
+    manifests: [manifest("gomod", "module/a", "go.mod"), manifest("gomod", "module/b", "go.mod")],
   });
   assert.equal(errors.length, 2);
 });
@@ -76,13 +69,13 @@ test("every base-tracked manifest under one entry is reported, not just the firs
 
 // The mirror defect: the original configuration covered the repository-root
 // go.mod and none of the five modules beneath it, which reports nothing at all.
-test("a non-base-tracked manifest with no entry is an error", () => {
+test("a non-module manifest with no entry is an error", () => {
   const errors = run({
     entries: [entry("gomod", "")],
     manifests: [manifest("gomod", "", "go.mod"), manifest("gomod", "tools", "go.mod")],
   });
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /tools\/go\.mod is not base-tracked/);
+  assert.match(errors[0], /tools\/go\.mod is not module-owned/);
   assert.match(errors[0], /no updates/);
 });
 
@@ -104,7 +97,7 @@ test("an entry covers only its own ecosystem in that directory", () => {
     manifests: [manifest("gomod", "svc", "go.mod"), manifest("pip", "svc", "pyproject.toml")],
   });
   assert.equal(errors.length, 1);
-  assert.match(errors[0], /svc\/pyproject\.toml is not base-tracked/);
+  assert.match(errors[0], /svc\/pyproject\.toml is not module-owned/);
 });
 
 // --------------------------------------------------------------------------
