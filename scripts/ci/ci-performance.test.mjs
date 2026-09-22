@@ -60,7 +60,7 @@ test('the CLI installer retries resets, verifies downloads, and fails after exha
   }
 });
 
-const DEFAULT_CODEFLY_VERSION = '0.1.159';
+const DEFAULT_CODEFLY_VERSION = '0.1.160';
 
 // The planner's selection and every phase's execution must come from one
 // CLI: the plan-only 0.1.151 override (#743) existed while the published
