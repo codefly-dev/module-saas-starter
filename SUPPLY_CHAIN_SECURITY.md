@@ -44,17 +44,17 @@ Resolved upstream and now remediated here by a pin bump:
   pull it (service-redis#31), and `0.0.86` carries the readiness-probe fix
   (service-redis#28; `0.0.84` probed the wrong port). All three still hold at
   the current pin — `runtime-image.json` is byte-identical from `0.0.88` to
-  `0.0.89` — and the `cache` pin is `0.0.89` in this repo.
+  `0.0.91` — and the `cache` pin is `0.0.91` in this repo.
 - **`store`** (postgres agent) — CVE-2026-14456 (HIGH), Alpine
   `libcrypto3`/`libssl3` `3.5.7-r0` → `3.5.8-r0`. Fixed upstream in
   codefly-dev/service-postgres#74 and shipped as postgres agent `0.0.130`; that
-  OpenSSL rebuild must not regress below it, and the `store` pin is `0.0.133` in
+  OpenSSL rebuild must not regress below it, and the `store` pin is `0.0.135` in
   this repo.
 - **`vault`** (vault agent) — CVE-2026-56854 (CRITICAL,
   `golang.org/x/crypto` `v0.53.0` → `0.55.0`) + CVE-2026-84304 (HIGH,
   `google.golang.org/grpc` `v1.82.1` → `1.83.1`). Fixed upstream in
   codefly-dev/service-vault#42 and shipped as vault agent `0.0.28`; those
-  dependency bumps must not regress below it, and the `vault` pin is `0.0.29` in
+  dependency bumps must not regress below it, and the `vault` pin is `0.0.31` in
   this repo.
 
 When an upstream release ships, bump the pin (see
