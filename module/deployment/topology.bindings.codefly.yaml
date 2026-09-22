@@ -161,7 +161,7 @@ services:
       kind: codefly:service
       name: nextjs
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.0.157
+      version: 0.0.156
       publisher: codefly.dev
     workspace_configuration_dependencies:
       - abuse-protection
@@ -232,7 +232,7 @@ services:
       kind: codefly:service
       name: nextjs
       # Runtime compatibility is checked against the agent's live protocol.
-      version: 0.0.157
+      version: 0.0.156
       publisher: codefly.dev
     endpoints:
       - name: http

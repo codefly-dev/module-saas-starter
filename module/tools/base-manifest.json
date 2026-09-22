@@ -144,7 +144,7 @@
     "deployment/generated/contributed-roles.json": "a0b81f8c091957efad4a3ee347d4a5027c931545f99ad6f559fed18c9895b377",
     "deployment/generated/contributed-topology.json": "2587ff298706c222b76a50b6c47448b1001748f865f98cd0250a2cfe4a64c68f",
     "deployment/generated/event-catalog.json": "a46dce1d850dcfd5d4e2cbdec860160b755d5f321144f0637dc59b120668cd81",
-    "deployment/topology.bindings.codefly.yaml": "2cd32e2f87484de5560d2e9381c97daf5b6b3b9b1bd779d3aac71f08d892a82f",
+    "deployment/topology.bindings.codefly.yaml": "19254cd3b10c0960cfe405ffac89a66f2ef2a62b931d93bbd68c892c2af1628c",
     "docs/adr/0001-frontend-plugin-packaging.md": "6dd43a979c81a0cfb8fd93646e73abd641364718fedc4817f937b2c553d6e2ee",
     "docs/adr/0002-remote-ui-tier-boundary.md": "a90fa59d7ad82f0c370cbe9ab3cae39c4c4316277cccbe92d40808a73647d1ee",
     "docs/adr/0003-typed-audit-event-registry.md": "1043aace7dabd1953d5ee896ba2dfae44b051ce07856e870c630b16b21cc2f0d",
