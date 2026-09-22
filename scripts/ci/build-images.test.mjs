@@ -18,6 +18,24 @@ test('executor materials preserve all effective dependencies and platform digest
   assert.match(verifyImages([image], materialImages([material('node', '24-alpine'), material('alpine', '3.21')])).join('\n'), /Unexpected build material/);
 });
 
+// These materials came from the released Go-gRPC recipe's hosted build. The
+// Dockerfile frontend is executable build input, not just a recipe comment.
+test('the adopted Go-gRPC image contract includes its exact Dockerfile frontend', () => {
+  const inventory = JSON.parse(readFileSync(new URL('./build-images.json', import.meta.url), 'utf8'));
+  const frontend = material('docker/dockerfile', '1', 'sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32');
+  const materials = [
+    frontend,
+    material('golang', '1.27.0-alpine3.23', 'sha256:3747dcba41c8b0db3211fda4db61638b980e17ac5bb3c94460a975a9cfe19395'),
+    material('alpine', '3.23.5', 'sha256:fd791d74b68913cbb027c6546007b3f0d3bc45125f797758156952bc2d6daf40'),
+  ];
+  assert.deepEqual(verifyImages(inventory['go-grpc'].images, materialImages(materials)), []);
+  assert.match(verifyImages(inventory['go-grpc'].images, materialImages(materials.slice(1))).join('\n'),
+    /Missing expected build material: docker\/dockerfile/);
+  assert.match(verifyImages(inventory['go-grpc'].images, materialImages([
+    { ...frontend, Digests: [digest] }, ...materials.slice(1),
+  ])).join('\n'), /Unexpected build material: docker\/dockerfile/);
+});
+
 test('a recipe pinned by digest alone is still attributed to the release line it locks', () => {
   // BuildKit's own shape for `FROM alpine@sha256:…`: no version in the path, the
   // pin in a `digest` parameter. The Postgres migration builder pins this way.
